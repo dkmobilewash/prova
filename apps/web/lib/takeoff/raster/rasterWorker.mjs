@@ -23,14 +23,97 @@ async function open(bytes) {
   doc = await pdfjs.getDocument({ data: bytes, useWorkerFetch: false, isEvalSupported: false, disableFontFace: true, verbosity: 0 }).promise;
 }
 
+// ── A SCAN IS ONE IMAGE, AND pdf.js HAS ALREADY DECODED IT ──
+//
+// By the time the operator list exists, pdf.js has decoded a 1-bit scan to
+// PACKED rows — 18 MB for a 400-dpi ARCH D page. What costs the seconds and
+// the 2–4 GB (NOTES-scanned.md §12) is DRAWING it: the canvas path expands
+// it to full-resolution RGBA, 572 MB a copy, and scales that down. So when a
+// page is exactly one image laid over the whole page — no rotation, no other
+// ink, 1 bit per pixel — the grey is box-averaged straight out of the bits
+// and the canvas is never touched. Anything else falls back to the banded
+// render below; a vector sheet never enters here.
+//
+// Ops that only set state are allowed alongside the image, because a scanner
+// writes an empty text object on every page; any op that could paint —
+// stroke, fill, showText, a second image, a mask — is a reason to fall back.
+const STATE_ONLY_OPS = new Set(["save", "restore", "transform", "dependency", "beginText", "endText", "moveText", "setFont", "setTextMatrix", "setLeading", "setCharSpacing", "setWordSpacing", "setHScale", "setTextRise", "setTextRenderingMode", "setGState", "setLineWidth", "setLineCap", "setLineJoin", "setMiterLimit", "setDash", "setFlatness", "setRenderingIntent", "setFillGray", "setStrokeGray", "setFillRGBColor", "setStrokeRGBColor", "setFillCMYKColor", "setStrokeCMYKColor", "setFillColorSpace", "setStrokeColorSpace", "setFillColor", "setStrokeColor", "setFillColorN", "setStrokeColorN", "beginMarkedContent", "beginMarkedContentProps", "endMarkedContent", "markPoint", "markPointProps", "beginCompat", "endCompat"]);
+let opNames = null;
+
+async function scanGray(page, width, height) {
+  const ops = await page.getOperatorList();
+  opNames ??= Object.fromEntries(Object.entries(pdfjs.OPS).map(([k, v]) => [v, k]));
+  let imageId = null;
+  let placed = null;
+  for (let i = 0; i < ops.fnArray.length; i += 1) {
+    const name = opNames[ops.fnArray[i]];
+    if (name === "paintImageXObject") {
+      if (imageId !== null) return null;
+      imageId = ops.argsArray[i][0];
+    } else if (name === "transform") {
+      placed = ops.argsArray[i];
+    } else if (!STATE_ONLY_OPS.has(name)) {
+      return null;
+    }
+  }
+  if (imageId === null || placed === null || page.rotate !== 0) return null;
+  // The image must sit over the whole page: its matrix is [w 0 0 h x y] in
+  // page points, within a point of the page box.
+  const [x0, y0, x1, y1] = page.view;
+  const near = (a, b) => Math.abs(a - b) <= 1;
+  if (!near(placed[0], x1 - x0) || placed[1] !== 0 || placed[2] !== 0 || !near(placed[3], y1 - y0) || !near(placed[4], x0) || !near(placed[5], y0)) return null;
+  const image = page.objs.get(imageId);
+  if (!image || image.kind !== pdfjs.ImageKind.GRAYSCALE_1BPP || !image.data) return null;
+  const { width: sw, height: sh, data: bits } = image;
+  const rowBytes = (sw + 7) >> 3;
+  // Each output pixel averages the source pixels whose floor-mapped column
+  // and row land on it — a box filter, exact at integer ratios (a 400-dpi
+  // scan read at 200 is 2 x 2) and nearest-area otherwise.
+  const colOf = new Uint32Array(sw);
+  for (let x = 0; x < sw; x += 1) colOf[x] = Math.min(width - 1, Math.floor((x * width) / sw));
+  const colCount = new Uint32Array(width);
+  for (let x = 0; x < sw; x += 1) colCount[colOf[x]] += 1;
+  const sum = new Uint32Array(width * height);
+  const rowCount = new Uint32Array(height);
+  for (let y = 0; y < sh; y += 1) {
+    const oy = Math.min(height - 1, Math.floor((y * height) / sh));
+    rowCount[oy] += 1;
+    const base = oy * width;
+    const row = y * rowBytes;
+    for (let x = 0; x < sw; x += 1) {
+      // Bit set is white, as pdf.js paints GRAYSCALE_1BPP.
+      if (bits[row + (x >> 3)] & (0x80 >> (x & 7))) sum[base + colOf[x]] += 1;
+    }
+  }
+  const data = new Uint8Array(width * height);
+  for (let y = 0; y < height; y += 1) {
+    const rows = rowCount[y];
+    for (let x = 0; x < width; x += 1) {
+      const n = rows * colCount[x];
+      // Mapped the way the canvas path comes out — 256ths, white pinned to
+      // 255 — so a 2 x 2 box reads 0 / 64 / 128 / 192 / 255 and the grey is
+      // byte-identical to the render it replaces (measured on Evergreen p24:
+      // 0 pixels differ; with plain rounding, 0.4% differed by one level).
+      const white = sum[y * width + x];
+      data[y * width + x] = n === 0 || white === n ? 255 : Math.round((256 * white) / n);
+    }
+  }
+  return data;
+}
+
 // Drawn in bands of `bandPx` rows into one reused canvas; the only full-page
-// buffer is the 8-bit grey.
+// buffer is the 8-bit grey. A one-image scan skips the canvas entirely.
 async function render(bytes, pageNumber, dpi, bandPx) {
   await open(bytes);
   const page = await doc.getPage(pageNumber);
   const full = page.getViewport({ scale: dpi / 72 });
   const width = Math.round(full.width);
   const height = Math.round(full.height);
+  const direct = await scanGray(page, width, height);
+  if (direct) {
+    page.cleanup?.();
+    return { gray: direct, width, height, direct: true };
+  }
   const data = new Uint8Array(width * height);
   const bandHeight = Math.min(bandPx, height);
   const { context } = doc.canvasFactory.create(width, bandHeight);
@@ -44,7 +127,7 @@ async function render(bytes, pageNumber, dpi, bandPx) {
     for (let i = 0; i < width * rows; i += 1) data[top * width + i] = (rgba[i * 4] * 299 + rgba[i * 4 + 1] * 587 + rgba[i * 4 + 2] * 114) / 1000;
   }
   page.cleanup?.();
-  return { gray: data, width, height };
+  return { gray: data, width, height, direct: false };
 }
 
 // Tiles cut straight from the grey into one reused tile canvas; with

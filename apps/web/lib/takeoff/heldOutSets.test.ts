@@ -120,8 +120,8 @@ describe("the sets that must never reach training", () => {
     // O'Reillys, plus Jefferson City as Albany's sibling); 9 to 12 on
     // 2026-10-29 (Modbox, Darrington, Hillside), each held out BEFORE a label
     // was written for it, which is the only order in which holding out means
-    // anything.
-    expect(HELD_OUT_SETS).toHaveLength(12);
+    // anything. 12 to 13 later the same day: Evergreen, the scanned key.
+    expect(HELD_OUT_SETS).toHaveLength(13);
   });
 
   it("refuses the three sets held out on 2026-10-29, before round 8 labelled them", () => {
@@ -174,5 +174,22 @@ describe("splitting labelled sets for a training run", () => {
     const got = splitForTraining([rowsFor("NG-Green-Bay-WI.pdf", 4)]);
     expect(got.train).toHaveLength(4);
     expect(got.refused).toEqual([]);
+  });
+});
+
+describe("the scanned answer key, held out 2026-10-29", () => {
+  // The real file name in `real-plans/new/`, spaces and all; the label
+  // directory will spell it with underscores.
+  const FILE = "8102 EVERGREEN WAY 2020 EVERETT 4 CORNERS - BLDG D Plans 2025-06-20.pdf";
+  it("refuses it by its real file name, and says it is the scanned key", () => {
+    expect(isHeldOut(FILE)).toBe(true);
+    expect(heldOutReason(FILE)).toMatch(/SCANNED answer key/);
+  });
+  it("matches it however the name was punctuated on its way through", () => {
+    expect(isHeldOut("8102_EVERGREEN_WAY_2020_EVERETT_4_CORNERS_-_BLDG_D_Plans_2025-06-20.pdf")).toBe(true);
+    expect(isHeldOut("8102EVERGREENWAY2020EVERETT4CORNERSBLDGDPlans20260620")).toBe(true);
+  });
+  it("keeps every entry in the list refusing its own match", () => {
+    for (const one of HELD_OUT_SETS) expect(isHeldOut(one.match), one.match).toBe(true);
   });
 });

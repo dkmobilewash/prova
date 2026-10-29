@@ -1,6 +1,6 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { bothFacesDashedInPoints } from "./dashedFaces";
-import { isTableRows } from "./textRows";
+import { isTableRows, isUnderline } from "./textRows";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "./findWallsOnSheet";
 import {
   drawingCount,
@@ -220,7 +220,17 @@ export function offeredCandidates(
   const equipment: { wall: WallCandidate; word: string; feet: number }[] = [];
   const dashed: WallCandidate[] = [];
   const tables: WallCandidate[] = [];
+  let zeroExtent = 0;
+  const underlines: WallCandidate[] = [];
   const onPlan = sheet.walls.filter((w) => {
+    // A run with no extent — a closed loop's chord, a degenerate merge — is
+    // nothing a reviewer can draw, accept or join, whatever its `lengthFeet`
+    // says. Counted, never offered. The curve engine refuses the loop at its
+    // source (`curvedWalls`, `MIN_CHORD_SHARE`); this is the guard at the door.
+    if (!(Math.hypot(w.x2 - w.x1, w.y2 - w.y1) > 0)) {
+      zeroExtent += 1;
+      return false;
+    }
     if (!onAPlan(sheet, w.x1, w.y1, w.x2, w.y2)) return false;
     const hit = sheet.textItems === undefined ? null : siteEquipmentWord(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit);
     if (hit !== null) {
@@ -237,8 +247,20 @@ export function offeredCandidates(
       tables.push(w);
       return false;
     }
+    // A line ruled under a word, as long as the word: a title's underline — see `isUnderline`.
+    if (sheet.textItems !== undefined && isUnderline(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit)) {
+      underlines.push(w);
+      return false;
+    }
     return true;
   });
+  if (underlines.length > 0) {
+    aside.set("underlines", {
+      kind: "underlines",
+      why: "a line ruled under a word and no longer than the word — a title's or a note's underline, not a wall",
+      n: underlines.length,
+    });
+  }
   if (dashed.length > 0) {
     aside.set("dashed-faces", {
       kind: "dashed-faces",
@@ -261,6 +283,9 @@ export function offeredCandidates(
     });
   }
 
+  if (zeroExtent > 0) {
+    aside.set("zero-extent", { kind: "zero-extent", why: "a run with no extent — the same start and end — which nothing can draw or accept", n: zeroExtent });
+  }
   return {
     candidates: candidatesFromSheet({
       walls: onPlan.map((w) => ({
@@ -292,6 +317,7 @@ export function offeredCandidates(
       ...equipment.map((e) => ({ kind: "site-equipment", why: `'${e.word}' is written ${e.feet.toFixed(0)} ft away`, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
       ...dashed.map((w) => ({ kind: "dashed-faces", why: "both faces are dashed lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...tables.map((w) => ({ kind: "table-rows", why: "rows of text between the lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...underlines.map((w) => ({ kind: "underlines", why: "ruled under a word, as long as the word", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...classified
         .filter((one) => !worthOffering(one.kind))
         .map((one) => ({

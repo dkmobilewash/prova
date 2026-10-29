@@ -1,4 +1,4 @@
-import { heldOutReason } from "./heldOutSets";
+import { excludedSheetReason, heldOutReason } from "./heldOutSets";
 
 /**
  * ── TURNING LABELLED SHEETS INTO TRAINING ROWS, HELD-OUT SETS REFUSED ──
@@ -81,6 +81,14 @@ export function trainingRows(sheets: readonly LabelledSheet[]): TrainingRowsResu
     const why = heldOutReason(sheet.set);
     if (why !== null) {
       refused.push({ set: sheet.set, sheet: sheet.sheet, why, rows: sheet.rows.length });
+      continue;
+    }
+    // A SHEET that is the wrong question, rather than a SET being kept as a
+    // key. Refused here and not elsewhere, for the reason this file's header
+    // gives: two refusals are how the two stop agreeing.
+    const excluded = excludedSheetReason(sheet.set, sheet.sheet);
+    if (excluded !== null) {
+      refused.push({ set: sheet.set, sheet: sheet.sheet, why: excluded, rows: sheet.rows.length });
       continue;
     }
     const family = familyOf(sheet.set);

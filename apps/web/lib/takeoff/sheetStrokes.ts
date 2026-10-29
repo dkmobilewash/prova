@@ -283,7 +283,8 @@ export async function segmentsFromOpenPage(
       // a separate stack would drift the moment a path changed one and not the
       // other. 1.0 is the PDF default for a page that never sets it.
       let lineWidth = 1;
-      const stack: { ctm: number[]; lineWidth: number }[] = [];
+      let gray: number | undefined;
+      const stack: { ctm: number[]; lineWidth: number; gray?: number }[] = [];
 
       // ── THE MARKED-CONTENT STACK, WHICH IS NOT THE GRAPHICS STACK ──
       //
@@ -359,17 +360,38 @@ export async function segmentsFromOpenPage(
         }
 
         if (fn === OPS.save) {
-          stack.push({ ctm, lineWidth });
+          stack.push({ ctm, lineWidth, gray });
           continue;
         }
         if (fn === OPS.restore) {
           const popped = stack.pop();
           ctm = popped?.ctm ?? IDENTITY;
           lineWidth = popped?.lineWidth ?? 1;
+          gray = popped?.gray;
           continue;
         }
         if (fn === OPS.setLineWidth) {
           lineWidth = Number((ops.argsArray[i] as number[])[0]) || 0;
+          continue;
+        }
+        // ── THE PEN'S COLOUR, AS ONE NUMBER ──
+        //
+        // Existing construction is drawn grey on most sets and the reviewer
+        // rejects it; the reader threw the colour away, so nothing downstream
+        // could tell a grey line from a black one. Kept as luminance 0 (black)
+        // to 1 (white), undefined until the content sets a stroke colour.
+        if (fn === OPS.setStrokeRGBColor) {
+          const [r, g, b] = ops.argsArray[i] as number[];
+          gray = (0.299 * (r ?? 0) + 0.587 * (g ?? 0) + 0.114 * (b ?? 0)) / 255;
+          continue;
+        }
+        if (fn === OPS.setStrokeGray) {
+          gray = Number((ops.argsArray[i] as number[])[0]) || 0;
+          continue;
+        }
+        if (fn === OPS.setStrokeCMYKColor) {
+          const [c, m, y, k] = ops.argsArray[i] as number[];
+          gray = 1 - Math.min(1, Math.max(c ?? 0, m ?? 0, y ?? 0) * (1 - (k ?? 0)) + (k ?? 0));
           continue;
         }
         if (fn === OPS.transform) {
@@ -403,7 +425,7 @@ export async function segmentsFromOpenPage(
         // `q`/`Q` do not bracket a form — the begin/end pair is its own scope —
         // so the matrix is pushed and popped here rather than relying on them.
         if (fn === OPS.paintFormXObjectBegin) {
-          stack.push({ ctm, lineWidth });
+          stack.push({ ctm, lineWidth, gray });
           const matrix = (ops.argsArray[i] as unknown[])[0];
           if (Array.isArray(matrix) && matrix.length === 6) {
             ctm = Util.transform(ctm, matrix as number[]);
@@ -499,7 +521,7 @@ export async function segmentsFromOpenPage(
           } else if (op === OPS.lineTo) {
             const next = toDisplay(coords[at], coords[at + 1]);
             at += 2;
-            if (cursor !== null) segments.push({ x1: cursor.x, y1: cursor.y, x2: next.x, y2: next.y, width: w, layer });
+            if (cursor !== null) segments.push({ x1: cursor.x, y1: cursor.y, x2: next.x, y2: next.y, width: w, layer, gray });
             cursor = next;
           } else if (op === OPS.curveTo) {
             // ── AN ARC IS FLATTENED, NOT DROPPED ──
@@ -534,7 +556,7 @@ export async function segmentsFromOpenPage(
             if (cursor !== null) {
               let from = cursor;
               for (const to of flattenCubic(cursor, c1, c2, end)) {
-                segments.push({ x1: from.x, y1: from.y, x2: to.x, y2: to.y, width: w, curved: true, layer });
+                segments.push({ x1: from.x, y1: from.y, x2: to.x, y2: to.y, width: w, curved: true, layer, gray });
                 from = to;
               }
             }
@@ -563,16 +585,16 @@ export async function segmentsFromOpenPage(
             const c = toDisplay(x + w, y + hh);
             const d = toDisplay(x, y + hh);
             segments.push(
-              { x1: a.x, y1: a.y, x2: b.x, y2: b.y, width: w, layer },
-              { x1: b.x, y1: b.y, x2: c.x, y2: c.y, width: w, layer },
-              { x1: c.x, y1: c.y, x2: d.x, y2: d.y, width: w, layer },
-              { x1: d.x, y1: d.y, x2: a.x, y2: a.y, width: w, layer },
+              { x1: a.x, y1: a.y, x2: b.x, y2: b.y, width: w, layer, gray },
+              { x1: b.x, y1: b.y, x2: c.x, y2: c.y, width: w, layer, gray },
+              { x1: c.x, y1: c.y, x2: d.x, y2: d.y, width: w, layer, gray },
+              { x1: d.x, y1: d.y, x2: a.x, y2: a.y, width: w, layer, gray },
             );
             cursor = a;
             subpathStart = a;
           } else if (op === OPS.closePath) {
             if (cursor !== null && subpathStart !== null) {
-              segments.push({ x1: cursor.x, y1: cursor.y, x2: subpathStart.x, y2: subpathStart.y, width: w, layer });
+              segments.push({ x1: cursor.x, y1: cursor.y, x2: subpathStart.x, y2: subpathStart.y, width: w, layer, gray });
               cursor = subpathStart;
             }
           }
