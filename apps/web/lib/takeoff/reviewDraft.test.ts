@@ -47,7 +47,7 @@ function fresh(ids: string[]): ReviewState {
   const candidates = ids.map((id, at) => candidate(id, 0.2 + at * 0.05));
   const verdicts: Record<string, "unreviewed"> = {};
   for (const one of candidates) verdicts[one.id] = "unreviewed";
-  return { candidates, verdicts, duplicates: [], traced: [], splits: [] };
+  return { candidates, verdicts, duplicates: [], traced: [], splits: [], nextTraceId: 0 };
 }
 
 function reviewed(): ReviewState {
@@ -57,6 +57,7 @@ function reviewed(): ReviewState {
     verdicts: { w0: "wall", w1: "not-a-wall", w2: "unsure" },
     traced: [traced("t0", 0.8), traced("t1", 0.85)],
     splits: [],
+    nextTraceId: 0,
   };
 }
 
@@ -289,6 +290,7 @@ describe("a re-detect must not wipe the sheet", () => {
       duplicates: [],
       traced: [traced("t0", 0.8), traced("t1", 0.85)],
       splits: [],
+      nextTraceId: 0,
     };
     // What the finder proposes once the hatched lines are offered too: the two
     // ordinary candidates, plus hatch singles. The split halves and the

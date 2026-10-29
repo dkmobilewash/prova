@@ -95,6 +95,17 @@ export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: str
     why: "multi-family apartments — held out 2026-10-29, before a label was written",
   },
   {
+    // ── THE SCANNED ANSWER KEY ──
+    //
+    // The first set in the corpus that is a scan rather than a vector export:
+    // 106 pages, one 400-dpi 1-bit image each. Held out 2026-10-29 before a
+    // label was written, so the scanned pipeline has a test it has never seen.
+    // The two sheets to label are p24 (A242B, level 3 east) and p27 (A244A,
+    // level 5 west), both printed 1/8" = 1'-0".
+    match: "8102 EVERGREEN WAY",
+    why: "scanned multi-family set — the SCANNED answer key, held out 2026-10-29, before a label was written",
+  },
+  {
     // Spelled without the hyphen deliberately. `flatten` strips punctuation
     // from both sides, so this matches "Cedar Hollow.pdf" exactly as the
     // hyphenated form would — and `truthWall.test.ts` greps the tree for
@@ -164,4 +175,36 @@ export function splitForTraining<T>(
     }
   }
   return { train, refused };
+}
+
+/**
+ * ── SHEETS THAT ARE NEITHER TRAINING NOR A KEY ──
+ *
+ * A held-out SET is still an answer key: it is scored, just never trained on.
+ * These are different. They are labelled, the labels are correct, and the
+ * sheet is the wrong question — so it is excluded from training AND from
+ * scoring, and the `why` has to say which kind of wrong.
+ *
+ * Keep this short. A sheet that merely scores badly belongs in the scorecard,
+ * not in here; the bar is that the sheet asks the finder for something it
+ * should not do.
+ */
+export const EXCLUDED_SHEETS: readonly { readonly set: string; readonly sheet: string; readonly why: string }[] = [
+  {
+    set: "michigan-state-universtity",
+    sheet: "A3",
+    why:
+      "its traced walls are mostly EXISTING (A-EXIST) — a trace means 'a wall the finder missed', so " +
+      "training on it teaches walls nobody is building and scoring against it counts a correct refusal " +
+      "as a miss. Excluded by Diego 2026-10-29; see BOARD.md.",
+  },
+];
+
+/** The reason this exact sheet is neither trained on nor scored, or null. */
+export function excludedSheetReason(set: string, sheet: string): string | null {
+  const want = flatten(set);
+  for (const one of EXCLUDED_SHEETS) {
+    if (flatten(one.set) === want && flatten(one.sheet) === flatten(sheet)) return one.why;
+  }
+  return null;
 }

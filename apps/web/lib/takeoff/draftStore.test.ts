@@ -33,6 +33,7 @@ function reviewed(): ReviewState {
     duplicates: [],
     traced: [candidate("t0", 0.8)],
     splits: [],
+    nextTraceId: 0,
   };
 }
 
