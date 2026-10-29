@@ -128,3 +128,15 @@ describe("a path split across operators is still one line", () => {
     );
   });
 });
+
+describe("the pen's colour rides on every segment", () => {
+  it("READS A GREY STROKE AS ITS LUMINANCE, AND LEAVES AN UNCOLOURED ONE ABSENT", async () => {
+    const at = (y: number, gray: number): Prim => ({ k: "path", pts: [{ x: 100, y }, { x: 460, y }], w: 0.7, role: "wall", layer: "A-WALL", gray });
+    const grey = at(400, 0.5);
+    const black = at(500, 0);
+    const read = await sheetStrokes(writePdf(sheetOf([grey, black]), [grey, black]), 1);
+    const found = (y: number) => read.segments.find((s) => Math.abs(s.y1 - y) < 1 || Math.abs(792 - s.y1 - y) < 1);
+    expect(found(400)?.gray).toBeCloseTo(0.5, 2);
+    expect(found(500)?.gray).toBeCloseTo(0, 2);
+  });
+});

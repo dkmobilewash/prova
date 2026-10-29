@@ -104,6 +104,12 @@ export type StrokeSegment = {
    * cannot place and `withoutNonWallLayers`, which keeps every `unknown`.
    */
   layer?: string;
+  /**
+   * The stroke colour as luminance, 0 black to 1 white, when the content set
+   * one. Existing construction is drawn grey on most sets; see
+   * `sheetStrokes.ts`. Carried by `inPageWidthUnits` like `layer` is.
+   */
+  gray?: number;
 };
 
 /** A wall this module is willing to claim: the centreline, in page points. */

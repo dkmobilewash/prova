@@ -5,6 +5,7 @@ import { printedScalesOnPage } from "../printedScales";
 import { scaleFromPrinted } from "../scaleFromPrinted";
 import { takeoffSheetVerdict } from "../takeoffSheet";
 import { SheetWorker, type OcrItem, type PxRegion } from "./nodeStack";
+import type { Gray } from "./pgm";
 import { skew } from "./rasterDegrade";
 import { estimateSkewDegrees, pageSizeOf, rasterLines } from "./rasterLines";
 
@@ -76,7 +77,7 @@ export async function rasterizeSheet(bytes: Uint8Array, pageNumber: number, opti
   const t0 = Date.now();
   const sheet = SheetWorker.start();
   try {
-    let gray = await sheet.render(bytes, pageNumber, dpi);
+    let gray: Gray = await sheet.render(bytes, pageNumber, dpi);
     const rssAfterRender = process.memoryUsage().rss;
     const t1 = Date.now();
     let lines = rasterLines(gray, { dpi });
@@ -124,7 +125,9 @@ export async function rasterizeSheet(bytes: Uint8Array, pageNumber: number, opti
     }
     const t3 = Date.now();
     const text = toPoints(items);
-    const printed = scaleFromPrinted(printedScalesOnPage(text), size.widthPt, size.heightPt);
+    // This stage runs only on pages the inventory called scanned, so the page
+    // size is paper plus scanner margin; the gate takes an inch of it.
+    const printed = scaleFromPrinted(printedScalesOnPage(text), size.widthPt, size.heightPt, { scanned: true });
     return {
       dpi,
       widthPt: size.widthPt,
