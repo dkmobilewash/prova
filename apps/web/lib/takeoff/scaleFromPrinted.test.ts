@@ -154,3 +154,17 @@ describe("the standard sheet sizes", () => {
     expect(standardSheetSize(2592, 1728)).toBe("ARCH D");
   });
 });
+
+describe("a scanned page's size carries the scanner's margin", () => {
+  // 8102 Evergreen BLDG D: 2628 x 1764 pt = 36.5 x 24.5 in, ARCH D plus half an inch of bed.
+  it("is refused as a vector page and accepted as a scan, with the same caption", () => {
+    expect(scaleFromPrinted(['1/8" = 1\'-0"'], 2628, 1764)).toBeNull();
+    expect(scaleFromPrinted(['1/8" = 1\'-0"'], 2628, 1764, { scanned: true })?.scaleName).toBe('1/8" = 1\'-0"');
+    expect(standardSheetSize(2628, 1764, { scanned: true })).toBe("ARCH D");
+  });
+  it("still refuses a scan that is nothing like a sheet, and a vector page keeps the exact gate", () => {
+    // Half-size print of ARCH D: 18 x 12 is ARCH B, which is its own size, so the test is a size that is nobody's.
+    expect(standardSheetSize(2160, 1440, { scanned: true })).toBeNull(); // 30 x 20 in: more than an inch from ARCH E1 (42 x 30) and ARCH C (24 x 18)
+    expect(standardSheetSize(2628, 1764)).toBeNull();
+  });
+});
