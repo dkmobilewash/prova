@@ -1,10 +1,10 @@
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sheetNumberFrom } from "../../plan-ingest/sheetNumber";
+import { SHEET_DESIGNATION, sheetNumberFrom } from "../../plan-ingest/sheetNumber";
 import { printedScalesOnPage } from "../printedScales";
 import { scaleFromPrinted } from "../scaleFromPrinted";
 import { takeoffSheetVerdict } from "../takeoffSheet";
-import { SheetWorker, type OcrItem, type PxRegion } from "./nodeStack";
+import { SheetWorker, type CellLine, type OcrItem, type PxRegion } from "./nodeStack";
 import type { Gray } from "./pgm";
 import { skew } from "./rasterDegrade";
 import { estimateSkewDegrees, pageSizeOf, rasterLines } from "./rasterLines";
@@ -44,6 +44,20 @@ import { estimateSkewDegrees, pageSizeOf, rasterLines } from "./rasterLines";
 export const FIRST_LOOK = { bottom: 0.22, right: 0.22 } as const;
 
 export const RASTER_DPI = 200;
+/** The bottom-right corner the sheet number sits in, as fractions of the page; wider than the number's own cell so a title block laid out differently still lands in it. */
+export const NUMBER_CELL = { width: 0.14, height: 0.12 } as const;
+/** A sparse-mode line below this confidence is noise off the title block's rules, not a number. */
+const CELL_MIN_CONFIDENCE = 30;
+
+/** The designation in a cell's lines, tallest first, spaces removed — or null. */
+export function designationFromCell(lines: readonly CellLine[]): string | null {
+  for (const line of [...lines].sort((a, b) => b.height - a.height)) {
+    if (line.confidence < CELL_MIN_CONFIDENCE) continue;
+    const read = line.str.replace(/\s+/g, "").toUpperCase();
+    if (read.length >= 2 && SHEET_DESIGNATION.test(read)) return read;
+  }
+  return null;
+}
 
 export type RasterizedSheet = {
   dpi: number;
@@ -54,8 +68,12 @@ export type RasterizedSheet = {
   /** OCR's lines in points, each with the confidence OCR gave it — the scan's captions are trusted by it. */
   text: { str: string; x: number; y: number; width: number; height: number; confidence: number }[];
   printedScale: string | null;
-  /** What the title block said the sheet is, when OCR read it, and the words it was read from. */
+  /** What the title block said the sheet is, when OCR read it: the cell read first, the strips' read otherwise. */
   sheetNumber: string | null;
+  /** The designation the tiled title-block pass found on its own — the read the stage made before the cell re-read existed. */
+  sheetNumberFromStrips: string | null;
+  /** The designation read out of the bottom-right corner on its own, sparse mode at double size. Null with a stand-in OCR. */
+  sheetNumberCell: string | null;
   titleBlockText: string;
   /** True when the sheet's number said it is not a floor plan and the rest of the page was not read. */
   ocrStoppedEarly: boolean;
@@ -94,6 +112,8 @@ export async function rasterizeSheet(bytes: Uint8Array, pageNumber: number, opti
       list.map((i) => ({ str: i.str, x: i.x * ptPerPx, y: i.y * ptPerPx, width: i.width * ptPerPx, height: i.height * ptPerPx, confidence: i.confidence }));
     let items: OcrItem[];
     let sheetNumber: string | null = null;
+    let sheetNumberFromStrips: string | null = null;
+    let sheetNumberCell: string | null = null;
     let titleBlockText = "";
     let ocrStoppedEarly = false;
     if (options.ocr) {
@@ -111,9 +131,22 @@ export async function rasterizeSheet(bytes: Uint8Array, pageNumber: number, opti
       const first = await sheet.ocr(gray, { cachePath, dpi, regions });
       gray = first.gray;
       const reading = sheetNumberFrom({ pageNumber, widthPt: size.widthPt, heightPt: size.heightPt, rotation: 0, items: toPoints(first.items) });
-      sheetNumber = reading.sheetNumber;
+      sheetNumberFromStrips = reading.sheetNumber;
       titleBlockText = reading.regionText;
-      const verdict = takeoffSheetVerdict({ sheetNumber: reading.sheetNumber, title: reading.regionText });
+      // ── THE NUMBER CELL, READ AGAIN ON ITS OWN ──
+      // The sheet number is the biggest text on the page and the tiled pass
+      // reads it worst: Evergreen p22 came back "BUILDING D A244 1 B it" for
+      // A241B, p105 "S112" for S11.2. Measured on those two (NOTES-scanned.md
+      // §13): single-line and block modes read the cell wrong or not at all,
+      // SPARSE mode at double size reads both right, and a character
+      // whitelist only zeroes the confidences (the LSTM engine ignores it).
+      // So the bottom-right corner is read once more, sparse, at 2x, and the
+      // tallest line that reads as a designation is the number.
+      const cell = await sheet.ocrCell(gray, { x: gray.width * (1 - NUMBER_CELL.width), y: gray.height * (1 - NUMBER_CELL.height), width: gray.width * NUMBER_CELL.width, height: gray.height * NUMBER_CELL.height }, { cachePath, psm: 11, upscale: 2 });
+      gray = cell.gray;
+      sheetNumberCell = designationFromCell(cell.lines);
+      sheetNumber = sheetNumberCell ?? sheetNumberFromStrips;
+      const verdict = takeoffSheetVerdict({ sheetNumber, title: reading.regionText });
       if (verdict.skipAutomatically) {
         items = first.items;
         ocrStoppedEarly = true;
@@ -137,6 +170,8 @@ export async function rasterizeSheet(bytes: Uint8Array, pageNumber: number, opti
       text,
       printedScale: printed?.scaleName ?? null,
       sheetNumber,
+      sheetNumberFromStrips,
+      sheetNumberCell,
       titleBlockText,
       ocrStoppedEarly,
       ms: { render: t1 - t0, lines: t2 - t1, ocr: t3 - t2, total: Date.now() - t0 },

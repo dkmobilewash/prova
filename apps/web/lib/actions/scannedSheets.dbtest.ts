@@ -69,6 +69,8 @@ const read: RasterizedSheet = {
   text: [{ str: `SCALE: 1/8" = 1'-0"`, x: 20, y: 190, width: 80, height: 6, confidence: 91 }],
   printedScale: `1/8" = 1'-0"`,
   sheetNumber: "A101",
+  sheetNumberFromStrips: "A101",
+  sheetNumberCell: "A101",
   titleBlockText: "SHEET NUMBER A101 FLOOR PLAN",
   ocrStoppedEarly: false,
   ms: { render: 1, lines: 1, ocr: 1, total: 3 },
@@ -136,6 +138,8 @@ describe("scanned sheets", () => {
     expect(loaded.rasterByPage[1]?.segments.length).toBe(2);
     expect(loaded.rasterByPage[2]).toBeUndefined();
     expect(loaded.printedScaleByPage[1]).toBe(`1/8" = 1'-0"`);
+    // The scan's own number, read off its corner and stored on the raster row, names it in the picker.
+    expect(loaded.sheetLabelByPage[1]).toBe("A101");
   });
 
   it("a second press with every scan read hands back the finished run rather than a new one of zero", async () => {

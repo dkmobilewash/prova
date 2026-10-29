@@ -626,3 +626,25 @@ describe("a heading owns its words, not the column beneath them", () => {
     expect(block.boxes![0].toY).toBeCloseTo(0.667, 3);
   });
 });
+
+describe("a title wrapped onto two lines", () => {
+  const withHeight = (str: string, xPct: number, yPct: number, height: number): { str: string; x: number; y: number; height: number } => ({ ...at(str, xPct, yPct), height });
+  it("IS READ AS ONE TITLE, SO FOUR ENLARGED PLANS KEEP THEIR LEVELS", () => {
+    const items = [
+      withHeight("TYP 1ST FLR @ GRADE NEW WORK", 25.5, 22.0, 13),
+      withHeight("PLAN", 25.5, 22.6, 13),
+      withHeight("1/4\" = 1'-0\"", 25.6, 23.1, 13),
+    ];
+    const views = sheetViews(items, W);
+    expect(views.map((v) => v.name)).toEqual(["TYP 1ST FLR @ GRADE NEW WORK PLAN"]);
+  });
+
+  it("does not take a note in smaller lettering sitting above the title", () => {
+    const items = [
+      withHeight("PAINT EXISTING STL LINTELS, TYP.", 25.5, 22.0, 10),
+      withHeight("PLAN", 25.5, 22.6, 13),
+      withHeight("1/4\" = 1'-0\"", 25.6, 23.1, 13),
+    ];
+    expect(sheetViews(items, W).map((v) => v.name)).toEqual(["PLAN"]);
+  });
+});

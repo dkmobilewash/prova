@@ -41,6 +41,8 @@ export type RasterRow = {
   lines: RasterizedSheet["lines"];
   text: RasterizedSheet["text"];
   printedScale: string | null;
+  /** The sheet number read from the title-block corner (#845), or null. */
+  sheetNumber: RasterizedSheet["sheetNumber"];
   ms: number;
 };
 
@@ -87,6 +89,7 @@ export function rasterWork(ctx: StageCtx, deps: RasterDeps = realDeps): StageWor
       lines: read.lines,
       text: read.text,
       printedScale: read.printedScale,
+      sheetNumber: read.sheetNumber,
       ms: read.ms.total,
     };
     await deps.store(ctx.planId, task.pageNumber, row);

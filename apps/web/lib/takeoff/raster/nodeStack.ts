@@ -22,6 +22,8 @@ import type { Gray } from "./pgm";
  */
 
 export type OcrItem = { str: string; x: number; y: number; width: number; height: number; confidence: number };
+/** A line read out of one cell: the text, Tesseract's confidence, and its height in pixels of the grey. */
+export type CellLine = { str: string; confidence: number; height: number };
 /** A window of the page, in pixels; OCR reads only the tiles that touch one. */
 export type PxRegion = { x: number; y: number; width: number; height: number };
 
@@ -35,7 +37,15 @@ export type OcrOptions = {
   minConfidence?: number;
   regions?: readonly PxRegion[];
   skipTiles?: ReadonlySet<string>;
+  /** Tesseract workers reading tiles at once. `RASTER_OCR_LANES` sets the default, 2 without it; the words come out the same whatever the count. */
+  lanes?: number;
 };
+
+/** The lane count the environment asks for, or 2. */
+export function defaultOcrLanes(): number {
+  const asked = Number(process.env.RASTER_OCR_LANES ?? "");
+  return Number.isInteger(asked) && asked >= 1 ? asked : 2;
+}
 
 /**
  * Tesseract's habits on a scale caption, measured on Baker A101 at 150 and
@@ -49,9 +59,7 @@ export function tidyOcrLine(str: string): string {
 
 type Reply = { ok: true; [k: string]: unknown } | { ok: false; error: string };
 
-/** One sheet's render and OCR, in a thread of its own. `close()` is what frees the memory.
- *
- *
+/**
  * ── THE WORKER SCRIPT IS A FILE ON DISK, AND WEBPACK MUST NOT SEE IT ──
  *
  * This was `new Worker(new URL("./rasterWorker.mjs", import.meta.url))`, the
@@ -82,6 +90,32 @@ export function rasterWorkerPath(): string {
  *  on. A page is 5–28 s on Evergreen at 200 dpi; the runner's lease is 90 s. */
 export const SHEET_WORKER_TIMEOUT_MS = 75_000;
 
+
+/**
+ * ── WARM, OR TORN DOWN: THE POOL ──
+ *
+ * §7's memory answer was a thread per sheet, terminated with it. Creating
+ * one costs what it loads: pdf.js, and a Tesseract worker per lane with its
+ * language file — a second or two a sheet, paid on every sheet of a set
+ * read in one process (the ingest runner advances a whole job in one call).
+ *
+ * So `close()` now RELEASES the thread to a small idle pool, with its
+ * document destroyed and its Tesseract lanes kept warm, and `start()` takes
+ * an idle one before making a new one. An idle thread is `unref()`'d, so it
+ * never keeps a process alive. `RASTER_WORKER_POOL=0` turns the pool off and
+ * terminates on close, exactly as before; `SheetWorker.drain()` terminates
+ * whatever is idle. Measured in NOTES-scanned.md: what a warm thread holds
+ * between sheets is the lanes' WASM heaps, and the sheet's own grey, canvases
+ * and document go with `release`.
+ */
+const POOL_LIMIT = 2;
+const idle: SheetWorker[] = [];
+
+function poolOn(): boolean {
+  return process.env.RASTER_WORKER_POOL !== "0";
+}
+
+/** One sheet's render and OCR, in a thread of its own. `close()` gives the thread back, or ends it with the pool off. */
 export class SheetWorker {
   private readonly worker: Worker;
   /** Set the moment the thread dies, so a later ask fails at once instead of
@@ -103,8 +137,32 @@ export class SheetWorker {
     });
   }
   static start(options: { script?: string; timeoutMs?: number } = {}): SheetWorker {
+    // A warm thread is only ever the default script at the default timeout —
+    // a test's own script, or its own clock, gets its own thread — and a
+    // thread that died while idle is ended, not handed out.
+    if (options.script === undefined && options.timeoutMs === undefined) {
+      for (let warm = idle.pop(); warm !== undefined; warm = idle.pop()) {
+        if (warm.dead === null) {
+          warm.worker.ref();
+          return warm;
+        }
+        void warm.worker.terminate();
+      }
+    }
     return new SheetWorker(new Worker(options.script ?? rasterWorkerPath()), options.timeoutMs ?? SHEET_WORKER_TIMEOUT_MS);
   }
+
+  /** How many threads are waiting warm; for tests and the budget report. */
+  static idleCount(): number {
+    return idle.length;
+  }
+
+  /** Terminates every idle thread. */
+  static async drain(): Promise<void> {
+    const waiting = idle.splice(0);
+    await Promise.all(waiting.map((w) => w.worker.terminate()));
+  }
+
   private ask<T extends object>(message: object, transfer: ArrayBufferLike[] = []): Promise<T> {
     if (this.dead !== null) return Promise.reject(this.dead);
     return new Promise<T>((resolve, reject) => {
@@ -170,6 +228,7 @@ export class SheetWorker {
         minConfidence: options.minConfidence ?? 40,
         regions: options.regions ?? null,
         skipTiles: options.skipTiles ? [...options.skipTiles] : null,
+        lanes: options.lanes ?? defaultOcrLanes(),
       },
       [gray.data.buffer],
     );
@@ -181,8 +240,32 @@ export class SheetWorker {
     };
   }
 
-  /** Ends the sheet: the document, the Tesseract worker and the thread go. */
+  /**
+   * One cell of the grey, read on its own: upscaled, in the page-segmentation
+   * mode asked for (7 = one line, 6 = one block), with a designation
+   * whitelist. For the sheet number, which the tiled pass reads worst; see
+   * `ocrCell` in the worker. The grey is transferred and handed back.
+   */
+  async ocrCell(gray: Gray, region: PxRegion, options: { cachePath: string; upscale?: number; psm?: number; whitelist?: string }): Promise<{ lines: CellLine[]; gray: Gray }> {
+    const reply = await this.ask<{ lines: CellLine[]; gray: Uint8Array }>(
+      { type: "ocrCell", gray: gray.data, width: gray.width, height: gray.height, cachePath: options.cachePath, region, upscale: options.upscale ?? 2, psm: options.psm ?? 7, whitelist: options.whitelist ?? null },
+      [gray.data.buffer],
+    );
+    return { lines: reply.lines, gray: { width: gray.width, height: gray.height, data: reply.gray } };
+  }
+
+  /** Ends the sheet: the document goes; the thread and its Tesseract lanes wait for the next sheet, or go too with the pool off. */
   async close(): Promise<void> {
+    if (poolOn() && idle.length < POOL_LIMIT) {
+      try {
+        await this.ask({ type: "release" });
+        this.worker.unref();
+        idle.push(this);
+        return;
+      } catch {
+        // A thread that could not release is not one to keep.
+      }
+    }
     try {
       if (this.dead === null) await this.ask({ type: "close" });
     } catch {

@@ -159,6 +159,8 @@ const CAPTION_SAME_LINE = 0.02;
  * the view beside it, which is the failure this constant exists to prevent.
  */
 const NAME_BESIDE = 0.04;
+/** A title's second line sits within this many line-heights of its first. */
+const TITLE_LINE_GAP = 1.8;
 
 /**
  * ── WHAT MAKES A CAPTION A VIEW'S AND NOT THE TITLE BLOCK'S ──
@@ -320,8 +322,32 @@ export function sheetViews(
       if (/:\s*\S/.test(text) || TITLE_FIELD.test(text) || name.x / widthPt >= TITLE_BLOCK_STRIP) continue;
     }
     claimed.add(name);
+    // ── A TITLE WRAPPED ONTO TWO LINES IS ONE TITLE ──
+    //
+    // HACP A-5 captions "TYP 1ST FLR @ GRADE NEW WORK" over "PLAN", and three
+    // more like it. Reading the last line alone gave four plans with no level,
+    // and `keptPlanViews` kept one as the floor and dropped the other three as
+    // the same floor drawn twice — 353 of the sheet's 396 ft of key. The line
+    // above the name, in the same lettering and left-aligned with it within a
+    // line's height or so, is the first half of the title. Items reach here
+    // with their height when the caller has it; without one nothing joins.
+    const nameH = (name as { height?: number }).height ?? 0;
+    let above: (typeof items)[number] | null = null;
+    if (nameH > 0) {
+      for (const item of items) {
+        if (item === name || claimed.has(item) || item.str.trim() === "") continue;
+        const h = (item as { height?: number }).height ?? 0;
+        if (Math.abs(h - nameH) > Math.max(1, nameH * 0.15)) continue;
+        const gap = (name.y - item.y) / widthPt;
+        if (gap <= 0 || gap > (nameH * TITLE_LINE_GAP) / widthPt) continue;
+        if (Math.abs(item.x - name.x) / widthPt > NAME_BESIDE) continue;
+        if (printedScalesAt([item]).length > 0) continue;
+        if (above === null || item.y > above.y) above = item;
+      }
+    }
+    if (above !== null) claimed.add(above);
     named.push({
-      name: name.str.trim(),
+      name: above === null ? name.str.trim() : `${above.str.trim()} ${name.str.trim()}`,
       scaleName: found.name,
       feetPerInch: found.feetPerInch,
       captionX: name.x / widthPt,

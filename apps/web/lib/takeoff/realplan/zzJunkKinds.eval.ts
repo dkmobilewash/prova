@@ -78,12 +78,18 @@ describe.skipIf(DIR === "" || LABELS === "")("confirmed junk on the product path
     const files: { dir: string; sheet: string }[] = [];
     for (const dir of readdirSync(LABELS)) {
       if (!existsSync(join(LABELS, dir)) || heldOutReason(dir) !== null) continue;
+      // SKIP_SETS: a regex of label directories to leave unread — a round still being labelled.
+      if (process.env.SKIP_SETS !== undefined && process.env.SKIP_SETS !== "" && new RegExp(process.env.SKIP_SETS, "i").test(dir)) continue;
       for (const name of readdirSync(join(LABELS, dir))) if (name.endsWith(".json")) files.push({ dir, sheet: name.replace(/\.json$/, "") });
     }
     files.sort((a, b) => a.dir.localeCompare(b.dir) || a.sheet.localeCompare(b.sheet));
     const rows: Record<string, unknown>[] = [];
     const allRows: Record<string, unknown>[] = [];
     const perKind = new Map<string, { ft: number; n: number }>();
+    const perWhat = new Map<string, { ft: number; n: number }>();
+    const whatBy = new Map<string, Map<string, number>>();
+    const addWhat = (k: string, ft: number) => { const e = perWhat.get(k) ?? { ft: 0, n: 0 }; e.ft += ft; e.n += 1; perWhat.set(k, e); };
+    let greyJunk = 0, greyReal = 0;
     const add = (k: string, ft: number) => { const e = perKind.get(k) ?? { ft: 0, n: 0 }; e.ft += ft; e.n += 1; perKind.set(k, e); };
     let unlabelledExtra = 0, unsureExtra = 0, confirmed = 0, offeredFt = 0, realFt = 0;
     const perSheet: string[] = [];
@@ -115,6 +121,13 @@ describe.skipIf(DIR === "" || LABELS === "")("confirmed junk on the product path
 
       const alongT = (c: G, w: { x: number; y: number }) => { const l = len(c); return ((w.x - c.x1) * (c.x2 - c.x1) + (w.y - c.y1) * (c.y2 - c.y1)) / (l * l); };
       const perpTouch = (c: G, o: G) => { if (parallel(c, o)) return false; const p = Math.atan2(c.y2 - c.y1, c.x2 - c.x1), q = Math.atan2(o.y2 - o.y1, o.x2 - o.x1); if (Math.abs(Math.cos(p - q)) > 0.26) return false; for (const [x, y] of [[o.x1, o.y1], [o.x2, o.y2]] as const) { const t = alongT(c, { x, y }); if (t >= -0.02 && t <= 1.02 && offLine(c, x, y) * fpu <= 1.5) return true; } return false; };
+      let sheetPenMemo: number | null | undefined;
+      const wallPenOf = (): number | null => {
+        if (sheetPenMemo !== undefined) return sheetPenMemo;
+        const ws: number[] = [];
+        for (const sg of d.found.inUnits as StrokeSegment[]) { if (sg.width === undefined) continue; const smx = (sg.x1 + sg.x2) / 2, smy = (sg.y1 + sg.y2) / 2; if (real.some((k) => parallel(k, sg) && offLine(k, smx, smy) * fpu <= Math.max(0.6, k.th) && overlapAlong(k, sg) > 0)) ws.push(sg.width); }
+        ws.sort((a, b) => a - b); sheetPenMemo = ws.length === 0 ? null : ws[Math.floor(ws.length / 2)]!; return sheetPenMemo;
+      };
       for (const c of cands) {
         const L = c.lengthFeet; offeredFt += L;
         const realC = coveredFeet(c, real, fpu); realFt += realC;
@@ -152,11 +165,27 @@ describe.skipIf(DIR === "" || LABELS === "")("confirmed junk on the product path
           return { n, cover: +(covered / Math.max(L, 0.01)).toFixed(2), longest: +longest.toFixed(1), medPiece: +med(lens).toFixed(2), medGap: +med(gaps).toFixed(2), cvPiece: +cv(lens).toFixed(2), cvGap: +cv(gaps).toFixed(2) };
         };
         const fA = faceOf(1), fB = faceOf(-1);
+        // ── WHAT THE LINES ARE, NOT JUST WHERE THEY SIT ──
+        const l0 = len(c);
+        const nearRun = (sg: StrokeSegment, ft: number) => { const smx = (sg.x1 + sg.x2) / 2, smy = (sg.y1 + sg.y2) / 2; const t = ((smx - c.x1) * (c.x2 - c.x1) + (smy - c.y1) * (c.y2 - c.y1)) / (l0 * l0); return t >= -0.1 && t <= 1.1 && offLine(c, smx, smy) * fpu <= ft; };
+        // the segments forming the faces: parallel, at half-thickness, along the run
+        const faceSegs = (d.found.inUnits as StrokeSegment[]).filter((sg) => parallel(c, sg) && nearRun(sg, 0.01) === false && Math.abs(offLine(c, (sg.x1 + sg.x2) / 2, (sg.y1 + sg.y2) / 2) * fpu - c.th / 2) <= 0.25 && nearRun(sg, c.th / 2 + 0.3));
+        const grays = faceSegs.map((sg) => sg.gray).filter((g): g is number => g !== undefined).sort((a, b) => a - b);
+        const faceGray = grays.length === 0 ? null : +grays[Math.floor(grays.length / 2)]!.toFixed(2);
+        const widths = faceSegs.map((sg) => sg.width).filter((w): w is number => w !== undefined).sort((a, b) => a - b);
+        const facePen = widths.length === 0 ? null : +widths[Math.floor(widths.length / 2)]!.toFixed(2);
+        // door swings: flattened arc pieces within 3 ft of the run
+        const curveNear = (d.found.inUnits as StrokeSegment[]).filter((sg) => sg.curved === true && nearRun(sg, 3)).length;
+        // a word whose extent matches the run and sits just above or below it: an underline
+        const wordAbove = textItems.some((i) => { const wx1 = i.x / W, wx2 = (i.x + i.width) / W, wy = (i.y - i.height / 2) / W; const horiz = Math.abs(c.y2 - c.y1) < l0 * 0.05; if (!horiz) return false; const yOff = Math.abs(wy - c.y1) * fpu; const h = (i.height / W) * fpu; return yOff <= Math.max(1, h) && Math.min(c.x1, c.x2) <= wx1 + 0.5 / fpu && Math.max(c.x1, c.x2) >= wx2 - 0.5 / fpu && L <= (wx2 - wx1) * fpu * 1.6 + 1; });
+        // bulk of the sheet's wall faces, for a pen ratio
+        const sheetPen = wallPenOf();
         // A dash pattern: several SHORT pieces with short regular gaps, covering a fair share of the run — not a face broken by doors.
         const isDashed = (f: { n: number; cover: number; longest: number; medPiece: number; medGap: number }) => f.n >= 5 && f.longest <= 2.5 && f.medGap > 0 && f.medGap <= 2.5 && f.cover >= 0.25 && f.cover <= 0.9;
         const dashedA = isDashed(fA), dashedB = isDashed(fB);
         const dashWords = words.filter((w) => Math.hypot(w.x - (c.x1 + c.x2) / 2, w.y - (c.y1 + c.y2) / 2) * fpu <= 10).map((w) => w.str).slice(0, 6);
-        allRows.push({ set: file.dir, sheet: file.sheet, x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, fpu, span: +(span * fpu).toFixed(0), L: +L.toFixed(1), thIn: +((c.thicknessIn ?? 0)).toFixed(1), from: c.from, realC: +realC.toFixed(1), rej: +rej.toFixed(1), uns: +uns.toFixed(1), dimBetween, dimNear, anyBetween, tees, fA, fB, dashedA, dashedB, dashWords, dupDrop: dupDrops.has(c.id) });
+        allRows.push({ set: file.dir, sheet: file.sheet, x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, fpu, span: +(span * fpu).toFixed(0), L: +L.toFixed(1), thIn: +((c.thicknessIn ?? 0)).toFixed(1), from: c.from, realC: +realC.toFixed(1), rej: +rej.toFixed(1), uns: +uns.toFixed(1), dimBetween, dimNear, anyBetween, tees, fA, fB, dashedA, dashedB, dashWords, dupDrop: dupDrops.has(c.id), faceGray, facePen, sheetPen, curveNear, wordAbove });
+        if (faceGray !== null && faceGray >= 0.35) greyReal += realC;
         if (extra < 0.5) continue;
         unsureExtra += uns; unlabelledExtra += extra - rej - uns;
         if (rej < 0.5) continue;
@@ -187,6 +216,26 @@ describe.skipIf(DIR === "" || LABELS === "")("confirmed junk on the product path
         else if (L < 3) kind = "other: short (<3 ft)";
         else kind = "other: plausible wall the key rejected";
         add(kind, rej); sheetKinds.set(kind, (sheetKinds.get(kind) ?? 0) + rej);
+        // ── BY WHAT THE LINES ARE (2026-10-29), the census Diego asked for ──
+        const isCbw = /Camp_Bow_Wow/i.test(file.dir);
+        const grey = faceGray !== null && faceGray >= 0.35;
+        let what: string;
+        if (isCbw && (hasWord(KENNEL, 15) || twins >= 3 || L <= 8)) what = "Camp Bow Wow kennels";
+        else if (dimBetween >= 1 || dimNear >= 2 || (within(2.5).some((w) => DIMENSION.test(w.str) && /\d/.test(w.str)) && (thIn <= 3 || c.from === "single"))) what = "dimension lines";
+        else if (wordAbove) what = "text underlines";
+        else if (between && L <= 12) what = "text / tag boxes";
+        else if (dashedA || dashedB) what = "ceiling / dashed (one dashed face)";
+        else if (curveNear >= 3 && L <= 8) what = "door swings / frames";
+        else if (hasWord(CASEWORK, 8)) what = "casework";
+        else if (hasWord(FIXTURE, 6) || (L <= 4 && dense >= 25)) what = "furniture / fixtures";
+        else if (axis && len(c) >= span * 0.85) what = "grid and border";
+        else if (L <= 4 && companions >= 4) what = "hatch / pattern edges";
+        else if (dup || dupDrops.has(c.id)) what = "second face of a real wall";
+        else if (twins >= 3) what = "repeated unit-plan shape";
+        else if (grey) what = "unknown, drawn grey";
+        else what = "unknown";
+        addWhat(what, rej); whatBy.set(what, (whatBy.get(what) ?? new Map()).set(file.dir, ((whatBy.get(what) ?? new Map()).get(file.dir) ?? 0) + rej));
+        if (grey) greyJunk += rej;
         rows.push({ set: file.dir, sheet: file.sheet, pdf, page: saved.page, x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, lengthFeet: +L.toFixed(1), thIn: +thIn.toFixed(1), from: c.from, note: c.note, extra: +extra.toFixed(1), rej: +rej.toFixed(1), kind, words: within(8).slice(0, 5).map((w) => w.str), companions, twins, dense, dimBetween, dimNear, tees });
       }
       perSheet.push(`  ${file.dir.slice(0, 24).padEnd(24)}/${file.sheet.padEnd(7)} offered ${offered.candidates.length} · confirmed junk ${sheetJunk.toFixed(0)} ft · ${[...sheetKinds].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${v.toFixed(0)}`).join(", ")}`);
@@ -194,6 +243,9 @@ describe.skipIf(DIR === "" || LABELS === "")("confirmed junk on the product path
     console.log(`\nCONFIRMED JUNK ON THE PRODUCT PATH, TRAINING SHEETS (${files.length} label files)`);
     console.log(`offered ${offeredFt.toFixed(0)} ft · on a real wall ${realFt.toFixed(0)} · confirmed junk ${confirmed.toFixed(0)} · on an unsure verdict ${unsureExtra.toFixed(0)} · unlabelled extra ${unlabelledExtra.toFixed(0)}\n`);
     for (const [k, e] of [...perKind].sort((a, b) => b[1].ft - a[1].ft)) console.log(`  ${k.padEnd(42)} ${e.ft.toFixed(0).padStart(6)} ft  ${String(e.n).padStart(4)} runs`);
+    console.log("\nBY WHAT THE LINES ARE");
+    for (const [k, e] of [...perWhat].sort((a, b) => b[1].ft - a[1].ft)) { const top = [...(whatBy.get(k) ?? new Map())].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([s, v]) => `${s.slice(0, 22)} ${v.toFixed(0)}`).join(", "); console.log(`  ${k.padEnd(36)} ${e.ft.toFixed(0).padStart(6)} ft  ${String(e.n).padStart(4)} runs   top: ${top}`); }
+    console.log(`  faces drawn grey (luminance >= 0.35): junk ${greyJunk.toFixed(0)} ft, real ${greyReal.toFixed(0)} ft`);
     console.log(""); for (const line of perSheet) console.log(line);
     if (OUT !== "") { writeFileSync(OUT, JSON.stringify(rows, null, 1)); writeFileSync(OUT.replace(/\.json$/, "-all.json"), JSON.stringify(allRows)); }
     expect(files.length).toBeGreaterThan(0);

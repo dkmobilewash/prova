@@ -81,3 +81,40 @@ export function runsMeeting(wall: WallCandidate, others: readonly WallCandidate[
 export function isTableRows(wall: WallCandidate, textItems: readonly Item[], others: readonly WallCandidate[], widthPt: number, feetPerUnit: number): boolean {
   return wordsBetweenFaces(wall, textItems, widthPt, feetPerUnit) >= TABLE_ROW_WORDS && runsMeeting(wall, others, feetPerUnit) <= TABLE_MAX_TEES;
 }
+
+/**
+ * ── A LINE DRAWN UNDER A WORD IS THE WORD'S UNDERLINE ──
+ *
+ * A view title, a notes-box heading, a legend caption: the drafter rules a
+ * line under the text, the line is as long as the text, and nothing else is
+ * near it. Paired with a second rule or a box edge it reads as a wall — 354 ft
+ * of confirmed junk on the training sheets (2026-10-29), 228 of them Joplin's
+ * GENERAL PLAN NOTES box, against 26 ft of real wall that happened to sit
+ * under a room name. So: a horizontal run, a word whose extent the run covers
+ * (half a foot of slack either end), sitting within the word's own height or
+ * a foot of the run, and the run no longer than 1.6 times the word plus a
+ * foot. The length cap is what keeps a corridor wall with a room name on it
+ * from qualifying.
+ */
+const UNDERLINE_SLACK_FEET = 0.5;
+const UNDERLINE_LENGTH_RATIO = 1.6;
+
+export function isUnderline(wall: WallCandidate, textItems: readonly Item[], widthPt: number, feetPerUnit: number): boolean {
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+  const l = Math.hypot(dx, dy);
+  if (l === 0 || Math.abs(dy) > l * 0.05) return false;
+  const lengthFeet = l * feetPerUnit;
+  const left = Math.min(wall.x1, wall.x2), right = Math.max(wall.x1, wall.x2);
+  const slack = UNDERLINE_SLACK_FEET / feetPerUnit;
+  for (const item of textItems) {
+    if (item.str.trim() === "" || item.width <= 0) continue;
+    const wx1 = item.x / widthPt, wx2 = (item.x + item.width) / widthPt;
+    const wy = (item.y - item.height / 2) / widthPt;
+    const heightFeet = (item.height / widthPt) * feetPerUnit;
+    if (Math.abs(wy - wall.y1) * feetPerUnit > Math.max(1, heightFeet)) continue;
+    if (left > wx1 + slack || right < wx2 - slack) continue;
+    if (lengthFeet > (wx2 - wx1) * feetPerUnit * UNDERLINE_LENGTH_RATIO + 1) continue;
+    return true;
+  }
+  return false;
+}
