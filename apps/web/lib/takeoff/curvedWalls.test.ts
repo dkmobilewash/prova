@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_CURVE_PIECES, curvedWalls } from "./curvedWalls";
+import { MAX_CURVE_PIECES, MIN_CHORD_SHARE, curvedWalls } from "./curvedWalls";
 import type { StrokeSegment } from "./wallVectors";
 
 /**
@@ -461,5 +461,20 @@ describe("only two pieces of the same arc are joined", () => {
     const walls = curvedWalls(bay, OPTS);
     expect(walls, "the arc did not survive its own opening").toHaveLength(1);
     expect(walls[0].lengthFeet).toBeGreaterThan(arcLength(RADIUS) * 0.93);
+  });
+});
+
+describe("a closed loop is not a run", () => {
+  it("REFUSES TWO CONCENTRIC CIRCLES, whose chord is a point", () => {
+    // Murray A101 #90: a column symbol read as 2.3 ft of curved wall with the same start and end.
+    const circles = [...arc(50, 50, 3.6, 0, 360, 48), ...arc(50, 50, 3.0, 0, 360, 48)];
+    expect(curvedWalls(circles, OPTS)).toHaveLength(0);
+  });
+
+  it("still keeps a three-quarter turn, whose chord is a third of its arc", () => {
+    const bend = [...arc(50, 50, 10, 0, 270, 40), ...arc(50, 50, 9.4, 0, 270, 40)];
+    const found = curvedWalls(bend, OPTS);
+    expect(found).toHaveLength(1);
+    expect(Math.hypot(found[0].x2 - found[0].x1, found[0].y2 - found[0].y1)).toBeGreaterThan(MIN_CHORD_SHARE * found[0].lengthFeet);
   });
 });

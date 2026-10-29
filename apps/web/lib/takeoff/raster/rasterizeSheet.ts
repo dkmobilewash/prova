@@ -124,7 +124,9 @@ export async function rasterizeSheet(bytes: Uint8Array, pageNumber: number, opti
     }
     const t3 = Date.now();
     const text = toPoints(items);
-    const printed = scaleFromPrinted(printedScalesOnPage(text), size.widthPt, size.heightPt);
+    // This stage runs only on pages the inventory called scanned, so the page
+    // size is paper plus scanner margin; the gate takes an inch of it.
+    const printed = scaleFromPrinted(printedScalesOnPage(text), size.widthPt, size.heightPt, { scanned: true });
     return {
       dpi,
       widthPt: size.widthPt,

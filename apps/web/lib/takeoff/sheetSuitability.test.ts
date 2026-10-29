@@ -4,8 +4,10 @@ import {
   multiScaleCaution,
   sheetSuitability,
   duplicateWallsCaution,
+  takeoffRank,
   viewsMeasuredCaution,
 } from "./sheetSuitability";
+import { viewKind } from "./viewKind";
 
 /**
  * THE DEFECT THIS EXISTS FOR, IN NUMBERS.
@@ -280,5 +282,18 @@ describe("nothing is excluded silently", () => {
     const said = viewsMeasuredCaution(plan, [], [detail, { name: "JAMB DETAIL", reason: "not to scale, not measured" }]);
     expect(said).toContain("HEAD OF WALL DETAIL");
     expect(said).toContain("JAMB DETAIL");
+  });
+});
+
+describe("FINISH FLOOR is a level, not a finish plan", () => {
+  it("KEEPS BUNKIE A100's PLAN, captioned by its finish-floor level", () => {
+    expect(viewKind("FINISH FLOOR (ADDITION)").kind).toBe("plan");
+    expect(takeoffRank(null, "FINISH FLOOR (ADDITION)").why).toBe("a plan named by its finish-floor level");
+  });
+
+  it("still leaves out a finish plan, a finish floor plan and a finish schedule", () => {
+    for (const title of ["FINISH PLAN", "FINISH FLOOR PLAN", "FIRST FLOOR FINISH PLAN", "ROOM FINISH SCHEDULE"]) {
+      expect(viewKind(title).kind, title).toBe("not-a-plan");
+    }
   });
 });
