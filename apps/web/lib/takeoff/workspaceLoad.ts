@@ -1,4 +1,5 @@
 import { loadWallModel } from "@/lib/takeoff/wallModelFile";
+import type { StoredScheduleRow } from "./doorsWindows";
 import { prisma } from "@prova/db";
 import { aiGate } from "@/lib/ai/settings";
 import { wallTypeSummary } from "@/lib/takeoff/wallTypeMatch";
@@ -584,10 +585,15 @@ export async function loadTakeoffWorkspace(
   // same load that decides everything else on the screen.
   const roomFinder = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOn: true, scannedPlansOn: true, symbolCountOn: true },
+    select: { roomFinderOn: true, demotedWallsOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOn: true },
   });
+  // The door schedule rows the ingest read, newest per page, for the doors
+  // panel's join — only for a company whose switch is on.
+  const doorScheduleRows = roomFinder?.doorsWindowsOn ? await doorScheduleRowsOf(plan.id) : [];
 
   return {
+    doorsWindowsOn: roomFinder?.doorsWindowsOn ?? false,
+    doorScheduleRows,
     plan,
     sheets,
     symbolCountOn: roomFinder?.symbolCountOn ?? false,
@@ -781,3 +787,25 @@ export async function takeoffSavedSignature(companyId: string, jobId: string): P
   return [plan.id, part(calibrations), part(measurements), part(proposals)].join("|");
 }
 
+/** Every row of the newest DOOR schedule read on each page of the plan, flattened. */
+async function doorScheduleRowsOf(planId: string): Promise<StoredScheduleRow[]> {
+  const proposals = await prisma.planScheduleProposal.findMany({
+    where: { planId, kind: "DOOR" },
+    orderBy: { createdAt: "desc" },
+    select: { pageNumber: true, rows: true },
+  });
+  const seen = new Set<number>();
+  const out: StoredScheduleRow[] = [];
+  for (const p of proposals) {
+    if (seen.has(p.pageNumber)) continue;
+    seen.add(p.pageNumber);
+    const rows = Array.isArray(p.rows) ? (p.rows as unknown[]) : [];
+    for (const r of rows) {
+      if (r !== null && typeof r === "object" && typeof (r as { mark?: unknown }).mark === "string") {
+        const row = r as { mark: string; size?: string | null; description?: string | null };
+        out.push({ mark: row.mark, size: row.size ?? null, description: row.description ?? null });
+      }
+    }
+  }
+  return out;
+}

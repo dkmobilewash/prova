@@ -104,6 +104,8 @@ export * from "./demotedWalls";
 export * from "./symbolCount";
 export * from "./wholeSetTakeoff";
 export * from "./scannedSheets";
+export * from "./takeoffFeatures";
+export * from "./doorsWindows";
 export * from "./takeoffItems";
 export * from "./outboundPush";
 export * from "./outboundOptOut";

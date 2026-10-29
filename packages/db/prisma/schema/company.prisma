@@ -107,6 +107,10 @@ model Company {
   /// ingest stage): OFF for every company until the owner turns it on under
   /// Settings. No model is called.
   scannedPlansOn Boolean @default(false)
+  /// "Doors and windows from the plan" on the takeoff: the door-swing and
+  /// window symbols read off the drawing, counted, measured and placed on
+  /// their wall runs. No model. OFF until the owner turns it on.
+  doorsWindowsOn Boolean @default(false)
 
   /// "Find all like this" on the takeoff: box one symbol, count every match
   /// on the sheet by its vector shape, save the count. No model. OFF until
