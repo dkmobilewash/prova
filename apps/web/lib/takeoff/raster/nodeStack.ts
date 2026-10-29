@@ -81,12 +81,13 @@ export class SheetWorker {
   }
 
   /** One page as 8-bit grey at `dpi`, rotation applied the way the viewer shows it, drawn in bands. */
-  async render(bytes: Uint8Array, pageNumber: number, dpi: number, bandPx = 600): Promise<Gray> {
+  /** `direct` is true when the page was one 1-bit image read straight from its bits, never through a canvas (see `scanGray` in the worker). */
+  async render(bytes: Uint8Array, pageNumber: number, dpi: number, bandPx = 600): Promise<Gray & { direct: boolean }> {
     // A copy is handed over: pdf.js keeps the buffer it is given, and the
     // caller may still want its bytes.
     const copy = bytes.slice();
-    const reply = await this.ask<{ gray: Uint8Array; width: number; height: number }>({ type: "render", bytes: copy, page: pageNumber, dpi, bandPx }, [copy.buffer]);
-    return { width: reply.width, height: reply.height, data: reply.gray };
+    const reply = await this.ask<{ gray: Uint8Array; width: number; height: number; direct: boolean }>({ type: "render", bytes: copy, page: pageNumber, dpi, bandPx }, [copy.buffer]);
+    return { width: reply.width, height: reply.height, data: reply.gray, direct: reply.direct };
   }
 
   /**
