@@ -224,6 +224,7 @@ export function inPageWidthUnits(over: number) {
     // `strokeFieldsCensus.test.ts` now fails the build on the THIRD occurrence
     // rather than waiting for somebody to notice it.
     layer: one.layer,
+    gray: one.gray,
   });
 }
 
