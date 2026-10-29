@@ -10,7 +10,9 @@ plus half an inch of scanner margin on each edge.
 
 `standardSheetSize` and `scaleFromPrinted` take `{ scanned: true }`, under
 which the gate is an inch each way in absolute terms, since a scanner's
-margin does not scale with the paper. Only the raster stage passes it. A
+margin does not scale with the paper. Only the raster stage passes it. Evergreen now reads a scale on 36 of 106
+pages and offers walls on 33 of them (18,350 ft across the eleven 1/8"
+floor plans), from none. A
 vector sheet keeps the exact gate, and the label sweep over every labelled
 vector sheet is byte-identical before and after. The scale still comes only
 from the caption; nothing is hand-set. Unit test pins the Evergreen page size

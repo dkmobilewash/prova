@@ -385,12 +385,24 @@ scan still refused.
 
 | Evergreen, 106 pages | before | after |
 | --- | --- | --- |
-| pages with a scale read | 0 | AFTER_SCALE |
-| pages with walls found | 0 | AFTER_WALLS |
-| feet found, total | 0 | AFTER_FT |
-| sheet number read | 5 (all wrong) | AFTER_SHEET |
+| pages with a scale read | 0 | **36** (1/8" on 16, 1/4" on 7, 3/16" on 3, 3/4" on 8, 1-1/2" and 3/32" one each) |
+| pages with walls offered | 0 | 33 of those 36 (2,940 runs) |
+| feet offered, total | 0 | 36,550 ft; 18,350 of it on the eleven 1/8" floor plans (p24 1,986 · p27 2,151 · p40 4,777 · p58 4,924 · p76–p81 258–642 · p92 2,021) |
+| sheet number read | 5 | 5 — the same five, all structural (`XBE1.00`, `S4.4E`, `S6.2`, `S10`, `S112`); not one A-sheet |
 
-AFTER_OVERLAYS
+Unlabelled, so no accuracy figure — what the overlays show, read by eye
+(`shots/scanned-real/evergreen-fixed/overlays/p{24,27,13}/`, a page PNG and
+four tiles each; the per-page dumps for all 36 pages are in `…/detect/`):
+p24 (A242B, level 3 east, 1/8") and p27 (A244A, level 5 west) put runs on
+the real corridor, demising and exterior walls, with gaps along the thinner
+interior partitions and the whole-sheet fallback taking the page (views 0)
+because no view title was read; p13 (A110, 1/4" unit plans) finds the unit
+walls and also marks the cabinet elevations and the caption underlines. The
+eight 3/4" sheets are structural details and their 36–272 ft are junk by
+construction — the title-block verdict stops five of them early, and the
+product path offers nothing from a stopped sheet; the eval ran the finder on
+them regardless to show the number. Per-page time in this run was a 16.0 s
+median, up from 14.1 s, because two label sweeps shared the machine.
 
 **Sheet numbers are still not read on a scan, and that is the next defect
 in this lane.** The title block's big number comes through OCR at 200 dpi
