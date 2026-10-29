@@ -33,6 +33,7 @@ import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsFor
 import { OpeningDeductionForm } from "@/components/OpeningDeductionForm";
 import { RoomFinderSwitch } from "@/components/RoomFinderSwitch";
 import { DemotedWallsSwitch } from "@/components/DemotedWallsSwitch";
+import { WholeSetTakeoffSwitch } from "@/components/WholeSetTakeoffSwitch";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
@@ -173,12 +174,16 @@ export default async function SettingsPage({
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
   if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
   const { company, ...currentUser } = context;
+  // ONE read for all three takeoff switches. The merge of two lanes left two
+  // queries here, each selecting roomFinderOn and redeclaring it; the switches
+  // are columns on the same row and there is no reason to ask twice.
   const switches = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOn: true },
+    select: { roomFinderOn: true, demotedWallsOn: true, wholeSetTakeoffOn: true },
   });
   const roomFinderOn = switches?.roomFinderOn ?? false;
   const demotedWallsOn = switches?.demotedWallsOn ?? false;
+  const wholeSetTakeoffOn = switches?.wholeSetTakeoffOn ?? false;
   const { qb, qb_detail, tab: tabParam } = await searchParams;
   // The same rule PageTabs highlights by, so the tab lit is the group shown.
   const tab =
@@ -609,6 +614,7 @@ export default async function SettingsPage({
                 owner only. See `lib/takeoff/NOTES-rooms.md`. */}
             <div className="mt-4">
               <RoomFinderSwitch on={roomFinderOn} isOwner={currentUser.role === "OWNER"} />
+              <WholeSetTakeoffSwitch on={wholeSetTakeoffOn} isOwner={currentUser.role === "OWNER"} />
             </div>
             <div className="mt-4">
               <DemotedWallsSwitch on={demotedWallsOn} isOwner={currentUser.role === "OWNER"} />

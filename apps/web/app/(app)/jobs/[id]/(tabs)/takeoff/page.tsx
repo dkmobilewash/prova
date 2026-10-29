@@ -7,6 +7,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
 import { TakeoffMeasurementList } from "@/components/TakeoffMeasurementList";
 import { TakeoffPlanUploader } from "@/components/TakeoffPlanUploader";
+import { WholeSetTakeoffPanel } from "@/components/WholeSetTakeoffPanel";
 import { PlanIngestPanel } from "@/components/PlanIngestPanel";
 import { ScheduleProposals } from "@/components/ScheduleProposals";
 import { loadScheduleProposals, scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
@@ -18,6 +19,8 @@ import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber, effectiveTitle, sheetPickerLabel } from "@/lib/plan-ingest/sheetIndex";
 import { sheetSuitability, duplicateWallsCaution } from "@/lib/takeoff/sheetSuitability";
 import { latestIngestFor } from "@/lib/plan-ingest/claim";
+import { MAX_ATTEMPTS } from "@/lib/plan-ingest/runner";
+import { wholeSetSummary } from "@/lib/plan-ingest/walls";
 import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
 import { TakeoffPlanRevisionForm } from "@/components/TakeoffPlanRevisionForm";
 import { loadTakeoffCurrency } from "@/lib/takeoff-currency-query";
@@ -119,6 +122,9 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   // a second round-trip to decide whether to show a banner is a round-trip
   // spent deciding.
   const currency = await loadTakeoffCurrency(company.id, job.id);
+  const wholeSetTakeoffOn =
+    (await prisma.company.findUnique({ where: { id: company.id }, select: { wholeSetTakeoffOn: true } }))?.wholeSetTakeoffOn ??
+    false;
 
   // #515. What a measured wall run can be posted AGAINST, so it arrives priced
   // instead of as a bare quantity. Only types that HAVE layers: one without
@@ -288,10 +294,20 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           `lib/ask/pageCount.ts` has counted PDF pages server-side for billing
           since it was written, and reading a PDF was never the same capability as
           rasterising one. `startPlanIngest` counts the file's own sheets now. */}
+      {/* FINDING WALLS ACROSS THE SET, behind the owner's switch — one press,
+          every scaled floor plan, a count, and a list of what became of each
+          sheet. `lib/plan-ingest/walls.ts`. */}
+      {isEstimateStage && wholeSetTakeoffOn && (
+        <WholeSetTakeoffPanel
+          planId={plan.id}
+          existing={await latestIngestFor(plan.id, "WALLS")}
+          summary={await wholeSetSummary(plan.id, company.id, MAX_ATTEMPTS)}
+        />
+      )}
       {isEstimateStage && (
         <PlanIngestPanel
           planId={plan.id}
-          existing={await latestIngestFor(plan.id)}
+          existing={await latestIngestFor(plan.id, { not: "WALLS" })}
           scheduleSheetCount={scheduleSheetCount}
           legend={{
             on: (await aiGate(company.id, "PLAN_TEXT_READ")).ok,

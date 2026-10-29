@@ -3635,3 +3635,42 @@ ships from this pass. Crops: McAllen's two walls are a storefront-style
 wall of a thick line and a grey double line with mullion rectangles;
 Crosslines' is the window run under a dash-dot overhang; Supreme Court's
 is the filled band.
+
+
+## Whole-set takeoff — 2026-10-27 (third session, `diego/whole-set-takeoff`)
+
+**Shape.** `WALLS` is a plan-ingest STAGE (`lib/plan-ingest/walls.ts`): the
+runner's claim column, the browser pump and the cron safety net are reused
+unchanged; the per-sheet work is `detectWallsForCalibration`, untouched finder.
+`startPlanIngest(planId, "WALLS")` makes a task per sheet that has a scale, is
+not called a non-plan by its title block, and has no walls for its current scale
+— so progress is "12 of 18" and never "12 of 100". Each finished task writes a
+`note`; the summary (`wholeSetSummary`) is derived from proposals, tasks and
+sheets at read time. Behind `Company.wholeSetTakeoffOn`, OFF.
+
+**Cost and time.** No model. One sheet's detection per advance call (the call's
+5 s budget is checked before each claim; detection may run to its own 45 s
+cap), and each call reads the plan file from storage once — that read was 7.7 s
+on a 52-sheet set in production (`detectWallsForCalibration`'s header), so on a
+100-page set the whole-set run costs (eligible sheets) × (file read + finder),
+not 100 ×. Baker: 4 eligible of 65, 22 s of finder time, longest sheet 17 s
+(`shots/whole-set/`, outside git).
+
+**Eligibility is the title block's verdict, not the viewer's.** The viewer also
+reads the drawings' captions (`sheetViews`) before deciding; the planner uses
+`takeoffSheetVerdict` on sheet number and title only, because that is free at
+press time. On Baker that lets G002 (a code sheet drawn at 1/4") through and the
+finder reports 15 groups on it. A sheet the inventory never named counts as
+eligible: unknown is not "not a plan".
+
+**What was not built.** Per-view scales (a sheet with two drawings at two
+scales) are not consulted; the sheet's current calibration is. A "nothing
+found" sheet is eligible again on the next press — pressing again is asking
+again. The run does not open the PDF once for all sheets (each task reads it),
+which is the ceiling to raise if the storage read dominates on big sets.
+
+**E2E to run when Clerk is quiet.** Settings: the switch saves and the takeoff
+page shows the panel only when on. Takeoff with Baker scaled: press, watch
+`whole-set-progress` reach "N of N sheets — done", summary rows carry
+`data-status="walls"` for the floor plans, open one and see its groups without a
+press of Find walls.
