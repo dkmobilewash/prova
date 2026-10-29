@@ -1,5 +1,6 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { bothFacesDashedInPoints } from "./dashedFaces";
+import { isTableRows } from "./textRows";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "./findWallsOnSheet";
 import {
   drawingCount,
@@ -217,6 +218,7 @@ export function offeredCandidates(
 
   const equipment: { wall: WallCandidate; word: string; feet: number }[] = [];
   const dashed: WallCandidate[] = [];
+  const tables: WallCandidate[] = [];
   const onPlan = sheet.walls.filter((w) => {
     if (!onAPlan(sheet, w.x1, w.y1, w.x2, w.y2)) return false;
     const hit = sheet.textItems === undefined ? null : siteEquipmentWord(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit);
@@ -229,6 +231,11 @@ export function offeredCandidates(
       dashed.push(w);
       return false;
     }
+    // Rows of text between the faces and nothing meeting the run: a schedule, a notes box — see `textRows.ts`.
+    if (sheet.textItems !== undefined && isTableRows(w, sheet.textItems, sheet.walls, sheet.widthPt, sheet.feetPerUnit)) {
+      tables.push(w);
+      return false;
+    }
     return true;
   });
   if (dashed.length > 0) {
@@ -236,6 +243,13 @@ export function offeredCandidates(
       kind: "dashed-faces",
       why: "both faces are dashed lines — a canopy, mezzanine, setback or demolished wall drawn above or beside the plan, not a wall to build",
       n: dashed.length,
+    });
+  }
+  if (tables.length > 0) {
+    aside.set("table-rows", {
+      kind: "table-rows",
+      why: "rows of text between the two lines and no wall meeting them — a schedule, a notes box or a legend, not a wall",
+      n: tables.length,
     });
   }
   if (equipment.length > 0) {
@@ -276,6 +290,7 @@ export function offeredCandidates(
     setAsideLines: [
       ...equipment.map((e) => ({ kind: "site-equipment", why: `'${e.word}' is written ${e.feet.toFixed(0)} ft away`, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
       ...dashed.map((w) => ({ kind: "dashed-faces", why: "both faces are dashed lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...tables.map((w) => ({ kind: "table-rows", why: "rows of text between the lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...classified
         .filter((one) => !worthOffering(one.kind))
         .map((one) => ({

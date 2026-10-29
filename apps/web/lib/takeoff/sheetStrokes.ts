@@ -86,6 +86,9 @@ export type SheetStrokes = {
   pathOperators: number;
   /** Image-drawing operators: a scan is one of these and no paths. */
   imageOperators: number;
+  /** Paths the page carried that painted nothing — a clip or a bare `n` — and
+   *  were therefore not read as lines. Counted inside `pathOperators` too. */
+  unpaintedPaths: number;
 };
 
 /**
@@ -268,6 +271,7 @@ export async function segmentsFromOpenPage(
       const segments: StrokeSegment[] = [];
       let pathOperators = 0;
       let imageOperators = 0;
+      let unpaintedPaths = 0;
 
       // The CTM stack. `ctm` is the matrix in force now; `q` pushes a copy and
       // `Q` pops back to it. A `Q` with nothing pushed is malformed PDF, so the
@@ -427,6 +431,27 @@ export async function segmentsFromOpenPage(
         }
         if (fn !== OPS.constructPath) continue;
         pathOperators += 1;
+        // ── A PATH THAT PAINTS NOTHING WAS NEVER ON THE SHEET ──
+        //
+        // The operator after `constructPath` says what the path does: stroke,
+        // fill, or `W n` / `W* n` — set a clip and draw nothing — or `n`
+        // alone. A clip path's edges are invisible, and a CAD export is full
+        // of them: every viewport, every block, every hatch boundary. Counted
+        // 2026-10-29 on the training sheets: 42,047 of Topeka p76's 98,222
+        // input strokes, 36,167 of Bunkie A104's 73,563, 17,077 of E Street's
+        // 42,128. They pair like faces, and a candidate whose face is drawn
+        // 95% by clip paths is junk 126 times out of 127 by the labels
+        // (278 ft against 2). Same rule as the OFF layer above: measuring a
+        // line nobody can see is measuring nothing. Counted in
+        // `pathOperators` first, like the OFF layer, so the control still
+        // reports what the page carried.
+        const paint = ops.fnArray[i + 1] as number | undefined;
+        // `paint !== undefined` first: a stub module without these constants
+        // would otherwise match a path at the end of a list on undefined.
+        if (paint !== undefined && (paint === OPS.endPath || paint === OPS.clip || paint === OPS.eoClip)) {
+          unpaintedPaths += 1;
+          continue;
+        }
 
         // ── A LAYER THE DRAWING HAS SWITCHED OFF WAS NEVER ON THE SHEET ──
         //
@@ -562,6 +587,7 @@ export async function segmentsFromOpenPage(
         segments,
         pathOperators,
         imageOperators,
+        unpaintedPaths,
       };
     }
   }
