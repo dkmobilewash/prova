@@ -206,6 +206,15 @@ export const notYetRegistered: Exclusion[] = [
       "\"Demote, don't hide\" on the takeoff is an owner's settings switch, flipped under Settings; not a thing to ask for in words.",
   },
   {
+    action: "wholeSetTakeoff.*",
+    reason:
+      "Finding walls across a set is one button on the takeoff with a count beside it; the summary is read off that panel and the switch is an owner's settings choice. Nothing to ask for in words.",
+  },
+  {
+    action: "scannedSheets.*",
+    reason: "Reading scanned sheets is an owner's settings switch, flipped under Settings; not a thing to ask for in words.",
+  },
+  {
     action: "takeoffFeatures.*",
     reason: "Turning the wall-types reader on is an owner's settings choice, flipped under Settings; not a thing to ask for in words.",
   },

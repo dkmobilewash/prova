@@ -24,6 +24,8 @@ vi.mock("@/lib/plan-ingest/planBytes", () => ({
   readPlanBytes: (planId: string, companyId: string) => readPlanBytes(planId, companyId),
 }));
 vi.mock("@/lib/plan-ingest/planPdf", () => ({ openPlanPdf: (bytes: unknown) => openPlanPdf(bytes) }));
+// No scanned sheets here: every page reads its strokes and text from the file.
+vi.mock("@/lib/plan-ingest/raster", () => ({ storedRasterFor: async () => null }));
 vi.mock("@prova/db", () => ({
   prisma: { takeoffWallProposal: { createMany: (args: unknown) => createMany(args) } },
 }));

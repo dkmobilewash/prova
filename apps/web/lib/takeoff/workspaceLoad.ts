@@ -4,6 +4,8 @@ import { aiGate } from "@/lib/ai/settings";
 import { wallTypeSummary } from "@/lib/takeoff/wallTypeMatch";
 
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
+import { isScannedSheet } from "@/lib/plan-ingest/scannedSheet";
+import { storedRasterFrom, type StoredRaster } from "@/lib/plan-ingest/raster";
 import { cutoutsFromJson, type ItemMeasurement, type TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
 import { scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
 import { effectiveSheetNumber, effectiveTitle, sheetPickerLabel } from "@/lib/plan-ingest/sheetIndex";
@@ -374,7 +376,22 @@ export async function loadTakeoffWorkspace(
    *
    * `sheetIndexFor` already selects `hasTextLayer`, so this is free.
    */
-  const scannedPages = sheetRows.filter((row) => !row.hasTextLayer).map((row) => row.pageNumber);
+  const scannedPages = sheetRows.filter(isScannedSheet).map((row) => row.pageNumber);
+  // ── WHAT THE RASTER STAGE READ OFF THE SCANNED SHEETS ──
+  // Lines and words in points, for the viewer's Find the walls; and the
+  // printed scale OCR read, as a prefill where the inventory has none — so a
+  // scan whose caption was read gets the one-press scale, and one whose
+  // caption was not gets the ordinary set-the-scale prompt, nothing new.
+  const rasterByPage: Record<number, StoredRaster> = {};
+  for (const row of await prisma.planSheetRaster.findMany({
+    where: { planId: plan.id },
+    select: { pageNumber: true, widthPt: true, heightPt: true, lines: true, text: true, printedScale: true },
+  })) {
+    const stored = storedRasterFrom(row);
+    if (stored === null) continue;
+    rasterByPage[row.pageNumber] = stored;
+    if (stored.printedScale !== null && printedScaleByPage[row.pageNumber] === undefined) printedScaleByPage[row.pageNumber] = stored.printedScale;
+  }
   const duplicateWallsByPage: Record<number, string> = {};
   /**
    * WHAT EACH SHEET IS CALLED, so the pager can be jumped to one.
@@ -567,7 +584,7 @@ export async function loadTakeoffWorkspace(
   // same load that decides everything else on the screen.
   const roomFinder = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOn: true },
+    select: { roomFinderOn: true, demotedWallsOn: true, scannedPlansOn: true },
   });
 
   return {
@@ -575,6 +592,7 @@ export async function loadTakeoffWorkspace(
     sheets,
     roomFinderOn: roomFinder?.roomFinderOn ?? false,
     demotedWallsOn: roomFinder?.demotedWallsOn ?? false,
+    scannedPlansOn: roomFinder?.scannedPlansOn ?? false,
     // The plan-text opt-in: the rail ranks the floor plans to scale first and
     // offers every sheet's printed scale in one press only for a company that
     // has turned plan-text reading on, the same switch the keyless sheet
@@ -590,6 +608,7 @@ export async function loadTakeoffWorkspace(
     postableWallTypes,
     printedScaleByPage,
     scannedPages,
+    rasterByPage,
     storedWallsByPage,
     matchableItems,
     levelByPage,

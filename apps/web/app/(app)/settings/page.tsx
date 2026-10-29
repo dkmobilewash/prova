@@ -32,7 +32,9 @@ import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
 import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsForm";
 import { OpeningDeductionForm } from "@/components/OpeningDeductionForm";
 import { RoomFinderSwitch } from "@/components/RoomFinderSwitch";
+import { ScannedPlansSwitch } from "@/components/ScannedPlansSwitch";
 import { DemotedWallsSwitch } from "@/components/DemotedWallsSwitch";
+import { WholeSetTakeoffSwitch } from "@/components/WholeSetTakeoffSwitch";
 import { TakeoffFeaturesSection } from "@/components/TakeoffFeaturesSection";
 import { takeoffFeatureRows } from "@/lib/takeoff/features";
 import { aiSettingsFor } from "@/lib/ai/settings";
@@ -177,12 +179,17 @@ export default async function SettingsPage({
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
   if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
   const { company, ...currentUser } = context;
+  // ONE read for all three takeoff switches. The merge of two lanes left two
+  // queries here, each selecting roomFinderOn and redeclaring it; the switches
+  // are columns on the same row and there is no reason to ask twice.
   const switches = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOn: true },
+    select: { roomFinderOn: true, demotedWallsOn: true, wholeSetTakeoffOn: true, scannedPlansOn: true },
   });
   const roomFinderOn = switches?.roomFinderOn ?? false;
   const demotedWallsOn = switches?.demotedWallsOn ?? false;
+  const wholeSetTakeoffOn = switches?.wholeSetTakeoffOn ?? false;
+  const scannedPlansOn = switches?.scannedPlansOn ?? false;
   // Every takeoff switch in one list (PILOT.md's first finding); the switches
   // themselves stay in their own sections below and on the Assistant page.
   const aiSettings = await aiSettingsFor(company.id);
@@ -191,6 +198,11 @@ export default async function SettingsPage({
     demotedWallsOn,
     ai: { aiEnabled: aiSettings.aiEnabled, planTextReadOptedIn: aiSettings.optedInFeatures.includes("PLAN_TEXT_READ") },
     anthropicConfigured: anthropicIsConfigured(),
+    // Both of these shipped after this list was written, and they are OPTIONAL
+    // inputs that render "not on this build yet" when omitted. Leaving them out
+    // would tell an owner that two switches they can use do not exist.
+    wholeSetTakeoffOn,
+    scannedPlansOn,
   });
   const { qb, qb_detail, tab: tabParam } = await searchParams;
   // The same rule PageTabs highlights by, so the tab lit is the group shown.
@@ -623,9 +635,14 @@ export default async function SettingsPage({
                 owner only. See `lib/takeoff/NOTES-rooms.md`. */}
             <div id="room-finder" className="mt-4 scroll-mt-20">
               <RoomFinderSwitch on={roomFinderOn} isOwner={currentUser.role === "OWNER"} />
+              <WholeSetTakeoffSwitch on={wholeSetTakeoffOn} isOwner={currentUser.role === "OWNER"} />
             </div>
             <div id="demoted-walls" className="mt-4 scroll-mt-20">
               <DemotedWallsSwitch on={demotedWallsOn} isOwner={currentUser.role === "OWNER"} />
+            </div>
+            {/* Scanned sheets, same posture: off until chosen. */}
+            <div className="mt-4">
+              <ScannedPlansSwitch on={scannedPlansOn} isOwner={currentUser.role === "OWNER"} />
             </div>
           </section>
 

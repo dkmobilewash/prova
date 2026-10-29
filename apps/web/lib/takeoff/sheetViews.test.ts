@@ -1,3 +1,4 @@
+import { CORNER_X } from "../plan-ingest/sheetNumber";
 import { describe, expect, it } from "vitest";
 import {
   excludedViews,
@@ -524,6 +525,48 @@ describe("which drawings were left out", () => {
   });
 });
 
+describe("a caption is whatever is written over the scale", () => {
+  // Baker A401: thirteen captions naming rooms and directions, not drawing
+  // kinds, each with `SCALE: 1/4" = 1'-0"` under it. None was a view, so the
+  // sheet's two text-block headings owned the drawing and the walls under
+  // them were measured by nobody — see `sheetViews`.
+  it("FINDS A VIEW NAMED BY ITS ROOM AND DIRECTION, once, by the title and not the drawing number beside it", () => {
+    const views = sheetViews(
+      [at("2", 11.3, 14.3), at("RESTROOM 1 NORTH", 12.7, 14.3), at('SCALE: 1/4" = 1\'-0"', 12.7, 14.8)],
+      W,
+    );
+    expect(views.map((v) => v.name)).toEqual(["RESTROOM 1 NORTH"]);
+    expect(views[0].scaleName).toBe('1/4" = 1\'-0"');
+  });
+
+  it("still leaves the title block's scale out, whether the field is `DATE: …` or a bare `SCALE` label", () => {
+    expect(sheetViews([at("DATE: 10/15/2026", 92.7, 60.9), at('SCALE: 1/4" = 1\'-0"', 92.7, 61.4)], W)).toEqual([]);
+    expect(sheetViews([at("SCALE", 40, 60.9), at('1/4" = 1\'-0"', 40, 61.4)], W)).toEqual([]);
+    expect(sheetViews([at("JOB NO. 23-105", 40, 60.9), at('1/4" = 1\'-0"', 40, 61.4)], W)).toEqual([]);
+  });
+
+  it("names a view by the line that says what it is when two lines sit over one scale", () => {
+    const views = sheetViews([at("FIRST FLOOR", 5.0, 63.7), at("PLAN", 6.5, 63.7), at('1/4" = 1\'-0"', 5.0, 64.2)], W);
+    expect(views.map((v) => v.name)).toEqual(["PLAN"]);
+  });
+
+  it("does not invent a view for a word-less name over `SCALE: NTS`", () => {
+    expect(sheetViews([at("RESTROOM 1 NORTH", 12.7, 14.3), at("SCALE: NTS", 12.7, 14.8)], W)).toEqual([]);
+  });
+});
+
+describe("the title-block strip is the sheet-number reader's corner", () => {
+  it("keeps the caption rule's strip equal to CORNER_X, so the two cannot drift apart", () => {
+    // `sheetViews` holds the value rather than importing it (see TITLE_BLOCK_STRIP there).
+    const views = sheetViews([at("DATE: 10/15/2026", CORNER_X * 100 + 0.5, 60.9), at('SCALE: 1/4" = 1\'-0"', CORNER_X * 100 + 0.5, 61.4)], W);
+    expect(views).toEqual([]);
+    const justLeft = sheetViews([at("RESTROOM 1 NORTH", CORNER_X * 100 - 1, 60.9), at('SCALE: 1/4" = 1\'-0"', CORNER_X * 100 - 1, 61.4)], W);
+    expect(justLeft).toHaveLength(1);
+    const justRight = sheetViews([at("RESTROOM 1 NORTH", CORNER_X * 100 + 0.5, 60.9), at('SCALE: 1/4" = 1\'-0"', CORNER_X * 100 + 0.5, 61.4)], W);
+    expect(justRight).toEqual([]);
+  });
+});
+
 describe("a piece belongs to the captions of its own region first", () => {
   // Bunkie A104: two plans of one warehouse, a gutter between them. The floor
   // plan's caption is lettered under the MIDDLE of its drawing, so the cells
@@ -550,5 +593,36 @@ describe("a piece belongs to the captions of its own region first", () => {
   it("still joins a region with no caption of its own to the nearest caption anywhere", () => {
     const got = placeDrawings([view("FLOOR PLAN", 0.5, 0.6)], [{ from: 0, to: 0.1, fromY: 0, toY: 1 }, { from: 0.1, to: 0.9, fromY: 0, toY: 1 }]);
     expect(got[0].from).toBe(0);
+  });
+});
+
+describe("a heading owns its words, not the column beneath them", () => {
+  // NG McAllen A3.2: DIMENSION PLAN NOTES lettered at the top of the plan's own
+  // region, no other caption line crossing that column, so the heading's piece
+  // ran the page height and the plan's east wall sat in a text block.
+  const view = (name: string, x: number, y: number, textBlock = false): SheetView => ({
+    name, scaleName: textBlock ? null : '1/8" = 1\'-0"', feetPerInch: textBlock ? null : 8, captionX: x, captionY: y,
+    from: 0, to: 1, fromY: 0, toY: Number.POSITIVE_INFINITY, textBlock, foundBy: textBlock ? "title" : "caption",
+  });
+  const region = [{ from: 0, to: 0.7, fromY: 0, toY: 0.667 }];
+  const plan = view("CRITICAL DIMENSION PLAN - MAIN LEVEL", 0.05, 0.635);
+  const notes = view("DIMENSION PLAN NOTES", 0.53, 0.028, true);
+  // Six lines of notes under the heading, then the plan's own dimension words far below.
+  const words = [0.04, 0.055, 0.07, 0.085, 0.1, 0.13].map((y) => ({ x: 0.55, y })).concat([0.25, 0.4, 0.55].map((y) => ({ x: 0.6, y })));
+
+  it("GIVES THE HEADING ITS LINES AND THE DRAWING THE REST OF THE COLUMN", () => {
+    const got = placeDrawings([plan, notes], region, words);
+    const block = got.find((v) => v.name === "DIMENSION PLAN NOTES")!;
+    expect(block.boxes).toHaveLength(1);
+    expect(block.boxes![0].fromY).toBe(0);
+    expect(block.boxes![0].toY).toBeCloseTo(0.15, 3);
+    const drawing = got.find((v) => v.name.startsWith("CRITICAL"))!;
+    expect(drawing.boxes!.some((b) => b.from >= 0.5 && b.fromY >= 0.14 && b.toY >= 0.66)).toBe(true);
+  });
+
+  it("without words a heading keeps the whole piece, as before", () => {
+    const got = placeDrawings([plan, notes], region);
+    const block = got.find((v) => v.name === "DIMENSION PLAN NOTES")!;
+    expect(block.boxes![0].toY).toBeCloseTo(0.667, 3);
   });
 });

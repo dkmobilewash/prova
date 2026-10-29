@@ -3153,3 +3153,594 @@ Totals 51,585→51,390 proposed, 6,883→6,876 missing, 17,944→17,743 extra.
 Unit: two placement tests in `sheetViews.test.ts`, one the A104 shape.
 No change to `detectForSheet`, where the original session is adding the
 no-view-kept fallback.
+### A grid bubble is drawn round, and the stage was never deleting bubbles (2026-10-27)
+
+**The change.** `gridBubbles` accepts a closed chain as a bubble only when
+every piece of it was flattened from a Bézier (`StrokeSegment.curved`), its
+vertices and edge midpoints sit within 0.13 of one radius, its 4πA/P² is at
+least 0.9, and it ends within 0.1 radius of where it started. The file-order
+walk, the size bounds and the turn test are exactly as shipped. The shipped
+test was the vertex radii alone at 0.18, which every rectangle, hexagon and
+regular polygon passes.
+
+**What the probe found first (seven training sheets, every closed chain in
+the size range).** Real bubbles, where a sheet has them, are 12–16 curved
+pieces with vertices within 0.09 and midpoints within 0.11 of the radius and
+circularity 0.977–0.992. The straight-sided loops the shipped test accepted
+are hexagonal tags, squares, 5-point open chains that reach 1.5π before they
+close, and chains whose longest edge is a whole diameter. The straight-sided
+loops that a purely geometric circle rule (no `curved` requirement) STILL
+accepts were cropped: cooktop burners, sink basins, a flue, stool tops — all
+polylines of 12–34 `lineTo`s, none a grid bubble. ELEVEN03 has no curved loop
+in range at all; Topeka p74 has 4 against 343 straight ones.
+
+**The measurement, 26 training sheets, no-hook arm, against the shipped test
+re-run in the same tree as a control (it reproduced 4,391/13,014 exactly).**
+
+| test | missing ft | extra ft | real recovered | junk added |
+| --- | --- | --- | --- | --- |
+| shipped (vertex radii, 0.18) | 4,391 | 13,014 | | |
+| **curved pieces + radii + midpoints + circularity + closed** | 1,863 | 27,330 | +2,528 | +14,316 |
+| the same without the curved requirement | 1,866 | 26,549 | +2,525 | +13,535 |
+| stage off (measured 2026-10-27, round-4 notes) | 1,756 | 27,663 | +2,635 | +14,649 |
+
+So the fix recovers 96% of the 2,600 ft the deletion was hiding, and it
+costs what switching the stage off costs, because on the sheets that supply
+the junk the shipped stage was not deleting grid lines — it was deleting
+casework and fixtures that happened to chain into "round" loops. Per sheet:
+
+| sheet | key ft | shipped miss/extra | real recovered | junk added |
+| --- | --- | --- | --- | --- |
+| Topeka p74 | 2,945 | 1,187/184 | +937 | +1,035 |
+| Topeka p75 | 1,462 | 36/396 | +6 | +2,385 |
+| Topeka p76 | 1,399 | 4/275 | −24 | +2,495 |
+| Joplin A-101 | 1,864 | 464/1,412 | +401 | +564 |
+| ELEVEN03 A4.B.1 | 1,790 | 4/512 | −38 | +1,295 |
+| ELEVEN03 A4.B.2 | 1,534 | 20/810 | −18 | +2,047 |
+| ELEVEN03 A4.B.3 | 1,810 | 36/415 | −21 | +1,865 |
+| Camp Bow Wow A101 | 739 | 1/1,756 | −3 | +898 |
+| Camp Bow Wow A120 | 16 | 0/116 | −4 | −25 |
+| Crosslines A100 | 3,233 | 908/621 | +598 | +150 |
+| MHK A1.01 | 945 | 356/378 | +254 | +283 |
+| Murray A101 | 1,037 | 167/137 | +124 | +36 |
+| NG Green Bay A3.2 | 653 | 123/497 | +121 | +9 |
+| Bunkie A100 | 470 | 108/500 | +91 | +101 |
+| Fairgrounds A-101 | 173 | 118/521 | +51 | +50 |
+| Baker A101 | 615 | 89/32 | +47 | +6 |
+| Supreme Court A111 | 211 | 41/436 | −19 | +460 |
+| E Street A2.1 | 477 | 0/451 | 0 | +214 |
+| NG Green Bay A3.1 | 1,009 | 154/989 | +29 | +203 |
+| Baker A100 | 1,681 | 64/304 | +29 | +29 |
+| HPL p3 | 382 | 382/416 | 0 | +83 |
+| the other five | | | 0 | +73 |
+
+Two sheets tell the whole story. Topeka p74 and p75 are the same building
+one floor apart, drawn the same way; p74 carries 1,198 ft of traced misses
+and recovers 937 of them for 1,035 of junk, p75 carries 36 ft of misses and
+gains 2,385 of junk for 6. What differs is not the walls but which sheet a
+reviewer traced. The junk that appears on p75, p76 and ELEVEN03 was there
+all along and the shipped deletion was hiding it, at the price of the walls
+on p74.
+
+**The order-dependence halves as a side effect.** The reversed arm went from
+6,609/18,011 (shipped) to 1,882/27,089, within 1% of the file-order answer,
+because the bubble set is now a few dozen real circles rather than hundreds
+of chains whose membership depended on which stroke the walk reached first.
+
+**What does not ship and why.** The geometric-only variant is 800 ft less
+junk for 3 ft less wall, and it keeps deleting under burners, sinks and
+stools, which is the shape of the defect this fixes. The curved requirement
+is the test that says what a bubble IS; the other three are the belt to it.
+
+**What follows.** The 14,300 ft of junk is the unit-plan casework the round-4
+notes name: ELEVEN03 ×3 at +5,200, Topeka p75+p76 at +4,900, Camp Bow Wow
++900, Supreme Court +460. That is a junk filter's job, not a bubble stage's,
+and this change is what makes its target visible: before it, that junk was
+being removed by accident, and the walls under it with it.
+
+Branch `diego/round-bubbles` off `main`. Unit tests: five new refusals in
+`gridBubbles.test.ts` (straight-pieced 12-gon, hexagon, octagon, curved
+ellipse, unclosed curved chain). No e2e.
+
+### Baker A401: thirteen captions no rule could see, and a server path that measures the sheet whole (2026-10-27)
+
+Reported by the third session from the export eval: "A401: server finds 13
+groups, viewer path (collector) finds none". Reproduced in Node on Baker
+p19 with the export eval's exact inputs. **The candidate hook is not the
+cause** — `detectForSheet` returns zero walls with the hook and without it.
+Two defects and one divergence, in the order they fire:
+
+1. **`sheetViews` required a caption to contain a drawing word** (PLAN,
+   ELEVATION, SECTION, DETAIL …). A401 is twelve interior elevations and
+   one enlarged plan captioned "RESTROOM 1 NORTH", "HALLWAY EAST",
+   "ENLARGED RESTROOMS", each with `SCALE: 1/4" = 1'-0"` printed 0.5% of
+   the page under it. None matched, so the sheet had no captioned view at
+   all. (The title route finds lettering by SIZE; these names are 12.6 pt
+   against a 9.5 pt median and do not qualify.)
+2. **A title-found text block owns the whole gutter region it sits in.**
+   The title route found KEYNOTE LEGEND and GENERAL NOTES, both text
+   blocks; `viewRegions` cuts A401 into two margin strips and one region
+   holding everything else, so each block's box was the drawing region.
+   With `drawingCount` 0 the single-drawing fallback removes every region
+   inside a text-block box, which left the two strips: 19 strokes of
+   212,851. Zero walls, for the wrong reason.
+3. **The server path never calls `detectForSheet`.** Saving a calibration
+   runs `detectWallsAfterResponse` → `detectWallsForCalibration` →
+   `findWallsOnSheet` on the WHOLE sheet — no views, no regions, no text
+   blocks. On A401 that is 88 walls in 12 groups, 796 ft, of interior
+   elevation and fixture line work on a sheet whose only plan is two
+   restrooms. The whole-set WALLS stage (PR D #820) uses the same call and
+   inherits the same answer. The "one pipeline" work of 2026-10-22 made
+   the viewer equal the eval; it did not reach this path.
+
+**Fixed here: (1).** A readable scale with lettering over it is a view
+whatever the lettering says; what KIND it is stays with `viewClass`, and a
+kind nobody recognises is measured by nobody. The guards that keep the old
+trap out: a `LABEL: value` field, a bare title-block label (SCALE, DATE,
+JOB …) and anything in the title-block strip at the right (`CORNER_X`) are
+not names; a line with a drawing word beats a longer one without over the
+same scale; one name per scale, so the drawing number beside the title is
+not a second view; a word-less name over `SCALE: NTS` is still nothing.
+When a joined title twins a split caption, the caption takes the title's
+text. A401 now: 13 views, none measured, each listed as "the caption does
+not say what kind of drawing this is — check it", zero walls for the right
+reason. On the 26 training sheets the change is byte-identical to the run
+before it (1,863 / 27,330, every per-sheet line equal), because no labelled
+sheet captions a drawing without a drawing word. Unit tests in
+`sheetViews.test.ts` cover the room-and-direction caption, the number
+beside it, the three title-block shapes, the two-line name and NTS.
+
+**Not fixed, recorded:** (2) a text block should own its lettering's
+extent, not its region — on A401 it no longer matters because the
+captions now place the drawings, but a sheet with one word-less caption
+and a notes heading would still lose its drawing to the block; and (3) the
+server path, which is a product decision about whether a calibration save
+and the whole-set stage should run `detectForSheet` (views, regions, text
+blocks, kept floors) instead of the raw finder. Until it does, a
+calibration on an elevation sheet or a detail sheet proposes the
+elevations as walls, which is what the third session saw.
+
+### The classifier's veto does not take the casework the round-bubble test uncovers (2026-10-27)
+
+Asked before building a unit-plan junk filter: does the trained classifier,
+vetoing at 0.3, already remove the 14,300 ft of junk that deleting only
+genuinely round loops (`23af9453`) makes visible? Measured leave-one-
+building-out on the 26 training sheets with `zzLoboVeto.eval.ts`: rows
+built through `detectForSheet` (the product path, not the raw finder
+`zzTrainRows` collects from), one gradient-boosted model per left-out
+building trained on every other building's real rows plus the synthetic
+rows (HPL has no labelled candidates, so no rows, and is scored with the
+all-rows model — every row of that is already "every other building"),
+then every sheet scored with and without the veto. Shipped rows: 19,347
+real + 130,457 synthetic; round rows: 20,017 + 142,331. The shipped-rules
+arm reproduced the arms eval's 4,391 / 13,014 exactly.
+
+| arm | missing ft | extra ft |
+| --- | --- | --- |
+| shipped bubbles, rules | 4,391 | 13,014 |
+| shipped bubbles + veto 0.3 (LOBO) | 4,973 | 11,852 |
+| round bubbles, rules | 1,863 | 27,330 |
+| round bubbles + veto 0.3 (LOBO) | 2,200 | 25,181 |
+
+**The veto removes 2,149 ft of the 14,316 ft the round test adds, and
+costs 337 ft of real wall doing it.** Round + veto against shipped + veto:
+real recovered 2,773 ft, junk added 13,329 ft. Per sheet, the four arms
+(missing/extra) and the round-plus-veto against shipped-plus-veto trade:
+
+| sheet | shipped rules | shipped+veto | round rules | round+veto | real / junk |
+| --- | --- | --- | --- | --- | --- |
+| Topeka p74 | 1,187/184 | 1,263/131 | 250/1,219 | 319/1,065 | +944 / +934 |
+| Topeka p75 | 36/396 | 73/366 | 30/2,781 | 49/2,577 | +24 / +2,211 |
+| Topeka p76 | 4/275 | 25/265 | 28/2,770 | 37/2,597 | −12 / +2,332 |
+| Joplin A-101 | 464/1,412 | 501/1,284 | 63/1,976 | 67/1,747 | +434 / +463 |
+| ELEVEN03 A4.B.1 | 4/512 | 30/438 | 42/1,807 | 74/1,705 | −44 / +1,267 |
+| ELEVEN03 A4.B.2 | 20/810 | 17/819 | 38/2,857 | 48/2,783 | −31 / +1,964 |
+| ELEVEN03 A4.B.3 | 36/415 | 117/352 | 57/2,280 | 95/2,096 | +22 / +1,744 |
+| Camp Bow Wow A101 | 1/1,756 | 6/1,651 | 4/2,654 | 10/2,500 | −4 / +849 |
+| Camp Bow Wow A120 | 0/116 | 0/116 | 4/91 | 11/83 | −11 / −33 |
+| Crosslines A100 | 908/621 | 980/492 | 310/771 | 325/636 | +655 / +144 |
+| MHK A1.01 | 356/378 | 362/252 | 102/661 | 115/527 | +247 / +275 |
+| Murray A101 | 167/137 | 171/123 | 43/173 | 46/161 | +125 / +38 |
+| NG Green Bay A3.2 | 123/497 | 126/492 | 2/506 | 5/453 | +121 / −39 |
+| Bunkie A100 | 108/500 | 112/301 | 17/601 | 42/405 | +70 / +104 |
+| Supreme Court A111 | 41/436 | 128/445 | 60/896 | 71/848 | +57 / +403 |
+| Baker A101 | 89/32 | 128/27 | 42/38 | 52/30 | +76 / +3 |
+| Baker A100 | 64/304 | 125/284 | 35/333 | 84/322 | +41 / +38 |
+
+On Topeka p75 and p76 the veto takes about 200 ft of 2,200–2,300 ft of new
+junk each; on ELEVEN03 100–180 of 1,300–2,000. The model was trained on
+rows whose negatives include Chrome's "not a wall" verdicts on those
+sheets, and it still passes the casework, which says the feature vector
+does not separate a cabinet run from a partition — both are two parallel
+lines a scheduled thickness apart. A junk filter that reasons about what
+the lines enclose (a closed rectangle of counter depth, a fixture symbol
+inside, a dimension string) is a different instrument, and it is still
+needed. The veto at 0.3 is also not free on shipped: 582 ft more missing
+for 1,162 ft less extra.
+
+Branch `diego/round-bubbles`; `zzLoboVeto.eval.ts` is the reusable
+instrument (`LOBO_ROWS_OUT` to build rows, `LOBO_MODEL_DIR` + `LOBO_CUT` to
+score; per-fold models from a 25-line sklearn script, same parameters as
+`train-wall-model.py`). The held-out sets are refused by `heldOutReason`.
+
+### A unit-plan junk filter, and why the junk it was built for is not there (2026-10-27)
+
+Brief: the round-bubble test (`23af9453`) adds 2,773 ft of real wall and
+13,329 ft of "junk" against shipped + veto; the model does not take the
+junk; build a casework filter (geometry and context, not thickness) and
+measure round + filter + veto against shipped + veto.
+
+**First, what the 13,329 ft is.** Every offered candidate on the 26
+sheets was scored against the key (accepted + traced), against the
+reviewer's "not a wall" runs, and against "unsure", for both bubble tests.
+The shipped finder's 13,014 ft of extra is 9,363 ft of reviewer-rejected
+runs. The round test adds 14,317 ft of extra, of which **−82 ft overlaps a
+rejection and 14,394 ft overlaps NO verdict at all** — candidates the
+shipped finder deleted the faces of before pairing, so no reviewer ever
+saw them. Cropped on Topeka p75 and ELEVEN03 A4.B.2, the biggest of them
+are corridor and exterior walls under hexagon window tags, the same walls
+the tracer traced on p74. The accepted-only keys on p75, p76, ELEVEN03,
+Camp Bow Wow, E Street, HPL, SW and McAllen cannot tell those from junk.
+
+On the 14 sheets WITH traces, where extra means junk, the round test's
+unlabelled extra is 4,237 ft: 2,125 ft in runs of 20 ft and more (dashed
+overhead lines on Joplin, magenta area-boundary lines on MHK, a balcony
+edge paired with a wall face and window sill lines on Supreme Court, a
+layout line a foot off a partition on p74, a title stamp on Joplin, and
+some walls the tracer did not trace), 940 ft in 10–20 ft runs, 1,172 ft
+under 10 ft. Casework-shaped junk is a quarter of the measurable junk at
+most. Topeka p74 is the proxy for p75/p76: there the new candidates split
+47% real / 53% extra against a complete key.
+
+**The filter** (`unitPlanJunk.ts`, not wired): a pair is set aside when
+both faces are dashed (many pieces, low cover), when a short run's faces
+are capped at both ends (a drawn box), or when a short run reaches no
+other candidate (a thing inside a room). Every constant physical.
+
+| arm, 26 sheets | missing ft | extra ft |
+| --- | --- | --- |
+| shipped + veto 0.3 (LOBO) | 4,973 | 11,852 |
+| round + veto | 2,200 | 25,181 |
+| round + filter v1 | 5,059 | 22,227 |
+| round + veto + filter v1 | 5,179 | 20,912 |
+
+v1 against shipped + veto: real −206 ft, junk +9,060 ft — it removes
+3,700 ft of key wall (1,760 on traced sheets) for 1,631 ft of rejected
+junk and 3,472 ft unlabelled. The closed-box rule takes wall segments
+between two door jambs (605 ft on p74 alone); the dashed rule takes walls
+drawn as existing (all 207 ft of Alden A103's key). v2 (box only at ≥ 11 in
+depth, dashed at 6 pieces / 60% cover) removes 332 ft of key, 564 ft of
+rejected junk and 708 ft unlabelled across all 26 sheets — too little to
+move any sheet, because the pairer's 13 in ceiling already keeps base
+cabinets and vanities out and 12 in uppers and shelves pair for about
+300 ft in total. Per sheet, v2's removals (real / rejected / unlabelled):
+Topeka p74 15/11/14, p75 29/2/54, p76 16/0/54; ELEVEN03 162/152/274
+across three sheets; Joplin 22/0/27; Camp Bow Wow 11/93/97.
+
+**Conclusion.** There is no junk filter to build against this number. The
+round-bubble test's cost is unmeasured, not measured-bad: 14,400 ft of
+candidates no reviewer has judged, on sheets whose keys were taken from
+the shipped list. What measures it is a review pass over the round-bubble
+candidate list on Topeka p75/p76, ELEVEN03 and Camp Bow Wow (and tracing
+where it misses), after which the veto, the filter and the shape test can
+all be scored on the same footing as p74. Until then p74 is the evidence:
++937 real, +1,035 unlabelled, of which the reviewer traced nothing.
+
+### Round 5: the new candidates judged, and round-bubbles against the shipping rule (2026-10-28)
+
+Chrome reviewed the candidates the round-bubble test uncovers (Topeka p74
+134 accepted / 46 rejected, p75 161/75, p76 177/66, ELEVEN03 66/50,
+126/56, 118/40, Crosslines 125/64, Joplin 43/23, MHK 19/11; Camp Bow Wow
+A101 14/104), and the original session trimmed the traces an accepted
+candidate now covers (p74 −165 ft, MHK −8, Crosslines −348). Each label
+stores a trace twice, in `traced[]` and as a `traced` verdict;
+`keyFromLabels` reads the verdicts only, so a trace counts once.
+
+Re-measured on the new labels, LOBO fold models retrained per arm (shipped
+rows 21,510 real + 130,457 synthetic; round 33,039 + 142,331), veto 0.3,
+26 training sheets:
+
+| arm | rules miss / extra | veto 0.3 miss / extra |
+| --- | --- | --- |
+| shipped | 13,637 / 12,606 | 14,274 / 11,506 |
+| round-bubbles | 1,566 / 16,844 | 2,257 / 15,091 |
+| round-bubbles + splitFacePass | 1,566 / 16,940 | 2,257 / 15,174 |
+
+The shipped finder's missing feet went from 4,391 to 13,637 on the same
+sheets: that is round 5's acceptances entering the key, walls the shipped
+finder never offered. **Round-bubbles with the classifier on: real
++12,017 ft, junk +3,585 ft, 3.4 ft per ft — passes the 3× rule.**
+Per sheet (veto arm, real recovered / junk added): Topeka p76 +2,054 /
++247, p75 +1,927 / +352, p74 +1,767 / +160, ELEVEN03 A4.B.3 +1,539 / +98,
+A4.B.2 +1,394 / +280, A4.B.1 +755 / +369, Joplin +871 / +42, Crosslines
++770 / −27, MHK +263 / +255, NG Green Bay A3.2 +124 / −76, Murray +121 /
++38, Baker A101 +64 / −3; Camp Bow Wow A101 +219 / +685, Supreme Court
++57 / +408, E Street +3 / +206, NG Green Bay A3.1 +29 / +191, HPL 0 / +85,
+SW 0 / +95 (−11 real), McAllen −23 / +60.
+
+**Four buildings are worse by more than 100 ft net, and three of them
+were not in round 5:** E Street (−203), Supreme Court (−351) and SW
+(−106) have accepted-only keys and no reviewer has seen their new
+candidates, which on every sheet that WAS reviewed came back 60–80% real.
+Their "junk" is the unlabelled kind. Camp Bow Wow A101 (−443) was
+reviewed and is junk: see below.
+
+**splitFacePass adds nothing on top of round-bubbles**: missing identical
+(2,257), extra +83 ft. The walls it recovered on main — Crosslines'
+demising wall, Bunkie's twice-drawn face — are proposed by the pairer
+once the grid stage stops deleting faces around them, and round 5
+accepted them. The pass is left on `diego/recall-never-paired` and is not
+in this PR.
+
+**Camp Bow Wow A101, and why no narrow fix.** The sheet is a dog-boarding
+floor plan at 1/8": 113 kennel enclosures ("kennels as selected, owner
+provided; G.C. to install") in rows of 4×4 and 4×6 ft, indoor play-yard
+fencing, outdoor runs with 8 ft fence, concrete curbs and trench drains —
+all drawn as two parallel lines a wall thickness apart, in regular rows.
+The shipped bubble stage hid most of them by accident through the kennel
+tags. Two signatures were measured across the training sheets as a
+possible narrow filter: "a face drawn as a regular dash pattern" covers
+187 of Camp Bow Wow's 2,378 rejected ft and removes real walls elsewhere
+(Alden A103's existing walls are dashed, 199 ft; Joplin 284 ft mixed), and
+"one of a regular parallel series at a ≤ 6 ft pitch" catches 122 ft there
+while flagging 1,403 ft of real wall on the unit plans, whose units repeat
+at exactly that kind of pitch. What separates a kennel panel from a
+partition on this sheet is the note that says who furnishes it, not its
+geometry. The classifier does see these pairs; on this sheet the LOBO
+veto removed 55 ft of the 740.
+
+### Camp Bow Wow A101: context where geometry failed, and how far it reaches (2026-10-28)
+
+Geometry could not separate the kennel panels, runs, fences and curbs from
+partitions (round 5 above). Two context signals were measured on every
+offered candidate of the 26 training sheets, each candidate scored by what
+it overlaps — key, reviewer-rejected, unlabelled:
+
+**Words near the candidate.** For each of the words a kennel plan prints —
+KENNEL, RUN, FENCE, CHAIN LINK, GATE, PLAY YARD, BOARDING, CURB, TRENCH
+DRAIN, PANEL, LATCH, SHELVING, BY OWNER, OWNER PROVIDED, NIC, RACK — the
+footage within 10, 15, 20 and 30 ft of it. At 10 ft, PLAY YARD (0 key /
+246 rejected), RUN (0 / 153), CHAIN LINK (0 / 142), GATE (0 / 142), CURB
+(0 / 45), SHELVING (0 / 65) and TRENCH DRAIN flag rejected footage and no
+key wall on any sheet. KENNEL does not: it is written beside the room's
+real walls as often as beside the panels (281 key / 107 rejected at
+10 ft), and so are BOARDING (455 / 181 at 20 ft) and FENCE (152 / 174).
+At 15 ft even the clean words reach Camp Bow Wow's real room walls
+(365 ft). So the rule is the clean words at 10 ft, as a union: 529 ft of
+rejected footage flagged — Camp Bow Wow 322, Joplin 142, SW 65 — and 0 ft
+of key, on 20 candidates across three sheets.
+
+**Repetition inside one room.** Membership in a regular parallel series
+(≥ 3 others of comparable length at multiples of one pitch ≤ 6 ft, see
+round 5) catches 122 ft of Camp Bow Wow's rejected footage and flags
+1,403 ft of real wall on the unit plans, whose units repeat at exactly
+that pitch. Not used.
+
+**Shipped as a set-aside, not a drop:** `offeredCandidates` takes the
+sheet's text (optional — a caller without it offers as before; the viewer
+and the LOBO eval pass it) and sets a paired wall aside with the kind
+`site-equipment` and the word and its distance, so a reviewer who
+disagrees still sees it. Measured LOBO, veto 0.3, 26 sheets, on top of
+round-bubbles: extra −503 ft, missing unchanged on every sheet — Camp Bow
+Wow A101 2,293 → 1,997, Joplin 1,340 → 1,198, SW 1,687 → 1,622. Camp Bow
+Wow keeps 1,997 ft of extra: the rule reaches the runs, yards, curbs and
+drains that are labelled, which is 13% of what the sheet draws like a
+wall and is not one. The kennel grid itself carries numbers, not words,
+and its perimeter is the room. A vocabulary read off one building and
+measured on twenty-six; the words are the drafter's, the reach is the one
+measurement set, and both are stated beside the rule.
+
+### The veto's cut, retrained on every label including round 5, with round-bubbles in (2026-10-28)
+
+Fold models retrained per building on the round-bubble finder's rows from
+all labels (33,039 real + 142,331 synthetic), LOBO, 26 training sheets,
+each cut's veto against its own rules arm. HPL p3 had been re-keyed after
+the round-5 run (its 382 ft of lighting-plan key cleared), so these rows
+are 382 ft lower in missing than the round-5 table; E Street's key grew
+from 477 to 620 ft between the 0.5 and 0.6 runs (Chrome's round 6), which
+is why the 0.6 rules arm differs by 11 / −142.
+
+| cut | rules miss / extra | veto miss / extra | real lost | junk removed | removed per lost | buildings losing > 100 ft |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0.2 | 1,184 / 16,844 | 1,574 / 15,744 | 390 | 1,100 | 2.8 | Topeka 216 |
+| 0.3 | 1,184 / 16,844 | 1,875 / 15,091 | 691 | 1,753 | 2.5 | Topeka 282, ELEVEN03 150 |
+| 0.4 | 1,184 / 16,844 | 2,307 / 14,303 | 1,123 | 2,541 | 2.3 | Topeka 345, ELEVEN03 343 |
+| 0.5 | 1,184 / 16,844 | 2,681 / 13,171 | 1,497 | 3,673 | 2.5 | six buildings, Topeka 414 |
+| 0.6 | 1,195 / 16,702 | 3,654 / 11,626 | 2,459 | 5,076 | 2.1 | seven buildings, Topeka 828 |
+
+**Read against the board's rule — 3 ft of junk removed per foot of real
+wall lost — no cut passes, and the ratio falls as the cut rises.** Before
+round-bubbles the veto at 0.3 on the shipped finder removed 1,162 ft for
+582 lost, 2.0 per foot, so the classifier is better on the new finder
+than on the old one at every cut, and still short of 3. The loss sits on
+the unit plans at every cut: Topeka p74 loses 116 ft at 0.2 for 35 ft
+removed, p75 61 for 62 — a fold that has never seen a unit plan vetoes
+the unit plan's walls. That is leave-one-building-out's honest cost, and a
+lower bound on the production model, which is trained on every building.
+
+**Recommendation: 0.2 if a veto runs at all.** It is the cut closest to
+the rule (2.8), the only one with a single building over the 100 ft line,
+and it keeps the walls round-bubbles recovered: 390 ft lost against
+12,017 gained. 0.3, the cut chosen on 2026-10-21 against the shipped
+finder, is no longer the best point on the new finder's curve. Whether a
+veto that does not meet the rule should run is Diego's call; its removal
+is a product setting, not a code change, and the setting is measured
+here either way.
+
+### Recall on the round-5 and round-6 labels, round-bubbles in: what is left and what it is worth (2026-10-28)
+
+`zzMissKinds.eval.ts` (the database-free version from `diego/miss-round4`,
+now on this branch) over the 14 traced training sheets, labels as of
+11:11 today. Traced misses fell from 5,768 ft to 2,775 ft.
+
+| stage | ft | share |
+| --- | --- | --- |
+| proposed after all (a current candidate lies over the trace) | 1,821 | 66% |
+| merged into a neighbour | 317 | 11% |
+| never paired | 267 | 10% |
+| set aside by triage, all in-a-hatch | 214 | 8% |
+| paired, not awarded | 61 | 2% |
+| lost to the post-pairing filters | 95 | 3% |
+
+By style: two faces, ordinary pen 2,273 ft (82%), short closet wall 465
+(17%); the "dense area" kind is 95% of everything, which is to say the
+styles no longer separate anything and the stage is the useful axis.
+
+**The 1,821 ft "proposed after all" is mostly a labelling gap, not a
+loss.** Each of those traces was matched to the candidate over it and that
+candidate to the reviewer's verdicts: 1,005 ft lie on the same line as a
+candidate covering ≥ 80% of the trace that has NO verdict within 1 ft of
+it (843 ft with no verdict anywhere near) — on Murray 552, NG Green Bay
+227, Bunkie 95, Baker 92, Fairgrounds 39, none of which was in round 5 or
+6. These are walls round-bubbles now proposes over old traces nobody has
+judged; trimming them the way the round-5 sheets were trimmed, after a
+review, is what makes this table honest. 171 ft sit under a candidate the
+reviewer REJECTED (the finder drew the wall wrong — thickness or extent —
+and the reviewer traced instead), 122 ft under a parallel accepted wall
+within 2.5 ft (a double wall or a band artefact).
+
+**The real finder losses are 954 ft, in three causes:**
+
+1. **Pairs refused on partial faces — about 300 ft.** Merged 243 ft and
+   never-paired 53 ft of "pair refused at N in": the faces are there and
+   kept, and the pair test refuses them on overlap or overhang. Crosslines
+   112 (the exterior wall traced across a window run: the window's frame
+   lines at 15.6 ft against the wall band's 4.5 ft pieces), Topeka 84,
+   Baker 41, NG Green Bay 26. The split-face pass that answered the
+   Crosslines demising wall on main was measured on these labels on top
+   of round-bubbles: 0 ft real, +83 ft junk. What is left needs a bridge
+   across a window run, which has not been built or measured; the ceiling
+   is 300 ft.
+2. **In-a-hatch set-aside — 214 ft.** Supreme Court 98 (two 38 ft walls
+   drawn as a grey-filled band with thin edge lines), Fairgrounds 33,
+   Crosslines 24, MHK 15, Bunkie 13, Joplin 12, Baker 10. The hatch pitch
+   rule was measured in round 4 at +29 ft real for +6,944 ft junk on the
+   customer path, and offering everything in-a-hatch at +626 / +69,000; no
+   rule meeting the board's 3-to-1 is known. The third session's
+   contour-face reader for grey fills (scanned-plans branch) is the one
+   instrument that reads this style, and it is a different pipeline.
+3. **Walls outside the kept plan region — about 140 ft.** NG McAllen A3.2
+   118 (two 39 ft walls at x 0.613, every one of their 248 faces outside
+   `planBoxes`: the single-drawing path's `drawingRegions` kept the
+   busiest region and dropped the strip they are in, which held under a
+   tenth of its strokes), Crosslines 16, Murray 8. Same family as Bunkie
+   A104 on `diego/view-losses` (region placement), different rule: the
+   share-of-busiest threshold. A fix is one line and must be swept for
+   collateral (a dimension strip or legend re-admitted is the risk); it
+   was not built here because at 140 ft it is not the biggest cause and
+   the sweep is a separate run.
+
+None of the three carries a fix that meets the rule today, so nothing
+ships from this pass. Crops: McAllen's two walls are a storefront-style
+wall of a thick line and a grey double line with mullion rectangles;
+Crosslines' is the window run under a dash-dot overhang; Supreme Court's
+is the filled band.
+
+
+## Whole-set takeoff — 2026-10-27 (third session, `diego/whole-set-takeoff`)
+
+**Shape.** `WALLS` is a plan-ingest STAGE (`lib/plan-ingest/walls.ts`): the
+runner's claim column, the browser pump and the cron safety net are reused
+unchanged; the per-sheet work is `detectWallsForCalibration`, untouched finder.
+`startPlanIngest(planId, "WALLS")` makes a task per sheet that has a scale, is
+not called a non-plan by its title block, and has no walls for its current scale
+— so progress is "12 of 18" and never "12 of 100". Each finished task writes a
+`note`; the summary (`wholeSetSummary`) is derived from proposals, tasks and
+sheets at read time. Behind `Company.wholeSetTakeoffOn`, OFF.
+
+**Cost and time.** No model. One sheet's detection per advance call (the call's
+5 s budget is checked before each claim; detection may run to its own 45 s
+cap), and each call reads the plan file from storage once — that read was 7.7 s
+on a 52-sheet set in production (`detectWallsForCalibration`'s header), so on a
+100-page set the whole-set run costs (eligible sheets) × (file read + finder),
+not 100 ×. Baker: 4 eligible of 65, 22 s of finder time, longest sheet 17 s
+(`shots/whole-set/`, outside git).
+
+**Eligibility is the title block's verdict, not the viewer's.** The viewer also
+reads the drawings' captions (`sheetViews`) before deciding; the planner uses
+`takeoffSheetVerdict` on sheet number and title only, because that is free at
+press time. On Baker that lets G002 (a code sheet drawn at 1/4") through and the
+finder reports 15 groups on it. A sheet the inventory never named counts as
+eligible: unknown is not "not a plan".
+
+**What was not built.** Per-view scales (a sheet with two drawings at two
+scales) are not consulted; the sheet's current calibration is. A "nothing
+found" sheet is eligible again on the next press — pressing again is asking
+again. The run does not open the PDF once for all sheets (each task reads it),
+which is the ceiling to raise if the storage read dominates on big sets.
+
+**E2E to run when Clerk is quiet.** Settings: the switch saves and the takeoff
+page shows the panel only when on. Takeoff with Baker scaled: press, watch
+`whole-set-progress` reach "N of N sheets — done", summary rows carry
+`data-status="walls"` for the floor plans, open one and see its groups without a
+press of Find walls.
+
+### McAllen A3.2's east wall: a heading's claim ends where its words do (2026-10-28)
+
+The recall pass above listed it as cause 3, "walls outside the kept plan region", and
+blamed `drawingRegions`' share-of-busiest rule. Wrong stage: the probe showed
+`viewRegions` returned only two regions (x 0..0.703 and the title column), both kept as
+drawing, and the plan's `boxes` were `[0,0.031]`, `[0.031,0.51]` and a sliver at the
+right — nothing from x 0.51 to 0.703. That column was a TEXT-BLOCK box: WALL & PARTITION
+NOTES / DIMENSION PLAN NOTES sit at y 0.028 at the top of the plan's region, no other
+caption line crosses x 0.51..0.703, so #823's "only that piece" rule — the piece under
+a heading is the heading's — gave it the piece from y 0 to 0.667. 14% of it is notes.
+
+Fix in `placeDrawings`: a heading's claim ends at the last word reachable from it without
+a gap over `NOTES_END_GAP` (0.03 page-width units, about an inch on ARCH D), plus
+`CAPTION_MARGIN`; the remainder rejoins the shared pieces and is placed as a drawing
+piece. McAllen's block now ends at y 0.234 and the plan's boxes reach x 0.703.
+
+36-sheet sweep (`zzViewSweep`, current labels): only McAllen changed — missing 274 → 141,
+extra 80 → 119 (133 real for 39 junk, 3.4×). The 39 ft of junk is on McAllen itself and
+was not looked at: at 3.4× it meets the board's rule, and the strip it comes from is the
+one that held the wall.
+
+### "Pairs refused on partial faces" is not a product-path cause, and the grid-label rule that replaced it fails on top of #824 (2026-10-28)
+
+The recall pass two entries up named "pairs refused on partial faces, ~300 ft" the
+biggest real loss. It was measured by `zzMissKinds`, which runs `findWallsOnSheet` on
+the RAW page — no view restriction, no triage — and against main's finder. Replayed on
+the product path (`detectForSheet` → `offeredCandidates` → `scoreSheet`, the sweep's
+own instruments) over the same 645 ft of unpaired traces, 539 ft is still missing and
+no shape reaches 100 ft:
+
+| what the replay found, product path, main's finder | ft |
+| --- | --- |
+| strokes removed before pairing — every one by the grid-bubble filter | 140 |
+| pair refused: overlap (an opening traced as wall: Joplin's hall, E Street's door) | 99 |
+| pair refused: overhang (filled bands, staggered jamb pieces) | 96 |
+| a pair formed in the real pass and the greedy pass discarded it (Baker's W4 window run, Topeka, Crosslines) | 66 |
+| fewer than two faces (a wall drawn as one thick stroke: McAllen's IW-7) | 40 |
+| no pair at wall thickness / too short / outside the plan boxes | 90 |
+
+The window-run shape the entry imagined — a run between two found walls with window
+lines inside — is 15 ft. Crops in the session scratchpad (`crops-miss/m0-m9`).
+
+**The 140 ft was the one clean shape, and it was the grid filter.** `gridBubbles`'
+shape test on main admits every closed round thing of plausible size — Supreme Court
+A111 has 272 of them and ONE holds a grid label, Topeka p74 347 and 115 — and
+`linesIntoBubbles` drops every stroke ending within two radii of any of them: 46,243 of
+Supreme Court's 67,368 strokes, 29,200 of Topeka's 78,254 to the label-less circles
+alone. McAllen's east wall lost 130 strokes to two detail callouts beside it.
+
+So a rule was built: a bubble is a grid bubble only if exactly one short label (A, 12,
+A.1) sits inside its circle; with no words on the sheet, the shape test stands alone.
+Measured on main + the region fix, 36 sheets: training real +12,006 ft / junk +3,551,
+3.4 to 1 — which is, to within 11 ft, the gain #824's round-bubble shape test gets
+from main. Two fixes for one loss, from opposite ends.
+
+**On top of #824 it is a wash and does not ship.** #824's round-bubble test already
+removes the blank circles; what it leaves are the two-word detail callouts (Supreme
+Court 22 of 23 bubbles, Camp Bow Wow 13, Topeka/E Street/MHK three each). Removing
+those too: training real +105 / junk +119 (0.9×), held-out +65 / +262; NG Green Bay
+A3.1 −98 missing, Murray −21, but E Street +86 extra, STEM +253 extra, and Supreme
+Court 26 ft MORE missing. The rule is twenty lines (`labelledBubbles(bubbles, words)`
+filtering `gridBubbles`' output in `findWallsOnSheet`) and is not in the tree;
+re-measure it only if #824's test changes.
+
+What is left for the unpaired residual on #824's finder is small and mixed: the
+greedy pass discarding a window run's pair when a longer neighbour claims the face
+(~66 ft, Baker W4 the clearest: pairs at 3.7 in and 2.6 in formed over 1.6–8.7 ft and
+the found walls stop at 0 and start at 13.2), and styles the pair test cannot read (one
+thick stroke, filled bands). Neither has a measured fix.
