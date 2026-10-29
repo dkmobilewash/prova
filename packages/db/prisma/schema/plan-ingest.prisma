@@ -149,6 +149,20 @@ model PlanIngestJob {
   startedByUserId String?
   startedByUser   User?   @relation(fields: [startedByUserId], references: [id], onDelete: SetNull)
 
+  // ── THE LAST THING THAT WENT WRONG, ON THE JOB ITSELF ──
+  //
+  // A task's `error` is cleared the moment the page is claimed again, so a
+  // page that fails three times and is then re-claimed leaves nothing behind;
+  // and a screen that shows the job never joins its 300 tasks to find one.
+  // Written by the fail port on EVERY failure (the latest wins), never
+  // cleared by a later success — a job that recovered still says what it
+  // recovered from. Additive, 2026-10-29, after Evergreen's RASTER stage
+  // exhausted 106 pages without a recorded reason.
+  lastError      String?
+  lastErrorStage PlanIngestStage?
+  lastErrorPage  Int?
+  lastErrorAt    DateTime?
+
   tasks PlanIngestTask[]
 
   /// What a `TITLE_BLOCK` run proposed, one row per page. Empty for every other

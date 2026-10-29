@@ -155,6 +155,12 @@ export function claimPorts(options: {
     },
 
     fail: async (task, error, retryAt, exhausted) => {
+      // The job remembers the latest failure even after the task's own
+      // `error` is cleared by the next claim — see `PlanIngestJob.lastError`.
+      await prisma.planIngestJob.update({
+        where: { id: options.jobId },
+        data: { lastError: error, lastErrorStage: task.stage, lastErrorPage: task.pageNumber, lastErrorAt: new Date() },
+      });
       await prisma.planIngestTask.update({
         where: { id: task.id },
         data: {

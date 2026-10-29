@@ -32,14 +32,42 @@ export async function scannedPageNumbers(planId: string): Promise<number[]> {
   return rows.filter(isScannedSheet).map((row) => row.pageNumber);
 }
 
+/** What the stage keeps for a page — the row `PlanSheetRaster` holds. */
+export type RasterRow = {
+  dpi: number;
+  widthPt: number;
+  heightPt: number;
+  tiltDegrees: number;
+  lines: RasterizedSheet["lines"];
+  text: RasterizedSheet["text"];
+  printedScale: string | null;
+  /** The sheet number read from the title-block corner (#845), or null. */
+  sheetNumber: RasterizedSheet["sheetNumber"];
+  ms: number;
+};
+
 export type RasterDeps = {
   readPlanBytes: typeof readPlanBytes;
   rasterize: (bytes: Uint8Array, pageNumber: number) => Promise<RasterizedSheet>;
+  /** Keep the page's read. The real one upserts `PlanSheetRaster`; a test
+   *  hands in a map, so the stage can be run THROUGH THE RUNNER without a
+   *  database — the only way its failure path gets exercised in a unit test. */
+  store: (planId: string, pageNumber: number, row: RasterRow) => Promise<void>;
 };
+
+/** The real store: `PlanSheetRaster`, one row per page, replaced on a re-run. */
+export async function storeRaster(planId: string, pageNumber: number, row: RasterRow): Promise<void> {
+  await prisma.planSheetRaster.upsert({
+    where: { planId_pageNumber: { planId, pageNumber } },
+    create: { planId, pageNumber, ...row },
+    update: row,
+  });
+}
 
 const realDeps: RasterDeps = {
   readPlanBytes,
   rasterize: (bytes, pageNumber) => rasterizeSheet(bytes, pageNumber),
+  store: storeRaster,
 };
 
 export function rasterWork(ctx: StageCtx, deps: RasterDeps = realDeps): StageWork {
@@ -53,7 +81,7 @@ export function rasterWork(ctx: StageCtx, deps: RasterDeps = realDeps): StageWor
       console.error("[raster] a scanned sheet could not be read", { planId: ctx.planId, pageNumber: task.pageNumber, error });
       return { ok: false, error: "This sheet couldn't be read as an image. Retry it, and tell C Stream if it keeps failing." };
     }
-    const row = {
+    const row: RasterRow = {
       dpi: read.dpi,
       widthPt: read.widthPt,
       heightPt: read.heightPt,
@@ -64,11 +92,7 @@ export function rasterWork(ctx: StageCtx, deps: RasterDeps = realDeps): StageWor
       sheetNumber: read.sheetNumber,
       ms: read.ms.total,
     };
-    await prisma.planSheetRaster.upsert({
-      where: { planId_pageNumber: { planId: ctx.planId, pageNumber: task.pageNumber } },
-      create: { planId: ctx.planId, pageNumber: task.pageNumber, ...row },
-      update: row,
-    });
+    await deps.store(ctx.planId, task.pageNumber, row);
     return { ok: true };
   };
 }

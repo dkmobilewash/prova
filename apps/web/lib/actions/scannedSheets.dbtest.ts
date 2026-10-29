@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { prisma } from "@prova/db";
 import { claimPorts, closeIfSettled, ingestViewOf } from "@/lib/plan-ingest/claim";
-import { rasterWork, storedRasterFor } from "@/lib/plan-ingest/raster";
+import { rasterWork, storeRaster, storedRasterFor } from "@/lib/plan-ingest/raster";
 import { runIngest } from "@/lib/plan-ingest/runner";
 import type { RasterizedSheet } from "@/lib/takeoff/raster/rasterizeSheet";
 
@@ -110,6 +110,7 @@ describe("scanned sheets", () => {
           asked.push(pageNumber);
           return read;
         },
+        store: storeRaster,
       },
     );
     const report = await runIngest({ ports: claimPorts({ jobId: run.id, work }), budgetMs: 10_000 });

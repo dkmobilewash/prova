@@ -483,3 +483,58 @@ needs the whole page read cannot reach 3 s single-threaded at 200 dpi;
 with blank-tile skipping and two workers it plausibly can. The 43 pages
 whose title block says they are not plans already stop after the first
 look and would land near 3 s total.
+
+## §13 — The RASTER stage on the server: why every page hung, and what records it now (2026-10-29, second session, `diego/raster-server`)
+
+**The symptom.** Evergreen's 106 RASTER tasks on :3010: 0 finished,
+attempts up to 3, no error on any task, no line in the server log, the
+server idle while holding a claimed task. `rasterStage.eval` on the same
+machine read a page in 16 s.
+
+**The cause is the bundle, which the eval never goes through.**
+`SheetWorker.start()` spelled the thread as
+`new Worker(new URL("./rasterWorker.mjs", import.meta.url))` — the
+documented spelling, and the exact pattern webpack recognises as worker
+syntax. In the live build (`.next-chrome/server/chunks/9273.js`) it became
+`new k.Worker(new URL(c.p + c.u(1854), c.b))`: the thread was started on a
+6 KB webpack chunk (`1854.js`, Tesseract's `createWorker` loaded through
+`c.e(3147)`) instead of the plain ESM file, and in that thread the page
+never came back. The string `rasterWorker` appears nowhere in that build.
+
+**Why nothing was recorded.** The runner awaited the stage with no bound.
+A hung page held its claim until the 90-second lease lapsed; the next tick
+re-claimed it, which CLEARS the task's `error`, and incremented `attempts`.
+Three rounds later the task sat exhausted with nothing written anywhere,
+by construction. The sheet worker registered its `error` listener only
+inside an ask, so a thread that failed to load before the first message
+would have been an uncaught exception rather than a refusal.
+
+**What changed.**
+- `nodeStack.ts`: the worker path is a string computed from
+  `import.meta.url` (`rasterWorkerPath()`), which webpack leaves as the
+  source file's URL and does not pattern-match. Proved on a production build
+  of this branch: the chunk now reads
+  `new l.Worker(a.script ?? fileURLToPath("file:///…/lib/takeoff/raster/nodeStack.ts")…)`,
+  `rasterWorker.mjs` is in the bundle as a string, and `c.u(` survives only
+  in `webpack-runtime.js`. The thread's `error`/`exit` are listened to from
+  construction; an unanswered ask times out at 75 s; `close()` cannot throw.
+- `next.config.mjs`: `rasterWorker.mjs` is force-included in the output
+  trace, because a file loaded by path is traced by nobody.
+- `runner.ts`: a page's work is bounded at lease − 5 s (`WorkTimedOut`),
+  recorded as "did not finish within N seconds at the RASTER stage" by the
+  worker that owns the claim, before another can take it.
+- `PlanIngestJob.lastError / lastErrorStage / lastErrorPage / lastErrorAt`
+  (additive migration `20261029220000_ingest_job_last_error`), written by
+  the fail port on every failure and never cleared by a later success.
+- `rasterWork` takes a `store` dependency, so `rasterRunner.test.ts` runs
+  the REAL stage and the REAL `rasterizeSheet` through `runIngest` with
+  in-memory ports: a page read and stored, a page that hangs recorded with
+  the stage and seconds, a plan that cannot be read recorded in the stage's
+  own words. `nodeStack.test.ts` asserts the script exists where the thread
+  will look, that a thread whose script did not load is refused rather than
+  waited on, and that a silent thread times out.
+
+**What this does not prove.** The in-process test cannot see the bundle;
+the chunk grep does, and the end-to-end proof is Evergreen draining on
+:3010 once it is rebuilt from this branch and the migration is applied to
+its database — both the original session's, asked for in the log.

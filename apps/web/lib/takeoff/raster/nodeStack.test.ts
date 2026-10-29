@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { SheetWorker, tidyOcrLine } from "./nodeStack";
+import { SheetWorker, rasterWorkerPath, tidyOcrLine } from "./nodeStack";
 import { rasterLines } from "./rasterLines";
 
 describe("tidying a Tesseract line", () => {
@@ -118,6 +118,33 @@ describe("a scanned page is read straight from its bits", () => {
     } finally {
       await sheet.close();
     }
+  });
+});
+
+describe("the sheet's thread, when it cannot answer", () => {
+  it("THE WORKER SCRIPT EXISTS WHERE THE THREAD WILL LOOK, AS A PLAIN FILE", async () => {
+    const { existsSync } = await import("node:fs");
+    const path = rasterWorkerPath();
+    expect(path.endsWith("/lib/takeoff/raster/rasterWorker.mjs")).toBe(true);
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it("refuses an ask on a thread whose script did not load, instead of an uncaught error or a wait", async () => {
+    const sheet = SheetWorker.start({ script: "/nonexistent/rasterWorker.mjs", timeoutMs: 2_000 });
+    await expect(sheet.render(new Uint8Array([1, 2, 3]), 1, 72)).rejects.toThrow(/Cannot find module|exited|did not answer/);
+    await sheet.close();
+  });
+
+  it("gives up on a thread that never answers, after its timeout", async () => {
+    const { writeFileSync, mkdtempSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(join(tmpdir(), "sheet-worker-"));
+    const script = join(dir, "silent.mjs");
+    writeFileSync(script, 'import { parentPort } from "node:worker_threads"; parentPort.on("message", () => {});\n');
+    const sheet = SheetWorker.start({ script, timeoutMs: 300 });
+    await expect(sheet.render(new Uint8Array([1, 2, 3]), 1, 72)).rejects.toThrow(/did not answer within 0 s/);
+    await sheet.close();
   });
 });
 

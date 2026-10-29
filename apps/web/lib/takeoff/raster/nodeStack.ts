@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import type { Gray } from "./pgm";
 
@@ -59,6 +60,38 @@ export function tidyOcrLine(str: string): string {
 type Reply = { ok: true; [k: string]: unknown } | { ok: false; error: string };
 
 /**
+ * ── THE WORKER SCRIPT IS A FILE ON DISK, AND WEBPACK MUST NOT SEE IT ──
+ *
+ * This was `new Worker(new URL("./rasterWorker.mjs", import.meta.url))`, the
+ * documented spelling — and webpack recognises exactly that spelling as
+ * worker syntax. Next's server build turned it into
+ * `new Worker(new URL(c.p + c.u(1854), c.b))`: the thread was started on a
+ * webpack CHUNK (6 KB, Tesseract's `createWorker` loaded through
+ * `c.e(3147)`) instead of the plain ESM file, and in that thread the page
+ * never came back. Evergreen's 106 RASTER tasks: 0 finished, attempts spent,
+ * no error anywhere, the server idle on a claimed task (2026-10-29). The same
+ * file run by vitest, where no bundler rewrites it, reads a page in 16 s. The
+ * eval could never see this, because the eval never goes through the bundle.
+ *
+ * So the path is a string computed from `import.meta.url` — which webpack
+ * leaves as the source file's own URL and does not pattern-match — and the
+ * thread loads the real `rasterWorker.mjs`, which resolves `pdfjs-dist` and
+ * `tesseract.js` from node_modules like any module. The file is force-included
+ * in the output trace (`next.config.mjs`) so a deploy ships it;
+ * `rasterWorkerPath()` is exported so a test can assert the file exists where
+ * the thread will look.
+ */
+export function rasterWorkerPath(): string {
+  const here = fileURLToPath(import.meta.url);
+  return here.slice(0, here.lastIndexOf("/") + 1) + "rasterWorker.mjs";
+}
+
+/** How long one message to the thread may take before the sheet is given up
+ *  on. A page is 5–28 s on Evergreen at 200 dpi; the runner's lease is 90 s. */
+export const SHEET_WORKER_TIMEOUT_MS = 75_000;
+
+
+/**
  * ── WARM, OR TORN DOWN: THE POOL ──
  *
  * §7's memory answer was a thread per sheet, terminated with it. Creating
@@ -85,17 +118,39 @@ function poolOn(): boolean {
 /** One sheet's render and OCR, in a thread of its own. `close()` gives the thread back, or ends it with the pool off. */
 export class SheetWorker {
   private readonly worker: Worker;
-  private constructor(worker: Worker) {
+  /** Set the moment the thread dies, so a later ask fails at once instead of
+   *  waiting on a thread that will never answer. */
+  private dead: Error | null = null;
+  private readonly timeoutMs: number;
+  private constructor(worker: Worker, timeoutMs: number) {
     this.worker = worker;
+    this.timeoutMs = timeoutMs;
+    // ── LISTENED TO FROM THE START, NOT ONLY DURING AN ASK ──
+    // A thread that fails to load emits `error` before the first message is
+    // ever posted; with no listener that is an uncaught exception in the
+    // server, and with one the next ask knows to refuse.
+    this.worker.on("error", (error: Error) => {
+      this.dead = error;
+    });
+    this.worker.on("exit", (code) => {
+      if (this.dead === null && code !== 0) this.dead = new Error(`the sheet's thread exited with code ${code}`);
+    });
   }
-
-  static start(): SheetWorker {
-    const warm = idle.pop();
-    if (warm) {
-      warm.worker.ref();
-      return warm;
+  static start(options: { script?: string; timeoutMs?: number } = {}): SheetWorker {
+    // A warm thread is only ever the default script at the default timeout —
+    // a test's own script, or its own clock, gets its own thread — and a
+    // thread that died while idle is ended, not handed out.
+    if (options.script === undefined && options.timeoutMs === undefined) {
+      for (let warm = idle.pop(); warm !== undefined; warm = idle.pop()) {
+        if (warm.dead === null) {
+          warm.worker.ref();
+          return warm;
+        }
+        // `dead` is set from the thread's own `error`/`exit`, so this thread
+        // has already ended; it is dropped from the pool and nothing is awaited.
+      }
     }
-    return new SheetWorker(new Worker(new URL("./rasterWorker.mjs", import.meta.url)));
+    return new SheetWorker(new Worker(options.script ?? rasterWorkerPath()), options.timeoutMs ?? SHEET_WORKER_TIMEOUT_MS);
   }
 
   /** How many threads are waiting warm; for tests and the budget report. */
@@ -110,6 +165,7 @@ export class SheetWorker {
   }
 
   private ask<T extends object>(message: object, transfer: ArrayBufferLike[] = []): Promise<T> {
+    if (this.dead !== null) return Promise.reject(this.dead);
     return new Promise<T>((resolve, reject) => {
       const onMessage = (reply: Reply) => {
         cleanup();
@@ -120,16 +176,31 @@ export class SheetWorker {
         cleanup();
         reject(error);
       };
+      const onExit = (code: number) => {
+        cleanup();
+        reject(new Error(`the sheet's thread exited with code ${code} before answering`));
+      };
+      // ── A THREAD THAT NEVER ANSWERS IS A FAILURE, NOT A WAIT ──
+      // Without this a hung thread held the runner's claim until the lease
+      // lapsed, the next tick claimed the page again, and nothing was ever
+      // written down. Unref'd so it cannot keep a process alive.
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`the sheet's thread did not answer within ${Math.round(this.timeoutMs / 1000)} s`));
+      }, this.timeoutMs);
+      timer.unref();
       const cleanup = () => {
+        clearTimeout(timer);
         this.worker.off("message", onMessage);
         this.worker.off("error", onError);
+        this.worker.off("exit", onExit);
       };
       this.worker.once("message", onMessage);
       this.worker.once("error", onError);
+      this.worker.once("exit", onExit);
       this.worker.postMessage(message, transfer as ArrayBuffer[]);
     });
   }
-
   /** One page as 8-bit grey at `dpi`, rotation applied the way the viewer shows it, drawn in bands. */
   /** `direct` is true when the page was one 1-bit image read straight from its bits, never through a canvas (see `scanGray` in the worker). */
   async render(bytes: Uint8Array, pageNumber: number, dpi: number, bandPx = 600): Promise<Gray & { direct: boolean }> {
@@ -197,7 +268,9 @@ export class SheetWorker {
       }
     }
     try {
-      await this.ask({ type: "close" });
+      if (this.dead === null) await this.ask({ type: "close" });
+    } catch {
+      // A thread that cannot even close is terminated below; nothing to add.
     } finally {
       await this.worker.terminate();
     }
