@@ -120,3 +120,27 @@ describe("a scanned page is read straight from its bits", () => {
     }
   });
 });
+
+describe("the warm pool", () => {
+  it("gives a closed thread back to the next sheet, and ends it with the pool off", async () => {
+    await SheetWorker.drain();
+    const first = SheetWorker.start();
+    const bytes = new Uint8Array(readFileSync("e2e/fixtures/plan-sheet.pdf"));
+    await first.render(bytes, 1, 72);
+    await first.close();
+    expect(SheetWorker.idleCount()).toBe(1);
+    const second = SheetWorker.start();
+    expect(second).toBe(first);
+    expect(SheetWorker.idleCount()).toBe(0);
+    // A warm thread still renders: its document was destroyed on release, not its modules.
+    const gray = await second.render(bytes, 1, 72);
+    expect(gray.width).toBeGreaterThan(0);
+    process.env.RASTER_WORKER_POOL = "0";
+    try {
+      await second.close();
+      expect(SheetWorker.idleCount()).toBe(0);
+    } finally {
+      delete process.env.RASTER_WORKER_POOL;
+    }
+  });
+});

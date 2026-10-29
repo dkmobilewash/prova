@@ -36,7 +36,15 @@ export type OcrOptions = {
   minConfidence?: number;
   regions?: readonly PxRegion[];
   skipTiles?: ReadonlySet<string>;
+  /** Tesseract workers reading tiles at once. `RASTER_OCR_LANES` sets the default, 2 without it; the words come out the same whatever the count. */
+  lanes?: number;
 };
+
+/** The lane count the environment asks for, or 2. */
+export function defaultOcrLanes(): number {
+  const asked = Number(process.env.RASTER_OCR_LANES ?? "");
+  return Number.isInteger(asked) && asked >= 1 ? asked : 2;
+}
 
 /**
  * Tesseract's habits on a scale caption, measured on Baker A101 at 150 and
@@ -50,7 +58,31 @@ export function tidyOcrLine(str: string): string {
 
 type Reply = { ok: true; [k: string]: unknown } | { ok: false; error: string };
 
-/** One sheet's render and OCR, in a thread of its own. `close()` is what frees the memory. */
+/**
+ * ── WARM, OR TORN DOWN: THE POOL ──
+ *
+ * §7's memory answer was a thread per sheet, terminated with it. Creating
+ * one costs what it loads: pdf.js, and a Tesseract worker per lane with its
+ * language file — a second or two a sheet, paid on every sheet of a set
+ * read in one process (the ingest runner advances a whole job in one call).
+ *
+ * So `close()` now RELEASES the thread to a small idle pool, with its
+ * document destroyed and its Tesseract lanes kept warm, and `start()` takes
+ * an idle one before making a new one. An idle thread is `unref()`'d, so it
+ * never keeps a process alive. `RASTER_WORKER_POOL=0` turns the pool off and
+ * terminates on close, exactly as before; `SheetWorker.drain()` terminates
+ * whatever is idle. Measured in NOTES-scanned.md: what a warm thread holds
+ * between sheets is the lanes' WASM heaps, and the sheet's own grey, canvases
+ * and document go with `release`.
+ */
+const POOL_LIMIT = 2;
+const idle: SheetWorker[] = [];
+
+function poolOn(): boolean {
+  return process.env.RASTER_WORKER_POOL !== "0";
+}
+
+/** One sheet's render and OCR, in a thread of its own. `close()` gives the thread back, or ends it with the pool off. */
 export class SheetWorker {
   private readonly worker: Worker;
   private constructor(worker: Worker) {
@@ -58,7 +90,23 @@ export class SheetWorker {
   }
 
   static start(): SheetWorker {
+    const warm = idle.pop();
+    if (warm) {
+      warm.worker.ref();
+      return warm;
+    }
     return new SheetWorker(new Worker(new URL("./rasterWorker.mjs", import.meta.url)));
+  }
+
+  /** How many threads are waiting warm; for tests and the budget report. */
+  static idleCount(): number {
+    return idle.length;
+  }
+
+  /** Terminates every idle thread. */
+  static async drain(): Promise<void> {
+    const waiting = idle.splice(0);
+    await Promise.all(waiting.map((w) => w.worker.terminate()));
   }
 
   private ask<T extends object>(message: object, transfer: ArrayBufferLike[] = []): Promise<T> {
@@ -110,6 +158,7 @@ export class SheetWorker {
         minConfidence: options.minConfidence ?? 40,
         regions: options.regions ?? null,
         skipTiles: options.skipTiles ? [...options.skipTiles] : null,
+        lanes: options.lanes ?? defaultOcrLanes(),
       },
       [gray.data.buffer],
     );
@@ -135,8 +184,18 @@ export class SheetWorker {
     return { lines: reply.lines, gray: { width: gray.width, height: gray.height, data: reply.gray } };
   }
 
-  /** Ends the sheet: the document, the Tesseract worker and the thread go. */
+  /** Ends the sheet: the document goes; the thread and its Tesseract lanes wait for the next sheet, or go too with the pool off. */
   async close(): Promise<void> {
+    if (poolOn() && idle.length < POOL_LIMIT) {
+      try {
+        await this.ask({ type: "release" });
+        this.worker.unref();
+        idle.push(this);
+        return;
+      } catch {
+        // A thread that could not release is not one to keep.
+      }
+    }
     try {
       await this.ask({ type: "close" });
     } finally {
