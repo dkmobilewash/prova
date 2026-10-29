@@ -3823,3 +3823,132 @@ long run nothing meets 3.4 to 1 with all its real loss on Alden's one wall; one 
 face 2.2 to 1 (7 to 1 with Alden out, which is tuning on a building); faces mostly
 unpainted at 50% 1.3 to 1 (at 95%, 126 to 1 — the clip rule takes the whole class
 instead).
+
+## Where the missed real wall goes — 2026-10-29 (second session, `diego/recall-stages`)
+
+`realplan/zzMissStages.eval.ts`: every missed foot of training key, on the
+PRODUCT path (`detectForSheet` with every pairing hooked, then
+`offeredCandidates` with the sheet's words), attributed to the stage that lost
+it. Main `9a53ca2b`, 26 training label files after round 7: key 40,456 ft,
+missed 1,321 (recall 96.7%), extra 13,796 (34 ft per 100 ft of key).
+
+| stage | ft | top buildings |
+| --- | --- | --- |
+| never paired: both faces drawn | 277 | Topeka 69, MHK 60, NG Green Bay 38 |
+| set aside by a junk rule: in-a-hatch | 265 | Supreme Court 99, Fairgrounds 40, Crosslines 32 |
+| never paired: single line drawn | 184 | Supreme Court 74, NG Green Bay 38, Crosslines 19 |
+| paired, dropped by a filter (lettering, border, last) | 140 | Topeka 71, Crosslines 25, Baker 13 |
+| paired, lost to the greedy pass or the merge | 106 | Crosslines 57, Topeka 35 |
+| found, off the plan boxes | 88 | Topeka 40, ELEVEN03 16 |
+| never paired: hatched | 86 | NG Green Bay 29, Crosslines 21, Joplin 21 |
+| set aside by a junk rule: dashed-faces | 46 | Fairgrounds 38, NG Green Bay 8 |
+| paired, refused as a hatch series | 37 | Topeka 19 |
+| merged into a different run | 36 | Crosslines 18, Supreme Court 11 |
+| never paired: nothing drawn along it | 34 | Murray 14, Crosslines 12 |
+| outside the kept drawing | 25 | Crosslines 25 |
+
+Two attribution lessons, both in the file. Coverage of a trace by pairings is
+a UNION along the trace, not a sum — five copies of one short pairing counted
+five times and put 295 ft under "lost to the greedy pass" that was 106. And
+"merged into a longer run" needs the longer run to OVERLAP the trace, not just
+be collinear and near; without that 260 ft was attributed to merges that were
+other walls on the same line.
+
+### Replaying the pair rules on "both faces drawn, never paired"
+
+`zzProbeWindow` (scratch) re-ran `wallFromPair` on every face pair along each
+such trace: refused for overlap 135 ft, overhang 57, short 23; a pair FORMS
+in replay and is lost later 55; no pair at wall thickness 6. MHK A1.01's
+31 ft office front is 3 ft hatched jamb pieces 7 ft apart against a corridor
+face — each jamb pairs alone and is refused.
+
+### REJECTED: bridging a face's gap when an opposite face spans it
+
+`oneFacePerLine` joined pieces across 2 ft; the attempt bridged up to 12 ft
+when a parallel face at wall thickness spanned the gap with 0.5 ft to spare.
+Simulated on the 277 ft: pairs cover 70 ft as drawn, 94 ft bridged. Swept
+(36 sheets, before = main):
+
+| | real recovered | junk added |
+| --- | --- | --- |
+| TRAINING | **−220 ft** | **+1,400 ft** |
+| held-out, delta only | +184 | +258 |
+
+Camp Bow Wow A101 +847 junk (kennel runs bridged into long faces), Topeka
+−127 real / +254 junk, Supreme Court −64 real, Joplin +78 junk. And the MHK
+wall it was built for stayed "never paired": its corridor face is itself two
+pieces (0.7→6.3, 15.7→26.7) that do not span the jamb gaps, so nothing on
+that wall was bridged — the join fired on other geometry instead. Reverted;
+the pairing stage is unchanged on this branch.
+
+### REJECTED: in-a-hatch neighbours made to run ALONGSIDE the line
+
+`classifySingleLines` counts every parallel face within 3 ft of the line's
+LINE with no overlap test along it, and the product path runs with the pitch
+rule OFF, so three parallel faces anywhere are the whole test. Requiring a
+neighbour to overlap half the shorter of the two: TRAINING **+27 ft real,
++1,225 ft junk** (Camp Bow Wow +440, Joplin +338, ELEVEN03 +131, Topeka
++118) — the strangers were holding back hatch-field lines, not walls. And
+Supreme Court, the building it was aimed at, moved by 0 ft. Reversed; patch
+in the scratchpad.
+
+### What in-a-hatch is ACTUALLY hiding, from the faces around each trace
+
+Replaying `oneFacePerLine` around the set-aside traces (`zzProbeWindow`,
+scratch) — the faces are genuine alongside neighbours, and the label is
+downstream of two PAIRING refusals:
+
+- **Thicker than the 13-in cap** — Supreme Court's two 38-ft walls have
+  faces at −1.06/−0.99 and +0.83/+0.90 ft (a 22-in masonry wall drawn as a
+  filled polygon with a double outline each side), its 15-ft wall at
+  −0.57/+0.80 (16 in), Baker A101's 15.5 ft at −0.55/+0.61 (14 in). None can
+  pair, each face is single, and its outline twin plus the far side are its
+  "three parallel neighbours". That is 91 ft of the 99 on Supreme Court and
+  the whole of Baker's — `maxThicknessFeet: 1.0833`, whose comment calls
+  raising it Diego's call and asks for its table to be re-run with the grid
+  filter in the pipeline. Re-run below.
+- **Loose at both ends** — Fairgrounds' 23-ft wall is an inner face
+  0.2→22.9 against an exterior face −13.1→34.0 at 7.7 in; Crosslines' 19 ft
+  is −0.7→27.1 against −11.2→22.9 at 3.5 in. Both overhang the shorter by
+  more than 10% at BOTH ends, which is the grid-line gate
+  (`LOOSE_END_SHARE`), so the pair is refused and the orphan faces fall to
+  in-a-hatch. The gate's own comment says the two populations are two
+  orders of magnitude apart (2% vs 56–132%); these sit at 15–45%, in
+  between, and loosening it is the column-grid trade the comment was
+  written against. Not attempted.
+
+### MEASURED, NOT SHIPPED: the pairer's cap at 24 in
+
+`maxThicknessFeet` 1.0833 → 2, pipeline sweep, 36 sheets, before = main:
+
+| | real recovered | junk added |
+| --- | --- | --- |
+| TRAINING | **−94 ft** | **+9,209 ft** |
+| held-out, delta only | +365 | +2,255 |
+
+Supreme Court goes 73.3% → 98.0% recall (+183 ft) and 51 → 135 ft junk per
+100; Fairgrounds 53 → 65%; KSU Fairchild (held-out) −206 missing. Everything
+else pays: Topeka +2,591 junk, ELEVEN03 −242 real / +1,430 junk, Joplin
++1,219, NG Green Bay +1,294, Camp Bow Wow +1,111. A wider band lets a wall
+pair with the wall beside it, which is the knee the cap's own table put at
+16 in. So the 13-in cap is right as a GLOBAL number and wrong for two masonry
+buildings; the fix that would pay is per-sheet — a wall type schedule that
+names a 16-in or 22-in assembly, or a measured face-pair population — and
+that is a design, not a sweep. Diego's call, as the cap's comment says.
+
+### Where this leaves recall
+
+Three fixes measured against the shipping rule (≥3 ft real per 1 ft junk,
+no building worse by ~100 ft); none passes:
+
+| fix | real | junk | verdict |
+| --- | --- | --- | --- |
+| bridge a face's gap across an opposite face | −220 | +1,400 | rejected |
+| in-a-hatch neighbours must run alongside | +27 | +1,225 | rejected |
+| thickness cap 13 → 24 in | −94 | +9,209 | rejected, recorded |
+
+The remaining 1,321 ft is spread over twelve stages, the largest 277 ft, and
+the two biggest are each two or three root causes deep. Nothing in the table
+is a rule away; the next real gain is the per-sheet thickness band above, or
+the loose-ends gate made aware of a corridor face that is one face of many
+rooms (Fairgrounds, Crosslines, and the MHK office front all have this shape).
