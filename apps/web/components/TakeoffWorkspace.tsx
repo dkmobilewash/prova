@@ -783,6 +783,25 @@ export function TakeoffWorkspace({
    * would re-add every trace. And it only loads into a review with NO
    * decisions yet — reopening must never overwrite work in progress, and a
    * reviewer who has started judging has told us they do not want the file.
+   *
+   * ── "ONCE PER SHEET" MEANS ONCE IT HAS AN ANSWER, NOT ONCE IT HAS TRIED ──
+   *
+   * `triedSaved` used to be set immediately before the fetch, so a response
+   * that was not ok, or a fetch that threw, spent the sheet's only attempt and
+   * left no notice. Chrome reported Bunkie A100 reopening as "12 of 69
+   * reviewed, 0 walls, blank reviewer" with the file on disk intact: nothing
+   * was lost, the restore simply never happened and said nothing.
+   *
+   * It is marked now only on a DEFINITE outcome — restored, refused with a
+   * reason, or the server saying there is no file for this sheet. A transport
+   * failure leaves the sheet eligible, so the next render tries again.
+   *
+   * ── AND A SHEET WITH NOWHERE TO RESTORE INTO STILL REPORTS THE FILE ──
+   *
+   * On a sheet the finder refused, the reviewer presses "Run anyway" and the
+   * candidates arrive later. Until they do there is nothing to put verdicts
+   * on, so this cannot restore — but it CAN say the file is there, and
+   * silence is what made a reviewer believe their work was gone.
    */
   const [savedNotice, setSavedNotice] = useState<{ page: number; note: string } | null>(null);
   const [restoredReviewer, setRestoredReviewer] = useState<string | null>(null);
@@ -804,7 +823,42 @@ export function TakeoffWorkspace({
     const sheetKey = `${draftSet}#${page}`;
     if (!keyMode || draftSet === "" || triedSaved.current === sheetKey) return;
     const current = keyStateRef.current;
-    if (current === null || current.candidates.length === 0) return;
+    if (current === null) return;
+    if (current.candidates.length === 0) {
+      // Nothing to restore INTO yet — the finder has not offered anything on
+      // this sheet. Say whether a file exists rather than leaving a blank
+      // panel that reads as lost work. `triedSaved` is deliberately NOT set:
+      // this is the "Run anyway" sheet waiting for its candidates, and the
+      // real restore must still happen when they arrive.
+      void (async () => {
+        try {
+          const peek = await fetch(
+            `/api/takeoff/labels?set=${encodeURIComponent(draftSet)}&sheet=${encodeURIComponent(sheetNumber)}`,
+            { cache: "no-store" },
+          );
+          if (!peek.ok) return;
+          const body = (await peek.json()) as { saved?: SavedSheet | null };
+          const file = body.saved;
+          if (file === null || file === undefined) return;
+          // `verdicts` is an ARRAY here and a trace is one of its entries, so
+          // the two counts come from the same list rather than a second field.
+          const all = file.verdicts ?? [];
+          const traces = all.filter((one) => one.verdict === "traced").length;
+          const decisions = all.length - traces;
+          setSavedNotice({
+            page,
+            note:
+              `Saved work for this sheet is on file (${decisions} decision${decisions === 1 ? "" : "s"}` +
+              `${traces > 0 ? `, ${traces} traced` : ""}) and has NOT been loaded yet, because nothing has been ` +
+              `found on this sheet to load it onto. Press Find the walls — on a sheet the finder refused, press ` +
+              `Run anyway first. Nothing has been overwritten.`,
+          });
+        } catch {
+          // Offline is not news here: the sheet is empty either way.
+        }
+      })();
+      return;
+    }
 
     // ── "UNTOUCHED" IS NOT "NO DECISIONS" ──
     //
@@ -821,7 +875,6 @@ export function TakeoffWorkspace({
       baselineDecided.current = { key: sheetKey, count: decided };
     }
     if (decided > baselineDecided.current.count) return;
-    triedSaved.current = sheetKey;
     let cancelled = false;
     void (async () => {
       try {
@@ -829,12 +882,20 @@ export function TakeoffWorkspace({
           `/api/takeoff/labels?set=${encodeURIComponent(draftSet)}&sheet=${encodeURIComponent(sheetNumber)}`,
           { cache: "no-store" },
         );
+        // NOT marked tried: a transport failure is not an answer about this
+        // sheet, and spending the attempt on one is what hid the file.
         if (!response.ok) return;
         const body = (await response.json()) as { ok?: boolean; saved?: SavedSheet | null };
         const saved = body.saved;
-        if (cancelled || saved === null || saved === undefined) return;
+        if (cancelled) return;
+        if (saved === null || saved === undefined) {
+          // The server has answered: there is no file. THAT is definite.
+          triedSaved.current = sheetKey;
+          return;
+        }
         const fresh = keyStateRef.current;
         if (fresh === null) return;
+        triedSaved.current = sheetKey;
         const got = restoreSaved(saved, fresh, scaleFeetPerUnit);
         if (got.ok) {
           setKeyState(got.state);
