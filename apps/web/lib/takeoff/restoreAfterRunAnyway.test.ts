@@ -55,16 +55,21 @@ describe("the saved-label restore", () => {
     ).toBe(true);
   });
 
-  it("reports a saved file even when there is nothing to restore into", () => {
-    // The Run-anyway case: no candidates yet, so no verdicts can be placed,
-    // but the reviewer must not be shown an empty panel in silence.
-    const guard = source.indexOf("current.candidates.length === 0");
-    expect(guard, "the no-candidates guard is gone").toBeGreaterThan(-1);
-    const afterGuard = source.slice(guard, guard + 1800);
-    expect(afterGuard, "the empty-sheet branch never asks whether a file exists").toContain("await fetch(");
-    expect(afterGuard, "the empty-sheet branch does not tell the reviewer anything").toContain("setSavedNotice(");
-    expect(afterGuard, "the notice must say the work is safe").toMatch(/NOT been loaded|has NOT been/);
-    expect(afterGuard, "the notice must say what to press").toMatch(/Run anyway/);
+  it("does NOT skip a sheet that has no candidates, because traces do not need any", () => {
+    // Michigan State A3, round 8: 20 traces on disk, "0 of 0" on screen. The
+    // finder offers nothing on a single-line renovation plan, and the restore
+    // used to return before asking — so the one sheet that proves the bug was
+    // the one it skipped.
+    //
+    // A trace is standalone geometry, not a verdict ON a candidate, so an
+    // empty candidate list is no reason to skip. The guard must be gone, not
+    // softened into a notice: announcing the file while still not loading it
+    // leaves the sheet broken and tells the reviewer it is fine.
+    expect(
+      source,
+      "the zero-candidate early return is back, so a trace-only sheet will not restore",
+    ).not.toMatch(/if \(current\.candidates\.length === 0\)/);
+    expect(source, "the restore no longer runs for a sheet with no candidates").toContain("restoreSaved(");
   });
 
   it("does not restore into a review that already has work", () => {

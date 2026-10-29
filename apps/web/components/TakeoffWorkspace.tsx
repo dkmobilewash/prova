@@ -824,41 +824,18 @@ export function TakeoffWorkspace({
     if (!keyMode || draftSet === "" || triedSaved.current === sheetKey) return;
     const current = keyStateRef.current;
     if (current === null) return;
-    if (current.candidates.length === 0) {
-      // Nothing to restore INTO yet — the finder has not offered anything on
-      // this sheet. Say whether a file exists rather than leaving a blank
-      // panel that reads as lost work. `triedSaved` is deliberately NOT set:
-      // this is the "Run anyway" sheet waiting for its candidates, and the
-      // real restore must still happen when they arrive.
-      void (async () => {
-        try {
-          const peek = await fetch(
-            `/api/takeoff/labels?set=${encodeURIComponent(draftSet)}&sheet=${encodeURIComponent(sheetNumber)}`,
-            { cache: "no-store" },
-          );
-          if (!peek.ok) return;
-          const body = (await peek.json()) as { saved?: SavedSheet | null };
-          const file = body.saved;
-          if (file === null || file === undefined) return;
-          // `verdicts` is an ARRAY here and a trace is one of its entries, so
-          // the two counts come from the same list rather than a second field.
-          const all = file.verdicts ?? [];
-          const traces = all.filter((one) => one.verdict === "traced").length;
-          const decisions = all.length - traces;
-          setSavedNotice({
-            page,
-            note:
-              `Saved work for this sheet is on file (${decisions} decision${decisions === 1 ? "" : "s"}` +
-              `${traces > 0 ? `, ${traces} traced` : ""}) and has NOT been loaded yet, because nothing has been ` +
-              `found on this sheet to load it onto. Press Find the walls — on a sheet the finder refused, press ` +
-              `Run anyway first. Nothing has been overwritten.`,
-          });
-        } catch {
-          // Offline is not news here: the sheet is empty either way.
-        }
-      })();
-      return;
-    }
+    // ── NO CANDIDATES IS NOT NOTHING TO RESTORE ──
+    //
+    // This used to return here, and then (briefly) to fetch the file only so
+    // it could say the file existed. Both skipped the sheet that proves the
+    // bug: Michigan State A3 holds 20 TRACES and no candidates, because the
+    // finder offers nothing on a single-line renovation plan.
+    //
+    // A trace is standalone geometry — not a verdict ON a candidate — so it
+    // needs no candidate list to land in, and `addTraced` never consults one.
+    // `restoreSaved` refuses only a file with no verdicts at all. So the
+    // ordinary path runs: traces come back, a candidate verdict with nothing
+    // to match becomes `carried`, and the notice says which.
 
     // ── "UNTOUCHED" IS NOT "NO DECISIONS" ──
     //
