@@ -109,6 +109,9 @@ export type FindWallsInput = {
    */
   onCandidate?: WallFinderOptions["onCandidate"];
   decide?: WallFinderOptions["decide"];
+  /** The strokes were clipped to a drawing region or a view: a set the layer
+   *  filter empties holds no wall, and the filter's fail-safe must not fire. */
+  regionClipped?: boolean;
   /** Removes a wall the rules chose, and nothing else — see `WallFinderOptions.veto`. */
   veto?: WallFinderOptions["veto"];
   /**
@@ -293,7 +296,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // that simple the geometric filters already cope. P16 therefore asserts only
   // what it can see — the line never reaches the pairer — and says so.
   stage("layers");
-  const onWallLayers = withoutNonWallLayers(input.segments);
+  const onWallLayers = withoutNonWallLayers(input.segments, { emptyIsAnswer: input.regionClipped === true });
   const allInUnits = onWallLayers.kept.map(inPageWidthUnits(pageSize.widthPt));
 
   // ── THE SET'S OWN TEMPLATE, READ FROM OTHER SHEETS ──

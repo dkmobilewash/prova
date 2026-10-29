@@ -15,6 +15,7 @@ import {
   type ExcludedView,
   type ViewWalls,
 } from "./sheetViews";
+import { withoutNonWallLayers } from "./layerNames";
 import { drawingRegions, segmentsInRegions } from "./planRegion";
 import { classifySingleLines, worthOffering } from "./singleLines";
 import { trustedScanViews } from "./scannedCaptions";
@@ -219,7 +220,16 @@ export function offeredCandidates(
   const equipment: { wall: WallCandidate; word: string; feet: number }[] = [];
   const dashed: WallCandidate[] = [];
   const tables: WallCandidate[] = [];
+  let zeroExtent = 0;
   const onPlan = sheet.walls.filter((w) => {
+    // A run with no extent — a closed loop's chord, a degenerate merge — is
+    // nothing a reviewer can draw, accept or join, whatever its `lengthFeet`
+    // says. Counted, never offered. The curve engine refuses the loop at its
+    // source (`curvedWalls`, `MIN_CHORD_SHARE`); this is the guard at the door.
+    if (!(Math.hypot(w.x2 - w.x1, w.y2 - w.y1) > 0)) {
+      zeroExtent += 1;
+      return false;
+    }
     if (!onAPlan(sheet, w.x1, w.y1, w.x2, w.y2)) return false;
     const hit = sheet.textItems === undefined ? null : siteEquipmentWord(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit);
     if (hit !== null) {
@@ -260,6 +270,9 @@ export function offeredCandidates(
     });
   }
 
+  if (zeroExtent > 0) {
+    aside.set("zero-extent", { kind: "zero-extent", why: "a run with no extent — the same start and end — which nothing can draw or accept", n: zeroExtent });
+  }
   return {
     candidates: candidatesFromSheet({
       walls: onPlan.map((w) => ({
@@ -472,10 +485,20 @@ export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
           (b) => r.from >= b.from - 1e-9 && r.to <= b.to + 1e-9 && r.fromY >= b.fromY - 1e-9 && r.toY <= b.toY + 1e-9,
         ),
     );
-    const drawing = drawingRegions(regions, base.segments, input.pageSize.widthPt);
+    // ── THE BUSIEST REGION, COUNTED IN STROKES THAT COULD BE WALLS ──
+    //
+    // Counted in every stroke, Michigan State p4's title-block column
+    // (26,908 A-TITLEBLOCK strokes) beat its plan (2,405, mostly A-TEXT and
+    // A-EXIST) and was measured: 155 phantom walls. A region of lettering is
+    // never the drawing, so the count is taken after the layer filter — and
+    // with `emptyIsAnswer`, because a page that is all annotation has no
+    // busiest drawing and `drawingRegions` then keeps every region, which the
+    // finder's own layer filter empties in turn and says so.
+    const couldBeWalls = withoutNonWallLayers(base.segments, { emptyIsAnswer: true }).kept;
+    const drawing = drawingRegions(regions, couldBeWalls, input.pageSize.widthPt);
     const onTheDrawing = segmentsInRegions(base.segments, drawing, input.pageSize.widthPt);
     return {
-      found: findWallsOnSheet({ ...base, segments: onTheDrawing }),
+      found: findWallsOnSheet({ ...base, segments: onTheDrawing, regionClipped: true }),
       wholeSheet: null,
       planBoxes: drawing.length > 0 ? [...drawing] : null,
       views: drawingCount(views),

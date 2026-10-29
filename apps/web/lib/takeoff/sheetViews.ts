@@ -822,6 +822,7 @@ export function wallsPerView(input: {
   const measure = (band: (typeof measurable)[number], feetPerUnit: number): ViewWalls => {
     const found = findWallsOnSheet({
       segments: band.segments as StrokeSegment[],
+      regionClipped: true,
       textItems: input.textItems,
       pageSize: input.pageSize,
       feetPerUnit,

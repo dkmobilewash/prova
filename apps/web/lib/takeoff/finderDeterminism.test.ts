@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { findWallsOnSheet } from "./findWallsOnSheet";
+import { detectForSheet } from "./offeredCandidates";
 import { wallsFromStrokes, type StrokeSegment, type WallCandidate } from "./wallVectors";
 
 /**
@@ -183,6 +184,26 @@ describe("the whole sheet finder does not depend on the order the strokes are st
         expect(stages(mixed), `shuffle ${shuffle}`).toBe(stages(plain));
         expect(digest(mixed.walls), `shuffle ${shuffle}`).toEqual(digest(plain.walls));
       }
+    });
+  }
+});
+
+describe("the product path gives the same answer twice", () => {
+  // Baker A100 gave 87 candidates in one tab and 104 in the next (2026-10-29).
+  // The finder itself was not the cause — the viewer had lost the set's
+  // template on the first run — but nothing here said so. This pins the half
+  // the finder owns: the same sheet, the same inputs, the same answer, run
+  // after run, with and without an (empty) sample.
+  const detect = (segments: readonly StrokeSegment[], sampledSheets: StrokeSegment[][] | null) =>
+    detectForSheet({ segments: [...segments], textItems: [], pageSize: PAGE, feetPerUnit: FEET_PER_POINT * PAGE.widthPt, sampledSheets });
+  for (const seed of SEEDS) {
+    it(`seed ${seed}: detectForSheet twice is identical`, () => {
+      const strokes = drawing(seed);
+      const first = detect(strokes, null);
+      const second = detect(strokes, null);
+      expect(digest(second.found.walls)).toEqual(digest(first.found.walls));
+      expect(second.planBoxes).toEqual(first.planBoxes);
+      expect(second.views).toBe(first.views);
     });
   }
 });
