@@ -14,7 +14,7 @@ import { AI_FEATURE_LABEL } from "@/lib/ai/features";
  * tests read the rows.
  */
 
-export type TakeoffFeatureKey = "wallTypesFromDrawings" | "roomsAndCeilings" | "greyOut" | "wholeSet" | "scannedPlans" | "doorsWindows";
+export type TakeoffFeatureKey = "wallTypesFromDrawings" | "roomsAndCeilings" | "greyOut" | "wholeSet" | "scannedPlans" | "doorsWindows" | "symbolCount";
 
 export type TakeoffFeatureStatus =
   /** On, and nothing else is needed. */
@@ -48,6 +48,7 @@ export type TakeoffFeatureInputs = {
   wholeSetTakeoffOn?: boolean | null;
   scannedPlansOn?: boolean | null;
   doorsWindowsOn?: boolean | null;
+  symbolCountOn?: boolean | null;
 };
 
 export const NEEDS_AI_ON = "Company AI must be on (Settings → Assistant)";
@@ -111,6 +112,15 @@ export function takeoffFeatureRows(input: TakeoffFeatureInputs): TakeoffFeatureR
         "Reads the door swings and window frames off the plan itself, counts them, names each door from the door schedule, and uses its real width as the opening in the wall run it sits on. Windows are offered to check rather than claimed. No model.",
       status: onOff(input.doorsWindowsOn),
       where: { href: "/settings?tab=estimating#doors-windows", label: "Settings → Estimating" },
+      field: null,
+    },
+    {
+      key: "symbolCount",
+      title: "Count every copy of a symbol",
+      explain:
+        "Draw a box round one symbol on a sheet and every copy of it is marked, turned or mirrored, so a count becomes a measurement instead of a tally on paper. Click a mark to drop a wrong one. No model.",
+      status: onOff(input.symbolCountOn),
+      where: { href: "/settings?tab=estimating#symbol-count", label: "Settings → Estimating" },
       field: null,
     },
     {
