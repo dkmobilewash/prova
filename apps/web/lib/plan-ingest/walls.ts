@@ -7,6 +7,7 @@ import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { effectiveSheetNumber, effectiveTitle, type SheetRow } from "./sheetIndex";
 import { levelFromTitle } from "./sheetLevel";
 import { sheetIndexFor } from "./sheetIndexQuery";
+import { roomsForSheet, type RoomsOutcome } from "./rooms";
 import type { StageCtx, StageWork } from "./stages";
 
 /**
@@ -252,11 +253,21 @@ export function wallsNoteFor(outcome: DetectOutcome): { ok: true; note: string }
 
 export type WallsDeps = {
   detect: (target: DetectTarget) => Promise<DetectOutcome>;
+  /** Rooms and ceilings for a sheet whose walls were just written; `roomsForSheet` unless a test says otherwise. */
+  findRooms?: (input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null }) => Promise<RoomsOutcome>;
 };
 
 const realDeps: WallsDeps = {
   detect: (target) => detectWallsForCalibration(target),
+  findRooms: (input) => roomsForSheet(input),
 };
+
+/** The note a task carries once its rooms were looked for, after the walls' own note. */
+export function roomsNoteFor(outcome: RoomsOutcome): string {
+  if (outcome.kind === "written") return `${outcome.rooms} rooms, ${outcome.ceilingSqFt.toLocaleString("en-US")} sf of ceiling read`;
+  if (outcome.kind === "skipped") return `rooms: ${outcome.why}`;
+  return `rooms failed: ${outcome.error}`;
+}
 
 export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork {
   // The company's wall types, read once per run rather than once per sheet.
@@ -323,8 +334,26 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       wallTypes: await loadWallTypes(),
     });
     const said = wallsNoteFor(outcome);
-    if (said.ok) await note(task.id, said.note);
-    return said.ok ? { ok: true } : said;
+    if (!said.ok) return said;
+    // ── THEN THE ROOMS AND THEIR CEILINGS, ON A SHEET THAT GOT WALLS ──
+    // The same step the viewer's Find rooms + Save does, so the counted floor
+    // plans carry their rooms and ceiling areas before anybody opens them
+    // (`lib/plan-ingest/rooms.ts`). Its outcome rides on the task's note; a
+    // failure there does not fail the sheet, whose walls are already written.
+    let text = said.note;
+    if (outcome === "written") {
+      const findRooms = deps.findRooms ?? realDeps.findRooms!;
+      try {
+        const rooms = await findRooms({ planId: ctx.planId, companyId: ctx.companyId, jobId: ctx.jobId, pageNumber: task.pageNumber, userId: ctx.startedByUserId });
+        // A company without the room finder sees the note it always saw.
+        if (!(rooms.kind === "skipped" && rooms.why === "room finding is off")) text = `${said.note}; ${roomsNoteFor(rooms)}`;
+      } catch (error) {
+        console.error("[walls] rooms after walls threw", { planId: ctx.planId, pageNumber: task.pageNumber, error });
+        text = `${said.note}; rooms failed`;
+      }
+    }
+    await note(task.id, text);
+    return { ok: true };
   };
 }
 
@@ -333,7 +362,7 @@ export type WallsSummaryRow = {
   pageNumber: number;
   label: string;
   status:
-    | { kind: "walls"; groups: number; feet: number }
+    | { kind: "walls"; groups: number; feet: number; rooms?: number; ceilingSqFt?: number }
     | { kind: "skipped"; why: WallsSkip }
     | { kind: "looked"; note: string }
     | { kind: "failed"; error: string }
@@ -342,6 +371,8 @@ export type WallsSummaryRow = {
 
 export function wallsSummaryRows(input: {
   sheets: WallsSheet[];
+  /** Rooms the run wrote per page, and the ceiling area it read, derived from the ROOM_FINDER rows. */
+  rooms?: Map<number, { rooms: number; ceilingSqFt: number }>;
   /** Found walls per page, for its current scale: group count and feet. */
   walls: Map<number, { groups: number; feet: number }>;
   /** The newest WALLS run's tasks, by page. */
@@ -354,7 +385,7 @@ export function wallsSummaryRows(input: {
     const found = input.walls.get(sheet.pageNumber);
     const task = input.tasks.get(sheet.pageNumber);
     let status: WallsSummaryRow["status"];
-    if (found) status = { kind: "walls", ...found };
+    if (found) status = { kind: "walls", ...found, ...(input.rooms?.get(sheet.pageNumber) ?? {}) };
     else if (task?.finishedAt && task.note) status = { kind: "looked", note: task.note };
     else if (task && !task.finishedAt && task.error && task.attempts >= input.maxAttempts) status = { kind: "failed", error: task.error };
     else if (task && !task.finishedAt) status = { kind: "pending" };
@@ -375,6 +406,7 @@ export async function wholeSetSummary(planId: string, companyId: string, maxAtte
         pageNumber: true,
         calibrations: { orderBy: { createdAt: "desc" }, take: 1 },
         wallProposals: { orderBy: { createdAt: "desc" } },
+        measurements: { where: { source: "ROOM_FINDER" }, select: { calibrationId: true, ceilingFamily: true, xs: true, ys: true } },
       },
     }),
     prisma.wallType.findMany({
@@ -395,6 +427,9 @@ export async function wholeSetSummary(planId: string, companyId: string, maxAtte
     thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
   }));
   const walls = new Map<number, { groups: number; feet: number }>();
+  // Rooms and the ceiling area the run read, from the ROOM_FINDER rows on the
+  // sheet's current scale — derived, like the walls, never stored.
+  const rooms = new Map<number, { rooms: number; ceilingSqFt: number }>();
   for (const page of pages) {
     const current = page.calibrations[0];
     if (!current) continue;
@@ -406,7 +441,15 @@ export async function wholeSetSummary(planId: string, companyId: string, maxAtte
       declaredDistanceFeet: current.declaredDistanceFeet.toNumber(),
     });
     const mine = page.wallProposals.filter((row) => row.calibrationId === current.id);
-    if (feetPerUnit === null || mine.length === 0) continue;
+    if (feetPerUnit === null) continue;
+    const found = page.measurements.filter((m) => m.calibrationId === current.id);
+    if (found.length > 0) {
+      rooms.set(page.pageNumber, {
+        rooms: found.filter((m) => m.ceilingFamily === null).length,
+        ceilingSqFt: Math.round(found.filter((m) => m.ceilingFamily !== null).reduce((n, m) => n + polygonSqFt(m.xs, m.ys, feetPerUnit), 0)),
+      });
+    }
+    if (mine.length === 0) continue;
     const newest = mine[0].createdAt.getTime();
     const groups = groupsFromProposals(
       mine.filter((row) => row.createdAt.getTime() === newest),
@@ -418,9 +461,20 @@ export async function wholeSetSummary(planId: string, companyId: string, maxAtte
     }
   }
   return wallsSummaryRows({
+    rooms,
     sheets,
     walls,
     tasks: new Map((run?.tasks ?? []).map((task) => [task.pageNumber, task])),
     maxAttempts,
   });
+}
+
+/** Shoelace area of a stored polygon, page-width units to square feet. */
+function polygonSqFt(xs: number[], ys: number[], feetPerUnit: number): number {
+  let twice = 0;
+  for (let i = 0; i < xs.length; i += 1) {
+    const j = (i + 1) % xs.length;
+    twice += xs[i]! * ys[j]! - xs[j]! * ys[i]!;
+  }
+  return (Math.abs(twice) / 2) * feetPerUnit * feetPerUnit;
 }

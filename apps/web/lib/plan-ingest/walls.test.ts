@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { areaOfTitle, wallsNoteFor, wallsPlan, wallsSkipReason, wallsSummaryRows, type WallsSheet } from "./walls";
+import { areaOfTitle, roomsNoteFor, wallsNoteFor, wallsPlan, wallsSkipReason, wallsSummaryRows, type WallsSheet } from "./walls";
+87188cc1 (Rooms and ceilings for every floor plan the whole-set run counts)
 
 const sheet = (over: Partial<WallsSheet> = {}): WallsSheet => ({
   pageNumber: 1,
@@ -228,5 +229,22 @@ describe("a floor split across sheets by area — every part counts", () => {
     ]);
     expect(plan.get(1)).toBeNull();
     expect(plan.get(2)).toBe("same level as A101");
+  });
+});
+
+describe("rooms after walls — what the note and the summary say", () => {
+  it("writes the rooms outcome into the task's note", () => {
+    expect(roomsNoteFor({ kind: "written", rooms: 12, ceilingSqFt: 3200 })).toBe("12 rooms, 3,200 sf of ceiling read");
+    expect(roomsNoteFor({ kind: "skipped", why: "room finding is off" })).toBe("rooms: room finding is off");
+    expect(roomsNoteFor({ kind: "failed", error: "no file" })).toBe("rooms failed: no file");
+  });
+  it("carries rooms and ceiling area on a sheet with walls, and nothing on one without rows", () => {
+    const sheets: WallsSheet[] = [
+      { pageNumber: 1, sheetNumber: "A101", title: "FIRST FLOOR PLAN", hasScale: true, hasWalls: true },
+      { pageNumber: 2, sheetNumber: "A102", title: "SECOND FLOOR PLAN", hasScale: true, hasWalls: true },
+    ];
+    const rows = wallsSummaryRows({ sheets, walls: new Map([[1, { groups: 3, feet: 400 }], [2, { groups: 2, feet: 300 }]]), rooms: new Map([[1, { rooms: 5, ceilingSqFt: 1200 }]]), tasks: new Map(), maxAttempts: 3 });
+    expect(rows[0]!.status).toEqual({ kind: "walls", groups: 3, feet: 400, rooms: 5, ceilingSqFt: 1200 });
+    expect(rows[1]!.status).toEqual({ kind: "walls", groups: 2, feet: 300 });
   });
 });
