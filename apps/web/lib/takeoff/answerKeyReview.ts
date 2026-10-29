@@ -70,6 +70,19 @@ export type ReviewState = {
   /** What the reviewer has traced by hand, already accepted by definition. */
   traced: Candidate[];
   /**
+   * ── THE NEXT TRACE ID, AND IT ONLY GOES UP ──
+   *
+   * Not `traced.length`. Chrome deleted traces and the next one reused a live
+   * id, leaving a ghost line on the drawing that could not be deleted because
+   * two entries answered to the same name. Anything derived from the surviving
+   * traces is reissued the moment one is removed — the same reason this repo's
+   * sequence numbers come from a counter row rather than `count() + 1`.
+   *
+   * A freed id is never reused either: a reference held elsewhere would then
+   * address a different line.
+   */
+  nextTraceId: number;
+  /**
    * ── EVERY SPLIT THE REVIEWER MADE, AS A FACT ──
    *
    * A split replaces one candidate with two halves that the finder never
@@ -131,7 +144,7 @@ export function startReview(
       : duplicatePairs(candidates, feetPerUnit, segments);
   for (const pair of duplicates) verdicts[pair.drop] = "not-a-wall";
 
-  return { candidates: [...candidates], verdicts, traced: [], duplicates, splits: [] };
+  return { candidates: [...candidates], verdicts, traced: [], duplicates, splits: [], nextTraceId: 0 };
 }
 
 export function setVerdict(state: ReviewState, ids: readonly string[], verdict: Verdict): ReviewState {
@@ -166,7 +179,11 @@ export function tracedWall(
   from: { x: number; y: number },
   to: { x: number; y: number },
   feetPerUnit: number,
-  at: number,
+  /** PROVISIONAL. `addTraced` overwrites the id from the review's own counter,
+   *  because two callers each worked one out from `traced.length` and both
+   *  reissued a live id. Pass 0 unless you are building a wall for a test that
+   *  never goes through `addTraced`. */
+  at = 0,
 ): Candidate {
   return {
     id: `t${at}`,
@@ -182,7 +199,14 @@ export function tracedWall(
 }
 
 export function addTraced(state: ReviewState, wall: Candidate): ReviewState {
-  return { ...state, traced: [...state.traced, wall] };
+  // THE ID IS ASSIGNED HERE, not by the caller. Two call sites each worked one
+  // out from `traced.length` and both were wrong in the same way; a rule that
+  // every caller has to remember gets forgotten at one of them.
+  return {
+    ...state,
+    traced: [...state.traced, { ...wall, id: `t${state.nextTraceId}` }],
+    nextTraceId: state.nextTraceId + 1,
+  };
 }
 
 export function removeTraced(state: ReviewState, id: string): ReviewState {
