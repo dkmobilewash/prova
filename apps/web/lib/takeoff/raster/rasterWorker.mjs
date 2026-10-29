@@ -9,13 +9,13 @@
 // and nothing from the app. The protocol is typed on the TypeScript side.
 //
 //   { type: "render", bytes, page, dpi, bandPx }           → { gray, width, height }
-//   { type: "ocr", gray, width, height, dpi, cachePath, tilePxAt150, minConfidence, regions, skipTiles }
+//   { type: "ocr", gray, width, height, dpi, cachePath, tilePxAt150, minConfidence, regions, skipTiles, lanes }
 //                                                          → { items, tiles, tileKeys }
 import { parentPort } from "node:worker_threads";
+import { planTiles } from "./tilePlan.mjs";
 
 let pdfjs = null;
 let doc = null;
-let worker = null;
 
 async function open(bytes) {
   pdfjs ??= await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -46,70 +46,89 @@ async function render(bytes, pageNumber, dpi, bandPx) {
   return { gray: data, width, height };
 }
 
-// Tiles cut straight from the grey into one reused tile canvas; with
-// `regions`, only the tiles touching one are read; `skipTiles` are tiles a
-// first pass already read. Lines, not words: a scale caption is one line.
-async function ocr(gray, width, height, dpi, cachePath, tilePxAt150, minConfidence, regions, skipTiles) {
-  if (worker === null) {
+// ── TILES, READ BY A SMALL POOL OF TESSERACT WORKERS ──
+//
+// Tiles are cut straight from the grey into a tile canvas each lane owns;
+// with `regions`, only the tiles touching one are read; `skipTiles` are
+// tiles a previous call already read (the first look's, when the rest of
+// the page is read after it).
+//
+// Three things make the page faster than one worker reading every tile in
+// turn, and none of them may change a single word that comes out — the
+// walls read the words (NOTES-scanned.md §12 measured one grey level moving
+// 24 ft), so the output is kept byte-identical by construction:
+//   · a tile with no ink is never sent. Tesseract on a blank tile returns
+//     nothing, after a quarter of a second; a plan sheet's margins are a
+//     third of its tiles. The ink count is a threshold on dark pixels, far
+//     below what a single glyph leaves.
+//   · `lanes` Tesseract workers read tiles concurrently (WASM is CPU-bound,
+//     so each lane is a core). Results are kept per tile and folded in TILE
+//     ORDER afterwards, so the dedupe sees them in the same order as a
+//     single worker would and the items list is the same list.
+//   · the lanes are created once and kept for the sheet; the first
+//     `createWorker` and language load are the price of the first tile.
+const lanes = [];
+async function laneWorkers(cachePath, count) {
+  while (lanes.length < count) {
     const { createWorker } = await import("tesseract.js");
-    worker = await createWorker("eng", 1, { cachePath, logger: () => {} });
+    lanes.push(await createWorker("eng", 1, { cachePath, logger: () => {} }));
   }
+  return lanes.slice(0, count);
+}
+
+async function ocr(gray, width, height, dpi, cachePath, tilePxAt150, minConfidence, regions, skipTiles, laneCount) {
+  const workers = await laneWorkers(cachePath, Math.max(1, laneCount ?? 1));
   const tile = Math.round((tilePxAt150 * dpi) / 150);
   const overlap = Math.round(tile / 12);
-  const items = [];
-  const seen = new Set();
-  const tileKeys = [];
-  let tiles = 0;
-  const skip = new Set(skipTiles ?? []);
-  const touches = (x0, y0, tw, th) =>
-    regions === null || regions.some((r) => x0 < r.x + r.width && x0 + tw > r.x && y0 < r.y + r.height && y0 + th > r.y);
-  const shared = doc.canvasFactory.create(tile, tile);
-  const sharedImage = shared.context.getImageData(0, 0, tile, tile);
-  for (let y0 = 0; y0 < height; y0 += tile - overlap) {
-    const th = Math.min(tile, height - y0);
-    for (let x0 = 0; x0 < width; x0 += tile - overlap) {
-      const tw = Math.min(tile, width - x0);
-      const key = `${x0}:${y0}`;
-      if (!touches(x0, y0, tw, th) || skip.has(key)) {
-        if (x0 + tw >= width) break;
-        continue;
-      }
-      tileKeys.push(key);
+  const { plan, tileKeys } = planTiles(gray, width, height, tile, overlap, regions, new Set(skipTiles ?? []));
+  const results = new Array(plan.length);
+  let next = 0;
+  const lane = async (tess) => {
+    const canvas = doc.canvasFactory.create(tile, tile);
+    const image = canvas.context.getImageData(0, 0, tile, tile);
+    for (;;) {
+      const index = next;
+      if (index >= plan.length) return;
+      next += 1;
+      const { x0, y0, tw, th } = plan[index];
       const full = tw === tile && th === tile;
-      const piece = full ? shared : doc.canvasFactory.create(tw, th);
-      const image = full ? sharedImage : piece.context.getImageData(0, 0, tw, th);
+      const piece = full ? canvas : doc.canvasFactory.create(tw, th);
+      const pixels = full ? image : piece.context.getImageData(0, 0, tw, th);
       for (let y = 0; y < th; y += 1) {
         const row = (y0 + y) * width + x0;
         for (let x = 0; x < tw; x += 1) {
           const v = gray[row + x];
           const o = (y * tw + x) * 4;
-          image.data[o] = image.data[o + 1] = image.data[o + 2] = v;
-          image.data[o + 3] = 255;
+          pixels.data[o] = pixels.data[o + 1] = pixels.data[o + 2] = v;
+          pixels.data[o + 3] = 255;
         }
       }
-      piece.context.putImageData(image, 0, 0);
-      const { data } = await worker.recognize(piece.canvas.toBuffer("image/png"), {}, { blocks: true });
-      tiles += 1;
-      for (const block of data.blocks ?? []) {
-        for (const paragraph of block.paragraphs) {
-          for (const line of paragraph.lines) {
-            if (line.confidence < minConfidence) continue;
-            const str = line.text.trim();
-            if (str === "") continue;
-            const x = x0 + line.bbox.x0;
-            const y = y0 + line.bbox.y1;
-            const dedupe = `${Math.round(x / 6)}:${Math.round(y / 6)}:${str}`;
-            if (seen.has(dedupe)) continue;
-            seen.add(dedupe);
-            items.push({ str, x, y, width: line.bbox.x1 - line.bbox.x0, height: line.bbox.y1 - line.bbox.y0, confidence: line.confidence });
-          }
-        }
-      }
-      if (x0 + tw >= width) break;
+      piece.context.putImageData(pixels, 0, 0);
+      const { data } = await tess.recognize(piece.canvas.toBuffer("image/png"), {}, { blocks: true });
+      results[index] = data.blocks ?? [];
     }
-    if (y0 + th >= height) break;
-  }
-  return { items, tiles, tileKeys };
+  };
+  await Promise.all(workers.map((tess) => lane(tess)));
+  const items = [];
+  const seen = new Set();
+  plan.forEach(({ x0, y0 }, index) => {
+    for (const block of results[index]) {
+      for (const paragraph of block.paragraphs) {
+        for (const line of paragraph.lines) {
+          if (line.confidence < minConfidence) continue;
+          const str = line.text.trim();
+          if (str === "") continue;
+          const x = x0 + line.bbox.x0;
+          const y = y0 + line.bbox.y1;
+          const dedupe = `${Math.round(x / 6)}:${Math.round(y / 6)}:${str}`;
+          if (seen.has(dedupe)) continue;
+          seen.add(dedupe);
+          items.push({ str, x, y, width: line.bbox.x1 - line.bbox.x0, height: line.bbox.y1 - line.bbox.y0, confidence: line.confidence });
+        }
+      }
+    }
+  });
+  return { items, tiles: plan.length, tileKeys };
 }
 
 parentPort.on("message", async (message) => {
@@ -118,11 +137,11 @@ parentPort.on("message", async (message) => {
       const out = await render(message.bytes, message.page, message.dpi, message.bandPx);
       parentPort.postMessage({ ok: true, ...out }, [out.gray.buffer]);
     } else if (message.type === "ocr") {
-      const out = await ocr(message.gray, message.width, message.height, message.dpi, message.cachePath, message.tilePxAt150, message.minConfidence, message.regions, message.skipTiles);
+      const out = await ocr(message.gray, message.width, message.height, message.dpi, message.cachePath, message.tilePxAt150, message.minConfidence, message.regions, message.skipTiles, message.lanes);
       // The grey goes back the way it came, so the caller keeps using it.
       parentPort.postMessage({ ok: true, ...out, gray: message.gray }, [message.gray.buffer]);
     } else if (message.type === "close") {
-      if (worker) await worker.terminate();
+      for (const tess of lanes) await tess.terminate();
       if (doc) await doc.destroy();
       parentPort.postMessage({ ok: true });
     }

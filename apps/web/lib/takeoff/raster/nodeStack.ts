@@ -34,7 +34,15 @@ export type OcrOptions = {
   minConfidence?: number;
   regions?: readonly PxRegion[];
   skipTiles?: ReadonlySet<string>;
+  /** Tesseract workers reading tiles at once. `RASTER_OCR_LANES` sets the default, 2 without it; the words come out the same whatever the count. */
+  lanes?: number;
 };
+
+/** The lane count the environment asks for, or 2. */
+export function defaultOcrLanes(): number {
+  const asked = Number(process.env.RASTER_OCR_LANES ?? "");
+  return Number.isInteger(asked) && asked >= 1 ? asked : 2;
+}
 
 /**
  * Tesseract's habits on a scale caption, measured on Baker A101 at 150 and
@@ -107,6 +115,7 @@ export class SheetWorker {
         minConfidence: options.minConfidence ?? 40,
         regions: options.regions ?? null,
         skipTiles: options.skipTiles ? [...options.skipTiles] : null,
+        lanes: options.lanes ?? defaultOcrLanes(),
       },
       [gray.data.buffer],
     );
