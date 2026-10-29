@@ -33,3 +33,12 @@ describe("site equipment: a word within reach sets a wall aside", () => {
     expect(siteEquipmentWord(run, [word("TRENCH DRAIN, RE: PLUMBING", 25, 52)], W, FPU)?.word).toBe("TRENCH DRAIN");
   });
 });
+
+describe("a run with no extent is never offered", () => {
+  it("COUNTS IT ASIDE AND LEAVES THE OTHERS", () => {
+    const point = { x1: 0.3, y1: 0.3, x2: 0.3, y2: 0.3, lengthFeet: 2.3, thicknessFeet: 0.32, curved: true } as WallCandidate;
+    const got = offeredCandidates(sheet([wall(0.1, 0.5, 0.4, 0.5), point]));
+    expect(got.candidates).toHaveLength(1);
+    expect(got.setAside.find((a) => a.kind === "zero-extent")?.n).toBe(1);
+  });
+});

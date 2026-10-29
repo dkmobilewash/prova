@@ -106,6 +106,9 @@ export type CurvedOptions = {
   onCount?: (pieces: number) => void;
 };
 
+/** A curved run's chord must be at least this share of its arc, else it is a closed loop. */
+export const MIN_CHORD_SHARE = 0.05;
+
 export function curvedWalls(
   segments: readonly StrokeSegment[],
   options: CurvedOptions,
@@ -676,11 +679,23 @@ function pairChains(chains: readonly Chain[], options: CurvedOptions): WallCandi
       Math.hypot(aHead.x - bTail.x, aHead.y - bTail.y);
     const head = sameWay ? bHead : bTail;
     const tail = sameWay ? bTail : bHead;
+    const x1 = (aHead.x + head.x) / 2, y1 = (aHead.y + head.y) / 2;
+    const x2 = (aTail.x + tail.x) / 2, y2 = (aTail.y + tail.y) / 2;
+    // ── A CLOSED LOOP IS NOT A RUN ──
+    //
+    // Two concentric circles — a column, a pipe, a circle symbol — pair as
+    // curved faces exactly like a bowed wall, and their chord is a POINT: the
+    // same start and end. Murray A101 offered one as candidate #90, 2.3 ft of
+    // "wall" with no extent, which nothing downstream can draw, accept or
+    // join. A real curved wall's chord is a fair share of its arc (a half
+    // circle 64%, three quarters 30%); below `MIN_CHORD_SHARE` the faces have
+    // come back to where they started.
+    if (Math.hypot(x2 - x1, y2 - y1) < MIN_CHORD_SHARE * ((a.lengthUnits + b.lengthUnits) / 2)) continue;
     out.push({
-      x1: (aHead.x + head.x) / 2,
-      y1: (aHead.y + head.y) / 2,
-      x2: (aTail.x + tail.x) / 2,
-      y2: (aTail.y + tail.y) / 2,
+      x1,
+      y1,
+      x2,
+      y2,
       thicknessFeet: best.thicknessUnits * options.feetPerUnit,
       lengthFeet,
       curved: true,
