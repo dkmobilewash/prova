@@ -12,6 +12,27 @@ import { findWallsOnSheet } from "../findWallsOnSheet";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { roomsFromWalls, type FoundWall, type RoomFromWalls } from "../roomsFromWalls";
 import { sheetStrokes } from "../sheetStrokes";
+import { doorSymbols } from "../doorWindowSymbols";
+
+/**
+ * ── DOOR SEALS FROM THE SWING SYMBOLS (ROOM_DOOR_SEALS=1) ──
+ * The doors read off the sheet's own swings (`doorWindowSymbols.ts`), each
+ * as the leaf's line hinge → strike, in page-width units, drawn as ink by
+ * `roomsFromWalls` so the doorway closes where the door is. Every arm below
+ * scores the same wall set twice when this is on — as before, and with the
+ * seals — so the two lines beside each other ARE the before/after.
+ */
+const DOOR_SEALS = process.env.ROOM_DOOR_SEALS === "1";
+/** Only sets whose file name contains this (case-insensitive), when given. */
+const ONLY = (process.env.ROOM_ONLY ?? "").toLowerCase();
+async function doorSealsFor(pdf: string, page: number, feetPerUnit: number, walls: readonly FoundWall[]): Promise<{ x1: number; y1: number; x2: number; y2: number }[]> {
+  const read = await sheetStrokes(Buffer.from(readFileSync(pdf)), page);
+  const w = read.widthPt;
+  const segs = read.segments.map((seg) => ({ ...seg, x1: seg.x1 / w, y1: seg.y1 / w, x2: seg.x2 / w, y2: seg.y2 / w }));
+  const runs = walls.map((one) => ({ ...one, thicknessFeet: one.thicknessFeet ?? 0.4, lengthFeet: Math.hypot(one.x2 - one.x1, one.y2 - one.y1) * feetPerUnit }));
+  const doors = doorSymbols(segs, runs, feetPerUnit);
+  return doors.map((d) => ({ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y }));
+}
 
 /**
  * ── AREA ERROR PER ROOM, AGAINST THE KEYS ──
@@ -311,9 +332,16 @@ describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("ro
         feetPerUnit = printed.declaredDistanceFeet / Math.abs(printed.x2 - printed.x1);
         scaleName = `${printed.scaleName} (printed)`;
       }
+      if (ONLY && !set.toLowerCase().includes(ONLY)) continue;
       const raw = await rawCandidates(pdf, page, feetPerUnit);
       const hatched = process.env.ROOM_HATCH === "1" ? await hatchedSingles(pdf, page, feetPerUnit) : [];
       const walls = [...raw.walls, ...hatched];
+      if (DOOR_SEALS) {
+        const doorSeals = await doorSealsFor(pdf, page, feetPerUnit, walls);
+        const withDoors = roomsFromWalls({ walls, feetPerUnit, text: text.items, widthPt: text.widthPt, doorSeals });
+        dump(`boundary-doors__${set.replace(/\.pdf$/, "")}__p${page}`, withDoors, { pdf, set, sheet: `p${page}`, page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit, walls });
+        score(`${set} p${page} + ${doorSeals.length} DOOR SEALS`, withDoors.rooms, withDoors.unplacedTags, withDoors.mergedTags, key, how);
+      }
       const result = roomsFromWalls({ walls, feetPerUnit, text: text.items, widthPt: text.widthPt, strokes: await strokesInUnits(pdf, page), bridgeSidelights: process.env.ROOM_BRIDGE === "1" });
       dump(`boundary__${set.replace(/\.pdf$/, "")}__p${page}`, result, { pdf, set, sheet: `p${page}`, page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit, walls });
       const rows = score(`${set} p${page} (${scaleName}, ${raw.walls.length} raw candidates >= ${RAW_MIN_FEET} ft${hatched.length ? ` + ${hatched.length} hatched singles` : ""} of ${raw.strokes} strokes)`, result.rooms, result.unplacedTags, result.mergedTags, key, how);
@@ -341,7 +369,14 @@ describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("ro
       const doc = await openPlanPdf(bytes);
       const text = await doc.pageText(saved.page);
       await doc.close();
+      if (ONLY && !set.toLowerCase().includes(ONLY)) continue;
       const result = roomsFromWalls({ walls, feetPerUnit: saved.feetPerUnit, text: text.items, widthPt: text.widthPt });
+      if (DOOR_SEALS) {
+        const doorSeals = await doorSealsFor(join(REAL, set), saved.page, saved.feetPerUnit, walls);
+        const withDoors = roomsFromWalls({ walls, feetPerUnit: saved.feetPerUnit, text: text.items, widthPt: text.widthPt, doorSeals });
+        dump(`labels-doors__${set.replace(/\.pdf$/, "")}__${sheet}`, withDoors, { pdf: join(REAL, set), set, sheet, page: saved.page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: saved.feetPerUnit, walls });
+        score(`  … + ${doorSeals.length} DOOR SEALS from the swings`, withDoors.rooms, withDoors.unplacedTags, withDoors.mergedTags, key, how);
+      }
       dump(`labels__${set.replace(/\.pdf$/, "")}__${sheet}`, result, { pdf: join(REAL, set), set, sheet, page: saved.page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: saved.feetPerUnit, walls });
       all.push(...score(`${set} ${sheet} (${walls.length} accepted+traced walls)`, result.rooms, result.unplacedTags, result.mergedTags, key, how));
       // The same sheet with EVERY candidate the reviewer saw, rejected ones
@@ -359,6 +394,11 @@ describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("ro
       const boundary: FoundWall[] = [...raw.walls, ...every];
       const bounded = roomsFromWalls({ walls: boundary, feetPerUnit: saved.feetPerUnit, text: text.items, widthPt: text.widthPt, strokes: await strokesInUnits(join(REAL, set), saved.page), bridgeSidelights: process.env.ROOM_BRIDGE === "1" });
       dump(`boundary__${set.replace(/\.pdf$/, "")}__${sheet}`, bounded, { pdf: join(REAL, set), set, sheet, page: saved.page, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: saved.feetPerUnit, walls: boundary });
+      if (DOOR_SEALS) {
+        const doorSeals = await doorSealsFor(join(REAL, set), saved.page, saved.feetPerUnit, boundary);
+        const withDoors = roomsFromWalls({ walls: boundary, feetPerUnit: saved.feetPerUnit, text: text.items, widthPt: text.widthPt, doorSeals });
+        score(`  … BOUNDARY + ${doorSeals.length} DOOR SEALS`, withDoors.rooms, withDoors.unplacedTags, withDoors.mergedTags, key, how);
+      }
       all.push(...score(`  … BOUNDARY: ${raw.walls.length} raw finder candidates >= ${RAW_MIN_FEET} ft (${raw.strokes} strokes) + all ${every.length} offered`, bounded.rooms, bounded.unplacedTags, bounded.mergedTags, key, how));
     }
     expect(all.length).toBeGreaterThan(0);
@@ -367,6 +407,7 @@ describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("ro
   it.skipIf(BIM === "" || KEYS === "")("bim arm: the key's own centrelines", { timeout: 7_200_000 }, async () => {
     const all: Row[] = [];
     const endToEnd: Row[] = [];
+    const bimDoors: Row[] = [];
     for (const model of readdirSync(BIM, { withFileTypes: true }).filter((d) => d.isDirectory())) {
       for (const name of readdirSync(join(BIM, model.name)).filter((f) => f.endsWith("r1-section.json")).sort()) {
         const k = JSON.parse(readFileSync(join(BIM, model.name, name), "utf8")) as {
@@ -400,6 +441,11 @@ describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("ro
         const result = roomsFromWalls({ walls, feetPerUnit: 1 / key.unitsPerFoot, text: text.items, widthPt: text.widthPt, strokes: await strokesInUnits(join(BIM, model.name, k.file), 1), bridgeSidelights: process.env.ROOM_BRIDGE === "1" });
         dump(`bim__${k.id}`, result, { pdf: join(BIM, model.name, k.file), set: k.id, page: 1, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: 1 / key.unitsPerFoot, walls });
         all.push(...score(`${k.id} (${walls.length} wall pieces)`, result.rooms, result.unplacedTags, result.mergedTags, key, "number", walls));
+        if (DOOR_SEALS) {
+          const doorSeals = await doorSealsFor(join(BIM, model.name, k.file), 1, 1 / key.unitsPerFoot, walls);
+          const withDoors = roomsFromWalls({ walls, feetPerUnit: 1 / key.unitsPerFoot, text: text.items, widthPt: text.widthPt, doorSeals });
+          bimDoors.push(...score(`  … + ${doorSeals.length} DOOR SEALS`, withDoors.rooms, withDoors.unplacedTags, withDoors.mergedTags, key, "number", walls));
+        }
         if (process.env.BIM_END_TO_END === "1") {
           const raw = await rawCandidates(join(BIM, model.name, k.file), 1, 1 / key.unitsPerFoot);
           const e2e = roomsFromWalls({ walls: raw.walls, feetPerUnit: 1 / key.unitsPerFoot, text: text.items, widthPt: text.widthPt });
@@ -413,6 +459,13 @@ describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("ro
       `\nBIM TOTAL: ${all.length} key rooms joined, ${errs.length} measured, ${all.filter((r) => r.why === "OPEN").length} open, ${all.filter((r) => r.why === "MERGED").length} merged through a wall (a leak), ${all.filter((r) => r.why === "MERGED-NO-WALL").length} merged with no wall in the model; ` +
         `median ${(errs[Math.floor(errs.length / 2)] * 100).toFixed(1)}%, within 5%: ${errs.filter((e) => e <= 0.05).length}, within 10%: ${errs.filter((e) => e <= 0.1).length}`,
     );
+    if (bimDoors.length) {
+      const e = bimDoors.filter((r) => r.gotSf !== null && r.keySf !== null).map((r) => Math.abs((r.gotSf as number) - (r.keySf as number)) / (r.keySf as number)).sort((a, b) => a - b);
+      console.log(
+        `BIM + DOOR SEALS: ${bimDoors.length} key rooms joined, ${e.length} measured, ${bimDoors.filter((r) => r.why === "OPEN").length} open, ${bimDoors.filter((r) => r.why === "MERGED").length} merged through a wall, ${bimDoors.filter((r) => r.why === "MERGED-NO-WALL").length} merged no wall; ` +
+          `median ${e.length ? (e[Math.floor(e.length / 2)]! * 100).toFixed(1) : "—"}%, within 5%: ${e.filter((x) => x <= 0.05).length}, within 10%: ${e.filter((x) => x <= 0.1).length}`,
+      );
+    }
     if (endToEnd.length) {
       const e = endToEnd.filter((r) => r.gotSf !== null && r.keySf !== null).map((r) => Math.abs((r.gotSf as number) - (r.keySf as number)) / (r.keySf as number)).sort((a, b) => a - b);
       console.log(

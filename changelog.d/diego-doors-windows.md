@@ -22,3 +22,12 @@ has the table and what each number is worth.
 sweep rejects, pairs, drawn-twice), `doorsWindows.test.ts` (schedule rows),
 the switch's db test, and `realplan/doorWindows.eval.ts` against the keys
 outside git. Migration additive (one boolean). No e2e run.
+
+**Round 2.** The detected doors feed the rest: each run's openings are now
+the doors' widths rather than the inferred gaps, and a named door's schedule
+height rides into the saved run. The room engine takes the doors as seals;
+measured before and after on Baker, Bunkie, Joplin and the BIM arm, the
+seals change nothing because the gap rule already closed every doorway a key
+room sits behind (NOTES-doors.md §5). Windows: a face-coverage rule cut
+Crosslines' false by half; Baker's 33 false stayed and the target precision
+was not reached, so they remain "to check" (§7).

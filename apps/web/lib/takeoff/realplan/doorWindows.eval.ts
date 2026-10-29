@@ -58,7 +58,16 @@ describe.skipIf(DIR === "" || SET === "" || PAGE === 0 || !(FPU > 0) || KEY_DIR 
     const walls = findWallsOnSheet({ segments: read.segments, textItems: items, pageSize: { widthPt: W, heightPt: read.heightPt }, feetPerUnit: FPU, wallTypes: [], sampledSheets: null }).walls;
     const segs = read.segments.map(inPageWidthUnits(W));
     const allDoors = doorSymbols(segs, walls, FPU);
-    const allWindows = windowSymbols(segs, walls, FPU);
+    // Window tags: a short code in a hexagon or circle (W1, W2, A, 101 is a
+    // door) — the symbol pass finds them; a window mark is 1-3 characters.
+    const windowTags = tagSymbols({ segments: read.segments, text: items, unitsPerPaperInch: 72 })
+      .filter((s) => s.rejected === null && /^W?\d{1,2}[A-Z]?$|^[A-Z]$/.test(s.text.trim().toUpperCase()))
+      .map((s) => ({ x: s.x / W, y: s.y / W }));
+    const allWindows = windowSymbols(segs, walls, FPU, windowTags);
+    if (process.env.DW_DEBUG === "1") {
+      const all = tagSymbols({ segments: read.segments, text: items, unitsPerPaperInch: 72 });
+      console.log(`   tags: ${all.length} symbols, ${windowTags.length} window-shaped: ${all.filter((t) => /^W\d/i.test(t.text.trim())).map((t) => `${t.text}@(${(t.x / W).toFixed(3)},${(t.y / W).toFixed(3)}) ${t.shape} ${t.rejected ?? "ok"}`).join(" ")}`);
+    }
     const keyAt = join(KEY_DIR, SET, `p${PAGE}.json`);
     const reach = REACH_FEET / FPU;
     const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y) <= reach;

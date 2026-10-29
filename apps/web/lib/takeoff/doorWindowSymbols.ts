@@ -312,10 +312,15 @@ export const WINDOW_BAND_FEET = 1.25;
  * foot inboard, so a search inside the found wall's band saw none of them.
  * The wall is attached afterwards, when one runs parallel within reach.
  */
+/** A window tag (W1, W2, A, 1…) drawn within this many feet of the window says it is one. */
+export const WINDOW_TAG_REACH_FEET = 6;
+
 export function windowSymbols(
   segments: readonly StrokeSegment[],
   walls: readonly WallCandidate[],
   feetPerUnit: number,
+  /** Window tags on the sheet (text inside a symbol), page-width units, when known. */
+  tags: readonly { x: number; y: number }[] = [],
 ): WindowSymbol[] {
   if (!(feetPerUnit > 0)) return [];
   const minLen = NARROWEST_WINDOW_FEET / feetPerUnit, maxLen = WIDEST_WINDOW_FEET / feetPerUnit;
@@ -395,6 +400,33 @@ export function windowSymbols(
       if (perp < best) { best = perp; wall = wi; }
     });
     if (wall === -1) continue;
+    // ── IN A GAP OF THE WALL, NOT ON A WALL ──
+    // A window's frame lines ARE the wall's faces where the wall stops; a
+    // rated wall's hatch and a desk against the wall sit under faces that run
+    // straight past them. So if a straight stroke at either frame's offset
+    // runs on beyond both ends of the window, this is not a window — unless
+    // the sheet puts a window tag beside it, which is the drawing saying so.
+    const tagged = tags.some((t) => Math.hypot(t.x - mx, t.y - my) <= WINDOW_TAG_REACH_FEET / feetPerUnit);
+    if (!tagged) {
+      const beyond = 1 / feetPerUnit;
+      const frameOffs = [offs[0]! * inside, offs[offs.length - 1]! * inside];
+      let covered = false;
+      for (const s of segments) {
+        if (covered) break;
+        if (s.curved) continue;
+        const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+        if (len <= (aHi - aLo) + beyond) continue;
+        let ang = Math.atan2(s.y2 - s.y1, s.x2 - s.x1);
+        if (ang < 0) ang += Math.PI;
+        const d = Math.abs(ang - a.ang);
+        if (Math.min(d, Math.PI - d) > (2 * Math.PI) / 180) continue;
+        const o = (off(s.x1, s.y1) + off(s.x2, s.y2)) / 2;
+        if (!frameOffs.some((fo) => Math.abs(o - fo) <= inside)) continue;
+        const lo = Math.min(proj(s.x1, s.y1), proj(s.x2, s.y2)), hi = Math.max(proj(s.x1, s.y1), proj(s.x2, s.y2));
+        if (lo <= aLo - beyond && hi >= aHi + beyond) covered = true;
+      }
+      if (covered) continue;
+    }
     out.push({ kind: "window", x1, y1, x2, y2, widthFeet: (aHi - aLo) * feetPerUnit, wall, lines: offs.length });
   }
   return out;

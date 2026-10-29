@@ -43,6 +43,11 @@ usable marks were keyed on a REGION of the sheet from the crops.
 | Crosslines A100 (p10), two-unit region | 30 doors, 8 windows | 30 / 0 / 0 | no schedule on the set | 4 / 4 / 4 |
 | MHK A1.01 (p32), office block | 14 doors, 0 windows | 14 / 0 / 0 | no size strings readable without a model | — / — / 25 |
 
+Re-run 2026-10-29 after rebasing on `main` with #824's finder (the found
+wall counts moved: Baker 52 → 58, Bunkie 51 → 64, Crosslines 263 → 319, MHK
+37 → 65): every door number above is unchanged — 82 of 82, no false, 25 of
+25 widths within an inch. The windows moved; see §7.
+
 **Read the two right-hand columns differently.** Doors: 82 of 82, no false,
 and every door with a schedule width agrees to the inch (worst 0.02 ft). But
 on Crosslines and MHK the key's doors were placed FROM detections I confirmed
@@ -87,3 +92,83 @@ is on. Nothing is saved: this round counts and shows.
   above); a per-view ray-cast using `planBoxes` would fix it.
 - Door width from the drawing when the leaf is a thin rectangle rather than a
   line: handled by accident (one long side matches), not by design.
+
+## 5. Doors as room seals (2026-10-29) — built, measured, no effect on these sets
+
+`roomsFromWalls` takes `doorSeals`: each detected door's leaf line, hinge to
+strike, drawn as ink so the doorway closes where the door is with the door's
+own width. `roomsFromWalls.test.ts` proves the input: a 14 ft opening, wider
+than `openingsInWalls` will close, becomes two rooms with the seal.
+
+`zzRoomDetect.eval.ts` with `ROOM_DOOR_SEALS=1` scores every arm twice, as
+before and with the seals, on the same walls:
+
+| arm | before | with door seals |
+| --- | --- | --- |
+| Baker A101, 36 accepted + traced walls | 8 regions, 6 tagged, 7 tags open, 2 merged; 6 measured, median 2.6% | identical |
+| Baker A101, boundary set | 14 regions, 11 tagged, 4 open, 0 merged; 7 measured, median 2.0% | identical |
+| Bunkie A100, 29 accepted + traced | 3 regions, 19 tags open; 1 measured | identical |
+| Bunkie A100, boundary set | 7 regions, 6 tagged, 16 open; 6 measured, median 2.3% | 8 regions, otherwise identical |
+| BIM, 18 sheets, the key's own walls | 640 joined, 411 measured, 2 open, 103 merged through a wall, 124 merged with no wall; median 1.1% | identical |
+| Joplin A-101 p46, 1,761 raw pairings (no printed areas; closed / merged only) | 59 regions, 41 tagged, 4 tags open, 32 merged; 40 keyed rooms closed | 61 regions, 45 tagged, 4 open, 28 merged; **44 closed** (+53 seals) |
+| Joplin p47, 1,050 raw pairings | 36 regions, 29 tagged, 56 open, 2 merged; 29 closed | 41 regions, 30 tagged, 36 open, **21 merged**; 29 closed (+52 seals) |
+
+**On the three sets with area keys the seals change nothing, because the
+doorways were already closed.** The finder's face lines stop at a door and
+`openingsInWalls` seals that gap; the leaf closes the same gap again. Joplin
+is the one sheet where they do something, in both directions: p46 closes
+four more keyed rooms and merges four fewer; p47 turns twenty open tags into
+nineteen MERGED ones — the seals close the corridor side of rooms whose
+party walls the raw pairings never drew, so the closed region holds several
+tags. A merged room is at least a region an estimator can see and split; an
+open one is nothing. Neither sheet prints areas, so the error column is
+empty there. What keeps rooms open on Baker and Bunkie
+is the WALL SET (§4 and §8 of NOTES-rooms.md said so on 2026-10-22, and this
+is the same answer from the other side), and what merges BIM rooms is a
+wall the model does not have. So the door seal is in the engine and inert
+on every sheet measured; it would earn its place on a sheet whose doorways
+the gap rule cannot close — a 12 ft+ opening, a door at a corner with wall
+on one side only — and none of these four has one that a key room sits
+behind.
+
+## 6. Door widths into the run's openings (2026-10-29)
+
+With the switch on, the viewer reads the doors BEFORE grouping and gives
+each run the detected doors' widths as its `openings`, in place of the gap
+widths `mergeWalls` inferred (the leaf is the door; the gap is a fifth
+narrow). The "includes N openings, not deducted" note on a group now counts
+doors. On save, a detected door the join named — so its schedule row has a
+height — rides along as an opening width and height the way the plan-text
+doors do, skipping marks the plan-text read already placed.
+
+## 7. Window precision, second attempt (2026-10-29) — not reached, kept as "to check"
+
+Two rules added to §1's exterior-wall gate: a window's frame lines must
+not be covered by a straight stroke at the same offset running on a foot or
+more beyond both ends (a hatch, a desk, a continuous face), and a window
+tag beside the candidate was tried as an override. Measured:
+
+| plan | before | after |
+| --- | --- | --- |
+| Baker A101 (no windows) | 32 false | 33 false |
+| Bunkie A100 (4 windows) | 4 found, 23 false | 0 found, 4 false |
+| Crosslines A100 region (8) | 4 found, 4 missed, 4 false | 4 found, 4 missed, 2 false |
+
+Crosslines improved; Baker did not; Bunkie got worse for a reason that is
+not the rule: `main` now carries #824's finder, which pairs the dashed
+canopy line 4 ft east of Bunkie's east wall as a 63 ft wall, and the
+ray-cast then calls the east wall interior. The tag override cannot save it,
+because Baker labels its WALL types `W1`–`W7` in the same hexagons Bunkie
+uses for its window tags: a W-tag beside a candidate is evidence on one set
+and the opposite on the other. What Baker's 33 are, from the crops: a
+wall-mounted projection screen drawn as a thin rectangle along the west
+wall (four of them, 5.1 ft each), exterior-wall stretches drawn as three
+lines where the finder made no run, and interior walls the ray-cast calls
+exterior because the existing building beyond them has no found walls.
+
+So the 80% precision target is not met on Baker (0 of 33) or Bunkie, and
+the panel keeps saying "to check". The face-coverage rule stays (it is the
+one that helped and it costs nothing). What would move it: an exterior test
+that reads the drawing rather than the found walls — which side of the wall
+has rooms — and a window SCHEDULE join, which gives widths to check against
+the way the door schedule does; neither is in this round.
