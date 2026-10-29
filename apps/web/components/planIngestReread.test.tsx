@@ -52,6 +52,7 @@ const STAGES = [
   "SCHEDULE_ROWS",
   "SHEET_INDEX",
   "WALL_LEGEND",
+  "WALLS",
 ] as const satisfies readonly PlanIngestStage[];
 
 const view = (over: Partial<IngestView> = {}): IngestView => ({

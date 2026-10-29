@@ -82,6 +82,12 @@ enum PlanIngestStage {
   /// one task per page, a model call only on the page or two that legend the
   /// walls. Behind the PLAN_TEXT_READ opt-in.
   WALL_LEGEND
+  /// WHOLE-SET TAKEOFF: one task per floor-plan sheet that has a scale and no
+  /// walls yet, each running the same detection a saved scale triggers
+  /// (`lib/takeoff/detectWallsForCalibration.ts`). No model call. Behind
+  /// `Company.wholeSetTakeoffOn`. The task's `note` says what became of the
+  /// sheet; the walls themselves are `TakeoffWallProposal` rows.
+  WALLS
 
   /// A scanned sheet rendered at 200 dpi and read as lines and text, stored
   /// on `PlanSheetRaster` so the wall finder can run on it. No model.
@@ -237,6 +243,10 @@ model PlanIngestTask {
   /// for a person, never a stack: this is rendered on a screen beside a Retry
   /// button.
   error String?
+  /// What a FINISHED task has to say beyond "done" — for `WALLS`, why a sheet
+  /// was passed over ("no scale", "not a floor plan") or what detection
+  /// returned. Null for every other stage. Not progress: counts are derived.
+  note String?
 
   /// The earliest a failed task may be claimed again. Null means now.
   ///

@@ -98,6 +98,11 @@ model Company {
   /// click to take back. OFF for every company until the owner turns it on.
   demotedWallsOn Boolean @default(false)
 
+  /// "Find walls on every floor plan" on the takeoff: one press runs the wall
+  /// finder over every scaled floor-plan sheet in the set, in the background,
+  /// behind this switch, OFF until the owner turns it on. No model is called.
+  wholeSetTakeoffOn Boolean @default(false)
+
   /// Scanned sheets read as lines and text for the wall finder (the RASTER
   /// ingest stage): OFF for every company until the owner turns it on under
   /// Settings. No model is called.
