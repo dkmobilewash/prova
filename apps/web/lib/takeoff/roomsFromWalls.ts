@@ -246,6 +246,14 @@ export function roomsFromWalls(input: {
   gridCap?: number;
   /** Also seal corner-hinged doors. Off by default — measured, see `cornerSeals`. */
   sealCornerDoors?: boolean;
+  /**
+   * The doors read off the sheet's own swing symbols (`doorWindowSymbols.ts`),
+   * each as the leaf's line hinge → strike, page-width units. Drawn as ink so
+   * the doorway closes exactly where the door is, with the door's own width,
+   * instead of where `openingsInWalls` infers a gap. Measured 2026-10-29, see
+   * NOTES-doors.md §5.
+   */
+  doorSeals?: readonly { x1: number; y1: number; x2: number; y2: number }[];
 }): RoomsFromWallsResult {
   const { feetPerUnit } = input;
   const empty = { rooms: [], unplacedTags: [], mergedTags: [], grid: { width: 0, height: 0, feetPerCell: 0 } };
@@ -328,6 +336,7 @@ export function roomsFromWalls(input: {
   }
   const seals = openingsInWalls(faces, feetPerUnit);
   for (const s of seals) bands.push({ x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2 });
+  for (const d of input.doorSeals ?? []) bands.push({ x1: d.x1 - x0, y1: d.y1 - y0, x2: d.x2 - x0, y2: d.y2 - y0 });
   if (input.sealCornerDoors) {
     for (const s of cornerSeals(walls.map((w) => ({ ...w, x1: w.x1 - x0, y1: w.y1 - y0, x2: w.x2 - x0, y2: w.y2 - y0 })), feetPerUnit)) bands.push(s);
   }

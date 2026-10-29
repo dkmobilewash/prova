@@ -15,6 +15,7 @@ import {
   type ExcludedView,
   type ViewWalls,
 } from "./sheetViews";
+import { withoutNonWallLayers } from "./layerNames";
 import { drawingRegions, segmentsInRegions } from "./planRegion";
 import { classifySingleLines, worthOffering } from "./singleLines";
 import { trustedScanViews } from "./scannedCaptions";
@@ -484,10 +485,20 @@ export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
           (b) => r.from >= b.from - 1e-9 && r.to <= b.to + 1e-9 && r.fromY >= b.fromY - 1e-9 && r.toY <= b.toY + 1e-9,
         ),
     );
-    const drawing = drawingRegions(regions, base.segments, input.pageSize.widthPt);
+    // ── THE BUSIEST REGION, COUNTED IN STROKES THAT COULD BE WALLS ──
+    //
+    // Counted in every stroke, Michigan State p4's title-block column
+    // (26,908 A-TITLEBLOCK strokes) beat its plan (2,405, mostly A-TEXT and
+    // A-EXIST) and was measured: 155 phantom walls. A region of lettering is
+    // never the drawing, so the count is taken after the layer filter — and
+    // with `emptyIsAnswer`, because a page that is all annotation has no
+    // busiest drawing and `drawingRegions` then keeps every region, which the
+    // finder's own layer filter empties in turn and says so.
+    const couldBeWalls = withoutNonWallLayers(base.segments, { emptyIsAnswer: true }).kept;
+    const drawing = drawingRegions(regions, couldBeWalls, input.pageSize.widthPt);
     const onTheDrawing = segmentsInRegions(base.segments, drawing, input.pageSize.widthPt);
     return {
-      found: findWallsOnSheet({ ...base, segments: onTheDrawing }),
+      found: findWallsOnSheet({ ...base, segments: onTheDrawing, regionClipped: true }),
       wholeSheet: null,
       planBoxes: drawing.length > 0 ? [...drawing] : null,
       views: drawingCount(views),

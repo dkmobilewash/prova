@@ -328,7 +328,7 @@ export function printedScalesFromProposals(
   return byPage;
 }
 
-export type ToolId = "pan" | "calibrate" | "linear" | "area" | "rect" | "count" | "cutout" | "edit";
+export type ToolId = "pan" | "calibrate" | "linear" | "area" | "rect" | "count" | "cutout" | "edit" | "symbol";
 
 /**
  * The measuring vocabulary, and it is deliberately the same three primitives
@@ -360,6 +360,8 @@ export const TOOLS: { id: ToolId; label: string; hint: string }[] = [
     hint: "Click two opposite corners. For a room that is square, which most of them are.",
   },
   { id: "count", label: "Count", hint: "Click each one. The name you give it becomes the line item." },
+  /** Shown only with `Company.symbolCountOn`; the viewer filters it out otherwise. */
+  { id: "symbol", label: "Count like this", hint: "Drag a box round one symbol. Every match on the sheet is marked and counted; click a mark to drop it." },
   {
     id: "edit",
     label: "Edit",

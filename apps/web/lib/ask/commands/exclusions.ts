@@ -206,6 +206,10 @@ export const notYetRegistered: Exclusion[] = [
       "\"Demote, don't hide\" on the takeoff is an owner's settings switch, flipped under Settings; not a thing to ask for in words.",
   },
   {
+    action: "symbolCount.*",
+    reason: "Counting symbols is a box drawn on the takeoff and an owner's settings switch; not a thing to ask for in words.",
+  },
+  {
     action: "wholeSetTakeoff.*",
     reason:
       "Finding walls across a set is one button on the takeoff with a count beside it; the summary is read off that panel and the switch is an owner's settings choice. Nothing to ask for in words.",
@@ -217,6 +221,10 @@ export const notYetRegistered: Exclusion[] = [
   {
     action: "takeoffFeatures.*",
     reason: "Turning the wall-types reader on is an owner's settings choice, flipped under Settings; not a thing to ask for in words.",
+  },
+  {
+    action: "doorsWindows.*",
+    reason: "Counting doors and windows off the plan is an owner's settings switch, flipped under Settings; not a thing to ask for in words.",
   },
   { action: "sales.*", reason: "Prova-operator-only CRM, unreachable for any contractor tenant; excluded from the agent surface entirely." },
   { action: "emailFinder.*", reason: "Prova-operator-only sales tooling (finds cold-lead emails, spends search and verifier credits); excluded with the rest of the sales CRM." },
