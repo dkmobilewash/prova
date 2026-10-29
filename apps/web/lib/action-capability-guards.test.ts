@@ -1969,6 +1969,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   wholeSetTakeoff: () => import("./actions/wholeSetTakeoff"),
   // Scanned sheets: the owner's switch (behind /settings).
   scannedSheets: () => import("./actions/scannedSheets"),
+  doorsWindows: () => import("./actions/doorsWindows"),
   takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),
