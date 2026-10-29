@@ -1969,6 +1969,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   wholeSetTakeoff: () => import("./actions/wholeSetTakeoff"),
   // Scanned sheets: the owner's switch (behind /settings).
   scannedSheets: () => import("./actions/scannedSheets"),
+  // The Takeoff features list's one action: AI on plus the opt-in, in one save (behind /settings).
+  takeoffFeatures: () => import("./actions/takeoffFeatures"),
   takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),
