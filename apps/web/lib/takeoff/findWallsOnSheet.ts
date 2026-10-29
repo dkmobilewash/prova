@@ -378,6 +378,9 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
     feetPerPoint: feetPerUnit,
     knownThicknessesIn: scheduleIn,
     onCandidate: input.onCandidate,
+    // For the census-born features: the words, centred, and the raw strokes.
+    words: textItems.map((item) => ({ str: item.str, x: (item.x + item.width / 2) / pageSize.widthPt, y: (item.y + item.height / 2) / pageSize.widthPt })),
+    strokes: inUnits,
     decide: input.decide,
     veto: input.veto,
   });

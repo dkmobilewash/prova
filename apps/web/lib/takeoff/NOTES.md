@@ -3823,3 +3823,50 @@ long run nothing meets 3.4 to 1 with all its real loss on Alden's one wall; one 
 face 2.2 to 1 (7 to 1 with Alden out, which is tuning on a building); faces mostly
 unpainted at 50% 1.3 to 1 (at 95%, 126 to 1 — the clip rule takes the whole class
 instead).
+### The classifier in grey-out mode, retrained with the census signals (2026-10-29)
+
+Rows rebuilt on the product path from every training label (rounds 1–6; a trace has no
+candidate and so no row — the key side of the labels is for scoring, not for training):
+33,851 rows from 26 sheets across 18 buildings, 23,122 positive, plus 142,331 synthetic
+rows. Fold models leave one building out; `zzDemote.eval.ts` scores each building with
+the model that never saw it, at the app's 0.2 cut, through `modelVerdicts` itself.
+
+| building | new: junk greyed / real greyed / precision | shipped model: same |
+| --- | --- | --- |
+| Camp Bow Wow A101 | 124 of 2,153 / 0 / 100% | 187 / 0 / 100% |
+| ELEVEN03 (3 sheets) | 95 of 2,243 / 17 / 85% | 117 / 20 / 86% |
+| Topeka (3 sheets) | 98 of 1,626 / 77 / 56% | 128 / 81 / 61% |
+| NG Green Bay | 136 of 1,358 / 0 / 100% | 33 / 0 / 100% |
+| Joplin | 0 of 1,158 / 14 / 0% | 83 / 31 / 73% |
+| Bunkie | 243 of 527 / 0 / 100% | 175 / 0 / 100% |
+| MHK | 136 of 608 / 5 / 96% | 178 / 0 / 100% |
+| Crosslines | 86 of 220 / 0 / 100% | 83 / 2 / 98% |
+| Supreme Court | 30 of 382 / 29 / 51% | 14 / 43 / 25% |
+| McAllen | 73 of 95 / 0 / 100% | 0 / 12 / 0% |
+| TOTAL | 1,073 of 12,710 (8%) / 146 / 88% | 1,074 (8%) / 189 / 85% |
+
+(The shipped file was trained on these very sheets, so its column is flattered; the
+fair comparison is the old-column LOBO row in the changelog entry: 944 / 163 / 85%.)
+Neither target — 90% precision, 40% of junk greyed — is met, and the reason is
+structural: `modelVerdicts` greys a run only when EVERY pairing along it scores under
+the cut, which at 0.2 is 193 of 4,032 runs. The rules (`dashed-faces`, `table-rows`,
+clip paths) removed more junk than the classifier greys. Raising the cut is the lever
+left, and it trades real greyed for junk greyed on Topeka and Supreme Court first.
+
+**Camp Bow Wow's kennel grid is a lost cause for a rule, and this says why in the
+model's own terms.** The kennel junk scores a median 1.00 — the model is certain it is
+wall — because it is drawn exactly like partitions: faces, 4x6 bays, a median 17 twins
+on the sheet, 3.5 runs meeting each. "Numbered repeated bays in one room" was priced
+every way: `twinFaces ≥ k and numbersNear ≥ m` is 0.2–0.6 junk per real foot on Camp
+Bow Wow itself (the bay numbers sit in the bays' centres, more than 6 ft from most
+runs; the real walls have room numbers nearer) and 0.4–0.6 on every other sheet,
+where it lands on Joplin's and Camp Clark's real walls. `twinFaces ≥ 4` alone is 2.1
+on Camp Bow Wow and would take unit plans elsewhere. What tells a kennel bay from a
+partition is the sheet's own sentence — "KENNELS AS SELECTED, PROVIDED BY OWNER" —
+which is an owner-furnished-equipment reading, not geometry.
+
+One thing observed and not explained: Bunkie A100's junk total came out 527 ft in the
+new-model run and 623 ft in the other two, from the same code and labels. 96 ft of
+difference in what the product offered between two runs is either a nondeterminism in
+`detectForSheet` on that sheet or an artefact of the run; it does not move the totals'
+conclusion and is recorded so the next person checks it rather than inherits it.
