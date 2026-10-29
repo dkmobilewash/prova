@@ -358,3 +358,128 @@ shape in it, and be decided on that set's numbers.
 4. A vector sheet in the same set: no caution, Find the walls unchanged.
 5. The whole-set stage (PR D) on a scanned page writes proposals from the
    stored lines (detectWallsForCalibration reads the raster row).
+
+## 12. The first real scan, and the half-inch that hid it (2026-10-29)
+
+8102 Evergreen BLDG D is the first set in the corpus that is a scan rather
+than a vector export: 106 pages, every one a single 14,600 x 9,800 px 1-bit
+image (100 CCITT G4, 6 JPEG) at 400 dpi, no paths, no text. The inventory
+calls all 106 scanned; the stage rasterised all 106 and found lines on all
+106; and it measured NOTHING, because it read a scale on zero pages.
+
+**The caption was read. The page size refused it.** OCR returns
+`1/8" = 1'-0"` on the plan sheets (p24, p27 at confidence 57), and
+`printedScalesOnPage` hands it on. `scaleFromPrinted` then asks
+`standardSheetSize` whether 2628 x 1764 pt is a sheet, with a two-percent
+gate — and a scan is the paper plus the scanner's bed: 36.5 x 24.5 in, half
+an inch over ARCH D on each edge, 2.1% on the short one. Refused, on every
+page. A vector export never hit this because its page size IS the plot size.
+
+The fix is one option: `standardSheetSize(w, h, { scanned: true })` admits
+an inch each way in absolute terms, because a scanner's margin does not
+scale with the paper. Only the raster stage passes it; a vector sheet keeps
+the exact gate, so a 50% reduction is still refused where it always was.
+The scale still comes only from the printed caption. Unit test pins the
+Evergreen size refused as vector and accepted as scan, and a 30 x 20 in
+scan still refused.
+
+| Evergreen, 106 pages | before | after |
+| --- | --- | --- |
+| pages with a scale read | 0 | **36** (1/8" on 16, 1/4" on 7, 3/16" on 3, 3/4" on 8, 1-1/2" and 3/32" one each) |
+| pages with walls offered | 0 | 33 of those 36 (2,940 runs) |
+| feet offered, total | 0 | 36,550 ft; 18,350 of it on the eleven 1/8" floor plans (p24 1,986 · p27 2,151 · p40 4,777 · p58 4,924 · p76–p81 258–642 · p92 2,021) |
+| sheet number read | 5 | 5 — the same five, all structural (`XBE1.00`, `S4.4E`, `S6.2`, `S10`, `S112`); not one A-sheet |
+
+Unlabelled, so no accuracy figure — what the overlays show, read by eye
+(`shots/scanned-real/evergreen-fixed/overlays/p{24,27,13}/`, a page PNG and
+four tiles each; the per-page dumps for all 36 pages are in `…/detect/`):
+p24 (A242B, level 3 east, 1/8") and p27 (A244A, level 5 west) put runs on
+the real corridor, demising and exterior walls, with gaps along the thinner
+interior partitions and the whole-sheet fallback taking the page (views 0)
+because no view title was read; p13 (A110, 1/4" unit plans) finds the unit
+walls and also marks the cabinet elevations and the caption underlines. The
+eight 3/4" sheets are structural details and their 36–272 ft are junk by
+construction — the title-block verdict stops five of them early, and the
+product path offers nothing from a stopped sheet; the eval ran the finder on
+them regardless to show the number. Per-page time in this run was a 16.0 s
+median, up from 14.1 s, because two label sweeps shared the machine.
+
+**Sheet numbers are still not read on a scan, and that is the next defect
+in this lane.** The title block's big number comes through OCR at 200 dpi
+as `BUILDING D A244 1 B it` (h 39 pt, confidence 68) for the printed
+`A241B` — split, with a 1→4 confusion — and `sheetNumberFrom` rightly does
+not accept that. What it needs: a second pass on the title block's bottom
+cell at 300 dpi, single-line mode, whitelist `A-Z0-9.-`, then a fuzzy join
+against the set's own sheet index (CS01/CS02 list every number) so a read
+within edit distance 2 of exactly one index entry resolves to it. Not
+quick; not built.
+
+**Label sweep, every labelled vector sheet, before and after:** `zzViewSweep` over all 36
+labelled sheets (training and held-out, read only as "did it move"), from a
+detached checkout of `origin/main` and from this tree: the two JSON files are
+byte-identical, every sheet (`shots/scan-scale/sweep-{before,after}.json`).
+A first "before" taken on a tree that predated #828/#829 differed on 29
+sheets — those are the finder changes in between, not this one; the
+comparison that counts is from the same base.
+
+### Cost per page on a real scan, and what would bring it under 5 s / 1.5 GB (report only)
+
+Measured over the 106 pages, this Mac, one process, nothing else running
+(`shots/scanned-real/evergreen/run.log`):
+
+| step | median | p90 | worst |
+| --- | --- | --- | --- |
+| render (pdf.js, 200 dpi, banded) | 5.4 s | 9.0 s | 27.9 s |
+| lines | 0.8 s | 1.6 s | 2.4 s |
+| OCR (Tesseract, tiles) | 7.6 s | 15.3 s | 58.2 s |
+| **page** | **14.1 s** | **27 s** | **85 s** |
+| RSS after render | 2,250 MB | 3,226 MB | 4,118 MB |
+| RSS after OCR | 980 MB | 2,091 MB | 3,200 MB |
+| RSS after the sheet (worker closed) | 876 MB | — | 3,042 MB |
+| live V8 heap | 19 MB | | |
+
+§7's numbers were Baker — vector sheets rendered as if scanned, so pdf.js
+was rasterising paths. A real scan is a different cost: the page is one
+400-dpi 1-bit image, and pdf.js decodes it to a full-resolution RGBA
+picture before drawing it scaled into the band canvas. 14,600 x 9,800 x 4
+is **572 MB per copy**, and the 2.2 GB median after render is that picture,
+its decode buffer and the band. That is where the memory goes, and it is
+also most of the render time (CCITT decode + a 143 Mpx scale-down in JS).
+
+What would get a page under ~5 s and the peak under ~1.5 GB, in the order
+it pays:
+
+1. **Decode the scan's image directly, never through pdf.js's canvas.** The
+   inventory already knows the page is one image. Read that XObject's
+   stream and decode it ourselves — pdf.js exports `CCITTFaxDecoder`, and
+   JPEG goes through `@napi-rs/canvas`'s `loadImage` — straight into the
+   200-dpi 8-bit grey by 2 x 2 box-averaging the 1-bit rows as they
+   stream. Working set ~36 MB grey + one decoded row band; no RGBA copy
+   ever exists. Expected: render from 5.4 s to ~1 s, RSS after render
+   from 2.2 GB to under 300 MB. This one change meets the memory target on
+   its own. Needs a bench on the 6 JPEG pages too.
+2. **Run the lines step inside the sheet worker as well.** It runs on the
+   main thread today, over the 36 Mpx grey with its contour labels, and
+   the 876 MB median left behind after every sheet (against a 19 MB live
+   heap) is that step's freed-but-retained allocation. Moving it into the
+   worker lets the worker's teardown return it. Nothing changes in the
+   lines code.
+3. **OCR: skip blank tiles, then parallelise.** A plan sheet is ~20 tiles
+   of 1,600 px at 200 dpi and a third of them hold no text-sized ink —
+   count dark pixels per tile before encoding it (the grey is already in
+   hand) and skip the empty ones. Then two Tesseract workers instead of
+   one halve the wall time on the rest; this is CPU-bound WASM, so on
+   Fluid it costs the same CPU and finishes sooner. Each tile is also
+   PNG-encoded and decoded again on the way in; handing Tesseract the raw
+   grey tile saves that round trip (bench it; tesseract.js's Node input
+   types need checking).
+4. **Keep one Tesseract worker warm across sheets** — `createWorker` plus
+   the language file is ~1 s per sheet. This pulls against §7's
+   one-worker-per-sheet memory answer, and is only worth it once 1 and 2
+   have made the sheet's own memory small.
+
+Honest bound: render + lines can reach ~2 s. OCR on a floor plan that
+needs the whole page read cannot reach 3 s single-threaded at 200 dpi;
+with blank-tile skipping and two workers it plausibly can. The 43 pages
+whose title block says they are not plans already stop after the first
+look and would land near 3 s total.
