@@ -8,6 +8,7 @@ import { duplicatePairs } from "../duplicateCandidates";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { sheetStrokes } from "../sheetStrokes";
 import type { StrokeSegment } from "../wallVectors";
+import { textItemCentre } from "../textCentre";
 
 /**
  * ── WHAT KIND OF THING IS THE PRODUCT OFFERING THAT A REVIEWER REJECTED? ──
@@ -103,10 +104,11 @@ describe.skipIf(DIR === "" || LABELS === "")("confirmed junk on the product path
       const text = await doc.pageText(saved.page);
       await doc.close();
       const W = strokes.widthPt; const fpu = saved.feetPerUnit;
-      const textItems = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
+      const textItems = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height, angle: i.angle }));
       const d = detectForSheet({ segments: strokes.segments, textItems, pageSize: { widthPt: W, heightPt: strokes.heightPt }, feetPerUnit: fpu });
       const offered = offeredCandidates({ walls: d.found.walls, segments: d.found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })), widthPt: W, feetPerUnit: fpu, planBoxes: d.planBoxes, textItems });
-      const words = textItems.map((i) => ({ str: i.str.trim(), x: (i.x + i.width / 2) / W, y: (i.y - i.height / 2) / W })).filter((w) => w.str !== "");
+      // The item's middle whichever way it runs (`textItemCentre`): a vertical dimension string's figures are written along the line.
+      const words = textItems.map((i) => { const m = textItemCentre(i); return { str: i.str.trim(), x: m.x / W, y: m.y / W }; }).filter((w) => w.str !== "");
       const toRun = (v: Verdict) => ({ ...v, th: v.thicknessFeet ?? 0 });
       const real = saved.verdicts.filter((v) => v.verdict === "wall" || v.verdict === "traced").map(toRun);
       const rejected = saved.verdicts.filter((v) => v.verdict === "not-wall").map(toRun);

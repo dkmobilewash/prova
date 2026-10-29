@@ -4015,3 +4015,27 @@ extra 170 → 212 (83.7% → 87.9%, 13 → 15). Every other sheet is identical.
 at 15 ft/100 against a training average of 31, so the fix makes both sheets
 cleaner than the set it joins. Recorded rather than argued — whether a
 dropped-drawing fix is held to the junk rule is Diego's call.
+
+## Three candidates from the unknown-junk report — 2026-10-29 (second session, `diego/junk-three`)
+
+Training only, sweep against main `e2742c2c`, held-out as a delta.
+
+1. **Rotated dimension text.** pdf.js reports a vertical string's START and
+   its width along the run; `(x + w/2, y − h/2)` is only its middle for
+   horizontal text. `PlanTextItem.angle` and `textItemCentre` fix that
+   (unit-tested on Topeka's `[0, −6.5, −9.5, 0]` shape). Result: nothing. The
+   census's dimension kinds went 1,973 → 1,814 ft with label drift; the
+   product sweep is byte-identical. Measured why on Topeka p76: the figures
+   sit 3–6 ft from the candidate pair, because the candidate is two adjacent
+   strings and the figures are drawn beside the outer one. The miss is
+   distance, not rotation. Kept as a correctness change.
+2. **Band contains two candidates.** On OFFERED candidates: contains ≥ 2 →
+   0 runs at every tolerance (`oneWallPerPlace` keeps one of the three);
+   contains ≥ 1 → 23–40 ft, 0 real. Dead as a rule. `facesInsideBand` is on
+   `diego/classifier-signals-3` as a feature; the retrain says whether it
+   helps.
+3. **FENCE / GUARDRAIL / OPEN TO BELOW / EDGE OF SLAB in the site-equipment
+   vocabulary** (10 ft reach): junk removed **0 ft**, real set aside **149 ft**
+   — Murray's guardrails 132, Joplin 17; held-out delta +17 junk / 0 real
+   (Albany). The words sit beside the walls they describe. Reverted; the
+   price is in the code comment beside the list.

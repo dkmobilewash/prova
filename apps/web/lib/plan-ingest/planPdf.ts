@@ -65,6 +65,19 @@ export type PlanTextItem = {
   y: number;
   width: number;
   height: number;
+  /**
+   * The direction the text runs, in RADIANS, screen convention (0 is left to
+   * right, −π/2 is up the page). Absent on rows stored before 2026-10-29 and
+   * on readers that never set it, which `textItemCentre` reads as 0.
+   *
+   * A vertical dimension string's figures are written along the line — Topeka
+   * p76's "21' - 0"" has the transform [0, −6.5, −9.5, 0] — and `x`/`y` are
+   * the START of the run, so a centre computed as (x + width/2, y − height/2)
+   * lands two to three feet off a vertical string and every rule that asks
+   * "a number near this line" misses it. ~400 ft of the training junk sat in
+   * "unknown" for exactly that.
+   */
+  angle?: number;
 };
 
 /** One page's text and the size of the sheet it is printed on, as displayed. */
@@ -282,7 +295,8 @@ export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
           // [a, b, c, d, e, f]; e and f are the translation once the viewport's
           // rotation and flip have been composed in, so y runs DOWN from the top.
           const m = pdfjs.Util.transform(viewport.transform, item.transform);
-          items.push({ str, x: m[4], y: m[5], width: item.width, height: item.height });
+          const angle = Math.atan2(m[1], m[0]);
+          items.push({ str, x: m[4], y: m[5], width: item.width, height: item.height, ...(Math.abs(angle) > 1e-6 ? { angle } : {}) });
         }
         return {
           pageNumber,

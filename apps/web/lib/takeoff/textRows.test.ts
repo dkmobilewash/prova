@@ -57,3 +57,17 @@ describe("a line ruled under a word, as long as the word", () => {
     expect(isUnderline(wall(10 / FPU, 90 / FPU, 10 / FPU, 110 / FPU), [heading], W, FPU)).toBe(false);
   });
 });
+
+describe("a vertical dimension string, written along the line", () => {
+  it("IS COUNTED AS A WORD BETWEEN THE FACES BY ITS MIDDLE, NOT ITS START", () => {
+    // a 20 ft vertical run at x = 50 ft, from y = 100 to 120, 6 in thick; the figure's run starts 1.3 ft
+    // beside the line and runs UP the page for 1.5 ft, as pdf.js reports it (angle −π/2)
+    const vertical = wall(50 / FPU, 120 / FPU, 50 / FPU, 100 / FPU, 6);
+    const figure = { str: "21' - 0\"", x: (50 + 0.1) * 27, y: 111 * 27, width: 1.5 * 27, height: 8, angle: -Math.PI / 2 };
+    expect(wordsBetweenFaces(vertical, [figure], W, FPU)).toBe(0); // a dimension is never a "word between"
+    const label = { str: "CORRIDOR", x: (50 + 0.1) * 27, y: 111 * 27, width: 1.5 * 27, height: 8, angle: -Math.PI / 2 };
+    expect(wordsBetweenFaces(vertical, [label], W, FPU)).toBe(1);
+    const asIfHorizontal = { ...label, angle: undefined };
+    expect(wordsBetweenFaces(vertical, [asIfHorizontal], W, FPU)).toBe(0);
+  });
+});

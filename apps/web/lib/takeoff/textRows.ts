@@ -29,7 +29,9 @@ const FACE_SLACK_FEET = 0.4;
 const MEETS_FEET = 1.5;
 const DIMENSION = /^[\d'"\-\s./±+]+$/;
 
-type Item = { str: string; x: number; y: number; width: number; height: number };
+import { textItemCentre } from "./textCentre";
+
+type Item = { str: string; x: number; y: number; width: number; height: number; angle?: number };
 
 function alongT(w: WallCandidate, x: number, y: number): number {
   const dx = w.x2 - w.x1, dy = w.y2 - w.y1;
@@ -49,8 +51,9 @@ export function wordsBetweenFaces(wall: WallCandidate, textItems: readonly Item[
   for (const item of textItems) {
     const str = item.str.trim();
     if (str === "" || (DIMENSION.test(str) && /\d/.test(str))) continue;
-    const x = (item.x + item.width / 2) / widthPt;
-    const y = (item.y - item.height / 2) / widthPt;
+    const c = textItemCentre(item);
+    const x = c.x / widthPt;
+    const y = c.y / widthPt;
     const t = alongT(wall, x, y);
     if (t < -0.05 || t > 1.05) continue;
     if (offLine(wall, x, y) * feetPerUnit > reach) continue;

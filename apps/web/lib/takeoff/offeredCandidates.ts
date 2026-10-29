@@ -1,5 +1,6 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { bothFacesDashedInPoints } from "./dashedFaces";
+import { textItemCentre } from "./textCentre";
 import { isTableRows, isUnderline } from "./textRows";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "./findWallsOnSheet";
 import {
@@ -124,7 +125,11 @@ export const SHORTEST_SINGLE_FEET = 12;
  * 15 ft the same words reach Camp Bow Wow's real room walls (365 ft), which is
  * why the reach is 10 and not more. KENNEL, BOARDING and FENCE are NOT in the
  * list: each sits beside the room's real walls as often as beside the panels
- * (KENNEL within 10 ft: 281 ft of key, 107 rejected). A one-building rule in
+ * (KENNEL within 10 ft: 281 ft of key, 107 rejected). FENCE, GUARDRAIL,
+ * OPEN TO BELOW/ABOVE and EDGE OF SLAB were tried 2026-10-29 from the
+ * unknown-junk report and swept: 0 ft of junk removed, 149 ft of real wall
+ * set aside (Murray's guardrails 132, Joplin 17). The words sit beside the
+ * walls they describe. A one-building rule in
  * origin and said so; the candidate is SET ASIDE with the word, not dropped,
  * so a reviewer who disagrees can still accept it.
  */
@@ -142,8 +147,10 @@ export function siteEquipmentWord(
   for (const item of textItems) {
     const m = SITE_EQUIPMENT_WORDS.exec(item.str);
     if (m === null) continue;
-    const px = (item.x + item.width / 2) / widthPt;
-    const py = item.y / widthPt;
+    // The item's middle whichever way it runs — a vertical label's start is not its middle.
+    const c = textItemCentre(item);
+    const px = c.x / widthPt;
+    const py = c.y / widthPt;
     const dx = wall.x2 - wall.x1;
     const dy = wall.y2 - wall.y1;
     const l2 = dx * dx + dy * dy || 1e-12;
