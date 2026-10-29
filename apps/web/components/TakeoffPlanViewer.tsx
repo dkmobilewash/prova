@@ -2471,23 +2471,40 @@ export function TakeoffPlanViewer({
       // another page; what it produces is handed over as data. A page that will
       // not parse yields `null`, which is not an error — the geometric filters
       // still run and the sheet gets exactly what it had before this existed.
+      //
+      // ── ONE PAGE THAT WILL NOT PARSE MUST NOT COST THE WHOLE TEMPLATE ──
+      //
+      // This caught ONCE around the whole loop and fell back to `null`, so a
+      // single page failing to read threw away every page that had read, and
+      // the finder ran with no template at all. That is why the same sheet
+      // gave two answers in two tabs: Baker A100 offers 99 candidates without
+      // the template and 83 with it, the 16 being the title block's own lines
+      // down the right edge, which the template is what removes. Now each
+      // page is read on its own, a page that fails is counted and named in the
+      // console, and the finder gets every page that did read. `sampleFailed`
+      // travels with the other diagnostics so the discrepancy is visible
+      // instead of silent.
       let sampledSheets: StrokeSegment[][] | null = null;
-      try {
+      let sampleFailed = 0;
+      {
         const sampled: StrokeSegment[][] = [];
         for (const n of pagesToSample(doc.numPages, pageNumber)) {
           if (n === pageNumber) {
             sampled.push(segments.map(inPageWidthUnits(pageSize.widthPt)));
             continue;
           }
-          const other = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(n);
-          const read = await segmentsFromOpenPage(other, pdfjs, n, layers);
-          // ITS OWN width, not this sheet's. A set with a mixed page size would
-          // otherwise compare one sheet's coordinates against another's scale.
-          sampled.push(read.segments.map(inPageWidthUnits(read.widthPt || pageSize.widthPt)));
+          try {
+            const other = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(n);
+            const read = await segmentsFromOpenPage(other, pdfjs, n, layers);
+            // ITS OWN width, not this sheet's. A set with a mixed page size would
+            // otherwise compare one sheet's coordinates against another's scale.
+            sampled.push(read.segments.map(inPageWidthUnits(read.widthPt || pageSize.widthPt)));
+          } catch (error) {
+            sampleFailed += 1;
+            console.warn(`[takeoff] template sample: page ${n} did not read, so the template is thinner on this run`, error);
+          }
         }
-        sampledSheets = sampled;
-      } catch {
-        sampledSheets = null;
+        sampledSheets = sampled.length > 1 ? sampled : null;
       }
 
       // ── ONE PIPELINE, SHARED ──
@@ -2587,6 +2604,7 @@ export function TakeoffPlanViewer({
           segments: segments.length,
           text: textItems.length,
           sampled: sampledSheets?.length ?? 0,
+          sampleFailed,
           wallTypes: wallTypes.length,
           feetPerUnit,
           walls: detected.found.walls.length,
