@@ -137,14 +137,22 @@ describe("one plan per floor — what is NOT grouped", () => {
     expect(plan.get(2)).toBe("already found");
     expect(plan.get(5)).toBeNull();
   });
-  it("on a set naming no level, groups only the whole-floor plans", () => {
+  it("on a set naming no level, the whole-floor plans AND the enlarged plans are that one floor", () => {
+    // Joplin, 2026-10-29: A-111's enlarged toilet plan added 103 ft that A-101 already had.
     const plan = wallsPlan([
       sheet({ pageNumber: 1, sheetNumber: "A100", title: "OVERALL FLOOR PLAN" }),
       sheet({ pageNumber: 2, sheetNumber: "A101", title: "FLOOR PLAN" }),
       sheet({ pageNumber: 3, sheetNumber: "A111", title: "ENLARGED PLAN - TOILETS" }),
+      sheet({ pageNumber: 4, sheetNumber: "A150", title: "STAIR PLAN AND SECTIONS" }),
     ]);
     expect(plan.get(1)).toBeNull();
     expect(plan.get(2)).toBe("same level as A100");
+    expect(plan.get(3)).toBe("same level as A100");
+    expect(plan.get(4)).toBe("not a floor plan");
+  });
+  it("with no whole-floor plan to keep, an enlarged plan stands on its own", () => {
+    const plan = wallsPlan([sheet({ pageNumber: 3, sheetNumber: "A111", title: "ENLARGED PLAN - TOILETS" }), sheet({ pageNumber: 4, sheetNumber: "A112", title: "ENLARGED PLAN - KITCHEN" })]);
     expect(plan.get(3)).toBeNull();
+    expect(plan.get(4)).toBeNull();
   });
 });

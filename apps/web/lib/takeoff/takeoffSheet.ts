@@ -1,4 +1,4 @@
-import { takeoffRank } from "./sheetSuitability";
+import { takeoffRank, sheetTitleRefusal } from "./sheetSuitability";
 import { viewKind, type ViewKind } from "./viewKind";
 
 /**
@@ -92,6 +92,18 @@ export function takeoffSheetVerdict(input: {
     return {
       worthMeasuring: false,
       why: `This is ${rank.why} — there is no floor plan here to measure.`,
+      skipAutomatically: true,
+    };
+  }
+  // ── THE SHEET-ONLY WORDS ──
+  // Code, FF&E, ceiling, fire-protection, demolition and assemblies sheets:
+  // refused here and not in the shared rank, so the viewer's view split on a
+  // page does not move (see `NOT_A_FLOOR_PLAN_SHEET`).
+  const sheetOnly = sheetTitleRefusal(input.title);
+  if (sheetOnly !== null) {
+    return {
+      worthMeasuring: false,
+      why: `This is ${sheetOnly} — there is no floor plan here to measure.`,
       skipAutomatically: true,
     };
   }

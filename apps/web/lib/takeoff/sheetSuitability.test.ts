@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cautionToShow,
   disciplineFromNumber,
+  sheetTitleRefusal,
   multiScaleCaution,
   sheetSuitability,
   duplicateWallsCaution,
@@ -314,11 +315,13 @@ describe("the letters before the number, in general — the pilot of 2026-10-29"
       expect(takeoffRank(number, "LEVEL 1 FLOOR PLAN").score, number).toBeGreaterThan(0);
     }
   });
-  it("refuses the code, FF&E, ceiling and fire-protection titles the pilot measured as walls", () => {
-    expect(takeoffRank("G-101", "CODE FOOTPRINT PLAN").score).toBeLessThan(0);
-    expect(takeoffRank("A-102", "FIRST FLOOR FF&E PLAN").score).toBeLessThan(0);
-    expect(takeoffRank("A111", "LEVEL 1 CEILING PLAN").score).toBeLessThan(0);
-    expect(takeoffRank("A-105", "LEVEL 1 DEMOLITION PLAN").score).toBeLessThan(0);
-    expect(sheetSuitability("A-102", "FIRST FLOOR FF&E PLAN", null).likelyDuplicate).toBe(true);
+  it("keeps the shared rank's words as they were — the sheet-only words live in the verdict", () => {
+    // "FIRE PROTECTION AND FIRE ALARM" is a notes block on Murray A101; the
+    // view splitter reads this rank for every caption, so it must not move.
+    expect(takeoffRank(null, "FIRE PROTECTION AND FIRE ALARM").score).toBe(0);
+    expect(takeoffRank(null, "APPLICABLE CODE (DESIGN CRITERIA)").score).toBe(0);
+    expect(sheetTitleRefusal("ROOF/CEILING/FLOOR ASSEMBLIES")).toBe("an assemblies sheet");
+    expect(sheetTitleRefusal("FIRST FLOOR FF&E PLAN")).toBe("an FF&E plan");
+    expect(sheetTitleRefusal("FIRST FLOOR PLAN")).toBeNull();
   });
 });

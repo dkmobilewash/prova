@@ -92,12 +92,16 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
     const level = levelFromTitle(sheet.title, "PLAN");
     if (level) named.set(sheet, level.label);
   }
-  // With no level named anywhere, only the sheets whose titles say they are
-  // whole-floor plans are taken as one floor; a sheet with no title at all
-  // says nothing about which floor it is, and is left alone.
+  // With no level named anywhere, the set is one floor: its whole-floor
+  // plans and its ENLARGED plans are that floor (an enlarged toilet plan is
+  // part of the floor plan beside it — Joplin A-111's 103 ft were A-101's
+  // walls again), and one whole-floor plan is kept for all of them. A sheet
+  // with no title at all says nothing about which floor it is, and is left
+  // alone, as is a set with no whole-floor plan to keep.
+  const oneFloor = named.size === 0 && candidates.some((sheet) => isWholeFloorTitle(sheet.title));
   const groups = new Map<string, WallsSheet[]>();
   for (const sheet of candidates) {
-    const key = named.get(sheet) ?? (named.size === 0 && isWholeFloorTitle(sheet.title) ? "" : null);
+    const key = named.get(sheet) ?? (oneFloor && (isWholeFloorTitle(sheet.title) || isEnlargedPlanTitle(sheet.title)) ? "" : null);
     if (key === null) continue;
     (groups.get(key) ?? groups.set(key, []).get(key)!).push(sheet);
   }
@@ -117,6 +121,11 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
 export function isWholeFloorTitle(title: string | null): boolean {
   const text = title ?? "";
   return /\bFLOOR\s+PLAN\b|\bOVERALL\b/i.test(text) && !/\bENLARGED\b/i.test(text);
+}
+
+/** A title that names a part of a floor drawn larger — walls the floor plan already has. */
+export function isEnlargedPlanTitle(title: string | null): boolean {
+  return /\bENLARGED\b[^.]*\bPLAN\b/i.test(title ?? "");
 }
 
 function preferWholeFloor(a: WallsSheet, b: WallsSheet): number {

@@ -89,6 +89,36 @@ const PREFIX_KINDS: ReadonlyArray<readonly [RegExp, string, string]> = [
   [/^D/, "demolition plan", "walls being removed, which are not the walls being built"],
 ];
 
+/**
+ * ── WORDS THAT REFUSE A SHEET, AND ONLY A SHEET ──
+ *
+ * These are read by `takeoffSheetVerdict` (the whole-set run and the sheet's
+ * own button) and NOT by `takeoffRank`, which the viewer's view splitter also
+ * consults for every caption on a page. Putting "CODE" or "FIRE PROTECTION"
+ * into the shared rank moved two labelled sheets in the sweep — a notes block
+ * captioned "FIRE PROTECTION AND FIRE ALARM" became its own view — which is a
+ * change to measured quantities this fix has no business making. A sheet
+ * TITLE with these words is not a floor plan; a caption with them is a block
+ * the splitter already handles its own way.
+ */
+export const NOT_A_FLOOR_PLAN_SHEET: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bCODE\b/i, "a code plan"],
+  [/\bLIFE\s+SAFETY\b/i, "a life-safety plan"],
+  [/\bF\.?\s?F\.?\s?&?\s?E\.?\b/i, "an FF&E plan"],
+  [/\bCEILING\s+PLAN\b/i, "a ceiling plan"],
+  [/\bFIRE\s+PROTECTION\b/i, "a fire protection plan"],
+  [/\bDEMO(LITION)?\b/i, "a demolition plan"],
+  [/\bASSEMBL(Y|IES)\b/i, "an assemblies sheet"],
+  [/\bCEILING\s+TYPES?\b/i, "a ceiling-types sheet"],
+];
+
+/** The first of `NOT_A_FLOOR_PLAN_SHEET` a sheet title matches, or null. */
+export function sheetTitleRefusal(title: string | null | undefined): string | null {
+  const name = (title ?? "").trim();
+  for (const [pattern, kind] of NOT_A_FLOOR_PLAN_SHEET) if (pattern.test(name)) return kind;
+  return null;
+}
+
 /** What a sheet number's prefix says the sheet is when it is NOT an architectural sheet, or null. */
 export function disciplineFromNumber(sheetNumber: string | null | undefined): { kind: string; caution: string } | null {
   const match = PREFIX.exec((sheetNumber ?? "").trim());
@@ -134,11 +164,6 @@ const TITLE_RULES: ReadonlyArray<readonly [RegExp, string, string]> = [
   [/ROOF\s+PLAN/i, "roof plan", "roof edges and crickets rather than partitions"],
   [/SITE\s+PLAN/i, "site plan", "site work rather than the building's partitions"],
   [/FINISH\s+PLAN/i, "finish plan", "the architectural walls repeated under the finish hatching"],
-  [/\bCODE\b/i, "code plan", "the code footprint, with the architectural walls repeated under the rating hatches"],
-  [/\bLIFE\s+SAFETY\b/i, "life-safety plan", "the egress diagram, with the architectural walls repeated under it"],
-  [/\bF\.?\s?F\.?\s?&?\s?E\.?\b/i, "FF&E plan", "the architectural walls repeated under the furniture and equipment"],
-  [/\bCEILING\s+PLAN\b/i, "ceiling plan", "the architectural walls repeated under the ceiling grid"],
-  [/\bFIRE\s+PROTECTION\b/i, "fire protection plan", "the architectural walls repeated in grey under the sprinkler layout"],
   [/FURNITURE\s+PLAN/i, "furniture plan", "the architectural walls repeated under the furniture"],
   [/\bMECHANICAL\b/i, "mechanical plan", "the architectural walls repeated in grey under the ductwork"],
   [/\bELECTRICAL\b/i, "electrical plan", "the architectural walls repeated in grey under the power plan"],
@@ -416,11 +441,6 @@ const WORTH_PRICING: ReadonlyArray<readonly [RegExp, number, string]> = [
  */
 const NOT_WHAT_YOU_PRICE: ReadonlyArray<readonly [RegExp, number, string]> = [
   [/\bLIFE\s+SAFETY\b/i, -200, "a life-safety plan"],
-  [/\bCODE\b/i, -200, "a code plan"],
-  [/\bF\.?\s?F\.?\s?&?\s?E\.?\b/i, -200, "an FF&E plan"],
-  [/\bCEILING\s+PLAN\b/i, -200, "a ceiling plan"],
-  [/\bFIRE\s+PROTECTION\b/i, -200, "a fire protection plan"],
-  [/\bDEMO(LITION)?\b/i, -200, "a demolition plan"],
   [/\bOCCUPANC(Y|IES)\b/i, -200, "an occupancy plan"],
   [/\bEGRESS\b/i, -200, "an egress plan"],
   [/\bUNIT\s+NUMBERING\b/i, -200, "a unit-numbering plan"],

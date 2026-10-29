@@ -85,3 +85,17 @@ describe("whether a sheet is worth taking off", () => {
     expect(got).not.toHaveProperty("forbidden");
   });
 });
+
+describe("the sheet-only words — the pilot of 2026-10-29", () => {
+  it("skips code, FF&E, ceiling, fire-protection, demolition and assemblies sheets automatically", () => {
+    for (const [number, title] of [["G-101", "FIRST FLOOR CODE FOOTPRINT PLAN"], ["A-102", "OVERALL FIRST FLOOR FFE PLAN"], ["A111", "LEVEL 1 CEILING PLAN"], ["A-105", "LEVEL 1 DEMOLITION PLAN"], ["A601", "ROOF/CEILING/FLOOR ASSEMBLIES"], ["FP-101", "FIRE PROTECTION PLAN"]] as const) {
+      const verdict = takeoffSheetVerdict({ sheetNumber: number, title });
+      expect(verdict.skipAutomatically, `${number} ${title}`).toBe(true);
+      expect(verdict.why, title).toMatch(/there is no floor plan here/);
+    }
+  });
+  it("still offers a floor plan, and a captioned plan still beats the words", () => {
+    expect(takeoffSheetVerdict({ sheetNumber: "A-101", title: "OVERALL FIRST FLOOR PLAN" }).skipAutomatically).toBe(false);
+    expect(takeoffSheetVerdict({ sheetNumber: "A-102", title: "FFE PLAN", viewNames: ["ENLARGED PLAN"] }).skipAutomatically).toBe(false);
+  });
+});
