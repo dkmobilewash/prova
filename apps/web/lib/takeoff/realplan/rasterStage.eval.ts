@@ -51,7 +51,7 @@ describe.skipIf(DIR === "" || SET === "")("the raster stage over a set", () => {
       // What the finder would then do with it, where the sheet's own caption
       // gave a scale: the walls it offers and whether it took the whole sheet.
       let detectNote = "";
-      const printed = read.printedScale === null ? null : scaleFromPrinted([read.printedScale], read.widthPt, read.heightPt);
+      const printed = read.printedScale === null ? null : scaleFromPrinted([read.printedScale], read.widthPt, read.heightPt, { scanned: true });
       if (printed) {
         const detected = detectForSheet({ segments: read.lines, textItems: read.text, pageSize: { widthPt: read.widthPt, heightPt: read.heightPt }, feetPerUnit: printed.declaredDistanceFeet, scanned: true });
         const feet = Math.round(detected.found.walls.reduce((n, w) => n + w.lengthFeet, 0));

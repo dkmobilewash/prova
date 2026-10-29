@@ -106,8 +106,20 @@ const STANDARD_SHEETS: { long: number; short: number; name: string }[] = [
   { long: 44, short: 34, name: "ANSI E" },
 ];
 
+/**
+ * A SCAN is the sheet plus the scanner's margin. 8102 Evergreen BLDG D
+ * (2026-10-29, the first real scanned set) is 36.5 x 24.5 in on every page —
+ * ARCH D with half an inch of bed round it — and the two-percent gate above
+ * refused its printed `1/8" = 1'-0"` on all 106 pages, so no scanned page was
+ * ever measured. On a scan the gate is an inch each way instead, in absolute
+ * terms, because a scanner's margin does not scale with the paper; a VECTOR
+ * export keeps the exact check, since its page size is what the drawing was
+ * plotted to and a 50% reduction must still be refused.
+ */
+export const SCANNED_SHEET_MARGIN_INCHES = 1;
+
 /** The standard sheet size this page is, or null if it is not one. */
-export function standardSheetSize(widthPt: number, heightPt: number): string | null {
+export function standardSheetSize(widthPt: number, heightPt: number, options: { scanned?: boolean } = {}): string | null {
   if (!(widthPt > 0) || !(heightPt > 0)) return null;
   const long = Math.max(widthPt, heightPt) / 72;
   const short = Math.min(widthPt, heightPt) / 72;
@@ -115,6 +127,7 @@ export function standardSheetSize(widthPt: number, heightPt: number): string | n
     const longOff = Math.abs(long - sheet.long) / sheet.long;
     const shortOff = Math.abs(short - sheet.short) / sheet.short;
     if (longOff <= SHEET_SIZE_TOLERANCE && shortOff <= SHEET_SIZE_TOLERANCE) return sheet.name;
+    if (options.scanned && Math.abs(long - sheet.long) <= SCANNED_SHEET_MARGIN_INCHES && Math.abs(short - sheet.short) <= SCANNED_SHEET_MARGIN_INCHES) return sheet.name;
   }
   return null;
 }
@@ -132,13 +145,15 @@ export function scaleFromPrinted(
   printed: readonly string[],
   widthPt: number | null,
   heightPt: number | null,
+  /** `scanned`: the page is a scan, so its size carries the scanner's margin (see `SCANNED_SHEET_MARGIN_INCHES`). The scale still comes only from the caption. */
+  options: { scanned?: boolean } = {},
 ): PrintedScaleReading | null {
   if (printed.length !== 1) return null;
   const name = printed[0];
   const scale = ARCHITECTURAL_SCALES.find((candidate) => candidate.name === name);
   if (scale === undefined) return null;
   if (widthPt === null || heightPt === null) return null;
-  if (standardSheetSize(widthPt, heightPt) === null) return null;
+  if (standardSheetSize(widthPt, heightPt, options) === null) return null;
 
   const paperInches = widthPt / 72;
   const across = paperInches * scale.feetPerInch;
