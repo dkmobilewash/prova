@@ -114,12 +114,32 @@ describe("the sets that must never reach training", () => {
     expect(isHeldOut("KSU_Fairchild_Hall")).toBe(true);
   });
 
-  it("covers the four sets held out 2026-10-20, the three from 2026-10-21, Cedar Hollow and one sibling", () => {
+  it("covers every set held out so far, Cedar Hollow and one sibling", () => {
     // A count, pinned, so removing an entry is a deliberate act rather than a
-    // line that vanishes in a refactor. It moved from 5 to 9 on 2026-10-21:
-    // KSU, Albany and O'Reillys held out, plus Jefferson City kept out as
-    // Albany's sibling.
-    expect(HELD_OUT_SETS).toHaveLength(9);
+    // line that vanishes in a refactor. 5 to 9 on 2026-10-21 (KSU, Albany,
+    // O'Reillys, plus Jefferson City as Albany's sibling); 9 to 12 on
+    // 2026-10-29 (Modbox, Darrington, Hillside), each held out BEFORE a label
+    // was written for it, which is the only order in which holding out means
+    // anything.
+    expect(HELD_OUT_SETS).toHaveLength(12);
+  });
+
+  it("refuses the three sets held out on 2026-10-29, before round 8 labelled them", () => {
+    // The real file names, as they appear in the plans folder.
+    expect(heldOutReason("Modbox-Bistro-plans.pdf")).toContain("held out 2026-10-29");
+    expect(heldOutReason("Darrington-Library-Tenant-Improvements.pdf")).toContain("held out 2026-10-29");
+    expect(heldOutReason("HILLSIDE-VILLAGE-Apartments.pdf")).toContain("held out 2026-10-29");
+  });
+
+  it("matches those three however the name was punctuated", () => {
+    // `flatten` strips punctuation and case from both sides, so a name that
+    // arrives underscored, unspaced or shouted still refuses. A round-8 label
+    // written against a differently-punctuated copy must not slip into
+    // training because the spelling drifted.
+    expect(heldOutReason("modbox_bistro_plans.pdf")).not.toBeNull();
+    expect(heldOutReason("MODBOX BISTRO PLANS.pdf")).not.toBeNull();
+    expect(heldOutReason("darrington library tenant improvements.pdf")).not.toBeNull();
+    expect(heldOutReason("Hillside_Village_Apartments.pdf")).not.toBeNull();
   });
 });
 

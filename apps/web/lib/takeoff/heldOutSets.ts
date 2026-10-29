@@ -83,6 +83,18 @@ export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: str
     why: "SIBLING of the held-out Albany Readiness Center — kept out of training, not a test key",
   },
   {
+    match: "Modbox-Bistro-plans",
+    why: "modular restaurant build — held out 2026-10-29, before a label was written",
+  },
+  {
+    match: "Darrington-Library-Tenant-Improvements",
+    why: "library tenant improvement — held out 2026-10-29, before a label was written",
+  },
+  {
+    match: "HILLSIDE-VILLAGE-Apartments",
+    why: "multi-family apartments — held out 2026-10-29, before a label was written",
+  },
+  {
     // Spelled without the hyphen deliberately. `flatten` strips punctuation
     // from both sides, so this matches "Cedar Hollow.pdf" exactly as the
     // hyphenated form would — and `truthWall.test.ts` greps the tree for
