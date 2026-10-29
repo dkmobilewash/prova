@@ -10,6 +10,8 @@
 //
 //   { type: "render", bytes, page, dpi, bandPx }           → { gray, width, height }
 //   { type: "ocr", gray, width, height, dpi, cachePath, tilePxAt150, minConfidence, regions, skipTiles, lanes }
+//   { type: "release" }  → the document goes, the lanes stay warm
+//   { type: "close" }    → everything goes
 //                                                          → { items, tiles, tileKeys }
 import { parentPort } from "node:worker_threads";
 import { planTiles } from "./tilePlan.mjs";
@@ -140,6 +142,11 @@ parentPort.on("message", async (message) => {
       const out = await ocr(message.gray, message.width, message.height, message.dpi, message.cachePath, message.tilePxAt150, message.minConfidence, message.regions, message.skipTiles, message.lanes);
       // The grey goes back the way it came, so the caller keeps using it.
       parentPort.postMessage({ ok: true, ...out, gray: message.gray }, [message.gray.buffer]);
+    } else if (message.type === "release") {
+      // The sheet goes; the Tesseract lanes stay warm for the next one.
+      if (doc) await doc.destroy();
+      doc = null;
+      parentPort.postMessage({ ok: true });
     } else if (message.type === "close") {
       for (const tess of lanes) await tess.terminate();
       if (doc) await doc.destroy();
