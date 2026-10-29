@@ -215,6 +215,10 @@ export const notYetRegistered: Exclusion[] = [
     reason: "Reading scanned sheets is an owner's settings switch, flipped under Settings; not a thing to ask for in words.",
   },
   {
+    action: "takeoffFeatures.*",
+    reason: "Turning the wall-types reader on is an owner's settings choice, flipped under Settings; not a thing to ask for in words.",
+  },
+  {
     action: "doorsWindows.*",
     reason: "Counting doors and windows off the plan is an owner's settings switch, flipped under Settings; not a thing to ask for in words.",
   },
