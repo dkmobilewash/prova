@@ -120,3 +120,13 @@ describe("every floor keeps its walls; a floor drawn twice keeps one", () => {
     expect(keptPlanViews([vw("RESTROOM - ENLARGED PLAN", 16)]).kept).toHaveLength(1);
   });
 });
+
+describe("a level written as a word", () => {
+  it("READS FIRST AND SECOND AS TWO LEVELS, NOT ONE FLOOR DRAWN TWICE", () => {
+    expect(planLevel("First Floor Plan")).toBe("1");
+    expect(planLevel("Second Floor Plan")).toBe("2");
+    expect(planLevel("Second Floor Plan")).not.toBe(planLevel("First Floor Plan"));
+    expect(planLevel("Third Floor Mezzanine Plan")).toBe("3 MEZZANINE");
+    expect(isLevelPlan("Second Floor Plan")).toBe(true);
+  });
+});

@@ -384,14 +384,23 @@ export async function loadTakeoffWorkspace(
   // scan whose caption was read gets the one-press scale, and one whose
   // caption was not gets the ordinary set-the-scale prompt, nothing new.
   const rasterByPage: Record<number, StoredRaster> = {};
+  const scannedNumberByPage: Record<number, string> = {};
   for (const row of await prisma.planSheetRaster.findMany({
     where: { planId: plan.id },
-    select: { pageNumber: true, widthPt: true, heightPt: true, lines: true, text: true, printedScale: true },
+    select: { pageNumber: true, widthPt: true, heightPt: true, lines: true, text: true, printedScale: true, sheetNumber: true },
   })) {
     const stored = storedRasterFrom(row);
     if (stored === null) continue;
     rasterByPage[row.pageNumber] = stored;
     if (stored.printedScale !== null && printedScaleByPage[row.pageNumber] === undefined) printedScaleByPage[row.pageNumber] = stored.printedScale;
+    // ── WHAT A SCANNED SHEET IS CALLED ──
+    // The inventory has no text to name a scan by, so its number is the one
+    // OCR read off the title-block corner (`rasterizeSheet`, the sparse
+    // re-read) — a jump target, like the labels below, never a name on a
+    // quantity. Snapping it against the set's other pages was measured on
+    // Evergreen and HURT (71 → 67 of 106 right): a right read one edit from
+    // a neighbour named twice moved to the neighbour. So it is used as read.
+    if (row.sheetNumber !== null) scannedNumberByPage[row.pageNumber] = row.sheetNumber;
   }
   const duplicateWallsByPage: Record<number, string> = {};
   /**
@@ -425,7 +434,7 @@ export async function loadTakeoffWorkspace(
       number,
     );
     if (caution) duplicateWallsByPage[row.pageNumber] = caution;
-    const label = sheetPickerLabel(number, title);
+    const label = sheetPickerLabel(number ?? scannedNumberByPage[row.pageNumber] ?? null, title);
     if (label !== null) sheetLabelByPage[row.pageNumber] = label;
   }
 
