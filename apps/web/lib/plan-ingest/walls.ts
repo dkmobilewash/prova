@@ -76,10 +76,10 @@ export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
  * one is kept per level — the one with walls already, else the OVERALL plan,
  * else a plan that is not ENLARGED, else the lowest sheet number — and the
  * others are "same level as A100", listed as such in the summary and never
- * measured. A set that names no level at all is one floor, and its
- * whole-floor plans are grouped the same way; a sheet with no title, or a
- * set that names levels and a plan that does not, is left alone, because
- * nothing says which floor it repeats.
+ * measured. A set whose plans name one level, or none, is one floor, and
+ * its whole-floor and enlarged plans are grouped the same way; a sheet with
+ * no title, or an unlevelled plan on a set that names several levels, is
+ * left alone, because nothing says which floor it repeats.
  */
 export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip | null> {
   const out = new Map<number, WallsSkip | null>(sheets.map((sheet) => [sheet.pageNumber, wallsSkipReason(sheet)]));
@@ -98,10 +98,15 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
   // walls again), and one whole-floor plan is kept for all of them. A sheet
   // with no title at all says nothing about which floor it is, and is left
   // alone, as is a set with no whole-floor plan to keep.
-  const oneFloor = named.size === 0 && candidates.some((sheet) => isWholeFloorTitle(sheet.title));
+  // A set whose plans name ONE level is a single storey too (Joplin says
+  // "OVERALL FIRST FLOOR PLAN" once and "ENLARGED FLOOR PLANS" for its
+  // toilets): an unlevelled plan there can only be that floor. With several
+  // levels named, an unlevelled plan is left alone.
+  const levels = new Set(named.values());
+  const only = levels.size === 1 ? [...levels][0] : levels.size === 0 && candidates.some((sheet) => isWholeFloorTitle(sheet.title)) ? "" : null;
   const groups = new Map<string, WallsSheet[]>();
   for (const sheet of candidates) {
-    const key = named.get(sheet) ?? (oneFloor && (isWholeFloorTitle(sheet.title) || isEnlargedPlanTitle(sheet.title)) ? "" : null);
+    const key = named.get(sheet) ?? (only !== null && (isWholeFloorTitle(sheet.title) || isEnlargedPlanTitle(sheet.title)) ? only : null);
     if (key === null) continue;
     (groups.get(key) ?? groups.set(key, []).get(key)!).push(sheet);
   }

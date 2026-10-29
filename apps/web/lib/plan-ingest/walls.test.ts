@@ -111,9 +111,10 @@ describe("one plan per floor — the set-level plan", () => {
     expect(plan.get(13)).toBe("already found");
     expect(plan.get(12)).toBe("same level as A101");
   });
-  it("leaves an unlevelled plan alone when the set names its levels", () => {
+  it("leaves an unlevelled plan alone when the set names SEVERAL levels — nothing says which it repeats", () => {
     const plan = wallsPlan([
       sheet({ pageNumber: 1, sheetNumber: "A101", title: "LEVEL 1 FLOOR PLAN" }),
+      sheet({ pageNumber: 2, sheetNumber: "A102", title: "LEVEL 2 FLOOR PLAN" }),
       sheet({ pageNumber: 9, sheetNumber: "A150", title: "ENLARGED PLAN - STAIR" }),
     ]);
     expect(plan.get(9)).toBeNull();
@@ -151,6 +152,15 @@ describe("one plan per floor — what is NOT grouped", () => {
     expect(plan.get(3)).toBe("same level as A100");
     expect(plan.get(4)).toBe("not a floor plan");
     expect(plan.get(5)).toBe("same level as A100");
+  });
+  it("on a set that names ONE level, an unlevelled enlarged plan is that level", () => {
+    // Joplin: "OVERALL FIRST FLOOR PLAN" names Level 1 once; "ENLARGED FLOOR PLANS" names nothing and is the same floor.
+    const plan = wallsPlan([
+      sheet({ pageNumber: 46, sheetNumber: "A-101", title: "OVERALL FIRST FLOOR PLAN" }),
+      sheet({ pageNumber: 49, sheetNumber: "A-111", title: "ENLARGED FLOOR PLANS" }),
+    ]);
+    expect(plan.get(46)).toBeNull();
+    expect(plan.get(49)).toBe("same level as A-101");
   });
   it("with no whole-floor plan to keep, an enlarged plan stands on its own", () => {
     const plan = wallsPlan([sheet({ pageNumber: 3, sheetNumber: "A111", title: "ENLARGED PLAN - TOILETS" }), sheet({ pageNumber: 4, sheetNumber: "A112", title: "ENLARGED PLAN - KITCHEN" })]);

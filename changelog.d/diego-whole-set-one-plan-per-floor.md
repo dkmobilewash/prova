@@ -26,4 +26,11 @@ about 1,750. Three things, each with its test:
   with both names (nothing added), and the run's label carries the sheets
   that fed it: `Pilot walls — from A100, A102`.
 
-PILOT_RESULT
+Re-run on this branch, same harness, titles read off the title block as the
+title stage would: Joplin's whole-set run becomes ONE task and posts 3,634 ft
+from A-101 alone (A-111's enlarged plans "same level as A-101"; the other 46
+scaled sheets "not a floor plan"); Baker ONE task and 1,754 ft from A100
+(A101 and A401 "same level as A100"). Both land on the real building. Label
+sweep over 46 vector sheets: byte-identical — after moving the new title
+words out of the shared rank, which the viewer's view splitter reads; the
+first commit had moved two sheets.
