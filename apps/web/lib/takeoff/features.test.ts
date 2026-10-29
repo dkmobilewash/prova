@@ -6,7 +6,7 @@ const base = { roomFinderOn: false, demotedWallsOn: false, ai: { aiEnabled: true
 describe("the takeoff features list", () => {
   it("lists every switch, each with where it lives and one plain sentence", () => {
     const rows = takeoffFeatureRows(base);
-    expect(rows.map((r) => r.key)).toEqual(["wallTypesFromDrawings", "roomsAndCeilings", "greyOut", "wholeSet", "scannedPlans"]);
+    expect(rows.map((r) => r.key)).toEqual(["wallTypesFromDrawings", "roomsAndCeilings", "greyOut", "wholeSet", "doorsWindows", "symbolCount", "scannedPlans"]);
     for (const row of rows) {
       expect(row.explain.length).toBeGreaterThan(40);
       expect(row.where.href.startsWith("/settings")).toBe(true);

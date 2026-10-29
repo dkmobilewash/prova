@@ -129,3 +129,24 @@ describe("roomsFromWalls", () => {
     expect(mergedTags.map((t) => t.name).sort()).toEqual(["OFFICE", "STORAGE"]);
   });
 });
+
+describe("door seals from the swing symbols", () => {
+  // Two 20 x 20 ft rooms side by side, the party wall cut by a 14 ft opening —
+  // wider than `openingsInWalls` will ever close (WIDEST_DOOR_FEET is 12), so
+  // without a seal the two are one region.
+  const FPU = 100;
+  const walls = [
+    { x1: 0.1, y1: 0.1, x2: 0.5, y2: 0.1, thicknessFeet: 0.5 },
+    { x1: 0.5, y1: 0.1, x2: 0.5, y2: 0.3, thicknessFeet: 0.5 },
+    { x1: 0.5, y1: 0.3, x2: 0.1, y2: 0.3, thicknessFeet: 0.5 },
+    { x1: 0.1, y1: 0.3, x2: 0.1, y2: 0.1, thicknessFeet: 0.5 },
+    { x1: 0.3, y1: 0.1, x2: 0.3, y2: 0.13, thicknessFeet: 0.5 },
+    { x1: 0.3, y1: 0.27, x2: 0.3, y2: 0.3, thicknessFeet: 0.5 },
+  ];
+  it("closes an opening the gap rule cannot, exactly along the leaf", () => {
+    const before = roomsFromWalls({ walls, feetPerUnit: FPU });
+    expect(before.rooms).toHaveLength(1);
+    const after = roomsFromWalls({ walls, feetPerUnit: FPU, doorSeals: [{ x1: 0.3, y1: 0.13, x2: 0.3, y2: 0.27 }] });
+    expect(after.rooms).toHaveLength(2);
+  });
+});
