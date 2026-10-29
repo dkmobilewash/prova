@@ -3674,3 +3674,45 @@ page shows the panel only when on. Takeoff with Baker scaled: press, watch
 `whole-set-progress` reach "N of N sheets — done", summary rows carry
 `data-status="walls"` for the floor plans, open one and see its groups without a
 press of Find walls.
+### Junk on the product path, by kind, and the one rule that priced out (2026-10-29)
+
+`zzJunkKinds.eval.ts`, #824's finder (`ec8b3677`), training sheets, confirmed junk only
+(offered footage on a `not-wall` verdict and on no real wall). Offered 54,119 ft; on a
+real wall 38,742; confirmed junk 12,434; on an `unsure` verdict 1,319; unlabelled 1,601.
+
+| kind (a heuristic, checked by crops) | ft | runs |
+| --- | --- | --- |
+| other: a plausible wall the key rejected | 4,770 | 303 |
+| stacked dimension strings (feet-and-inches text between the faces) | 1,941 | 107 |
+| a second candidate along a real wall | 1,931 | 188 |
+| furniture / fixtures | 910 | 288 |
+| grid lines | 735 | 8 |
+| repeated unit-plan shape | 656 | 81 |
+| kennel / fence / run grid (after #824's site-equipment rule) | 416 | 18 |
+| casework / counters / shelves | 412 | 67 |
+| hatch lines | 309 | 98 |
+| text or tag boxes | 283 | 43 |
+
+The crops of the biggest runs said what the kinds could not: SW A110's two 100 ft
+dimension strings 12 in apart with "99'-9 7/8"" between them, MHK's the same, ELEVEN03's
+vertical ones; Joplin's two 100-ft SINGLES are dimension lines; Supreme Court's 70 ft at
+3.5 in is a baseboard radiator; Joplin's 45 ft at 5 in is the double rule of the GENERAL
+PLAN NOTES box; and across "other" and "duplicate" alike, a DASHED line paired with a
+solid one or another dashed one — a canopy edge, a setback, a grid line.
+
+Rules priced on every offered candidate (junk removed per real foot lost; the board rule
+reversed wants 3):
+
+| rule | junk | real lost | ratio |
+| --- | --- | --- | --- |
+| dimension text between the faces | 1,488 | 4,225 | 0.4 |
+| same, and nothing meets the run | 424 | 579 | 0.7 |
+| a parallel overlapping neighbour, this the thinner | 1,191 | 4,044 | 0.3 |
+| a run ≥ 60% of the sheet's extent that ≤ 1 wall meets | 679 | 198 | 3.4, but all 198 is Alden's one wall |
+| one face dashed | 2,122 | 957 | 2.2 |
+| **both faces dashed** | **590** | **33** | **18** |
+
+Shipped: both faces dashed, as a triage set-aside (`dashedFaces.ts`). Sweep on top of
+#824, 36 sheets: training extra −679 / missing +30, held-out extra −14 / missing +30
+(one STEM wall); Bunkie A100 −247, NG Green Bay A3.2 −112, A3.1 −68, McAllen −45. The
+"other" bucket at 4,770 ft is still the biggest thing on the table and still a question.
