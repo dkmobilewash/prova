@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { modelVerdicts, type ScoredPairing } from "../demotedRuns";
-import { heldOutReason } from "../heldOutSets";
+import { excludedSheetReason, heldOutReason } from "../heldOutSets";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { sheetStrokes } from "../sheetStrokes";
 import type { WallModel } from "../wallClassifier";
@@ -81,8 +81,17 @@ describe.skipIf(DIR === "" || LABELS === "" || (MODEL_DIR === "" && MODEL_FILE =
   it("greys out junk and leaves real walls alone, per building", { timeout: 7_200_000 }, async () => {
     const files: { dir: string; sheet: string }[] = [];
     for (const dir of readdirSync(LABELS)) {
-      if (!existsSync(join(LABELS, dir)) || heldOutReason(dir) !== null) continue;
-      for (const name of readdirSync(join(LABELS, dir))) if (name.endsWith(".json")) files.push({ dir, sheet: name.replace(/\.json$/, "") });
+      if (!existsSync(join(LABELS, dir))) continue;
+      // DEMOTE_HELD_OUT=1: the HELD-OUT sets instead, for a before/after delta
+      // of one model against another — never for choosing a cut or a feature.
+      if (process.env.DEMOTE_HELD_OUT === "1" ? heldOutReason(dir) === null : heldOutReason(dir) !== null) continue;
+      for (const name of readdirSync(join(LABELS, dir))) {
+        if (!name.endsWith(".json")) continue;
+        const sheet = name.replace(/\.json$/, "");
+        // A sheet that is the wrong question (Michigan A3's existing walls) — see `EXCLUDED_SHEETS`.
+        if (excludedSheetReason(dir, sheet) !== null) continue;
+        files.push({ dir, sheet });
+      }
     }
     files.sort((a, b) => a.dir.localeCompare(b.dir) || a.sheet.localeCompare(b.sheet));
     const models = new Map<string, { model: WallModel; take: number }>();

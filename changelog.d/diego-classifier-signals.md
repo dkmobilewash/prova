@@ -28,3 +28,16 @@ on junk; neither target is met (90% precision, 40% of junk), because at 0.2 a ru
 greyed only when EVERY pairing of it scores under the cut — 193 of 4,032 runs. The
 model file is prepared beside this branch (`train-…-signals/wall-model.json`, `cut`
 0.2) and ships only together with this code.
+
+**This is the 28-column branch, and the model ships with it.** The six
+further signals measured on `diego/classifier-signals-2` (stroke colour,
+crossing ticks, centred numbers, extension ends, faces two feet off) do not
+help — 952 / 240 / 80% training and 415 / 136 / 75% held-out against this
+set's 804 / 194 / 81% and 579 / 145 / 80% — so they stay off this branch
+and the model trained on exactly these 28 columns
+(`train-20261029-164211-signals28-round8/wall-model.json`, named by
+`TAKEOFF_WALL_MODEL`) is the one to deploy. `wallModelColumns.test.ts` pins
+`FEATURE_NAMES` to those 28 names in order, so a column added or moved
+without a new model fails the build instead of silently switching the
+classifier off. `zzLoboVeto` and `zzDemote` honour #843's excluded sheets,
+and `zzDemote` has a held-out delta mode.
