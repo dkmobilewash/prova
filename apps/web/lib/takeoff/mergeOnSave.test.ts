@@ -79,7 +79,12 @@ describe("reopening a sheet whose candidates have moved", () => {
     expect(got.ok).toBe(true);
     if (!got.ok) return;
     expect(got.traceOnly).toBe(true);
-    expect(got.message).toContain("2 saved decisions kept but not shown");
+    // The wording moved: the notice now LEADS with what came back, because
+    // Chrome read the old sentence as "restored silently" — it opened on the
+    // carried count and never said "Restored" at all. The held-back count is
+    // still named, second.
+    expect(got.message).toContain("Restored");
+    expect(got.message).toContain("2 more are kept but not shown");
     expect(got.message).toContain("TRACING");
     // It must NOT claim the work is lost, because it is not.
     expect(got.message).toContain("nothing already decided is lost");
