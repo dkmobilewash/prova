@@ -126,6 +126,8 @@ import {
 import { detectForSheet, offeredCandidates } from "@/lib/takeoff/offeredCandidates";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
+import { TakeoffDoorsPanel } from "./TakeoffDoorsPanel";
+import { doorsAndWindowsForSheet, type DoorsWindowsResult, type StoredScheduleRow } from "@/lib/takeoff/doorsWindows";
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
 import { roomsFromWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
@@ -274,6 +276,8 @@ export function TakeoffPlanViewer({
   readOnly = false,
   roomFinder = false,
   demotedWalls = false,
+  doorsWindows = false,
+  doorScheduleRows = [],
   wallModel = null,
   ceilingPages = [],
   onMeasurementSaved,
@@ -358,6 +362,15 @@ export function TakeoffPlanViewer({
    * button absent. See `lib/takeoff/NOTES-rooms.md`.
    */
   roomFinder?: boolean;
+  /**
+   * "Doors and windows from the plan": after Find the walls, the door swings
+   * and window symbols read off the sheet, counted, measured and joined to the
+   * door schedule. Read from `Company.doorsWindowsOn`, false until chosen.
+   * See `lib/takeoff/NOTES-doors.md`.
+   */
+  doorsWindows?: boolean;
+  /** The set's door schedule rows as the ingest read them, for the join; empty when none. */
+  doorScheduleRows?: StoredScheduleRow[];
   /**
    * "Demote, don't hide": a run the check labels casework or reference stays
    * on the sheet greyed, out of the total, one click to take back. Read from
@@ -715,6 +728,9 @@ export function TakeoffPlanViewer({
   const pairingsRef = useRef<{ x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet: number }[]>([]);
   const wordsRef = useRef<{ str: string; x: number; y: number; width: number; height: number }[]>([]);
   const [rooms, setRooms] = useState<RoomsFromWallsResult | null>(null);
+  /** Doors and windows read from this sheet's symbols at the last Find, with the page they are about. */
+  const [openings, setOpenings] = useState<{ page: number; result: DoorsWindowsResult; walls: WallCandidate[] } | null>(null);
+  const [hoveredOpening, setHoveredOpening] = useState<string | null>(null);
   const [roomsOnPage, setRoomsOnPage] = useState<number | null>(null);
   const [hoveredRoom, setHoveredRoom] = useState<number | null>(null);
   /**
@@ -2631,7 +2647,42 @@ export function TakeoffPlanViewer({
       // next line went with it: `clusterByThickness` was called, assigned and
       // then deliberately discarded, because the real clustering happens inside
       // `regroup`. The pipeline still returns it for the bench.
-      setFound(doubted !== null ? regroup(walls.filter((_, at) => !doubted.has(at))) : found.groups);
+      // ── THE DOORS AND WINDOWS, FROM THE SAME STROKES ──
+      // Only with the company's switch on, and never in labelling mode: the
+      // key is about walls. Pure geometry over what is already in hand. Read
+      // BEFORE grouping, because each door's width becomes its run's opening
+      // in place of the gap `mergeWalls` inferred — the leaf is the door, the
+      // gap is a fifth narrow (openingMarks.ts).
+      let runs: WallCandidate[] = walls;
+      if (doorsWindows && answerKey === undefined) {
+        const W = pageSize.widthPt;
+        const result = doorsAndWindowsForSheet({
+          segments: found.inUnits,
+          segmentsPt: found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })),
+          textPt: textItems,
+          widthPt: W,
+          walls,
+          feetPerUnit,
+          scheduleRows: doorScheduleRows,
+        });
+        const byWall = new Map<number, { widthFt: number }[]>();
+        result.doors.forEach((d, i) => {
+          if (d.wall === null) return;
+          const joined = result.join?.openings[i];
+          (byWall.get(d.wall) ?? byWall.set(d.wall, []).get(d.wall)!).push({ widthFt: joined?.widthFt ?? d.widthFeet });
+        });
+        runs = walls.map((w, i) => (byWall.has(i) ? { ...w, openings: byWall.get(i)! } : w));
+        setOpenings({ page: pageNumber, walls: runs, result });
+      } else {
+        setOpenings(null);
+      }
+      setFound(
+        doubted !== null
+          ? regroup(runs.filter((_, at) => !doubted.has(at)))
+          : runs === walls
+            ? found.groups
+            : regroup(runs),
+      );
 
       // ── AND, FOR A REVIEWER, EVERYTHING THE DETECTOR COULD NOT REACH ──
       //
@@ -2728,6 +2779,22 @@ export function TakeoffPlanViewer({
     for (const opening of openingsFromDoors(planTextDoors.get(index) ?? []).openings) {
       body.append("openingWidth", String(opening.widthFt));
       body.append("openingHeight", String(opening.heightFt));
+    }
+    // ── AND THE DOORS READ OFF THE SWINGS, WHERE THE SCHEDULE GAVE A HEIGHT ──
+    // A door the symbol pass found on one of this group's runs and the join
+    // named: its schedule row has the height a deduction needs. One the
+    // plan-text read already placed by the same mark is not added twice.
+    if (openings !== null && openings.page === pageNumber) {
+      const marksDone = new Set(openingsFromDoors(planTextDoors.get(index) ?? []).openings.map((o) => o.mark));
+      const group = found[index];
+      openings.result.doors.forEach((d, i) => {
+        if (d.wall === null || group === undefined || !group.runs.includes(openings.walls[d.wall]!)) return;
+        const joined = openings.result.join?.openings[i];
+        const height = joined?.matched?.heightFt ?? null;
+        if (joined?.mark == null || height === null || marksDone.has(joined.mark)) return;
+        body.append("openingWidth", String(joined.widthFt));
+        body.append("openingHeight", String(height));
+      });
     }
     // ── THE LABEL CARRIES THE DRAWING'S OWN WORD WHERE THERE IS ONE ──
     //
@@ -3721,6 +3788,18 @@ export function TakeoffPlanViewer({
               <PlanTextPanel view={planText} wallTypes={wallTypes} />
             </>
           )}
+          {openings !== null && openings.page === pageNumber && (
+            <TakeoffDoorsPanel
+              result={openings.result}
+              groupOfWall={(at) => {
+                const run = openings.walls[at];
+                const g = run === undefined ? -1 : found.findIndex((group) => group.runs.includes(run));
+                return g < 0 ? null : g + 1;
+              }}
+              hovered={hoveredOpening}
+              onHover={setHoveredOpening}
+            />
+          )}
           {rooms !== null && roomsOnPage === pageNumber && sheet !== null && feetPerUnit !== null && (
             <TakeoffRoomsPanel
               jobId={jobId}
@@ -4180,6 +4259,47 @@ export function TakeoffPlanViewer({
                   strokeWidth={STROKE_PX}
                   vectorEffect="non-scaling-stroke"
                 />
+              )}
+              {/* The doors and windows read from this sheet's symbols: a dot at
+                  each hinge, the leaf hinge to strike, a bar across each window.
+                  Page-width units like everything else here. */}
+              {openings !== null && openings.page === pageNumber && (
+                <g data-takeoff="doors-overlay">
+                  {openings.result.doors.map((d, i) => {
+                    const lit = hoveredOpening === `door-${i}`;
+                    return (
+                      <g key={`door-${i}`} data-takeoff="door" opacity={hoveredOpening === null || lit ? 1 : 0.4}>
+                        <line
+                          x1={d.hinge.x}
+                          y1={d.hinge.y}
+                          x2={d.strike.x}
+                          y2={d.strike.y}
+                          stroke={d.wall === null ? "#c026d3" : "#2563eb"}
+                          strokeWidth={lit ? STROKE_PX * 3 : STROKE_PX * 1.5}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                        <circle cx={d.hinge.x} cy={d.hinge.y} r={lit ? 0.004 : 0.0025} fill={d.wall === null ? "#c026d3" : "#2563eb"} />
+                      </g>
+                    );
+                  })}
+                  {openings.result.windows.map((w, i) => {
+                    const lit = hoveredOpening === `window-${i}`;
+                    return (
+                      <line
+                        key={`window-${i}`}
+                        data-takeoff="window"
+                        x1={w.x1}
+                        y1={w.y1}
+                        x2={w.x2}
+                        y2={w.y2}
+                        stroke="#16a34a"
+                        strokeWidth={lit ? STROKE_PX * 4 : STROKE_PX * 2.5}
+                        opacity={hoveredOpening === null || lit ? 0.9 : 0.35}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    );
+                  })}
+                </g>
               )}
               {/* The calibration line, redrawn over the sheet so the scale is
                   something a reviewer can SEE rather than take on faith.

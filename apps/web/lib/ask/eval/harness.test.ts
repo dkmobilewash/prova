@@ -92,6 +92,8 @@ describe("every eval refuses to run without a key", () => {
   const KEYLESS_EVALS: Record<string, string> = {
     "scaleAudit.eval.ts":
       "calls no model: deterministic geometry over real drawings, guarded by a skip plus a non-zero input assertion",
+    "doorWindows.eval.ts":
+      "calls no model: reads door-swing and window symbols off REAL training floor plans under REAL_PLAN_DIR and scores them against a hand-built key under DW_KEY_DIR (found / missed / false, width error against the schedule's size column, itself a CACHED read); guarded by a skip on every variable",
     "takeoffBench.eval.ts":
       "calls no model: generated drawings through the real scale/wall/schedule pipeline, guarded by a skip plus non-zero case and path-operator assertions",
     "realPlan.eval.ts":

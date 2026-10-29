@@ -39,6 +39,7 @@ import { TakeoffFeaturesSection } from "@/components/TakeoffFeaturesSection";
 import { takeoffFeatureRows } from "@/lib/takeoff/features";
 import { aiSettingsFor } from "@/lib/ai/settings";
 import { anthropicIsConfigured } from "@prova/integrations";
+import { DoorsWindowsSwitch } from "@/components/DoorsWindowsSwitch";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
@@ -184,12 +185,13 @@ export default async function SettingsPage({
   // are columns on the same row and there is no reason to ask twice.
   const switches = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOn: true, wholeSetTakeoffOn: true, scannedPlansOn: true },
+    select: { roomFinderOn: true, demotedWallsOn: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true },
   });
   const roomFinderOn = switches?.roomFinderOn ?? false;
   const demotedWallsOn = switches?.demotedWallsOn ?? false;
   const wholeSetTakeoffOn = switches?.wholeSetTakeoffOn ?? false;
   const scannedPlansOn = switches?.scannedPlansOn ?? false;
+  const doorsWindowsOn = switches?.doorsWindowsOn ?? false;
   // Every takeoff switch in one list (PILOT.md's first finding); the switches
   // themselves stay in their own sections below and on the Assistant page.
   const aiSettings = await aiSettingsFor(company.id);
@@ -203,6 +205,7 @@ export default async function SettingsPage({
     // would tell an owner that two switches they can use do not exist.
     wholeSetTakeoffOn,
     scannedPlansOn,
+    doorsWindowsOn,
   });
   const { qb, qb_detail, tab: tabParam } = await searchParams;
   // The same rule PageTabs highlights by, so the tab lit is the group shown.
@@ -643,6 +646,9 @@ export default async function SettingsPage({
             {/* Scanned sheets, same posture: off until chosen. */}
             <div className="mt-4">
               <ScannedPlansSwitch on={scannedPlansOn} isOwner={currentUser.role === "OWNER"} />
+            </div>
+            <div className="mt-4">
+              <DoorsWindowsSwitch on={doorsWindowsOn} isOwner={currentUser.role === "OWNER"} />
             </div>
           </section>
 
