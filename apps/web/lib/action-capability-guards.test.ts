@@ -1963,6 +1963,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   roomFinder: () => import("./actions/roomFinder"),
   // "Demote, don't hide": the owner's switch (behind /settings).
   demotedWalls: () => import("./actions/demotedWalls"),
+  symbolCount: () => import("./actions/symbolCount"),
   // Whole-set takeoff: the owner's switch (behind /settings) and the per-sheet
   // summary read (behind the takeoff's job-costs gate). The run itself is
   // planIngest's start/advance, listed above.
@@ -1971,6 +1972,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   scannedSheets: () => import("./actions/scannedSheets"),
   // The Takeoff features list's one action: AI on plus the opt-in, in one save (behind /settings).
   takeoffFeatures: () => import("./actions/takeoffFeatures"),
+  doorsWindows: () => import("./actions/doorsWindows"),
   takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),

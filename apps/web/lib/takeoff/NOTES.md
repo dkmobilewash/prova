@@ -3787,3 +3787,39 @@ Shipped: both faces dashed, as a triage set-aside (`dashedFaces.ts`). Sweep on t
 #824, 36 sheets: training extra −679 / missing +30, held-out extra −14 / missing +30
 (one STEM wall); Bunkie A100 −247, NG Green Bay A3.2 −112, A3.1 −68, McAllen −45. The
 "other" bucket at 4,770 ft is still the biggest thing on the table and still a question.
+
+### The "other" junk re-sorted, the duplicates that are not, and two rules that priced out (2026-10-29)
+
+Forty crops of the 4,770 ft "other" bucket (at most four per sheet; session scratchpad
+`crops-other/`), then every "other" run re-sorted by the features the crops pointed at:
+
+| what it is | ft | runs |
+| --- | --- | --- |
+| rest (still unexplained; Camp Bow Wow 764, NG Green Bay A3.1 306, ELEVEN03 238) | 2,469 | 200 |
+| two long solid lines nothing meets (site edge, railing, storefront) | 651 | 15 |
+| a plausible wall that partitions meet, the key rejected | 449 | 14 |
+| table, schedule, notes or legend rules | 355 | 16 |
+| a dashed line beside a solid one | 296 | 15 |
+| sparse faces | 100 | 9 |
+| dimension strings and witness lines the kind test missed | 65 | 4 |
+
+Six of the forty crops were BLANK at the candidate's midpoint at two widths, with faces
+of eight equal 4 ft pieces covering the whole run: lines the PDF carries and never
+draws. Tagging every stroke with the operator that painted its path found them —
+`eoClip` paths, 23% of NG Green Bay A3.1's strokes, 43% of Topeka p76's — and the
+clip-path rule in `sheetStrokes` is the result (numbers in the changelog entry).
+
+**"A second candidate along a real wall" is not the same wall twice.** Matched each of
+its 1,905 ft to the nearest offered real wall within 4 ft: 1,696 ft has zero overlap
+with it — the junk continues the wall's line past its end (crops `crops-dup/d1-d5`: a
+notes-box rule, a dash-dot setback, a radiator run, a grey unit-plan segment the reviewer
+rejected). The review tool's `duplicatePairs` (1.5 ft centrelines, 70% overlap) cannot
+see those, and the 157 ft it can see it mostly keeps the wrong side of. Applied to the
+product's offered candidates as a filter, its drop side is 817 ft of junk for 2,732 ft
+of real wall — Joplin's 74 ft and Supreme Court's 70 ft among them. Not a filter.
+
+Rules priced and rejected this round: dimension text between the faces 0.4 to 1; a
+long run nothing meets 3.4 to 1 with all its real loss on Alden's one wall; one dashed
+face 2.2 to 1 (7 to 1 with Alden out, which is tuning on a building); faces mostly
+unpainted at 50% 1.3 to 1 (at 95%, 126 to 1 — the clip rule takes the whole class
+instead).
