@@ -1,5 +1,6 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { bothFacesDashedInPoints } from "./dashedFaces";
+import { isCaseworkFront } from "./casework";
 import { isTableRows } from "./textRows";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "./findWallsOnSheet";
 import {
@@ -220,6 +221,7 @@ export function offeredCandidates(
   const equipment: { wall: WallCandidate; word: string; feet: number }[] = [];
   const dashed: WallCandidate[] = [];
   const tables: WallCandidate[] = [];
+  const casework: WallCandidate[] = [];
   let zeroExtent = 0;
   const onPlan = sheet.walls.filter((w) => {
     // A run with no extent — a closed loop's chord, a degenerate merge — is
@@ -246,8 +248,20 @@ export function offeredCandidates(
       tables.push(w);
       return false;
     }
+    // A thin run two feet off a parallel run: the front of the casework — see `casework.ts`.
+    if (isCaseworkFront(w, sheet.walls, sheet.feetPerUnit)) {
+      casework.push(w);
+      return false;
+    }
     return true;
   });
+  if (casework.length > 0) {
+    aside.set("casework", {
+      kind: "casework",
+      why: "a thin line pair two feet off a wall, along it — the front of base cabinets or a counter, not a wall",
+      n: casework.length,
+    });
+  }
   if (dashed.length > 0) {
     aside.set("dashed-faces", {
       kind: "dashed-faces",
@@ -304,6 +318,7 @@ export function offeredCandidates(
       ...equipment.map((e) => ({ kind: "site-equipment", why: `'${e.word}' is written ${e.feet.toFixed(0)} ft away`, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
       ...dashed.map((w) => ({ kind: "dashed-faces", why: "both faces are dashed lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...tables.map((w) => ({ kind: "table-rows", why: "rows of text between the lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...casework.map((w) => ({ kind: "casework", why: "a thin pair two feet off a wall, along it", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...classified
         .filter((one) => !worthOffering(one.kind))
         .map((one) => ({

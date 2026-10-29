@@ -3823,3 +3823,33 @@ long run nothing meets 3.4 to 1 with all its real loss on Alden's one wall; one 
 face 2.2 to 1 (7 to 1 with Alden out, which is tuning on a building); faces mostly
 unpainted at 50% 1.3 to 1 (at 95%, 126 to 1 — the clip rule takes the whole class
 instead).
+
+## The casework rule — 2026-10-29 (second session, `diego/casework`)
+
+The junk the census called "a second face of a real wall" was mostly a thin
+line pair about two feet off a wall: base-cabinet fronts and counters. The
+rule (`casework.ts`): a run no thicker than 4 in, lying along a parallel
+candidate for 70% of its own length, with its near face 20–28 in from that
+candidate's face, is set aside as `casework`. The thin run goes, never the
+wall it faces. Priced on every offered candidate: 442 ft junk / 123 real.
+
+Sweep, every labelled sheet, before = main `97b758bd`, Michigan excluded:
+
+| | real lost | junk removed |
+| --- | --- | --- |
+| TRAINING | **74 ft** | **501 ft** — 6.8 to 1 |
+| held-out, delta only | **90 ft** | **144 ft** — 1.6 to 1 |
+
+Per building (training): ELEVEN03 −34 real / −205 junk; Crosslines −15 /
+−42; Topeka −13 / −4; Murray −9 / −7; SW Grand Junction −3 / −51; Camp Bow
+Wow −74 junk, NG Green Bay −49, Supreme Court −23, Bunkie −20, glen-hazel
+−20, HPL −6, all with no real lost. No training building worse by more than
+34 ft. Passes the training rule.
+
+**The held-out delta does not pass it, and that is the sentence to read.**
+Gen BBQ A101 loses 63 ft of real wall for 0 ft of junk — a thin run two
+feet off a parallel run that IS a wall there (a restaurant's storefront or
+furring, by the numbers; nobody looked, held-out is not looked at). Hillside
+loses 19 ft for 3. Modbox and STEM gain. Training 6.8:1 against held-out
+1.6:1 is a generalisation warning on a rule written from training sets,
+recorded here for the merge decision rather than smoothed over.
