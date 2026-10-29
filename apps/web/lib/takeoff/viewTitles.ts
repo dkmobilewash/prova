@@ -208,8 +208,21 @@ const LEVEL_NUMBER =
   /\b(?:(\d{1,2})(?:ST|ND|RD|TH)?(?:\s*(?:-|–|TO|THRU|THROUGH)\s*(\d{1,2})(?:ST|ND|RD|TH)?)?\s+(?:FLOOR|LEVEL|FLR)|(?:FLOOR|LEVEL|FLR)\s*(\d{1,2})(?:\s*(?:-|–|TO|THRU)\s*(\d{1,2}))?)\b/;
 const LEVEL_NAME = /\b(PENTHOUSE|BASEMENT|MEZZANINE|GROUND|MAIN\s+LEVEL|UPPER\s+LEVEL|LOWER\s+LEVEL|CELLAR|ATTIC|LOFT)\b/;
 
+/**
+ * ── A LEVEL WRITTEN AS A WORD IS THE SAME LEVEL ──
+ *
+ * glen-hazel A-111 captions "First Floor Plan" and "Second Floor Plan". Both
+ * parsed to NO level, so `keptPlanViews` grouped them as one floor drawn twice
+ * and dropped the second — 822 of its 1,843 ft of key, measured and thrown
+ * away. The words are spelled out before the digit pattern runs.
+ */
+const ORDINAL_WORDS: Record<string, string> = {
+  FIRST: "1ST", SECOND: "2ND", THIRD: "3RD", FOURTH: "4TH", FIFTH: "5TH", SIXTH: "6TH",
+  SEVENTH: "7TH", EIGHTH: "8TH", NINTH: "9TH", TENTH: "10TH", ELEVENTH: "11TH", TWELFTH: "12TH",
+};
+const ORDINAL_WORD = new RegExp(`\\b(${Object.keys(ORDINAL_WORDS).join("|")})\\b`, "g");
 export function planLevel(title: string): string | null {
-  const up = title.toUpperCase();
+  const up = title.toUpperCase().replace(ORDINAL_WORD, (w) => ORDINAL_WORDS[w] ?? w);
   const num = LEVEL_NUMBER.exec(up);
   const name = LEVEL_NAME.exec(up);
   const number = num === null ? null : (() => {

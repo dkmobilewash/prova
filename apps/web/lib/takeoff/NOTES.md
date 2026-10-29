@@ -3823,3 +3823,108 @@ long run nothing meets 3.4 to 1 with all its real loss on Alden's one wall; one 
 face 2.2 to 1 (7 to 1 with Alden out, which is tuning on a building); faces mostly
 unpainted at 50% 1.3 to 1 (at 95%, 126 to 1 — the clip rule takes the whole class
 instead).
+
+## Second faces, dimension lines, and three sheets that offered nothing — 2026-10-29 (second session, `diego/second-face`)
+
+### "Second face of a real wall" is mostly not that, and the rule for it loses
+
+Priced on every offered candidate of the training label files (the
+`zzJunkKinds` rows, pairs of OFFERED candidates — what a product rule can
+see). "Never offer a run alongside an already-offered wall's face, keep the
+better one", at every tolerance tried:
+
+| the second run… | dropped | junk | real | ratio |
+| --- | --- | --- | --- | --- |
+| bands touch within 0 in, overlap ≥ 50%, keep the longer | 14 | 90 | 76 | 1.2× |
+| bands touch within 1 in | 54 | 127 | 488 | 0.3× |
+| bands touch within 2 in | 172 | 353 | 1,232 | 0.3× |
+| bands touch within 2 in, keep the thicker | 173 | 671 | 1,739 | 0.4× |
+| shares a face (< 1 in) with a thicker run | 31 | 79 | 315 | 0.3× |
+| shares a face, thinner AND shorter | 18 | 67 | 152 | 0.4× |
+| its whole band inside a thicker run's band (+2 in) | 2 | 27 | 0 | — |
+| the review tool's own `duplicatePairs` drop | | 633 | 3,007 | 0.2× |
+
+What sits against a real wall's face on these sets is usually another real
+wall: ELEVEN03's demising and chase walls, HACP's and Baker's furring, MHK.
+The one clean form — a thin run whose band lies entirely INSIDE a thicker
+run's — catches 27 ft. The glen-hazel #75/#78 pair (0.7 ft apart, 4 ft of
+overlap) is below every overlap floor here and would not be caught either.
+
+And the category was misnamed. Of the 1,874 ft of junk parallel to and
+overlapping a real wall within 3 ft, **1,562 ft shares no face with it**: the
+centre offset clusters at 20–28 in, which is base-cabinet depth. Those are
+casework edges paired with each other two feet off the wall, not the wall's
+face offered twice. Priced as that:
+
+| a thin run (≤ 4 in) whose face is this far from a parallel run's face | junk | real | ratio |
+| --- | --- | --- | --- |
+| 18–30 in | 628 | 204 | 3.1× |
+| 20–28 in | 442 | 123 | 3.6× |
+| 22–26 in | 285 | 58 | 4.9× |
+
+Clears 3:1 on paper, with ELEVEN03 (−50 ft) and Crosslines (−47) paying;
+not swept in this session — it is a casework rule, and the dimension-line
+and view work below came first.
+
+### Why three sheets offered nothing
+
+- **glen-hazel A-111, Second Floor Plan (822 of 1,843 ft of key missing).**
+  Found by caption, scaled, measured at 850 ft — and dropped. `planLevel`
+  read levels only as digits (`1ST`, `LEVEL 2`), so "First Floor Plan" and
+  "Second Floor Plan" both parsed to NO level, `keptPlanViews` grouped them
+  as one floor drawn twice, and kept the bigger. Fixed: ordinal words map to
+  their digits before the pattern runs. All three floors are kept now.
+- **HACP A-5, three of four enlarged plans (353 of 396 ft missing).** The
+  captions are two lines — "TYP 1ST FLR @ GRADE NEW WORK" over "PLAN" — and
+  the name reader took the last line only, so four plans read as "WORK
+  PLAN", "PLAN", "DOOR NEW WORK PLAN", "NEW WORK PLAN": no level on any,
+  one kept. Fixed in `sheetViews`: the line above the name, in the same
+  lettering and left-aligned within 1.8 line-heights, is the first half of
+  the title. All four are kept, each with its level.
+- **Michigan A3 (473 ft of key, 0 offered).** Not a view problem: one
+  whole-page FLOOR PLAN, found. The strokes carry layer names and
+  `withoutNonWallLayers` keeps 282 of 51,764 segments; with layers stripped
+  the raw finder returns 72 walls, 826 ft. The key walls sit on **A-EXIST
+  (410 ft)**, A-HATCH 32 and A-NEW 31 — existing construction, which the
+  layer filter excludes by design (`OUT_OF_SCOPE`, the dealership rule).
+  So the labeller counted existing walls as walls and the product does not.
+  That is a labelling-policy call, not a code change; nothing done here.
+
+### Dimension lines: four feature families, none clears 3:1
+
+The 1,968 ft is mostly stacked dimension strings paired as a wall, three to
+six inches apart on paper, and the number is the string's own text. Priced
+on every offered candidate of the 31 training files (junk : real):
+
+| test | junk | real | ratio |
+| --- | --- | --- | --- |
+| a dimension number between the faces, or two within 1.5 ft (round 7) | 2,013 | 5,477 | 0.4× |
+| short 30–60° strokes on the run's line or a face (ticks), ≥ 2 | 8,169 | 34,842 | 0.2× |
+| … ≥ 6 and run ≤ 6 in thick | 2,730 | 11,364 | 0.2× |
+| strokes that CROSS the run's centreline or a face at 30–60°, ≥ 2 | 1,466 | 9,818 | 0.1× |
+| … and a dimension number near | 567 | 3,059 | 0.2× |
+| arrowhead bits (tiny near-perpendicular strokes) ≥ 4 | 8,128 | 39,722 | 0.2× |
+
+The reason is in the distributions, not the thresholds: real walls carry a
+median of four 45° strokes at their faces — hatching, door swings, the
+returns at openings — and of the dimension-string junk only 31% shows two
+crossing ticks, because the ticks on these sets are mostly arrowheads or
+slashes clipped to the line. A dimension line is told from a wall by what
+it MEASURES, not by what is drawn on it, and that is the classifier's job
+(`dimensionText*` features already on the model) rather than a rule's.
+Not shipped.
+
+### Sweep: the two view fixes, every labelled sheet, before = main `de5c4fb9`
+
+| | real recovered | junk added |
+| --- | --- | --- |
+| TRAINING (31 files) | **+658 ft** | **+231 ft** — 2.8 to 1 |
+| held-out | 0 | 0 |
+
+Only two sheets move: glen-hazel A-111 missing 822 → 294, extra 235 → 424
+(recall 70.6% → 87.9%, junk 9 → 15 ft/100); HACP A-5 missing 353 → 223,
+extra 170 → 212 (83.7% → 87.9%, 13 → 15). Every other sheet is identical.
+2.8:1 is under the tuning rule's 3:1; the junk is the recovered plans' own
+at 15 ft/100 against a training average of 31, so the fix makes both sheets
+cleaner than the set it joins. Recorded rather than argued — whether a
+dropped-drawing fix is held to the junk rule is Diego's call.
