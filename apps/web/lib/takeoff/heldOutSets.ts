@@ -165,3 +165,35 @@ export function splitForTraining<T>(
   }
   return { train, refused };
 }
+
+/**
+ * ── SHEETS THAT ARE NEITHER TRAINING NOR A KEY ──
+ *
+ * A held-out SET is still an answer key: it is scored, just never trained on.
+ * These are different. They are labelled, the labels are correct, and the
+ * sheet is the wrong question — so it is excluded from training AND from
+ * scoring, and the `why` has to say which kind of wrong.
+ *
+ * Keep this short. A sheet that merely scores badly belongs in the scorecard,
+ * not in here; the bar is that the sheet asks the finder for something it
+ * should not do.
+ */
+export const EXCLUDED_SHEETS: readonly { readonly set: string; readonly sheet: string; readonly why: string }[] = [
+  {
+    set: "michigan-state-universtity",
+    sheet: "A3",
+    why:
+      "its traced walls are mostly EXISTING (A-EXIST) — a trace means 'a wall the finder missed', so " +
+      "training on it teaches walls nobody is building and scoring against it counts a correct refusal " +
+      "as a miss. Excluded by Diego 2026-10-29; see BOARD.md.",
+  },
+];
+
+/** The reason this exact sheet is neither trained on nor scored, or null. */
+export function excludedSheetReason(set: string, sheet: string): string | null {
+  const want = flatten(set);
+  for (const one of EXCLUDED_SHEETS) {
+    if (flatten(one.set) === want && flatten(one.sheet) === flatten(sheet)) return one.why;
+  }
+  return null;
+}
