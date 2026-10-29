@@ -1366,7 +1366,6 @@ export function TakeoffWorkspace({
                                 currentSheet?.calibration != null
                                   ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
                                   : 0,
-                                current.traced.length,
                               ),
                             ),
                           );

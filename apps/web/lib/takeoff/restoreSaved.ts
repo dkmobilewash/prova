@@ -423,7 +423,7 @@ export function restoreSaved(
     // defaulted.
     state = addTraced(
       state,
-      tracedWall({ x: t.x1, y: t.y1 }, { x: t.x2, y: t.y2 }, feetPerUnit, state.traced.length + index),
+      tracedWall({ x: t.x1, y: t.y1 }, { x: t.x2, y: t.y2 }, feetPerUnit),
     );
   });
 
