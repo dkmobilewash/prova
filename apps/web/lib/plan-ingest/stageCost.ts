@@ -58,5 +58,7 @@ export const STAGE_SPENDS: Record<PlanIngestStage, boolean> = {
   WALL_LEGEND: true,
   // The finder is code; a whole-set run spends nothing however many sheets.
   WALLS: false,
+  // Render, lines and Tesseract — CPU, no model.
+  RASTER: false,
 };
 

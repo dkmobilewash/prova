@@ -255,6 +255,7 @@ export function TakeoffPlanViewer({
   // is a build error rather than a button that silently never appears —
   // which is the failure this prop exists to fix.
   scannedPages = [],
+  rasterByPage = {},
   storedWallsByPage,
   takeoffItems = [],
   levelByPage,
@@ -416,6 +417,12 @@ export function TakeoffPlanViewer({
    * gate is that fact, and nothing else.
    */
   scannedPages: number[];
+  /**
+   * WHAT THE RASTER STAGE READ OFF A SCANNED SHEET, keyed by page: the lines
+   * and the words in points, for Find the walls to use instead of the file's
+   * strokes (a scan has none). Absent for every sheet the stage has not read.
+   */
+  rasterByPage?: Record<number, { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[] }>;
   /**
    * THE WALLS ALREADY FOUND ON EACH SHEET, from `TakeoffWallProposal`, keyed by
    * page number.
@@ -2404,7 +2411,11 @@ export function TakeoffPlanViewer({
       // downstream behaves exactly as it did before layers existed.
       const layers = await layersOf(doc);
       const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
-      const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber, layers);
+      // ── A SCANNED SHEET: the lines and words the raster stage stored ──
+      // The file has no strokes for it; the stage read them off the bitmap
+      // in the same points. The finder below is the same finder.
+      const raster = rasterByPage[pageNumber];
+      const { segments } = raster ? { segments: raster.segments } : await segmentsFromOpenPage(page, pdfjs, pageNumber, layers);
       setStrokesSeen(segments.length);
 
       // ── WHERE THE WORDS ARE ──
@@ -2414,7 +2425,7 @@ export function TakeoffPlanViewer({
       // itself, once, so the browser and the server cannot disagree about where
       // a word is — which they would, because `planPdf.pageText` stores the
       // baseline and this used to subtract before passing anything on.
-      const vectorWords = await pageTextItems(page, pdfjs);
+      const vectorWords = raster ? raster.textItems : await pageTextItems(page, pdfjs);
       wordsRef.current = vectorWords;
       // ── A SCAN'S WORDS ENTER EXACTLY HERE ──
       //
@@ -2520,6 +2531,7 @@ export function TakeoffPlanViewer({
         wallTypes,
         sampledSheets,
         onCandidate: collect,
+        scanned: raster !== undefined,
       });
       const found: FoundOnSheet = detected.found;
       // ── WHAT THE FINDER SAW, FOR THE LABELLING HARNESS ONLY ──
@@ -3037,6 +3049,12 @@ export function TakeoffPlanViewer({
             had by reading the picture, and this is the thing that reads it —
             so gating on it made the feature unreachable on every sheet it was
             built for. See `scannedPages`. */}
+        {rasterByPage[pageNumber] !== undefined && (
+          <p data-takeoff="scanned-caution" className="w-full text-xs text-ink-muted">
+            Scanned sheet: the lines were read from an image, not from the drawing. Check each group against the sheet
+            more carefully than usual.
+          </p>
+        )}
         {scannedPages.includes(pageNumber) && (
           <button
             type="button"

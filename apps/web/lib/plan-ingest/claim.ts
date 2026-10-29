@@ -310,14 +310,29 @@ export async function ingestViewOf(jobId: string, stage: IngestView["stage"]): P
  */
 export async function latestIngestFor(
   planId: string,
-  /** Which stages count. The reading panel asks for everything BUT the
-   *  whole-set wall run, whose panel asks for only that: the two are different
-   *  controls over different rows, and the newest of one must not hide the
-   *  other. Omitted, every stage counts — the original behaviour. */
-  stage?: PlanIngestStage | { not: PlanIngestStage },
+  /** Which stages count. Three panels read these rows and each wants a
+   *  different slice: the reading panel asks for everything BUT the whole-set
+   *  wall run, the whole-set panel asks for only that, and the scanned-sheet
+   *  panel asks for only RASTER. The newest row of one must not hide another.
+   *  Omitted, every stage counts — the original behaviour.
+   *
+   *  The exclusion takes SEVERAL stages, and that is load-bearing rather than
+   *  general-purpose: the reading panel has to exclude both background runs at
+   *  once, and with one slot it would show whichever of them this file did not
+   *  name. Prisma spells a multi-value exclusion `notIn`, so this cannot be a
+   *  bare `{ stage }` spread. */
+  stage?: PlanIngestStage | { not: PlanIngestStage | PlanIngestStage[] },
 ): Promise<IngestView | null> {
+  const where =
+    stage === undefined
+      ? {}
+      : typeof stage === "string"
+        ? { stage }
+        : Array.isArray(stage.not)
+          ? { stage: { notIn: stage.not } }
+          : { stage: { not: stage.not } };
   const job = await prisma.planIngestJob.findFirst({
-    where: { planId, ...(stage === undefined ? {} : { stage }) },
+    where: { planId, ...where },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: { id: true, stage: true },
   });

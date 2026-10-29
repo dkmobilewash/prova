@@ -88,6 +88,10 @@ enum PlanIngestStage {
   /// `Company.wholeSetTakeoffOn`. The task's `note` says what became of the
   /// sheet; the walls themselves are `TakeoffWallProposal` rows.
   WALLS
+
+  /// A scanned sheet rendered at 200 dpi and read as lines and text, stored
+  /// on `PlanSheetRaster` so the wall finder can run on it. No model.
+  RASTER
 }
 
 /// One ingestion run over one uploaded plan set.
@@ -321,6 +325,13 @@ model PlanSheetText {
   /// the page is never sent to a model, and the review screen says this sheet
   /// needs its number typed in.
   hasTextLayer Boolean
+
+  /// COUNTED ONLY FOR A PAGE WITH NO TEXT LAYER, else null: how many path
+  /// operators and how many image operators the page's content stream has.
+  /// A scanned sheet is one with no text, no paths and at least one image —
+  /// derived at read time by `isScannedSheet`, never stored as a flag.
+  pathOperators  Int?
+  imageOperators Int?
 
   /// The title block's words, in reading order, or null when there is no text
   /// layer. What the model is given — never the file, never an image.
@@ -808,4 +819,41 @@ model PlanLegendProposal {
   @@index([planId, pageNumber, createdAt])
   @@index([planId, status])
   @@index([acceptedByUserId])
+}
+
+/// ── A SCANNED SHEET, READ AS LINES AND TEXT ──
+///
+/// What the RASTER stage leaves behind for a page the finder cannot read
+/// from the file: the straight lines found on the bitmap and the words OCR
+/// read, both in POINTS of the displayed page (y down), the way the vector
+/// path hands `detectForSheet` its strokes and text. One row per page, the
+/// newest stage run replacing the last. `printedScale` is the caption OCR
+/// read, for the calibration prefill; null means the estimator sets it.
+model PlanSheetRaster {
+  id String @id @default(cuid())
+
+  planId String
+  plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  pageNumber Int
+
+  dpi      Int
+  widthPt  Float
+  heightPt Float
+  /// The tilt read off the long lines and taken out before the lines were read, in degrees.
+  tiltDegrees Float
+
+  /// `[{ x1, y1, x2, y2, width }]` in points.
+  lines Json
+  /// `[{ str, x, y, width, height }]` in points, y the baseline from the top.
+  text  Json
+
+  printedScale String?
+
+  /// How long the render, the lines and the OCR took, for the budget.
+  ms Int
+
+  createdAt DateTime @default(now())
+
+  @@unique([planId, pageNumber])
 }

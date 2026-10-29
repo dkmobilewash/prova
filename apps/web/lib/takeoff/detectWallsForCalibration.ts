@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { prisma } from "@prova/db";
 import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
+import { storedRasterFor } from "@/lib/plan-ingest/raster";
 import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
 import { pagesToSample } from "./sheetTemplate";
 import { inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
@@ -124,20 +125,24 @@ export async function detectWallsForCalibration(
   try {
     if (target.pageNumber < 1 || target.pageNumber > doc.pageCount) return "no-such-page";
 
-    const strokes = await doc.pageStrokes(target.pageNumber);
-    const text = await doc.pageText(target.pageNumber);
-
-    // BASELINE `y`, HANDED OVER UNSHIFTED. `findWallsOnSheet` moves each word
-    // to its top edge itself — see `fromBaseline`. Shifting here as well would
-    // put every text box one glyph height out, and nothing would throw: the
-    // lettering filter would simply stop covering the lettering.
-    const textItems: SheetTextItem[] = text.items.map((item) => ({
-      str: item.str,
-      x: item.x,
-      y: item.y,
-      width: item.width,
-      height: item.height,
-    }));
+    // ── A SCANNED SHEET READS FROM WHAT THE RASTER STAGE STORED ──
+    // The file has no strokes and no text for it; the stage read both off
+    // the bitmap, in the same points. Everything after this line is the
+    // same finder on the same shapes.
+    const raster = await storedRasterFor(target.planId, target.pageNumber);
+    const strokes = raster
+      ? { segments: raster.segments, widthPt: raster.widthPt, heightPt: raster.heightPt }
+      : await doc.pageStrokes(target.pageNumber);
+    const text = raster ? null : await doc.pageText(target.pageNumber);
+    const textItems: SheetTextItem[] = raster
+      ? raster.textItems
+      : (text?.items ?? []).map((item) => ({
+          str: item.str,
+          x: item.x,
+          y: item.y,
+          width: item.width,
+          height: item.height,
+        }));
 
     // THE SET'S OWN TEMPLATE, read off other sheets. The frame, the title block
     // and the logo are the only geometry at the same page position on every
@@ -225,6 +230,7 @@ export async function detectWallsForCalibration(
       pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt },
       feetPerUnit: target.feetPerUnit,
       wallTypes: target.wallTypes,
+      scanned: raster !== null,
       sampledSheets: sampleFailed ? null : sampledSheets,
       ...(planText === undefined ? {} : { planText }),
     });

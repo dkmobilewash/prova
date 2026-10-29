@@ -1967,6 +1967,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // summary read (behind the takeoff's job-costs gate). The run itself is
   // planIngest's start/advance, listed above.
   wholeSetTakeoff: () => import("./actions/wholeSetTakeoff"),
+  // Scanned sheets: the owner's switch (behind /settings).
+  scannedSheets: () => import("./actions/scannedSheets"),
   takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),

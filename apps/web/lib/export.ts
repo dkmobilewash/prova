@@ -702,8 +702,11 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       " is the scale a sheet declares about itself, derived from the dimension strings and" +
       " stroked lines already in the PDF, so it is re-read at no cost and nobody's own work is" +
       " lost by leaving it out. The calibration an estimator ACCEPTED from it is a different" +
-      " matter and is `TakeoffScaleCalibration`, exported with the takeoff.",
-    models: ["PlanSheetText", "PlanSheetProposal", "PlanSheetScaleReading"],
+      " matter and is `TakeoffScaleCalibration`, exported with the takeoff." +
+      " `PlanSheetRaster` is the same kind of thing for a SCANNED sheet: the lines and words" +
+      " the raster stage read off the picture, re-read from the file at no cost by running" +
+      " the stage again, and nobody's own work.",
+    models: ["PlanSheetText", "PlanSheetProposal", "PlanSheetScaleReading", "PlanSheetRaster"],
   },
   {
     key: "plan-wall-proposals",
