@@ -1,16 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  BACKOFF_MS,
-  CLAIM_LEASE_MS,
-  DEFAULT_RUN_BUDGET_MS,
-  MAX_ATTEMPTS,
-  backoffFor,
-  ingestProgress,
-  runIngest,
-  type ClaimedTask,
-  type RunnerPorts,
-  type WorkOutcome,
-} from "./runner";
+import { BACKOFF_MS, CLAIM_LEASE_MS, DEFAULT_RUN_BUDGET_MS, MAX_ATTEMPTS, WORK_TIMEOUT_BEFORE_LEASE_MS, backoffFor, ingestProgress, runIngest, type ClaimedTask, type RunnerPorts, type WorkOutcome } from "./runner";
 
 /**
  * The run loop's policy, tested without a database, a clock or a PDF.
@@ -212,5 +201,30 @@ describe("ingestProgress", () => {
       percent: 100,
       complete: true,
     });
+  });
+});
+
+describe("a page whose work never returns", () => {
+  it("IS RECORDED AS FAILED WITH THE STAGE AND THE SECONDS, BEFORE THE LEASE LAPSES", async () => {
+    const failed: { error: string; exhausted: boolean }[] = [];
+    let claims = 0;
+    const report = await runIngest({
+      ports: {
+        claim: async () => (claims++ === 0 ? { id: "t1", pageNumber: 3, stage: "RASTER", attempts: 1 } : null),
+        work: () => new Promise(() => {}),
+        finish: async () => {},
+        fail: async (_task, error, _retryAt, exhausted) => { failed.push({ error, exhausted }); },
+      },
+      budgetMs: 10_000,
+      leaseMs: 90_000,
+      workTimeoutMs: 100,
+    });
+    expect(failed).toEqual([{ error: expect.stringMatching(/did not finish within 0 seconds at the RASTER stage/), exhausted: false }]);
+    expect(report).toMatchObject({ done: 0, retryable: 1, exhausted: 0 });
+  });
+
+  it("defaults the timeout to a little short of the lease, so the owner of the claim records the failure", async () => {
+    expect(WORK_TIMEOUT_BEFORE_LEASE_MS).toBeGreaterThan(0);
+    expect(WORK_TIMEOUT_BEFORE_LEASE_MS).toBeLessThan(CLAIM_LEASE_MS);
   });
 });
