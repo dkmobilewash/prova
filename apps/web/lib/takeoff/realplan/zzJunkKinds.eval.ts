@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { heldOutReason } from "../heldOutSets";
+import { duplicatePairs } from "../duplicateCandidates";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { sheetStrokes } from "../sheetStrokes";
 import type { StrokeSegment } from "../wallVectors";
@@ -71,6 +72,7 @@ const CASEWORK = /COUNTER|CASEWORK|MILLWORK|CABINET|\bCAB\b|SHELV|SHELF|WARDROBE
 const FIXTURE = /TOILET|\bLAV\b|\bWC\b|\bTUB\b|SHOWER|URINAL|\bSINK\b|DESK|TABLE|CHAIR|\bBED\b|SOFA|BENCH|LOCKER|GRAB BAR|DRINKING|\bEWC\b|MOP/i;
 const DIMENSION = /^[\d'"\-\s./±+]+$/;
 
+
 describe.skipIf(DIR === "" || LABELS === "")("confirmed junk on the product path, by kind", () => {
   it("breaks the rejected footage the app offers into kinds, in feet", { timeout: 7_200_000 }, async () => {
     const files: { dir: string; sheet: string }[] = [];
@@ -106,8 +108,11 @@ describe.skipIf(DIR === "" || LABELS === "")("confirmed junk on the product path
       const keyBox = real.reduce((b, k) => ({ x1: Math.min(b.x1, k.x1, k.x2), y1: Math.min(b.y1, k.y1, k.y2), x2: Math.max(b.x2, k.x1, k.x2), y2: Math.max(b.y2, k.y1, k.y2) }), { x1: 1, y1: 1, x2: 0, y2: 0 });
       const span = Math.max(keyBox.x2 - keyBox.x1, keyBox.y2 - keyBox.y1);
       const cands = offered.candidates.map((c) => ({ ...c, th: (c.thicknessIn ?? 0) / 12 }));
+      // What the review tool's own duplicate check would drop, with the sheet's lines in hand.
+      const dupDrops = new Set(duplicatePairs(offered.candidates, fpu, d.found.inUnits).map((p) => p.drop));
       const shortStrokes = d.found.inUnits.filter((s: StrokeSegment) => len(s) * fpu <= 1);
       let sheetJunk = 0; const sheetKinds = new Map<string, number>();
+
       const alongT = (c: G, w: { x: number; y: number }) => { const l = len(c); return ((w.x - c.x1) * (c.x2 - c.x1) + (w.y - c.y1) * (c.y2 - c.y1)) / (l * l); };
       const perpTouch = (c: G, o: G) => { if (parallel(c, o)) return false; const p = Math.atan2(c.y2 - c.y1, c.x2 - c.x1), q = Math.atan2(o.y2 - o.y1, o.x2 - o.x1); if (Math.abs(Math.cos(p - q)) > 0.26) return false; for (const [x, y] of [[o.x1, o.y1], [o.x2, o.y2]] as const) { const t = alongT(c, { x, y }); if (t >= -0.02 && t <= 1.02 && offLine(c, x, y) * fpu <= 1.5) return true; } return false; };
       for (const c of cands) {
@@ -140,16 +145,18 @@ describe.skipIf(DIR === "" || LABELS === "")("confirmed junk on the product path
           }
           pieces.sort((x, y) => x[0] - y[0]);
           let covered = 0, cur = -1, longest = 0, n = 0; const lens: number[] = []; const gaps: number[] = [];
+
           for (const [a0, b0] of pieces) { const a1 = Math.max(a0, cur); if (b0 > a1) { if (cur >= 0 && a1 - cur > 0.05) gaps.push(a1 - cur); covered += b0 - a1; cur = b0; n += 1; longest = Math.max(longest, b0 - a0); lens.push(b0 - a1); } }
           const med = (xs: number[]) => xs.length === 0 ? 0 : [...xs].sort((x, y) => x - y)[Math.floor(xs.length / 2)];
-          return { n, cover: +(covered / Math.max(L, 0.01)).toFixed(2), longest: +longest.toFixed(1), medPiece: +med(lens).toFixed(2), medGap: +med(gaps).toFixed(2) };
+          const cv = (xs: number[]) => { if (xs.length < 2) return 0; const m = xs.reduce((t, x) => t + x, 0) / xs.length; return m === 0 ? 0 : Math.sqrt(xs.reduce((t, x) => t + (x - m) * (x - m), 0) / xs.length) / m; };
+          return { n, cover: +(covered / Math.max(L, 0.01)).toFixed(2), longest: +longest.toFixed(1), medPiece: +med(lens).toFixed(2), medGap: +med(gaps).toFixed(2), cvPiece: +cv(lens).toFixed(2), cvGap: +cv(gaps).toFixed(2) };
         };
         const fA = faceOf(1), fB = faceOf(-1);
         // A dash pattern: several SHORT pieces with short regular gaps, covering a fair share of the run — not a face broken by doors.
         const isDashed = (f: { n: number; cover: number; longest: number; medPiece: number; medGap: number }) => f.n >= 5 && f.longest <= 2.5 && f.medGap > 0 && f.medGap <= 2.5 && f.cover >= 0.25 && f.cover <= 0.9;
         const dashedA = isDashed(fA), dashedB = isDashed(fB);
         const dashWords = words.filter((w) => Math.hypot(w.x - (c.x1 + c.x2) / 2, w.y - (c.y1 + c.y2) / 2) * fpu <= 10).map((w) => w.str).slice(0, 6);
-        allRows.push({ set: file.dir, sheet: file.sheet, x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, fpu, span: +(span * fpu).toFixed(0), L: +L.toFixed(1), thIn: +((c.thicknessIn ?? 0)).toFixed(1), from: c.from, realC: +realC.toFixed(1), rej: +rej.toFixed(1), uns: +uns.toFixed(1), dimBetween, dimNear, anyBetween, tees, fA, fB, dashedA, dashedB, dashWords });
+        allRows.push({ set: file.dir, sheet: file.sheet, x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, fpu, span: +(span * fpu).toFixed(0), L: +L.toFixed(1), thIn: +((c.thicknessIn ?? 0)).toFixed(1), from: c.from, realC: +realC.toFixed(1), rej: +rej.toFixed(1), uns: +uns.toFixed(1), dimBetween, dimNear, anyBetween, tees, fA, fB, dashedA, dashedB, dashWords, dupDrop: dupDrops.has(c.id) });
         if (extra < 0.5) continue;
         unsureExtra += uns; unlabelledExtra += extra - rej - uns;
         if (rej < 0.5) continue;

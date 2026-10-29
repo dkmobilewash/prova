@@ -52,7 +52,7 @@ describe.skipIf(DIR === "" || LABELS === "")("every labelled sheet, rules only",
       await doc.close();
       const textItems = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
       const d = detectForSheet({ segments: strokes.segments, textItems, pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt }, feetPerUnit: saved.feetPerUnit });
-      const offered = offeredCandidates({ walls: d.found.walls, segments: d.found.inUnits.map((one) => ({ ...one, x1: one.x1 * strokes.widthPt, y1: one.y1 * strokes.widthPt, x2: one.x2 * strokes.widthPt, y2: one.y2 * strokes.widthPt })), widthPt: strokes.widthPt, feetPerUnit: saved.feetPerUnit, planBoxes: d.planBoxes });
+      const offered = offeredCandidates({ walls: d.found.walls, segments: d.found.inUnits.map((one) => ({ ...one, x1: one.x1 * strokes.widthPt, y1: one.y1 * strokes.widthPt, x2: one.x2 * strokes.widthPt, y2: one.y2 * strokes.widthPt })), widthPt: strokes.widthPt, feetPerUnit: saved.feetPerUnit, planBoxes: d.planBoxes, textItems });
       const { key } = keyFromLabels(saved);
       const proposed: ScoredRun[] = offered.candidates.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, lengthFeet: w.lengthFeet, thicknessFeet: w.thicknessIn === null ? undefined : w.thicknessIn / 12 }));
       const s = scoreSheet({ set: file.dir, sheet: file.sheet, key, proposed, feetPerUnit: saved.feetPerUnit });
