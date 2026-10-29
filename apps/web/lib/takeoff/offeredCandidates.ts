@@ -219,7 +219,16 @@ export function offeredCandidates(
   const equipment: { wall: WallCandidate; word: string; feet: number }[] = [];
   const dashed: WallCandidate[] = [];
   const tables: WallCandidate[] = [];
+  let zeroExtent = 0;
   const onPlan = sheet.walls.filter((w) => {
+    // A run with no extent — a closed loop's chord, a degenerate merge — is
+    // nothing a reviewer can draw, accept or join, whatever its `lengthFeet`
+    // says. Counted, never offered. The curve engine refuses the loop at its
+    // source (`curvedWalls`, `MIN_CHORD_SHARE`); this is the guard at the door.
+    if (!(Math.hypot(w.x2 - w.x1, w.y2 - w.y1) > 0)) {
+      zeroExtent += 1;
+      return false;
+    }
     if (!onAPlan(sheet, w.x1, w.y1, w.x2, w.y2)) return false;
     const hit = sheet.textItems === undefined ? null : siteEquipmentWord(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit);
     if (hit !== null) {
@@ -260,6 +269,9 @@ export function offeredCandidates(
     });
   }
 
+  if (zeroExtent > 0) {
+    aside.set("zero-extent", { kind: "zero-extent", why: "a run with no extent — the same start and end — which nothing can draw or accept", n: zeroExtent });
+  }
   return {
     candidates: candidatesFromSheet({
       walls: onPlan.map((w) => ({
