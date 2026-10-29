@@ -3823,3 +3823,90 @@ long run nothing meets 3.4 to 1 with all its real loss on Alden's one wall; one 
 face 2.2 to 1 (7 to 1 with Alden out, which is tuning on a building); faces mostly
 unpainted at 50% 1.3 to 1 (at 95%, 126 to 1 — the clip rule takes the whole class
 instead).
+
+## Junk by what the lines ARE — 2026-10-29 (second session, `diego/junk-by-kind`)
+
+`realplan/zzJunkKinds.eval.ts` grew a second table: every foot of confirmed
+junk on the product path (the feet of an offered candidate on a `not-wall`
+verdict and on no real wall), named by what the drawing has there rather
+than by the candidate's geometry. New features for it: the faces' pen
+COLOUR (`StrokeSegment.gray`, which `sheetStrokes` now carries through
+save/restore and `inPageWidthUnits` carries through the unit change), the
+faces' pen width against the sheet's wall pen, flattened arc pieces within
+3 ft (door swings), and a word whose extent the run covers at the word's
+own height (an underline). `SKIP_SETS` leaves a label directory unread,
+for a round still being labelled.
+
+Main `f968676d`, the 26 training label files of the recall breakdown
+(glen-hazel and DEVELOPMENT-AND-… arrived mid-session and were not read):
+offered 55,761 ft · on a real wall 41,722 · **confirmed junk 11,670** ·
+on an unsure verdict 1,286 · unlabelled extra 1,069.
+
+| what the lines are | ft | runs | top buildings |
+| --- | --- | --- | --- |
+| second face of a real wall (a second candidate along a key wall) | 1,909 | 206 | Topeka 682, ELEVEN03 482, Supreme Court 219 |
+| dimension lines | 1,788 | 103 | SW Grand Junction 466, Joplin 352, Fairgrounds 251 |
+| unknown, drawn grey | 1,696 | 78 | NG Green Bay 655, Camp Bow Wow 601, MHK 134 |
+| unknown | 1,684 | 109 | ELEVEN03 390, Joplin 247, Topeka 236 |
+| ceiling / dashed (one dashed face) | 1,017 | 76 | ELEVEN03 291, Bunkie 180, Camp Bow Wow 136 |
+| furniture / fixtures | 944 | 309 | ELEVEN03 326, Topeka 253, Crosslines 137 |
+| Camp Bow Wow kennels | 831 | 86 | Camp Bow Wow |
+| grid and border | 558 | 6 | MHK 218, Camp Bow Wow 199, ELEVEN03 133 |
+| casework | 384 | 72 | ELEVEN03 344 |
+| text underlines | 354 | 26 | Joplin 228, SW Grand Junction 57 |
+| repeated unit-plan shape | 190 | 29 | NG Green Bay 78, Topeka 49 |
+| door swings / frames | 156 | 36 | Topeka 66, E Street 58 |
+| text / tag boxes | 153 | 25 | ELEVEN03 55, E Street 49 |
+| hatch / pattern edges | 7 | 2 | |
+
+Checked against crops where the crop tool works (it renders NG Green Bay's
+rotated page blank, so that set is unverified by eye): Joplin's biggest rows
+are the dimension string along the resident rooms and the GENERAL PLAN
+NOTES box; ELEVEN03's are a dashed "above" line paired with a solid face;
+Supreme Court's two 70-ft rows are window-sill double lines; Camp Bow Wow's
+110-ft row runs along the kennel side of the building.
+
+**Grey is not "existing".** Faces at luminance ≥ 0.35 carry 4,271 ft of
+junk and **11,457 ft of real wall** — Supreme Court, E Street and Topeka
+draw their new walls grey (sheet grey share 0.99, 0.99, 0.62). A per-sheet
+version ("grey on a sheet whose offered feet are mostly black") is 0.2× to
+0.9× at every cut tried. Colour is a classifier feature, not a rule.
+
+### Rules priced on every offered candidate (junk removed : real lost)
+
+| rule | junk | real | ratio |
+| --- | --- | --- | --- |
+| grid/border: axis-aligned, ≥85% of the key's extent | 1,025 | 1,505 | 0.7× |
+| … and no run meets it | 414 | 206 | 2.0× |
+| … ≥70% of extent, no run meets it | 569 | 206 | 2.8× |
+| **underline: a word the run covers, at the word's height, run ≤ 1.6× word + 1 ft** | **372** | **26** | **14×** |
+| underline and no run meets it | 215 | 8 | 27× |
+| tag box: a word between the faces, run ≤ 12 ft | 484 | 398 | 1.2× |
+| door swing: ≥3 arc pieces within 3 ft, run ≤ 8 ft | 339 | 635 | 0.5× |
+| face pen < 0.6× the sheet's wall pen | 2,775 | 5,790 | 0.5× |
+| grey face on a sheet with grey share < 0.35 | 328 | 1,867 | 0.2× |
+
+The four largest categories have no rule that clears 3:1 — second faces
+(duplicate-thinner was 0.3× in round 7), dimension lines (dimension text
+between the faces 0.4×), one dashed face (2.2×), and the two unknowns. The
+underline is the largest that does, so it ships as `isUnderline` in
+`textRows.ts`, a set-aside kind `underlines` in `offeredCandidates`. The
+26 ft of real are three room names on 3–8 ft walls (VESTIBULE, RESTROOM,
+MECH). Sweep below.
+
+### Sweep: the underline rule, 36 labelled sheets, before = main `f968676d`
+
+| | real lost | junk removed |
+| --- | --- | --- |
+| TRAINING (26 files) | **19 ft** | **539 ft** — 28 to 1 |
+| held-out, delta only | 8 ft | 109 ft |
+
+Per building, recall before → after and junk per 100 ft before → after:
+Joplin 97.8 → 97.6%, 49 → 39 (−275 junk); Baker 97.0 → 97.0, 11 → 7
+(−100); SW Grand Junction 96.7 → 96.7, 330 → 310 (−78); ELEVEN03 99.5 →
+99.5, 26 → 25 (−27); Topeka 97.7 → 97.6, 14 → 14 (−10 real, −20 junk);
+Bunkie 108 → 105; Fairgrounds 155 → 149; MHK, HPL, E Street −5 to −6;
+Camp Clark 97.7 → 97.2 (−4 real, 3.4 ft under "SHOWER"); every other
+building unchanged. Nothing is worse by more than 10 ft. Three label sets
+that arrived during the session (glen-hazel, DEVELOPMENT-AND-…, michigan)
+are excluded from the totals and were not read.
