@@ -73,10 +73,12 @@ export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
  *
  * So the plan is made for the SET, not sheet by sheet. Sheets that could be
  * tasks (or already have walls) are grouped by the level their title names;
- * one is kept per level — the one with walls already, else the OVERALL plan,
- * else a plan that is not ENLARGED, else the lowest sheet number — and the
- * others are "same level as A100", listed as such in the summary and never
- * measured. A set whose plans name one level, or none, is one floor, and
+ * one is kept per level AND AREA — the one with walls already, else the
+ * OVERALL plan, else a plan that is not ENLARGED, else the lowest sheet
+ * number — and the others are "same level as A100", listed as such in the
+ * summary and never measured. A floor drawn in parts (LEVEL 3 EAST / WEST,
+ * AREA A / B) keeps every part, unless a plan of the whole floor is there
+ * too, in which case the whole floor is kept and the parts are not. A set whose plans name one level, or none, is one floor, and
  * its whole-floor and enlarged plans are grouped the same way; a sheet with
  * no title, or an unlevelled plan on a set that names several levels, is
  * left alone, because nothing says which floor it repeats.
@@ -112,14 +114,66 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
   }
   for (const group of groups.values()) {
     if (group.length < 2) continue;
-    const keep = [...group].sort(preferWholeFloor)[0];
+    // ── A FLOOR SPLIT BY AREA IS NOT THE SAME PLAN TWICE ──
+    // "LEVEL 3 EAST" and "LEVEL 3 WEST" (or AREA A/B, PART 1/2, NORTH/SOUTH)
+    // are two halves of one floor, joined at a match line, and both must
+    // count. A plan with no area word on that level is the whole floor; if
+    // there is one, it is kept and the parts are the same walls again. If
+    // there is none, one plan is kept PER AREA, and the enlarged plans — a
+    // part of some part — are the same walls again.
+    const whole = group.filter((sheet) => isWholeFloorTitle(sheet.title) && areaOfTitle(sheet.title) === null);
+    if (whole.length > 0) {
+      const keep = [...whole].sort(preferWholeFloor)[0];
+      for (const sheet of group) {
+        if (sheet !== keep && out.get(sheet.pageNumber) === null) out.set(sheet.pageNumber, `same level as ${nameOf(keep)}`);
+      }
+      continue;
+    }
+    const byArea = new Map<string, WallsSheet[]>();
     for (const sheet of group) {
-      if (sheet !== keep && out.get(sheet.pageNumber) === null) {
-        out.set(sheet.pageNumber, `same level as ${keep.sheetNumber ?? `sheet ${keep.pageNumber}`}`);
+      const area = areaOfTitle(sheet.title);
+      if (area !== null && isWholeFloorTitle(sheet.title)) (byArea.get(area) ?? byArea.set(area, []).get(area)!).push(sheet);
+    }
+    const kept: WallsSheet[] = [];
+    for (const part of byArea.values()) {
+      const keep = [...part].sort(preferWholeFloor)[0];
+      kept.push(keep);
+      for (const sheet of part) {
+        if (sheet !== keep && out.get(sheet.pageNumber) === null) out.set(sheet.pageNumber, `same level as ${nameOf(keep)}`);
+      }
+    }
+    if (kept.length === 0) {
+      // Only enlarged plans on this level: nothing to fold them into.
+      continue;
+    }
+    const first = [...kept].sort(preferWholeFloor)[0];
+    for (const sheet of group) {
+      if (!kept.includes(sheet) && areaOfTitle(sheet.title) === null && out.get(sheet.pageNumber) === null) {
+        out.set(sheet.pageNumber, `same level as ${nameOf(first)}`);
       }
     }
   }
   return out;
+}
+
+function nameOf(sheet: WallsSheet): string {
+  return sheet.sheetNumber ?? `sheet ${sheet.pageNumber}`;
+}
+
+/**
+ * The AREA of a floor a title names, normalised — `EAST`, `AREA B`, `PART 2`,
+ * `NORTH` — or null for a plan of the whole floor. Evergreen numbers its
+ * floors "LEVEL 3 EAST" / "LEVEL 3 WEST"; other offices write AREA A/B,
+ * PART 1/2, SECTOR, ZONE or WING. Two sheets with different areas on one
+ * level are two drawings, not one twice.
+ */
+export function areaOfTitle(title: string | null): string | null {
+  const text = (title ?? "").toUpperCase();
+  const compass = /\b(NORTH\s?EAST|NORTH\s?WEST|SOUTH\s?EAST|SOUTH\s?WEST|NORTH|SOUTH|EAST|WEST|N\.?E\.?|N\.?W\.?|S\.?E\.?|S\.?W\.?)\b(?!\s+ELEVATION)/.exec(text);
+  if (compass) return compass[1].replace(/[\s.]/g, "");
+  const named = /\b(AREA|PART|SECTOR|ZONE|WING|QUADRANT|SEGMENT)\s+([A-Z0-9]{1,3})\b/.exec(text);
+  if (named) return `${named[1]} ${named[2]}`;
+  return null;
 }
 
 /** A title that names a plan of the whole floor rather than a part of it. */

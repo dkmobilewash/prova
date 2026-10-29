@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { isBlank, labelFromKey, parseNumericInput } from "@/lib/numeric-input";
 import { effectiveSheetNumber, effectiveTitle, type SheetRow } from "@/lib/plan-ingest/sheetIndex";
-import { isWholeFloorTitle } from "@/lib/plan-ingest/walls";
+import { areaOfTitle, isWholeFloorTitle } from "@/lib/plan-ingest/walls";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { levelFromTitle } from "@/lib/plan-ingest/sheetLevel";
 import { requireCompanyContext } from "@/lib/auth";
@@ -1073,9 +1073,10 @@ export async function rescaleTakeoffMeasurements(jobId: string, formData: FormDa
  * The sheets a set of measurements came from, by number, and whether two of
  * them show the same floor. A sheet's level is what its title names
  * (`levelFromTitle`); two whole-floor plans naming no level on a set that
- * names none are one floor too — the single-storey case. Enlarged plans are
- * left out of that check, because two enlarged areas of one floor are not
- * the floor twice.
+ * names none are one floor too — the single-storey case. Different AREAS of
+ * one level (LEVEL 3 EAST and WEST) are two drawings and post together;
+ * enlarged plans are left out of the check, because two enlarged areas of
+ * one floor are not the floor twice.
  */
 async function sheetsFeeding(
   pages: readonly { pageNumber: number; planId: string }[],
@@ -1091,14 +1092,18 @@ async function sheetsFeeding(
     const number = row ? effectiveSheetNumber(row) : null;
     const title = row ? effectiveTitle(row) : null;
     const level = levelFromTitle(title, "PLAN");
-    return { name: number ?? `sheet ${p.pageNumber}`, numbered: number !== null, title, level: level?.label ?? null, wholeFloor: isWholeFloorTitle(title) };
+    return { name: number ?? `sheet ${p.pageNumber}`, numbered: number !== null, title, level: level?.label ?? null, wholeFloor: isWholeFloorTitle(title), area: areaOfTitle(title) };
   });
   const anyLevel = named.some((n) => n.level !== null);
+  // Two whole-floor plans of one level are one floor twice — unless they are
+  // different AREAS of it (LEVEL 3 EAST and WEST), which are two drawings.
   const seen = new Map<string, (typeof named)[number]>();
   for (const one of named) {
-    const key = one.level ?? (!anyLevel && one.wholeFloor ? "the floor" : null);
-    if (key === null) continue;
-    const other = seen.get(key);
+    if (!one.wholeFloor) continue;
+    const floor = one.level ?? (!anyLevel ? "the floor" : null);
+    if (floor === null) continue;
+    const key = `${floor} / ${one.area ?? "whole"}`;
+    const other = seen.get(key) ?? (one.area === null ? [...seen.entries()].find(([k]) => k.startsWith(`${floor} / `))?.[1] : seen.get(`${floor} / whole`));
     if (other) {
       const where = one.level ?? "the same floor";
       return {

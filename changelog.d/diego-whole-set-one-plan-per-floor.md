@@ -20,10 +20,14 @@ about 1,750. Three things, each with its test:
   is one floor), one is kept per level — walls already found, else the
   OVERALL plan, else a plan that is not ENLARGED, else the lowest number —
   and the rest are listed in the summary as `same level as A100` and never
-  measured.
+  measured. A floor drawn in parts (LEVEL 3 EAST / WEST, AREA A / B, PART
+  1 / 2) keeps every part — `areaOfTitle` — unless a plan of the whole
+  floor is there too, in which case the whole floor is kept; only the same
+  area of a level is ever "the same plan twice".
 - **The estimate guard.** `postTakeoffMeasurements` reads the sheets behind
   the measurements off the plan's index, refuses two that show one level
-  with both names (nothing added), and the run's label carries the sheets
+  with both names (nothing added; the EAST and WEST halves of a level post
+  together, as two drawings), and the run's label carries the sheets
   that fed it: `Pilot walls — from A100, A102`.
 
 Re-run on this branch, same harness, titles read off the title block as the

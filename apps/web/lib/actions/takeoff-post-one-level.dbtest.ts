@@ -27,9 +27,16 @@ beforeAll(async () => {
   const wallType = await prisma.wallType.create({ data: { companyId, code: "P1", name: "Partition", defaultHeightFt: 10, components: { create: [{ description: "GWB", basis: "FACE_SQFT", factor: 2 }] } } as never });
   wallTypeId = wallType.id;
   const plan = await prisma.takeoffPlan.create({ data: { companyId, jobId, fileUrl: "local:plan-sheet.pdf", fileName: "plan-sheet.pdf" } });
-  const inventory = await prisma.planIngestJob.create({ data: { planId: plan.id, companyId, stage: "PAGE_INVENTORY", pageCount: 3, finishedAt: new Date() } });
-  const titles: Record<number, [string, string]> = { 1: ["A100", "OVERALL FLOOR PLAN"], 2: ["A101", "FLOOR PLAN"], 3: ["A102", "LEVEL 2 FLOOR PLAN"] };
-  for (const n of [1, 2, 3]) {
+  const inventory = await prisma.planIngestJob.create({ data: { planId: plan.id, companyId, stage: "PAGE_INVENTORY", pageCount: 6, finishedAt: new Date() } });
+  const titles: Record<number, [string, string]> = {
+    1: ["A100", "OVERALL FLOOR PLAN"],
+    2: ["A101", "FLOOR PLAN"],
+    3: ["A102", "LEVEL 2 FLOOR PLAN - EAST"],
+    4: ["A103", "LEVEL 2 FLOOR PLAN - WEST"],
+    5: ["A104", "LEVEL 3 FLOOR PLAN - WEST"],
+    6: ["A105", "LEVEL 3 FLOOR PLAN - WEST"],
+  };
+  for (const n of [1, 2, 3, 4, 5, 6]) {
     await prisma.planSheetText.create({ data: { planId: plan.id, pageNumber: n, hasTextLayer: true, widthPt: 2592, heightPt: 1728 } });
     await prisma.planSheetProposal.create({
       data: { ingestJobId: inventory.id, planId: plan.id, pageNumber: n, proposedSheetNumber: titles[n][0], proposedTitle: titles[n][1], proposedPageType: "PLAN", proposedReason: "test", proposedConfidence: "HIGH", model: "test", promptVersion: "test", status: "ACCEPTED", acceptedSheetNumber: titles[n][0], acceptedTitle: titles[n][1] },
@@ -57,11 +64,24 @@ describe("posting measurements from more than one sheet", () => {
     expect(result.error).toContain("A101");
     expect(await prisma.wallRun.count({ where: { jobId } })).toBe(0);
   });
-  it("accepts two different levels, and the run names the sheets that fed it", async () => {
-    const result = await post([1, 3]);
+  it("ACCEPTS the EAST and WEST halves of one level together — two drawings, not one twice — and names both", async () => {
+    const result = await post([3, 4]);
     expect(result.ok, JSON.stringify(result)).toBe(true);
     const run = await prisma.wallRun.findFirst({ where: { jobId }, orderBy: { createdAt: "desc" } });
-    expect(run?.label).toBe("Pilot walls — from A100, A102");
+    expect(run?.label).toBe("Pilot walls — from A102, A103");
     expect(Number(run?.lengthFt)).toBe(80);
+  });
+  it("REFUSES two sheets of the same AREA of one level — two scales of one drawing", async () => {
+    const result = await post([5, 6]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toContain("A104");
+    expect(result.error).toContain("A105");
+  });
+  it("accepts one whole-floor plan with a different level's half", async () => {
+    const result = await post([1, 5]);
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    const run = await prisma.wallRun.findFirst({ where: { jobId }, orderBy: { createdAt: "desc" } });
+    expect(run?.label).toBe("Pilot walls — from A100, A104");
   });
 });
