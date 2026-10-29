@@ -115,7 +115,7 @@ export const CORNER_Y = 0.72;
  * `PERMIT SET` has a space, `07231.14` and `01-12-18` start with a digit, so
  * they are job numbers and dates.
  */
-const SHEET_DESIGNATION = /^[A-Z]{1,3}[-.]?\d[\dA-Z.\-]{0,6}$/i;
+export const SHEET_DESIGNATION = /^[A-Z]{1,3}[-.]?\d[\dA-Z.\-]{0,6}$/i;
 
 /** How far down the type sizes to look before giving up, so a template whose
  *  largest corner text is a logo's wordmark does not cost the reading. */

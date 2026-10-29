@@ -21,6 +21,8 @@ import type { Gray } from "./pgm";
  */
 
 export type OcrItem = { str: string; x: number; y: number; width: number; height: number; confidence: number };
+/** A line read out of one cell: the text, Tesseract's confidence, and its height in pixels of the grey. */
+export type CellLine = { str: string; confidence: number; height: number };
 /** A window of the page, in pixels; OCR reads only the tiles that touch one. */
 export type PxRegion = { x: number; y: number; width: number; height: number };
 
@@ -116,6 +118,20 @@ export class SheetWorker {
       tileKeys: reply.tileKeys,
       gray: { width: gray.width, height: gray.height, data: reply.gray },
     };
+  }
+
+  /**
+   * One cell of the grey, read on its own: upscaled, in the page-segmentation
+   * mode asked for (7 = one line, 6 = one block), with a designation
+   * whitelist. For the sheet number, which the tiled pass reads worst; see
+   * `ocrCell` in the worker. The grey is transferred and handed back.
+   */
+  async ocrCell(gray: Gray, region: PxRegion, options: { cachePath: string; upscale?: number; psm?: number; whitelist?: string }): Promise<{ lines: CellLine[]; gray: Gray }> {
+    const reply = await this.ask<{ lines: CellLine[]; gray: Uint8Array }>(
+      { type: "ocrCell", gray: gray.data, width: gray.width, height: gray.height, cachePath: options.cachePath, region, upscale: options.upscale ?? 2, psm: options.psm ?? 7, whitelist: options.whitelist ?? null },
+      [gray.data.buffer],
+    );
+    return { lines: reply.lines, gray: { width: gray.width, height: gray.height, data: reply.gray } };
   }
 
   /** Ends the sheet: the document, the Tesseract worker and the thread go. */

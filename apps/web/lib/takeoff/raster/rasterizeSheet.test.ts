@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { rasterizeSheet } from "./rasterizeSheet";
+import { designationFromCell, rasterizeSheet } from "./rasterizeSheet";
 
 /** An ARCH D sheet (36×24 in) with two parallel lines on it: the scale reader
  *  refuses a page too small to be a drawing, so the fixture is a real size. */
@@ -33,5 +33,24 @@ describe("one scanned sheet, read as lines and text", () => {
     const read = await rasterizeSheet(await sheet(), 1, { dpi: 72, ocr: async () => [] });
     expect(read.printedScale).toBeNull();
     expect(read.text).toEqual([]);
+  });
+});
+
+describe("the designation in a corner read", () => {
+  // What sparse-mode Tesseract handed back for Evergreen p22's corner at 2x.
+  const p22 = [
+    { str: "EAST", confidence: 95, height: 26 },
+    { str: "A241B", confidence: 85, height: 101 },
+    { str: "PERMIT SET 10/09/2020", confidence: 96, height: 26 },
+    { str: "qv", confidence: 18, height: 103 },
+  ];
+  it("is the tallest confident line that reads as one, spaces removed and upper-cased", () => {
+    expect(designationFromCell(p22)).toBe("A241B");
+    expect(designationFromCell([{ str: "s 11.2", confidence: 68, height: 105 }])).toBe("S11.2");
+  });
+  it("skips a tall line that is noise or below the confidence floor", () => {
+    expect(designationFromCell([{ str: "A5", confidence: 12, height: 200 }, { str: "A501", confidence: 80, height: 100 }])).toBe("A501");
+    expect(designationFromCell([{ str: "PERMIT SET", confidence: 96, height: 26 }])).toBeNull();
+    expect(designationFromCell([])).toBeNull();
   });
 });

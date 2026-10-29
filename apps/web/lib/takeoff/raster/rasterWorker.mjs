@@ -11,6 +11,7 @@
 //   { type: "render", bytes, page, dpi, bandPx }           → { gray, width, height }
 //   { type: "ocr", gray, width, height, dpi, cachePath, tilePxAt150, minConfidence, regions, skipTiles }
 //                                                          → { items, tiles, tileKeys }
+//   { type: "ocrCell", gray, width, height, cachePath, region, upscale, psm, whitelist } → { lines }
 import { parentPort } from "node:worker_threads";
 
 let pdfjs = null;
@@ -112,6 +113,56 @@ async function ocr(gray, width, height, dpi, cachePath, tilePxAt150, minConfiden
   return { items, tiles, tileKeys };
 }
 
+// ── ONE CELL OF THE PAGE, READ AS A LINE ──
+//
+// The sheet number is the biggest text on the page and Tesseract's tiled
+// pass reads it worst: the strip tile cuts it in with its neighbours and the
+// automatic layout splits "A241B" into "A244 1 B" (Evergreen p22, measured).
+// So the cell is cut out on its own, upscaled, and read in SINGLE-LINE mode
+// with a whitelist of what a designation can contain. A second Tesseract
+// worker does it, so the parameters never touch the tiled pass and its
+// words — and therefore the walls — stay exactly what they were.
+let cellWorker = null;
+async function ocrCell(gray, width, height, cachePath, region, upscale, psm, whitelist) {
+  if (cellWorker === null) {
+    const { createWorker } = await import("tesseract.js");
+    cellWorker = await createWorker("eng", 1, { cachePath, logger: () => {} });
+  }
+  await cellWorker.setParameters({ tessedit_pageseg_mode: String(psm), tessedit_char_whitelist: whitelist ?? "" });
+  const x0 = Math.max(0, Math.floor(region.x));
+  const y0 = Math.max(0, Math.floor(region.y));
+  const x1 = Math.min(width, Math.ceil(region.x + region.width));
+  const y1 = Math.min(height, Math.ceil(region.y + region.height));
+  const cw = x1 - x0;
+  const ch = y1 - y0;
+  if (cw < 4 || ch < 4) return { lines: [] };
+  const s = Math.max(1, Math.round(upscale));
+  const piece = doc.canvasFactory.create(cw * s, ch * s);
+  const image = piece.context.getImageData(0, 0, cw * s, ch * s);
+  for (let y = 0; y < ch * s; y += 1) {
+    const row = (y0 + Math.floor(y / s)) * width + x0;
+    for (let x = 0; x < cw * s; x += 1) {
+      const v = gray[row + Math.floor(x / s)];
+      const o = (y * cw * s + x) * 4;
+      image.data[o] = image.data[o + 1] = image.data[o + 2] = v;
+      image.data[o + 3] = 255;
+    }
+  }
+  piece.context.putImageData(image, 0, 0);
+  const { data } = await cellWorker.recognize(piece.canvas.toBuffer("image/png"), {}, { blocks: true });
+  const lines = [];
+  for (const block of data.blocks ?? []) {
+    for (const paragraph of block.paragraphs) {
+      for (const line of paragraph.lines) {
+        const str = line.text.trim();
+        if (str === "") continue;
+        lines.push({ str, confidence: line.confidence, height: (line.bbox.y1 - line.bbox.y0) / s });
+      }
+    }
+  }
+  return { lines };
+}
+
 parentPort.on("message", async (message) => {
   try {
     if (message.type === "render") {
@@ -121,8 +172,12 @@ parentPort.on("message", async (message) => {
       const out = await ocr(message.gray, message.width, message.height, message.dpi, message.cachePath, message.tilePxAt150, message.minConfidence, message.regions, message.skipTiles);
       // The grey goes back the way it came, so the caller keeps using it.
       parentPort.postMessage({ ok: true, ...out, gray: message.gray }, [message.gray.buffer]);
+    } else if (message.type === "ocrCell") {
+      const out = await ocrCell(message.gray, message.width, message.height, message.cachePath, message.region, message.upscale, message.psm, message.whitelist);
+      parentPort.postMessage({ ok: true, ...out, gray: message.gray }, [message.gray.buffer]);
     } else if (message.type === "close") {
       if (worker) await worker.terminate();
+      if (cellWorker) await cellWorker.terminate();
       if (doc) await doc.destroy();
       parentPort.postMessage({ ok: true });
     }

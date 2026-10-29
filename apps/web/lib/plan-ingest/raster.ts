@@ -61,6 +61,7 @@ export function rasterWork(ctx: StageCtx, deps: RasterDeps = realDeps): StageWor
       lines: read.lines,
       text: read.text,
       printedScale: read.printedScale,
+      sheetNumber: read.sheetNumber,
       ms: read.ms.total,
     };
     await prisma.planSheetRaster.upsert({
