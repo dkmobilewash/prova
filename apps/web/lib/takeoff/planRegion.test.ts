@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { withoutNonWallLayers } from "./layerNames";
 import { drawingRegions, insideRegions, segmentsInRegions, type Region } from "./planRegion";
 import type { StrokeSegment } from "./wallVectors";
 
@@ -70,5 +71,25 @@ describe("which part of a one-drawing sheet is the drawing", () => {
     const segments = fill(drawing, 10);
     expect(segmentsInRegions(segments, [], W)).toHaveLength(10);
     expect(insideRegions([], 0.99, 0.5)).toBe(true);
+  });
+});
+
+describe("the busiest region is counted in strokes that could be walls", () => {
+  it("A TITLE-BLOCK COLUMN OF LETTERING LOSES TO A PLAN OF SIXTY UNKNOWN STROKES", () => {
+    // Michigan State p4: 26,908 A-TITLEBLOCK strokes at the right against a
+    // plan of A-TEXT, A-EXIST and a few unknown-layer strokes.
+    const W = 1000;
+    const plan = { from: 0, to: 0.687, fromY: 0, toY: 0.667 };
+    const title = { from: 0.687, to: 1, fromY: 0, toY: 0.667 };
+    const at = (x: number, y: number, layer: string) => ({ x1: x * W, y1: y * W, x2: x * W + 1, y2: y * W, layer });
+    const segs = [
+      ...Array.from({ length: 5000 }, (_, i) => at(0.8, 0.1 + (i % 50) * 0.01, "A-TITLEBLOCK")),
+      ...Array.from({ length: 60 }, (_, i) => at(0.3, 0.1 + i * 0.005, "A-BREAKLINE")),
+      ...Array.from({ length: 300 }, (_, i) => at(0.4, 0.1 + (i % 50) * 0.01, "A-TEXT")),
+    ];
+    const everyStroke = drawingRegions([plan, title], segs, W);
+    expect(everyStroke).toEqual([title]);
+    const couldBeWalls = drawingRegions([plan, title], withoutNonWallLayers(segs, { emptyIsAnswer: true }).kept, W);
+    expect(couldBeWalls).toEqual([plan]);
   });
 });

@@ -349,6 +349,8 @@ const WORTH_PRICING: ReadonlyArray<readonly [RegExp, number, string]> = [
   [/\bPARTITION\b[^.]*\bPLAN\b/i, 90, "a partition plan"],
   [/\bENLARGED\b[^.]*\bPLAN\b/i, 70, "an enlarged plan"],
   [/\bPLAN\b/i, 40, "a plan of some kind"],
+  /** A plan named by its level and nothing else — see the FINISH note below. */
+  [/\bFINISH(ED)?\s+FLOOR\b(?![^.]*\bPLAN\b)/i, 60, "a plan named by its finish-floor level"],
 ];
 
 /**
@@ -371,7 +373,16 @@ const NOT_WHAT_YOU_PRICE: ReadonlyArray<readonly [RegExp, number, string]> = [
   [/\bEQUIPMENT\b/i, -150, "an equipment plan"],
   [/\bREFLECTED\s+CEILING\b/i, -200, "a reflected ceiling plan"],
   [/\bRCP\b/i, -200, "a reflected ceiling plan"],
-  [/\bFINISH(ES)?\b/i, -150, "a finish plan"],
+  // ── "FINISH FLOOR" IS A LEVEL, NOT A FINISH PLAN ──
+  //
+  // Bunkie A100's floor plan is captioned `FINISH FLOOR (ADDITION)` over a
+  // 1/4" scale: the addition's plan at finish-floor level, 486 ft of labelled
+  // wall. Once #824 read lettering over a readable scale as a view, this word
+  // made it "a finish plan — check it", the sheet's only drawing was left out,
+  // and the panel said every drawing was a finish plan. FINISH followed by
+  // FLOOR is the datum; FINISH FLOOR PLAN, with PLAN after it, is still the
+  // flooring drawing.
+  [/\bFINISH(ES)?\b(?!\s+FLOOR\b(?!\s+PLAN\b))/i, -150, "a finish plan"],
   // Found on HPL p3, which carries four views of the same floor. LIGHTING
   // was in neither list, so it scored 40 as "a plan of some kind" and won
   // the sheet on footage — a decorative lighting layout measured as

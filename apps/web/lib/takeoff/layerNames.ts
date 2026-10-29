@@ -256,7 +256,18 @@ export type WithoutNonWallLayers = {
  * filtering is a panel with some rubbish in it, which a person can see; the
  * cost of over-filtering is an empty screen that looks like an answer.
  */
-export function withoutNonWallLayers(segments: readonly StrokeSegment[]): WithoutNonWallLayers {
+export function withoutNonWallLayers(
+  segments: readonly StrokeSegment[],
+  /**
+   * `emptyIsAnswer`: the strokes were already clipped to a drawing region, so
+   * a set the filter empties holds no wall — the guard below must NOT hand the
+   * title block to the pairer. Michigan State p4: the region clip left only
+   * 26,924 A-TITLEBLOCK strokes, the guard kept every one of them, and the
+   * pairer found 155 walls on a sheet with no new wall. An all-annotation
+   * page says so through `dropped` instead of measuring its lettering.
+   */
+  options: { emptyIsAnswer?: boolean } = {},
+): WithoutNonWallLayers {
   const counts = new Map<string, { verdict: LayerVerdict; n: number }>();
   const kept: StrokeSegment[] = [];
 
@@ -272,7 +283,7 @@ export function withoutNonWallLayers(segments: readonly StrokeSegment[]): Withou
     counts.set(name, at);
   }
 
-  if (kept.length === 0 && segments.length > 0) {
+  if (kept.length === 0 && segments.length > 0 && options.emptyIsAnswer !== true) {
     return { kept: [...segments], dropped: [] };
   }
 
