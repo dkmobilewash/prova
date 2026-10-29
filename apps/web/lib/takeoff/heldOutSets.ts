@@ -106,6 +106,31 @@ export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: str
     why: "scanned multi-family set — the SCANNED answer key, held out 2026-10-29, before a label was written",
   },
   {
+    // ── DECLARED HELD OUT IN ROUND 7, ADDED TO THE CODE IN ROUND 9 ──
+    //
+    // These three were named held out when round 7 was planned and never
+    // reached this list, so for two rounds they were held out in prose and
+    // trainable in code. The third session's round-9 survey caught it while
+    // deciding what to label next. Nothing else would have: a set missing
+    // from this list is indistinguishable from a set nobody mentioned.
+    //
+    // Added before any label exists for them, which is the only order in
+    // which holding out means anything.
+    match: "lodi-memorial-library",
+    why: "public library — declared held out for round 7, added to the list 2026-10-29 before a label was written",
+  },
+  {
+    match: "Missouri-New-Outdoor-Pavilion",
+    why: "open-air pavilion — declared held out for round 7, added to the list 2026-10-29 before a label was written",
+  },
+  {
+    // The round-9 survey's own argument for keeping this one: it is an office
+    // fit-out, the building type that round wants, so it is worth more as a
+    // test than as training.
+    match: "Nall-Wealth-Plans",
+    why: "office fit-out — declared held out for round 7, added to the list 2026-10-29 before a label was written",
+  },
+  {
     // Spelled without the hyphen deliberately. `flatten` strips punctuation
     // from both sides, so this matches "Cedar Hollow.pdf" exactly as the
     // hyphenated form would — and `truthWall.test.ts` greps the tree for

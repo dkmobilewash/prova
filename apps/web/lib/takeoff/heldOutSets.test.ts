@@ -121,7 +121,24 @@ describe("the sets that must never reach training", () => {
     // 2026-10-29 (Modbox, Darrington, Hillside), each held out BEFORE a label
     // was written for it, which is the only order in which holding out means
     // anything. 12 to 13 later the same day: Evergreen, the scanned key.
-    expect(HELD_OUT_SETS).toHaveLength(13);
+    expect(HELD_OUT_SETS).toHaveLength(16);
+  });
+
+  it("refuses the three that were declared held out in round 7 and only listed in round 9", () => {
+    // They were held out in prose and trainable in code for two rounds. The
+    // reason strings say so, because a reader finding them here later should
+    // learn that the gap existed rather than assume the list was always right.
+    for (const name of ["lodi-memorial-library.pdf", "Missouri-New-Outdoor-Pavilion.pdf", "Nall-Wealth-Plans.pdf"]) {
+      const why = heldOutReason(name);
+      expect(why, `${name} is still trainable`).not.toBeNull();
+      expect(why, `${name}'s reason does not record when it was listed`).toMatch(/2026-10-29/);
+    }
+  });
+
+  it("matches those three however the name was punctuated", () => {
+    expect(heldOutReason("lodi memorial library.pdf")).not.toBeNull();
+    expect(heldOutReason("MISSOURI_NEW_OUTDOOR_PAVILION")).not.toBeNull();
+    expect(heldOutReason("nall wealth plans.pdf")).not.toBeNull();
   });
 
   it("refuses the three sets held out on 2026-10-29, before round 8 labelled them", () => {
