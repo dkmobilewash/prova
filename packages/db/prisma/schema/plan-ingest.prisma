@@ -849,6 +849,8 @@ model PlanSheetRaster {
   text  Json
 
   printedScale String?
+  /// The sheet's designation as OCR read it off the title block's corner (`A241B`), or null when nothing there read as one. An observation like `printedScale`, not a label: the workspace snaps it against the set's other pages before showing it.
+  sheetNumber String?
 
   /// How long the render, the lines and the OCR took, for the budget.
   ms Int
