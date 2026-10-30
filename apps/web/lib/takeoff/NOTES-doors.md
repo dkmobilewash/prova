@@ -172,3 +172,94 @@ one that helped and it costs nothing). What would move it: an exterior test
 that reads the drawing rather than the found walls — which side of the wall
 has rooms — and a window SCHEDULE join, which gives widths to check against
 the way the door schedule does; neither is in this round.
+
+## 8. The schedule join counts, and a window needs a symbol (2026-10-29, `diego/pilot-schedule`)
+
+Two counts the pilot flagged: SW Grand Junction's A110 read 3 doors of 5
+scheduled, and Joplin's A-101 54 windows where an estimator counts about
+36. Measured with the cached schedule reads standing in for the ingest's
+DOOR proposal (`DW_SCHEDULE_CACHE`; the eval now runs
+`doorsAndWindowsForSheet` itself, so it scores what the viewer shows).
+
+### Doors: what the schedule knows that the swing does not
+
+`joinOpeningsToSchedule` already placed a scheduled mark with no swing on
+the nearest run (§3 of `openingMarks.ts`). Three things stopped it counting:
+
+- **The pilot fed it no rows.** The viewer passes the newest DOOR proposal;
+  the pilot harness passed `[]`. Now it passes the cached read, and the
+  headline count is `doorCount()` — drawn doors plus those placed from a
+  tag — in the panel and the harness alike. The panel lists the placed ones
+  ("placed from its tag, no swing drawn") and the schedule rows no door on
+  the sheet carries.
+- **SW's 10 ft sliding door 101 sits in a storefront, not a wall.** The
+  finder's runs are the brick piers 5 ft either side; the tag under the
+  door's middle was 5.1 ft from both, past the 4.5 ft symbol reach and
+  clearly nearest to neither. A symbol mark past the END of two collinear
+  runs, each within half the scheduled width of it, is now the door between
+  them, centred where the mark projects onto their line.
+- **Bunkie prints its marks in pills the symbol pass does not draw.** E101
+  and E102 were drawn, found and unnamed. A text item that IS a schedule
+  mark, inside no symbol already read, is a mark too (loose, so it gets the
+  2.5 ft reach, not the symbol's 4.5).
+
+| sheet | keyed | drawn | named by a mark | placed from a tag | schedule rows | rows not on this sheet |
+| --- | --- | --- | --- | --- | --- | --- |
+| SW A110 (p5, keyed this round from the sheet) | 5 | 3 | 3 | **2** (101 sliding 10 ft, 102B overhead 8 ft) | 5 | 0 |
+| Baker A101 (p13) | 20 | 20 | 18 | 0 | 18 | 0 |
+| Bunkie A100 (p31) | 18 | 18 | 5 → **7** | 0 | 11 | 4 (K106–K108D: the warehouse building, another sheet) |
+| MHK A1.01 (p32, office region) | 14 | 14 | 1 → 2 | 4 outside the region (119A–D, the warehouse's overhead doors, from their pills) | 31 | 25 (marks are not in the text layer) |
+| Crosslines (p10, region) | 30 | 30 | — | — | no schedule | — |
+
+Found / missed / false on every keyed sheet is unchanged at 0 missed, 0
+false; SW is 5 of 5 where it was 3. The "rows not on this sheet" column
+is honest about a schedule that spans a set: Bunkie's K-rows belong to
+the warehouse plan, and the number is per SHEET, so a set-level total
+has to subtract rows placed on any sheet. MHK's 25 are doors that are
+drawn and found but cannot be named — the sheet's marks are outlines, not
+text — which is a naming gap, not a counting one.
+
+Not built: a WINDOW schedule join. No training set has a window schedule
+read (the legend cache holds DOOR schedules only), so there is nothing to
+measure it against; the window side below is symbols and tags.
+
+### Windows: the symbol, not the band
+
+By eye over Joplin's 54 (crops in `shots/pilot/doors/joplin-win/`): the
+13–15 ft ones were the exterior wall's two faces plus a parallel roof,
+sill or rated-wall line, pier to pier — never a line INSIDE the wall. And
+the resident-room wall's 6 ft 5 in cavity-wall pieces between the 4 ft G
+windows were kept because the G tag over the window was within 6 ft of
+them too, then merged with the windows either side into 14 ft "windows".
+Three rules in `windowSymbols`, measured one at a time:
+
+1. **Glass inside the wall.** Without a tag, a candidate needs one line
+   strictly inside the matched wall's thickness and none more than an inch
+   outside its faces. The faces-and-roof pattern has no inside line; a
+   band drawn beside the wall has none either.
+2. **A tag names the nearest candidate only** — not everything within 6 ft.
+3. **…and the lites drawn like it**: a candidate on the same wall, collinear,
+   within a mullion, with the same lines across it, is a pane of the same
+   storefront (Joplin's D and Q glass partitions, three and four lites with
+   one tag). The cavity wall between two G windows is drawn with different
+   lines, so it is not.
+
+The product now passes window tags (`doorsAndWindowsForSheet`), which the
+eval always had; "before" below is with tags on both sides.
+
+| sheet | key | before: found / missed / false | after |
+| --- | --- | --- | --- |
+| Baker A101 (no windows) | 0 | — / — / 26 | — / — / **13** |
+| Bunkie A100 | 4 | 0 / 4 / 4 | 0 / 4 / 4 (east wall still called interior, §7) |
+| Crosslines region | 8 | 4 / 4 / 2 | 4 / 4 / **0** |
+| MHK office block (no windows) | 0 | — / — / 8 | — / — / **3** |
+| SW A110 (not keyed for windows) | — | 22 | 5 (W1/W2 storefront lites) |
+| Joplin A-101 (eval, finder walls) | by eye | 70 | 44 |
+
+Joplin's 44, by crop: the G windows read one by one at 3.7 ft (twelve),
+the C windows at 2.7 ft (three), the D and Q partitions at their full
+width, the vestibule storefronts, F at 10 of its 13 ft. Still false among
+the ones looked at: a hatched rated wall (12.9 ft), two pieces of cavity
+wall drawn with inner lines (8.9 and 5.3 ft) — a cavity wall's layer lines
+are inside the wall too, and nothing in the geometry tells them from
+glass. The pilot's number moved 54 → 44 on the stored proposal walls.

@@ -4,9 +4,10 @@ import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { sheetStrokes } from "../sheetStrokes";
 import { findWallsOnSheet, inPageWidthUnits } from "../findWallsOnSheet";
-import { doorArcCandidates, doorSymbols, windowSymbols, type DoorSymbol, type WindowSymbol } from "../doorWindowSymbols";
+import { doorArcCandidates, type DoorSymbol, type WindowSymbol } from "../doorWindowSymbols";
 import { tagSymbols } from "../tagSymbols";
 import { widthAndHeight } from "../openingMarks";
+import { doorsAndWindowsForSheet, type StoredScheduleRow } from "../doorsWindows";
 
 /**
  * ── DOORS AND WINDOWS, SCORED AGAINST A KEY BUILT FROM THE PLAN'S OWN MARKS ──
@@ -57,20 +58,36 @@ describe.skipIf(DIR === "" || SET === "" || PAGE === 0 || !(FPU > 0) || KEY_DIR 
     const items = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
     const walls = findWallsOnSheet({ segments: read.segments, textItems: items, pageSize: { widthPt: W, heightPt: read.heightPt }, feetPerUnit: FPU, wallTypes: [], sampledSheets: null }).walls;
     const segs = read.segments.map(inPageWidthUnits(W));
-    const allDoors = doorSymbols(segs, walls, FPU);
-    // Window tags: a short code in a hexagon or circle (W1, W2, A, 101 is a
-    // door) — the symbol pass finds them; a window mark is 1-3 characters.
+    // ── THE PRODUCT'S OWN READ: symbols, window tags, and the schedule join ──
+    // The cached rows stand in for the ingest's DOOR proposal (the same JSON).
+    const scheduleRows: StoredScheduleRow[] = CACHE && existsSync(CACHE) ? (JSON.parse(readFileSync(CACHE, "utf8")) as { rows: StoredScheduleRow[] }).rows : [];
+    const sheet = doorsAndWindowsForSheet({ segments: segs, segmentsPt: read.segments, textPt: items, widthPt: W, walls, feetPerUnit: FPU, scheduleRows });
+    const allDoors = sheet.doors;
+    const allWindows = sheet.windows;
     const windowTags = tagSymbols({ segments: read.segments, text: items, unitsPerPaperInch: 72 })
       .filter((s) => s.rejected === null && /^W?\d{1,2}[A-Z]?$|^[A-Z]$/.test(s.text.trim().toUpperCase()))
       .map((s) => ({ x: s.x / W, y: s.y / W }));
-    const allWindows = windowSymbols(segs, walls, FPU, windowTags);
+    const sheetJoin = sheet.join;
+    if (sheetJoin !== null) {
+      const notPlaced = scheduleRows.map((r) => r.mark.trim().toUpperCase()).filter((m, i, all) => all.indexOf(m) === i && !sheetJoin.openings.some((o) => (o.mark ?? "").trim().toUpperCase() === m));
+      console.log(`SCHEDULE ${sheetJoin.rowsTotal} rows: ${sheetJoin.matched - sheetJoin.placedByMark} drawn doors named by a mark, ${sheetJoin.placedByMark} placed from a mark with no swing (${sheetJoin.openings.filter((o) => o.placedBy === "mark").map((o) => `${o.mark} ${o.widthFt.toFixed(1)}' @(${((o.opening.x1 + o.opening.x2) / 2).toFixed(3)},${((o.opening.y1 + o.opening.y2) / 2).toFixed(3)})`).join(" ") || "none"}), ${notPlaced.length} rows not placed: ${notPlaced.join(" ") || "none"}`);
+      if (process.env.DW_DEBUG === "1") {
+        const all = tagSymbols({ segments: read.segments, text: items, unitsPerPaperInch: 72 });
+        const sched = new Set(scheduleRows.map((r) => r.mark.trim().toUpperCase()));
+        console.log(`   schedule marks seen as symbols: ${all.filter((t) => sched.has(t.text.trim().toUpperCase())).map((t) => `${t.text}@(${(t.x / W).toFixed(3)},${(t.y / W).toFixed(3)}) ${t.shape} ${t.rejected ?? "ok"}`).join(" ") || "none"}`);
+        for (const t of all.filter((t) => sched.has(t.text.trim().toUpperCase()) && !sheetJoin.openings.some((o) => (o.mark ?? "").trim().toUpperCase() === t.text.trim().toUpperCase()))) {
+          const ds = walls.map((w) => { const dx = w.x2 - w.x1, dy = w.y2 - w.y1, l2 = dx * dx + dy * dy; const tt = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((t.x / W - w.x1) * dx + (t.y / W - w.y1) * dy) / l2)); return Math.hypot(t.x / W - (w.x1 + tt * dx), t.y / W - (w.y1 + tt * dy)) * FPU; }).sort((a, b) => a - b);
+          console.log(`   unplaced ${t.text}@(${(t.x / W).toFixed(3)},${(t.y / W).toFixed(3)}) ${t.shape}: nearest runs ${ds.slice(0, 3).map((d) => d.toFixed(1)).join(" / ")} ft`);
+        }
+        console.log(`   schedule marks as bare text: ${items.filter((i) => sched.has(i.str.trim().toUpperCase())).map((i) => `${i.str.trim()}@(${((i.x + i.width / 2) / W).toFixed(3)},${((i.y - i.height / 2) / W).toFixed(3)})`).join(" ") || "none"}`);
+      }
+    }
     if (process.env.DW_DEBUG === "1") {
       const all = tagSymbols({ segments: read.segments, text: items, unitsPerPaperInch: 72 });
       console.log(`   tags: ${all.length} symbols, ${windowTags.length} window-shaped: ${all.filter((t) => /^W\d/i.test(t.text.trim())).map((t) => `${t.text}@(${(t.x / W).toFixed(3)},${(t.y / W).toFixed(3)}) ${t.shape} ${t.rejected ?? "ok"}`).join(" ")}`);
     }
     const keyAt = join(KEY_DIR, SET, `p${PAGE}.json`);
     const reach = REACH_FEET / FPU;
-    const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y) <= reach;
 
     if (WRITE_KEY || !existsSync(keyAt)) {
       // ── A DRAFT KEY FROM THE MARKS ──
@@ -114,7 +131,9 @@ describe.skipIf(DIR === "" || SET === "" || PAGE === 0 || !(FPU > 0) || KEY_DIR 
     expect(key.doors.length + key.windows.length, "the key names nothing to score").toBeGreaterThan(0);
     // A key may cover one REGION of the sheet; detections outside it are neither found nor false.
     const inRegion = (p: { x: number; y: number }) => !key.region || (p.x >= key.region.x0 && p.x <= key.region.x1 && p.y >= key.region.y0 && p.y <= key.region.y1);
-    const doors = allDoors.filter((d) => inRegion(mid(d)));
+    // A door the join placed from its mark counts as a door, at the point on the run it was placed.
+    const markPlaced: DoorSymbol[] = (sheetJoin?.openings ?? []).filter((o) => o.placedBy === "mark").map((o) => ({ kind: "door", hinge: { x: o.opening.x1, y: o.opening.y1 }, strike: { x: o.opening.x2, y: o.opening.y2 }, widthFeet: o.widthFt, wall: null, leaves: 1 }) as unknown as DoorSymbol);
+    const doors = [...allDoors, ...markPlaced].filter((d) => inRegion(mid(d)));
     const windows = allWindows.filter((w) => inRegion(midW(w)));
     const ignore = new Set(key.ignoreMarks.map((m) => m.toUpperCase()));
     const keyDoors = key.doors.filter((d) => d.mark === null || !ignore.has(d.mark));
