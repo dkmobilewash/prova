@@ -90,6 +90,8 @@ describe("every eval refuses to run without a key", () => {
    * and one the guard re-proves is a second kind of guarantee.
    */
   const KEYLESS_EVALS: Record<string, string> = {
+    "zzHatchClass.eval.ts":
+      "calls no model: scores every line the in-a-hatch class withholds on the training sheets against the labels and buckets the feet by length, neighbour count, side and ends met. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts sheets were read",
     "zzMissStages.eval.ts":
       "calls no model: attributes every missed real foot on the PRODUCT path to the stage that lost it; training sheets by default, held-out as aggregate totals only under MISS_HELD_OUT=1. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts label files were found",
     "scaleAudit.eval.ts":
