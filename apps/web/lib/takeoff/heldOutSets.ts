@@ -223,6 +223,58 @@ export const EXCLUDED_SHEETS: readonly { readonly set: string; readonly sheet: s
       "training on it teaches walls nobody is building and scoring against it counts a correct refusal " +
       "as a miss. Excluded by Diego 2026-10-29; see BOARD.md.",
   },
+  // ── THE SCOPE IS IN THE NOTES AND THE WALLS LOOK NEW ──
+  //
+  // Diego, 2026-10-30, after Chrome's existing-walls cleanup. These four are
+  // not excluded for being renovations: Murray, Baker, Bunkie, Supreme Court,
+  // NG Green Bay A3.2 and Darrington are renovations too and they STAY IN,
+  // because their DRAWINGS mark what is existing — a legend fill or outline,
+  // (E) tags, a NEW | EXISTING line — so new work can be told from existing
+  // and the key can say which is which.
+  //
+  // On these four the scope is set only by NOTES (finishes, windows and doors
+  // in an existing building) and the walls are drawn exactly like new walls.
+  // So an honest key is all-R — every wall rejected, because none of it is
+  // being built — and a key that rejects every ordinary-looking wall on a
+  // floor plan cannot teach "this is existing", because nothing in the
+  // geometry says so. It teaches that ORDINARY WALLS ARE JUNK, which is the
+  // opposite of the finder's job, and it scores a correct find as a false
+  // positive.
+  //
+  // Michigan A3 above is the same failure from the other side: there, traced
+  // existing walls taught walls nobody is building.
+  {
+    set: "glen-hazel-bernice",
+    sheet: "A-101",
+    why:
+      "the scope is set only by the notes (finishes, windows and doors in an existing building) and " +
+      "the walls are drawn like new walls, so an honest key is all-R and would teach that ordinary " +
+      "walls are junk. Excluded by Diego 2026-10-30; see BOARD.md.",
+  },
+  {
+    set: "glen-hazel-bernice",
+    sheet: "A-111",
+    why:
+      "the scope is set only by the notes (finishes, windows and doors in an existing building) and " +
+      "the walls are drawn like new walls, so an honest key is all-R and would teach that ordinary " +
+      "walls are junk. Excluded by Diego 2026-10-30; see BOARD.md.",
+  },
+  {
+    set: "DEVELOPMENT-AND-DERNIZATION-DEPARTMENT",
+    sheet: "A-2",
+    why:
+      "the scope is set only by the notes (finishes, windows and doors in an existing building) and " +
+      "the walls are drawn like new walls, so an honest key is all-R and would teach that ordinary " +
+      "walls are junk. Excluded by Diego 2026-10-30; see BOARD.md.",
+  },
+  {
+    set: "DEVELOPMENT-AND-DERNIZATION-DEPARTMENT",
+    sheet: "A-5",
+    why:
+      "the scope is set only by the notes (finishes, windows and doors in an existing building) and " +
+      "the walls are drawn like new walls, so an honest key is all-R and would teach that ordinary " +
+      "walls are junk. Excluded by Diego 2026-10-30; see BOARD.md.",
+  },
 ];
 
 /** The reason this exact sheet is neither trained on nor scored, or null. */

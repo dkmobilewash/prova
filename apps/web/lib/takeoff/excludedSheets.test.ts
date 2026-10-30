@@ -73,3 +73,50 @@ describe("sheets excluded from training and scoring", () => {
     expect(refusal?.rows, "the refusal does not say how many rows it dropped").toBe(4);
   });
 });
+
+describe("the four whose scope is only in the notes", () => {
+  // Diego, 2026-10-30, after Chrome's existing-walls cleanup.
+  it("excludes glen-hazel A-101 and A-111 and HACP A-2 and A-5", () => {
+    for (const [set, sheet] of [
+      ["glen-hazel-bernice", "A-101"],
+      ["glen-hazel-bernice", "A-111"],
+      ["DEVELOPMENT-AND-DERNIZATION-DEPARTMENT", "A-2"],
+      ["DEVELOPMENT-AND-DERNIZATION-DEPARTMENT", "A-5"],
+    ] as const) {
+      const why = excludedSheetReason(set, sheet);
+      expect(why, `${set}/${sheet} is not excluded`).not.toBeNull();
+      expect(why, "the reason does not say why this sheet cannot carry a key").toMatch(/notes/i);
+    }
+  });
+
+  // ── THE RULE IS NOT "IT IS A RENOVATION" ──
+  //
+  // These are renovations too and they STAY IN, because their drawings mark
+  // what is existing — a legend fill or outline, (E) tags, a NEW | EXISTING
+  // line — so new work can be told from existing and the key can say which.
+  // Read only the exclusions above and you would drop these for the wrong
+  // reason, losing the very sheets that teach what an existing-wall
+  // convention looks like.
+  it("keeps the renovation sheets whose DRAWINGS mark what is existing", () => {
+    for (const [set, sheet] of [
+      ["IFBREBID-Murray-Tower-Package", "A101"],
+      ["2025.07.08_Baker_EOC_BID", "A100"],
+      ["BUNKIE-BID-DRAWINGS", "A100"],
+      ["Supreme-Court-of-Missouri-Judicial", "A111"],
+      ["NG-Green-Bay-WI", "A3.2"],
+      ["Darrington-Library-Tenant-Improvements", "A101"],
+    ] as const) {
+      expect(
+        excludedSheetReason(set, sheet),
+        `${set}/${sheet} was excluded — it is a renovation, but its drawing marks existing, which is ` +
+          `the whole distinction`,
+      ).toBeNull();
+    }
+  });
+
+  it("excludes the SHEET, not the set, for both new entries", () => {
+    // glen-hazel and HACP have other sheets; the exclusion must not swallow them.
+    expect(excludedSheetReason("glen-hazel-bernice", "A-102")).toBeNull();
+    expect(excludedSheetReason("DEVELOPMENT-AND-DERNIZATION-DEPARTMENT", "A-1")).toBeNull();
+  });
+});
