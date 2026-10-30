@@ -95,7 +95,7 @@ export function takeoffFeatureRows(input: TakeoffFeatureInputs): TakeoffFeatureR
         "Runs the wall check on what Find the walls offers and greys out the casework, fixtures and reference lines it names, out of the total and one click to take back. No model.",
       status: onOff(input.demotedWallsOn),
       where: { href: "/settings?tab=estimating#demoted-walls", label: "Settings → Estimating" },
-      field: "demotedWallsOn",
+      field: "demotedWallsOff",
     },
     {
       key: "wholeSet",

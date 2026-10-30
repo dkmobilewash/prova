@@ -42,7 +42,7 @@ export function DemotedWallsSwitch({ on, isOwner }: { on: boolean; isOwner: bool
                 a person is actually deciding: the lines stay visible, and one
                 click puts one back. */}
             <span className="font-medium text-ink">Grey out lines that probably aren&rsquo;t walls</span>
-            <span className="ml-2 text-xs text-ink-muted">new — off until you turn it on</span>
+            <span className="ml-2 text-xs text-ink-muted">on — untick to turn it off</span>
             <span className="mt-1 block text-xs text-ink-muted">
               They stay visible on the drawing, greyed and marked &ldquo;probably not a wall&rdquo; with the
               reason, left out of the total — and one click puts a line back. A line is greyed when the wall

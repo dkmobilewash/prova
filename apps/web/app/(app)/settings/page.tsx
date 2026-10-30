@@ -186,10 +186,12 @@ export default async function SettingsPage({
   // are columns on the same row and there is no reason to ask twice.
   const switches = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOn: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOn: true },
+    select: { roomFinderOn: true, demotedWallsOff: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOn: true },
   });
   const roomFinderOn = switches?.roomFinderOn ?? false;
-  const demotedWallsOn = switches?.demotedWallsOn ?? false;
+  // The switch reads as ON unless this company turned it off, so the box is
+  // ticked for everybody who has never touched it.
+  const demotedWallsOn = !(switches?.demotedWallsOff ?? false);
   const wholeSetTakeoffOn = switches?.wholeSetTakeoffOn ?? false;
   const scannedPlansOn = switches?.scannedPlansOn ?? false;
   const symbolCountOn = switches?.symbolCountOn ?? false;

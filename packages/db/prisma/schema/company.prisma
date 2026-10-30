@@ -93,10 +93,26 @@ model Company {
   /// (no model is called), so not in `CompanyAiSettings`.
   roomFinderOn Boolean @default(false)
 
-  /// "Demote, don't hide" on the takeoff: runs the wall check labels as
-  /// casework or reference stay on the sheet greyed, out of the total, one
-  /// click to take back. OFF for every company until the owner turns it on.
+  /// SUPERSEDED 2026-10-29 by Company.demotedWallsOff (this file): the same
+  /// decision read the other way round, so that ON could become the default
+  /// for every existing company without an UPDATE over customer rows.
+  ///
+  /// No longer read anywhere. Kept for one deploy because the RUNNING build
+  /// still selects it — expand then contract, and the drop is its own PR.
+  /// Its value means "somebody turned this on back when off was the default";
+  /// it is not an off-choice, which is why nothing migrates from it.
   demotedWallsOn Boolean @default(false)
+
+  /// "Demote, don't hide" on the takeoff: the wall check greys the casework,
+  /// fixtures and reference lines it names — out of the total, one click to
+  /// take back, and it NEVER hides a line.
+  ///
+  /// ON FOR EVERY COMPANY, which is why this is an OFF switch. Diego's
+  /// decision, 2026-10-29. A default of false on a new column makes every
+  /// existing company on the moment the migration applies, with no UPDATE
+  /// over customer rows — where flipping `demotedWallsOn`'s default would
+  /// have reached new companies only.
+  demotedWallsOff Boolean @default(false)
 
   /// "Find walls on every floor plan" on the takeoff: one press runs the wall
   /// finder over every scaled floor-plan sheet in the set, in the background,

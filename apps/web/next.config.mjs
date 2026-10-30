@@ -162,6 +162,12 @@ const nextConfig = {
       // on the server, 2026-10-29. Loaded by path, nothing traces it, so it is
       // named here or a deploy ships a thread with no script to run.
       "./lib/takeoff/raster/rasterWorker.mjs",
+      // THE WALL CLASSIFIER'S MODEL, read by path from TAKEOFF_WALL_MODEL
+      // (`loadWallModel` in lib/takeoff/wallModelFile.ts). Same reason as the
+      // line above: a readFileSync traces nothing, so without this a deploy
+      // sets the variable and ships no file — and a missing model looks
+      // exactly like a classifier that is switched off.
+      "./models/wall-model.json",
     ],
   },
   // The free lien waiver tool lives at cstream.ai/lien-waiver (Diego,

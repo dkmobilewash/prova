@@ -594,7 +594,7 @@ export async function loadTakeoffWorkspace(
   // same load that decides everything else on the screen.
   const roomFinder = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOn: true },
+    select: { roomFinderOn: true, demotedWallsOff: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOn: true },
   });
   // The door schedule rows the ingest read, newest per page, for the doors
   // panel's join — only for a company whose switch is on.
@@ -607,7 +607,8 @@ export async function loadTakeoffWorkspace(
     sheets,
     symbolCountOn: roomFinder?.symbolCountOn ?? false,
     roomFinderOn: roomFinder?.roomFinderOn ?? false,
-    demotedWallsOn: roomFinder?.demotedWallsOn ?? false,
+    // ON unless this company turned it off, and on for a company with no row.
+    demotedWallsOn: !(roomFinder?.demotedWallsOff ?? false),
     scannedPlansOn: roomFinder?.scannedPlansOn ?? false,
     // The plan-text opt-in: the rail ranks the floor plans to scale first and
     // offers every sheet's printed scale in one press only for a company that
@@ -616,7 +617,7 @@ export async function loadTakeoffWorkspace(
     planTextReadOn: (await aiGate(company.id, "PLAN_TEXT_READ")).ok,
     // The trained wall model, only for a company whose switch is on: ~80 KB
     // of trees that nobody else's page should carry.
-    wallModel: roomFinder?.demotedWallsOn ? loadWallModel(process.env) : null,
+    wallModel: (roomFinder?.demotedWallsOff ?? false) ? null : loadWallModel(process.env),
     // The plan's pages whose title block says ceiling plan or finish schedule, for the
     // room finder's ceilings: the viewer reads those pages' text itself when rooms are found.
     ceilingPages: roomFinder?.roomFinderOn ? await ceilingPagesOf(plan.id) : [],
