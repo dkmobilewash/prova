@@ -176,8 +176,6 @@ test.describe("demote, don't hide", () => {
   test("switch off: the real check refuses without a model and the sheet is untouched", async () => {
     await signInAs(page, PERSONAS.takeoff.email);
     await landOnDashboard(page, monitor);
-    jobId = await startJob(page, monitor, { name: JOB, gcName: GC_NAME });
-    await finishWizard(page, monitor, jobId);
 
     // ── MAKE THE SWITCH OFF, DO NOT ASSUME IT ──
     //
@@ -185,15 +183,18 @@ test.describe("demote, don't hide", () => {
     // off to be about anything. It used to rely on the default being off,
     // which is how it failed the day the default moved — with a message that
     // read like a product defect rather than a stale premise.
+    //
+    // IDEMPOTENT, because retries share this database: an earlier attempt may
+    // already have unticked and saved, so only the END state is asserted.
+    //
+    // HERE, before the job exists, because this is a COMPANY setting and
+    // `openJobTab` asserts the job stage nav is on screen — a settings detour
+    // in the middle of the job flow leaves the browser somewhere that
+    // assertion cannot hold.
     await page.goto("/settings?tab=estimating");
     await hydrated(page, '[data-settings="demoted-walls"]');
     const offForm = page.locator('[data-settings="demoted-walls"]');
     const offBox = offForm.locator('input[name="demotedWallsOn"]');
-    // IDEMPOTENT, because retries share this database. An earlier attempt may
-    // already have unticked and SAVED, so asserting it starts ticked would be
-    // measuring the previous attempt rather than the default — which is how
-    // the first version of this failed on retry #1. Only the end state is
-    // asserted: off before the sheet is opened, however it got there.
     if (await offBox.isChecked()) {
       await offBox.uncheck();
       await offForm.getByRole("button", { name: "Save" }).click();
@@ -205,6 +206,9 @@ test.describe("demote, don't hide", () => {
       page.locator('[data-settings="demoted-walls"] input[name="demotedWallsOn"]'),
       "the grey-out is still on, so this case cannot be about the switch being off",
     ).not.toBeChecked();
+
+    jobId = await startJob(page, monitor, { name: JOB, gcName: GC_NAME });
+    await finishWizard(page, monitor, jobId);
 
     await openJobTab(page, "Takeoff");
     await page.waitForURL(new RegExp(`/jobs/${jobId}/takeoff$`));
