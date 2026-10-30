@@ -963,6 +963,9 @@ export function TakeoffPlanViewer({
   const lastDetect = useRef<{
     page: number;
     segments: StrokeSegment[];
+    /** Every stroke on the page, in points — for the existing-wall rule's
+     *  legend swatch, which sits outside the drawing `segments` is clipped to. */
+    pageSegments: StrokeSegment[];
     feetPerUnit: number;
     widthPt: number;
     walls: WallCandidate[];
@@ -1008,6 +1011,7 @@ export function TakeoffPlanViewer({
       {
         walls: last.walls,
         segments: last.segments,
+        pageSegments: last.pageSegments,
         widthPt: last.widthPt,
         feetPerUnit: last.feetPerUnit,
         planBoxes: last.planBoxes,
@@ -2762,6 +2766,7 @@ export function TakeoffPlanViewer({
           x2: one.x2 * pageSize.widthPt,
           y2: one.y2 * pageSize.widthPt,
         })),
+        pageSegments: segments,
         feetPerUnit,
         widthPt: pageSize.widthPt,
         walls: [...found.walls],
