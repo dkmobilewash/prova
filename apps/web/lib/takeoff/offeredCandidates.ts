@@ -1,6 +1,7 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { bothFacesDashedInPoints } from "./dashedFaces";
 import { existingSentence, existingWalls, type ExistingWall } from "./existingWalls";
+import { clipToWorkArea, describeStyle, wallsLikeThese, type Line, type Polygon } from "./userExclusions";
 import { isTableRows, isUnderline } from "./textRows";
 import { legendBoxes } from "./legendBoxes";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "./findWallsOnSheet";
@@ -79,6 +80,13 @@ export type DetectedSheet = {
    *  existing-wall rule for the legend's swatch, which sits outside the
    *  drawing `segments` is clipped to. See `existingWalls.ts`. */
   pageSegments?: readonly StrokeSegment[];
+  /**
+   * What the USER said about this sheet — see `userExclusions.ts`. Walls
+   * they clicked "exclude walls like this" on, as lines in page-width
+   * units, and the work-area polygons they drew. Sheet-relative; a caller
+   * passes the page's own.
+   */
+  user?: { excludeLike?: readonly Line[]; workArea?: readonly Polygon[] };
 };
 
 export type OfferedResult = {
@@ -294,7 +302,30 @@ export function offeredCandidates(
     if (ex !== undefined && !framed.sides.has(w) && !framed.inside.has(w)) existingRuns.push(ex);
   }
   const isExisting = new Set(existingRuns.map((e) => e.wall));
-  const offeredRuns = onPlan.filter((w) => !framed.sides.has(w) && !framed.inside.has(w) && !isExisting.has(w));
+  const survivors = onPlan.filter((w) => !framed.sides.has(w) && !framed.inside.has(w) && !isExisting.has(w));
+  // ── WHAT THE USER EXCLUDED — see `userExclusions.ts` ──
+  //
+  // After every rule, on what would otherwise be offered: the walls drawn
+  // like the ones they clicked, then the work area. The split pieces of a
+  // wall the work-area boundary crosses are offered in the wall's place.
+  const like = wallsLikeThese(sheet.user?.excludeLike ?? [], survivors, unitSegments, sheet.feetPerUnit);
+  const afterLike = survivors.filter((w) => !like.excluded.has(w));
+  const area = clipToWorkArea(afterLike, sheet.user?.workArea ?? [], sheet.feetPerUnit);
+  const offeredRuns = [...area.inside, ...area.split.map((s) => s.piece)];
+  if (like.excluded.size > 0) {
+    aside.set("excluded-like", {
+      kind: "excluded-like",
+      why: `drawn like the wall${like.patterns.length === 1 ? "" : "s"} you clicked (${like.patterns.map(describeStyle).join("; ")}) — excluded by you, on this sheet only`,
+      n: like.excluded.size,
+    });
+  }
+  if (area.outside.length > 0 || area.split.length > 0) {
+    aside.set("outside-work-area", {
+      kind: "outside-work-area",
+      why: `outside the work area you drew — ${Math.round(area.outsideFeet).toLocaleString()} ft set aside${area.split.length > 0 ? `, ${area.split.length} wall${area.split.length === 1 ? "" : "s"} cut at its edge` : ""}`,
+      n: area.outside.length + area.split.length,
+    });
+  }
   if (framedRuns.length > 0) {
     aside.set("legend-box", {
       kind: "legend-box",
@@ -368,6 +399,8 @@ export function offeredCandidates(
     setAsideLines: [
       ...equipment.map((e) => ({ kind: "site-equipment", why: `'${e.word}' is written ${e.feet.toFixed(0)} ft away`, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
       ...existingRuns.map((e) => ({ kind: "existing", why: e.why, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
+      ...[...like.excluded].map((w) => ({ kind: "excluded-like", why: "drawn like a wall you clicked — excluded by you", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...area.outside.map((w) => ({ kind: "outside-work-area", why: "outside the work area you drew", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...dashed.map((w) => ({ kind: "dashed-faces", why: "both faces are dashed lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...tables.map((w) => ({ kind: "table-rows", why: "rows of text between the lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...underlines.map((w) => ({ kind: "underlines", why: "ruled under a word, as long as the word", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),

@@ -146,6 +146,7 @@ export async function loadTakeoffWorkspace(
             orderBy: { createdAt: "asc" },
             include: { calibration: true },
           },
+          exclusions: { orderBy: { createdAt: "asc" }, select: { kind: true, xs: true, ys: true } },
         },
       },
     },
@@ -502,6 +503,7 @@ export async function loadTakeoffWorkspace(
         : null,
       measurements,
       zoneNotices: notices,
+      exclusions: page.exclusions,
     };
   });
 

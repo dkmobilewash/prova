@@ -111,6 +111,7 @@ export * from "./outboundPush";
 export * from "./outboundOptOut";
 export * from "./replies";
 export * from "./takeoffClassify";
+export * from "./takeoffExclusions";
 export * from "./takeoffReadSheet";
 export * from "./planTextRead";
 export * from "./wallLegend";

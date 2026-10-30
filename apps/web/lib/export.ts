@@ -726,6 +726,16 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     models: ["TakeoffWallProposal"],
   },
   {
+    key: "takeoff-sheet-exclusions",
+    title: "Walls excluded on a sheet, and work areas",
+    detail:
+      "Instructions to the wall finder about one sheet: this wall's style is not in the job, this " +
+      "is the area of work. They shape what is proposed and are not themselves a quantity; the " +
+      "walls an estimator kept are exported as measurements in the takeoff dataset. Geometry on a " +
+      "PDF this file does not contain, and meaningless without it.",
+    models: ["TakeoffSheetExclusion"],
+  },
+  {
     key: "plan-schedule-readings",
     title: "The schedules read off each plan sheet",
     detail:
