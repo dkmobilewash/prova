@@ -4093,3 +4093,62 @@ allowed — so the mechanism there is still unknown.
 Sweep (52 sheets, main `40900004` → this branch): proposed 86,461 → 86,826,
 missing 5,465 → 5,227, extra 23,778 → 23,857; one sheet changes; held-out
 delta 0 / 0.
+
+## The pairer: best-fitting partner before widest — measured, not shipped (2026-10-30, `diego/pairer-fit`)
+
+**Question (Diego's):** the pairing loop takes the WIDEST valid partner within each
+tier, so a loose or wide pair can steal a face from the wall next door. Prefer the
+best-fitting partner instead, gates unchanged, and if that holds, re-test the
+per-sheet thick-wall cap and the bounded-ends waiver on top of it — both had
+been read as dying of exactly that theft.
+
+**What was built.** The four hand-kept tiers (schedule & balanced, schedule,
+balanced, any — widest within each) became one comparison: tier, then
+thickness compared exactly. A FITTED tier sits between schedule and balanced:
+both faces end together within one wall thickness (the corner allowance). With
+the fitted tier off, the loop reproduces main byte-for-byte on all 52 sheets —
+an earlier draft folded thickness into a single float rank and drifted on two
+sheets through tie noise between duplicate faces, which is why the comparison
+is exact. A second main run on the same snapshot was also byte-identical, so
+the sweep carries no run-to-run noise.
+
+**Sweep, labels snapshot 20261030T0754, main ab3031d7, training / held-out as
+deltas only:**
+
+| pairer | training real + | training extra + | held-out real + | held-out extra + |
+| --- | --- | --- | --- | --- |
+| fitted, slack 10% of the shorter face | +39 | +326 | +54 | +36 |
+| fitted, slack one wall thickness | +44 | +253 | +59 | +26 |
+| NEAREST within tier (no fit) | −113 | +833 | −19 | +210 |
+
+Fails the shipping rule (1 ft real per 6 ft extra) and the per-building rule
+(Topeka −115 net). Nearest is the stud-cavity defect the widest rule was
+written for, returning.
+
+**What the Topeka extra is**, from a per-run dump of p74–76 (`SWEEP_ONLY`,
+`SWEEP_DUMP=1` on the sweep probe): +165 ft of extra on runs that re-paired at
+the SAME place to a longer span against −68 ft gone, and only +43 ft at new
+places. Two crops: a closet-to-bath partition the key traces for 4.4 ft is 7.7
+ft on the drawing and the fitted pair spans all of it (the widest pair had
+taken a 4.4 ft fixture line at 4.7 in, matching the short key by accident);
+and a canopy triple-line that is junk at 30.7 ft and junk at 36.6 ft. So the
+cost is mostly "the same thing, measured longer", which the position scorer
+counts as junk whether the key or the pairer is the short one.
+
+**The 2×2 the question asked for**, same snapshot, each loosening on main and
+on the fitted pairer (training real + / extra +):
+
+| | on main | on the fitted pairer |
+| --- | --- | --- |
+| per-sheet thick-wall cap (49dd6ef0) | +80 / +470 | +69 / +477 |
+| bounded-ends waiver (17d96088) | −16 / +1,312 | −5 / +1,195 |
+
+Within noise of each other. **The stolen-face diagnosis is refuted:** with the
+widest preference neutralised among faces that end together, both loosenings
+lose what they lost before. The cap's additions are Supreme's existing masonry
+(as its own notes say) and the waiver's junk is the loose pairs it admits,
+not faces taken from their neighbours.
+
+**Not tried:** a one-to-one (mutual-best) assignment. With widest as the
+preference both sides of a stolen pair agree on it, so mutual-best changes
+nothing; with fit as the preference it is the fitted tier again.

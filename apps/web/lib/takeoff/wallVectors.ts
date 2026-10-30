@@ -1526,8 +1526,8 @@ export function wallsFromStrokes(
   // midpoint rather than to the nearest point, and a filter that is slightly
   // too generous costs a few comparisons while one that is slightly too tight
   // silently loses walls.
-  const reach =
-    ((options.maxThicknessFeet ?? DEFAULTS.maxThicknessFeet) / options.feetPerPoint) * 1.5;
+  const maxThicknessPoints = (options.maxThicknessFeet ?? DEFAULTS.maxThicknessFeet) / options.feetPerPoint;
+  const reach = maxThicknessPoints * 1.5;
   const boxMinX = order.map((one) => Math.min(one.x1, one.x2));
   const boxMaxX = order.map((one) => Math.max(one.x1, one.x2));
   const boxMinY = order.map((one) => Math.min(one.y1, one.y2));
@@ -1595,10 +1595,42 @@ export function wallsFromStrokes(
     // The widest valid partner whose face is a PLAUSIBLE PARTNER, falling back
     // to the widest of any kind. Taking the widest alone reaches past the wall
     // and pairs with the column grid line — see `BALANCED_FACE_RATIO`.
-    let bestJ = -1;
-    let bestWall: WallCandidate | null = null;
-    let anyJ = -1;
-    let anyWall: WallCandidate | null = null;
+    // ── THE BEST-FITTING PARTNER IN THE BEST TIER, AND THEN THE WIDEST ──
+    //
+    // One comparison replaces the four tiers this used to keep by hand: a
+    // schedule thickness beats one that is not, a FITTED pair beats one that
+    // is not, a balanced pair beats one that is not, and only then is the
+    // widest taken. Fitted means the two faces end together at BOTH ends,
+    // within one wall thickness — the most a face legitimately outruns its
+    // partner, at a corner. Rule 6 refuses a pair loose at both ends; this
+    // prefers one loose at neither.
+    //
+    // The case it decides: a long face sees every valid partner within reach,
+    // and "widest" hands it the far face of the NEXT wall over whenever that
+    // face shares one end with it and so passes the gate. The thin wall
+    // between them is then left one face and lost; the test "the partner that
+    // ENDS WITH a face" is that drawing. The face that ends with the long
+    // face at both ends is its own wall's other face.
+    //
+    // MEASURED, 2026-10-30, 52 labelled sheets, and it is a record rather
+    // than a win: against the widest-first tiers (which this reproduces
+    // byte-for-byte with the fitted tier removed), training +44 ft real for
+    // +253 ft extra, held-out +59 / +26. Topeka carries +140 of the extra and
+    // most of it is the same place paired longer — a closet partition the
+    // key traced for 4.4 ft that is 7.7 ft on the drawing, and a canopy
+    // triple-line that is junk at either length. Nearest-first within the
+    // tiers is far worse (−113 / +833): the layered exterior comes back at
+    // its stud cavity, exactly the defect "widest" was written for. And the
+    // two gate-loosenings this was meant to rescue — the per-sheet thick cap
+    // and the bounded-ends waiver — lose the same on top of it as on main
+    // (cap +69 / +477 against +80 / +470; waiver −5 / +1,195 against
+    // −16 / +1,312), so stolen faces were never their cost. See NOTES.md.
+    const tierOf = (known: boolean, fitted: boolean, balanced: boolean) =>
+      (known ? 4 : 0) + (fitted ? 2 : 0) + (balanced ? 1 : 0);
+    let chosen: WallCandidate | null = null;
+    let chosenJ = -1;
+    let chosenTier = -1;
+    let chosenBalanced = false;
     // ── AND THE WIDEST PAIR THAT IS A THICKNESS THIS COMPANY BUILDS ──
     //
     // "The widest valid pair is the wall and the narrower ones are its layers"
@@ -1618,10 +1650,6 @@ export function wallsFromStrokes(
     // The schedule is not privileged information: it is printed on the drawing,
     // it is what an estimator reads first, and `wallTypesFromSchedule` already
     // extracts it. Without it the loop behaves exactly as before.
-    let knownJ = -1;
-    let knownWall: WallCandidate | null = null;
-    let knownAnyJ = -1;
-    let knownAnyWall: WallCandidate | null = null;
     const knownIn = options.knownThicknessesIn ?? [];
     const iLength = lengthOf(order[i]);
     for (let j = i + 1; j < order.length; j += 1) {
@@ -1687,61 +1715,48 @@ export function wallsFromStrokes(
       if (layerLine && wall.thicknessFeet < (options.minThicknessFeet ?? DEFAULTS.minThicknessFeet)) {
         continue;
       }
-      if (anyWall === null || wall.thicknessFeet > anyWall.thicknessFeet) {
-        anyWall = wall;
-        anyJ = j;
-      }
-      // AND AN ENCLOSED PAIR OF NORMAL THICKNESS IS A LAST RESORT, not a
-      // preference. It has already been recorded as the fallback above, so a
-      // real wall that merely looks enclosed is still found; what it cannot do
-      // is beat a pair the schedule names. Refusing these outright was measured
-      // and it is worse than doing nothing — Mesa Ridge 58,438 ft found against
-      // 59,538 before any of this.
-      if (layerLine) continue;
+      const jLength = lengthOf(order[j]);
+      const shorter = Math.min(iLength, jLength);
+      const ratio = Math.max(iLength, jLength) / Math.max(shorter, 1e-9);
+      // AN ENCLOSED PAIR OF NORMAL THICKNESS IS A LAST RESORT, not a
+      // preference: it earns none of the tiers below, so a real wall that
+      // merely looks enclosed is still found and cannot beat a pair the
+      // schedule names. Refusing these outright was measured and it is worse
+      // than doing nothing — Mesa Ridge 58,438 ft found against 59,538 before
+      // any of this.
       // A SPAN THAT DECOMPOSES INTO TWO SCHEDULED ASSEMBLIES IS NOT A WALL.
       // Only asked of pairs wide enough for two assemblies to fit, because the
       // scan is O(n) inside this loop; 6in is below the thinnest pair of
       // scheduled types that could compose one.
       const known =
+        !layerLine &&
         isAKnownType(wall.thicknessFeet, knownIn) &&
         !(
           wall.thicknessFeet * 12 > 6 &&
           splitsIntoScheduledAssemblies(order, i, j, wall.thicknessFeet, options, knownIn)
         );
-      if (known && (knownAnyWall === null || wall.thicknessFeet > knownAnyWall.thicknessFeet)) {
-        knownAnyWall = wall;
-        knownAnyJ = j;
-      }
-      const jLength = lengthOf(order[j]);
-      const ratio = Math.max(iLength, jLength) / Math.max(Math.min(iLength, jLength), 1e-9);
-      if (ratio > BALANCED_FACE_RATIO) continue;
-      if (bestWall === null || wall.thicknessFeet > bestWall.thicknessFeet) {
-        bestWall = wall;
-        bestJ = j;
-      }
-      if (known && (knownWall === null || wall.thicknessFeet > knownWall.thicknessFeet)) {
-        knownWall = wall;
-        knownJ = j;
+      const [headGap, tailGap] = overhangsAlong(order[i], order[j]);
+      const fitted = !layerLine && Math.max(headGap, tailGap) <= maxThicknessPoints;
+      const balanced = !layerLine && ratio <= BALANCED_FACE_RATIO;
+      const tier = tierOf(known, fitted, balanced);
+      // The thickness is compared exactly, not folded into one number: two
+      // faces drawn twice differ by float noise, and the first-wins rule on an
+      // exact tie is what keeps the result the same drawing in any order.
+      const wider = chosen === null || wall.thicknessFeet > chosen.thicknessFeet;
+      if (tier > chosenTier || (tier === chosenTier && wider)) {
+        chosen = wall;
+        chosenJ = j;
+        chosenTier = tier;
+        chosenBalanced = balanced;
       }
     }
-    // A schedule thickness first, balanced before unbalanced within each tier.
-    const chosen = knownWall ?? knownAnyWall ?? bestWall ?? anyWall;
-    const chosenJ =
-      knownWall !== null
-        ? knownJ
-        : knownAnyWall !== null
-          ? knownAnyJ
-          : bestWall !== null
-            ? bestJ
-            : anyJ;
-    const balanced = knownWall !== null || (knownAnyWall === null && bestWall !== null);
     if (options.decide !== undefined) continue;
     if (chosen !== null) {
       used.add(i);
       used.add(chosenJ);
       claimSide(i, chosenJ);
       claimSide(chosenJ, i);
-      const made = { ...chosen, fromBalancedFaces: balanced };
+      const made = { ...chosen, fromBalancedFaces: chosenBalanced };
       pairingOf.set(made, { i, j: chosenJ });
       walls.push(made);
     }

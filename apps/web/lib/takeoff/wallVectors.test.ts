@@ -1483,3 +1483,39 @@ describe("a series is strokes that look alike, not merely strokes nearby", () =>
     expect(wallsFromStrokes(six, EIGHTH), "a six-stroke fill leaked a wall").toEqual([]);
   });
 });
+
+describe("the partner that ENDS WITH a face beats a wider one that does not", () => {
+  const opts: WallFinderOptions = { feetPerPoint: 1 / 9 };
+  /** A horizontal face: `feet` long, starting at `atFt`, on line `yFt`. */
+  const face = (atFt: number, feet: number, yFt: number): StrokeSegment => ({
+    x1: atFt * 9,
+    y1: yFt * 9,
+    x2: (atFt + feet) * 9,
+    y2: yFt * 9,
+    width: 0.7,
+  });
+  const inches = (walls: readonly { thicknessFeet: number }[]) =>
+    walls.map((w) => Math.round(w.thicknessFeet * 12)).sort((a, b) => a - b);
+
+  it("a long face takes its own wall's other face, not the next wall's", () => {
+    // Two 6in walls 9in apart, sharing a start: 40 ft and 30 ft. The long
+    // face sees three partners within reach — its own at 6in, and the next
+    // wall's near face at 15in, which passes the ends gate because one end
+    // is shared. Widest took the 15in pair and left the thin wall one face.
+    const walls = wallsFromStrokes(
+      [face(0, 40, 0), face(0, 40, 0.5), face(0, 30, 1.25), face(0, 30, 1.75)],
+      { ...opts, maxThicknessFeet: 1.5 },
+    );
+    expect(inches(walls), "the long face reached past its own wall").toEqual([6, 6]);
+    expect(walls.map((w) => Math.round(w.lengthFeet)).sort((a, b) => a - b)).toEqual([30, 40]);
+  });
+
+  it("among faces that all end together the widest is still the wall", () => {
+    // The layered exterior: four coextensive faces, one wall, finish to finish.
+    const walls = wallsFromStrokes(
+      [0, 1.56, 2.28, 8.28].map((inch) => face(0, 40, inch / 12)),
+      opts,
+    );
+    expect(inches(walls)).toEqual([8]);
+  });
+});

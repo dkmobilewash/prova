@@ -25,6 +25,9 @@ const DIR2 = process.env.REAL_PLAN_DIR2 ?? "";
 const LABELS = process.env.TAKEOFF_LABEL_DIR ?? "";
 const OUT = process.env.SWEEP_OUT ?? "";
 const TAG = process.env.SWEEP_TAG ?? "run";
+/** Only sheets whose `set/sheet` contains this; and with `SWEEP_DUMP=1`, every proposed run is written per sheet, each with the feet of it the key does not cover. */
+const ONLY = process.env.SWEEP_ONLY ?? "";
+const DUMP = process.env.SWEEP_DUMP === "1";
 const flat = (s: string) => s.replace(/[^a-z0-9]+/gi, "").toUpperCase();
 function findPdf(dir: string): string | null {
   for (const root of [DIR, DIR2].filter((r) => r !== "")) for (const name of readdirSync(root)) if (name.toLowerCase().endsWith(".pdf") && flat(name) === flat(dir)) return join(root, name);
@@ -42,6 +45,7 @@ describe.skipIf(DIR === "" || LABELS === "")("every labelled sheet, rules only",
     files.sort((a, b) => a.dir.localeCompare(b.dir) || a.sheet.localeCompare(b.sheet));
     const rows: Record<string, unknown>[] = [];
     for (const file of files) {
+      if (ONLY !== "" && !`${file.dir}/${file.sheet}`.includes(ONLY)) continue;
       const pdf = findPdf(file.dir);
       if (pdf === null) { console.log(`  ${file.dir}/${file.sheet}: no pdf`); continue; }
       const saved = JSON.parse(readFileSync(join(LABELS, file.dir, `${file.sheet}.json`), "utf8")) as Saved;
@@ -58,6 +62,11 @@ describe.skipIf(DIR === "" || LABELS === "")("every labelled sheet, rules only",
       const s = scoreSheet({ set: file.dir, sheet: file.sheet, key, proposed, feetPerUnit: saved.feetPerUnit });
       const row = { set: file.dir, sheet: file.sheet, key: Math.round(s.keyFeet), proposed: Math.round(s.proposedFeet), missing: Math.round(s.missingFeet), extra: Math.round(s.extraFeet), views: d.views, kept: d.kept.map((k) => k.name), others: d.others.length, leftOut: d.leftOut.map((l) => l.name) };
       rows.push(row);
+      if (DUMP && OUT !== "") {
+        mkdirSync(OUT, { recursive: true });
+        const runs = proposed.map((r) => ({ ...r, extraFeet: Math.round(scoreSheet({ set: file.dir, sheet: file.sheet, key, proposed: [r], feetPerUnit: saved.feetPerUnit }).extraFeet) }));
+        writeFileSync(join(OUT, `walls-${TAG}-${flat(file.dir).slice(0, 20)}-${file.sheet}.json`), JSON.stringify({ feetPerUnit: saved.feetPerUnit, key, runs }));
+      }
       console.log(`  ${`${file.dir.slice(0, 24)}/${file.sheet}`.padEnd(32)} key ${String(row.key).padStart(5)} proposed ${String(row.proposed).padStart(5)} missing ${String(row.missing).padStart(5)} extra ${String(row.extra).padStart(5)} · views ${row.views} kept [${row.kept.join("; ")}] others ${row.others} leftOut ${row.leftOut.length}`);
     }
     expect(rows.length, "no labelled sheet was read").toBeGreaterThan(0);
