@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
-import { AREA_LABEL, isExistingRoomName, isWallTag, LEGEND_EXISTING, legendPens, modalWallPen, textRows } from "../existingWalls";
+import { isWallTag, LEGEND_EXISTING, legendPens, modalWallPen, textRows } from "../existingWalls";
 import { excludedSheetReason, heldOutReason } from "../heldOutSets";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { sheetStrokes } from "../sheetStrokes";
@@ -12,7 +12,7 @@ import { sheetStrokes } from "../sheetStrokes";
  * ── WHAT THE `existing` SET-ASIDE TAKES, AGAINST THE LABELS ──
  *
  * For every labelled sheet: the runs `existingWalls.ts` set aside, by route
- * (tag / area / legend), in feet, and what the label file says about each —
+ * (tag / legend), in feet, and what the label file says about each —
  * real (accepted or traced wall covers it), junk (rejected covers it) or
  * unverdicted. Training sheets print one row each; held-out sheets are
  * summed into ONE row and never named, which is the only way they may be
@@ -50,8 +50,8 @@ function coveredFeet(a: G & { th: number }, others: readonly (G & { th: number }
 }
 type Tally = { n: number; real: number; junk: number; other: number };
 const fresh = (): Tally => ({ n: 0, real: 0, junk: 0, other: 0 });
-const ROUTES = ["tag", "area", "legend"] as const;
-const routeOf = (why: string): (typeof ROUTES)[number] => (why.startsWith("tagged") ? "tag" : why.startsWith("bounds only") ? "area" : "legend");
+const ROUTES = ["tag", "legend"] as const;
+const routeOf = (why: string): (typeof ROUTES)[number] => (why.startsWith("tagged") ? "tag" : "legend");
 
 describe.skipIf(DIR === "" || LABELS === "")("the existing set-aside, against the labels", () => {
   it("tallies what it takes, by route, per training sheet and as one held-out total", { timeout: 7_200_000 }, async () => {
@@ -87,7 +87,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the existing set-aside, against th
             return best * fpu;
           };
           for (const r of textRows(textItems)) {
-            const hit = [isWallTag(r.str) ? "TAG" : "", AREA_LABEL.test(r.str) ? "AREA" : "", isExistingRoomName(r.str) ? "ROOM" : "", LEGEND_EXISTING.test(r.str) ? "LEGEND" : ""].filter((h) => h !== "").join("+");
+            const hit = [isWallTag(r.str) ? "TAG" : "", LEGEND_EXISTING.test(r.str) ? "LEGEND" : ""].filter((h) => h !== "").join("+");
             if (hit !== "") console.log(`    WORDS ${dir.slice(0, 14)}/${sheet} ${hit} (nearest run ${nearestFeet(r).toFixed(1)} ft): ${r.str.slice(0, 80)}`);
             if (hit.includes("LEGEND")) {
               // Where the sample would be: strokes within eight text heights left and right of the row.
