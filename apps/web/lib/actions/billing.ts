@@ -572,6 +572,15 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   const description = String(formData.get("description") ?? "").trim();
   const dueRaw = String(formData.get("dueAt") ?? "").trim();
   const dueAt = dueRaw ? new Date(dueRaw) : null;
+  // PERIOD TO, a calendar day the person entered. `YYYY-MM-DD` from a date
+  // input parses as UTC midnight by spec, which is how every entered date
+  // here is stored (CLAUDE.md, Dates). Optional: the column is nullable and
+  // the sheet prints a blank to be written in rather than a guessed date.
+  const periodRaw = String(formData.get("periodTo") ?? "").trim();
+  const periodTo = periodRaw ? new Date(periodRaw) : null;
+  if (periodTo && Number.isNaN(periodTo.getTime())) {
+    return actionFail("Period to has to be a date.");
+  }
 
   const amount = payAppTotal(rows);
   // The figure that goes on the document, fixed to the two decimal places
@@ -624,9 +633,10 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
   // invoice number, and retainageWithheld is snapshotted at creation and
   // deliberately never recomputed (see the field comment on Invoice) — so a
   // duplicate here isn't just a second document, it's a second retainage
-  // figure nothing ever reconciles against the first. There is no period
-  // field on Invoice to use as a natural key (see billing.prisma), so this
-  // checks the job's single most recent invoice for an identical amount and
+  // figure nothing ever reconciles against the first. `periodTo` exists now
+  // but is optional and legitimately repeats (a correction re-issued the
+  // same month), so it is not a natural key either; this still checks the
+  // job's single most recent invoice for an identical amount and
   // per-line breakdown submitted in the last 10 seconds — long enough to
   // catch a double-click or retried request, short enough that a genuine
   // correction re-sent minutes later still goes through. `issuedAt`, not a
@@ -669,6 +679,7 @@ export async function submitPayApplication(jobId: string, formData: FormData): P
         description: description || null,
         amount: amountValue,
         dueAt,
+        periodTo,
         retainageWithheld,
         lineItems: {
           create: rows.map((row) => ({

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { Disclosure } from "@/components/Disclosure";
 import { secondaryActionClass } from "@/components/emptyStateStyles";
 import { Hint } from "@/components/Hint";
+import { useLocalToday } from "@/components/localToday";
 import { NEW_PAY_APP_HASH } from "@/components/job/payAppFigures";
 import { submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
 import { money } from "@/lib/money";
@@ -97,6 +98,11 @@ export function PayApplications({
   lineItems: PayAppLineItemOption[];
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  // The default PERIOD TO. The user's own calendar day, read in an effect
+  // (components/localToday.ts) so the server-rendered markup never carries a
+  // date that could disagree with the browser's. Overwritten freely: most
+  // applications run to a month end, and the person knows which.
+  const today = useLocalToday();
   /** Set when the form was opened from the Billing summary's "Start pay app"
    * button, so the cursor lands in it once it has rendered. */
   const focusOnOpen = useRef(false);
@@ -306,6 +312,16 @@ export function PayApplications({
                 placeholder="Application for payment #3"
                 className="w-56 rounded-md border border-line-card bg-canvas px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
               />
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-ink-label">
+              Period to
+              <input
+                type="date"
+                name="periodTo"
+                defaultValue={today}
+                className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
+              />
+              <span className="text-xs text-ink-muted">The last day this application covers. Prints on the G702.</span>
             </label>
             <label className="flex flex-col gap-1 text-sm text-ink-label">
               Due date

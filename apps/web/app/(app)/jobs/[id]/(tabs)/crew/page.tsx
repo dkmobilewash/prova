@@ -5,6 +5,7 @@ import { LogTimeEntryForm } from "@/components/LogTimeEntryForm";
 import { TimeEntryRow } from "@/components/TimeEntryRow";
 import { TimesheetSignoffs } from "@/components/TimesheetSignoffs";
 import { SignatureImage } from "@/components/SignatureImage";
+import { TmTicketActions } from "@/components/TmTicketActions";
 import { DispatchSlipForm } from "@/components/DispatchSlipForm";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
 import { can, canReach } from "@/lib/permissions";
@@ -98,7 +99,14 @@ export default async function JobCrewPage({
     // Only fetched for a reader who can see it — same MANAGE_FIELD gate
     // the monolith withheld this section behind, now also skipping the
     // query rather than just hiding the result.
-    showsField ? prisma.tmTicket.findMany({ where: { jobId: jobRef.id }, orderBy: { workDate: "desc" }, take: 20 }) : Promise.resolve([]),
+    showsField
+      ? prisma.tmTicket.findMany({
+          where: { jobId: jobRef.id },
+          orderBy: { workDate: "desc" },
+          take: 20,
+          include: { changeOrder: { select: { number: true, status: true } } },
+        })
+      : Promise.resolve([]),
   ]);
 
   // A job still at ESTIMATE has nothing to log yet (density audit #39: the
@@ -413,6 +421,13 @@ export default async function JobCrewPage({
                         {ticket.signaturePath ? "" : " (typed name — signed before the phone took drawn signatures)"}
                       </span>
                     </div>
+                    <TmTicketActions
+                      ticketId={ticket.id}
+                      jobId={job.id}
+                      changeOrder={
+                        ticket.changeOrder ? { number: ticket.changeOrder.number, status: ticket.changeOrder.status } : null
+                      }
+                    />
                   </li>
                 ))}
               </ul>

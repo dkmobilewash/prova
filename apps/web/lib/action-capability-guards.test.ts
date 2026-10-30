@@ -1027,6 +1027,12 @@ const SECTION_DECIDED: Record<
     reason:
       "Same section and the same capability as the upload it reverses, for the same reason. Nothing is sent to the local either way; the row and the link to any scanned slip are this company's own record of the referral.",
   },
+  "changeOrders.draftChangeOrderFromTmTicket": {
+    capability: "MANAGE_FIELD",
+    section: "T&M tickets",
+    reason:
+      "The T&M tickets section of the crew tab is withheld behind `showsField` (MANAGE_FIELD), and the Draft change order button sits on each ticket row inside it. Drafting creates a DRAFT and prices nothing, so VIEW_JOB_COSTS is not the gate — the person pricing it meets that one on the change-order form. The delay draft on the Overview tab asserts nothing because its section withholds nothing; this one's section does.",
+  },
 
   /* ---- Ten that ALREADY assert the right capability, and which this
    * file has never once executed.

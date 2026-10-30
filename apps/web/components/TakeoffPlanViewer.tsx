@@ -128,10 +128,12 @@ import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
 import { TakeoffDoorsPanel } from "./TakeoffDoorsPanel";
 import { doorsAndWindowsForSheet, type DoorsWindowsResult, type StoredScheduleRow } from "@/lib/takeoff/doorsWindows";
-import { TakeoffSymbolPanel } from "./TakeoffSymbolPanel";
+import { TakeoffSymbolPanel, type AcrossRow, type AcrossState } from "./TakeoffSymbolPanel";
+import { findSymbolsFrom, scaleSymbolTemplate, symbolTemplate, type Box as SymbolBox, type SymbolMatch, type SymbolTemplate } from "@/lib/takeoff/symbolSignature";
+import { sheetInScope, type SheetScope } from "@/lib/takeoff/symbolScope";
+import { scaleFromPrinted } from "@/lib/takeoff/scaleFromPrinted";
 /** One scanned page's stored read, as the raster route and `rasterByPage` both give it. */
 type RasterRead = { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[]; widthPt?: number; heightPt?: number; printedScale?: string | null };
-import { findSymbols, type Box as SymbolBox, type SymbolMatch } from "@/lib/takeoff/symbolSignature";
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
 import { roomsFromWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
@@ -751,7 +753,11 @@ export function TakeoffPlanViewer({
   const [hoveredOpening, setHoveredOpening] = useState<string | null>(null);
   /** "Count like this": the box being dragged, and the matches it found, with the ones the estimator dropped. */
   const [symbolBox, setSymbolBox] = useState<SymbolBox | null>(null);
-  const [symbols, setSymbols] = useState<{ page: number; matches: SymbolMatch[]; dropped: Set<number>; ms: number; busy: boolean; error: string | null } | null>(null);
+  const [symbols, setSymbols] = useState<{ page: number; matches: SymbolMatch[]; dropped: Set<number>; ms: number; busy: boolean; error: string | null; label?: string | null; tag?: string | null } | null>(null);
+  /** The boxed symbol as a template, kept so "Find on all sheets" lays the same one over the rest of the set. */
+  const symbolTemplateRef = useRef<{ made: SymbolTemplate; widthPt: number; fpu: number | null; number: string | null } | null>(null);
+  const [across, setAcross] = useState<AcrossState | null>(null);
+  const acrossCancel = useRef(false);
   const [roomsOnPage, setRoomsOnPage] = useState<number | null>(null);
   const [hoveredRoom, setHoveredRoom] = useState<number | null>(null);
   /**
@@ -1428,6 +1434,75 @@ export function TakeoffPlanViewer({
   };
 
   /**
+   * ── "FIND ON ALL SHEETS": THE SAME TEMPLATE OVER THE REST OF THE SET ──
+   *
+   * Walked HERE, in the browser, one page at a time off the open document:
+   * the same strokes and words the single-sheet count reads, so there is one
+   * pipeline; no server time limit to run into on a 130-page set; and a row
+   * per sheet appears as it is counted, with the seconds it took, so the
+   * estimator can stop a walk that is going nowhere. Pages out of scope cost
+   * their text only (the sheet number is read before any stroke is).
+   *
+   * Scale: the template keeps its size ON PAPER (corrected for the two
+   * pages' widths); where both sheets print a scale and the scales differ,
+   * the model-space size is tried too and the larger count kept, saying so
+   * in the row — an annotative symbol and a model-space fixture behave the
+   * two ways, and nothing on the sheet says which a block is.
+   */
+  const searchAcrossSheets = async (scope: SheetScope) => {
+    const doc = docRef.current;
+    const tpl = symbolTemplateRef.current;
+    const own = symbols;
+    if (!doc || !tpl || !own || own.page !== pageNumber) return;
+    acrossCancel.current = false;
+    const total = doc.numPages;
+    const keptOwn = own.matches.filter((_, i) => !own.dropped.has(i));
+    const ownRow: AcrossRow = {
+      page: pageNumber, number: tpl.number, count: keptOwn.length, ms: own.ms, scaling: "paper",
+      xs: keptOwn.map((m) => (m.box.x1 + m.box.x2) / 2), ys: keptOwn.map((m) => (m.box.y1 + m.box.y2) / 2),
+    };
+    let state: AcrossState = { scope, fromNumber: tpl.number, running: true, looked: 0, total, rows: [ownRow], error: null, done: false };
+    setAcross(state);
+    try {
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const layers = await layersOf(doc as never).catch(() => null);
+      for (let n = 1; n <= total; n += 1) {
+        if (acrossCancel.current) break;
+        state = { ...state, looked: n };
+        if (n === pageNumber) { setAcross(state); continue; }
+        const t0 = performance.now();
+        const page = await doc.getPage(n);
+        const words = await pageTextItems(page as never, pdfjs as never);
+        const viewport = (page as { getViewport: (o: { scale: number }) => { width: number; height: number } }).getViewport({ scale: 1 });
+        const W = viewport.width;
+        const number = sheetNumberFrom({ pageNumber: n, widthPt: W, heightPt: viewport.height, rotation: 0, items: words } as never).sheetNumber;
+        if (!sheetInScope(scope, tpl.number, number)) { setAcross(state); continue; }
+        const { segments } = await segmentsFromOpenPage(page as never, pdfjs as never, n, layers as never);
+        const segs = segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W }));
+        const text = words.map((w) => ({ x: w.x / W, y: (w.y - w.height) / W, width: w.width / W, height: w.height / W, str: w.str }));
+        const paper = scaleSymbolTemplate(tpl.made, tpl.widthPt / W);
+        let best = { matches: findSymbolsFrom(segs, text, paper).matches, scaling: "paper" };
+        const printed = scaleFromPrinted(printedScalesOnPage(words), W, viewport.height)?.declaredDistanceFeet ?? null;
+        if (tpl.fpu !== null && printed !== null && Math.abs(tpl.fpu / printed - 1) > 0.05) {
+          const model = findSymbolsFrom(segs, text, scaleSymbolTemplate(tpl.made, (tpl.widthPt / W) * (tpl.fpu / printed))).matches;
+          if (model.length > best.matches.length) best = { matches: model, scaling: `at this sheet's scale (x${(tpl.fpu / printed).toFixed(2)})` };
+        }
+        const row: AcrossRow = {
+          page: n, number, count: best.matches.length, ms: performance.now() - t0, scaling: best.scaling,
+          xs: best.matches.map((m) => (m.box.x1 + m.box.x2) / 2), ys: best.matches.map((m) => (m.box.y1 + m.box.y2) / 2),
+        };
+        state = { ...state, rows: [...state.rows, row].sort((a, b) => a.page - b.page) };
+        setAcross(state);
+        // Let the row paint before the next sheet is read.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      setAcross({ ...state, running: false, done: !acrossCancel.current });
+    } catch {
+      setAcross({ ...state, running: false, done: false, error: "A sheet could not be read; what was counted so far is kept." });
+    }
+  };
+
+  /**
    * ── "COUNT LIKE THIS": EVERY MATCH OF THE BOXED SYMBOL ON THIS SHEET ──
    * The sheet's strokes and words are read the way Find the walls reads
    * them, the box and the strokes go to `findSymbols` in page-width units,
@@ -1445,10 +1520,27 @@ export function TakeoffPlanViewer({
       const { segments } = await segmentsFromOpenPage(page as never, pdfjs as never, pageNumber, layers as never);
       const words = await pageTextItems(page as never, pdfjs as never);
       const W = pageSize.widthPt;
-      const text = words.map((w) => ({ x: w.x / W, y: (w.y - w.height) / W, width: w.width / W, height: w.height / W }));
+      const text = words.map((w) => ({ x: w.x / W, y: (w.y - w.height) / W, width: w.width / W, height: w.height / W, str: w.str }));
       const t0 = performance.now();
-      const found = findSymbols(segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W })), text, box);
-      setSymbols({ page: pageNumber, matches: found.matches, dropped: new Set(), ms: performance.now() - t0, busy: false, error: found.template === null ? "Nothing drawn inside that box — draw it round the symbol's lines." : null });
+      const segs = segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W }));
+      const made = symbolTemplate(segs, text, box);
+      const found = made === null ? null : findSymbolsFrom(segs, text, made);
+      const printed = scaleFromPrinted(printedScalesOnPage(words), W, pageSize.heightPt);
+      symbolTemplateRef.current =
+        made === null
+          ? null
+          : { made, widthPt: W, fpu: printed?.declaredDistanceFeet ?? feetPerUnit ?? null, number: sheetNumberFrom({ pageNumber, widthPt: W, heightPt: pageSize.heightPt, rotation: 0, items: words } as never).sheetNumber };
+      setAcross(null);
+      setSymbols({
+        page: pageNumber,
+        matches: found?.matches ?? [],
+        dropped: new Set(),
+        ms: performance.now() - t0,
+        busy: false,
+        error: found === null ? "Nothing drawn inside that box — draw it round the symbol's lines, not just the lettering." : null,
+        label: found?.label ?? null,
+        tag: found?.tag ?? null,
+      });
     } catch {
       setSymbols({ page: pageNumber, matches: [], dropped: new Set(), ms: 0, busy: false, error: "The sheet could not be read for symbols. Try again in a moment." });
     }
@@ -3924,10 +4016,15 @@ export function TakeoffPlanViewer({
       {symbols !== null && symbols.page === pageNumber && sheet !== null && (
         <TakeoffSymbolPanel
           jobId={jobId}
+          planId={planId}
           pageId={sheet.id}
           itemId={activeItemId}
           state={symbols}
-          onClear={() => setSymbols(null)}
+          across={across}
+          pageCount={pageCount}
+          onAcross={(scope) => void searchAcrossSheets(scope)}
+          onCancelAcross={() => { acrossCancel.current = true; }}
+          onClear={() => { acrossCancel.current = true; setAcross(null); setSymbols(null); }}
           onSaved={(saved) => {
             setSymbols(null);
             onMeasurementSaved?.({ id: saved.id, kind: "COUNT" });

@@ -68,15 +68,134 @@ five false at 0.75). Topeka's 14 s is the sheet's 263,667 strokes, most of
 them a hatch whose pitch matched the bubble's anchor length; the anchor
 rarity rule is what brought it from 55 s.
 
-## 4. Not built
+## 4. Round two (2026-10-30, `diego/symbol-count-set`): the trade symbols, and what they taught
 
-- Across sheets. The signature is scale-free but the match is not, so "all
-  sheets at the same scale" is one loop over sheets at the same
-  `feetPerUnit` with the same template in page-width units; the viewer only
-  holds the current sheet's strokes, so it needs a server stage or a sheet
-  walk. Left for a round with a customer who asks.
-- Text drawn as paths (Topeka) is not ignored; it is matched, which is what
-  made "20" and "60" the same symbol at 80%.
-- Filled and crossed circles of the same radius tell apart only by the
-  fill's extra ink, which the test ignores by design; a density check was
-  tried and removed because a hexagon on a hatch is also dense (Bunkie).
+Diego's priority after the existing-walls work: make "Count like this"
+production-ready for the symbols an MEP estimator actually counts. Hand
+keys built on TRAINING sheets by rendering the matches over the drawing and
+judging every tile by eye; the keys sit beside the first five under
+`~/Claude Folder/takeoff/labels-symbols/`, the renders under
+`shots/symbols/`. Every template box was drawn ON THE PLAN, the way the
+tool is used; a legend row as a template was tried first and dropped — the
+legend's own 2x4 draws its centre dot twice the plan's size, and the centre
+weighting makes that dot a quarter of the score.
+
+### 4a. The scores, before and after the rules below
+
+| sheet | symbol | key | first run | after | rule that moved it |
+| --- | --- | --- | --- | --- | --- |
+| Baker EL1.01 (59,307 strokes) | R1 2x4 troffer, plain and emergency-shaded | 23 | 23 / 0 / **6** | **21 / 2 / 0** | pen agreement; grey background out |
+| Baker EL1.01 | OS occupancy sensor (circle reading OS) | 16 | **3** / 13 / 0 | **16 / 0 / 0** | chord anchors; letters inside |
+| Baker EL1.01 | X1 exit sign (circle-X) | 5 | 5 / 0 / 0 | 5 / 0 / 0 | — (tag reach widened to keep it) |
+| Baker EL1.01 | E2 emergency wall fixture | 7 | 7 / 0 / **6** | **7 / 0 / 0** | type tag beside |
+| Baker EL1.01 | R2 plain recessed can | 3 | 3 / 0 / 0 | 3 / 0 / 0 | — |
+| Baker EL1.01 | S1 strip light, one unit tick to tick | 7 | 14 (half-unit box) | **7 / 0 / 0** | the box must hold the whole symbol |
+| Baker M1.01 (12,975) | CD-1 square diffuser | 17 | 1 (box mis-read) | **17 / 0 / 0** | — |
+| Baker EP1.01 (27,014) | duplex receptacle, circle with two lines | ≈72 by eye | 81 (bare circle: every junction box and GFCI) | 4 at the 0.8 floor; **73 at 0.7**, junction circles out | line through the box; the family varies its line length |
+| Topeka P111 (138,154) | W&V keyed tag, letters drawn as paths | — | 107, WTR tags among them | 107 | letters-as-paths cannot be read |
+| Topeka P111 | water closet in the grey layer under black pipe | — | 1 (itself) | 1 | the box's black ink (the pipe) was taken as the symbol |
+
+Two of Diego's families have no instances to count on the training FP
+sheets: Crosslines FP101 and Joplin FP-101 both shade coverage areas and
+specify the system in notes — no head is drawn. That is how design-build
+sprinkler work is bid; a head count lives on the sprinkler contractor's
+shop drawings, not these.
+
+The two troffer misses are drawn differently from the other 21: their black
+rectangle is absent and only the grey tile and a filled outline remain
+(`shots/symbols/baker-lighting/troffer-R1`). Not a rule's fault.
+
+### 4b. The rules, each measured in before it was written
+
+- **A covering stroke carries the template stroke's pen** (`samePen`: both
+  grey or both black, widths within 4x). Every 2x4 fixture sits on a 2x4
+  ceiling tile drawn in thin grey; an empty tile, a desk and a pendant's
+  outline covered the fixture's black rectangle. Six false in twenty-nine
+  became none.
+- **Grey under black is background** (`symbolInk`, `BLACK_IS_THE_SYMBOL`
+  0.4): the tile under a fixture, the wall hatch round a sensor, are left
+  out of the template when black carries 40% of the box's ink. A symbol
+  drawn wholly grey keeps every stroke.
+- **A circle of micro-pieces gets chord anchors** (`chainChords`): Revit
+  draws Baker's sensor as 236 pieces of 0.13‰, under the anchor floor, so
+  the only anchors were two grid pieces under it — three of sixteen found.
+  Consecutive short pieces are chained and the chord of every minimum-anchor
+  length of path is an anchor, and only an anchor; the same block stamps its
+  pieces in the same order, so the chords land identically in every copy.
+- **A chain is one feature** (`CHAIN_SHARE` 0.5): when straight strokes are
+  present, a circle's many pieces may carry at most half the weight, so the
+  two lines that tell a receptacle from a junction box keep their say.
+- **The letters inside the box are part of the symbol** (`labelInside`):
+  OS and PC are the same circle. A NUMBER inside is the instance — door tag
+  107, keynote 12 — and asks nothing, which is what keeps the five earlier
+  keys whole. Read from the inner half of the box, because the switch-leg
+  "a" at a fixture's corner is in the box and not in the symbol.
+- **The type tag beside the symbol is part of it** (`tagBeside`,
+  `tagsWithin`): E2 and R2 are the identical emergency block; "E2 /INV-1"
+  beside one and "R2 /INV-1" beside the other is the only difference. A tag
+  is a short schedule code (E2, R1, S1, X1, GFI; one letter alone is not),
+  found within four radii or a quarter inch; the template's tag is the
+  token the first-pass matches support, so an exit sign's X1 beats the
+  switch zone's LV2 written nearer to it; a match passes if any tag-like
+  token in reach equals it. A room name there asks nothing.
+- **A stroke through the box belongs to it** (`strokesInBox`): the duplex
+  receptacle's two lines run a little past the circle; a box drawn snug cut
+  them off and the template was a bare circle. Now a stroke no longer than
+  the box's diagonal with its midpoint inside is in; a wall through the box
+  is not.
+- **Overlapping placements of a long symbol are one**
+  (`SAME_PLACEMENT_OVERLAP`); and the S1 lesson behind it is written for
+  the panel to say some day: a box holding HALF a symbol counts each symbol
+  twice, as touching pairs.
+
+### 4c. Across the set
+
+`symbolTemplate` / `findSymbolsFrom` / `scaleSymbolTemplate` split the
+matcher so one template is laid over any sheet. The viewer keeps the boxed
+symbol and walks the open document page by page in the browser
+(`searchAcrossSheets`): the sheet number is read from each page's text
+first and pages outside the scope cost only that; in scope, the template is
+laid over the sheet at its size on paper, and where both sheets print a
+scale and the scales differ the model-space size is tried too and the
+larger count kept, said so in the row. `symbolScope.ts` makes the default
+scope the sheets whose number starts with the same letter (EL, EP and E are
+one discipline). `saveSymbolCountAcrossSheets` writes one count item with a
+measurement per sheet, giving a sheet the scale it prints where it has
+none and reporting the sheets that print none.
+
+Timed on Baker (65 pages, the troffer template, `symbolSet.eval.ts`):
+
+| scope | sheets walked | total | time | per sheet |
+| --- | --- | --- | --- | --- |
+| same discipline (E) | 12 of 65 | 26 (21 on EL1.01, 5 legend samples on E0.03) | 2.2 s | 0.19 s |
+| every sheet | 65 | 62 (+23 on the RCP A111, +9 on two elevations, +2 each on p10 and M6.01) | 14.5 s | 0.22 s, max 2.0 s |
+
+Which is the case for the default: the elevations' nine are rectangles the
+size of a fixture, and the RCP's 23 are the same fixtures counted again.
+
+### 4d. On a scan: not yet, and why
+
+`symbolRaster.eval.ts` rasterises Baker's EL1.01 as the RASTER stage would
+(200 dpi, 11 s) and lays the troffer template over the stored lines: 2,182
+lines against 59,307 vector strokes, and the troffer's box holds none of
+them. The stage's line finder (`rasterLines.ts`) emits axis-aligned bands
+of ink at least 0.15 in long — walls — and never a circle, a diagonal or a
+mark that short. So "Count like this" on a scanned sheet is OFF the table
+until a scan has its own symbol pass over the grey image, and the viewer
+should say so rather than offer a box; it does not yet.
+
+## 5. Not built
+
+- A sensitivity control. The duplex family varies its line length 4.95–6.06‰
+  across blocks, so the 0.8 floor tuned on door tags keeps 4 of ~72 and 0.7
+  keeps 73 with the junction circles out. A "more like this / fewer" knob is
+  the honest product answer; the eval takes `SC_COVERAGE`.
+- Text drawn as paths (Topeka) still reads as geometry: the W&V tag counts
+  the WTR tags with it, because the vote pass keeps what recurs and only the
+  letters differ.
+- A grey fixture under black pipe (Topeka's water closets): the box's black
+  ink is taken as the symbol. A pipe is a long stroke leaving the box; that
+  is the discriminator to try.
+- The panel's half-symbol warning, and "this is a scan" instead of the box
+  tool on a scanned sheet.
+- Legend rows as templates: right idea, wrong size on Baker.
