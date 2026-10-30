@@ -379,7 +379,12 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       const writeWallItems = deps.writeWallItems ?? realDeps.writeWallItems!;
       try {
         const items = await writeWallItems({ planId: ctx.planId, companyId: ctx.companyId, jobId: ctx.jobId, pageNumber: task.pageNumber, userId: ctx.startedByUserId });
-        text = `${text}; ${wallItemsNoteFor(items)}`;
+        // "no walls found" here means the detection stored no rows, which the
+        // detector's own note already says — repeating it after "walls found"
+        // would read as a contradiction, and the one place it can happen is a
+        // test whose `detect` returns "written" without writing (the whole-set
+        // dbtest's stub). Every other skip and every write is worth a clause.
+        if (!(items.kind === "skipped" && items.why === "no walls found")) text = `${text}; ${wallItemsNoteFor(items)}`;
       } catch (error) {
         console.error("[walls] wall items after walls threw", { planId: ctx.planId, pageNumber: task.pageNumber, error });
         text = `${text}; walls on job failed`;
