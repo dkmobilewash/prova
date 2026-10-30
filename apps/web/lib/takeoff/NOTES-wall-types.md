@@ -352,3 +352,18 @@ key, PILOT.md); the set-level `PlanTextLegend` does not carry one either,
 because the partition legend page rarely draws the existing symbol — the
 floor plan's own legend does, and that is the page `detectForSheet` already
 has in hand.
+
+## 8. The existing set-aside and the estimate (pilot pass six, 2026-10-30)
+
+Whole-set pilot on Baker, Murray and Joplin with the second session's
+existing-wall set-aside stacked on main (`coordination/pilot-flow-2026-10-30-existing.md`
+has the tables). The VIEWER's offer drops: Murray A101 90 → 12 runs
+(78 set aside by the legend's existing-wall pen), Baker A100 91 → 58 (33
+by (E) tags and NIC/existing areas), Joplin unchanged. The ESTIMATE does
+not move by a foot on any of the three, and the reason is structural:
+`offeredCandidates` has one caller, the viewer. The WALLS stage posts the
+finder's groups directly, so no set-aside of any kind — legend box, dashed
+faces, existing — reaches a whole-set estimate. Second gap: Murray's A101
+prints no scale caption the planner reads, so the whole-set run counts
+A117 (60 ft) and never that sheet. Both are recorded here for the finder
+lane; nothing in this file's module changes them.
