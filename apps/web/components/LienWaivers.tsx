@@ -18,6 +18,17 @@ import {
   type WaiverStage,
 } from "@/lib/lien-waiver";
 import type { LienWaiverSection } from "@/lib/lien-waiver-query";
+import type { WaiverOffer } from "@/lib/lien-waiver-followups";
+
+/** What the offer pre-fills on the issue form. Condition and stage are
+ * fixed — a progress application is paid against a CONDITIONAL PROGRESS
+ * waiver — and the amount and through date come from the application.
+ * The EXCEPTIONS are never here (lib/lien-waiver-followups.ts). */
+type IssuePrefill = {
+  invoiceId: string;
+  amount: number;
+  throughDate: string | null;
+};
 
 /**
  * The lien waivers issued on this job, and the form that issues one.
@@ -39,12 +50,18 @@ export function LienWaivers({
   jobId,
   section,
   canManage,
+  offer = null,
 }: {
   jobId: string;
   section: LienWaiverSection;
   canManage: boolean;
+  /** The matching waiver for the newest pay application with none yet —
+   * `waiverOfferFor` on the Billing tab. Null when there is nothing to
+   * offer. */
+  offer?: WaiverOffer | null;
 }) {
   const [open, setOpen] = useState(false);
+  const [prefill, setPrefill] = useState<IssuePrefill | null>(null);
   // The list is collapsed on the Billing tab (declutter round 2), and the
   // Paperwork rail, the search palette and /lien-deadlines all link to
   // `billing#lien-waivers` — a link that lands on a closed list would land on
@@ -67,14 +84,43 @@ export function LienWaivers({
         {/* Secondary: the Billing summary holds the page's one yellow
             primary. */}
         {canManage && !open && (
-          <button type="button" onClick={() => setOpen(true)} className={`shrink-0 ${secondaryActionClass}`}>
+          <button
+            type="button"
+            onClick={() => {
+              setPrefill(null);
+              setOpen(true);
+            }}
+            className={`shrink-0 ${secondaryActionClass}`}
+          >
             Issue a waiver
           </button>
         )}
       </div>
 
+      {/* THE OFFER. A pay application was created and no waiver points at
+          it yet, so the form it needs is one press away with the two figures
+          the app knows — the payment due and the period-to — already in it.
+          It opens the SAME form: the person still reads every field, and the
+          exceptions start empty, because a number this app writes into a
+          waiver is a decision the app made. */}
+      {canManage && !open && offer && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-line-card bg-canvas p-3">
+          <p className="text-sm text-ink-body">Application #{offer.invoiceNumber} has no lien waiver yet.</p>
+          <button
+            type="button"
+            onClick={() => {
+              setPrefill({ invoiceId: offer.invoiceId, amount: offer.amount, throughDate: offer.throughDate });
+              setOpen(true);
+            }}
+            className={`shrink-0 ${secondaryActionClass}`}
+          >
+            {offer.label}
+          </button>
+        </div>
+      )}
+
       {open && canManage && (
-        <IssueWaiverForm jobId={jobId} section={section} onDone={() => setOpen(false)} />
+        <IssueWaiverForm jobId={jobId} section={section} prefill={prefill} onDone={() => setOpen(false)} />
       )}
 
       {section.waivers.length === 0 ? (
@@ -311,15 +357,20 @@ function EditWaiverForm({
 function IssueWaiverForm({
   jobId,
   section,
+  prefill,
   onDone,
 }: {
   jobId: string;
   section: LienWaiverSection;
+  prefill: IssuePrefill | null;
   onDone: () => void;
 }) {
+  // A prefill is conditional + progress by construction; without one the
+  // form starts where it always did. The excepted amount starts EMPTY in
+  // both cases.
   const [condition, setCondition] = useState<WaiverCondition>("CONDITIONAL");
   const [stage, setStage] = useState<WaiverStage>("PROGRESS");
-  const [invoiceId, setInvoiceId] = useState("");
+  const [invoiceId, setInvoiceId] = useState(prefill?.invoiceId ?? "");
   const [excepted, setExcepted] = useState("");
 
   const candidates = candidateExceptions(section);
@@ -384,6 +435,7 @@ function IssueWaiverForm({
             type="date"
             name="throughDate"
             required
+            defaultValue={prefill?.throughDate ?? undefined}
             className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
           />
         </label>
@@ -394,8 +446,14 @@ function IssueWaiverForm({
             name="amount"
             inputMode="decimal"
             placeholder="0.00"
+            defaultValue={prefill ? prefill.amount.toFixed(2) : undefined}
             className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
           />
+          {prefill && (
+            <span className="text-xs text-ink-muted">
+              The current payment due on that application (line 8 of its G702). Change it if the GC is paying a different figure.
+            </span>
+          )}
         </label>
         <label className="flex flex-col gap-1 text-sm text-ink-label">
           Pay application
