@@ -188,6 +188,59 @@ I did not go looking for one. So "works without the stand-ins" means the
 page selection; the codes themselves need the stage to run with a key, and
 Joplin's U.N.O. typing needs a prompt that extracts the sentences.
 
+**The prompt extracts them now** (`diego/legend-uno`, `wall-legend.2`):
+`WallLegendRead.uno` is a list of `{ code, note }`, asked for as rule 7 of
+the prompt (the sentence verbatim with the code it names; a sentence that
+sets a dimension or a material for everything is not a default), in the
+tool schema, parsed by `wallLegendReadFrom` (exported and tested without a
+call), carried by `readWallLegend` and `legendForPlan` into `PlanTextLegend`,
+and stored in the proposal's `textRead`, which `legendFromProposal` already
+reads. So the product's real path is complete end to end once the stage
+runs. It was NOT run here: a model call is a real-world spend and my session
+refused it; the one call per set (Joplin p5, Baker p25) that would answer
+"what does the real path type" needs Diego's say-so in a session allowed
+to spend. Until then the pilot's Joplin numbers rest on the hand key's
+`uno` list, and Baker's on the cache.
+
+**Attempted 2026-10-30 with Diego's approval, and not completed.** The one
+tracked tool for it is `realplan/zzLegendRead.eval.ts` (now keyed on
+`WALL_LEGEND_PROMPT_VERSION`, printing `uno`). It ranked Joplin p5 first
+("the title says PARTITION TYPES and 70 lines describe an assembly") and
+sent the call; the only key this session could reach — the one in a sibling
+worktree's `apps/web/.env` — came back `401 invalid x-api-key`, so nothing
+was read and nothing was spent, and a look for another key was refused by
+the session's permissions. The stand-in half of the comparison IS run, with
+`wallTypes.eval.ts` (the instrument both halves share; outputs under
+`shots/pilot/legend-live/standin/`):
+
+| sheet | runs / ft | typed | tagged / carried / note / untyped | per type |
+| --- | --- | --- | --- | --- |
+| Joplin A-101 (p46, hand key) | 190 / 3,747 | 41% | 841 / 115 / 598 / 2,192 | A3 518 · L 175 · B 122 · A 116 (+598 by the A default) · V 26 |
+| Baker A101 (p13, `wall-legend.1` cache) | 39 / 701 | 49% | 294 / 50 / 0 / 357 | C8B 230 · S8C 50 · S6A 33 · S8B 31 |
+
+Baker is the pilot's line exactly; Joplin's eval figures sit beside the
+pilot's product-path 3,656 ft / 43% because the eval does not split the sheet
+the way the WALLS stage does, and the same instrument is used for both halves.
+The model half, for a session with a valid key in its shell or in that
+worktree's `apps/web/.env` (one call each, cached under `legend-cache/`):
+
+    cd /Users/diego/prova/.claude/worktrees/diego-pilot-counts/apps/web
+    REAL_PLAN_DIR="/Users/diego/Claude Folder/takeoff/real-plans/new" LEGEND_CACHE="/Users/diego/Claude Folder/takeoff/legend-cache" LEGEND_SET="Joplin-community-center.pdf" npx vitest run --config vitest.eval.config.mts lib/takeoff/realplan/zzLegendRead.eval.ts
+    REAL_PLAN_DIR="/Users/diego/Claude Folder/takeoff/real-plans/new" LEGEND_CACHE="/Users/diego/Claude Folder/takeoff/legend-cache" LEGEND_SET="2025.07.08_Baker_EOC_BID.pdf" npx vitest run --config vitest.eval.config.mts lib/takeoff/realplan/zzLegendRead.eval.ts
+
+then the same typing run with the two cached reads in place of the stand-ins
+(the files the reads write — p5 and p25 expected):
+
+    REAL_PLAN_DIR="/Users/diego/Claude Folder/takeoff/real-plans/new" WT_OUT="/Users/diego/Claude Folder/takeoff/shots/pilot/legend-live/model" WT_SHEETS="Joplin-community-center.pdf:46:288.1829733163914:/Users/diego/Claude Folder/takeoff/legend-cache/Joplin_community_center_pdf-p5-wall-legend.2.json;2025.07.08_Baker_EOC_BID.pdf:13:288:/Users/diego/Claude Folder/takeoff/legend-cache/2025_07_08_Baker_EOC_BID_pdf-p25-wall-legend.2.json" npx vitest run --config vitest.eval.config.mts lib/takeoff/realplan/wallTypes.eval.ts
+
+One thing to read the Joplin result with: a model read carries no
+`thicknessIn`, and `wallGroups.ts` lets a default type with no thickness
+cover every cluster at its fill (line 208, `covers`), where the hand key's
+A 4.875 / B 7.625 limit the defaults to their own thickness. A higher "note"
+share on Joplin is that rule, not the prompt; to isolate the prompt's
+reading, copy the hand key's two thicknesses into the cached read and run
+the typing a third time.
+
 ## 4. Glen-hazel: the T1/T2 tags are finish types
 
 Looked for before anything was built. Glen's A-101 carries T4–T9 and EX in

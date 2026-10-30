@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { extractWallLegend, type WallLegendRead } from "@prova/integrations/src/wallLegend";
+import { extractWallLegend, WALL_LEGEND_PROMPT_VERSION, type WallLegendRead } from "@prova/integrations/src/wallLegend";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { legendPages, type PageForLegend } from "../legendPages";
 import { readPartitionAssembly } from "../partitionAssembly";
@@ -30,7 +30,8 @@ const DIR = process.env.REAL_PLAN_DIR ?? "";
 const SET = process.env.LEGEND_SET ?? "";
 const CACHE = process.env.LEGEND_CACHE ?? "";
 const LIVE = process.env.LEGEND_LIVE !== "0";
-const PROMPT_VERSION = "wall-legend.1";
+// The cache key follows the prompt, so a prompt change costs one call and nothing stale is read back.
+const PROMPT_VERSION = WALL_LEGEND_PROMPT_VERSION;
 
 /** Lines of a page, grouped the way a person reads them. */
 async function linesOf(
@@ -144,6 +145,8 @@ describe.skipIf(DIR === "" || SET === "")("reading a set's partition legend", ()
     console.log(
       `\n   ${read.types.length} wall types, confidence ${read.confidence}\n   ${read.reason}\n`,
     );
+    // eslint-disable-next-line no-console
+    console.log(`   U.N.O. defaults: ${(read.uno ?? []).length === 0 ? "none" : (read.uno ?? []).map((u) => `${u.code} — "${u.note.slice(0, 90)}"`).join("; ")}`);
     for (const type of read.types) {
       const assembly = readPartitionAssembly({
         lines: type.lines,

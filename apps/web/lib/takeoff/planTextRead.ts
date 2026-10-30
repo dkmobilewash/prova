@@ -212,6 +212,7 @@ export async function legendForPlan(input: {
       proposals: read.proposals,
       reason: read.reason,
       confidence: read.confidence,
+      ...(read.uno.length > 0 ? { uno: read.uno } : {}),
     };
     await writeStored(input.planId, SET_PAGE, "legend", legend);
     return legend;

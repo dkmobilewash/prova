@@ -39,7 +39,7 @@ export type WallLegendProposal = {
 };
 
 export type WallLegendResult =
-  | { ok: true; proposals: WallLegendProposal[]; reason: string; confidence: WallLegendRead["confidence"] }
+  | { ok: true; proposals: WallLegendProposal[]; uno: WallLegendRead["uno"]; reason: string; confidence: WallLegendRead["confidence"] }
   | { ok: false; error: string };
 
 /**
@@ -88,6 +88,7 @@ export async function readWallLegend(input: {
         where: `${input.where}, type ${type.code}`,
       }),
     })),
+    uno: read.uno,
     reason: read.reason,
     confidence: read.confidence,
   };
