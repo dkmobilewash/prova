@@ -4233,9 +4233,66 @@ and matches no run. Counts only, on purpose: the labels' verdicts on these runs 
 pre-cleanup keys, which hold existing walls, and reading them now is
 reading the thing Chrome is fixing.
 
-**NOT MEASURED ON REAL SHEETS YET, ON PURPOSE.** The keys still hold the
-existing walls Chrome is cleaning out, and against those every set-aside
-here reads as a miss. Once the cleanup round closes: snapshot the labels,
-run `realplan/zzExisting.eval.ts` (per training sheet by route, real / junk
-/ unverdicted; held-out as one unnamed total) and the 52-sheet sweep against
-main; shipping rule per building. The numbers go here when they exist.
+### The cleanup closed the same day, and the keys moved by half on held-out
+
+Snapshot `labels-snap-20261030T1927`, 26 of 52 label files changed; glen-hazel
+A-101/A-111 and HACP A-2/A-5 are excluded from everything (#870, scope set
+only by notes). The held-out recall-stage breakdown (`zzMissStages`
+`MISS_HELD_OUT=1` on `diego/recall-heldout` e9dc712b, SAME code on both
+snapshots, totals only):
+
+| held-out, 15 sheets | old keys (0754) | cleaned keys (1927) |
+| --- | --- | --- |
+| key | 18,066 ft | 9,728 ft |
+| missed | 1,961 (recall 89.1%) | 1,051 (recall 89.2%) |
+| set aside by in-a-hatch | 827 ft | 124 ft |
+| extra | 5,920 ft (33 per 100) | 12,758 ft (131 per 100) |
+
+So 703 of the 827 ft the in-a-hatch class was "losing" on held-out were
+existing walls that should never have been in the keys, and the banded-fill
+case for recovering them is mostly gone with them. The cost moved to the
+other column: the finder still offers those walls, so held-out extra more
+than doubled — which is the number the existing set-aside is for, and on
+held-out its routes find almost none of it (the held-out sets mark their
+existing work by hatch and pen, not by (E), NIC or a legend row this reads).
+
+### Measured on the cleaned keys — two routes corrected, then the sweep
+
+`zzExisting.eval.ts` on the six training sheets where a route fires, real /
+junk in feet by the labels: the legend route took 1,998 ft of junk for 18 ft
+of real (Murray A101 1,024 / 18, Supreme Court A111 974 / 0); the area route
+on Baker A100 443 / 64 (the `(E) RECORDS` room, whose walls Chrome keyed as
+new); McAllen's `(E) DEMISING` tag 150 / 0. Two routes were wrong and are
+gone: a BARE `(E)` two feet from a run named an existing door or column
+beside a NEW wall as often as the wall (E Street A2.1: 120 ft real against
+33 junk; across training 120 / 115), so a wall tag now has to name a wall;
+and `NIC, TYP ALL` on E Street annotates the furniture, not an area (144
+real / 9 junk), so an area label is the marker alone or with a reference
+clause (`NIC - REFER TO ARCH PLANS`). The first sweep, before those two
+fixes, lost 306 ft of real for 2,677 of junk on training with E Street
+98.2% → 59.5% — the per-building half of the rule is what caught it.
+
+**The sweep, corrected code vs main 56f41ff5, same snapshot, 52 sheets
+(ex-before → ex-after2), the four excluded sheets dropped:**
+
+| building | key | recall | junk per 100 ft | real lost | junk removed |
+| --- | --- | --- | --- | --- | --- |
+| Murray A101 | 77 | 63.6% → 14.3% | 1,492 → 188 | 38 | 1,004 |
+| Supreme Court A111 | 21 | 100% → 100% | 5,076 → 433 | 0 | 975 |
+| Baker A100 | 1,218 | 94.2% → 91.6% | 111 → 74 | 31 | 446 |
+| NG McAllen A3.2 | 850 | 97.5% → 97.5% | 42 → 24 | 0 | 150 |
+| every other training building | | unchanged | unchanged | 0 | 0 |
+| **TRAINING** | 40,959 | 96.0% → 95.8% | 47 → 41 | **69** | **2,575** |
+
+37 ft of junk per foot of real lost; no building worse by more than 38 ft.
+Murray's and Supreme's keys are tiny after the cleanup (77 and 21 ft) and
+their "junk" was the existing building, which is what the legend route reads.
+**Held-out, as a delta: real −247 ft, junk −266 ft** — and by route (the
+eval's own held-out total, never per sheet): tag 0, legend 0, area 29 runs
+at 439 ft real against 64 ft junk. Every foot of the held-out cost is the
+AREA route, and on training that route stands on one building (Baker, 446
+junk / 31 real). Without it the training sweep is 38 ft real lost for 2,129
+of junk and the held-out delta is zero by construction. Which configuration
+ships is Diego's call; the branch carries all three routes.
+
+RETRAIN_PLACEHOLDER

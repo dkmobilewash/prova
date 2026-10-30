@@ -27,8 +27,15 @@ scores it against the labels and is keyless-registered. On the training
 sheets the routes fire on six of 36 (Baker A100, E Street A2.1, Murray
 A101's whole existing building and Supreme Court A111's existing masonry
 off their legends' grey poché, NG McAllen A3.2, glen-hazel A-111) and on
-the held-out set only by the area route. **Not yet measured
-on real sheets**: the keys still hold existing walls Chrome is cleaning out,
-and against those every one of these set-asides reads as a miss. The
-training measurement, per building, and the held-out total follow the
-cleanup; NOTES.md carries the numbers when they exist.
+the held-out set only by the area route. Measured on the
+cleaned keys (snapshot 20261030T1927, 52-sheet sweep vs main, the four
+notes-only sheets excluded): training 2,575 ft of junk removed for 69 ft of
+real lost, no building worse by more than 38 ft — Murray A101 and Supreme
+Court A111's existing buildings off their legends' grey poché, Baker A100's
+`(E)` rooms, McAllen's `(E) DEMISING`. Two first-draft routes were measured
+wrong and removed: a bare `(E)` (names a door or column as often as a wall)
+and an item's `NIC, TYP ALL` read as an area. Held-out delta: real −247 ft,
+junk −266 ft, all of it the area route, which on training stands on one
+building; the configuration without it costs 38 ft of real for 2,129 of junk
+and moves held-out by nothing. Details and the per-building table in
+`NOTES.md`.
