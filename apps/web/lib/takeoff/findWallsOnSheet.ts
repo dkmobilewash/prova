@@ -24,6 +24,7 @@ import { DEFAULTS } from "./wallVectors";
 import { wallGroups, type WallGroup } from "./wallGroups";
 import { withoutNonWallLayers, type LayerDrop } from "./layerNames";
 import type { MatchableWallType } from "./wallTypeMatch";
+import { textItemCentre } from "./textCentre";
 
 /**
  * FINDING THE WALLS ON ONE SHEET — the whole pipeline, in one place.
@@ -380,7 +381,8 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
     knownThicknessesIn: scheduleIn,
     onCandidate: input.onCandidate,
     // For the census-born features: the words, centred, and the raw strokes.
-    words: textItems.map((item) => ({ str: item.str, x: (item.x + item.width / 2) / pageSize.widthPt, y: (item.y + item.height / 2) / pageSize.widthPt })),
+    // The item's middle whichever way it runs — a vertical dimension string's figures start beside the line and run along it.
+    words: textItems.map((item) => { const c = textItemCentre(item); return { str: item.str, x: c.x / pageSize.widthPt, y: c.y / pageSize.widthPt }; }),
     strokes: inUnits,
     decide: input.decide,
     veto: input.veto,

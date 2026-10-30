@@ -137,6 +137,11 @@ export const FEATURE_NAMES = [
    *  1.6:1 on the held-out delta, so it is a feature the grey-out can weigh
    *  rather than a rule that hides. */
   "facesTwoFeetOff",
+  /** Parallel faces lying INSIDE the run's band, besides its own two — a
+   *  composite 12 in band drawn over a party wall's two 4 in walls holds four.
+   *  Priced as a rule on offered candidates it caught 23–40 ft because the
+   *  dedup leaves only one of the three; the faces are still there. Capped at 10. */
+  "facesInsideBand",
 ] as const;
 
 /**
@@ -422,7 +427,30 @@ export function featuresFor(
     centredNumbers(wall, context.words ?? []),
     extensionEnds(wall, context.strokes ?? []),
     facesTwoFeetOff(wall, faces, a, b),
+    facesInsideBand(wall, faces, a, b),
   ];
+}
+
+export function facesInsideBand(wall: WallCandidate, faces: readonly StrokeSegment[], a: StrokeSegment, b: StrokeSegment): number {
+  const fpu = feetPerUnitOf(wall);
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+  const l = Math.hypot(dx, dy);
+  if (l === 0) return 0;
+  // strictly inside: at least an inch in from either face
+  const limit = wall.thicknessFeet / 2 - 1 / 12;
+  if (limit <= 0) return 0;
+  let n = 0;
+  for (const o of faces) {
+    if (o === a || o === b) continue;
+    const ol = lengthOf(o);
+    if (ol * fpu < 2 || Math.abs(((o.x2 - o.x1) * dx + (o.y2 - o.y1) * dy) / (ol * l)) < 0.97) continue;
+    const t1 = alongT(wall, o.x1, o.y1), t2 = alongT(wall, o.x2, o.y2);
+    if (Math.min(1, Math.max(t1, t2)) - Math.max(0, Math.min(t1, t2)) < 0.5) continue;
+    if (offLineOf(wall, (o.x1 + o.x2) / 2, (o.y1 + o.y2) / 2) * fpu > limit) continue;
+    n += 1;
+    if (n >= 10) break;
+  }
+  return n;
 }
 
 const TWO_FEET_MIN = 20 / 12;

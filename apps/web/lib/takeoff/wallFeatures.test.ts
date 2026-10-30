@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FEATURE_NAMES, SHEET_RELATIVE_NAMES, centredNumbers, crossingTicks, dashedFaceCount, extensionEnds, faceGray, facesTwoFeetOff, featuresFor, normaliseAcrossSheet, penPercentileFor, runsMeeting, twinFaces, wordsBetween } from "./wallFeatures";
+import { FEATURE_NAMES, SHEET_RELATIVE_NAMES, centredNumbers, crossingTicks, dashedFaceCount, extensionEnds, faceGray, facesInsideBand, facesTwoFeetOff, featuresFor, normaliseAcrossSheet, penPercentileFor, runsMeeting, twinFaces, wordsBetween } from "./wallFeatures";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
@@ -215,5 +215,19 @@ describe("a face two feet off the run", () => {
     const stub = seg(17, 1 / 12 + 2, 30, 1 / 12 + 2);
     expect(facesTwoFeetOff(run, [a, b, wallFace, far, stub], a, b)).toBe(1);
     expect(facesTwoFeetOff(run, [a, b, far, stub], a, b)).toBe(0);
+  });
+});
+
+describe("faces inside the band", () => {
+  const seg = (x1: number, y1: number, x2: number, y2: number): StrokeSegment => ({ x1, y1, x2, y2 });
+  it("COUNTS A PARTY WALL'S INNER FACES UNDER A COMPOSITE BAND, AND NOTHING UNDER A PLAIN WALL", () => {
+    // 1 ft per unit: a 12 in composite band along y = 0 whose two inner 4 in walls leave faces at ±0.17 and ±0.5
+    const composite = { x1: 0, y1: 0, x2: 20, y2: 0, lengthFeet: 20, thicknessFeet: 1 } as WallCandidate;
+    const a = seg(0, -0.5, 20, -0.5), b = seg(0, 0.5, 20, 0.5);
+    const inner = [seg(0, -0.17, 20, -0.17), seg(0, 0.17, 20, 0.17)];
+    expect(facesInsideBand(composite, [a, b, ...inner], a, b)).toBe(2);
+    const plain = { x1: 0, y1: 0, x2: 20, y2: 0, lengthFeet: 20, thicknessFeet: 4 / 12 } as WallCandidate;
+    const pa = seg(0, -1 / 6, 20, -1 / 6), pb = seg(0, 1 / 6, 20, 1 / 6);
+    expect(facesInsideBand(plain, [pa, pb, seg(0, 2, 20, 2)], pa, pb)).toBe(0);
   });
 });

@@ -65,6 +65,9 @@ export type PlanTextItem = {
   y: number;
   width: number;
   height: number;
+  /** The direction the text runs, in radians, screen convention (0 left to
+   *  right, −π/2 up the page); absent means 0. See `textItemCentre`. */
+  angle?: number;
 };
 
 /** One page's text and the size of the sheet it is printed on, as displayed. */
@@ -282,7 +285,8 @@ export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
           // [a, b, c, d, e, f]; e and f are the translation once the viewport's
           // rotation and flip have been composed in, so y runs DOWN from the top.
           const m = pdfjs.Util.transform(viewport.transform, item.transform);
-          items.push({ str, x: m[4], y: m[5], width: item.width, height: item.height });
+          const angle = Math.atan2(m[1], m[0]);
+          items.push({ str, x: m[4], y: m[5], width: item.width, height: item.height, ...(Math.abs(angle) > 1e-6 ? { angle } : {}) });
         }
         return {
           pageNumber,
