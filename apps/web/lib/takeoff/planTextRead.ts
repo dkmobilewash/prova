@@ -64,11 +64,12 @@ async function legendFromProposal(planId: string): Promise<PlanTextLegend | null
   const proposal = await prisma.planLegendProposal.findFirst({
     where: { planId },
     orderBy: { createdAt: "desc" },
-    select: { pageNumber: true, sheetTitle: true, merged: true, reason: true, confidence: true },
+    select: { pageNumber: true, sheetTitle: true, merged: true, textRead: true, reason: true, confidence: true },
   });
   if (proposal === null) return null;
   const types = storedLegendTypesFromJson(proposal.merged);
   if (types.length === 0) return null;
+  const uno = unoFromJson(proposal.textRead);
   return {
     page: proposal.pageNumber,
     title: proposal.sheetTitle,
@@ -76,7 +77,15 @@ async function legendFromProposal(planId: string): Promise<PlanTextLegend | null
     proposals: types.map((t) => ({ code: t.code, name: t.name, lines: t.lines, assembly: t.assembly })),
     reason: proposal.reason,
     confidence: proposal.confidence,
+    ...(uno.length > 0 ? { uno } : {}),
   };
+}
+
+/** The `uno` list of a stored legend read, where one wrote it; nothing otherwise. */
+export function unoFromJson(value: unknown): { code: string; note: string }[] {
+  const list = (value as { uno?: unknown } | null)?.uno;
+  if (!Array.isArray(list)) return [];
+  return list.filter((u): u is { code: string; note: string } => typeof u === "object" && u !== null && typeof (u as { code?: unknown }).code === "string" && typeof (u as { note?: unknown }).note === "string");
 }
 
 export type PlanTextLegend = {
@@ -86,6 +95,15 @@ export type PlanTextLegend = {
   proposals: WallLegendProposal[];
   reason: string;
   confidence: "HIGH" | "MEDIUM" | "LOW";
+  /**
+   * The legend's own "unless noted otherwise" defaults — Joplin's G-111:
+   * "ALL INTERIOR DRYWALL PARTITIONS … ARE TYPE 'A'", "ALL INTERIOR MASONRY
+   * PARTITIONS … ARE TYPE 'B'". Read off the stored proposal's text read
+   * when it carries a `uno` list; the model's read does not write one yet,
+   * so today this comes from a hand-keyed legend. `detectWallsForCalibration`
+   * puts each sentence on its type as `unoNote`.
+   */
+  uno?: { code: string; note: string }[];
 };
 
 export type PlanTextDoorRow = { mark: string; size: string | null; description: string | null };
