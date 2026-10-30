@@ -1,6 +1,7 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { bothFacesDashedInPoints } from "./dashedFaces";
 import { isTableRows, isUnderline } from "./textRows";
+import { legendBoxes } from "./legendBoxes";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "./findWallsOnSheet";
 import {
   drawingCount,
@@ -254,6 +255,18 @@ export function offeredCandidates(
     }
     return true;
   });
+  // ── A FRAMED LEGEND, SCHEDULE OR NOTES BLOCK IS SET ASIDE WHOLE — see `legendBoxes.ts` ──
+  const boxWords = (sheet.textItems ?? []).map((t) => ({ x: (t.x + t.width / 2) / sheet.widthPt, y: (t.y - t.height / 2) / sheet.widthPt, str: t.str, h: t.height / sheet.widthPt }));
+  const framed = legendBoxes(onPlan, boxWords, sheet.feetPerUnit);
+  const framedRuns = onPlan.filter((w) => framed.sides.has(w) || framed.inside.has(w));
+  const offeredRuns = onPlan.filter((w) => !framed.sides.has(w) && !framed.inside.has(w));
+  if (framedRuns.length > 0) {
+    aside.set("legend-box", {
+      kind: "legend-box",
+      why: framed.boxes.map((b) => b.why).join("; "),
+      n: framedRuns.length,
+    });
+  }
   if (underlines.length > 0) {
     aside.set("underlines", {
       kind: "underlines",
@@ -288,7 +301,7 @@ export function offeredCandidates(
   }
   return {
     candidates: candidatesFromSheet({
-      walls: onPlan.map((w) => ({
+      walls: offeredRuns.map((w) => ({
         x1: w.x1,
         y1: w.y1,
         x2: w.x2,
@@ -318,6 +331,7 @@ export function offeredCandidates(
       ...dashed.map((w) => ({ kind: "dashed-faces", why: "both faces are dashed lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...tables.map((w) => ({ kind: "table-rows", why: "rows of text between the lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...underlines.map((w) => ({ kind: "underlines", why: "ruled under a word, as long as the word", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...framedRuns.map((w) => ({ kind: "legend-box", why: framed.boxes[0]?.why ?? "inside a framed legend, schedule or notes block", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...classified
         .filter((one) => !worthOffering(one.kind))
         .map((one) => ({
