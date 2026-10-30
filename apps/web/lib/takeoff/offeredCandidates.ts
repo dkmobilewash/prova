@@ -21,6 +21,7 @@ import { withoutNonWallLayers } from "./layerNames";
 import { drawingRegions, segmentsInRegions } from "./planRegion";
 import { classifySingleLines, worthOffering } from "./singleLines";
 import { trustedScanViews } from "./scannedCaptions";
+import { ocrWordsSentence, runsInOcrWords, scanOnlyAsides } from "./scannedWords";
 import { viewKind } from "./viewKind";
 import { oneFacePerLine, wallFromPair, type StrokeSegment, type WallCandidate } from "./wallVectors";
 
@@ -74,7 +75,7 @@ export type DetectedSheet = {
   planBoxes: readonly { from: number; to: number; fromY: number; toY: number }[] | null;
   /** The sheet's text, in page POINTS as the PDF gives it — optional, and only
    *  read by the site-equipment rule; a caller without it offers as before. */
-  textItems?: readonly { str: string; x: number; y: number; width: number; height: number }[];
+  textItems?: readonly { str: string; x: number; y: number; width: number; height: number; confidence?: number }[];
   /** EVERY stroke on the page, in POINTS — optional, read only by the
    *  existing-wall rule for the legend's swatch, which sits outside the
    *  drawing `segments` is clipped to. See `existingWalls.ts`. */
@@ -234,6 +235,10 @@ export function offeredCandidates(
   }
 
   const equipment: { wall: WallCandidate; word: string; feet: number }[] = [];
+
+  const wordRuns: { wall: WallCandidate; word: string }[] = [];
+
+  const ocrWords = sheet.textItems === undefined ? new Map<WallCandidate, string>() : runsInOcrWords(sheet.walls, sheet.textItems, sheet.widthPt);
   // ── EXISTING WORK IS NOT A WALL TO TAKE OFF — see `existingWalls.ts` ──
   //
   // Read once over every run, because the area route closes rooms from all
@@ -265,6 +270,13 @@ export function offeredCandidates(
       equipment.push({ wall: w, word: hit.word, feet: hit.feet });
       return false;
     }
+    // On a scan the lettering is ink and comes back as lines; a run inside an
+    // OCR word's box, no longer than the word, is the word — see `scannedWords.ts`.
+    const word = ocrWords.get(w);
+    if (word !== undefined) {
+      wordRuns.push({ wall: w, word });
+      return false;
+    }
     // Both faces dash patterns: a hidden, overhead or demolished line — see `dashedFaces.ts`.
     if (bothFacesDashedInPoints(w, sheet.segments, sheet.widthPt, sheet.feetPerUnit)) {
       dashed.push(w);
@@ -294,7 +306,11 @@ export function offeredCandidates(
     if (ex !== undefined && !framed.sides.has(w) && !framed.inside.has(w)) existingRuns.push(ex);
   }
   const isExisting = new Set(existingRuns.map((e) => e.wall));
-  const offeredRuns = onPlan.filter((w) => !framed.sides.has(w) && !framed.inside.has(w) && !isExisting.has(w));
+  const pastFrames = onPlan.filter((w) => !framed.sides.has(w) && !framed.inside.has(w) && !isExisting.has(w));
+  const scanned = sheet.textItems?.some((t) => t.confidence !== undefined) ?? false;
+  const { kept: offeredRuns, titleStrip, twins } = scanned ? scanOnlyAsides(pastFrames, sheet.feetPerUnit) : { kept: pastFrames, titleStrip: [], twins: [] };
+  if (titleStrip.length > 0) aside.set("title-strip", { kind: "title-strip", why: "in the title-block strip at the sheet's right edge", n: titleStrip.length });
+  if (twins.length > 0) aside.set("same-wall-twin", { kind: "same-wall-twin", why: "the same wall as a longer or better-drawn run", n: twins.length });
   if (framedRuns.length > 0) {
     aside.set("legend-box", {
       kind: "legend-box",
@@ -334,6 +350,9 @@ export function offeredCandidates(
     });
   }
 
+  if (wordRuns.length > 0) {
+    aside.set("ocr-words", { kind: "ocr-words", why: ocrWordsSentence(wordRuns.map((r) => r.word)), n: wordRuns.length });
+  }
   if (zeroExtent > 0) {
     aside.set("zero-extent", { kind: "zero-extent", why: "a run with no extent — the same start and end — which nothing can draw or accept", n: zeroExtent });
   }
@@ -367,6 +386,9 @@ export function offeredCandidates(
     setAside: [...aside.values()].sort((a, b) => b.n - a.n),
     setAsideLines: [
       ...equipment.map((e) => ({ kind: "site-equipment", why: `'${e.word}' is written ${e.feet.toFixed(0)} ft away`, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
+      ...titleStrip.map((w) => ({ kind: "title-strip", why: "in the title-block strip", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...twins.map((w) => ({ kind: "same-wall-twin", why: "the same wall as a longer or better-drawn run", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...wordRuns.map((r) => ({ kind: "ocr-words", why: `inside the OCR word "${r.word}"`, lengthFeet: r.wall.lengthFeet, x1: r.wall.x1, y1: r.wall.y1, x2: r.wall.x2, y2: r.wall.y2 })),
       ...existingRuns.map((e) => ({ kind: "existing", why: e.why, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
       ...dashed.map((w) => ({ kind: "dashed-faces", why: "both faces are dashed lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...tables.map((w) => ({ kind: "table-rows", why: "rows of text between the lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
