@@ -1,5 +1,4 @@
 import { bothFacesDashed } from "./dashedFaces";
-import { roomsFromWalls } from "./roomsFromWalls";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
@@ -16,13 +15,13 @@ import type { StrokeSegment, WallCandidate } from "./wallVectors";
  *   1. A TAG beside the wall: `(E)`, `(E) WALL`, `EXIST. CMU WALL`,
  *      `EXISTING WALL TO REMAIN`, within `TAG_REACH_FEET` of the run — the
  *      same reach a bare type tag gets in `bareTextTags`.
- *   2. An AREA the sheet marks: `NIC`, `NOT IN CONTRACT`, `NO WORK THIS
- *      AREA`, `EXISTING BUILDING`, `LIMITED SCOPE`, or a room named
- *      `(E) OFFICE`. The rooms are closed from the finder's own walls
- *      (`roomsFromWalls`), the label is placed in one, and a wall is existing
- *      when EVERY room it bounds is marked. A wall between a marked room and
- *      an unmarked one stays offered: it may be the new wall that closes the
- *      scope off, and nothing on the sheet says which.
+ *   2. (Removed.) An AREA the sheet marks — NIC, EXISTING BUILDING, a room
+ *      named (E) OFFICE — closed from the finder's runs, every wall bounding
+ *      only marked rooms set aside. Measured on the cleaned keys 2026-10-30
+ *      it stood on one training building (Baker A100, 446 ft junk / 31 real)
+ *      and was the whole of the held-out cost (29 runs, 439 ft real against
+ *      64 junk): a room's label says what the ROOM is, and its walls are as
+ *      often the new work that made it. Diego's call: ship without it.
  *   3. The LEGEND'S OWN PEN: a legend row reading EXISTING WALL has a drawn
  *      sample beside it, and the sample's pen — grey level, line width, dash
  *      — is what the plan draws existing walls with. A wall whose faces carry
@@ -50,8 +49,6 @@ export const PEN_WIDTH_RATIO = 1.25;
 export const PEN_FACE_SHARE = 0.6;
 /** A face stroke sits this close to the wall's face line, in feet (as `dashedFaces`). */
 const ON_FACE_FEET = 0.25;
-/** How far from a room's inside face a wall's centreline may sit and still bound it, beyond half its thickness, in feet. */
-const BOUNDS_SLACK_FEET = 1;
 
 const EXIST = String.raw`(?:\(E\)|EXIST(?:ING|'G|G\.|\.)?)`;
 const WALL_WORD = String.raw`(?:WALLS?|PARTITIONS?|DEMISING|CMU|MASONRY|BRICK)`;
@@ -69,29 +66,6 @@ export const WALL_TAG = new RegExp(
   String.raw`^(?:${EXIST}(?:\s+[A-Z0-9"'/.\-]+){0,3}\s+${WALL_WORD}(?:\s+TO\s+REMAIN)?\.?|(?:${EXIST}\s+)?${WALL_WORD}\s+TO\s+REMAIN\.?)$`,
   "i",
 );
-/**
- * A label marking an AREA as out of this contract: the marker alone, or
- * followed by a reference (`NIC - REFER TO ARCH PLANS`, `NIC (SEE A-101)`).
- * `NIC, TYP ALL` is not one — on E Street A2.1 it annotates the furniture,
- * and read as an area it took 144 ft of new wall for 9 ft of junk on the
- * cleaned labels. TYP, ALL and an item word after the marker mean an item.
- */
-export const AREA_LABEL = new RegExp(
-  String.raw`^(?:AREA\s+)?["']?(?:N\.?\s?I\.?\s?C\.?|NOT\s+IN\s+(?:THIS\s+)?CONTRACT|NO\s+WORK(?:\s+(?:IN\s+)?THIS\s+AREA)?|LIMITED\s+SCOPE|EXISTING\s+(?:BUILDING|SPACE|AREA|TENANT|STRUCTURE|FACILITY|CONSTRUCTION)(?:\s+TO\s+REMAIN)?|EXISTING\s+TO\s+REMAIN)(?![A-Z])["']?` +
-    String.raw`(?:[\s\-–—(:,.]*\(?(?:N\.?I\.?C\.?|NO\s+WORK(?:\s+THIS\s+AREA)?|TO\s+REMAIN)\)?\.?)?(?:[\s\-–—(:,.]+(?:REFER|SEE|RE:|PER)\b.*)?$`,
-  "i",
-);
-/**
- * `(E) OFFICE`, `(E) DISPATCH`: a room name that says the room is existing.
- * The `(E)` form only. `EXISTING <word>` was accepted too and, read off the
- * training sheets' own text, it is far more often the first row of a note
- * split across lines — `EXISTING FIXED` (window), `EXISTING RIGID`
- * (insulation), `EXISTING SIDEWALK`, `EXISTING GYP. BD.` — than a room, and a
- * note inside a new room would mark the room. `EXISTING CORRIDOR` as a room
- * name is the cost, and it is recorded rather than guessed around.
- */
-export const EXISTING_ROOM = /^\(E\)\s+(?:[A-Z0-9#&'./-]+\s*){1,4}$/i;
-const NOT_A_ROOM = /\b(?:WALLS?|PARTITIONS?|DOORS?|WINDOWS?|OVERHEAD|CMU|MASONRY|BRICK|CONC(?:RETE)?|CEILING|FLOOR|SLAB|ROOF|BEAM|COLUMNS?|FOOTING|CURB|EQUIP(?:MENT)?|GRID|FIXTURE|FIXED|DUCT|PIPE|PANEL|METER|BOX|FRAME|SILL|LINTELS?|TRIM|DECK|TILE|MIRROR|SIDEWALK|STACKS?)\b/i;
 /** A legend row describing the existing-wall sample, and one describing the new-wall sample. */
 export const LEGEND_EXISTING = new RegExp(
   String.raw`^(?:${EXIST}(?:\s+[A-Z0-9"'/.\-]+){0,2}\s+(?:${WALL_WORD}|CONSTRUCTION)(?:\s+TO\s+REMAIN)?|(?:${EXIST}\s+)?(?:${WALL_WORD}|CONSTRUCTION)\s+TO\s+REMAIN)\.?$`,
@@ -102,8 +76,6 @@ const DEMOLITION = /\b(?:DEMO(?:LISH(?:ED)?|LITION)?|REMOVED?|TO\s+BE\s+REMOVED)
 
 /** A short label naming an existing wall beside it — and not a fixture. */
 export const isWallTag = (str: string): boolean => WALL_TAG.test(str) && !FIXTURE.test(str);
-/** `(E) OFFICE`, `(E) DISPATCH`: an existing ROOM's name, which marks the room. */
-export const isExistingRoomName = (str: string): boolean => EXISTING_ROOM.test(str) && !NOT_A_ROOM.test(str) && !WALL_TAG.test(str);
 
 export type TextRow = TextItem;
 
@@ -280,23 +252,7 @@ const distanceToRun = (px: number, py: number, w: { x1: number; y1: number; x2: 
   return Math.hypot(px - (w.x1 + t * dx), py - (w.y1 + t * dy));
 };
 
-function insidePolygon(px: number, py: number, xs: readonly number[], ys: readonly number[]): boolean {
-  let inside = false;
-  for (let i = 0, j = xs.length - 1; i < xs.length; j = i, i += 1) {
-    if (ys[i] > py !== ys[j] > py && px < ((xs[j] - xs[i]) * (py - ys[i])) / (ys[j] - ys[i]) + xs[i]) inside = !inside;
-  }
-  return inside;
-}
-
-function distanceToPolygon(px: number, py: number, xs: readonly number[], ys: readonly number[]): number {
-  let best = Infinity;
-  for (let i = 0, j = xs.length - 1; i < xs.length; j = i, i += 1) {
-    best = Math.min(best, distanceToRun(px, py, { x1: xs[j], y1: ys[j], x2: xs[i], y2: ys[i] }));
-  }
-  return best;
-}
-
-export type ExistingWall = { wall: WallCandidate; route: "tag" | "area" | "legend"; why: string };
+export type ExistingWall = { wall: WallCandidate; route: "tag" | "legend"; why: string };
 
 export function existingWalls(input: {
   /** The finder's runs, page-width units. */
@@ -333,30 +289,7 @@ export function existingWalls(input: {
     }
   }
 
-  // ── 2. AN AREA THE SHEET MARKS ──
-  const labels = rows.filter((r) => AREA_LABEL.test(r.str) || isExistingRoomName(r.str));
-  if (labels.length > 0) {
-    const { rooms } = roomsFromWalls({ walls: walls.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, thicknessFeet: w.thicknessFeet })), feetPerUnit });
-    const marked = new Map<number, string>();
-    for (const label of labels) {
-      const px = (label.x + label.width / 2) / widthPt, py = (label.y - label.height / 2) / widthPt;
-      const room = rooms.find((r) => insidePolygon(px, py, r.xs, r.ys));
-      if (room !== undefined && !marked.has(room.id)) marked.set(room.id, label.str);
-    }
-    if (marked.size > 0) {
-      for (const w of walls) {
-        if (found.has(w)) continue;
-        const reach = (w.thicknessFeet / 2 + BOUNDS_SLACK_FEET) / feetPerUnit;
-        const samples = [0.25, 0.5, 0.75].map((t) => [w.x1 + (w.x2 - w.x1) * t, w.y1 + (w.y2 - w.y1) * t] as const);
-        const bounds = rooms.filter((r) => samples.filter(([x, y]) => distanceToPolygon(x, y, r.xs, r.ys) <= reach).length >= 2);
-        if (bounds.length === 0 || !bounds.every((r) => marked.has(r.id))) continue;
-        const names = [...new Set(bounds.map((r) => marked.get(r.id) as string))].map((s) => `"${s}"`).join(", ");
-        found.set(w, { wall: w, route: "area", why: `bounds only ${names} — an area the sheet marks existing or not in contract` });
-      }
-    }
-  }
-
-  // ── 3. THE LEGEND'S OWN PEN ──
+  // ── 2. THE LEGEND'S OWN PEN ──
   const pens = legendPens(rows, input.pageSegments ?? segments, widthPt);
   if (pens.existing !== null) {
     const other = pens.fresh?.pen ?? modalWallPen(walls, segments, feetPerUnit);
@@ -378,7 +311,6 @@ export function existingSentence(list: readonly ExistingWall[]): string {
   const n = (route: ExistingWall["route"]) => list.filter((e) => e.route === route).length;
   const parts: string[] = [];
   if (n("tag") > 0) parts.push(`${n("tag")} tagged (E) or EXISTING beside the wall`);
-  if (n("area") > 0) parts.push(`${n("area")} bounding only an area the sheet marks NIC or existing`);
   if (n("legend") > 0) parts.push(`${n("legend")} drawn with the legend's existing-wall pen`);
   return `${parts.join("; ")} — existing work, not a wall to take off`;
 }

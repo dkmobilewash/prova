@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AREA_LABEL, existingWalls, isExistingRoomName, isWallTag, LEGEND_EXISTING, legendPens, textRows } from "./existingWalls";
+import { existingWalls, isWallTag, LEGEND_EXISTING, legendPens, textRows } from "./existingWalls";
 import { offeredCandidates } from "./offeredCandidates";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
@@ -39,16 +39,6 @@ describe("the words: what is a wall tag and what marks an area", () => {
     // A bare (E) names whatever it sits beside — a door, a column — and took 120 ft of new wall on the cleaned labels.
     for (const no of ["(E)", "(E) OFFICE", "EXISTING WALLS TO REMAIN SHALL BE PATCHED AND PAINTED", "E", "NEW WALL", "WALL", "EXISTING CONCRETE", "EXISTING MIRROR TOILET PARTITION", "(E) COLUMN TO REMAIN"]) expect(isWallTag(no), no).toBe(false);
   });
-  it("an area label: NIC, N.I.C., NIC - REFER TO ARCH PLANS, NIC, TYP ALL, AREA \"NOT IN CONTRACT\", NO WORK THIS AREA, EXISTING BUILDING (NIC), LIMITED SCOPE — not a wall tag, a niche or a note", () => {
-    for (const yes of ["NIC", "N.I.C.", "NIC - REFER TO ARCH PLANS", "NIC (SEE A-101)", 'AREA "NOT IN CONTRACT"', "NOT IN CONTRACT", "NO WORK THIS AREA", "EXISTING BUILDING (NIC)", "EXISTING BUILDING - NO WORK", "LIMITED SCOPE", "EXISTING TO REMAIN"]) expect(AREA_LABEL.test(yes), yes).toBe(true);
-    // NIC, TYP ALL annotates the furniture on E Street A2.1; read as an area it took 144 ft of new wall.
-    for (const no of ["NIC, TYP ALL", "NIC FURNITURE", "(E) WALL", "NICHE", "EXISTING WALL", "OFFICE", "ALL EXISTING CONSTRUCTION TO REMAIN SHALL BE PATCHED, REPAIRED, AND PREP AS", "NICKEL FINISH"]) expect(AREA_LABEL.test(no), no).toBe(false);
-  });
-  it("an existing room's name: (E) OFFICE, (E) DISPATCH, (E) STORAGE 104 — not a wall tag, a column, an overhead door, or the first line of a split note", () => {
-    for (const yes of ["(E) OFFICE", "(E) DISPATCH", "(E) STORAGE 104", "(E) DELIVERY /"]) expect(isExistingRoomName(yes), yes).toBe(true);
-    // EXISTING CORRIDOR is left out on purpose: `EXISTING <word>` on the training sheets is a split note far more often than a room.
-    for (const no of ["(E) WALL", "(E) COLUMN", "(E) OVERHEAD", "EXISTING FIXED", "EXISTING SIDEWALK", "EXISTING CORRIDOR", "EXISTING CEILING TO REMAIN", "OFFICE"]) expect(isExistingRoomName(no), no).toBe(false);
-  });
   it("a legend row is the WHOLE short row naming the sample — never a note sentence, a heading or a furring detail", () => {
     for (const yes of ["EXISTING WALL", "EXISTING WALL TO REMAIN", "EXISTING CONSTRUCTION", "EXIST. 8\" CMU WALL", "WALL TO REMAIN"]) expect(LEGEND_EXISTING.test(yes), yes).toBe(true);
     for (const no of ["ALL EXISTING MASONRY DOOR JAMBS SCHEDULED TO RECIEVE NEW DOOR/FRAME SHALL BE PAINTED", "LINE WITH EXISTING WALLS.", "EXISTING WALL FURROUT.", "NEW & EXISTING PARTITIONS .", "EXISTING WALL OPENING DIMENSIONS MAY VARY FOR ALL"]) expect(LEGEND_EXISTING.test(no), no).toBe(false);
@@ -70,35 +60,7 @@ describe("route 1 — a tag beside the wall", () => {
   });
 });
 
-describe("route 2 — an area the sheet marks NIC or existing", () => {
-  // Two 10x10 ft rooms side by side with their OWN top and bottom walls, so a
-  // wall can bound one room without bounding the other. Centrelines sit half
-  // a thickness outside each interior.
-  const c = T / 2;
-  const room1 = { top: wall(-c, -c, 10 + c, -c), bottom: wall(-c, 10 + c, 10 + c, 10 + c), left: wall(-c, -c, -c, 10 + c) };
-  const shared = wall(10 + c, -c, 10 + c, 10 + c);
-  const room2 = { top: wall(10 + c, -c, 20 + 3 * c, -c), bottom: wall(10 + c, 10 + c, 20 + 3 * c, 10 + c), right: wall(20 + 3 * c, -c, 20 + 3 * c, 10 + c) };
-  const walls = [room1.top, room1.bottom, room1.left, shared, room2.top, room2.bottom, room2.right];
-  const ask = (items: ReturnType<typeof word>[]) => existingWalls({ walls, segments: [], textItems: items, widthPt: W, feetPerUnit: FPU });
-
-  it("NIC in room 1: its three own walls are existing; the shared wall and room 2's walls are offered", () => {
-    const got = ask([word("NIC", 5, 5), word("OFFICE", 15, 5)]);
-    expect(got.map((e) => e.route)).toEqual(["area", "area", "area"]);
-    expect(new Set(got.map((e) => e.wall))).toEqual(new Set([room1.top, room1.bottom, room1.left]));
-    expect(got[0].why).toBe('bounds only "NIC" — an area the sheet marks existing or not in contract');
-  });
-  it("a room named (E) STORAGE marks the same way; OFFICE marks nothing; a label outside every room marks nothing", () => {
-    expect(ask([word("(E) STORAGE", 5, 5)])).toHaveLength(3);
-    expect(ask([word("EXISTING FIXED", 5, 5)])).toHaveLength(0);
-    expect(ask([word("OFFICE", 5, 5)])).toHaveLength(0);
-    expect(ask([word("NIC", 40, 40)])).toHaveLength(0);
-  });
-  it("NIC in BOTH rooms: every wall, the shared one included, is existing", () => {
-    expect(ask([word("NIC", 5, 5), word("N.I.C.", 15, 5)])).toHaveLength(7);
-  });
-});
-
-describe("route 3 — the legend's own existing-wall pen", () => {
+describe("route 2 — the legend's own existing-wall pen", () => {
   // The legend, far from the plan: a row's words at x = 60 ft with its drawn
   // sample 4 ft long just to the left. Baselines at 90 and 92 ft.
   const legend = [word("EXISTING WALL", 62, 90), word("NEW WALL", 62, 92)];
