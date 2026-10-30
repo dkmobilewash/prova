@@ -345,8 +345,9 @@ export function windowSymbols(
   lines.forEach((l, i) => { const k = keyOf(l.mx, l.my); (grid.get(k) ?? grid.set(k, []).get(k)!).push(i); });
   const exterior = exteriorWalls(walls, feetPerUnit);
   const used = new Set<number>();
-  const out: WindowSymbol[] = [];
   const parallel = (a: Line, b: Line) => { const d = Math.abs(a.ang - b.ang); return Math.min(d, Math.PI - d) <= (3 * Math.PI) / 180; };
+  type Candidate = { a: Line; group: { i: number; off: number }[]; offs: number[]; aLo: number; aHi: number; x1: number; y1: number; x2: number; y2: number; mx: number; my: number; wall: number; fromWall: number[] };
+  const cands: Candidate[] = [];
   for (let i = 0; i < lines.length; i++) {
     if (used.has(i)) continue;
     const a = lines[i]!;
@@ -400,19 +401,74 @@ export function windowSymbols(
       if (perp < best) { best = perp; wall = wi; }
     });
     if (wall === -1) continue;
-    // ── IN A GAP OF THE WALL, NOT ON A WALL ──
-    // A window's frame lines ARE the wall's faces where the wall stops; a
-    // rated wall's hatch and a desk against the wall sit under faces that run
-    // straight past them. So if a straight stroke at either frame's offset
-    // runs on beyond both ends of the window, this is not a window — unless
-    // the sheet puts a window tag beside it, which is the drawing saying so.
-    const tagged = tags.some((t) => Math.hypot(t.x - mx, t.y - my) <= WINDOW_TAG_REACH_FEET / feetPerUnit);
-    if (!tagged) {
+    const w = walls[wall]!;
+    const wx = w.x2 - w.x1, wy = w.y2 - w.y1, wl = Math.hypot(wx, wy);
+    const fromWall = group.map((g) => { const l = lines[g.i]!; return Math.abs(((l.mx - w.x1) * -wy + (l.my - w.y1) * wx) / wl); });
+    cands.push({ a, group, offs, aLo, aHi, x1, y1, x2, y2, mx, my, wall, fromWall });
+  }
+  // ── ONE TAG NAMES ONE WINDOW: THE NEAREST ──
+  // Joplin's resident rooms: a G tag over each 4 ft window, 6 ft 5 in of
+  // cavity wall between windows. With every candidate within reach taking
+  // the tag, the wall piece beside the window was "tagged" too, kept, and
+  // then merged with the windows either side into one 14 ft "window". A tag
+  // sits over the thing it names, so it claims the nearest candidate only.
+  const tagged = new Set<number>();
+  const tagReach = WINDOW_TAG_REACH_FEET / feetPerUnit;
+  for (const t of tags) {
+    let at = -1, near = tagReach;
+    cands.forEach((c, ci) => { const d = Math.hypot(t.x - c.mx, t.y - c.my); if (d <= near) { near = d; at = ci; } });
+    if (at >= 0) tagged.add(at);
+  }
+  // ── AND THE TAG NAMES THE WHOLE STOREFRONT, LITE BY LITE ──
+  // Joplin's D and Q glass partitions are three and four lites drawn with
+  // the same frame lines, mullion to mullion, one tag over the middle lite.
+  // A lite drawn exactly like a tagged one — same lines across it, same
+  // wall, collinear, no more than a mullion apart — is a pane of the same
+  // window. The cavity wall between two G windows is drawn with different
+  // lines, so it is not.
+  const sameLites = (c: Candidate, d: Candidate) => c.wall === d.wall && c.offs.length === d.offs.length && c.offs.every((o, k) => o === d.offs[k]);
+  const abut = (c: Candidate, d: Candidate) => {
+    const ex = Math.cos(c.a.ang), ey = Math.sin(c.a.ang);
+    const offOf = (x: number, y: number) => Math.abs((x - c.mx) * -ey + (y - c.my) * ex);
+    if (offOf(d.mx, d.my) > inside * 4) return false;
+    const along = Math.abs((d.mx - c.mx) * ex + (d.my - c.my) * ey);
+    return along - (c.aHi - c.aLo) / 2 - (d.aHi - d.aLo) / 2 <= MULLION_FEET / feetPerUnit;
+  };
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const ci of [...tagged]) for (let di = 0; di < cands.length; di++) {
+      if (tagged.has(di) || !sameLites(cands[ci]!, cands[di]!) || !abut(cands[ci]!, cands[di]!)) continue;
+      tagged.add(di);
+      grew = true;
+    }
+  }
+  const out: WindowSymbol[] = [];
+  cands.forEach((c, ci) => {
+    const { a, offs, aLo, aHi, wall, fromWall } = c;
+    if (!tagged.has(ci)) {
+      // ── GLASS INSIDE THE WALL, OR IT IS NOT A WINDOW ──
+      // Joplin A-101 (2026-10-29, by eye over 54 candidates): the exterior
+      // wall's two faces plus a parallel roof, sill or rated-wall line read as
+      // a window pier to pier, 13–15 ft wide. Those three lines are never
+      // INSIDE the wall: the faces sit on it and the third beside it. A window
+      // symbol has a glass line between the faces. So, without a tag, a
+      // candidate needs one line strictly inside the matched wall's thickness
+      // and none more than an inch outside its faces. (Bunkie's windows sit in
+      // CMU piers a foot outside the furring line the finder chose; their W2
+      // tags are what keep them, not this rule.)
+      const half = walls[wall]!.thicknessFeet / 2 / feetPerUnit;
+      if (!fromWall.some((o) => o < half - inside) || fromWall.some((o) => o > half + 2 * inside)) return;
+      // ── IN A GAP OF THE WALL, NOT ON A WALL ──
+      // A window's frame lines ARE the wall's faces where the wall stops; a
+      // rated wall's hatch and a desk against the wall sit under faces that
+      // run straight past them. So if a straight stroke at either frame's
+      // offset runs on beyond both ends of the window, this is not a window.
+      const ex = Math.cos(a.ang), ey = Math.sin(a.ang);
+      const proj = (x: number, y: number) => (x - a.x1) * ex + (y - a.y1) * ey;
+      const off = (x: number, y: number) => (x - a.x1) * -ey + (y - a.y1) * ex;
       const beyond = 1 / feetPerUnit;
       const frameOffs = [offs[0]! * inside, offs[offs.length - 1]! * inside];
-      let covered = false;
       for (const s of segments) {
-        if (covered) break;
         if (s.curved) continue;
         const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
         if (len <= (aHi - aLo) + beyond) continue;
@@ -423,12 +479,11 @@ export function windowSymbols(
         const o = (off(s.x1, s.y1) + off(s.x2, s.y2)) / 2;
         if (!frameOffs.some((fo) => Math.abs(o - fo) <= inside)) continue;
         const lo = Math.min(proj(s.x1, s.y1), proj(s.x2, s.y2)), hi = Math.max(proj(s.x1, s.y1), proj(s.x2, s.y2));
-        if (lo <= aLo - beyond && hi >= aHi + beyond) covered = true;
+        if (lo <= aLo - beyond && hi >= aHi + beyond) return;
       }
-      if (covered) continue;
     }
-    out.push({ kind: "window", x1, y1, x2, y2, widthFeet: (aHi - aLo) * feetPerUnit, wall, lines: offs.length });
-  }
+    out.push({ kind: "window", x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, widthFeet: (aHi - aLo) * feetPerUnit, wall, lines: offs.length });
+  });
   return mergeLites(out, feetPerUnit);
 }
 
