@@ -273,3 +273,97 @@ is the drawing's answer, not a miss.
   wall tags are unreadable without OCR of the symbol.
 - A note-typed group where two types share the thickness (Joplin A3 / B)
   stays a question; the item is "Walls — untyped" until a person answers.
+
+## 7. The existing-wall legend entry, deterministic half (`existingMarks.ts`, 2026-10-30)
+
+Diego's rule: an existing wall that remains is NOT WALL on every key, and the
+finder is to set such walls aside rather than offer them. The second
+session builds the set-aside; this is what the legend lane hands it, read
+off the sheet's own text with no model.
+
+**What is read** (`existingMarks({ textItems, segments, widthPt })`):
+
+- `legend[]` — short labels naming a kind (`EXISTING` / `NEW` / `NIC` /
+  `DEMO`) with a self-contained swatch to their left, and that swatch's pen:
+  stroke count, median grey, median and longest piece in inches of paper,
+  diagonal share, thickest width, and three flags (`grey`, `dashed`,
+  `hatched`). The swatch is the sheet's own pen for that kind, so the
+  consumer compares a run against the EXISTING entry *and* the NEW entry
+  rather than against a fixed idea of grey.
+- `tokens[]` — `(E)` always, plus any abbreviation the sheet defines
+  ("EX = EXISTING TO REMAIN" on glen-hazel A-111 → `EX`).
+- `tags[]` — labels on the drawing: `EXISTING` (a token at the start,
+  "EXISTING …", "… TO REMAIN"; at most four words; not about a door,
+  window, floor, lintel and the like) and `NIC` ("N.I.C.", "NOT IN
+  CONTRACT", "NO WORK", "LIMIT OF WORK"), each with its box in page-width
+  units so an area can be found around it.
+
+**What a swatch has to be**, each rule measured in before it was written:
+to the LEFT of the words within 1.5 in; at least two strokes with both ends
+inside the box (a plan line running past "(E) DEMISING" on McAllen A3.2 is
+not a swatch); spanning at least 0.35 in (three grey ticks of a room outline
+beside "JAIL (NO WORK)" on Baker A100 are not); and with no more strokes in
+the 0.3 in to its left than a quarter of its own (a label inside a field of
+hatch is in the field, not beside a sample). A row starts with its subject
+and is not a sentence: "FOR THE NEW BUILDING." and "EXISTING WALL FURROUT."
+are keynotes. Six unit tests; mutations run and red for: confinement gone,
+extent gone, isolation gone, sentences admitted, abbreviation learning off,
+grey flag off, dash flag off, hatch flag off, removal-before-existing
+swapped, tag word cap off.
+
+**Measured on the eighteen marked TRAINING sheets** of the cleanup list
+(`shots/legend-existing/training-2026-10-30.txt`; held-out sheets not run):
+
+| sheet | legend entries read | pen of the EXISTING entry |
+| --- | --- | --- |
+| Murray A101 | EXISTING WALL TO REMAIN | black, 9 pieces of 0.05 in — **dashed** |
+| Supreme Court A111 | NEW CONSTRUCTION, EXISTING CONSTRUCTION | **black**, 41 pieces of 0.06 in, 2% diagonal — a stipple, not grey |
+| Bunkie A100 | EXISTING WALL | black, 8 strokes, thickest pen on the sheet (11 pt) — a solid fill |
+| HPL p3 | AREA "NOT IN CONTRACT", NEW PARTITION | — (NIC swatch 8 strokes, 0.5 in) |
+| Joplin A-101 | NEW WALL | — (2 black lines, 0.9 in) |
+| the other 13 | none | — |
+
+So of five sheets with a readable wall legend, the existing pen is dashed
+on one, stippled black on one, thick-filled on one, and absent (only NEW
+drawn) on two. **Grey appears in none of the EXISTING swatches**, which is
+the measurement behind "grey alone is not enough". Conventions: `(E)` on
+Baker (26 labels, room names), E Street (3), McAllen (2 "(E) DEMISING" +
+"TO REMAIN"); `EX` defined and used nine times on glen-hazel A-111. NIC
+tags on Baker ("JAIL (NO WORK)", "(NO WORK)"), glen-hazel (3), HPL (3).
+
+**Two misfires, found in that run and fixed the same day** (second run,
+`training-2026-10-30b.txt`): a NIC label standing inside a hatched NIC area
+(E Street "NIC, TYP ALL", glen-hazel's second "N.I.C.") read as a legend
+NIC entry whose swatch was the area's own hatch. Measured round every
+candidate row on the training legends: all nine true legend rows have ZERO
+strokes in the half inch right of their words, the two field labels have
+two — a legend row ends in margin, a field goes on past the words. That is
+the rule now (`RIGHT_MAX_STROKES`), plus the words themselves: "TYP" is a
+note's word and a bare "N.I.C." is what is written ON an area, so neither
+is a row. And Murray's NEW swatches did not fail isolation at all — they
+are 0.35 in wide to the hundredth and the extent floor was 0.35; it is 0.3
+(three ticks of a room outline measure under 0.25). After: Murray reads all
+three rows (EXISTING dashed, NEW hatched, NEW WITH SOUND BATT), and the two
+field labels are NIC tags. Nine legend rows on five sheets, no misread.
+
+**Not built:** the model legend read does not return an existing entry yet
+(`wallLegend.ts` has no field for it; the real read is still blocked on a
+key, PILOT.md); the set-level `PlanTextLegend` does not carry one either,
+because the partition legend page rarely draws the existing symbol — the
+floor plan's own legend does, and that is the page `detectForSheet` already
+has in hand.
+
+## 8. The existing set-aside and the estimate (pilot pass six, 2026-10-30)
+
+Whole-set pilot on Baker, Murray and Joplin with the second session's
+existing-wall set-aside stacked on main (`coordination/pilot-flow-2026-10-30-existing.md`
+has the tables). The VIEWER's offer drops: Murray A101 90 → 12 runs
+(78 set aside by the legend's existing-wall pen), Baker A100 91 → 58 (33
+by (E) tags and NIC/existing areas), Joplin unchanged. The ESTIMATE does
+not move by a foot on any of the three, and the reason is structural:
+`offeredCandidates` has one caller, the viewer. The WALLS stage posts the
+finder's groups directly, so no set-aside of any kind — legend box, dashed
+faces, existing — reaches a whole-set estimate. Second gap: Murray's A101
+prints no scale caption the planner reads, so the whole-set run counts
+A117 (60 ft) and never that sheet. Both are recorded here for the finder
+lane; nothing in this file's module changes them.

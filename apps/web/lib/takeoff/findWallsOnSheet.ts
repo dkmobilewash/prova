@@ -225,6 +225,7 @@ export function inPageWidthUnits(over: number) {
     // rather than waiting for somebody to notice it.
     layer: one.layer,
     gray: one.gray,
+    fill: one.fill,
   });
 }
 

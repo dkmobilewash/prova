@@ -92,6 +92,8 @@ describe("every eval refuses to run without a key", () => {
   const KEYLESS_EVALS: Record<string, string> = {
     "zzViewLeak.eval.ts":
       "calls no model: attributes every offered candidate and every key wall on a multi-view sheet to the view whose box holds its midpoint, labelled real / junk / unverdicted from the sheet's own label file. Diagnostic for the view split. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR and LEAK_SHEETS, and asserts a named sheet was found",
+    "zzExisting.eval.ts":
+      "calls no model: tallies the runs the `existing` set-aside takes on every labelled sheet, by route (tag / area / legend), against the labels as real / junk / unverdicted; training per sheet, held-out as one unnamed total. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts sheets were read",
     "zzLegendBox.eval.ts":
       "calls no model: tallies every offered candidate on the training sheets by whether it is the side of a text-filled, cornered box, against the labels; the probe behind legendBoxes.ts. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts sheets were read",
     "scaleAudit.eval.ts":
@@ -104,6 +106,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: rasterises a REAL training sheet under REAL_PLAN_DIR as the scan stage would and counts a boxed symbol on the contour lines against the vector key (SR_SET / SR_PAGE / SR_BOX / SR_KEY); guarded by a skip plus a non-zero line assertion",
     "symbolSet.eval.ts":
       "calls no model: lays one boxed symbol over every sheet in scope of a REAL training set under REAL_PLAN_DIR (SS_SET / SS_PAGE / SS_BOX), timing each sheet; guarded by a skip plus a non-zero stroke assertion on the template page",
+    "existingMarks.eval.ts":
+      "calls no model: reads a REAL training sheet's legend rows, (E)-style tokens and NIC labels off its own text and strokes under REAL_PLAN_DIR / EXISTING_SHEETS, guarded by a skip plus a non-zero text-or-strokes assertion per sheet",
     "symbolCount.eval.ts":
       "calls no model: lays one boxed symbol's strokes over a REAL training sheet under REAL_PLAN_DIR and scores the matches against a hand key under SC_KEY (found / missed / false, time per search); guarded by a skip on every variable plus a non-zero stroke assertion",
     "takeoffBench.eval.ts":

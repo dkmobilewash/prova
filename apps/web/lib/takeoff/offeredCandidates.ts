@@ -1,5 +1,6 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { bothFacesDashedInPoints } from "./dashedFaces";
+import { existingSentence, existingWalls, type ExistingWall } from "./existingWalls";
 import { isTableRows, isUnderline } from "./textRows";
 import { legendBoxes } from "./legendBoxes";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "./findWallsOnSheet";
@@ -74,11 +75,24 @@ export type DetectedSheet = {
   /** The sheet's text, in page POINTS as the PDF gives it — optional, and only
    *  read by the site-equipment rule; a caller without it offers as before. */
   textItems?: readonly { str: string; x: number; y: number; width: number; height: number }[];
+  /** EVERY stroke on the page, in POINTS — optional, read only by the
+   *  existing-wall rule for the legend's swatch, which sits outside the
+   *  drawing `segments` is clipped to. See `existingWalls.ts`. */
+  pageSegments?: readonly StrokeSegment[];
 };
 
 export type OfferedResult = {
   /** Exactly what the panel lists. */
   candidates: Candidate[];
+  /**
+   * The finder's PAIRED runs that survived every set-aside — the same objects
+   * `sheet.walls` holds, so a caller can regroup them (`found.regroup`) and
+   * post them. The WALLS stage reads this; until it did, it posted
+   * `found.groups` straight from the finder and no set-aside — legend box,
+   * dashed faces, underline, existing wall, site equipment — ever reached a
+   * whole-set estimate. One list, the viewer's and the stage's.
+   */
+  offeredRuns: WallCandidate[];
   /** What the classifier withheld, by its own reason, for the panel to say. */
   setAside: { kind: string; why: string; n: number }[];
   /** For a measurement: the paired candidates dropped for being off-plan. */
@@ -199,10 +213,11 @@ export function offeredCandidates(
       !faces.some((other) => other !== f && wallFromPair(f, other, pairOptions) !== null),
   );
 
+  const unitSegments = sheet.segments.map(inPageWidthUnits(sheet.widthPt));
   const classified = classifySingleLines({
     unclaimed,
     faces,
-    segments: sheet.segments.map(inPageWidthUnits(sheet.widthPt)),
+    segments: unitSegments,
     walls: sheet.walls,
     feetPerUnit: sheet.feetPerUnit,
     hatchPitchRule,
@@ -219,6 +234,18 @@ export function offeredCandidates(
   }
 
   const equipment: { wall: WallCandidate; word: string; feet: number }[] = [];
+  // ── EXISTING WORK IS NOT A WALL TO TAKE OFF — see `existingWalls.ts` ──
+  //
+  // Read once over every run, because the area route closes rooms from all
+  // of them; a wall tagged (E), bounding only an area marked NIC or existing,
+  // or drawn with the legend's own existing-wall pen is set aside with the
+  // words that said so.
+  const existing = new Map<WallCandidate, ExistingWall>(
+    sheet.textItems === undefined
+      ? []
+      : existingWalls({ walls: sheet.walls, segments: unitSegments, pageSegments: sheet.pageSegments?.map(inPageWidthUnits(sheet.widthPt)), textItems: sheet.textItems, widthPt: sheet.widthPt, feetPerUnit: sheet.feetPerUnit }).map((e) => [e.wall, e]),
+  );
+  const existingRuns: ExistingWall[] = [];
   const dashed: WallCandidate[] = [];
   const tables: WallCandidate[] = [];
   let zeroExtent = 0;
@@ -259,13 +286,24 @@ export function offeredCandidates(
   const boxWords = (sheet.textItems ?? []).map((t) => ({ x: (t.x + t.width / 2) / sheet.widthPt, y: (t.y - t.height / 2) / sheet.widthPt, str: t.str, h: t.height / sheet.widthPt }));
   const framed = legendBoxes(onPlan, boxWords, sheet.feetPerUnit);
   const framedRuns = onPlan.filter((w) => framed.sides.has(w) || framed.inside.has(w));
-  const offeredRuns = onPlan.filter((w) => !framed.sides.has(w) && !framed.inside.has(w));
+  // Existing work is judged AFTER the frame, so a legend's existing-wall row
+  // cannot take the frame's own upright and leave the samples inside it
+  // offered; and so `existing` counts only what would otherwise be offered.
+  for (const w of onPlan) {
+    const ex = existing.get(w);
+    if (ex !== undefined && !framed.sides.has(w) && !framed.inside.has(w)) existingRuns.push(ex);
+  }
+  const isExisting = new Set(existingRuns.map((e) => e.wall));
+  const offeredRuns = onPlan.filter((w) => !framed.sides.has(w) && !framed.inside.has(w) && !isExisting.has(w));
   if (framedRuns.length > 0) {
     aside.set("legend-box", {
       kind: "legend-box",
       why: framed.boxes.map((b) => b.why).join("; "),
       n: framedRuns.length,
     });
+  }
+  if (existingRuns.length > 0) {
+    aside.set("existing", { kind: "existing", why: existingSentence(existingRuns), n: existingRuns.length });
   }
   if (underlines.length > 0) {
     aside.set("underlines", {
@@ -300,6 +338,7 @@ export function offeredCandidates(
     aside.set("zero-extent", { kind: "zero-extent", why: "a run with no extent — the same start and end — which nothing can draw or accept", n: zeroExtent });
   }
   return {
+    offeredRuns,
     candidates: candidatesFromSheet({
       walls: offeredRuns.map((w) => ({
         x1: w.x1,
@@ -328,6 +367,7 @@ export function offeredCandidates(
     setAside: [...aside.values()].sort((a, b) => b.n - a.n),
     setAsideLines: [
       ...equipment.map((e) => ({ kind: "site-equipment", why: `'${e.word}' is written ${e.feet.toFixed(0)} ft away`, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
+      ...existingRuns.map((e) => ({ kind: "existing", why: e.why, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
       ...dashed.map((w) => ({ kind: "dashed-faces", why: "both faces are dashed lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...tables.map((w) => ({ kind: "table-rows", why: "rows of text between the lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...underlines.map((w) => ({ kind: "underlines", why: "ruled under a word, as long as the word", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),

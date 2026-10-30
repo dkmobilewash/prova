@@ -4120,3 +4120,253 @@ Sweep vs main `ca376067`, labels snapshotted at 04:22 (Chrome was re-judging
 sheets): Joplin G-101 extra 819 → 343, A-101 1,007 → 786, **697 ft of junk
 removed, 0 ft of real lost**, every other sheet byte-identical, held-out
 delta 0 / 0.
+
+## An existing wall is not a wall to take off — 2026-10-30 (second session, `diego/existing-walls`)
+
+Diego's rule for the keys, the same day: a wall counts if it is NEW work,
+not if it is existing. Chrome is flipping existing and NIC walls to
+not-wall on KSU, Central Bank, SLN, Gen BBQ and others, because earlier
+rounds keyed them as walls. This is the product side of the same rule:
+`existingWalls.ts`, called from `offeredCandidates`, sets a run aside under
+one kind, `existing`, with the words on the sheet that said so.
+
+Three routes, each read in code from the sheet's own text and ink:
+
+1. **A tag beside the wall.** `(E)`, `(E) WALL`, `EXIST. 8" CMU WALL`,
+   `EXISTING WALL TO REMAIN`, `WALL TO REMAIN`, within 3 ft of the run —
+   the reach `bareTextTags` gives a bare type code. The sheet's words are
+   first joined into rows (`textRows`), because a PDF hands over EXISTING /
+   WALL / TO / REMAIN as four items as often as one. A room name such as
+   `(E) OFFICE` is NOT a wall tag; a long note that happens to start with
+   EXISTING is not one either (the tag must name a wall, in six words or
+   fewer).
+2. **An area the sheet marks.** `NIC`, `N.I.C.`, `NIC - REFER TO ARCH
+   PLANS`, `NOT IN CONTRACT`, `NO WORK THIS AREA`, `EXISTING BUILDING (NIC)`,
+   `LIMITED SCOPE`, `EXISTING TO REMAIN`, or a room named `(E) STORAGE`. The
+   `(E)` form only for a room name: `EXISTING <word>` was accepted first
+   and, read off the training sheets' own text, it is the first row of a
+   note split across lines far more often than a room — `EXISTING FIXED`
+   (window), `EXISTING RIGID` (insulation), `EXISTING SIDEWALK`, `EXISTING
+   GYP. BD.` — and a note inside a new room would mark the room. `EXISTING
+   CORRIDOR` as a room name is the recorded cost. The rooms are closed from the
+   finder's own runs by `roomsFromWalls` (only when such a label exists, so
+   most sheets pay nothing), the label is placed in one, and a run is
+   existing when EVERY room it bounds is marked. A run between a marked room
+   and an unmarked one stays offered: it may be the new wall that closes the
+   scope off, and nothing on the sheet says which. A label that lands in no
+   closed room marks nothing — the safe failure on a leaky plan.
+3. **The legend's own pen.** A legend row that IS the words `EXISTING
+   WALL` / `EXISTING WALL TO REMAIN` / `EXISTING CONSTRUCTION` (a whole short
+   row, never a note sentence — the first regex matched "ALL EXISTING
+   MASONRY DOOR JAMBS SCHEDULED TO…" and "EXISTING WALL FURROUT", neither a
+   sample) has a drawn sample to its left, within eight text heights. The
+   sample's pen — grey level, line width, three-or-more collinear pieces for
+   a dash, or the FILL's grey when the sample is a filled band — is what this
+   sheet draws existing walls with. A run whose face strokes carry that pen
+   over 60% of their length (for a fill: filled edges along 60% of its
+   length) is existing. **Grey alone is never enough**: a line pen is matched
+   on grey AND width (within 0.1 and 25%), a fill on the fill's grey, and
+   either must differ from the NEW WALL swatch's pen or, with no new-wall
+   row, from the pen most of the sheet's walls are drawn with — a legend
+   whose two samples share a pen, or a sheet mostly drawn in the "existing"
+   pen, sets nothing aside. A sample of three or more oblique pieces is a
+   hatch and one with a pen wider than the text is a poché, and neither
+   names a pen: deriving one from the hatch's ticks would hand a thin black
+   pen to every new wall drawn in thin black (Supreme Court A111 draws
+   EXISTING CONSTRUCTION as poché with ticks).
+
+   **Three things the real sheets taught on the way, each a crop or a
+   probe rather than a guess.** (a) The sample is not in the finder's stroke
+   list: `detectForSheet` clips a one-drawing sheet to its busiest region and
+   the legend sits outside it — Bunkie A100's and Murray A101's EXISTING WALL
+   samples are in the page's strokes and in none of `found.inUnits`. So
+   `DetectedSheet` grew an optional `pageSegments` (every stroke on the page)
+   that only this route reads; the viewer, the sweep and `zzExisting` pass
+   it. (b) On both those sheets the sample is a GREY FILL between two black
+   outlines, and so are the plan's existing walls — the outline pen is the
+   same black as the new walls', and the fill is the whole signal. The stroke
+   reader threw fill colour away, so `sheetStrokes` now tracks the fill
+   colour beside the stroke colour and marks the edges of a filled path (`f`,
+   `f*`, `B`, `B*`, `b`, `b*`) with `fill`, its luminance; `StrokeSegment`,
+   `inPageWidthUnits` and the stroke-field census carry it. (c) Existing is
+   judged AFTER the legend-box rule, on what would otherwise be offered: the
+   first draft judged it inside the on-plan loop, and a legend's EXISTING
+   WALL row sitting a foot from the frame's left upright would have taken
+   the upright as "existing" and left the frame unrecognised, with the wall
+   samples inside it offered again. A test pins that frame.
+
+Layer-named existing walls (`A-WALL-E`, `A-EXIST`, `NIC`) were already
+dropped before the pairer by `layerNames.ts`; this is for the flattened
+plots, which is most of what arrives. The third session, which owns the
+legend read, has been asked for an `existing` entry on `WallLegendRead` (the
+legend's existing-wall row verbatim); until it exists the row is found by
+regex, so nothing blocks on it.
+
+Twenty unit tests on synthetic sheets, plus two on the stroke reader: each
+regex's yes and no lists taken from the real sheets' phrasing; a tag at 1 ft
+and at 4 ft; two rooms with their own walls where NIC in one room takes its
+three own walls and leaves the shared wall and the other room's; the same
+with both rooms marked (all seven); a legend whose grey 0.5 pt swatch takes
+the grey 0.5 pt wall and leaves the black wall AND the grey-but-heavy wall;
+a filled grey sample taking the grey-filled wall and not the white-filled
+one; a keynote hexagon, a hatched sample and a poché reading no pen; the
+sample read from the page's strokes when the finder's list has no legend;
+no legend, a legend whose samples share a pen, and a sheet mostly drawn in
+the legend's existing pen, each taking nothing; the framed legend keeping
+its frame; `offeredCandidates` naming the kind, the reason and the length;
+and `segmentsFromOpenPage` marking filled, even-odd-filled and
+fill-and-stroked paths with the fill in force and a stroked path with none.
+
+**WHAT FIRES, BEFORE ANY SCORING.** `zzExisting.eval.ts` with `EX_WORDS=1`
+read every labelled sheet's own text (snapshot `labels-snap-20261030T0754`)
+and that inventory shaped every regex above: the yes and no lists in the
+tests are the sheets' phrasing. The routes fire on six of the 36 training
+sheets — Baker A100 (8 tag, 25 area), E Street A2.1 (9 tag, 7 area),
+Murray A101 (78 legend: the whole existing building, read off the grey
+poché the legend declares), Supreme Court A111 (27 legend: its existing
+masonry, grey poché against a white-filled NEW CONSTRUCTION sample — the
+sheet the banded-fill note already named), NG McAllen A3.2 (1 tag, `(E)
+DEMISING`), glen-hazel A-111 (12 area, `N.I.C.`); training totals 18 tag,
+44 area, 105 legend. The held-out total is 29 runs, all by the area route.
+Bunkie A100's legend sample reads (fill 0.75, 3 to 9 text heights out)
+and matches no run. Counts only, on purpose: the labels' verdicts on these runs are the
+pre-cleanup keys, which hold existing walls, and reading them now is
+reading the thing Chrome is fixing.
+
+### The cleanup closed the same day, and the keys moved by half on held-out
+
+Snapshot `labels-snap-20261030T1927`, 26 of 52 label files changed; glen-hazel
+A-101/A-111 and HACP A-2/A-5 are excluded from everything (#870, scope set
+only by notes). The held-out recall-stage breakdown (`zzMissStages`
+`MISS_HELD_OUT=1` on `diego/recall-heldout` e9dc712b, SAME code on both
+snapshots, totals only):
+
+| held-out, 15 sheets | old keys (0754) | cleaned keys (1927) |
+| --- | --- | --- |
+| key | 18,066 ft | 9,728 ft |
+| missed | 1,961 (recall 89.1%) | 1,051 (recall 89.2%) |
+| set aside by in-a-hatch | 827 ft | 124 ft |
+| extra | 5,920 ft (33 per 100) | 12,758 ft (131 per 100) |
+
+So 703 of the 827 ft the in-a-hatch class was "losing" on held-out were
+existing walls that should never have been in the keys, and the banded-fill
+case for recovering them is mostly gone with them. The cost moved to the
+other column: the finder still offers those walls, so held-out extra more
+than doubled — which is the number the existing set-aside is for, and on
+held-out its routes find almost none of it (the held-out sets mark their
+existing work by hatch and pen, not by (E), NIC or a legend row this reads).
+
+### Measured on the cleaned keys — two routes corrected, then the sweep
+
+`zzExisting.eval.ts` on the six training sheets where a route fires, real /
+junk in feet by the labels: the legend route took 1,998 ft of junk for 18 ft
+of real (Murray A101 1,024 / 18, Supreme Court A111 974 / 0); the area route
+on Baker A100 443 / 64 (the `(E) RECORDS` room, whose walls Chrome keyed as
+new); McAllen's `(E) DEMISING` tag 150 / 0. Two routes were wrong and are
+gone: a BARE `(E)` two feet from a run named an existing door or column
+beside a NEW wall as often as the wall (E Street A2.1: 120 ft real against
+33 junk; across training 120 / 115), so a wall tag now has to name a wall;
+and `NIC, TYP ALL` on E Street annotates the furniture, not an area (144
+real / 9 junk), so an area label is the marker alone or with a reference
+clause (`NIC - REFER TO ARCH PLANS`). The first sweep, before those two
+fixes, lost 306 ft of real for 2,677 of junk on training with E Street
+98.2% → 59.5% — the per-building half of the rule is what caught it.
+
+**The sweep, corrected code vs main 56f41ff5, same snapshot, 52 sheets
+(ex-before → ex-after2), the four excluded sheets dropped:**
+
+| building | key | recall | junk per 100 ft | real lost | junk removed |
+| --- | --- | --- | --- | --- | --- |
+| Murray A101 | 77 | 63.6% → 14.3% | 1,492 → 188 | 38 | 1,004 |
+| Supreme Court A111 | 21 | 100% → 100% | 5,076 → 433 | 0 | 975 |
+| Baker A100 | 1,218 | 94.2% → 91.6% | 111 → 74 | 31 | 446 |
+| NG McAllen A3.2 | 850 | 97.5% → 97.5% | 42 → 24 | 0 | 150 |
+| every other training building | | unchanged | unchanged | 0 | 0 |
+| **TRAINING** | 40,959 | 96.0% → 95.8% | 47 → 41 | **69** | **2,575** |
+
+37 ft of junk per foot of real lost; no building worse by more than 38 ft.
+Murray's and Supreme's keys are tiny after the cleanup (77 and 21 ft) and
+their "junk" was the existing building, which is what the legend route reads.
+**Held-out, as a delta: real −247 ft, junk −266 ft** — and by route (the
+eval's own held-out total, never per sheet): tag 0, legend 0, area 29 runs
+at 439 ft real against 64 ft junk. Every foot of the held-out cost is the
+AREA route, and on training that route stands on one building (Baker, 446
+junk / 31 real). Without it the training sweep is 38 ft real lost for 2,129
+of junk and the held-out delta is zero by construction. Which configuration
+ships is Diego's call; the branch carries all three routes.
+
+**Diego's call (2026-10-30): ship WITHOUT the area route.** Removed in
+01ffe5b6; the confirming sweep (ex-after3) on the same snapshot: training
+38 ft of real lost for 2,129 ft of junk removed (Murray 38 / 1,004, Supreme
+0 / 975, McAllen 0 / 150, every other building unchanged), held-out delta
+0 real / −18 junk.
+
+## No set-aside reached the whole-set estimate — 2026-10-30 (second session, same branch)
+
+Found by the third session. `offeredCandidates` had ONE caller, the viewer.
+The WALLS stage (`detectWallsForCalibration`, which the whole-set takeoff
+and the calibration save both run) called `detectForSheet` and posted
+`found.groups` straight from the finder — so the legend box, the dashed
+faces, the title underline, the schedule rows, the site equipment and now
+the existing wall, each measured and shipped against the viewer's list,
+never applied to an estimate. The viewer and the estimate disagreed by
+exactly the set-asides, and nothing said so.
+
+The stage now makes the same `offeredCandidates` call the viewer makes,
+with the same arguments, and regroups what survived with the finder's own
+`regroup` — one implementation, no copy. `OfferedResult` grew
+`offeredRuns`, the surviving paired runs as the same objects `sheet.walls`
+holds, which is what a regroup needs and the candidate rows could not give.
+The test (`detectWallsForCalibration.test.ts`) draws a room and a wall
+tagged `(E) WALL` through the stage's own mocks: without the tag five runs
+are posted (the control that proves the fixture is read), with it four, and
+none on the tagged wall.
+
+Measured with `realplan/wholeSet.eval.ts`, which now reports feet before
+and after the set-asides and can take each labelled sheet's scale from its
+label file (`WHOLE_SET_SCALES=labels`; the printed-scale reader places
+nothing on Joplin and two sheets on Baker), labelled floor plans only, no
+wall types:
+
+| set / sheet | posted before | posted now | what the set-asides took |
+| --- | --- | --- | --- |
+| Joplin G-101 | 3,102 | 2,573 | legend-box 476, dashed 183, underlines 50 |
+| Joplin A-101 | 3,747 | 3,091 | dashed 447, underlines 279, legend-box 221 |
+| Joplin A-111 | 497 | 467 | underlines 21, dashed-faces 9 |
+| **Joplin** | **7,346** | **6,131** | |
+| Baker A100 | 1,956 | 1,855 | underlines 101 |
+| Baker A101 | 701 | 698 | dashed-faces 3 |
+| **Baker** | **2,657** | **2,553** | |
+
+(The in-a-hatch and past-the-building feet in the eval's column are the
+classifier's single-line kinds, which were never in a group on either path.)
+
+## The 28-column model retrained on the cleaned labels — not a replacement (2026-10-30, second session)
+
+The cleaned keys moved 26 of 52 label files and halved the held-out key, so
+the shipped round-8 model (`train-20261029-164211-signals28-round8`, trained
+on the old labels) was retrained on the same 28 columns from the cleaned
+rows: 40,449 rows from 32 sheets across 18 buildings (the four notes-only
+sheets excluded by `trainingRows`), 142,331 synthetic rows folded in,
+leave-one-building-out, demote cut 0.2, scored on the cleaned keys for BOTH
+models (`cls6` in the scratchpad, main 3b31e635's extraction).
+
+| | junk greyed | real greyed | precision |
+| --- | --- | --- | --- |
+| training LOBO, shipped | 956 ft of 16,806 | 44 ft of 39,114 | 96% |
+| training LOBO, retrained | 1,136 | 180 | 86% |
+| held-out, shipped | 753 of 10,745 | 92 of 8,440 | 89% |
+| held-out, retrained | 922 | 75 | 92% |
+
+On training the retrain greys 180 ft more junk for 136 ft more real — 1.3
+to 1 against the rule's 3 — and one building is worse by more than 100 ft:
+Topeka goes from 13 ft of real greyed to 132 (56 → 199 junk), with Joplin
+14 → 31. Where it gains it gains on junk only (Supreme +67, Green Bay +71,
+Bunkie −68 the other way). On held-out it is the better model (+169 junk,
+−17 real), which is reported and not what decides. **The shipped model
+stays.** What the cleanup changed for the classifier is the KEY it is
+scored against, not the rows it should learn from: the shipped model scored
+on the cleaned keys reads 96% precision on training and 89% on held-out,
+both fine. A retrain is worth repeating when more sheets carry the existing
+set-aside's own column, which is the signal the cleanup actually added.
+
