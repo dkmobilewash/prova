@@ -84,6 +84,15 @@ export type DetectedSheet = {
 export type OfferedResult = {
   /** Exactly what the panel lists. */
   candidates: Candidate[];
+  /**
+   * The finder's PAIRED runs that survived every set-aside — the same objects
+   * `sheet.walls` holds, so a caller can regroup them (`found.regroup`) and
+   * post them. The WALLS stage reads this; until it did, it posted
+   * `found.groups` straight from the finder and no set-aside — legend box,
+   * dashed faces, underline, existing wall, site equipment — ever reached a
+   * whole-set estimate. One list, the viewer's and the stage's.
+   */
+  offeredRuns: WallCandidate[];
   /** What the classifier withheld, by its own reason, for the panel to say. */
   setAside: { kind: string; why: string; n: number }[];
   /** For a measurement: the paired candidates dropped for being off-plan. */
@@ -329,6 +338,7 @@ export function offeredCandidates(
     aside.set("zero-extent", { kind: "zero-extent", why: "a run with no extent — the same start and end — which nothing can draw or accept", n: zeroExtent });
   }
   return {
+    offeredRuns,
     candidates: candidatesFromSheet({
       walls: offeredRuns.map((w) => ({
         x1: w.x1,

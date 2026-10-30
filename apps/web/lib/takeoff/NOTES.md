@@ -4295,4 +4295,50 @@ junk / 31 real). Without it the training sweep is 38 ft real lost for 2,129
 of junk and the held-out delta is zero by construction. Which configuration
 ships is Diego's call; the branch carries all three routes.
 
+**Diego's call (2026-10-30): ship WITHOUT the area route.** Removed in
+01ffe5b6; the confirming sweep (ex-after3) on the same snapshot: training
+38 ft of real lost for 2,129 ft of junk removed (Murray 38 / 1,004, Supreme
+0 / 975, McAllen 0 / 150, every other building unchanged), held-out delta
+0 real / −18 junk.
+
+## No set-aside reached the whole-set estimate — 2026-10-30 (second session, same branch)
+
+Found by the third session. `offeredCandidates` had ONE caller, the viewer.
+The WALLS stage (`detectWallsForCalibration`, which the whole-set takeoff
+and the calibration save both run) called `detectForSheet` and posted
+`found.groups` straight from the finder — so the legend box, the dashed
+faces, the title underline, the schedule rows, the site equipment and now
+the existing wall, each measured and shipped against the viewer's list,
+never applied to an estimate. The viewer and the estimate disagreed by
+exactly the set-asides, and nothing said so.
+
+The stage now makes the same `offeredCandidates` call the viewer makes,
+with the same arguments, and regroups what survived with the finder's own
+`regroup` — one implementation, no copy. `OfferedResult` grew
+`offeredRuns`, the surviving paired runs as the same objects `sheet.walls`
+holds, which is what a regroup needs and the candidate rows could not give.
+The test (`detectWallsForCalibration.test.ts`) draws a room and a wall
+tagged `(E) WALL` through the stage's own mocks: without the tag five runs
+are posted (the control that proves the fixture is read), with it four, and
+none on the tagged wall.
+
+Measured with `realplan/wholeSet.eval.ts`, which now reports feet before
+and after the set-asides and can take each labelled sheet's scale from its
+label file (`WHOLE_SET_SCALES=labels`; the printed-scale reader places
+nothing on Joplin and two sheets on Baker), labelled floor plans only, no
+wall types:
+
+| set / sheet | posted before | posted now | what the set-asides took |
+| --- | --- | --- | --- |
+| Joplin G-101 | 3,102 | 2,573 | legend-box 476, dashed 183, underlines 50 |
+| Joplin A-101 | 3,747 | 3,091 | dashed 447, underlines 279, legend-box 221 |
+| Joplin A-111 | 497 | 467 | underlines 21, dashed-faces 9 |
+| **Joplin** | **7,346** | **6,131** | |
+| Baker A100 | 1,956 | 1,855 | underlines 101 |
+| Baker A101 | 701 | 698 | dashed-faces 3 |
+| **Baker** | **2,657** | **2,553** | |
+
+(The in-a-hatch and past-the-building feet in the eval's column are the
+classifier's single-line kinds, which were never in a group on either path.)
+
 RETRAIN_PLACEHOLDER
