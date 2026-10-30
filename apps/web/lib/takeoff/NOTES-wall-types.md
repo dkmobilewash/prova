@@ -188,6 +188,20 @@ I did not go looking for one. So "works without the stand-ins" means the
 page selection; the codes themselves need the stage to run with a key, and
 Joplin's U.N.O. typing needs a prompt that extracts the sentences.
 
+**The prompt extracts them now** (`diego/legend-uno`, `wall-legend.2`):
+`WallLegendRead.uno` is a list of `{ code, note }`, asked for as rule 7 of
+the prompt (the sentence verbatim with the code it names; a sentence that
+sets a dimension or a material for everything is not a default), in the
+tool schema, parsed by `wallLegendReadFrom` (exported and tested without a
+call), carried by `readWallLegend` and `legendForPlan` into `PlanTextLegend`,
+and stored in the proposal's `textRead`, which `legendFromProposal` already
+reads. So the product's real path is complete end to end once the stage
+runs. It was NOT run here: a model call is a real-world spend and my session
+refused it; the one call per set (Joplin p5, Baker p25) that would answer
+"what does the real path type" needs Diego's say-so in a session allowed
+to spend. Until then the pilot's Joplin numbers rest on the hand key's
+`uno` list, and Baker's on the cache.
+
 ## 4. Glen-hazel: the T1/T2 tags are finish types
 
 Looked for before anything was built. Glen's A-101 carries T4–T9 and EX in
