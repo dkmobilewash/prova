@@ -1483,3 +1483,33 @@ describe("a series is strokes that look alike, not merely strokes nearby", () =>
     expect(wallsFromStrokes(six, EIGHTH), "a six-stroke fill leaked a wall").toEqual([]);
   });
 });
+
+
+describe("rule 6 lets a room face pair with a longer outer face when the room face ends at walls", () => {
+  // Units are points at 1/4" = 1'-0": 48 ft per 144pt, so feetPerPoint = 1/3.
+  const fpp = 1 / 3;
+  const inner: StrokeSegment = { x1: 60, y1: 10, x2: 120, y2: 10 }; // a 20 ft room face
+  const outerNear: StrokeSegment = { x1: 0, y1: 8.5, x2: 300, y2: 8.5 }; // a 100 ft building face 1.5pt = 6 in away
+  const ends: StrokeSegment[] = [
+    { x1: 60, y1: 10, x2: 60, y2: 40 },
+    { x1: 120, y1: 10, x2: 120, y2: 40 },
+  ];
+  it("refuses with no strokes to consult, as it always did", () => {
+    expect(wallFromPair(inner, outerNear, { feetPerPoint: fpp })).toBeNull();
+  });
+  it("keeps the pair when both ends of the short face are met by perpendicular strokes", () => {
+    const strokes = [inner, outerNear, ...ends];
+    expect(wallFromPair(inner, outerNear, { feetPerPoint: fpp, strokes })).not.toBeNull();
+  });
+  it("a dimension tick at the end does not bound it — the meeting stroke must be wall-length", () => {
+    const ticks: StrokeSegment[] = [
+      { x1: 60, y1: 10, x2: 60, y2: 12 }, // 2pt = 8 in
+      { x1: 120, y1: 10, x2: 120, y2: 12 },
+    ];
+    expect(wallFromPair(inner, outerNear, { feetPerPoint: fpp, strokes: [inner, outerNear, ...ticks] })).toBeNull();
+  });
+  it("still refuses when one end hangs in air — a grid line is not bounded", () => {
+    const strokes = [inner, outerNear, ends[0]];
+    expect(wallFromPair(inner, outerNear, { feetPerPoint: fpp, strokes })).toBeNull();
+  });
+});

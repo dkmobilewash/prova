@@ -1213,6 +1213,68 @@ function overhangsAlong(a: StrokeSegment, b: StrokeSegment): [number, number] {
   return [Math.abs(lo), Math.abs(hi - len)];
 }
 
+/** Half a foot: a wall's end is met by the next wall's face within a thickness. */
+const BOUNDED_END_FEET = 0.5;
+const PERPENDICULAR_COS = 0.26;
+/**
+ * The stroke that meets the end has to be a WALL-length stroke. With any
+ * perpendicular stroke counting, a dense plan bounds every face — a dimension
+ * tick, a door jamb, a hatch stroke — and the waiver fired on Topeka and
+ * ELEVEN03 where no room face was in question (sweep 2026-10-30: −27 ft real,
+ * +3,049 ft junk). Three feet is shorter than any wall and longer than any tick.
+ */
+const BOUNDED_END_MIN_STROKE_FEET = 3;
+/**
+ * Where the sheet's strokes END and CROSS, in a coarse grid, built once per
+ * stroke array (`WallFinderOptions.strokes`, the finder's `inUnits`). A cell
+ * is a foot; a stroke is filed under every cell its bounding box touches, so
+ * a query at a point reads one cell and tests only what could be near.
+ */
+const endIndexes = new WeakMap<readonly StrokeSegment[], { cell: number; map: Map<string, number[]> }>();
+function strokesNear(strokes: readonly StrokeSegment[], x: number, y: number, feetPerPoint: number): number[] {
+  let index = endIndexes.get(strokes);
+  if (index === undefined) {
+    const cell = 1 / feetPerPoint;
+    const map = new Map<string, number[]>();
+    strokes.forEach((s, at) => {
+      const x0 = Math.floor(Math.min(s.x1, s.x2) / cell), x1 = Math.floor(Math.max(s.x1, s.x2) / cell);
+      const y0 = Math.floor(Math.min(s.y1, s.y2) / cell), y1 = Math.floor(Math.max(s.y1, s.y2) / cell);
+      // A long stroke touches many cells; cap the fan-out so a border line
+      // does not file itself a thousand times. Past the cap it is simply not
+      // findable by this index, which only loses it as a possible END.
+      if ((x1 - x0 + 1) * (y1 - y0 + 1) > 400) return;
+      for (let cx = x0; cx <= x1; cx += 1) for (let cy = y0; cy <= y1; cy += 1) {
+        const key = `${cx},${cy}`;
+        const list = map.get(key);
+        if (list) list.push(at); else map.set(key, [at]);
+      }
+    });
+    index = { cell, map };
+    endIndexes.set(strokes, index);
+  }
+  return index.map.get(`${Math.floor(x / index.cell)},${Math.floor(y / index.cell)}`) ?? [];
+}
+/** True when a perpendicular stroke comes within `BOUNDED_END_FEET` of EACH end of `face`. */
+function boundedEnds(face: StrokeSegment, options: WallFinderOptions): boolean {
+  const strokes = options.strokes;
+  if (strokes === undefined || strokes.length === 0) return false;
+  const reach = BOUNDED_END_FEET / options.feetPerPoint;
+  const fx = face.x2 - face.x1, fy = face.y2 - face.y1;
+  const fl = Math.hypot(fx, fy);
+  if (fl === 0) return false;
+  const metAt = (x: number, y: number) =>
+    strokesNear(strokes, x, y, options.feetPerPoint).some((at) => {
+      const s = strokes[at];
+      const sx = s.x2 - s.x1, sy = s.y2 - s.y1;
+      const sl = Math.hypot(sx, sy);
+      if (sl * options.feetPerPoint < BOUNDED_END_MIN_STROKE_FEET) return false;
+      if (Math.abs((fx * sx + fy * sy) / (fl * sl)) > PERPENDICULAR_COS) return false;
+      const t = Math.max(0, Math.min(1, ((x - s.x1) * sx + (y - s.y1) * sy) / (sl * sl)));
+      return Math.hypot(x - (s.x1 + t * sx), y - (s.y1 + t * sy)) <= reach;
+    });
+  return metAt(face.x1, face.y1) && metAt(face.x2, face.y2);
+}
+
 /**
  * The walls two faces make, if they make one.
  *
@@ -1352,7 +1414,18 @@ export function wallFromPair(
   // fragment floating inside it — that case cannot reach this rule.
   const [headGap, tailGap] = overhangsAlong(a, b);
   const loose = shorter * BOTH_ENDS_OVERHANG;
-  if (headGap > loose && tailGap > loose) return null;
+  // ── LOOSE AT BOTH ENDS, BUT THE SHORT FACE ENDS AT WALLS: A ROOM, NOT A GRID ──
+  //
+  // Rule 6 refuses a room-length inner face against a whole-building outer
+  // face: Fairgrounds' and Crosslines' corridor walls, MHK's office front.
+  // Switching it off is measured and dead (2026-10-30: training −75 ft real
+  // net, +4,160 ft junk — loose pairs steal faces). What a room face has and a
+  // grid line never has is an END: a perpendicular stroke meets it where the
+  // room's next wall begins. A grid line passes through; nothing ends there.
+  // So the pair is kept when each end of the SHORTER face has a perpendicular
+  // stroke within half a foot, and refused as before when either end hangs
+  // in air. `boundedEnds` indexes the sheet's strokes once per finder call.
+  if (headGap > loose && tailGap > loose && !boundedEnds(aLen <= bLen ? a : b, options)) return null;
 
   // ── A DIMENSION STRING REACHES HERE AND PASSES, AND NO RULE BELOW STOPS IT.
   //    DO NOT SPEND THE AFTERNOON ON A DISTANCE THRESHOLD; IT IS ELIMINATED. ──

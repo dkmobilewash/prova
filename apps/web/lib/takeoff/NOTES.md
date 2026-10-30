@@ -4062,3 +4062,24 @@ new-model run and 623 ft in the other two, from the same code and labels. 96 ft 
 difference in what the product offered between two runs is either a nondeterminism in
 `detectForSheet` on that sheet or an artefact of the run; it does not move the totals'
 conclusion and is recorded so the next person checks it rather than inherits it.
+
+## The ends-together gate, waived for a bounded face — measured, not shipped (2026-10-30, second session, `diego/ends-bounded`)
+
+Rule 6 refuses a pair loose at both ends; four training sheets lose a
+room-length inner face against a whole-building outer face to it
+(Fairgrounds, glen-hazel A-111, Camp Bow Wow A102, MHK). The waiver:
+keep the pair when each end of the SHORTER face is met by a perpendicular
+stroke within half a foot (`boundedEnds`, strokes indexed once per finder
+call). Swept against main `ca376067` on a labels snapshot:
+
+| variant | training real / junk | held-out delta |
+| --- | --- | --- |
+| any perpendicular stroke at both ends | −27 / +3,049 | +79 / +849 |
+| the meeting stroke must be ≥ 3 ft (a wall, not a tick) | −16 / +1,290 | +102 / +467 |
+
+The gains are exactly the four sheets (Fairgrounds −38 to −73 missing,
+glen-hazel −30 to −95, MHK −40); the losses are Topeka p75/p76 at +93/+97
+missing and +200 ft of extra each, and ELEVEN03 in the first form — the
+widest-partner preference stealing a thin wall's face the moment the gate
+opens for its longer neighbour. The gate was never the whole problem; the
+preference is, and no end test reaches it. Kept on the branch as the record.
