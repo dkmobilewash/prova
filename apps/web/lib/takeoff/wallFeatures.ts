@@ -98,6 +98,21 @@ export const FEATURE_NAMES = [
   "hasNearestNeighbour",
   "densityPercentile",
   "inHatchSeries",
+  // ── ADDED 2026-10-29, FROM THE JUNK CENSUS (`zzJunkKinds`) ──
+  // Appended, never inserted: the model names its columns and the loader
+  // refuses a mismatch, so an older model file simply stops applying.
+  /** Non-dimension words whose centre lies between the faces along the run —
+   *  a schedule's rows, a notes box, a legend. Capped at 10. */
+  "wordsBetween",
+  /** How many of the two faces are dash patterns (0, 1, 2): several short
+   *  pieces with short regular gaps. Needs `context.strokes`; 0 without. */
+  "dashedFaces",
+  /** Faces roughly perpendicular to the run with an end on its line — the
+   *  partitions that meet a wall and never meet a table rule. Capped at 20. */
+  "runsMeeting",
+  /** Other faces on the sheet, parallel, of the same length to the quarter
+   *  foot — a unit plan's repeated partition, a kennel grid's bay. Capped at 50. */
+  "twinFaces",
 ] as const;
 
 /**
@@ -143,6 +158,12 @@ export type FeatureContext = {
   inHatchSeries: boolean;
   /** The longest dimension of the sheet in page units, for scale-free length. */
   sheetSpan: number;
+  /** Every word on the sheet, CENTRED, in page units. Optional: a caller
+   *  without text gets `wordsBetween` = 0. */
+  words?: readonly { str: string; x: number; y: number }[];
+  /** The sheet's raw strokes in page units (before faces were merged), for
+   *  `dashedFaces`. Optional: 0 without. */
+  strokes?: readonly StrokeSegment[];
 };
 
 const lengthOf = (s: StrokeSegment) => Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
@@ -367,5 +388,137 @@ export function featuresFor(
     hasNearest ? 1 : 0,
     dense,
     context.inHatchSeries ? 1 : 0,
+    wordsBetween(wall, context.words ?? []),
+    dashedFaceCount(wall, context.strokes ?? []),
+    runsMeeting(wall, faces, a, b),
+    twinFaces(wall, a, faces),
   ];
+}
+
+// ── THE FOUR SIGNALS FROM THE JUNK CENSUS ──
+//
+// All in FEET where a distance matters, from the wall's own feet-per-unit
+// (`lengthFeet / length in units`), so none of them needs the sheet's scale
+// handed in separately.
+
+const DIMENSION_WORD = /^[\d'"\-\s./±+]+$/;
+
+const feetPerUnitOf = (wall: WallCandidate) => wall.lengthFeet / Math.max(Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1), 1e-9);
+const alongT = (w: { x1: number; y1: number; x2: number; y2: number }, x: number, y: number) => {
+  const dx = w.x2 - w.x1, dy = w.y2 - w.y1;
+  const l2 = dx * dx + dy * dy;
+  return l2 === 0 ? 0 : ((x - w.x1) * dx + (y - w.y1) * dy) / l2;
+};
+const offLineOf = (w: { x1: number; y1: number; x2: number; y2: number }, x: number, y: number) => {
+  const dx = w.x2 - w.x1, dy = w.y2 - w.y1;
+  const l = Math.hypot(dx, dy);
+  return l === 0 ? Math.hypot(x - w.x1, y - w.y1) : Math.abs(dx * (w.y1 - y) - (w.x1 - x) * dy) / l;
+};
+
+export function wordsBetween(wall: WallCandidate, words: readonly { str: string; x: number; y: number }[]): number {
+  const fpu = feetPerUnitOf(wall);
+  const reach = wall.thicknessFeet / 2 + 0.4;
+  let n = 0;
+  for (const w of words) {
+    const str = w.str.trim();
+    if (str === "" || (DIMENSION_WORD.test(str) && /\d/.test(str))) continue;
+    const t = alongT(wall, w.x, w.y);
+    if (t < -0.05 || t > 1.05) continue;
+    if (offLineOf(wall, w.x, w.y) * fpu > reach) continue;
+    n += 1;
+    if (n >= 10) break;
+  }
+  return n;
+}
+
+/** The face on one side of the wall, as pieces of the run in feet, and whether they form a dash pattern. */
+function faceIsDashed(wall: WallCandidate, side: 1 | -1, strokes: readonly StrokeSegment[]): boolean {
+  const fpu = feetPerUnitOf(wall);
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+  const l = Math.hypot(dx, dy);
+  if (l === 0) return false;
+  const L = wall.lengthFeet;
+  const ux = dx / l, uy = dy / l;
+  const half = wall.thicknessFeet / 2;
+  const reachU = (half + 0.25) / fpu;
+  const minX = Math.min(wall.x1, wall.x2) - reachU, maxX = Math.max(wall.x1, wall.x2) + reachU;
+  const minY = Math.min(wall.y1, wall.y2) - reachU, maxY = Math.max(wall.y1, wall.y2) + reachU;
+  const pieces: [number, number][] = [];
+  for (const s of strokes) {
+    const mx = (s.x1 + s.x2) / 2, my = (s.y1 + s.y2) / 2;
+    if (mx < minX || mx > maxX || my < minY || my > maxY) continue;
+    const sdx = s.x2 - s.x1, sdy = s.y2 - s.y1;
+    const sl = Math.hypot(sdx, sdy);
+    if (sl === 0 || Math.abs((sdx * ux + sdy * uy) / sl) < 0.97) continue;
+    const cross = dx * (my - wall.y1) - dy * (mx - wall.x1);
+    if (wall.thicknessFeet > 0.05 && Math.sign(cross) !== side) continue;
+    if (Math.abs((Math.abs(cross) / l) * fpu - half) > 0.25) continue;
+    const t1 = ((s.x1 - wall.x1) * ux + (s.y1 - wall.y1) * uy) * fpu;
+    const t2 = ((s.x2 - wall.x1) * ux + (s.y2 - wall.y1) * uy) * fpu;
+    const p = Math.max(0, Math.min(t1, t2)), q = Math.min(L, Math.max(t1, t2));
+    if (q > p) pieces.push([p, q]);
+  }
+  pieces.sort((p, q) => p[0] - q[0]);
+  let covered = 0, cur = -1, longest = 0, n = 0;
+  const gaps: number[] = [];
+  for (const [p0, q0] of pieces) {
+    const p1 = Math.max(p0, cur);
+    if (q0 <= p1) continue;
+    if (cur >= 0 && p1 - cur > 0.05) gaps.push(p1 - cur);
+    covered += q0 - p1;
+    cur = q0;
+    n += 1;
+    longest = Math.max(longest, q0 - p0);
+  }
+  if (n < 5 || longest > 2.5 || gaps.length === 0) return false;
+  const medGap = [...gaps].sort((x, y) => x - y)[Math.floor(gaps.length / 2)];
+  const cover = covered / Math.max(L, 0.01);
+  return medGap <= 2.5 && cover >= 0.25 && cover <= 0.9;
+}
+
+export function dashedFaceCount(wall: WallCandidate, strokes: readonly StrokeSegment[]): number {
+  if (strokes.length === 0) return 0;
+  return (faceIsDashed(wall, 1, strokes) ? 1 : 0) + (faceIsDashed(wall, -1, strokes) ? 1 : 0);
+}
+
+export function runsMeeting(wall: WallCandidate, faces: readonly StrokeSegment[], a: StrokeSegment, b: StrokeSegment): number {
+  const fpu = feetPerUnitOf(wall);
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
+  const l = Math.hypot(dx, dy);
+  if (l === 0) return 0;
+  let n = 0;
+  for (const o of faces) {
+    if (o === a || o === b) continue;
+    const ox = o.x2 - o.x1, oy = o.y2 - o.y1;
+    const ol = Math.hypot(ox, oy);
+    if (ol * fpu < 2 || Math.abs((dx * ox + dy * oy) / (l * ol)) > 0.26) continue;
+    for (const [x, y] of [[o.x1, o.y1], [o.x2, o.y2]] as const) {
+      const t = alongT(wall, x, y);
+      if (t >= -0.02 && t <= 1.02 && offLineOf(wall, x, y) * fpu <= 1.5) { n += 1; break; }
+    }
+    if (n >= 20) break;
+  }
+  return n;
+}
+
+export function twinFaces(wall: WallCandidate, a: StrokeSegment, faces: readonly StrokeSegment[]): number {
+  const la = lengthOf(a);
+  if (la === 0) return 0;
+  const { ux, uy } = unitOf(a);
+  const tol = la * 0.03;
+  // The pair's own other face is not a twin: anything within three wall
+  // thicknesses of this face is the same wall.
+  const own = (wall.thicknessFeet * 3) / feetPerUnitOf(wall);
+  let n = 0;
+  for (const o of faces) {
+    if (o === a) continue;
+    const lo = lengthOf(o);
+    if (Math.abs(lo - la) > Math.max(tol, 1e-9)) continue;
+    const { ux: ox, uy: oy } = unitOf(o);
+    if (Math.abs(ux * ox + uy * oy) < 0.97) continue;
+    if (Math.hypot((o.x1 + o.x2) / 2 - (a.x1 + a.x2) / 2, (o.y1 + o.y2) / 2 - (a.y1 + a.y2) / 2) <= own) continue;
+    n += 1;
+    if (n >= 50) break;
+  }
+  return n;
 }

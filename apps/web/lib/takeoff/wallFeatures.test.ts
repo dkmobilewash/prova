@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  dashedFaceCount,
   FEATURE_NAMES,
   featuresFor,
   normaliseAcrossSheet,
   penPercentileFor,
+  runsMeeting,
   SHEET_RELATIVE_NAMES,
+  twinFaces,
+  wordsBetween,
 } from "./wallFeatures";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
@@ -139,5 +143,43 @@ describe("features that no office can set", () => {
         expect(row[at(name as (typeof FEATURE_NAMES)[number])], name).toBeLessThanOrEqual(10);
       }
     }
+  });
+});
+
+describe("the four signals from the junk census", () => {
+  // 1 page unit = 100 ft; a 20 ft run at y = 0.5, 6 in thick, faces at ±0.0025.
+  const wall = { x1: 0.1, y1: 0.5, x2: 0.3, y2: 0.5, lengthFeet: 20, thicknessFeet: 0.5 } as WallCandidate;
+  const faceA: StrokeSegment = { x1: 0.1, y1: 0.5025, x2: 0.3, y2: 0.5025 };
+  const faceB: StrokeSegment = { x1: 0.1, y1: 0.4975, x2: 0.3, y2: 0.4975 };
+  const dashes = (y: number): StrokeSegment[] => Array.from({ length: 10 }, (_, k) => ({ x1: 0.1 + k * 0.02, y1: y, x2: 0.1 + k * 0.02 + 0.01, y2: y }));
+
+  it("wordsBetween counts the words inside the band and not the dimensions or the words beside it", () => {
+    const words = [
+      { str: "HINGE", x: 0.15, y: 0.5 }, { str: "PULL", x: 0.2, y: 0.5 }, { str: "CLOSER", x: 0.25, y: 0.5 },
+      { str: "3'-0\"", x: 0.28, y: 0.5 }, { str: "HALLWAY", x: 0.2, y: 0.53 },
+    ];
+    expect(wordsBetween(wall, words)).toBe(3);
+    expect(wordsBetween(wall, [])).toBe(0);
+  });
+
+  it("dashedFaces is 2 for two dashed faces, 1 for one, 0 for solid or with no strokes", () => {
+    expect(dashedFaceCount(wall, [...dashes(0.5025), ...dashes(0.4975)])).toBe(2);
+    expect(dashedFaceCount(wall, [...dashes(0.5025), faceB])).toBe(1);
+    expect(dashedFaceCount(wall, [faceA, faceB])).toBe(0);
+    expect(dashedFaceCount(wall, [])).toBe(0);
+  });
+
+  it("runsMeeting counts perpendicular faces ending on the run, not parallel ones or ticks", () => {
+    const partition: StrokeSegment = { x1: 0.2, y1: 0.5, x2: 0.2, y2: 0.7 };
+    const tick: StrokeSegment = { x1: 0.15, y1: 0.5, x2: 0.15, y2: 0.505 };
+    const parallel: StrokeSegment = { x1: 0.1, y1: 0.6, x2: 0.3, y2: 0.6 };
+    expect(runsMeeting(wall, [faceA, faceB, partition, tick, parallel], faceA, faceB)).toBe(1);
+  });
+
+  it("twinFaces counts parallel faces of the same length elsewhere on the sheet", () => {
+    const twins: StrokeSegment[] = [0.6, 0.7, 0.8].map((y) => ({ x1: 0.1, y1: y, x2: 0.3, y2: y }));
+    const longer: StrokeSegment = { x1: 0.1, y1: 0.9, x2: 0.35, y2: 0.9 };
+    // faceB is the pair's own other face, 6 in away: not a twin. The three at 10, 20 and 30 ft are.
+    expect(twinFaces(wall, faceA, [faceA, faceB, ...twins, longer])).toBe(3);
   });
 });

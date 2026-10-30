@@ -5,8 +5,11 @@ import { FEATURE_NAMES } from "./wallFeatures";
 /**
  * ── THE TRAINED WALL MODEL, FROM A FILE THE NEXT RETRAIN SWAPS ──
  *
- * No model is committed (`NOTES.md`): the file lives wherever the deployment
- * puts it and `TAKEOFF_WALL_MODEL` names it. The cut is the LOBO-chosen one
+ * One model IS committed since 2026-10-29 — `apps/web/models/wall-model.json`,
+ * the 28-column model trained with round 8 — so a deployment has a path to
+ * name with `TAKEOFF_WALL_MODEL`; `wallModelFile.test.ts` asserts this build
+ * accepts it. The file still lives wherever the deployment puts it and the
+ * variable names it. The cut is the LOBO-chosen one
  * — 0.3 at the time of writing — and comes from the model file's own `cut`
  * when the trainer writes one, else `TAKEOFF_WALL_MODEL_CUT`, else the
  * default here. A retrain is therefore a new file and, if the sweep moved,
