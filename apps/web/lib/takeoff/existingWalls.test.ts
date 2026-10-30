@@ -66,24 +66,25 @@ describe("route 2 — the legend's own existing-wall pen", () => {
   const legend = [word("EXISTING WALL", 62, 90), word("NEW WALL", 62, 92)];
   const swatch = (yFt: number, pen: { gray?: number; width: number }, lines = 1): StrokeSegment[] =>
     Array.from({ length: lines }, (_, i) => ({ x1: ft(55), y1: ft(yFt - 0.4) + i * 0.002, x2: ft(59), y2: ft(yFt - 0.4) + i * 0.002, ...pen }));
-  const grey = { gray: 0.6, width: 0.5 };
+  // 0.55: under the sheet-relative rule's grey threshold, so these cases test the LEGEND route alone.
+  const grey = { gray: 0.55, width: 0.5 };
   const black = { gray: 0, width: 1.5 };
   const a = wall(10, 50, 40, 50);
   const b = wall(10, 60, 40, 60);
   const c = wall(10, 70, 40, 70);
-  const strokes = [...swatch(90, grey), ...swatch(92, black, 2), ...faces(a, grey), ...faces(b, black), ...faces(c, { gray: 0.6, width: 1.5 })];
+  const strokes = [...swatch(90, grey), ...swatch(92, black, 2), ...faces(a, grey), ...faces(b, black), ...faces(c, { gray: 0.55, width: 1.5 })];
   const ask = (items: ReturnType<typeof word>[], segments: StrokeSegment[]) => existingWalls({ walls: [a, b, c], segments, textItems: items, widthPt: W, feetPerUnit: FPU });
 
   it("reads the two pens off the swatches beside the rows", () => {
     const pens = legendPens(textRows(legend), strokes, W);
-    expect(pens.existing?.pen).toEqual({ gray: 0.6, width: 0.5, dashed: false });
+    expect(pens.existing?.pen).toEqual({ gray: 0.55, width: 0.5, dashed: false });
     expect(pens.fresh?.pen).toEqual({ gray: 0, width: 1.5, dashed: false });
   });
   it("the grey 0.5 pt wall is existing; the black one is not; the GREY BUT HEAVY one is not — grey alone is never enough", () => {
     const got = ask(legend, strokes);
     expect(got.map((e) => e.wall)).toEqual([a]);
     expect(got[0].route).toBe("legend");
-    expect(got[0].why).toBe('drawn with the legend\'s "EXISTING WALL" pen (grey 0.60, 0.50 pt)');
+    expect(got[0].why).toBe('drawn with the legend\'s "EXISTING WALL" pen (grey 0.55, 0.50 pt)');
   });
   it("with no legend row nothing is read off the pens, and a legend whose two samples share a pen says nothing", () => {
     expect(ask([], strokes)).toHaveLength(0);
@@ -118,6 +119,30 @@ describe("route 2 — the legend's own existing-wall pen", () => {
     expect(ask([legend[0]], mostlyGrey)).toHaveLength(0);
     const oneGrey = [...swatch(90, grey), ...faces(a, grey), ...faces(b, black), ...faces(c, black)];
     expect(ask([legend[0]], oneGrey).map((e) => e.wall)).toEqual([a]);
+  });
+});
+
+describe("route 3 — the sheet's own two pens, no legend", () => {
+  // Six 30 ft walls: four black, two grey (0.7). No legend row anywhere.
+  const grey = { gray: 0.7, width: 0.5 };
+  const black = { gray: 0, width: 0.5 };
+  const ws = [10, 20, 30, 40, 50, 60].map((y) => wall(10, y, 40, y));
+  const draw = (pens: { gray: number; width: number }[]) => ws.flatMap((w, i) => faces(w, pens[i]));
+  const ask = (segments: StrokeSegment[], walls = ws) => existingWalls({ walls, segments, textItems: [], widthPt: W, feetPerUnit: FPU });
+
+  it("two of six walls grey on a sheet otherwise black: the grey two are existing, by the sheet's own convention", () => {
+    const got = ask(draw([black, black, black, black, grey, grey]));
+    expect(got.map((e) => [e.route, e.wall])).toEqual([["pen", ws[4]], ["pen", ws[5]]]);
+    expect(got[0].why).toBe("drawn in a grey pen (0.70) on a sheet that draws 67% of its walls black — existing, by this sheet's own convention");
+  });
+  it("one pen only — all black, or all grey — sets nothing aside; so does a grey share under a fifth", () => {
+    expect(ask(draw([black, black, black, black, black, black]))).toHaveLength(0);
+    expect(ask(draw([grey, grey, grey, grey, grey, grey]))).toHaveLength(0);
+    const seven = [...ws, wall(10, 70, 40, 70)];
+    expect(ask(seven.flatMap((w, i) => faces(w, i === 6 ? grey : black)), seven)).toHaveLength(0);
+  });
+  it("a mid grey (0.45) is not the grey pen — Crosslines and Topeka draw real walls in it", () => {
+    expect(ask(draw([black, black, black, black, { gray: 0.45, width: 0.5 }, { gray: 0.45, width: 0.5 }]))).toHaveLength(0);
   });
 });
 

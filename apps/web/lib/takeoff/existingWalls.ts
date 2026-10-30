@@ -22,7 +22,17 @@ import type { StrokeSegment, WallCandidate } from "./wallVectors";
  *      and was the whole of the held-out cost (29 runs, 439 ft real against
  *      64 junk): a room's label says what the ROOM is, and its walls are as
  *      often the new work that made it. Diego's call: ship without it.
- *   3. The LEGEND'S OWN PEN: a legend row reading EXISTING WALL has a drawn
+ *   3. THE SHEET'S OWN TWO PENS, with no legend: a renovation sheet that draws
+ *      its existing building in a grey pen and the new work black. Fires only
+ *      when the sheet CLEARLY uses both — at least `SHEET_STYLE_SHARE` of its
+ *      paired footage in a grey pen (luminance ≥ `SHEET_GREY_PEN`) and as much
+ *      in black — and never on a sheet drawn in one pen. Measured on the
+ *      cleaned training keys (2026-10-30 census): it holds on Baker A100 (640
+ *      ft junk / 61 real) and E Street A2.1 (240 / 22) and fires nowhere
+ *      else; at a lighter threshold or a smaller share it takes Crosslines'
+ *      and Topeka's real walls, which those sets draw grey. Two buildings is
+ *      thin evidence, and the record says so.
+ *   4. The LEGEND'S OWN PEN: a legend row reading EXISTING WALL has a drawn
  *      sample beside it, and the sample's pen — grey level, line width, dash
  *      — is what the plan draws existing walls with. A wall whose faces carry
  *      that pen is existing. GREY ALONE IS NEVER ENOUGH: the pen is read off
@@ -47,6 +57,10 @@ export const PEN_GRAY_SLACK = 0.1;
 export const PEN_WIDTH_RATIO = 1.25;
 /** Share of a wall's face strokes, by length, that must carry the legend's pen. */
 export const PEN_FACE_SHARE = 0.6;
+/** A face pen this light is a grey pen; under 0.1 is black. */
+export const SHEET_GREY_PEN = 0.6;
+/** The sheet-relative pen rule fires only when grey AND black each carry this share of the sheet's paired footage. */
+export const SHEET_STYLE_SHARE = 0.2;
 /** A face stroke sits this close to the wall's face line, in feet (as `dashedFaces`). */
 const ON_FACE_FEET = 0.25;
 
@@ -252,7 +266,7 @@ const distanceToRun = (px: number, py: number, w: { x1: number; y1: number; x2: 
   return Math.hypot(px - (w.x1 + t * dx), py - (w.y1 + t * dy));
 };
 
-export type ExistingWall = { wall: WallCandidate; route: "tag" | "legend"; why: string };
+export type ExistingWall = { wall: WallCandidate; route: "tag" | "legend" | "pen"; why: string };
 
 export function existingWalls(input: {
   /** The finder's runs, page-width units. */
@@ -303,6 +317,27 @@ export function existingWalls(input: {
       }
     }
   }
+  // ── 3. THE SHEET'S OWN TWO PENS ──
+  if (pens.existing === null) {
+    const penGray = (w: WallCandidate): number | null => {
+      const faces = [...faceStrokes(w, 1, segments, feetPerUnit), ...faceStrokes(w, -1, segments, feetPerUnit)];
+      if (faces.length === 0) return null;
+      const weighted: number[] = [];
+      for (const s of faces) for (let i = 0; i < Math.max(1, Math.round(length(s) * feetPerUnit)); i += 1) weighted.push(s.gray ?? 0);
+      weighted.sort((a, b) => a - b);
+      return weighted[Math.floor(weighted.length / 2)];
+    };
+    const grays = walls.map((w) => ({ w, gray: penGray(w), feet: length(w) * feetPerUnit }));
+    const total = grays.reduce((n, g) => n + g.feet, 0);
+    const greyFeet = grays.filter((g) => g.gray !== null && g.gray >= SHEET_GREY_PEN).reduce((n, g) => n + g.feet, 0);
+    const blackFeet = grays.filter((g) => g.gray !== null && g.gray < 0.1).reduce((n, g) => n + g.feet, 0);
+    if (total > 0 && greyFeet >= SHEET_STYLE_SHARE * total && blackFeet >= SHEET_STYLE_SHARE * total) {
+      for (const g of grays) {
+        if (found.has(g.w) || g.gray === null || g.gray < SHEET_GREY_PEN) continue;
+        found.set(g.w, { wall: g.w, route: "pen", why: `drawn in a grey pen (${g.gray.toFixed(2)}) on a sheet that draws ${Math.round((100 * blackFeet) / total)}% of its walls black — existing, by this sheet's own convention` });
+      }
+    }
+  }
   return [...found.values()];
 }
 
@@ -312,5 +347,6 @@ export function existingSentence(list: readonly ExistingWall[]): string {
   const parts: string[] = [];
   if (n("tag") > 0) parts.push(`${n("tag")} tagged (E) or EXISTING beside the wall`);
   if (n("legend") > 0) parts.push(`${n("legend")} drawn with the legend's existing-wall pen`);
+  if (n("pen") > 0) parts.push(`${n("pen")} drawn in the grey pen on a sheet whose other walls are black`);
   return `${parts.join("; ")} — existing work, not a wall to take off`;
 }

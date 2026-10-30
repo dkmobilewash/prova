@@ -145,7 +145,7 @@ describe.skipIf(DIR === "" || LABELS === "")("how training sheets draw existing 
         for (const s of styled) {
           row.offered += s.L; if (s.st === "junk") row.junk += s.L; if (s.st === "real") row.real += s.L;
           for (const sp of SPLITS) { const which = sp.of(s.style, sheetStats); if (which !== null) row.splits[sp.name][which][s.st] += s.L; }
-          if (process.env.CENSUS_DUMP === "1") console.log(`    RUN ${sheet} ${s.st} ${s.L.toFixed(0)}ft fill ${s.style.filled ? (s.style.fillGray ?? 0).toFixed(2) : "-"} gray ${s.style.gray.toFixed(2)} w ${s.style.width.toFixed(2)}${s.style.dashed ? " dashed" : ""}${s.style.hatched ? " hatched" : ""} layer ${s.style.layer ?? "-"} at ${s.w.x1.toFixed(4)},${s.w.y1.toFixed(4)}`);
+          if (process.env.CENSUS_DUMP === "1") console.log(`    RUN ${dir.slice(0, 12)}/${sheet} ${s.st} ${s.L.toFixed(0)}ft fill ${s.style.filled ? (s.style.fillGray ?? 0).toFixed(2) : "-"} gray ${s.style.gray.toFixed(2)} w ${s.style.width.toFixed(2)}${s.style.dashed ? " dashed" : ""}${s.style.hatched ? " hatched" : ""} layer ${s.style.layer ?? "-"} at ${s.w.x1.toFixed(4)},${s.w.y1.toFixed(4)}`);
         }
         offeredFeet += row.offered; junkFeet += row.junk; realFeet += row.real; otherFeet += row.offered - row.junk - row.real;
         perSheet.push(row);
