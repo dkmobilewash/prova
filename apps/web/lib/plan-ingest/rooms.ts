@@ -35,7 +35,16 @@ export async function ceilingPagesOf(planId: string): Promise<number[]> {
 async function ceilingPageText(doc: PlanPdf, pageNumber: number): Promise<CeilingPageText | null> {
   try {
     const page = await doc.pageText(pageNumber);
-    return { pageNumber, items: page.items, widthPt: page.widthPt, tableRows: tableRowsFromPage(page) };
+    // The strokes too: a ceiling plan's families are often its hatch alone.
+    let strokes: CeilingPageText["strokes"];
+    try {
+      const read = await doc.pageStrokes(pageNumber);
+      const W = read.widthPt;
+      strokes = read.segments.map((s) => ({ x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W }));
+    } catch {
+      strokes = undefined;
+    }
+    return { pageNumber, items: page.items, widthPt: page.widthPt, tableRows: tableRowsFromPage(page), strokes };
   } catch {
     return null;
   }

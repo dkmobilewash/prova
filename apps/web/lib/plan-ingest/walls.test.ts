@@ -84,14 +84,24 @@ describe("the set-level summary", () => {
 
 describe("one plan per floor — the set-level plan", () => {
   const sheet = (over: Partial<WallsSheet> = {}): WallsSheet => ({ pageNumber: 1, sheetNumber: "A101", title: "FIRST FLOOR PLAN", hasScale: true, hasWalls: false, ...over });
-  it("keeps the OVERALL plan of a level and lists the other as the same level", () => {
-    // Baker EOC, 2026-10-29: A100 overall + A101 floor plan, both measured, both added.
+  it("KEEPS THE PLAIN FLOOR PLAN OVER THE OVERALL ONE of the same level", () => {
+    // Baker EOC, 2026-10-29: A100 "OVERALL FLOOR PLAN" draws the new block and
+    // the existing building around it (1,781 ft, 45 doors, "(E)" rooms, "JAIL
+    // (NO WORK)"); A101 "FLOOR PLAN" is the new work (722 ft, the 20 keyed
+    // doors). The overall sheet shows where the work sits; the plain one is it.
     const plan = wallsPlan([
       sheet({ pageNumber: 12, sheetNumber: "A100", title: "OVERALL FLOOR PLAN" }),
       sheet({ pageNumber: 13, sheetNumber: "A101", title: "FLOOR PLAN" }),
     ]);
-    expect(plan.get(12)).toBeNull();
-    expect(plan.get(13)).toBe("same level as A100");
+    expect(plan.get(13)).toBeNull();
+    expect(plan.get(12)).toBe("same level as A101");
+    // Alone, an overall plan is still the floor (Joplin A-101 beside its ENLARGED plans).
+    const alone = wallsPlan([
+      sheet({ pageNumber: 46, sheetNumber: "A-101", title: "OVERALL FIRST FLOOR PLAN" }),
+      sheet({ pageNumber: 49, sheetNumber: "A-111", title: "ENLARGED FLOOR PLANS" }),
+    ]);
+    expect(alone.get(46)).toBeNull();
+    expect(alone.get(49)).toBe("same level as A-101");
   });
   it("groups by the level the title names, and leaves different levels alone", () => {
     const plan = wallsPlan([
@@ -147,11 +157,12 @@ describe("one plan per floor — what is NOT grouped", () => {
       sheet({ pageNumber: 4, sheetNumber: "A150", title: "STAIR PLAN AND SECTIONS" }),
       sheet({ pageNumber: 5, sheetNumber: "A112", title: "ENLARGED PLAN - TOILETS" }),
     ]);
-    expect(plan.get(1)).toBeNull();
-    expect(plan.get(2)).toBe("same level as A100");
-    expect(plan.get(3)).toBe("same level as A100");
+    // The plain floor plan is kept over the OVERALL one (see the Baker test above).
+    expect(plan.get(2)).toBeNull();
+    expect(plan.get(1)).toBe("same level as A101");
+    expect(plan.get(3)).toBe("same level as A101");
     expect(plan.get(4)).toBe("not a floor plan");
-    expect(plan.get(5)).toBe("same level as A100");
+    expect(plan.get(5)).toBe("same level as A101");
   });
   it("on a set that names ONE level, an unlevelled enlarged plan is that level", () => {
     // Joplin: "OVERALL FIRST FLOOR PLAN" names Level 1 once; "ENLARGED FLOOR PLANS" names nothing and is the same floor.

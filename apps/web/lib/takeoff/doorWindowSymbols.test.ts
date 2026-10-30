@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
-import { doorArcCandidates, doorSymbols, exteriorWalls, windowSymbols } from "./doorWindowSymbols";
+import { doorArcCandidates, doorSymbols, exteriorWalls, windowSymbols, WIDEST_WINDOW_FEET } from "./doorWindowSymbols";
 
 /** One foot = 0.01 page-width units here, so feetPerUnit is 100. */
 const FPU = 100;
@@ -109,6 +109,10 @@ describe("window symbols", () => {
     const one = windowSymbols(lites, [...box, partition], FPU);
     expect(one).toHaveLength(1);
     expect(one[0]!.widthFeet).toBeCloseTo(12.67, 1);
+    // Joined lites stop at the widest window: eleven 4-ft lites with 4-inch mullions are not one 47-ft window.
+    const many = Array.from({ length: 11 }, (_, i) => triple(0.4, 0.5 + i * 0.0433, 0.54 + i * 0.0433)).flat();
+    const widest = Math.max(...windowSymbols(many, [...box, partition], FPU).map((w) => w.widthFeet));
+    expect(widest).toBeLessThanOrEqual(WIDEST_WINDOW_FEET);
     // The same two lites 3 ft apart are two windows.
     const two = windowSymbols([...triple(0.4, 0.5, 0.54), ...triple(0.4, 0.57, 0.61)], [...box, partition], FPU);
     expect(two).toHaveLength(2);
