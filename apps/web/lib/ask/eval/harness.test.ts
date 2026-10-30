@@ -100,6 +100,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: reads door-swing and window symbols off REAL training floor plans under REAL_PLAN_DIR and scores them against a hand-built key under DW_KEY_DIR (found / missed / false, width error against the schedule's size column, itself a CACHED read); guarded by a skip on every variable",
     "wallTypes.eval.ts":
       "calls no model: the finder over REAL training floor plans under REAL_PLAN_DIR with a stored legend read as the vocabulary (WT_SHEETS), reporting feet typed by tag, carried, note and untyped, feet per type, and ten random runs for crops; guarded by a skip plus a non-zero walls assertion",
+    "symbolSet.eval.ts":
+      "calls no model: lays one boxed symbol over every sheet in scope of a REAL training set under REAL_PLAN_DIR (SS_SET / SS_PAGE / SS_BOX), timing each sheet; guarded by a skip plus a non-zero stroke assertion on the template page",
     "symbolCount.eval.ts":
       "calls no model: lays one boxed symbol's strokes over a REAL training sheet under REAL_PLAN_DIR and scores the matches against a hand key under SC_KEY (found / missed / false, time per search); guarded by a skip on every variable plus a non-zero stroke assertion",
     "takeoffBench.eval.ts":

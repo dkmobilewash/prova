@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StrokeSegment } from "./wallVectors";
-import { coverageOf, findSymbols, signatureDistance, signatureOf, withoutText } from "./symbolSignature";
+import { coverageOf, findSymbols, samePen, signatureDistance, signatureOf, strokesInBox, symbolInk, withoutText } from "./symbolSignature";
 
 /** A duplex receptacle as CAD draws it: a circle (12 pieces) with two parallel ticks. */
 function receptacle(cx: number, cy: number, r: number, rot = 0, mirror = false): StrokeSegment[] {
@@ -94,5 +94,165 @@ describe("rigid coverage", () => {
   it("is low for a different symbol", () => {
     const t = receptacle(0.2, 0.2, r);
     expect(coverageOf(t, box(0.2, 0.2, r), signatureOf(t)!.radius)).toBeLessThan(0.3);
+  });
+});
+
+describe("the pen is part of the symbol", () => {
+  // A black 2x4 rectangle with a dot, sitting on a thin grey 2x4 tile; the
+  // sheet has three more empty grey tiles. Only the fixture is the fixture.
+  const rect = (x: number, y: number, extra: Partial<StrokeSegment>): StrokeSegment[] => [
+    { x1: x, y1: y, x2: x + 0.014, y2: y, ...extra }, { x1: x + 0.014, y1: y, x2: x + 0.014, y2: y + 0.007, ...extra },
+    { x1: x + 0.014, y1: y + 0.007, x2: x, y2: y + 0.007, ...extra }, { x1: x, y1: y + 0.007, x2: x, y2: y, ...extra },
+  ];
+  const black = { width: 1.3, gray: 0 }, grey = { width: 0.24, gray: 0.67 };
+  const sheet: StrokeSegment[] = [
+    ...rect(0.2, 0.3, black), ...rect(0.2, 0.3, grey),
+    ...rect(0.2, 0.4, grey), ...rect(0.3, 0.3, grey), ...rect(0.3, 0.4, grey),
+    ...rect(0.5, 0.5, black), ...rect(0.5, 0.5, grey),
+  ];
+  it("the grey tile under a fixture is background, not part of the symbol", () => {
+    const tpl = symbolInk([...rect(0.2, 0.3, black), ...rect(0.2, 0.3, grey)]);
+    expect(tpl.length).toBe(4);
+    expect(tpl.every((s) => s.gray === 0)).toBe(true);
+    // A symbol drawn entirely screened keeps every stroke.
+    expect(symbolInk(rect(0.2, 0.3, grey)).length).toBe(4);
+    // A fixture with its tile is found where a fixture has NO tile, too.
+    const bare = [...sheet, ...rect(0.7, 0.7, black)];
+    expect(findSymbols(bare, [], { x1: 0.199, y1: 0.299, x2: 0.215, y2: 0.308 }).matches.length).toBe(3);
+  });
+  it("an empty grey tile does not cover a black fixture", () => {
+    const found = findSymbols(sheet, [], { x1: 0.199, y1: 0.299, x2: 0.215, y2: 0.308 });
+    expect(found.matches.length).toBe(2);
+    expect(samePen(rect(0, 0, black)[0]!, rect(0, 0, grey)[0]!)).toBe(false);
+    expect(samePen(rect(0, 0, black)[0]!, { ...rect(0, 0, black)[0]!, width: 2 })).toBe(true);
+    expect(samePen({ x1: 0, y1: 0, x2: 1, y2: 0 }, { x1: 0, y1: 0, x2: 1, y2: 0, width: 5 })).toBe(true);
+  });
+});
+
+describe("the letters inside the box are part of the symbol", () => {
+  // Three identical 24-gons: two read "OS", one reads "PC". Boxing an OS finds the OSs only.
+  const circle = (cx: number, cy: number, r: number): StrokeSegment[] =>
+    Array.from({ length: 24 }, (_, k) => {
+      const a = (k / 24) * 2 * Math.PI, b = ((k + 1) / 24) * 2 * Math.PI;
+      return { x1: cx + r * Math.cos(a), y1: cy + r * Math.sin(a), x2: cx + r * Math.cos(b), y2: cy + r * Math.sin(b), width: 1, gray: 0 };
+    });
+  const sheet = [...circle(0.2, 0.2, 0.004), ...circle(0.5, 0.2, 0.004), ...circle(0.5, 0.5, 0.004)];
+  const text = [
+    { x: 0.198, y: 0.199, width: 0.004, height: 0.002, str: "OS" },
+    { x: 0.498, y: 0.199, width: 0.004, height: 0.002, str: "OS" },
+    { x: 0.498, y: 0.499, width: 0.004, height: 0.002, str: "PC" },
+  ];
+  it("keeps the matches that read the same and reports the ones that do not", () => {
+    const found = findSymbols(sheet, text, { x1: 0.195, y1: 0.195, x2: 0.205, y2: 0.205 });
+    expect(found.label).toBe("OS");
+    expect(found.matches.length).toBe(2);
+    expect(found.offLabel).toBe(1);
+    // Without words, the three are one symbol.
+    const plain = findSymbols(sheet, text.map(({ str: _s, ...b }) => b), { x1: 0.195, y1: 0.195, x2: 0.205, y2: 0.205 });
+    expect(plain.matches.length).toBe(3);
+    expect(plain.label).toBeNull();
+  });
+});
+
+describe("a number inside is the instance, a type tag beside is the kind", () => {
+  const circle = (cx: number, cy: number, r: number): StrokeSegment[] =>
+    Array.from({ length: 24 }, (_, k) => {
+      const a = (k / 24) * 2 * Math.PI, b = ((k + 1) / 24) * 2 * Math.PI;
+      return { x1: cx + r * Math.cos(a), y1: cy + r * Math.sin(a), x2: cx + r * Math.cos(b), y2: cy + r * Math.sin(b), width: 1, gray: 0 };
+    });
+  it("door tags numbered 101, 102, 103 are one symbol", () => {
+    const sheet = [...circle(0.2, 0.2, 0.004), ...circle(0.5, 0.2, 0.004), ...circle(0.5, 0.5, 0.004)];
+    const text = [
+      { x: 0.198, y: 0.199, width: 0.004, height: 0.002, str: "101" },
+      { x: 0.498, y: 0.199, width: 0.004, height: 0.002, str: "102" },
+      { x: 0.498, y: 0.499, width: 0.004, height: 0.002, str: "103" },
+    ];
+    const found = findSymbols(sheet, text, { x1: 0.195, y1: 0.195, x2: 0.205, y2: 0.205 });
+    expect(found.label).toBeNull();
+    expect(found.matches.length).toBe(3);
+  });
+  it("the same block tagged E2 and R2 beside it is two kinds", () => {
+    const sheet = [...circle(0.2, 0.2, 0.004), ...circle(0.5, 0.2, 0.004), ...circle(0.5, 0.5, 0.004)];
+    const text = [
+      { x: 0.196, y: 0.19, width: 0.012, height: 0.003, str: "E2 /INV-1" },
+      { x: 0.496, y: 0.19, width: 0.012, height: 0.003, str: "E2 /INV-3" },
+      { x: 0.496, y: 0.49, width: 0.012, height: 0.003, str: "R2 /INV-1" },
+    ];
+    const found = findSymbols(sheet, text, { x1: 0.195, y1: 0.195, x2: 0.205, y2: 0.205 });
+    expect(found.tag).toBe("E2");
+    expect(found.matches.length).toBe(2);
+    expect(found.offTag).toBe(1);
+    // A room name beside the symbol is not a type tag and asks nothing.
+    const rooms = text.map((t, i) => ({ ...t, str: ["OFFICE", "STORAGE", "LOBBY"][i]! }));
+    expect(findSymbols(sheet, rooms, { x1: 0.195, y1: 0.195, x2: 0.205, y2: 0.205 }).tag).toBeNull();
+  });
+});
+
+describe("a chained strip light is counted once per unit", () => {
+  // Three units tick-to-tick: |---o---|---o---|---o---| ; a template of one unit must not also land half a unit along.
+  const unit = (x0: number, y: number): StrokeSegment[] => {
+    const L = 0.014, tick = 0.002;
+    const circle = Array.from({ length: 16 }, (_, k) => {
+      const a = (k / 16) * 2 * Math.PI, b = ((k + 1) / 16) * 2 * Math.PI, r = 0.0012;
+      return { x1: x0 + L / 2 + r * Math.cos(a), y1: y + r * Math.sin(a), x2: x0 + L / 2 + r * Math.cos(b), y2: y + r * Math.sin(b), width: 1, gray: 0 };
+    });
+    return [
+      { x1: x0, y1: y - tick, x2: x0, y2: y + tick, width: 1, gray: 0 },
+      { x1: x0, y1: y, x2: x0 + L / 2 - 0.0012, y2: y, width: 1, gray: 0 },
+      { x1: x0 + L / 2 + 0.0012, y1: y, x2: x0 + L, y2: y, width: 1, gray: 0 },
+      ...circle,
+    ];
+  };
+  const sheet = [...unit(0.2, 0.3), ...unit(0.214, 0.3), ...unit(0.228, 0.3), { x1: 0.242, y1: 0.298, x2: 0.242, y2: 0.302, width: 1, gray: 0 }];
+  it("finds three, not five", () => {
+    const found = findSymbols(sheet, [], { x1: 0.199, y1: 0.296, x2: 0.2142, y2: 0.304 });
+    expect(found.matches.length).toBe(3);
+  });
+});
+
+describe("a circle drawn in two hundred pieces is one feature", () => {
+  // A duplex receptacle: a 120-piece circle with two lines through it. The
+  // junction box beside it is the same circle with three spokes. Only the
+  // receptacle is a receptacle.
+  const circle = (cx: number, cy: number, r: number, n: number): StrokeSegment[] =>
+    Array.from({ length: n }, (_, k) => {
+      const a = (k / n) * 2 * Math.PI, b = ((k + 1) / n) * 2 * Math.PI;
+      return { x1: cx + r * Math.cos(a), y1: cy + r * Math.sin(a), x2: cx + r * Math.cos(b), y2: cy + r * Math.sin(b), width: 1, gray: 0 };
+    });
+  const duplex = (cx: number, cy: number): StrokeSegment[] => [
+    ...circle(cx, cy, 0.002, 120),
+    { x1: cx - 0.0007, y1: cy - 0.003, x2: cx - 0.0007, y2: cy + 0.003, width: 1, gray: 0 },
+    { x1: cx + 0.0007, y1: cy - 0.003, x2: cx + 0.0007, y2: cy + 0.003, width: 1, gray: 0 },
+  ];
+  const junction = (cx: number, cy: number): StrokeSegment[] => [
+    ...circle(cx, cy, 0.002, 120),
+    ...[90, 210, 330].map((deg) => ({ x1: cx, y1: cy, x2: cx + 0.002 * Math.cos((deg * Math.PI) / 180), y2: cy + 0.002 * Math.sin((deg * Math.PI) / 180), width: 1, gray: 0 })),
+  ];
+  it("the lines through the circle keep their say", () => {
+    const sheet = [...duplex(0.2, 0.2), ...duplex(0.4, 0.2), ...junction(0.6, 0.2), ...junction(0.6, 0.4)];
+    const found = findSymbols(sheet, [], { x1: 0.1965, y1: 0.1965, x2: 0.2035, y2: 0.2035 });
+    expect(found.matches.length).toBe(2);
+  });
+});
+
+describe("a line that pokes out of the box is part of the symbol", () => {
+  const circle = (cx: number, cy: number, r: number, n: number): StrokeSegment[] =>
+    Array.from({ length: n }, (_, k) => {
+      const a = (k / n) * 2 * Math.PI, b = ((k + 1) / n) * 2 * Math.PI;
+      return { x1: cx + r * Math.cos(a), y1: cy + r * Math.sin(a), x2: cx + r * Math.cos(b), y2: cy + r * Math.sin(b), width: 1, gray: 0 };
+    });
+  const duplex = (cx: number, cy: number): StrokeSegment[] => [
+    ...circle(cx, cy, 0.002, 12),
+    { x1: cx - 0.0007, y1: cy - 0.003, x2: cx - 0.0007, y2: cy + 0.003, width: 1, gray: 0 },
+    { x1: cx + 0.0007, y1: cy - 0.003, x2: cx + 0.0007, y2: cy + 0.003, width: 1, gray: 0 },
+  ];
+  it("a box snug round the circle still takes the lines, so a bare circle is not a receptacle", () => {
+    const sheet = [...duplex(0.2, 0.2), ...duplex(0.4, 0.2), ...circle(0.6, 0.2, 0.002, 12), ...circle(0.6, 0.4, 0.002, 12)];
+    const snug = { x1: 0.1978, y1: 0.1978, x2: 0.2022, y2: 0.2022 };
+    expect(strokesInBox(sheet, snug).length).toBe(14);
+    expect(findSymbols(sheet, [], snug).matches.length).toBe(2);
+    // A long wall running through the box is still not the symbol.
+    const wall = { x1: 0.1, y1: 0.2, x2: 0.9, y2: 0.2, width: 1, gray: 0 };
+    expect(strokesInBox([...sheet, wall], snug).length).toBe(14);
   });
 });
