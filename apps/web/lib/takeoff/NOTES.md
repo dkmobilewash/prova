@@ -4414,3 +4414,27 @@ kept clicks per sheet is a lot of work. Blind clicking is unsafe: one click lose
 2,391 ft on training and greedy loses more real than it removes junk, so the
 count and the undo are the feature rather than decoration. Per-sheet rows are in
 the eval's output. No threshold was tuned on these numbers.
+
+### The realistic user on the scorecard (`zzRealisticUser.eval.ts`, snapshot 20261030T2306)
+
+One work-area box, then up to three kept "exclude like this" clicks (at most six
+tried), through the real `user` input and `scoreSheet`. Vector sheets only.
+Renovation comes from the sheet's own words, fixed before scoring. Box from the
+key's bounds; 10 ft pad is the sloppy drawer.
+
+| | recall | junk per 100 key | junk per 100 offered |
+| --- | --- | --- | --- |
+| training new-build, as offered → box + clicks | 96.2 → 94.1% | 34 → 16 | 24 → 13 |
+| training renovation | 93.0 → 90.4% | 57 → 14 | 33 → 12 |
+| held-out new-build, 4 sheets | 89.8 → 87.8% | 60 → 6 | 39 → 7 |
+| held-out renovation, 11 sheets | 89.4 → 80.0% | 173 → 86 | 63 → 51 |
+| held-out renovation, box alone | 89.5% | 139 | 59 |
+
+The box costs no recall anywhere; on held-out renovations it removes little
+because the existing building sits inside the same bounds as the new work. All
+the recall loss is the clicks: the simulated keep test is only "more junk than
+real". Padding the box to 10 ft moves little (86 → 98 per 100 key).
+
+**Correction to the table above:** its "held-out, 17 sheets" included Evergreen's
+two scanned sheets, which this path cannot read. They offer nothing, so its
+junk and real feet stand; the sheet count is 15 readable plus 2 scans.
