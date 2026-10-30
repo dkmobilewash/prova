@@ -344,6 +344,7 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       await note(task.id, "already found");
       return { ok: true };
     }
+    const types = await loadWallTypes();
     const outcome = await deps.detect({
       pageId: page.id,
       calibrationId: calibration.id,
@@ -351,16 +352,27 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       companyId: ctx.companyId,
       pageNumber: task.pageNumber,
       feetPerUnit,
-      wallTypes: await loadWallTypes(),
+      wallTypes: types,
     });
     const said = wallsNoteFor(outcome);
     if (!said.ok) return said;
+    // ── THE SCHEDULE'S THICKNESSES ARE PART OF THE ANSWER, SO THE NOTE NAMES THEM ──
+    // The finder pairs with the thicknesses of the types this company builds
+    // (`findWallsOnSheet`: a 1-1/2 in furring on an 8 in block wall is two
+    // walls because 9-1/2 in is on no schedule; a thin pair at a scheduled
+    // thickness is admitted below the floor). That is the finder's design,
+    // and it means a library WITH thicknesses finds different walls from one
+    // without — Joplin A-101 moved 3,720 → 3,595 ft when its types got them.
+    // A company's settings must not move a count silently, so the sheet's
+    // note says which thicknesses the pairing was given.
+    const scheduled = types.filter((t) => t.thicknessIn !== null).map((t) => `${t.code} ${t.thicknessIn}in`);
+    const paired = scheduled.length > 0 ? `; paired with the schedule's thicknesses: ${scheduled.join(", ")}` : "";
     // ── THEN THE ROOMS AND THEIR CEILINGS, ON A SHEET THAT GOT WALLS ──
     // The same step the viewer's Find rooms + Save does, so the counted floor
     // plans carry their rooms and ceiling areas before anybody opens them
     // (`lib/plan-ingest/rooms.ts`). Its outcome rides on the task's note; a
     // failure there does not fail the sheet, whose walls are already written.
-    let text = said.note;
+    let text = `${said.note}${paired}`;
     if (outcome === "written") {
       // ── THE WALLS ONTO THE JOB, BY TYPE (`lib/plan-ingest/wallItems.ts`) ──
       const writeWallItems = deps.writeWallItems ?? realDeps.writeWallItems!;
