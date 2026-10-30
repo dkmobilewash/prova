@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { sheetStrokes } from "../sheetStrokes";
 import { inPageWidthUnits } from "../findWallsOnSheet";
-import { findSymbols, templateStrokes, withoutText, type Box } from "../symbolSignature";
+import { findSymbolsFrom, scaleSymbolTemplate, symbolTemplate, templateStrokes, withoutText, type Box } from "../symbolSignature";
 
 /**
  * ── "FIND ALL LIKE THIS", SCORED AGAINST A HAND KEY ──
@@ -16,6 +16,12 @@ import { findSymbols, templateStrokes, withoutText, type Box } from "../symbolSi
  *     REAL_PLAN_DIR=… SC_SET=… SC_PAGE=… SC_BOX=x1,y1,x2,y2 (page-width units)
  *     SC_KEY=…/labels-symbols/<set>/<name>.json SC_OUT=… SC_NAME=…
  *     npx vitest run --config vitest.eval.config.mts lib/takeoff/realplan/symbolCount.eval.ts
+ *
+ * `SC_TPL_PAGE` takes the box off ANOTHER page of the set — a legend sheet's
+ * swatch, or the sheet an across-the-set count started on — corrected for
+ * the two pages' widths so the symbol keeps its size on paper; `SC_SCALE`
+ * multiplies on top of that (2 for a 1/4" plan read with a 1/8" template
+ * when the symbol is drawn in model space).
  *
  * A key file is `{ points: [{x, y, note?}], reach: feet, feetPerUnit }`;
  * without one the run prints the matches and writes them for the crop
@@ -29,6 +35,8 @@ const KEY = process.env.SC_KEY ?? "";
 const OUT = process.env.SC_OUT ?? "";
 const NAME = process.env.SC_NAME ?? "symbols";
 const COVER = process.env.SC_COVERAGE ? Number(process.env.SC_COVERAGE) : undefined;
+const TPL_PAGE = Number(process.env.SC_TPL_PAGE ?? "0") || PAGE;
+const SCALE = Number(process.env.SC_SCALE ?? "1") || 1;
 
 type Key = { points: { x: number; y: number; note?: string }[]; reach: number; feetPerUnit: number; region?: { x0: number; y0: number; x1: number; y1: number } };
 
@@ -41,15 +49,29 @@ describe.skipIf(DIR === "" || SET === "" || PAGE === 0 || BOX.length !== 4 || BO
     const W = read.widthPt;
     const doc = await openPlanPdf(bytes);
     const text = await doc.pageText(PAGE);
-    const textBoxes = text.items.map((i) => ({ x: i.x / W, y: (i.y - i.height) / W, width: i.width / W, height: i.height / W }));
+    const textBoxes = text.items.map((i) => ({ x: i.x / W, y: (i.y - i.height) / W, width: i.width / W, height: i.height / W, str: i.str }));
     const segs = read.segments.map(inPageWidthUnits(W));
     expect(segs.length).toBeGreaterThan(0);
     const template: Box = { x1: BOX[0]!, y1: BOX[1]!, x2: BOX[2]!, y2: BOX[3]! };
+    // The template's own page: this one, or the page named — read the same way.
+    let made = null as ReturnType<typeof symbolTemplate>;
+    if (TPL_PAGE === PAGE) made = symbolTemplate(segs, textBoxes, template);
+    else {
+      // From the OPEN document: pdfjs detached `bytes` when `doc` was opened.
+      const tread = await doc.pageStrokes(TPL_PAGE);
+      const TW = tread.widthPt;
+      const ttext = await doc.pageText(TPL_PAGE);
+      const tBoxes = ttext.items.map((i) => ({ x: i.x / TW, y: (i.y - i.height) / TW, width: i.width / TW, height: i.height / TW, str: i.str }));
+      const raw = symbolTemplate(tread.segments.map(inPageWidthUnits(TW)), tBoxes, template);
+      made = raw === null ? null : scaleSymbolTemplate(raw, (TW / W) * SCALE);
+      console.log(`   template from p${TPL_PAGE}: ${raw?.strokes.length ?? 0} strokes, paper factor ${(TW / W).toFixed(3)} x ${SCALE}`);
+    }
     const t0 = performance.now();
-    const found = findSymbols(segs, textBoxes, template, COVER === undefined ? {} : { coverage: COVER });
+    const found = made === null ? { matches: [], template: null, candidates: 0, kept: 0, boxed: 0, label: null, offLabel: 0, tag: null, offTag: 0 } : findSymbolsFrom(segs, textBoxes, made, COVER === undefined ? {} : { coverage: COVER });
     const ms = performance.now() - t0;
     console.log(`\n${SET} p${PAGE} ${NAME}: ${segs.length} strokes, template ${found.template?.count ?? 0} strokes radius ${found.template ? (found.template.radius * 1000).toFixed(2) : "-"}‰; ${found.candidates} clusters, template ${found.boxed} boxed → ${found.kept} kept, ${found.matches.length} matches in ${ms.toFixed(0)} ms`);
     console.log(`   distances: ${found.matches.map((m) => m.distance.toFixed(2)).join(" ")}`);
+    console.log(`   label ${found.label === null ? "none" : `"${found.label}"`}; ${found.offLabel} dropped for reading differently; tag ${found.tag === null ? "none" : `"${found.tag}"`}; ${found.offTag} dropped for a different tag beside`);
     if (process.env.SC_DEBUG === "1" && found.template) {
       const own = templateStrokes(withoutText(segs, textBoxes), template);
       const r = found.template.radius;
