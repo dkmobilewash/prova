@@ -538,3 +538,39 @@ would have been an uncaught exception rather than a refusal.
 the chunk grep does, and the end-to-end proof is Evergreen draining on
 :3010 once it is rebuilt from this branch and the migration is applied to
 its database — both the original session's, asked for in the log.
+
+## A scanned sheet gets its page row when it is read (2026-10-29, `diego/scan-page-rows`)
+
+No scanned sheet could be opened in the takeoff workspace. `workspaceLoad`
+builds its sheet list from `plan.pages` (`TakeoffPlanPage` rows), and a
+vector set gets those rows when its printed scales are applied or a scale is
+saved by hand. A scanned set got neither — the inventory sees no text layer,
+so no scale reading, so no page row — and every `?page=N` fell into the
+route's first-sheet fallback, which with an empty list has nothing to fall
+back to. Evergreen was raster-ready at 106 of 106 pages and no sheet of it
+could be reached; the only way in was two rows made by hand (p24, p27).
+
+`lib/plan-ingest/scannedPageRow.ts`, called by `rasterWork` after the
+raster row is stored: the `TakeoffPlanPage` (labelled with the sheet number
+OCR read off the corner, with the page width); where OCR read a printed
+scale, the `PlanSheetScaleReading` the inventory would have written for a
+vector page (`source: PRINTED`) and a calibration from it — `scaleFromPrinted`
+with `scanned: true`, so the scanner's margin on the sheet size is allowed
+for; never a typed number, and the note says it was read off the picture
+and checked against nothing. Otherwise just the row, which the viewer
+shows as "set the scale". Never twice: a page that already has a
+calibration keeps it, which is what leaves the two hand-made Evergreen rows
+alone. A failure in this step is logged and does not fail the read.
+
+`scannedPageRow.dbtest.ts` runs the real `rasterWork` through `runIngest`
+on a scratch database with a stood-in read: a 36 x 24 in page (plus half an
+inch of scanner margin) printing 1/8" = 1'-0" gets its row and a 290 ft
+calibration, a page printing nothing gets its row only, a second run adds
+nothing, and a scale set by hand survives the next read.
+
+Not in this change: pages rastered BEFORE it have raster rows and no page
+rows still, because RASTER does not revisit a page it has read. Evergreen's
+other 104 pages are in that state. A backfill over `PlanSheetRaster` rows
+with no page row is one call of `scannedPageRow` per page; it belongs with
+whoever next runs that set, and it must not touch p24/p27 (it would not —
+both carry a calibration).

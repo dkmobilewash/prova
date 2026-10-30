@@ -2,6 +2,7 @@ import { prisma } from "@prova/db";
 import { rasterizeSheet, type RasterizedSheet } from "@/lib/takeoff/raster/rasterizeSheet";
 import { readPlanBytes } from "./planBytes";
 import { isScannedSheet } from "./scannedSheet";
+import { scannedPageRow, type ScannedPageRead, type ScannedPageRowOutcome } from "./scannedPageRow";
 import type { StageCtx, StageWork } from "./stages";
 
 /**
@@ -53,6 +54,8 @@ export type RasterDeps = {
    *  hands in a map, so the stage can be run THROUGH THE RUNNER without a
    *  database — the only way its failure path gets exercised in a unit test. */
   store: (planId: string, pageNumber: number, row: RasterRow) => Promise<void>;
+  /** The page's row and OCR-read scale on the job (`scannedPageRow.ts`); the real one writes the database, a test records the call. */
+  pageRow: (input: { planId: string; pageNumber: number; userId: string | null; read: ScannedPageRead }) => Promise<ScannedPageRowOutcome>;
 };
 
 /** The real store: `PlanSheetRaster`, one row per page, replaced on a re-run. */
@@ -68,6 +71,7 @@ const realDeps: RasterDeps = {
   readPlanBytes,
   rasterize: (bytes, pageNumber) => rasterizeSheet(bytes, pageNumber),
   store: storeRaster,
+  pageRow: scannedPageRow,
 };
 
 export function rasterWork(ctx: StageCtx, deps: RasterDeps = realDeps): StageWork {
@@ -93,6 +97,15 @@ export function rasterWork(ctx: StageCtx, deps: RasterDeps = realDeps): StageWor
       ms: read.ms.total,
     };
     await deps.store(ctx.planId, task.pageNumber, row);
+    // The sheet is readable now, so it gets its page row — and its scale,
+    // where OCR read one — the way a vector sheet gets them from its printed
+    // scale. A failure here is logged and does not fail the read: the raster
+    // row is written and the page can still be given a scale by hand.
+    try {
+      await deps.pageRow({ planId: ctx.planId, pageNumber: task.pageNumber, userId: ctx.startedByUserId, read: { widthPt: read.widthPt, heightPt: read.heightPt, printedScale: read.printedScale, sheetNumber: read.sheetNumber } });
+    } catch (error) {
+      console.error("[raster] the page row after the read threw", { planId: ctx.planId, pageNumber: task.pageNumber, error });
+    }
     return { ok: true };
   };
 }

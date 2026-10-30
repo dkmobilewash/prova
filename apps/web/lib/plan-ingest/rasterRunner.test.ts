@@ -48,6 +48,7 @@ describe("the RASTER stage through the ingest runner", () => {
     const work = rasterWork(ctx, {
       readPlanBytes: async () => ({ ok: true, bytes }),
       rasterize: (b, page) => rasterizeSheet(b, page, { dpi: 72, ocr: async (gray) => [{ str: `SCALE: 1/4" = 1'-0"`, x: 10, y: gray.height - 10, width: 120, height: 10, confidence: 90 }] }),
+      pageRow: async () => ({ page: "created" as const, scale: "none read" as const }),
       store: async (planId, pageNumber, row) => { stored.set(`${planId}/${pageNumber}`, row); },
     });
     const { ports, finished, failed } = memoryPorts([{ id: "t1", pageNumber: 1, stage: "RASTER", attempts: 0 }], work);
@@ -64,6 +65,7 @@ describe("the RASTER stage through the ingest runner", () => {
     const work = rasterWork(ctx, {
       readPlanBytes: async () => ({ ok: true, bytes: await sheet() }),
       rasterize: () => new Promise(() => {}),
+      pageRow: async () => ({ page: "created" as const, scale: "none read" as const }),
       store: async () => {},
     });
     const { ports, finished, failed } = memoryPorts([{ id: "t1", pageNumber: 7, stage: "RASTER", attempts: 2 }], work);
@@ -79,6 +81,7 @@ describe("the RASTER stage through the ingest runner", () => {
     const work = rasterWork(ctx, {
       readPlanBytes: async () => ({ ok: false, error: "That plan set is no longer on file, so nothing was read." }),
       rasterize: () => { throw new Error("never reached"); },
+      pageRow: async () => ({ page: "created" as const, scale: "none read" as const }),
       store: async () => {},
     });
     const { ports, failed } = memoryPorts([{ id: "t1", pageNumber: 1, stage: "RASTER", attempts: 0 }], work);
