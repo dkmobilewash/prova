@@ -9,6 +9,7 @@ const text: WallLegendRead = {
     { code: "P1", name: "Interior partition", lines: ['3 5/8" METAL STUDS AT 16" O.C.', '5/8" TYPE X GYPSUM BOARD EACH SIDE'] },
     { code: "SF-1", name: null, lines: ["ALUMINUM STOREFRONT SYSTEM"] },
   ],
+  uno: [],
   reason: "a legend titled WALL TYPES",
   confidence: "HIGH",
 };

@@ -7,6 +7,7 @@ const text = {
     { code: "D", name: null, lines: ['5/8" GYPSUM BOARD EACH SIDE', '3 5/8" MTL. STUD', 'BRACING AT 48" O.C.', "SOUND ATTENUATION BATTS"] },
     { code: "Z", name: null, lines: ['6" METAL STUDS AT 24" O.C.', '5/8" GYP. BD. EACH SIDE'] },
   ],
+  uno: [],
   reason: "",
   confidence: "MEDIUM" as const,
 };
