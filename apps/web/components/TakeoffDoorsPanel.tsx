@@ -1,6 +1,6 @@
 "use client";
 
-import type { DoorsWindowsResult } from "@/lib/takeoff/doorsWindows";
+import { doorCount, type DoorsWindowsResult } from "@/lib/takeoff/doorsWindows";
 
 /**
  * What the drawing's own symbols say about its doors and windows, after
@@ -22,14 +22,16 @@ export function TakeoffDoorsPanel({
   hovered: string | null;
   onHover: (id: string | null) => void;
 }) {
-  const { doors, windows, join } = result;
+  const { doors, windows, join, unplacedMarks } = result;
   const pairs = doors.filter((d) => d.leaves === 2).length;
   const placed = doors.filter((d) => d.wall !== null).length;
   const joined = join?.openings ?? null;
+  const byMark = joined?.filter((o) => o.placedBy === "mark") ?? [];
+  const count = doorCount(result);
   return (
     <div data-takeoff="doors-windows" className="mt-3 rounded-lg border border-line-card bg-surface p-3 text-xs">
       <p className="text-sm font-medium text-ink">
-        {doors.length} {doors.length === 1 ? "door" : "doors"}
+        {count} {count === 1 ? "door" : "doors"}
         {pairs > 0 ? ` (${pairs} ${pairs === 1 ? "pair" : "pairs"})` : ""}, {windows.length}{" "}
         {windows.length === 1 ? "window" : "windows"} to check
       </p>
@@ -40,8 +42,11 @@ export function TakeoffDoorsPanel({
               join.placedByMark > 0 ? `, ${join.placedByMark} placed from a mark with no swing drawn` : ""
             }.`
           : " No door schedule has been read for this set, so doors carry the width drawn."}
+        {unplacedMarks.length > 0
+          ? ` ${unplacedMarks.length} schedule ${unplacedMarks.length === 1 ? "row is" : "rows are"} not on this sheet: ${unplacedMarks.join(", ")}.`
+          : ""}
       </p>
-      {doors.length > 0 && (
+      {(doors.length > 0 || byMark.length > 0) && (
         <ul className="mt-2 max-h-48 overflow-y-auto">
           {doors.map((d, i) => {
             const j = joined?.find((o) => o.opening.x1 === d.hinge.x && o.opening.y1 === d.hinge.y) ?? null;
@@ -65,6 +70,13 @@ export function TakeoffDoorsPanel({
               </li>
             );
           })}
+          {byMark.map((o, i) => (
+            <li key={`mark-${i}`} data-door-by-mark={i} className="flex items-baseline gap-2 rounded px-1 py-0.5">
+              <span className="w-16 shrink-0 font-medium text-ink">{o.mark}</span>
+              <span className="text-ink-body">{o.widthFt.toFixed(1)} ft (schedule)</span>
+              <span className="ml-auto text-ink-muted">placed from its tag, no swing drawn</span>
+            </li>
+          ))}
         </ul>
       )}
       {windows.length > 0 && (
