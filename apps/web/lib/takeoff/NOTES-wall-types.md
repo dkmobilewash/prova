@@ -367,3 +367,14 @@ faces, existing — reaches a whole-set estimate. Second gap: Murray's A101
 prints no scale caption the planner reads, so the whole-set run counts
 A117 (60 ft) and never that sheet. Both are recorded here for the finder
 lane; nothing in this file's module changes them.
+
+## Demolition takeoff (2026-10-30, `diego/demo-takeoff`)
+
+`demoWalls.ts` reads walls to remove as double dashed lines, without the finder,
+which is built to set dashed work aside. Doors come from keynotes that say to
+remove a door. Rejected on measurement: dashed swing geometry, which read 11 on
+E Street against 4 tags and nothing on Green Bay, Murray or Crosslines.
+
+A sheet can lay one line twice in two pens with offset dashes, which reads as
+solid, so dashes are read per pen. `existingWallSet.ts` gives the walls standing
+on a level, moved onto the new plan; it says when it could not align them.

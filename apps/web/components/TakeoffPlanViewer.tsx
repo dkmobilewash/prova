@@ -128,6 +128,8 @@ import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
 import { TakeoffDoorsPanel } from "./TakeoffDoorsPanel";
 import { doorsAndWindowsForSheet, type DoorsWindowsResult, type StoredScheduleRow } from "@/lib/takeoff/doorsWindows";
+import { TakeoffDemoPanel } from "./TakeoffDemoPanel";
+import { demoForSheet, demoSheetTitle, type DemoSheet } from "@/lib/takeoff/demoWalls";
 import { TakeoffSymbolPanel, type AcrossRow, type AcrossState } from "./TakeoffSymbolPanel";
 import { findSymbolsFrom, scaleSymbolTemplate, symbolTemplate, type Box as SymbolBox, type SymbolMatch, type SymbolTemplate } from "@/lib/takeoff/symbolSignature";
 import { sheetInScope, type SheetScope } from "@/lib/takeoff/symbolScope";
@@ -1461,6 +1463,26 @@ export function TakeoffPlanViewer({
       setAcross({ ...state, running: false, done: !acrossCancel.current });
     } catch {
       setAcross({ ...state, running: false, done: false, error: "A sheet could not be read; what was counted so far is kept." });
+    }
+  };
+
+  /** ── FIND THE DEMOLITION: double dashed walls and keynoted doors. See `lib/takeoff/demoWalls.ts`. ── */
+  const [demo, setDemo] = useState<{ page: number; read: DemoSheet | null; busy: boolean; error: string | null } | null>(null);
+  const [demoDropped, setDemoDropped] = useState<ReadonlySet<number>>(new Set());
+  const onFindDemolition = async () => {
+    const doc = docRef.current;
+    if (!doc || !pageSize || feetPerUnit === null) return;
+    setDemoDropped(new Set());
+    setDemo({ page: pageNumber, read: null, busy: true, error: null });
+    try {
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const page = await doc.getPage(pageNumber);
+      const layers = await layersOf(doc as never).catch(() => null);
+      const { segments } = await segmentsFromOpenPage(page as never, pdfjs as never, pageNumber, layers as never);
+      const textItems = await pageTextItems(page as never, pdfjs as never);
+      setDemo({ page: pageNumber, read: demoForSheet({ segments, textItems, widthPt: pageSize.widthPt, heightPt: pageSize.heightPt, feetPerUnit }), busy: false, error: null });
+    } catch {
+      setDemo({ page: pageNumber, read: null, busy: false, error: "The sheet could not be read for demolition. Try again in a moment." });
     }
   };
 
@@ -3205,6 +3227,19 @@ export function TakeoffPlanViewer({
         >
           {finding ? "Reading the lines…" : "Find the walls"}
         </button>
+        {/* Only on a sheet that says it is demolition, and it stays on the toolbar with no scale, with the title saying why it waits. */}
+        {(demoSheetTitle(sheetLabelByPage[pageNumber] ?? sheet?.label) || /demolition/i.test(takeoffVerdict?.why ?? "")) && (
+          <button
+            type="button"
+            onClick={onFindDemolition}
+            disabled={!calibration || !pageSize || demo?.busy === true}
+            data-takeoff="find-demolition"
+            title={!calibration ? "Set the scale on this sheet first — demolition is measured in feet." : undefined}
+            className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Find demolition
+          </button>
+        )}
         {/* ── FIND THE ROOMS, ONLY WITH THE COMPANY SWITCH ON ──
             Absent, not disabled, when the switch is off: the feature was
             measured and switched off once (`takeoffRoomFinder.test.tsx`) and
@@ -3975,6 +4010,17 @@ export function TakeoffPlanViewer({
         </div>
       )}
 
+      {demo !== null && demo.page === pageNumber && sheet !== null && (
+        <TakeoffDemoPanel
+          jobId={jobId}
+          pageId={sheet.id}
+          state={demo}
+          dropped={demoDropped}
+          onToggle={(i) => setDemoDropped((prev) => { const next = new Set(prev); if (!next.delete(i)) next.add(i); return next; })}
+          onClear={() => setDemo(null)}
+          onSaved={() => setDemo(null)}
+        />
+      )}
       {symbols !== null && symbols.page === pageNumber && sheet !== null && (
         <TakeoffSymbolPanel
           jobId={jobId}
@@ -4496,6 +4542,12 @@ export function TakeoffPlanViewer({
                   strokeWidth={STROKE_PX}
                   vectorEffect="non-scaling-stroke"
                 />
+              )}
+              {demo?.page === pageNumber && demo.read !== null && (
+                <g data-takeoff="demo-overlay">
+                  {demo.read.runs.map((r, i) => !demoDropped.has(i) && <line key={`${r.x1}:${r.y1}`} x1={r.x1} y1={r.y1} x2={r.x2} y2={r.y2} stroke="#dc2626" strokeWidth={STROKE_PX + 1} vectorEffect="non-scaling-stroke" />)}
+                  {demo.read.doors.map((d) => <circle key={`${d.x}:${d.y}`} cx={d.x} cy={d.y} r={0.006} fill="none" stroke="#dc2626" strokeWidth={STROKE_PX} vectorEffect="non-scaling-stroke" />)}
+                </g>
               )}
               {symbols !== null && symbols.page === pageNumber && (
                 <g data-takeoff="symbol-matches">
