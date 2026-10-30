@@ -4062,3 +4062,27 @@ new-model run and 623 ft in the other two, from the same code and labels. 96 ft 
 difference in what the product offered between two runs is either a nondeterminism in
 `detectForSheet` on that sheet or an artefact of the run; it does not move the totals'
 conclusion and is recorded so the next person checks it rather than inherits it.
+
+## A per-sheet thick-wall cap — measured, not shipped (2026-10-30, second session, `diego/thick-sheets`)
+
+The pairer refuses pairs over 13 in; a courthouse's masonry is thicker. The
+idea: widen to 24 in only on sheets whose own paired footage piles up at the
+cap (`sheetThickness.ts`: ≥ 25% and ≥ 100 ft at 12 in or more). Three
+sweeps over all 52 labelled sheets, training read in full, held-out as a
+delta:
+
+| variant | gate fired on | training real recovered | junk added | held-out delta |
+| --- | --- | --- | --- | --- |
+| global 24 in, every sheet (control) | — | 43 net (ELEVEN03 LOST 243 ft: the pairer prefers the widest partner, so thin walls re-pair fat) | 10,906 | not clean |
+| A: re-pair gated sheets at 24 in | Supreme A111, Alden A103 | 72 | 339 | 0 / 0 |
+| B: gated, ADDITIVE pass 13–24 in, a thick pair kept only when no found wall lies in its band (`bandHoldsAWall`) | Supreme A111, Alden A103 | 80 | 470 | 0 / 0 |
+
+What B adds on Supreme, read off the drawing (training sheet): the 81 ft,
+18.7 in runs are the EXISTING exterior masonry, drawn as a solid grey band —
+not in the key because it is not new work, the same reason Michigan A3 is
+excluded; the repeated 16 in × 10 ft verticals are captioned on the sheet as
+existing library stacks. So the thick things on the one training sheet with
+thick walls are existing construction and shelving, and the 80 ft of real
+recovered cost 470 ft. Fails the rule at 0.2:1, and the gate trips on no
+held-out sheet, so no variant of it moves held-out recall. Not shipped; the
+code stays on the branch as the measured artefact.

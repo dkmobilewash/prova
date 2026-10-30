@@ -5,10 +5,12 @@ import {
   type WallFinderOptions,
   clusterByThickness,
   wallsInTheBuilding,
+  wallsFromStrokes,
   wallsNotLettering,
   wallsNotTheSheetBorder,
 } from "./wallVectors";
 import { gridBubbles, linesIntoBubbles } from "./gridBubbles";
+import { bandHoldsAWall, thickSheetCap } from "./sheetThickness";
 import { joinAtCorners } from "./joinCorners";
 import { wallsFromBothEngines } from "./wallRuns";
 import { templateFromSheets, withoutTemplate } from "./sheetTemplate";
@@ -143,6 +145,13 @@ export type FindWallsInput = {
    * `planTextTags.ts` for what it does when present.
    */
   planText?: PlanTextInput;
+  /**
+   * A wider cap for a SECOND, additive pass, in feet. Unset means the ordinary
+   * 13 in only — and a sheet whose paired footage piles up at that cap gets
+   * the second pass to 24 in (`sheetThickness.ts`), which is the one case this
+   * is set internally. The ordinary pass is never widened: see `bandHoldsAWall`.
+   */
+  maxThicknessFeet?: number;
 };
 
 /**
@@ -154,6 +163,9 @@ export type FindWallsInput = {
  * walls would have destroyed the most useful diagnostic the bench has.
  */
 export type FoundOnSheet = {
+  /** Set when the sheet was paired a second time at a wider cap because its
+   *  own paired footage piled up at the ordinary one — `sheetThickness.ts`. */
+  widenedTo?: number;
   /** In page-width units, after the template pass. */
   inUnits: StrokeSegment[];
   /** Segments removed for being column-grid lines running into a bubble.
@@ -375,7 +387,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
     .map((type) => type.thicknessIn)
     .filter((inches): inches is number => inches !== null);
   const aspect = pageSize.heightPt / pageSize.widthPt;
-  const everywhere = wallsFromBothEngines(inUnits, 1, aspect, {
+  const ordinary = wallsFromBothEngines(inUnits, 1, aspect, {
     feetPerPoint: feetPerUnit,
     knownThicknessesIn: scheduleIn,
     onCandidate: input.onCandidate,
@@ -385,6 +397,21 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
     decide: input.decide,
     veto: input.veto,
   });
+  // ── ON A THICK-WALLED SHEET, A SECOND PASS ADDS THE PAIRS THE CAP REFUSED ──
+  //
+  // Between the ordinary cap and the wide one, straight pairs only, and only
+  // where the ordinary pass found nothing inside the band — see
+  // `bandHoldsAWall` for why it must not re-pair. Downstream filters see the
+  // union, so a thick pair that is lettering or the border still goes.
+  const thickExtra =
+    input.maxThicknessFeet !== undefined && input.maxThicknessFeet > DEFAULTS.maxThicknessFeet
+      ? wallsFromStrokes(inUnits, {
+          feetPerPoint: feetPerUnit,
+          minThicknessFeet: DEFAULTS.maxThicknessFeet,
+          maxThicknessFeet: input.maxThicknessFeet,
+        }).filter((t) => t.lengthFeet >= DEFAULTS.minLengthFeet && !bandHoldsAWall(t, ordinary, feetPerUnit))
+      : [];
+  const everywhere = [...ordinary, ...thickExtra];
   // ── THE NOISE COMES OUT BEFORE THE BUILDING IS LOOKED FOR ──
   //
   // These four filters used to run AFTER `wallsInTheBuilding`, and that order
@@ -538,6 +565,19 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
           wallTypes,
           fromNote,
         );
+
+  // ── A THICK-WALLED SHEET IS PAIRED AGAIN, WIDER, ON ITS OWN EVIDENCE ──
+  //
+  // Decided from the walls that survived every filter at the ordinary cap, so
+  // lettering, the border and the grid have no vote. Once: the second pass
+  // carries the cap explicitly and does not come back here.
+  if (input.maxThicknessFeet === undefined) {
+    const wider = thickSheetCap(walls);
+    if (wider !== null) {
+      stage("thick-sheet");
+      return { ...findWallsOnSheet({ ...input, maxThicknessFeet: wider }), widenedTo: wider };
+    }
+  }
 
   return {
     inUnits,
