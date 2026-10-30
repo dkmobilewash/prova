@@ -331,13 +331,20 @@ Baker (26 labels, room names), E Street (3), McAllen (2 "(E) DEMISING" +
 "TO REMAIN"); `EX` defined and used nine times on glen-hazel A-111. NIC
 tags on Baker ("JAIL (NO WORK)", "(NO WORK)"), glen-hazel (3), HPL (3).
 
-**Two misfires, recorded rather than tuned away:** a NIC label standing
-inside a hatched NIC area (E Street "NIC, TYP ALL", glen-hazel's second
-"N.I.C.") is read as a legend NIC entry whose swatch is the area's own grey
-hatch — the right information in the wrong bucket. And Murray's two NEW
-swatches (hatched, 31 and 35 pieces) fail the isolation rule because the
-legend's symbol column sits to their left; the EXISTING entry on the same
-sheet reads. Both are the second session's to weigh when it consumes this.
+**Two misfires, found in that run and fixed the same day** (second run,
+`training-2026-10-30b.txt`): a NIC label standing inside a hatched NIC area
+(E Street "NIC, TYP ALL", glen-hazel's second "N.I.C.") read as a legend
+NIC entry whose swatch was the area's own hatch. Measured round every
+candidate row on the training legends: all nine true legend rows have ZERO
+strokes in the half inch right of their words, the two field labels have
+two — a legend row ends in margin, a field goes on past the words. That is
+the rule now (`RIGHT_MAX_STROKES`), plus the words themselves: "TYP" is a
+note's word and a bare "N.I.C." is what is written ON an area, so neither
+is a row. And Murray's NEW swatches did not fail isolation at all — they
+are 0.35 in wide to the hundredth and the extent floor was 0.35; it is 0.3
+(three ticks of a room outline measure under 0.25). After: Murray reads all
+three rows (EXISTING dashed, NEW hatched, NEW WITH SOUND BATT), and the two
+field labels are NIC tags. Nine legend rows on five sheets, no misread.
 
 **Not built:** the model legend read does not return an existing entry yet
 (`wallLegend.ts` has no field for it; the real read is still blocked on a

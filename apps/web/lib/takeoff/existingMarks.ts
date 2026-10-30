@@ -90,7 +90,11 @@ export const HATCH_SHARE = 0.25;
 export const DASH_MAX_PIECE_IN = 0.12;
 export const DASH_MAX_STROKES = 16;
 export const SHORT_LABEL_CHARS = 48;
-export const SWATCH_MIN_EXTENT_IN = 0.35;
+/** Murray A101's NEW WALL sample is 0.35 in wide to the hundredth; three ticks of a room outline are under 0.25. */
+export const SWATCH_MIN_EXTENT_IN = 0.3;
+/** Strokes allowed in the half inch RIGHT of a row's words: a legend row ends in margin (0 on all nine training rows); a label in a hatch field has the field there too. */
+export const RIGHT_OF_WORDS_IN = 0.5;
+export const RIGHT_MAX_STROKES = 1;
 export const SWATCH_RING_IN = 0.3;
 export const SWATCH_RING_MAX_STROKES = 3;
 export const SHORT_LABEL_WORDS = 6;
@@ -115,8 +119,11 @@ const isShort = (s: string) => s.length <= SHORT_LABEL_CHARS && s.split(/\s+/).l
 
 /** Which legend kind a short label names, else null. DEMO before EXISTING: "REMOVE EXISTING WALL" is a removal. */
 export function entryKind(words: string): ExistingKind | null {
-  // A full stop after three or more words is a sentence, not a row; "N.I.C." is a row.
+  // A full stop after three or more words is a sentence, not a row. "TYP"
+  // is a note's word ("NIC, TYP ALL"), and a bare "NIC" / "N.I.C." is what
+  // is written ON an area — the legend spells it out ("AREA NOT IN CONTRACT").
   if (!isShort(words) || !ENTRY_START.test(words) || (/\.$/.test(words) && words.split(/\s+/).length >= 3)) return null;
+  if (/\bTYP\b/i.test(words) || /^N\.?\s?I\.?\s?C\.?$/i.test(words)) return null;
   if (ENTRY_DEMO.test(words)) return "DEMO";
   if (NIC.test(words)) return "NIC";
   if (ENTRY_EXISTING.test(words)) return "EXISTING";
@@ -173,6 +180,12 @@ function swatchLeftOf(item: PageTextItem, segments: readonly StrokeSegment[]): S
   // neighbouring symbol's few pieces beside it, while a field of hatch has
   // as many to the left as inside.
   if (left.length > Math.max(SWATCH_RING_MAX_STROKES, confined.length / 4)) return null;
+  // …and its words end in margin. A label inside a hatch field (E Street
+  // A2.1 "NIC, TYP ALL", glen-hazel A-111 "N.I.C.") has the field to the
+  // right of the words as well; a legend row never has strokes there.
+  const rx0 = item.x + item.width + 2, rx1 = item.x + item.width + RIGHT_OF_WORDS_IN * 72;
+  const right = segments.filter((s) => { const mx = (s.x1 + s.x2) / 2, my = (s.y1 + s.y2) / 2; return mx >= rx0 && mx <= rx1 && my >= y0 && my <= y1; });
+  if (right.length > RIGHT_MAX_STROKES) return null;
   return penOf(confined);
 }
 
