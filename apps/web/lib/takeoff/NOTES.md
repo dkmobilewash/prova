@@ -4120,3 +4120,30 @@ measured; if they are existing, the held-out key is counting what training's
 excludes and the two should agree before recall is chased further.
 (2) The ends-together gate (rule 6) switched off as a control: training −75
 real net, +4,160 junk; held-out +94 / +1,239. Dead as a blanket change.
+
+### Thick hatched band = NEW wall, under Diego's rule (2026-10-30, later the same session)
+
+Diego's decision: a thick hatched wall counts when it is new work and not
+when it is existing — Michigan's rule. `bandedFill.ts` now admits a band of
+3–30 in only when both faces are drawn black (`GREY_FACE` 0.35, an
+uncoloured set passes), no word within 2 ft says (E) or EXIST, no word sits
+inside the band, the hatch is confined, and — after the first sweep — an end
+of the band reaches a wall the finder already found. The pen colour reaches
+the single faces through the `oneFacePerLine` carry (cherry-picked from
+`diego/classifier-colour`); Supreme Court's grey masonry stays set aside.
+
+| sweep vs main `40900004` | training real / extra | held-out delta real / extra |
+| --- | --- | --- |
+| black, not existing, confined | 32 / **1,226** (NG Green Bay's gondola runs +1,054) | 190 / 127 |
+| + an end at a found wall | **15 / 86** | **140 / 31** |
+
+The attached form touches FOUR training sheets in THREE buildings —
+ELEVEN03 A4.B.1 (+35 extra: the unlabelled 14-in hatched 2-HR walls),
+Camp Bow Wow A101/A102 (+48), DEVELOPMENT A-2 (+15 real / +3) — 101 ft in
+all. **Too few to judge on training**: the only confirmed gain is 15 ft, the
+only confirmed cost is Camp Bow Wow's 48, and the largest line in the table
+is real wall the key does not hold. Held-out, as a total, says 4.5 : 1 on one
+building. Not shipped; the measurement waits for the masonry sets Diego is
+adding. One held-out aggregate for the labelling conversation: 130 ft of the
+held-out key sits on GREY confined 16–30 in bands, which this rule refuses by
+design.

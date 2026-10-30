@@ -25,11 +25,31 @@ describe("bandedFillWall", () => {
     const across = Array.from({ length: 8 }, (_, i) => seg(2 + i * 2, -0.2, 2.6 + i * 2, -0.9));
     expect(bandedFillWall(face, [face, partner, ...fill(12), ...across], [], fpu)).toBeNull();
   });
+  it("refuses a grey face, a grey partner, and a band marked existing", () => {
+    expect(bandedFillWall({ ...face, gray: 0.6 }, [face, partner, ...fill(12)], [], fpu)).toBeNull();
+    expect(bandedFillWall(face, [face, { ...partner, gray: 0.6 }, ...fill(12)], [], fpu)).toBeNull();
+    expect(bandedFillWall(face, [face, partner, ...fill(12)], [{ x: 10, y: -1, str: "(E)" }], fpu)).toBeNull();
+    expect(bandedFillWall(face, [face, partner, ...fill(12)], [{ x: 10, y: -1, str: "EXIST. CMU" }], fpu)).toBeNull();
+    // the same word four feet away is about something else
+    expect(bandedFillWall(face, [face, partner, ...fill(12)], [{ x: 10, y: -4, str: "(E)" }], fpu)).not.toBeNull();
+    // a black 20 in masonry band is a wall
+    const wide = seg(0, 20 / 12, 20, 20 / 12);
+    expect(bandedFillWall(face, [face, wide, ...fill(12, 0.1, 20 / 12 - 0.1)], [], fpu)?.thicknessFeet).toBeCloseTo(20 / 12, 2);
+  });
+  it("needs an end at a found wall when walls are given: masonry attaches, a gondola floats", () => {
+    const strokes = [face, partner, ...fill(12)];
+    const corridor = { x1: -0.5, y1: -5, x2: -0.5, y2: 5 };
+    expect(bandedFillWall(face, strokes, [], fpu, [corridor])).not.toBeNull();
+    const farAway = { x1: 40, y1: -5, x2: 40, y2: 5 };
+    expect(bandedFillWall(face, strokes, [], fpu, [farAway])).toBeNull();
+    expect(bandedFillWall(face, strokes, [], fpu, [])).toBeNull();
+  });
   it("refuses a notes panel: rules with lettering between them", () => {
     expect(bandedFillWall(face, [face, partner, ...fill(12)], [{ x: 5, y: 0.5 }], fpu)).toBeNull();
   });
   it("needs a partner inside the band's bounds and something filling it", () => {
-    expect(bandedFillWall(face, [face, seg(0, 2, 20, 2), ...fill(12, 0.1, 1.9)], [], fpu)).toBeNull();
+    // 36 in is past the widest masonry this admits
+    expect(bandedFillWall(face, [face, seg(0, 3, 20, 3), ...fill(12, 0.1, 2.9)], [], fpu)).toBeNull();
     expect(bandedFillWall(face, [face, partner, ...fill(2)], [], fpu)).toBeNull();
   });
 });

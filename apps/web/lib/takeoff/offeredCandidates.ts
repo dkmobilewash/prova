@@ -97,6 +97,8 @@ export type OfferedResult = {
   setAsideLines: {
     kind: string;
     why: string;
+    /** The pen's luminance where the set carries colour — grey is existing work on most sets. */
+    gray?: number;
     lengthFeet: number;
     x1: number;
     y1: number;
@@ -213,12 +215,12 @@ export function offeredCandidates(
   // See `bandedFill.ts`. The line's partner is a second withheld line more
   // often than not, so one wall can arrive twice; the centreline dedupes it.
   const unitSegments = sheet.segments.map(inPageWidthUnits(sheet.widthPt));
-  const wordCentres = (sheet.textItems ?? []).map((t) => ({ x: (t.x + t.width / 2) / sheet.widthPt, y: (t.y - t.height / 2) / sheet.widthPt }));
+  const wordCentres = (sheet.textItems ?? []).map((t) => ({ x: (t.x + t.width / 2) / sheet.widthPt, y: (t.y - t.height / 2) / sheet.widthPt, str: t.str }));
   const banded: BandedWall[] = [];
   const bandedLines = new Set<(typeof classified)[number]>();
   for (const one of classified) {
     if (one.kind !== "in-a-hatch") continue;
-    const wall = bandedFillWall(one.line, unitSegments, wordCentres, sheet.feetPerUnit);
+    const wall = bandedFillWall(one.line, unitSegments, wordCentres, sheet.feetPerUnit, sheet.walls);
     if (wall === null) continue;
     const key = [wall.x1, wall.y1, wall.x2, wall.y2].map((v) => v.toFixed(4)).join(",");
     const twin = [wall.x2, wall.y2, wall.x1, wall.y1].map((v) => v.toFixed(4)).join(",");
@@ -347,6 +349,7 @@ export function offeredCandidates(
         .map((one) => ({
           kind: one.kind,
           why: one.why,
+          gray: one.line.gray,
           lengthFeet: one.lengthFeet,
           x1: one.line.x1,
           y1: one.line.y1,

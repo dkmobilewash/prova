@@ -118,6 +118,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the hatch around a withheld line: 
           const realC = coveredFeet(me, real, fpu), rej = coveredFeet(me, rejected, fpu);
           const status: "real" | "junk" | "other" = realC >= 0.5 * L ? "real" : rej >= 0.5 * L ? "junk" : "other";
           const b = bandShape(me, units, fpu);
+          const colour = l.gray === undefined ? "uncoloured" : l.gray >= 0.35 ? "GREY" : "black";
           const perFt = b.inside / L;
           // Why there is no partner: one further out, a fragmented one, or nothing parallel at all.
           const farthest = (lo: number, hi: number, share: number) => units.some((u) => parallel(me, u) && overlapAlong(me, u) >= share * len(me) && (() => { const ux = (me.x2 - me.x1) / len(me), uy = (me.y2 - me.y1) / len(me); const d = Math.abs(((u.x1 + u.x2) / 2 - me.x1) * -uy + ((u.y1 + u.y2) / 2 - me.y1) * ux) * fpu; return d >= lo && d <= hi; })());
@@ -125,7 +126,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the hatch around a withheld line: 
           const shape =
             b.side === 0 ? noPartnerWhy
             : b.inside < 3 ? "b partner, under 3 strokes inside the band"
-            : b.beyond <= b.inside * 0.25 && b.across <= b.inside * 0.25 ? `c FILLED BAND, confined (${(b.partnerFt * 12) < 6 ? "<6in" : (b.partnerFt * 12) < 10 ? "6-10in" : (b.partnerFt * 12) <= 16 ? "10-16in" : "16-30in"}, ${perFt >= 1 ? "dense" : "sparse"})`
+            : b.beyond <= b.inside * 0.25 && b.across <= b.inside * 0.25 ? `c FILLED BAND, confined (${(b.partnerFt * 12) < 6 ? "<6in" : (b.partnerFt * 12) < 10 ? "6-10in" : (b.partnerFt * 12) <= 16 ? "10-16in" : "16-30in"}, ${colour})`
             : b.beyond > b.inside * 0.25 && b.across > b.inside * 0.25 ? `e filled band, hatch on both sides too (a field) (${(b.partnerFt * 12) <= 16 ? "<=16in" : "16-30in"})`
             : `d filled band, hatch continues on one side (${(b.partnerFt * 12) <= 16 ? "<=16in" : "16-30in"})`;
           add(byShape, shape, status, L);
