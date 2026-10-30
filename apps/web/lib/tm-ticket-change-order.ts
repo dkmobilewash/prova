@@ -116,8 +116,9 @@ export function tmTicketDraftDescription(input: TmTicketDraftInput): string {
     // Through formatHours, like every hours figure on a screen (hoursRenderCensus):
     // the snapshot stores Decimal strings, and a hand-edited row could carry
     // "8.00" or worse. An unreadable figure prints as written rather than as NaN.
-    const hoursText = Number.isFinite(Number(row.hours)) ? formatHours(Number(row.hours)) : row.hours;
-    const bits = [`${hoursText} h`, payTypeWord(row.payType), row.craftLabel].filter(Boolean).join(", ");
+    const figure = Number(row.hours);
+    const perWorker = Number.isFinite(figure) ? formatHours(figure) : row.hours;
+    const bits = [`${perWorker} h`, payTypeWord(row.payType), row.craftLabel].filter(Boolean).join(", ");
     lines.push(`  ${row.workerName} — ${bits}${row.lineItemDescription ? ` — on ${row.lineItemDescription}` : ""}`);
   }
   lines.push("", "Materials as signed for:");
