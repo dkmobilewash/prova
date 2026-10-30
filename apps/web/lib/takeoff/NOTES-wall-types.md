@@ -21,7 +21,7 @@ sheet, `answer-keys/legends/`), and the groups are summed by source.
 
 | sheet | runs · ft | before: typed | after: typed (tagged / carried / note) | per type |
 | --- | --- | --- | --- | --- |
-| Joplin A-101 (p46), legend A/B/K/L/V + suffix types | 199 · 3,535 | 5% (no legend; text tags only) | **56%** (20 / 7 / 29) | A3 522, B 122, A 116, L 108, B2 56, V 25 |
+| Joplin A-101 (p46), legend A/B/K/L/V + suffix codes, thickness on A and B | 194 · 3,661 | 5% (no legend; text tags only) | **56%** (23 / 5 / 28) | A3 578, L 175, B 122, A 116, V 26 |
 | NG Green Bay A3.2 (p10) | 92 · 1,680 | 36% | **47%** (36 / 11 / 0) | IW-7 408, IW-2 144, IW-4 128, IW-5 31 … |
 | Baker A101 (p13), legend S6A…C8B | 54 · 914 | 36% | **38%** (32 / 5 / 0) | C8B 230, S8C 50, S6A 33, S8B 31 |
 | SW A110 (p5), legend A1–A4/B1–B3 | 119 · 1,806 | 20% | 19% (18 / 1 / 0) | A3 165, A1 133, B1 25, B2 13, A4 9 |
@@ -79,19 +79,73 @@ changes how many tags a drafter printed.
 
 | set | walls | on the job by type | untyped |
 | --- | --- | --- | --- |
-| Joplin A-101 | 3,595 ft | A 1,205 (U.N.O.), A3 674, B 156, V 135, L 108, B2 55, B3 20 — 2,163 ft, 60% | 1,240 ft |
-| Baker A101 | 711 ft | C8B 240, S8C 50, S8B 35, S6A 33 — 358 ft, 50% | 352 ft |
-| SW A110 + A400 | 1,706 ft | A1 132, A3 60, B1 31, B2 13, A4 9 — 245 ft, 14% | 1,461 ft |
-| Glen-hazel (whole set) | 21,726 ft | P1 5,737 by thickness alone (the pilot's one type) | 15,990 ft |
+| Joplin A-101 | 3,570 ft | A 1,105 (U.N.O.), A3 578, L 175, B 163, V 26 — 2,047 ft, 57% | 1,522 ft |
+| Baker A101 | 701 ft | C8B 230, S8C 50, S6A 33, S8B 31 — 344 ft, 49% | 357 ft |
+| SW A110 + A400 | 1,714 ft | A3 170, A1 133, B1 25, B2 13, A4 9 — 351 ft, 20% | 1,363 ft |
+| Glen-hazel (whole set) | 20,390 ft | P1 5,711 by thickness alone (the pilot's one type) | 14,678 ft |
 
 Two things the pilot showed that a measurement on the finder alone does
 not. Giving the company wall types with thicknesses moves the finder's
-walls — Joplin 3,720 → 3,595 ft, 47 → 40 rooms — because the finder snaps
-to known thicknesses; that is the product's behaviour with a library, not
-this branch's. And a company with ONE type that is 4-7/8 in thick posts
+walls — §3b measures it and says what was done. And a company with ONE type that is 4-7/8 in thick posts
 every 4-7/8 in wall as it (Glen's 5,737 ft of P1): `settledType` treats a
 unique thickness as an identity, which is right with a real library and
 wrong with a placeholder, and the measurement label says "(by thickness)".
+
+## 3b. The finder with and without the company's wall types — the side effect, measured
+
+The first pilot moved Joplin from 3,720 to 3,595 ft and 47 to 40 rooms the
+moment the company had wall types. The path is the finder's own: every
+typed `WallType.thicknessIn` reaches `findWallsOnSheet` as a scheduled
+thickness and `wallVectors.ts` uses it three ways — a thin pair at a
+scheduled thickness is admitted below the 0.2 ft floor; in an assembly the
+widest pair that IS a scheduled thickness is preferred (8 + 1-1/2 over
+9-1/2); and a second pass adds assembly walls only when a schedule exists.
+Deliberate, documented in those files, measured by their authors on Mesa
+Ridge and School-01, and not this branch's to change (finder files).
+
+Measured here against the labels, every variant through `detectForSheet`
+(`zzWtDelta`, scratch): `none` = no types; `thick` = the legend's types with
+their thicknesses; `pilot` = those plus the harness's two ceiling starters,
+which an earlier run had given a 1 in thickness.
+
+| sheet | none: offered / missing / extra | thick | pilot (ceilings at 1 in) |
+| --- | --- | --- | --- |
+| Joplin A-101 (11 thicknesses, hand key) | 3,536 / 62 / 1,007 | **3,324 / 207 / 1,026** | 3,475 / 122 / 1,072 |
+| Joplin, thicknesses on A/B/K/L/V only | | 3,422 / 113 / 1,021 | |
+| Baker A101 | 698 / 42 / 25 | = none | 708 / 43 / 39 |
+| Bunkie A100 | 814 / 13 / 355 | = none | 898 / 14 / 436 |
+| Crosslines A100 | 3,918 / 241 / 474 | = none | 4,278 / 258 / 806 |
+| MHK A1.01 | 1,707 / 79 / 636 | = none | 1,850 / 74 / 709 |
+| SW A110 | 1,637 / 13 / 1,228 | = none | 1,572 / 14 / 1,165 |
+| NG Green Bay A3.1 | 2,152 / 131 / 1,112 | = none | 2,354 / 128 / 1,279 |
+| E Street A2.1 | 1,140 / 11 / 461 | = none | 1,224 / 37 / 586 |
+| Glen-hazel A-111 | 2,039 / 294 / 424 | = none | 2,200 / 264 / 541 |
+
+And through the pilot itself, the same company with NO wall types against
+one with the legend's (Joplin's A and B thicknesses; Baker's and SW's
+legends carry none):
+
+| set | no wall types: walls · rooms · ceiling | with the legend's types |
+| --- | --- | --- |
+| Joplin A-101 | 3,656 ft · 46 · 5,768 sf | 3,570 ft · 44 · 6,228 sf |
+| Baker A101 | 701 ft · 9 · 1,482 sf | identical |
+| SW A110 + A400 | 1,714 ft · 14 · 92 sf | identical |
+
+Two findings. **The ceiling thickness was a harness artefact**: the product's
+starter ceiling assemblies carry no thickness, the harness had typed 1 in on
+its own, and that one inch opened the finder's thin-pair floor on every set
+(Crosslines +332 ft of extra). The harness no longer does it. **Where real
+thicknesses exist the guidance moves the count, and on Joplin it moves it
+the wrong way**: 145 ft more missed against the label, 19 ft more extra;
+with thicknesses on the five drawn types only, still 51 ft more missed. On
+the other training sets the cached legends carry no thickness, so with and
+without are identical. That is one sheet with a hand-keyed schedule against
+the finder authors' measured gain on two others, so the behaviour stands
+and stops being silent: the sheet's task note now says "paired with the
+schedule's thicknesses: A 4.875in, B 7.625in, …" whenever the pairing was
+given any, and the original session can decide from this table whether the
+WALLS stage should pass thicknesses to the finder at all (one line in
+`walls.ts`'s `loadWallTypes`).
 
 ## 4. Glen-hazel: the T1/T2 tags are finish types
 
@@ -107,7 +161,7 @@ is the drawing's answer, not a miss.
 
 | sheet | right | wrong | notes |
 | --- | --- | --- | --- |
-| Joplin | 6 | 2 | 2 of 10 were legend-box borders the finder calls walls, typed A by the note at 5.1 in — finder junk, not a typing error; the A3 tags are plain circles beside 7.2 in walls (6 in studs: right); untyped 7.2 in and 8.0 in walls are the A3-or-B question, left open on purpose; a CMU wall with a B hexagon beside it was untyped (tag not reached) |
+| Joplin | 6 | 2 | Re-sampled on the product path after the first pass: the two "A" walls that were legend-box borders are still offered (the GENERAL PLAN NOTES box and the title block sit inside the plan view — finder junk, not this branch's) but now land untyped. The two wrong are a cross-hatched masonry wall read at 4.3 in and 5.0 in and typed A by the drywall note: thickness cannot see hatch. Right: a classroom partition typed A; a 2 ft jamb piece, the Q glass partition, a 9 in toilet-room wall and a 5.9 in partition left open. |
 | SW | 5 | 1 | "A1" on the west exterior wall came from an A1/A115 section marker, not the A1 boxes the sheet draws its tags in; A3 beside the tint room (square boxes) right; brick exterior and the schedule's own table lines untyped |
 | Baker | 4 | 0 | S6A and C8B boxes beside the walls they name; (E) existing-building walls untyped, which is right |
 | Bunkie | 3 | 0 | untyped runs are a hatched wall with no tag and a grid of building-section hatch |

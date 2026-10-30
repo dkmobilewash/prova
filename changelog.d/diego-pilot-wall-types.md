@@ -15,5 +15,7 @@
 - The whole-set WALLS stage writes each sheet's groups onto a takeoff item
   per wall type (`lib/plan-ingest/wallItems.ts`; label says tag, carried,
   U.N.O. or by thickness; the rest on "Walls — untyped"), so Send to estimate
-  prices each type with its own assembly. `wallTypes.eval.ts` reports feet
+  prices each type with its own assembly. The sheet's note names the
+  thicknesses the finder paired with, since a library with thicknesses
+  finds different walls from one without. `wallTypes.eval.ts` reports feet
   typed per sheet and per type.

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { sheetStrokes } from "../sheetStrokes";
-import { findWallsOnSheet } from "../findWallsOnSheet";
+import { detectForSheet } from "../offeredCandidates";
 import { planTextTagByRun, isPropagatedTag, plainTag, tagVocabulary } from "../planTextTags";
 import { wallTypeTags } from "../wallTags";
 import type { MatchableWallType } from "../wallTypeMatch";
@@ -73,7 +73,12 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
       const legendCodes = wallTypes.map((t) => t.code);
       const vocabulary = tagVocabulary(legendCodes, legendCodes);
       const planText = vocabulary.length === 0 ? undefined : { legendCodes: vocabulary };
-      const found = findWallsOnSheet({
+      // THE PRODUCT'S PATH, not the finder on the whole sheet: `detectForSheet`
+      // splits the sheet into drawings and keeps the plan views, so the title
+      // block's and the legend boxes' borders are not offered as walls. The
+      // first by-eye sample on Joplin had two "A" walls that were the GENERAL
+      // PLAN NOTES box, from a whole-sheet call this eval no longer makes.
+      const found = detectForSheet({
         segments: read.segments,
         textItems: items,
         pageSize: { widthPt: W, heightPt: read.heightPt },
@@ -81,7 +86,7 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
         wallTypes,
         sampledSheets: null,
         ...(planText === undefined ? {} : { planText }),
-      });
+      }).found;
       const groups: WallGroup[] = found.groups;
       const total = groups.reduce((s, g) => s + g.feet, 0);
       const by = { tagged: 0, carried: 0, note: 0, untyped: 0 };
