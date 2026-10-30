@@ -298,8 +298,8 @@ export function keyFromLabels(
    * score. Callers that have it should pass it.
    */
   feetPerUnit?: number,
-): { key: ScoredRun[]; fromTracedFeet: number; tracesFoldedIn: number } {
-  const accepted: ScoredRun[] = [];
+): { key: ScoredRun[]; fromTracedFeet: number; tracesFoldedIn: number; acceptedFoldedIn: number } {
+  const offered: ScoredRun[] = [];
   const traces: ScoredRun[] = [];
   for (const v of saved.verdicts) {
     if (v.verdict !== "wall" && v.verdict !== "traced") continue;
@@ -313,7 +313,27 @@ export function keyFromLabels(
       // which is honest: the reviewer drew a line, not a pair of faces.
       thicknessFeet: v.thicknessFeet,
     };
-    (v.verdict === "wall" ? accepted : traces).push(run);
+    (v.verdict === "wall" ? offered : traces).push(run);
+  }
+
+  // ── TWO ACCEPTED LINES CAN BE ONE WALL ──
+  //
+  // A finder that offers both faces of a wall as separate lines gets both
+  // accepted, and each then adds its full length to the key. Longest first, so
+  // a short duplicate folds into the long run rather than the reverse. A line
+  // only partly covered stays, for the same reason a partly covered trace does.
+  //
+  // ponytail: two genuine walls closer than the match band fold into one. A
+  // chase wall pair at under 1.5 ft would lose a side; split it out if a sheet
+  // ever shows that.
+  const accepted: ScoredRun[] = [];
+  let acceptedFoldedIn = 0;
+  for (const run of [...offered].sort((a, b) => len(b) - len(a))) {
+    if (feetPerUnit !== undefined && uncoveredFeet(run, accepted, feetPerUnit) <= 0.5) {
+      acceptedFoldedIn += 1;
+      continue;
+    }
+    accepted.push(run);
   }
 
   // ── A WALL IS COUNTED ONCE, EVEN WHEN BOTH KINDS DESCRIBE IT ──
@@ -346,5 +366,5 @@ export function keyFromLabels(
     key.push(trace);
     fromTracedFeet += left;
   }
-  return { key, fromTracedFeet, tracesFoldedIn };
+  return { key, fromTracedFeet, tracesFoldedIn, acceptedFoldedIn };
 }

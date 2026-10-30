@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { storedRasterFrom } from "../../plan-ingest/raster";
 import { prisma } from "@prova/db";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { findWallsOnSheet, inPageWidthUnits } from "../findWallsOnSheet";
@@ -74,7 +75,7 @@ type Saved = {
 
 describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
   it("scores the finder against the answer key — rules, or rules with the model's vetoes", { timeout: 7_200_000 }, async () => {
-    const plans = await prisma.takeoffPlan.findMany({ select: { fileName: true, fileUrl: true } });
+    const plans = await prisma.takeoffPlan.findMany({ select: { id: true, fileName: true, fileUrl: true } });
     const flat = (s: string) => s.replace(/[^a-z0-9]+/gi, "").toUpperCase();
 
     // Every label file, then the held-out ones. Both counts are reported, so
@@ -120,27 +121,34 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
       // counted ONCE. Chrome accepted candidates over existing traces in the
       // re-judge round — Central Bank A101 has 56 — and without this the key
       // carries both, inflating keyFeet and flattering junk-per-100-ft.
-      const { key, fromTracedFeet, tracesFoldedIn } = keyFromLabels(saved, saved.feetPerUnit);
-      if (tracesFoldedIn > 0) notes.push(`  ${file.dir.slice(0, 26)}/${file.sheet}: ${tracesFoldedIn} trace(s) folded into an accepted wall, counted once`);
+      const { key, fromTracedFeet, tracesFoldedIn, acceptedFoldedIn } = keyFromLabels(saved, saved.feetPerUnit);
+      if (tracesFoldedIn + acceptedFoldedIn > 0) notes.push(`  ${file.dir.slice(0, 26)}/${file.sheet}: FOLDED ${tracesFoldedIn} trace(s) and ${acceptedFoldedIn} accepted line(s), counted once`);
       if (key.length === 0) {
         notes.push(`  ${file.dir}/${file.sheet}: labelled, but no accepted or traced walls`);
         continue;
       }
-      const pdf =
-        plans.find((p) => flat(p.fileName ?? "") === flat(file.dir))?.fileUrl?.replace(/^local:/, "") ??
-        null;
+      const plan = plans.find((p) => flat(p.fileName ?? "") === flat(file.dir));
+      const pdf = plan?.fileUrl?.replace(/^local:/, "") ?? null;
       if (pdf === null) {
         notes.push(`  ${file.dir}/${file.sheet}: no ingested plan — SKIPPED, not scored`);
         continue;
       }
-      const bytes = Buffer.from(readFileSync(join(DIR, pdf)));
-      const read = await sheetStrokes(bytes, saved.page);
+      // A scanned sheet: the lines and words the raster stage stored, as the
+      // viewer reads them. No sampled sheets, so template lines are not dropped.
+      const raster = storedRasterFrom(
+        await prisma.planSheetRaster.findFirst({
+          where: { planId: plan!.id, pageNumber: saved.page },
+          select: { widthPt: true, heightPt: true, lines: true, text: true, printedScale: true },
+        }),
+      );
+      const bytes = raster === null ? Buffer.from(readFileSync(join(DIR, pdf))) : null;
+      const read = raster ?? (await sheetStrokes(bytes!, saved.page));
       if (read === null) {
         notes.push(`  ${file.dir}/${file.sheet}: unreadable — SKIPPED, not scored`);
         continue;
       }
-      const doc = await openPlanPdf(bytes);
-      const text = await doc.pageText(saved.page);
+      const doc = bytes === null ? null : await openPlanPdf(bytes);
+      const words = raster?.textItems ?? (await doc!.pageText(saved.page)).items;
       // ── SCORED ON WHAT THE APP WOULD OFFER, NOT ON THE FINDER'S RAW OUTPUT ──
       //
       // This called `findWallsOnSheet` on the raw page, which is a different
@@ -154,7 +162,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
       // NOT on multi-view ones (Murray 160 against the app's 32). The per
       // sheet view count is printed so a reader can tell which rows are
       // affected rather than having to trust this sentence.
-      const textItems = text.items.map((i) => ({
+      const textItems = words.map((i) => ({
         str: i.str,
         x: i.x,
         y: i.y,
@@ -162,7 +170,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
         height: i.height,
       }));
       const sampledSheets: StrokeSegment[][] = [];
-      for (const n of pagesToSample(doc.pageCount, saved.page)) {
+      for (const n of doc === null ? [] : pagesToSample(doc.pageCount, saved.page)) {
         // FRESH bytes per page: pdf.js detaches the array it is handed.
         const other =
           n === saved.page ? read : await sheetStrokes(Buffer.from(readFileSync(join(DIR, pdf))), n);
@@ -176,6 +184,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
         pageSize: { widthPt: read.widthPt, heightPt: read.heightPt },
         feetPerUnit: saved.feetPerUnit,
         sampledSheets,
+        scanned: raster !== null,
       });
       const found = detected.found;
       const offered = offeredCandidates({
@@ -190,6 +199,10 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
         widthPt: read.widthPt,
         feetPerUnit: saved.feetPerUnit,
         planBoxes: detected.planBoxes,
+        // What the viewer passes. Without these the word and stroke set-asides
+        // never ran, so this scored a list no reviewer has ever been shown.
+        textItems,
+        pageSegments: read.segments,
       });
       views.push(
         `  ${file.dir.slice(0, 26)}/${file.sheet}: views ${detected.views}` +
@@ -288,7 +301,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
     // but silently not scored must not pass as success.
     expect(all.length, "no label files at all — check TAKEOFF_LABEL_DIR").toBeGreaterThan(0);
     expect(scores.length, "held-out sheets were found but none could be scored").toBe(
-      held.length - notes.length,
+      held.length - notes.filter((n) => n.includes("SKIPPED")).length,
     );
   });
 });
