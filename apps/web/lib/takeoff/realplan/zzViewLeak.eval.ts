@@ -47,7 +47,7 @@ function coveredFeet(a: G & { th: number }, others: readonly (G & { th: number }
 
 describe.skipIf(DIR === "" || LABELS === "" || SHEETS.length === 0)("where a multi-view sheet's offered feet come from", () => {
   it("attributes every offered and key foot to a view", { timeout: 1_800_000 }, async () => {
-    let seen = 0;
+    const found: string[] = [];
     for (const dir of readdirSync(LABELS)) {
       for (const name of readdirSync(join(LABELS, dir))) {
         if (!name.endsWith(".json")) continue;
@@ -55,7 +55,7 @@ describe.skipIf(DIR === "" || LABELS === "" || SHEETS.length === 0)("where a mul
         if (!SHEETS.some((s) => { const [d, sh] = s.split("/"); return dir.toLowerCase().includes(d.toLowerCase()) && sh === sheet; })) continue;
         const pdf = findPdf(dir);
         if (pdf === null) { console.log(`  ${dir}/${sheet}: no pdf`); continue; }
-        seen += 1;
+        found.push(`${dir}/${sheet}`);
         const saved = JSON.parse(readFileSync(join(LABELS, dir, name), "utf8")) as Saved;
         const strokes = await sheetStrokes(Buffer.from(readFileSync(pdf)), saved.page);
         if (strokes === null) { console.log(`  ${dir}/${sheet}: unreadable`); continue; }
@@ -98,6 +98,6 @@ describe.skipIf(DIR === "" || LABELS === "" || SHEETS.length === 0)("where a mul
         if (none) console.log(`  ${"(no view box)".padEnd(44)} ${"".padEnd(40)} ${"".padEnd(14)} ${"".padEnd(13)} ${"".padEnd(20)} offered real ${none.real.toFixed(0).padStart(5)} junk ${none.junk.toFixed(0).padStart(5)} unverdicted ${none.other.toFixed(0).padStart(5)} · key here ${none.key.toFixed(0).padStart(5)}`);
       }
     }
-    expect(seen, "no named sheet was found").toBeGreaterThan(0);
+    expect(found.length, "no named sheet was found — check LEAK_SHEETS against TAKEOFF_LABEL_DIR").toBeGreaterThan(0);
   });
 });
