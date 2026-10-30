@@ -92,6 +92,8 @@ describe("every eval refuses to run without a key", () => {
   const KEYLESS_EVALS: Record<string, string> = {
     "zzViewLeak.eval.ts":
       "calls no model: attributes every offered candidate and every key wall on a multi-view sheet to the view whose box holds its midpoint, labelled real / junk / unverdicted from the sheet's own label file. Diagnostic for the view split. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR and LEAK_SHEETS, and asserts a named sheet was found",
+    "zzLegendBox.eval.ts":
+      "calls no model: tallies every offered candidate on the training sheets by whether it is the side of a text-filled, cornered box, against the labels; the probe behind legendBoxes.ts. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts sheets were read",
     "scaleAudit.eval.ts":
       "calls no model: deterministic geometry over real drawings, guarded by a skip plus a non-zero input assertion",
     "doorWindows.eval.ts":
