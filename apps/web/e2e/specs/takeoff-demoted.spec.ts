@@ -189,14 +189,21 @@ test.describe("demote, don't hide", () => {
     await hydrated(page, '[data-settings="demoted-walls"]');
     const offForm = page.locator('[data-settings="demoted-walls"]');
     const offBox = offForm.locator('input[name="demotedWallsOn"]');
-    await expect(offBox, "the grey-out should start ticked now that it is on by default").toBeChecked();
-    await offBox.uncheck();
-    await offForm.getByRole("button", { name: "Save" }).click();
-    await expect(offForm.getByText("Saved.")).toBeVisible({ timeout: 30_000 });
-    await page.reload();
+    // IDEMPOTENT, because retries share this database. An earlier attempt may
+    // already have unticked and SAVED, so asserting it starts ticked would be
+    // measuring the previous attempt rather than the default — which is how
+    // the first version of this failed on retry #1. Only the end state is
+    // asserted: off before the sheet is opened, however it got there.
+    if (await offBox.isChecked()) {
+      await offBox.uncheck();
+      await offForm.getByRole("button", { name: "Save" }).click();
+      await expect(offForm.getByText("Saved.")).toBeVisible({ timeout: 30_000 });
+      await page.reload();
+      await hydrated(page, '[data-settings="demoted-walls"]');
+    }
     await expect(
       page.locator('[data-settings="demoted-walls"] input[name="demotedWallsOn"]'),
-      "unticking it did not survive a reload, so the rest of this case proves nothing",
+      "the grey-out is still on, so this case cannot be about the switch being off",
     ).not.toBeChecked();
 
     await openJobTab(page, "Takeoff");
