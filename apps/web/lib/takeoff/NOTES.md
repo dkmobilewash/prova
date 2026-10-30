@@ -4062,3 +4062,61 @@ new-model run and 623 ft in the other two, from the same code and labels. 96 ft 
 difference in what the product offered between two runs is either a nondeterminism in
 `detectForSheet` on that sheet or an artefact of the run; it does not move the totals'
 conclusion and is recorded so the next person checks it rather than inherits it.
+
+## Where held-out recall goes, and what the in-a-hatch class is hiding there — 2026-10-30 (second session, `diego/recall-heldout`)
+
+Held-out read as TOTALS only throughout (`zzMissStages` `MISS_HELD_OUT=1`,
+`zzBandedHatch` `BAND_HELD_OUT=1`): feet per stage, per building, per shape.
+No held-out line, label row or image was read.
+
+**The stage.** Held-out, 15 sheets, key 15,506 ft, missed 2,109 (86.4%):
+in-a-hatch set-aside 942 ft (45%; KSU 420, Central Bank 297, SLN 151),
+then greedy/merge 200, never-paired-both-faces 175, dropped-by-a-filter 140,
+off-the-plan-boxes 138. On the ten single-view sheets in-a-hatch is 686 of
+1,351. Training on the same instrument (36 sheets, 94.4%): in-a-hatch 399
+of 2,857 — seven times less per foot of key.
+
+**The class on training labels** (`zzHatchClass`): 1,735 withheld lines
+≥ 12 ft, 1,228 ft along key walls (most of it third strokes beside walls
+already found — the stage says 399 ft actually missing), 9,711 ft confirmed
+junk, 70,700 ft unverdicted. No bucket by length, neighbour count, side or
+ends-met reaches 0.2 real per foot of junk. Relaxing the class is dead.
+
+**Banded fill, 3–16 in** (`bandedFill.ts`, wired into `offeredCandidates`):
+a withheld line with a long parallel partner 3–16 in away, ≥ 3 non-parallel
+strokes inside the band, ≤ 25% as many spilling beyond or across, no word
+inside. Sweep vs main `40900004`: training +43 real / +55 extra (0.8:1) —
+ELEVEN03 A4.B.1 −11 missing / +37 extra, where the +37 are 14-in
+diagonal-hatched 2-HR walls no label covers (crop); DEVELOPMENT +32 / +4;
+Camp Bow Wow +14 extra. **Held-out delta 0 / 0.** Training has the shape on
+23 lines in three buildings; too few to measure, and the held-out number
+says the shape is not what held-out hides.
+
+**What held-out hides, by the same probe at a 30 in reach** (totals):
+
+| band shape, partner 16–30 in | training real / junk | held-out real / junk |
+| --- | --- | --- |
+| filled, confined | 0 / 42 (+2,929 unverdicted) | **469 / 13** |
+| filled, hatch continues one side | 151 / 386 | 529 / 117 |
+| filled, hatch on both sides | 344 / 1,397 | 498 / 129 |
+
+Per building, held-out, 16–30 in filled bands: KSU Fairchild 1,000 ft real
+and 0 junk, Central Bank 233 / 0, Gen BBQ 161 / 0, Albany 0 / 222. **The
+held-out loss is walls 16–30 in thick drawn with hatch between two faces** —
+masonry — above the pairer's 13 in cap, so both faces arrive single and each
+counts the other and the fill as its hatch. On training the identical shape
+is 0 ft of real for 42 ft of junk and 2,929 ft of unverdicted (Supreme Court's
+existing grey masonry and its stacks, which this morning's cap experiment
+read off the sheet). So the two keys disagree about a 16–30 in hatched band:
+on training it is existing construction and not in the key; on held-out it is
+in the key. No rule measured on training can admit it, and a rule that
+admits it recovers roughly a thousand feet on KSU alone.
+
+**What this needs, in order.** (1) Diego to say whether KSU / Central Bank /
+Gen BBQ's thick hatched walls are NEW work — if they are, the training set
+needs masonry buildings whose thick walls are new (schools, banks,
+terminals, courthouses drawn poché) so the 16–30 in band rule can be
+measured; if they are existing, the held-out key is counting what training's
+excludes and the two should agree before recall is chased further.
+(2) The ends-together gate (rule 6) switched off as a control: training −75
+real net, +4,160 junk; held-out +94 / +1,239. Dead as a blanket change.

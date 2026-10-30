@@ -18,6 +18,7 @@ import {
 import { withoutNonWallLayers } from "./layerNames";
 import { drawingRegions, segmentsInRegions } from "./planRegion";
 import { classifySingleLines, worthOffering } from "./singleLines";
+import { bandedFillWall, type BandedWall } from "./bandedFill";
 import { trustedScanViews } from "./scannedCaptions";
 import { viewKind } from "./viewKind";
 import { oneFacePerLine, wallFromPair, type StrokeSegment, type WallCandidate } from "./wallVectors";
@@ -207,6 +208,25 @@ export function offeredCandidates(
     hatchPitchRule,
   });
 
+  // ── A FILLED BAND IS OFFERED AS THE WALL IT IS, NOT WITHHELD AS HATCH ──
+  //
+  // See `bandedFill.ts`. The line's partner is a second withheld line more
+  // often than not, so one wall can arrive twice; the centreline dedupes it.
+  const unitSegments = sheet.segments.map(inPageWidthUnits(sheet.widthPt));
+  const wordCentres = (sheet.textItems ?? []).map((t) => ({ x: (t.x + t.width / 2) / sheet.widthPt, y: (t.y - t.height / 2) / sheet.widthPt }));
+  const banded: BandedWall[] = [];
+  const bandedLines = new Set<(typeof classified)[number]>();
+  for (const one of classified) {
+    if (one.kind !== "in-a-hatch") continue;
+    const wall = bandedFillWall(one.line, unitSegments, wordCentres, sheet.feetPerUnit);
+    if (wall === null) continue;
+    const key = [wall.x1, wall.y1, wall.x2, wall.y2].map((v) => v.toFixed(4)).join(",");
+    const twin = [wall.x2, wall.y2, wall.x1, wall.y1].map((v) => v.toFixed(4)).join(",");
+    bandedLines.add(one);
+    if (banded.some((b) => [b.x1, b.y1, b.x2, b.y2].map((v) => v.toFixed(4)).join(",") === key || [b.x1, b.y1, b.x2, b.y2].map((v) => v.toFixed(4)).join(",") === twin)) continue;
+    banded.push(wall);
+  }
+
   // Counted by reason even when `offerAll` is on, so the sentence the panel
   // shows is about the drawing rather than about the filter's current setting.
   const aside = new Map<string, { kind: string; why: string; n: number }>();
@@ -288,14 +308,17 @@ export function offeredCandidates(
   }
   return {
     candidates: candidatesFromSheet({
-      walls: onPlan.map((w) => ({
-        x1: w.x1,
-        y1: w.y1,
-        x2: w.x2,
-        y2: w.y2,
-        lengthFeet: w.lengthFeet,
-        thicknessFeet: w.thicknessFeet,
-      })),
+      walls: [
+        ...onPlan.map((w) => ({
+          x1: w.x1,
+          y1: w.y1,
+          x2: w.x2,
+          y2: w.y2,
+          lengthFeet: w.lengthFeet,
+          thicknessFeet: w.thicknessFeet,
+        })),
+        ...banded,
+      ],
       singles: classified
         // ── THE OVERRIDE IS HATCH-CLASSED LINES, NOT EVERYTHING ──
         //
@@ -304,6 +327,7 @@ export function offeredCandidates(
         // confirmed wall. Offering those spends a reviewer's attention on
         // what is already known to be junk. `in-a-hatch` is the one reason
         // that has ever hidden a wall, so it is the one worth a verdict.
+        .filter((one) => !bandedLines.has(one))
         .filter((one) => worthOffering(one.kind) || (offerAll && one.kind === "in-a-hatch"))
         .map((one) => ({
           line: one.line,
@@ -319,7 +343,7 @@ export function offeredCandidates(
       ...tables.map((w) => ({ kind: "table-rows", why: "rows of text between the lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...underlines.map((w) => ({ kind: "underlines", why: "ruled under a word, as long as the word", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...classified
-        .filter((one) => !worthOffering(one.kind))
+        .filter((one) => !worthOffering(one.kind) && !bandedLines.has(one))
         .map((one) => ({
           kind: one.kind,
           why: one.why,
