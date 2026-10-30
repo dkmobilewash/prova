@@ -91,3 +91,33 @@ export async function scannedPageRow(input: { planId: string; pageNumber: number
   });
   return { ...outcome, scale: "set" };
 }
+
+/**
+ * ── THE PAGES RASTERED BEFORE THIS EXISTED ──
+ *
+ * RASTER never re-reads a page, so a scanned set read before the page-row
+ * step shipped has raster rows and no page rows (Evergreen's other 104).
+ * This gives each such raster row the page row the stage would have written,
+ * by the stage's own rules: one `scannedPageRow` per `PlanSheetRaster` with
+ * no `TakeoffPlanPage`, from what OCR stored. A raster row whose page already
+ * exists is not touched at all — which is what leaves a hand-made row, and
+ * whatever scale a person set on it, exactly as it was.
+ */
+export async function backfillScannedPageRows(input: { planId?: string; userId?: string | null; dryRun?: boolean } = {}) {
+  const rasters = await prisma.planSheetRaster.findMany({
+    where: input.planId === undefined ? {} : { planId: input.planId },
+    select: { planId: true, pageNumber: true, widthPt: true, heightPt: true, printedScale: true, sheetNumber: true },
+    orderBy: [{ planId: "asc" }, { pageNumber: "asc" }],
+  });
+  const pages = await prisma.takeoffPlanPage.findMany({ where: { planId: { in: [...new Set(rasters.map((r) => r.planId))] } }, select: { planId: true, pageNumber: true } });
+  const has = new Set(pages.map((p) => `${p.planId}:${p.pageNumber}`));
+  const missing = rasters.filter((r) => !has.has(`${r.planId}:${r.pageNumber}`));
+  const outcomes: { planId: string; pageNumber: number; outcome: ScannedPageRowOutcome }[] = [];
+  if (!input.dryRun) {
+    for (const r of missing) {
+      const outcome = await scannedPageRow({ planId: r.planId, pageNumber: r.pageNumber, userId: input.userId ?? null, read: { widthPt: r.widthPt, heightPt: r.heightPt, printedScale: r.printedScale, sheetNumber: r.sheetNumber } });
+      outcomes.push({ planId: r.planId, pageNumber: r.pageNumber, outcome });
+    }
+  }
+  return { rasters: rasters.length, withRows: rasters.length - missing.length, missing: missing.map((r) => ({ planId: r.planId, pageNumber: r.pageNumber })), outcomes };
+}

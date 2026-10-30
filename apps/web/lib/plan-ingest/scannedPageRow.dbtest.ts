@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@prova/db";
 import { rasterWork, storeRaster } from "./raster";
-import { scannedPageRow } from "./scannedPageRow";
+import { backfillScannedPageRows, scannedPageRow } from "./scannedPageRow";
 import { runIngest, type ClaimedTask, type RunnerPorts } from "./runner";
 import type { RasterizedSheet } from "@/lib/takeoff/raster/rasterizeSheet";
 
@@ -85,5 +85,27 @@ describe("a scanned sheet's page row after RASTER", () => {
     const after = await prisma.takeoffPlanPage.findUniqueOrThrow({ where: { planId_pageNumber: { planId, pageNumber: 2 } }, include: { calibrations: true } });
     expect(after.calibrations.map((c) => Number(c.declaredDistanceFeet))).toEqual([100]);
     expect(after.label).toBe("A-102");
+  });
+
+  it("BACKFILLS the pages rastered before this existed: a raster row with no page row gets one by the same rules, and rows that exist are not touched", async () => {
+    const rasterRow = (pageNumber: number, printedScale: string | null, sheetNumber: string | null) => ({ planId, pageNumber, dpi: 72, widthPt: ARCH_D.widthPt, heightPt: ARCH_D.heightPt, tiltDegrees: 0, lines: [], text: [], printedScale, sheetNumber, ms: 3 });
+    // Pages 1 and 2 have raster rows from the stage and page rows already (page 2's calibration is the hand-set 100 ft); 3 and 4 were "rastered before": raster rows only, 3 printing a scale and 4 none.
+    await prisma.planSheetRaster.createMany({ data: [rasterRow(3, `1/4" = 1'-0"`, "A-103"), rasterRow(4, null, null)] });
+    const dry = await backfillScannedPageRows({ planId, dryRun: true });
+    expect(dry).toMatchObject({ rasters: 4, withRows: 2, outcomes: [] });
+    expect(dry.missing.map((m) => m.pageNumber)).toEqual([3, 4]);
+    expect(await prisma.takeoffPlanPage.count({ where: { planId } })).toBe(2);
+
+    const done = await backfillScannedPageRows({ planId });
+    expect(done.outcomes.map((o) => [o.pageNumber, o.outcome])).toEqual([[3, { page: "created", scale: "set" }], [4, { page: "created", scale: "none read" }]]);
+    const pages = await prisma.takeoffPlanPage.findMany({ where: { planId }, orderBy: { pageNumber: "asc" }, include: { calibrations: true } });
+    expect(pages.map((p) => [p.pageNumber, p.label, p.pageWidthPt, p.calibrations.length])).toEqual([[1, "A-101", ARCH_D.widthPt, 1], [2, "A-102", ARCH_D.widthPt, 1], [3, "A-103", ARCH_D.widthPt, 1], [4, null, ARCH_D.widthPt, 0]]);
+    expect(Number(pages[2]!.calibrations[0]!.declaredDistanceFeet)).toBeCloseTo((ARCH_D.widthPt / 72) * 4, 2);
+    expect(pages[2]!.calibrations[0]!.note).toMatch(/read off the picture/);
+    expect(pages[1]!.calibrations.map((c) => Number(c.declaredDistanceFeet))).toEqual([100]);
+    expect((await prisma.planSheetScaleReading.findUnique({ where: { planId_pageNumber: { planId, pageNumber: 3 } } }))?.scaleName).toBe(`1/4" = 1'-0"`);
+    // Nothing left to do, and nothing done twice.
+    expect(await backfillScannedPageRows({ planId })).toMatchObject({ rasters: 4, withRows: 4, missing: [], outcomes: [] });
+    expect(await prisma.takeoffScaleCalibration.count({ where: { page: { planId } } })).toBe(3);
   });
 });

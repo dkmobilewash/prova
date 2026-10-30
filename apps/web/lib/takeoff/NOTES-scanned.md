@@ -568,9 +568,17 @@ inch of scanner margin) printing 1/8" = 1'-0" gets its row and a 290 ft
 calibration, a page printing nothing gets its row only, a second run adds
 nothing, and a scale set by hand survives the next read.
 
-Not in this change: pages rastered BEFORE it have raster rows and no page
-rows still, because RASTER does not revisit a page it has read. Evergreen's
-other 104 pages are in that state. A backfill over `PlanSheetRaster` rows
-with no page row is one call of `scannedPageRow` per page; it belongs with
-whoever next runs that set, and it must not touch p24/p27 (it would not —
-both carry a calibration).
+Pages rastered BEFORE it had raster rows and no page rows still, because
+RASTER does not revisit a page it has read — Evergreen's other 104. The
+backfill is `backfillScannedPageRows` in the same module: one `scannedPageRow`
+per `PlanSheetRaster` row with no `TakeoffPlanPage`, from what OCR stored
+(width, height, printed scale, sheet number), by the stage's own rules; a
+raster row whose page exists is not touched, so a hand-made row and whatever
+scale sits on it stay as they were (Evergreen p24/p27). Run it with
+`scripts/backfill-scanned-page-rows.ts` (dry run by default, `--write`, an
+optional plan id); idempotent. The dbtest's third case: two raster rows
+without pages beside two with, dry run lists the two and writes nothing, the
+write creates the two (one calibrated from its printed scale), leaves the
+hand-set 100 ft alone, and a second run finds nothing. The script itself was
+run under tsx against the same scratch database — dry, `--write <planId>`,
+`--write` again — and did the same.
