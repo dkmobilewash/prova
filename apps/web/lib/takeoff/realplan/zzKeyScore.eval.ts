@@ -217,6 +217,22 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
             // explicit and a single keeps no thickness rather than a zero.
             thicknessFeet: w.thicknessIn === null ? undefined : w.thicknessIn / 12,
           })),
+          // ── THE LINES THE REVIEWER REJECTED ──
+          //
+          // Without these every uncovered foot is "unjudged", and the finder's
+          // confirmed junk cannot be told from footage nobody has looked at.
+          // Centreline coordinates and the same inches-to-feet conversion as
+          // the proposals above, for the same thickness-band reason.
+          judged: (saved.verdicts ?? [])
+            .filter((v) => v.verdict === "not-wall")
+            .map((v) => ({
+              x1: v.x1,
+              y1: v.y1,
+              x2: v.x2,
+              y2: v.y2,
+              lengthFeet: v.lengthFeet,
+              thicknessFeet: v.thicknessFeet,
+            })),
           feetPerUnit: saved.feetPerUnit,
           keyFromTracedFeet: fromTracedFeet,
         }),
@@ -233,7 +249,12 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
         ` (traced ${s.keyFromTraced.toFixed(0)})` +
         ` · proposed ${s.proposedFeet.toFixed(0).padStart(6)}` +
         ` · missing ${s.missingFeet.toFixed(0).padStart(5)}` +
-        ` · extra ${s.extraFeet.toFixed(0).padStart(5)}` +
+        ` · recall ${s.recallPercent.toFixed(0).padStart(3)}%` +
+        // Junk and unjudged SEPARATELY. One "extra" number counted a line the
+        // reviewer called junk and a line nobody has looked at identically,
+        // and only the first is the finder's fault.
+        ` · junk ${s.confirmedJunkFeet.toFixed(0).padStart(5)}` +
+        ` · unjudged ${s.unjudgedFeet.toFixed(0).padStart(5)}` +
         ` · net ${s.netFeet >= 0 ? "+" : ""}${s.netFeet.toFixed(0)}`,
     );
 
@@ -249,7 +270,11 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
             `${notes.length === 0 ? "" : `${notes.join("\n")}\n`}` +
             `  TOTAL  key ${total.keyFeet.toFixed(0)} ft ` +
             `(${total.keyFromTraced.toFixed(0)} of it traced) · ` +
-            `missing ${total.missingFeet.toFixed(0)} · extra ${total.extraFeet.toFixed(0)} · ` +
+            `missing ${total.missingFeet.toFixed(0)} · ` +
+            `recall ${total.keyFeet === 0 ? 0 : (((total.keyFeet - total.missingFeet) / total.keyFeet) * 100).toFixed(1)}% · ` +
+            `junk ${total.confirmedJunkFeet.toFixed(0)} ` +
+            `(${total.keyFeet === 0 ? "0" : ((total.confirmedJunkFeet / total.keyFeet) * 100).toFixed(0)} per 100 ft of key) · ` +
+            `unjudged ${total.unjudgedFeet.toFixed(0)} · ` +
             `net ${total.netFeet >= 0 ? "+" : ""}${total.netFeet.toFixed(0)}`,
     );
 
