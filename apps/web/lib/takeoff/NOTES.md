@@ -4341,4 +4341,32 @@ wall types:
 (The in-a-hatch and past-the-building feet in the eval's column are the
 classifier's single-line kinds, which were never in a group on either path.)
 
-RETRAIN_PLACEHOLDER
+## The 28-column model retrained on the cleaned labels — not a replacement (2026-10-30, second session)
+
+The cleaned keys moved 26 of 52 label files and halved the held-out key, so
+the shipped round-8 model (`train-20261029-164211-signals28-round8`, trained
+on the old labels) was retrained on the same 28 columns from the cleaned
+rows: 40,449 rows from 32 sheets across 18 buildings (the four notes-only
+sheets excluded by `trainingRows`), 142,331 synthetic rows folded in,
+leave-one-building-out, demote cut 0.2, scored on the cleaned keys for BOTH
+models (`cls6` in the scratchpad, main 3b31e635's extraction).
+
+| | junk greyed | real greyed | precision |
+| --- | --- | --- | --- |
+| training LOBO, shipped | 956 ft of 16,806 | 44 ft of 39,114 | 96% |
+| training LOBO, retrained | 1,136 | 180 | 86% |
+| held-out, shipped | 753 of 10,745 | 92 of 8,440 | 89% |
+| held-out, retrained | 922 | 75 | 92% |
+
+On training the retrain greys 180 ft more junk for 136 ft more real — 1.3
+to 1 against the rule's 3 — and one building is worse by more than 100 ft:
+Topeka goes from 13 ft of real greyed to 132 (56 → 199 junk), with Joplin
+14 → 31. Where it gains it gains on junk only (Supreme +67, Green Bay +71,
+Bunkie −68 the other way). On held-out it is the better model (+169 junk,
+−17 real), which is reported and not what decides. **The shipped model
+stays.** What the cleanup changed for the classifier is the KEY it is
+scored against, not the rows it should learn from: the shipped model scored
+on the cleaned keys reads 96% precision on training and 89% on held-out,
+both fine. A retrain is worth repeating when more sheets carry the existing
+set-aside's own column, which is the signal the cleanup actually added.
+
