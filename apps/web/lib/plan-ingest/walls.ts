@@ -74,9 +74,10 @@ export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
  *
  * So the plan is made for the SET, not sheet by sheet. Sheets that could be
  * tasks (or already have walls) are grouped by the level their title names;
- * one is kept per level AND AREA — the one with walls already, else the
- * OVERALL plan, else a plan that is not ENLARGED, else the lowest sheet
- * number — and the others are "same level as A100", listed as such in the
+ * one is kept per level AND AREA — the one with walls already, else a plan
+ * that is not OVERALL (see `preferWholeFloor`), else one that is not
+ * ENLARGED, else the lowest sheet number — and the others are "same level
+ * as A101", listed as such in the
  * summary and never measured. A floor drawn in parts (LEVEL 3 EAST / WEST,
  * AREA A / B) keeps every part, unless a plan of the whole floor is there
  * too, in which case the whole floor is kept and the parts are not. A set whose plans name one level, or none, is one floor, and
@@ -190,9 +191,24 @@ export function isEnlargedPlanTitle(title: string | null): boolean {
   return /\bENLARGED\b[^.]*\bPLANS?\b/i.test(title ?? "");
 }
 
+/**
+ * ── AN OVERALL PLAN IS THE CONTEXT SHEET; THE PLAIN FLOOR PLAN IS THE WORK ──
+ *
+ * Measured on Baker EOC (2026-10-29): A100 "OVERALL FLOOR PLAN" draws the new
+ * block AND the existing building it attaches to — "(E) OFFICE", "JAIL (NO
+ * WORK)", every room grey — and came to 1,781 ft of walls and 45 doors. A101
+ * "FLOOR PLAN", the same level at the same 1/8" scale, draws the new work:
+ * 722 ft, and its 20 keyed doors are the ones the finder reads 20/20. The
+ * overall sheet exists to show where the work sits. So when a level has a
+ * plain whole-floor plan as well, the OVERALL one is the same walls plus
+ * somebody else's, and the plain one is kept. Alone (Joplin's "OVERALL FIRST
+ * FLOOR PLAN" has only ENLARGED plans beside it) an overall plan is still the
+ * floor. Across the 37 training sets, Baker is the only level that prints
+ * both (`shots/pilot/overall-pairs.log`).
+ */
 function preferWholeFloor(a: WallsSheet, b: WallsSheet): number {
   const score = (s: WallsSheet) =>
-    (s.hasWalls ? 8 : 0) + (/\bOVERALL\b/i.test(s.title ?? "") ? 4 : 0) + (/\bENLARGED\b/i.test(s.title ?? "") ? 0 : 2);
+    (s.hasWalls ? 8 : 0) + (/\bOVERALL\b/i.test(s.title ?? "") ? 0 : 4) + (/\bENLARGED\b/i.test(s.title ?? "") ? 0 : 2);
   const byScore = score(b) - score(a);
   if (byScore !== 0) return byScore;
   return (a.sheetNumber ?? "").localeCompare(b.sheetNumber ?? "", undefined, { numeric: true }) || a.pageNumber - b.pageNumber;
