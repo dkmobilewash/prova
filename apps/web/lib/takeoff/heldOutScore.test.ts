@@ -281,3 +281,95 @@ describe("totals across sheets", () => {
     expect(got.keyFeet).toBe(0);
   });
 });
+
+describe("uncovered footage: judged junk against never judged", () => {
+  // 1 unit = 1 ft here, so the numbers read directly.
+  const FPU = 1;
+  const run = (x1: number, x2: number) => ({ x1, y1: 0, x2, y2: 0, lengthFeet: x2 - x1 });
+
+  it("calls a proposal the reviewer rejected CONFIRMED JUNK, not unjudged", () => {
+    const got = scoreSheet({
+      set: "s",
+      sheet: "A1",
+      key: [run(0, 100)],
+      proposed: [run(0, 100), run(200, 250)],
+      judged: [run(200, 250)],
+      feetPerUnit: FPU,
+    });
+    expect(got.extraFeet).toBeCloseTo(50, 0);
+    expect(got.confirmedJunkFeet, "a rejected line is the finder's fault and must be counted as junk").toBeCloseTo(50, 0);
+    expect(got.unjudgedFeet).toBeCloseTo(0, 0);
+  });
+
+  it("calls a proposal nobody has looked at UNJUDGED, not junk", () => {
+    const got = scoreSheet({
+      set: "s",
+      sheet: "A1",
+      key: [run(0, 100)],
+      proposed: [run(0, 100), run(200, 250)],
+      judged: [],
+      feetPerUnit: FPU,
+    });
+    expect(got.extraFeet).toBeCloseTo(50, 0);
+    expect(got.confirmedJunkFeet, "nothing was judged, so nothing is confirmed junk").toBeCloseTo(0, 0);
+    expect(got.unjudgedFeet, "it is a labelling debt, not a finder defect").toBeCloseTo(50, 0);
+  });
+
+  it("splits a sheet that has both, and the two still add up to extra", () => {
+    const got = scoreSheet({
+      set: "s",
+      sheet: "A1",
+      key: [run(0, 100)],
+      proposed: [run(0, 100), run(200, 250), run(400, 430)],
+      judged: [run(200, 250)],
+      feetPerUnit: FPU,
+    });
+    expect(got.confirmedJunkFeet).toBeCloseTo(50, 0);
+    expect(got.unjudgedFeet).toBeCloseTo(30, 0);
+    expect(
+      got.confirmedJunkFeet + got.unjudgedFeet,
+      "the split has to account for every uncovered foot, or a number has gone missing",
+    ).toBeCloseTo(got.extraFeet, 0);
+  });
+
+  it("without `judged` at all, every uncovered foot is unjudged rather than clean", () => {
+    // The honest default for a caller that has no rejections to give: a zero
+    // here would read as "no junk", which is the opposite of what is known.
+    const got = scoreSheet({
+      set: "s",
+      sheet: "A1",
+      key: [run(0, 100)],
+      proposed: [run(0, 100), run(200, 250)],
+      feetPerUnit: FPU,
+    });
+    expect(got.confirmedJunkFeet).toBeCloseTo(0, 0);
+    expect(got.unjudgedFeet).toBeCloseTo(got.extraFeet, 0);
+  });
+
+  it("reports recall as its own number", () => {
+    const got = scoreSheet({
+      set: "s",
+      sheet: "A1",
+      key: [run(0, 100)],
+      proposed: [run(0, 60)],
+      feetPerUnit: FPU,
+    });
+    expect(got.missingFeet).toBeCloseTo(40, 0);
+    expect(got.recallPercent, "60 of 100 ft covered").toBeCloseTo(60, 0);
+  });
+
+  it("never reports negative unjudged footage", () => {
+    // The bound on the Math.min: a line that is somehow both accepted and
+    // rejected must not make the split go negative.
+    const got = scoreSheet({
+      set: "s",
+      sheet: "A1",
+      key: [run(0, 100)],
+      proposed: [run(0, 100)],
+      judged: [run(0, 100)],
+      feetPerUnit: FPU,
+    });
+    expect(got.unjudgedFeet).toBeGreaterThanOrEqual(0);
+    expect(got.confirmedJunkFeet).toBeLessThanOrEqual(got.extraFeet + 0.001);
+  });
+});

@@ -49,6 +49,18 @@ export type SheetScore = {
   proposedFeet: number;
   missingFeet: number;
   extraFeet: number;
+  /**
+   * `extraFeet` split in two, because one number was answering two questions.
+   * Confirmed junk is a line a reviewer JUDGED not to be a wall — a finder
+   * defect. Unjudged is a line nobody has looked at, which is a labelling debt
+   * and says nothing about the finder. The second session measured 46% of
+   * held-out extra in the second bucket against 17% on training, and on
+   * confirmed junk alone the two sides are 23 per 100 ft against 25.
+   */
+  confirmedJunkFeet: number;
+  unjudgedFeet: number;
+  /** Key footage the finder covered, as a percentage of the key. */
+  recallPercent: number;
   netFeet: number;
   keyRuns: number;
   proposedRuns: number;
@@ -176,6 +188,12 @@ export function scoreSheet(input: {
   sheet: string;
   key: readonly ScoredRun[];
   proposed: readonly ScoredRun[];
+  /**
+   * The lines a reviewer judged NOT to be walls, so uncovered footage can be
+   * attributed. Optional: without it every uncovered foot counts as unjudged,
+   * which is the honest reading for a caller that has no rejections to give.
+   */
+  judged?: readonly ScoredRun[];
   feetPerUnit: number;
   keyFromTracedFeet?: number;
 }): SheetScore {
@@ -184,6 +202,27 @@ export function scoreSheet(input: {
   const proposedFeet = proposed.reduce((n, r) => n + len(r) * feetPerUnit, 0);
   const missingFeet = key.reduce((n, r) => n + uncoveredFeet(r, proposed, feetPerUnit), 0);
   const extraFeet = proposed.reduce((n, r) => n + uncoveredFeet(r, key, feetPerUnit), 0);
+
+  // ── EXTRA WAS ANSWERING TWO QUESTIONS AT ONCE ──
+  //
+  // Uncovered footage is either a line the reviewer JUDGED not to be a wall —
+  // a finder defect — or a line NOBODY HAS LOOKED AT, which is a labelling
+  // debt and says nothing about the finder. The second session measured 46% of
+  // held-out extra in the second bucket against 17% on training, and on
+  // confirmed junk alone the two sides are 23 per 100 ft against 25: no gap.
+  // Reported as one number, the finder looked far worse on held-out than it is.
+  //
+  // `judged` absent means the caller cannot supply the rejections, so every
+  // uncovered foot is UNJUDGED rather than silently counted as clean.
+  const judged = input.judged ?? [];
+  const confirmedJunkFeet = proposed.reduce((n, r) => {
+    const extraOfThis = uncoveredFeet(r, key, feetPerUnit);
+    const judgedOfThis = len(r) * feetPerUnit - uncoveredFeet(r, judged, feetPerUnit);
+    // The smaller of the two, so this can never exceed the run's own extra and
+    // unjudgedFeet can never come out negative — which it could if a line were
+    // somehow both accepted and rejected.
+    return n + Math.min(extraOfThis, judgedOfThis);
+  }, 0);
   return {
     set,
     sheet,
@@ -192,6 +231,11 @@ export function scoreSheet(input: {
     proposedFeet,
     missingFeet,
     extraFeet,
+    confirmedJunkFeet,
+    unjudgedFeet: extraFeet - confirmedJunkFeet,
+    // Its own number, because "missing 500 of 3,600" and "86% recall" are the
+    // same fact and only one of them compares across sheets of different sizes.
+    recallPercent: keyFeet === 0 ? 0 : ((keyFeet - missingFeet) / keyFeet) * 100,
     netFeet: proposedFeet - keyFeet,
     keyRuns: key.length,
     proposedRuns: proposed.length,
@@ -206,8 +250,12 @@ export function totalScore(sheets: readonly SheetScore[]): {
   proposedFeet: number;
   missingFeet: number;
   extraFeet: number;
+  confirmedJunkFeet: number;
+  unjudgedFeet: number;
   netFeet: number;
 } {
+  // No summed recall: adding percentages is meaningless. A total recall figure
+  // is computed from the summed key and missing footage by whoever reports it.
   const sum = (pick: (s: SheetScore) => number) => sheets.reduce((n, s) => n + pick(s), 0);
   return {
     sheets: sheets.length,
@@ -216,6 +264,8 @@ export function totalScore(sheets: readonly SheetScore[]): {
     proposedFeet: sum((s) => s.proposedFeet),
     missingFeet: sum((s) => s.missingFeet),
     extraFeet: sum((s) => s.extraFeet),
+    confirmedJunkFeet: sum((s) => s.confirmedJunkFeet),
+    unjudgedFeet: sum((s) => s.unjudgedFeet),
     // Summed, not averaged: a sheet 50 ft over and one 50 ft under is a bid
     // that is right by accident, and averaging says so where summing does not.
     netFeet: sum((s) => s.netFeet),
