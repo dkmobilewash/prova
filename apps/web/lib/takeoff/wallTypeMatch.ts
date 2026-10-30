@@ -120,6 +120,13 @@ export type MatchableWallType = {
    * behaviour it had rather than acquiring a wrong answer.
    */
   thicknessIn: number | null;
+  /**
+   * The partition legend's own "unless noted otherwise" sentence naming this
+   * type as the default — Joplin's G-111: "ALL INTERIOR DRYWALL PARTITIONS …
+   * ARE TYPE 'A' PARTITIONS". A floor plan carries no such note of its own
+   * there, so `defaultWallTypeFromNotes` falls back to this.
+   */
+  unoNote?: string | null;
 };
 
 export type WallTypeMatch =

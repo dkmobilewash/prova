@@ -1,5 +1,5 @@
 import { tagByRun, type WallTypeTag } from "./wallTags";
-import type { TagSymbol, SymbolShape } from "./tagSymbols";
+import { SHEET_REFERENCE, type TagSymbol, type SymbolShape } from "./tagSymbols";
 import type { WallCandidate } from "./wallVectors";
 
 /**
@@ -111,8 +111,13 @@ export function tagsFromSymbols(input: {
     }
     return undefined;
   };
+  // A SPLIT symbol with a sheet number in one half is a detail callout, and
+  // its other half is the detail's number, whatever the legend calls a type:
+  // Joplin's "A3" over "A-621" read 133 ft of wall as type A3. A one-part
+  // symbol whose text merely looks like a sheet number keeps its chance.
+  const isCallout = (s: TagSymbol) => s.split && s.parts.length === 2 && s.parts.some((p) => SHEET_REFERENCE.test(p.replace(/\s+/g, "").toUpperCase()));
   const couldBeTags = symbols.filter(
-    (s) => s.rejected === null || (s.rejected === "sheet-reference" && codeOf(s) !== undefined),
+    (s) => s.rejected === null || (s.rejected === "sheet-reference" && !isCallout(s) && codeOf(s) !== undefined),
   );
   const tags: WallTypeTag[] = [];
   const anchoredByLeader = new Set<WallTypeTag>();

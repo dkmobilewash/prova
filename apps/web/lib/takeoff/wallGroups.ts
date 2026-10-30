@@ -185,21 +185,24 @@ export function wallGroups(
       // too, and a different thickness IS a notation — the note's own
       // "unless noted otherwise". A type with NO recorded thickness is offered,
       // because offering is not applying.
-      const noteCovers =
-        fromNote !== null &&
-        (fromNote.type.thicknessIn === null ||
-          Math.abs(fromNote.type.thicknessIn - cluster.inches) <= THICKNESS_SLACK_IN);
+      // Whichever of the legend's defaults (drywall A, masonry B) is this thick,
+      // where the sheet's own note is not the one.
+      // Each default covers its OWN thickness only — a different thickness IS
+      // a notation, the note's own "unless noted otherwise". Joplin names a
+      // default per family (drywall A at 4-7/8 in, masonry B at 7-5/8 in), and
+      // the nearer family was tried for the buckets between: wrong, because
+      // its 6 in stud partition (A3, 7-1/4 in) is a CMU wall's thickness. So
+      // those buckets stay a question, which `verdictFor` asks.
+      const defaults = fromNote === null ? [] : [fromNote, ...(fromNote.others ?? [])];
+      const covers = (n: WallTypeFromNote) => n.type.thicknessIn === null || Math.abs(n.type.thicknessIn - cluster.inches) <= THICKNESS_SLACK_IN;
+      const note = defaults.find(covers) ?? null;
       const atThickness = typesAtThickness(cluster.inches, wallTypes);
       out.push({
         inches: cluster.inches,
         runs: untagged,
         feet: feetOf(untagged),
-        source:
-          noteCovers && fromNote ? { kind: "GENERAL_NOTE", note: fromNote.note } : { kind: "REMAINDER" },
-        candidates:
-          noteCovers && fromNote
-            ? [fromNote.type, ...atThickness.filter((t) => t.id !== fromNote.type.id)]
-            : atThickness,
+        source: note !== null ? { kind: "GENERAL_NOTE", note: note.note } : { kind: "REMAINDER" },
+        candidates: note !== null ? [note.type, ...atThickness.filter((t) => t.id !== note.type.id)] : atThickness,
       });
     }
   }

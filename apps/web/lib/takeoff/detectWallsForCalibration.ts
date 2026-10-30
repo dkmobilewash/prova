@@ -7,7 +7,7 @@ import { pagesToSample } from "./sheetTemplate";
 import { inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
 import { detectForSheet } from "./offeredCandidates";
 import { SheetTooDenseError, type StrokeSegment } from "./wallVectors";
-import type { MatchableWallType } from "./wallTypeMatch";
+import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
 import { matchGroups } from "./proposalMatch";
 import { aiGate } from "@/lib/ai/settings";
@@ -193,12 +193,18 @@ export async function detectWallsForCalibration(
     const planTextOn = (await aiGate(target.companyId, "PLAN_TEXT_READ")).ok;
     let legendCodes: string[] | null = null;
     let legendPage: number | null = null;
+    // The company's types, with the legend's own "unless noted otherwise"
+    // sentence on the type it names (`MatchableWallType.unoNote`), so a sheet
+    // with no such note of its own still gets the legend's default.
+    let wallTypes: MatchableWallType[] = target.wallTypes;
     if (planTextOn) {
       try {
         const legend = await legendForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime });
         if (legend !== null) {
           legendCodes = legend.codes;
           legendPage = legend.page;
+          const uno = legend.uno ?? [];
+          if (uno.length > 0) wallTypes = target.wallTypes.map((type) => ({ ...type, unoNote: uno.find((u) => sameDesignation(u.code, type.code))?.note ?? type.unoNote ?? null }));
         }
       } catch (error) {
         console.error("[takeoff] legend read failed; detecting without it", { planId: target.planId }, error);
@@ -209,7 +215,7 @@ export async function detectWallsForCalibration(
     // (`tagVocabulary`). A company with no wall types has no vocabulary and
     // gets the detection it always had.
     const vocabulary = tagVocabulary(
-      target.wallTypes.map((type) => type.code),
+      wallTypes.map((type) => type.code),
       legendCodes,
     );
     const planText = vocabulary.length === 0 ? undefined : { legendCodes: vocabulary };
@@ -229,7 +235,7 @@ export async function detectWallsForCalibration(
       textItems,
       pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt },
       feetPerUnit: target.feetPerUnit,
-      wallTypes: target.wallTypes,
+      wallTypes,
       scanned: raster !== null,
       sampledSheets: sampleFailed ? null : sampledSheets,
       ...(planText === undefined ? {} : { planText }),

@@ -1,6 +1,6 @@
 import { bareTextTags } from "./bareTextTags";
 import { legendVocabulary, prefixlessVocabulary, tagsFromSymbols } from "./symbolTagging";
-import { tagSymbols, type SymbolShape, type TextForSymbol } from "./tagSymbols";
+import { SHEET_REFERENCE, tagSymbols, type SymbolShape, type TextForSymbol } from "./tagSymbols";
 import { propagateTypes } from "./typePropagation";
 import { tagByRun, type WallTypeTag } from "./wallTags";
 import type { MatchableWallType } from "./wallTypeMatch";
@@ -166,7 +166,24 @@ export function planTextTagByRun(input: {
 
   const asLegend = (tag: WallTypeTag): WallTypeTag =>
     shortForm && short !== null ? { ...tag, name: short.get(tag.name.toUpperCase()) ?? tag.name } : tag;
-  const direct = tagByRun(walls, [...fromSymbols.tags.map(asLegend), ...bareTags, ...textTags], feetPerUnit, wallTypes);
+  // ── A DETAIL CALLOUT IS NOT A WALL TAG ──
+  // Joplin's "A3" over "A-621" in a split circle is detail A3 on sheet
+  // A-621, and the text pass read 203 ft of walls as type "A3" from it. The
+  // symbol pass already names that circle a sheet reference and rejects it;
+  // a text tag sitting inside any symbol the symbol pass rejected is that
+  // symbol's text, not a tag printed loose beside a wall.
+  const rejectedAt = symbols.filter((s) => s.rejected !== null);
+  // …and the section marker drawn as a filled triangle with "B4/ A-621"
+  // beside it closes no shape at all, so its "B4" is loose text. A sheet
+  // number printed within a third of an inch of a text tag makes it a callout.
+  const near = (0.35 * 72) / widthPt;
+  const sheetRefs = text.filter((i) => SHEET_REFERENCE.test(i.str.replace(/[\s/]+/g, "").toUpperCase())).map((i) => ({ x: (i.x + i.width / 2) / widthPt, y: (i.y - i.height / 2) / widthPt }));
+  const loose = textTags.filter(
+    (t) =>
+      !rejectedAt.some((s) => Math.hypot(s.x / widthPt - t.x, s.y / widthPt - t.y) <= (s.radius / widthPt) * 1.2) &&
+      !sheetRefs.some((r) => Math.hypot(r.x - t.x, r.y - t.y) <= near),
+  );
+  const direct = tagByRun(walls, [...fromSymbols.tags.map(asLegend), ...bareTags, ...loose], feetPerUnit, wallTypes);
   const carried = propagateTypes({ walls, tagged: direct, feetPerUnit, defaultCode: null });
   const byRun = new Map<WallCandidate, string>(direct);
   let propagated = 0;
