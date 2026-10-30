@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ceilingSummary, ceilingsForRooms } from "./roomCeilings";
+import { alignCeilingPage, ceilingSummary, ceilingsForRooms } from "./roomCeilings";
 import type { PositionedText } from "./roomTags";
 import type { RoomFromWalls } from "./roomsFromWalls";
 
@@ -55,5 +55,48 @@ describe("ceilingsForRooms", () => {
       { label: "gypsum board", family: "GYP", squareFeet: 30 },
       { label: "no ceiling read", family: "unknown", squareFeet: 10 },
     ]);
+  });
+});
+
+describe("the same footprint on the ceiling plan — alignment, position join, hatch", () => {
+  // Three floor rooms; the RCP prints its room tags at the same places, so it is aligned at zero shift.
+  const rooms = [room(0, "CLASSROOM", "123", 0.2, 0.2), room(1, "HALL", "138", 0.4, 0.2), room(2, "STORAGE", null, 0.6, 0.2)];
+  rooms[2]!.tag = null; // the floor plan never tagged the third room
+  const rcpTags = [t("CLASSROOM", 0.2, 0.2), t("123", 0.202, 0.205), t("HALL", 0.4, 0.2), t("138", 0.402, 0.205), t("STORAGE", 0.6, 0.2), t("139", 0.602, 0.205)];
+  const title = t("OVERALL REFLECTED CEILING PLAN", 0.5, 0.95, 14);
+  /** A 2x2 grid hatch over one room: lines every 2 ft (288 ft per page width) inside its 0.06 box. */
+  const grid = (x: number, y: number) => {
+    const out: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    for (let i = -0.028; i <= 0.028; i += 2 / 288) {
+      out.push({ x1: x - 0.03, y1: y + i, x2: x + 0.03, y2: y + i });
+      out.push({ x1: x + i, y1: y - 0.03, x2: x + i, y2: y + 0.03 });
+    }
+    return out;
+  };
+  it("aligns a ceiling plan whose room tags land inside the floor plan's rooms, and not one drawn elsewhere", () => {
+    const here = alignCeilingPage({ pageNumber: 48, widthPt: W, items: [title, ...rcpTags] }, rooms);
+    expect(here).toMatchObject({ dx: 0, dy: 0, hits: 3 });
+    const shifted = alignCeilingPage({ pageNumber: 48, widthPt: W, items: [title, ...rcpTags.map((i) => ({ ...i, x: i.x + 0.1 * W, y: i.y + 0.05 * W }))] }, rooms);
+    expect(shifted).toMatchObject({ hits: 3 });
+    // Any shift within half a room box lands all three; the search returns the first such.
+    expect(shifted!.dx).toBeCloseTo(0.1, 1);
+    expect(shifted!.dy).toBeCloseTo(0.05, 1);
+    const elsewhere = alignCeilingPage({ pageNumber: 48, widthPt: W, items: [title, t("OFFICE", 0.8, 0.8), t("201", 0.802, 0.805), t("OFFICE", 0.9, 0.8), t("202", 0.902, 0.805), t("OFFICE", 0.8, 0.9), t("203", 0.802, 0.905)] }, rooms);
+    expect(elsewhere).toBeNull();
+  });
+  it("gives an untagged floor room the ceiling tag the RCP printed inside it, and reads the family off the hatch when the tag is only a height", () => {
+    const rcp = {
+      pageNumber: 48,
+      widthPt: W,
+      items: [title, ...rcpTags, t("9'-0\"", 0.6, 0.21), t("ACT", 0.603, 0.215), t("10'-0\"", 0.2, 0.21)],
+      strokes: grid(0.2, 0.2),
+    };
+    const out = ceilingsForRooms({ rooms, current: { pageNumber: 46, widthPt: W, items: [t("CLASSROOM", 0.2, 0.2), t("123", 0.202, 0.205), t("HALL", 0.4, 0.2), t("138", 0.402, 0.205)] }, feetPerUnit: 288, others: [rcp] });
+    // STORAGE: no floor tag; the RCP's "139 / 9'-0" ACT" sits inside it.
+    expect(out.get(2)).toMatchObject({ family: "ACT", heightFeet: 9, from: "tag", page: 48 });
+    // CLASSROOM: its tag says 10'-0" and nothing else; the 2x2 grid drawn over it on the RCP says ACT.
+    expect(out.get(0)).toMatchObject({ family: "ACT", heightFeet: 10, from: "pattern", page: 48 });
+    // HALL: no tag, no hatch — nothing is invented.
+    expect(out.get(1)).toMatchObject({ family: null });
   });
 });
