@@ -5,7 +5,7 @@ import { storedRasterFor } from "@/lib/plan-ingest/raster";
 import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
 import { pagesToSample } from "./sheetTemplate";
 import { inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
-import { detectForSheet } from "./offeredCandidates";
+import { detectForSheet, offeredCandidates } from "./offeredCandidates";
 import { SheetTooDenseError, type StrokeSegment } from "./wallVectors";
 import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
@@ -250,7 +250,27 @@ export async function detectWallsForCalibration(
       sampledSheets: sampleFailed ? null : sampledSheets,
       ...(planText === undefined ? {} : { planText }),
     });
-    const found = detected.found;
+    // ── AND THE SAME SET-ASIDES THE VIEWER APPLIES, NOT THE FINDER'S RAW RUNS ──
+    //
+    // `detectForSheet` is only half of what the viewer shows. The other half
+    // is `offeredCandidates`: the legend box, the dashed faces, the title
+    // underline, the schedule rows, the site equipment, the existing wall —
+    // each set aside with its reason. This posted `found.groups` straight
+    // from the finder, so NONE of that reached a whole-set estimate while
+    // every one of them was measured and shipped against the viewer's list.
+    // Same call, same arguments as `TakeoffPlanViewer`; the stage then
+    // regroups what survived with the finder's own grouping.
+    const W = strokes.widthPt;
+    const offered = offeredCandidates({
+      walls: detected.found.walls,
+      segments: detected.found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })),
+      pageSegments: strokes.segments,
+      widthPt: W,
+      feetPerUnit: target.feetPerUnit,
+      planBoxes: detected.planBoxes,
+      textItems,
+    });
+    const found = { ...detected.found, walls: offered.offeredRuns, groups: detected.found.regroup(offered.offeredRuns) };
     // The groups: the finder's own when it paired with the thicknesses, else
     // rebuilt here with them — same runs, same feet, named with the types.
     const groups = pairWithThicknesses

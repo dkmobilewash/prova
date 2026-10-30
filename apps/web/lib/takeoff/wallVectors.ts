@@ -110,6 +110,12 @@ export type StrokeSegment = {
    * `sheetStrokes.ts`. Carried by `inPageWidthUnits` like `layer` is.
    */
   gray?: number;
+  /**
+   * The FILL's luminance when this edge belongs to a filled path — a poché
+   * wall's grey, a hatch swatch's white — 0 black to 1 white; absent on a
+   * stroked line. Set by `sheetStrokes.ts`, read by `existingWalls.ts`.
+   */
+  fill?: number;
 };
 
 /** A wall this module is willing to claim: the centreline, in page points. */
