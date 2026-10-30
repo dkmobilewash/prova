@@ -139,8 +139,8 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Invoices / pay applications",
     // `status` added #525 — an invoice export with no status cannot tell a
     // draft from one a GC has been sent, on the file a person reconciles from.
-    columns: ["id", "jobId", "number", "description", "amount", "status", "issuedAt", "dueAt", "retainageWithheld"],
-    note: "retainageWithheld is what was held on that application, not a running balance.",
+    columns: ["id", "jobId", "number", "description", "amount", "status", "issuedAt", "periodTo", "dueAt", "retainageWithheld"],
+    note: "retainageWithheld is what was held on that application, not a running balance. periodTo is the G702 period-ending date, blank on applications before 2026-10-30.",
     scope: byJob,
   },
   {

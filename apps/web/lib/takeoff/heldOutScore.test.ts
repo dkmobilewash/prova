@@ -395,6 +395,21 @@ describe("a wall both traced and accepted is counted once", () => {
     expect(feet, "the wall was counted twice").toBeCloseTo(100, 0);
   });
 
+  it("counts both accepted faces of one wall once, and keeps the longer", () => {
+    const faces = { verdicts: [v(0, 40, "wall"), { ...v(0, 100, "wall"), y1: 0.5, y2: 0.5 }] };
+    const got = keyFromLabels(faces, FPU);
+    expect(got.key).toHaveLength(1);
+    expect(got.acceptedFoldedIn).toBe(1);
+    expect(got.key[0]?.lengthFeet, "the short face survived and the long one was lost").toBe(100);
+  });
+
+  it("keeps accepted walls that are separate, and one only partly covered", () => {
+    const apart = keyFromLabels({ verdicts: [v(0, 100, "wall"), { ...v(0, 100, "wall"), y1: 8, y2: 8 }] }, FPU);
+    expect(apart.key, "two walls across a corridor became one").toHaveLength(2);
+    const partly = keyFromLabels({ verdicts: [v(0, 100, "wall"), v(50, 180, "wall")] }, FPU);
+    expect(partly.key, "the 80 ft nothing else covers was dropped").toHaveLength(2);
+  });
+
   it("keeps a trace that NO accepted wall covers", () => {
     const got = keyFromLabels({ verdicts: [v(0, 100, "wall"), v(200, 260, "traced")] }, FPU);
     expect(got.key).toHaveLength(2);
