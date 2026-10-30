@@ -4120,3 +4120,122 @@ Sweep vs main `ca376067`, labels snapshotted at 04:22 (Chrome was re-judging
 sheets): Joplin G-101 extra 819 → 343, A-101 1,007 → 786, **697 ft of junk
 removed, 0 ft of real lost**, every other sheet byte-identical, held-out
 delta 0 / 0.
+
+## An existing wall is not a wall to take off — 2026-10-30 (second session, `diego/existing-walls`)
+
+Diego's rule for the keys, the same day: a wall counts if it is NEW work,
+not if it is existing. Chrome is flipping existing and NIC walls to
+not-wall on KSU, Central Bank, SLN, Gen BBQ and others, because earlier
+rounds keyed them as walls. This is the product side of the same rule:
+`existingWalls.ts`, called from `offeredCandidates`, sets a run aside under
+one kind, `existing`, with the words on the sheet that said so.
+
+Three routes, each read in code from the sheet's own text and ink:
+
+1. **A tag beside the wall.** `(E)`, `(E) WALL`, `EXIST. 8" CMU WALL`,
+   `EXISTING WALL TO REMAIN`, `WALL TO REMAIN`, within 3 ft of the run —
+   the reach `bareTextTags` gives a bare type code. The sheet's words are
+   first joined into rows (`textRows`), because a PDF hands over EXISTING /
+   WALL / TO / REMAIN as four items as often as one. A room name such as
+   `(E) OFFICE` is NOT a wall tag; a long note that happens to start with
+   EXISTING is not one either (the tag must name a wall, in six words or
+   fewer).
+2. **An area the sheet marks.** `NIC`, `N.I.C.`, `NIC - REFER TO ARCH
+   PLANS`, `NOT IN CONTRACT`, `NO WORK THIS AREA`, `EXISTING BUILDING (NIC)`,
+   `LIMITED SCOPE`, `EXISTING TO REMAIN`, or a room named `(E) STORAGE`. The
+   `(E)` form only for a room name: `EXISTING <word>` was accepted first
+   and, read off the training sheets' own text, it is the first row of a
+   note split across lines far more often than a room — `EXISTING FIXED`
+   (window), `EXISTING RIGID` (insulation), `EXISTING SIDEWALK`, `EXISTING
+   GYP. BD.` — and a note inside a new room would mark the room. `EXISTING
+   CORRIDOR` as a room name is the recorded cost. The rooms are closed from the
+   finder's own runs by `roomsFromWalls` (only when such a label exists, so
+   most sheets pay nothing), the label is placed in one, and a run is
+   existing when EVERY room it bounds is marked. A run between a marked room
+   and an unmarked one stays offered: it may be the new wall that closes the
+   scope off, and nothing on the sheet says which. A label that lands in no
+   closed room marks nothing — the safe failure on a leaky plan.
+3. **The legend's own pen.** A legend row that IS the words `EXISTING
+   WALL` / `EXISTING WALL TO REMAIN` / `EXISTING CONSTRUCTION` (a whole short
+   row, never a note sentence — the first regex matched "ALL EXISTING
+   MASONRY DOOR JAMBS SCHEDULED TO…" and "EXISTING WALL FURROUT", neither a
+   sample) has a drawn sample to its left, within eight text heights. The
+   sample's pen — grey level, line width, three-or-more collinear pieces for
+   a dash, or the FILL's grey when the sample is a filled band — is what this
+   sheet draws existing walls with. A run whose face strokes carry that pen
+   over 60% of their length (for a fill: filled edges along 60% of its
+   length) is existing. **Grey alone is never enough**: a line pen is matched
+   on grey AND width (within 0.1 and 25%), a fill on the fill's grey, and
+   either must differ from the NEW WALL swatch's pen or, with no new-wall
+   row, from the pen most of the sheet's walls are drawn with — a legend
+   whose two samples share a pen, or a sheet mostly drawn in the "existing"
+   pen, sets nothing aside. A sample of three or more oblique pieces is a
+   hatch and one with a pen wider than the text is a poché, and neither
+   names a pen: deriving one from the hatch's ticks would hand a thin black
+   pen to every new wall drawn in thin black (Supreme Court A111 draws
+   EXISTING CONSTRUCTION as poché with ticks).
+
+   **Three things the real sheets taught on the way, each a crop or a
+   probe rather than a guess.** (a) The sample is not in the finder's stroke
+   list: `detectForSheet` clips a one-drawing sheet to its busiest region and
+   the legend sits outside it — Bunkie A100's and Murray A101's EXISTING WALL
+   samples are in the page's strokes and in none of `found.inUnits`. So
+   `DetectedSheet` grew an optional `pageSegments` (every stroke on the page)
+   that only this route reads; the viewer, the sweep and `zzExisting` pass
+   it. (b) On both those sheets the sample is a GREY FILL between two black
+   outlines, and so are the plan's existing walls — the outline pen is the
+   same black as the new walls', and the fill is the whole signal. The stroke
+   reader threw fill colour away, so `sheetStrokes` now tracks the fill
+   colour beside the stroke colour and marks the edges of a filled path (`f`,
+   `f*`, `B`, `B*`, `b`, `b*`) with `fill`, its luminance; `StrokeSegment`,
+   `inPageWidthUnits` and the stroke-field census carry it. (c) Existing is
+   judged AFTER the legend-box rule, on what would otherwise be offered: the
+   first draft judged it inside the on-plan loop, and a legend's EXISTING
+   WALL row sitting a foot from the frame's left upright would have taken
+   the upright as "existing" and left the frame unrecognised, with the wall
+   samples inside it offered again. A test pins that frame.
+
+Layer-named existing walls (`A-WALL-E`, `A-EXIST`, `NIC`) were already
+dropped before the pairer by `layerNames.ts`; this is for the flattened
+plots, which is most of what arrives. The third session, which owns the
+legend read, has been asked for an `existing` entry on `WallLegendRead` (the
+legend's existing-wall row verbatim); until it exists the row is found by
+regex, so nothing blocks on it.
+
+Twenty unit tests on synthetic sheets, plus two on the stroke reader: each
+regex's yes and no lists taken from the real sheets' phrasing; a tag at 1 ft
+and at 4 ft; two rooms with their own walls where NIC in one room takes its
+three own walls and leaves the shared wall and the other room's; the same
+with both rooms marked (all seven); a legend whose grey 0.5 pt swatch takes
+the grey 0.5 pt wall and leaves the black wall AND the grey-but-heavy wall;
+a filled grey sample taking the grey-filled wall and not the white-filled
+one; a keynote hexagon, a hatched sample and a poché reading no pen; the
+sample read from the page's strokes when the finder's list has no legend;
+no legend, a legend whose samples share a pen, and a sheet mostly drawn in
+the legend's existing pen, each taking nothing; the framed legend keeping
+its frame; `offeredCandidates` naming the kind, the reason and the length;
+and `segmentsFromOpenPage` marking filled, even-odd-filled and
+fill-and-stroked paths with the fill in force and a stroked path with none.
+
+**WHAT FIRES, BEFORE ANY SCORING.** `zzExisting.eval.ts` with `EX_WORDS=1`
+read every labelled sheet's own text (snapshot `labels-snap-20261030T0754`)
+and that inventory shaped every regex above: the yes and no lists in the
+tests are the sheets' phrasing. The routes fire on six of the 36 training
+sheets — Baker A100 (8 tag, 25 area), E Street A2.1 (9 tag, 7 area),
+Murray A101 (78 legend: the whole existing building, read off the grey
+poché the legend declares), Supreme Court A111 (27 legend: its existing
+masonry, grey poché against a white-filled NEW CONSTRUCTION sample — the
+sheet the banded-fill note already named), NG McAllen A3.2 (1 tag, `(E)
+DEMISING`), glen-hazel A-111 (12 area, `N.I.C.`); training totals 18 tag,
+44 area, 105 legend. The held-out total is 29 runs, all by the area route.
+Bunkie A100's legend sample reads (fill 0.75, 3 to 9 text heights out)
+and matches no run. Counts only, on purpose: the labels' verdicts on these runs are the
+pre-cleanup keys, which hold existing walls, and reading them now is
+reading the thing Chrome is fixing.
+
+**NOT MEASURED ON REAL SHEETS YET, ON PURPOSE.** The keys still hold the
+existing walls Chrome is cleaning out, and against those every set-aside
+here reads as a miss. Once the cleanup round closes: snapshot the labels,
+run `realplan/zzExisting.eval.ts` (per training sheet by route, real / junk
+/ unverdicted; held-out as one unnamed total) and the 52-sheet sweep against
+main; shipping rule per building. The numbers go here when they exist.
