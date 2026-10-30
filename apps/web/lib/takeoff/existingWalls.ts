@@ -57,15 +57,28 @@ const EXIST = String.raw`(?:\(E\)|EXIST(?:ING|'G|G\.|\.)?)`;
 const WALL_WORD = String.raw`(?:WALLS?|PARTITIONS?|DEMISING|CMU|MASONRY|BRICK)`;
 /** `EXISTING TOILET PARTITION`, `EXISTING MIRROR`: a fixture, however the word reads. */
 const FIXTURE = /\b(?:TOILET|URINAL|MIRROR|SHOWER|CURTAIN)\b/i;
-/** A short label naming an existing WALL: `(E)`, `(E) WALL`, `EXIST. 8" CMU WALL`, `EXISTING WALL TO REMAIN`, `WALL TO REMAIN`. */
+/**
+ * A short label naming an existing WALL: `(E) WALL`, `(E) DEMISING`, `EXIST.
+ * 8" CMU WALL`, `EXISTING WALL TO REMAIN`, `WALL TO REMAIN`. A bare `(E)` is
+ * NOT one: measured on the cleaned labels (2026-10-30, E Street A2.1) a bare
+ * `(E)` two feet from a run marks an existing door, column or fixture beside
+ * a NEW wall as often as the wall — 120 ft of real wall against 115 of junk
+ * across the training sheets — so the tag has to say what it names.
+ */
 export const WALL_TAG = new RegExp(
-  String.raw`^(?:\(E\)|${EXIST}(?:\s+[A-Z0-9"'/.\-]+){0,3}\s+${WALL_WORD}(?:\s+TO\s+REMAIN)?\.?|(?:${EXIST}\s+)?${WALL_WORD}\s+TO\s+REMAIN\.?)$`,
+  String.raw`^(?:${EXIST}(?:\s+[A-Z0-9"'/.\-]+){0,3}\s+${WALL_WORD}(?:\s+TO\s+REMAIN)?\.?|(?:${EXIST}\s+)?${WALL_WORD}\s+TO\s+REMAIN\.?)$`,
   "i",
 );
-/** A label marking an AREA as out of this contract: the marker, then at most five more words (`NIC - REFER TO ARCH PLANS`, `NIC, TYP ALL`). */
+/**
+ * A label marking an AREA as out of this contract: the marker alone, or
+ * followed by a reference (`NIC - REFER TO ARCH PLANS`, `NIC (SEE A-101)`).
+ * `NIC, TYP ALL` is not one — on E Street A2.1 it annotates the furniture,
+ * and read as an area it took 144 ft of new wall for 9 ft of junk on the
+ * cleaned labels. TYP, ALL and an item word after the marker mean an item.
+ */
 export const AREA_LABEL = new RegExp(
   String.raw`^(?:AREA\s+)?["']?(?:N\.?\s?I\.?\s?C\.?|NOT\s+IN\s+(?:THIS\s+)?CONTRACT|NO\s+WORK(?:\s+(?:IN\s+)?THIS\s+AREA)?|LIMITED\s+SCOPE|EXISTING\s+(?:BUILDING|SPACE|AREA|TENANT|STRUCTURE|FACILITY|CONSTRUCTION)(?:\s+TO\s+REMAIN)?|EXISTING\s+TO\s+REMAIN)(?![A-Z])["']?` +
-    String.raw`(?:[\s\-–—(:,.]+(?:\S+\s*){0,5})?$`,
+    String.raw`(?:[\s\-–—(:,.]*\(?(?:N\.?I\.?C\.?|NO\s+WORK(?:\s+THIS\s+AREA)?|TO\s+REMAIN)\)?\.?)?(?:[\s\-–—(:,.]+(?:REFER|SEE|RE:|PER)\b.*)?$`,
   "i",
 );
 /**
