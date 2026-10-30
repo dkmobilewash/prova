@@ -118,6 +118,45 @@ describe("window symbols", () => {
     expect(two).toHaveLength(2);
   });
 
+  it("NEEDS GLASS INSIDE THE WALL: the wall's two faces plus a parallel line beside it are not a window", () => {
+    // Joplin's 13–15 ft "windows": the north wall's faces (±4 in of an 8 in
+    // wall) and a roof line 10 in outside, all stopping at the same piers.
+    const facesAndRoof: StrokeSegment[] = [
+      { x1: 0.5, y1: 0.4 - ft(0.33), x2: 0.64, y2: 0.4 - ft(0.33) },
+      { x1: 0.5, y1: 0.4 + ft(0.33), x2: 0.64, y2: 0.4 + ft(0.33) },
+      { x1: 0.5, y1: 0.4 - ft(0.83), x2: 0.64, y2: 0.4 - ft(0.83) },
+    ];
+    expect(windowSymbols(facesAndRoof, box, FPU)).toHaveLength(0);
+    // The same three lines sitting entirely outside the wall are not one either.
+    const beside = facesAndRoof.map((l) => ({ ...l, y1: l.y1 - ft(1), y2: l.y2 - ft(1) }));
+    expect(windowSymbols(beside, box, FPU)).toHaveLength(0);
+    // Frame, glass, frame inside the wall is (the test above), and a tag beside
+    // the faces-and-roof pattern overrides the rule: the drawing says window.
+    expect(windowSymbols(facesAndRoof, box, FPU, [{ x: 0.57, y: 0.4 - ft(3) }])).toHaveLength(1);
+  });
+
+  it("gives a tag to the NEAREST candidate only, and to the lites drawn like it", () => {
+    // A 4 ft window at x 0.50–0.54 and, abutting it, a 6 ft piece of cavity
+    // wall drawn with its own inner lines (x 0.54–0.60), both in the north
+    // wall. One G tag over the window. The wall piece has lines outside the
+    // wall, so it lives or dies by the tag — and the tag is the window's.
+    const window = triple(0.4);
+    const cavity: StrokeSegment[] = [-0.33, -0.1, 0.1, 0.33, 0.75].map((o) => ({ x1: 0.5405, y1: 0.4 + ft(o), x2: 0.6, y2: 0.4 + ft(o) }));
+    const tag = [{ x: 0.52, y: 0.4 - ft(2) }];
+    const got = windowSymbols([...window, ...cavity], box, FPU, tag);
+    expect(got).toHaveLength(1);
+    expect(got[0]!.widthFeet).toBeCloseTo(4, 1);
+    // Three lites of a glass partition, each drawn with the same three lines
+    // but all of them outside the found wall, one tag over the middle lite:
+    // the tag names the storefront, so all three are kept and joined.
+    const lite = (x1: number, x2: number) => triple(0.4 - ft(1), x1, x2);
+    const storefront = [...lite(0.5, 0.54), ...lite(0.5433, 0.5833), ...lite(0.5867, 0.6267)];
+    expect(windowSymbols(storefront, box, FPU)).toHaveLength(0);
+    const tagged = windowSymbols(storefront, box, FPU, [{ x: 0.563, y: 0.4 - ft(3.5) }]);
+    expect(tagged).toHaveLength(1);
+    expect(tagged[0]!.widthFeet).toBeCloseTo(12.67, 1);
+  });
+
   it("ignores staggered lines — a hatch along the wall — that do not stop together", () => {
     const staggered: StrokeSegment[] = [
       { x1: 0.5, y1: 0.4 - ft(0.33), x2: 0.54, y2: 0.4 - ft(0.33) },
