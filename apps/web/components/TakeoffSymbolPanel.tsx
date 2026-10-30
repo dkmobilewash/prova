@@ -30,6 +30,7 @@ export function TakeoffSymbolPanel({
   jobId,
   planId,
   pageId,
+  pageNumber,
   itemId,
   state,
   across,
@@ -41,7 +42,9 @@ export function TakeoffSymbolPanel({
 }: {
   jobId: string;
   planId: string;
-  pageId: string;
+  /** Null on a sheet with no page row yet; the save makes one from `pageNumber`. */
+  pageId: string | null;
+  pageNumber: number;
   itemId: string | null;
   state: { matches: SymbolMatch[]; dropped: Set<number>; ms: number; busy: boolean; error: string | null; label?: string | null; tag?: string | null };
   /** The across-the-set walk, once started. */
@@ -55,7 +58,7 @@ export function TakeoffSymbolPanel({
   const [label, setLabel] = useState("");
   const [scope, setScope] = useState<SheetScope>("discipline");
   const [error, setError] = useState<string | null>(null);
-  const [acrossSaved, setAcrossSaved] = useState<{ total: number; sheets: number; skipped: { pageNumber: number; count: number; why: string }[] } | null>(null);
+  const [acrossSaved, setAcrossSaved] = useState<{ total: number; sheets: number } | null>(null);
   const [isPending, startTransition] = useTransition();
   const kept = state.matches.filter((_, i) => !state.dropped.has(i));
   const acrossTotal = across?.rows.reduce((t, r) => t + r.count, 0) ?? 0;
@@ -66,14 +69,16 @@ export function TakeoffSymbolPanel({
     startTransition(async () => {
       const result = await saveSymbolCountAcrossSheets(jobId, planId, { label: label.trim(), itemId, sheets });
       if (!result.ok) return setError(result.error);
-      setAcrossSaved({ total: result.value.total, sheets: result.value.saved.length, skipped: result.value.skipped });
+      setAcrossSaved({ total: result.value.total, sheets: result.value.saved.length });
       if (result.value.saved[0]) onSaved({ id: result.value.saved[0].measurementId });
     });
   };
   const save = () => {
     if (!label.trim()) return setError("Name what you're counting — that name becomes the line item.");
     const body = new FormData();
-    body.set("pageId", pageId);
+    if (pageId) body.set("pageId", pageId);
+    body.set("planId", planId);
+    body.set("pageNumber", String(pageNumber));
     body.set("kind", "COUNT");
     body.set("label", label.trim());
     if (itemId) body.set("itemId", itemId);
@@ -197,9 +202,6 @@ export function TakeoffSymbolPanel({
                   {acrossSaved && (
                     <p className="mt-1 text-ink-muted" data-takeoff="symbol-across-saved">
                       Saved {acrossSaved.total} on {acrossSaved.sheets} sheets as one count.
-                      {acrossSaved.skipped.length > 0 && (
-                        <> Not saved: {acrossSaved.skipped.map((s) => `p${s.pageNumber} (${s.count}) — ${s.why}`).join("; ")}.</>
-                      )}
                     </p>
                   )}
                 </>
