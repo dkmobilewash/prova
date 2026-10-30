@@ -7,6 +7,7 @@ import { viewerToday } from "@/lib/viewerToday";
 import { prisma } from "@prova/db";
 import { reopenBlockers } from "@/lib/change-order";
 import { causeLabel, formatMinutes, methodLabel, partyLabel } from "@/lib/delays-core";
+import { tmTicketDraftDescription, tmTicketDraftTitle } from "@/lib/tm-ticket-change-order";
 import { Prisma } from "@prova/db";
 import {
   InputError,
@@ -319,6 +320,77 @@ export async function draftChangeOrderFromDelay(delayId: string): Promise<Action
     });
 
     revalidatePath(`/jobs/${delay.jobId}`);
+  });
+}
+
+/**
+ * Starts a DRAFT change order from a signed T&M ticket — the same move as
+ * `draftChangeOrderFromDelay`, from the other piece of evidence a sub
+ * collects on site. The title and description are the ticket's FROZEN
+ * snapshot (hours per worker, materials, who signed and when), so the
+ * draft says what the GC's representative signed for rather than what the
+ * time entries read today. Nothing is priced and no proposals are created:
+ * how hours become a sell price is an open decision
+ * (coordination/decisions/2026-10-30-change-order-markup-and-burden.md),
+ * so the person prices it on the change-order form as they would any draft.
+ * The ticket keeps a link to it and can start only one.
+ *
+ * MANAGE_FIELD, unlike the delay draft, which asserts nothing: the delay
+ * log sits on the Overview tab in a section that withholds nothing, while
+ * the T&M tickets section of the crew tab is withheld behind MANAGE_FIELD
+ * (`showsField`), and an action behind a withheld section answers to the
+ * same capability — action-capability-guards.test.ts, SECTION_DECIDED.
+ */
+export async function draftChangeOrderFromTmTicket(ticketId: string): Promise<ActionResult> {
+  return runAction(async () => {
+    const context = await requireCompanyContext();
+    if (!can(context, "MANAGE_FIELD")) {
+      throw new InputError(
+        "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.",
+      );
+    }
+    const { company } = context;
+    const ticket = await prisma.tmTicket.findUnique({ where: { id: ticketId } });
+    if (!ticket || ticket.companyId !== company.id) throw new InputError("That ticket is gone. Reload the page.");
+    if (ticket.changeOrderId) throw new InputError("A change order was already drafted from this ticket.");
+    const job = await requireJob(ticket.jobId, company.id);
+    requireEditableViaChangeOrder(job);
+
+    const day = ticket.workDate.toISOString().slice(0, 10);
+    // Photos captured on this job on the work date. The ticket holds none
+    // itself; the draft points at the day's.
+    const dayStart = new Date(`${day}T00:00:00.000Z`);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const photoCount = await prisma.jobMedia.count({
+      where: { jobId: ticket.jobId, capturedAt: { gte: dayStart, lt: dayEnd } },
+    });
+
+    const title = tmTicketDraftTitle({ day, workDescription: ticket.workDescription });
+    const description = tmTicketDraftDescription({
+      day,
+      workDescription: ticket.workDescription,
+      snapshot: ticket.snapshot,
+      signerName: ticket.signerName,
+      signedAtText: siteMoment(ticket.signedAt, job.siteTimeZone),
+      hasDrawnSignature: ticket.signaturePath !== null,
+      photoCount,
+    });
+
+    await prisma.$transaction(async (tx) => {
+      const number = await issueChangeOrderNumber(tx, ticket.jobId);
+      const changeOrder = await tx.changeOrder.create({
+        data: { jobId: ticket.jobId, number, title, description, status: "DRAFT" },
+      });
+      // Conditional, so two clicks cannot both link a change order: the
+      // second finds the link already set and rolls its draft back.
+      const { count } = await tx.tmTicket.updateMany({
+        where: { id: ticket.id, changeOrderId: null },
+        data: { changeOrderId: changeOrder.id },
+      });
+      if (count === 0) throw new InputError("A change order was already drafted from this ticket.");
+    });
+
+    revalidatePath(`/jobs/${ticket.jobId}`);
   });
 }
 
