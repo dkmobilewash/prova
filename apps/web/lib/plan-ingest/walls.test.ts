@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { areaOfTitle, roomsNoteFor, wallsNoteFor, wallsPlan, wallsSkipReason, wallsSummaryRows, type WallsSheet } from "./walls";
-87188cc1 (Rooms and ceilings for every floor plan the whole-set run counts)
 
 const sheet = (over: Partial<WallsSheet> = {}): WallsSheet => ({
   pageNumber: 1,
