@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FEATURE_NAMES } from "./wallFeatures";
 
@@ -33,5 +34,42 @@ describe("the shipped wall model's columns", () => {
     if (file === "" || !existsSync(file)) return;
     const model = JSON.parse(readFileSync(file, "utf8")) as { features?: string[] };
     expect(model.features).toEqual([...SHIPPED_MODEL_COLUMNS]);
+  });
+});
+
+/**
+ * ── EVERY MODEL FILE IN THE REPO, NOT ONLY THE ONE THE DEPLOY NAMES ──
+ *
+ * The e2e suite's invented model (`e2e/fixtures/wall-model.invented.json`)
+ * is a second model file, and when `FEATURE_NAMES` grew to 28 it kept its
+ * 24 columns: `loadWallModel` refused it, the demote specs had nothing to
+ * demote by, and #851 went red on CI while the guard above was green —
+ * "a completeness check cannot see a second list", one file over. So every
+ * JSON under apps/web that declares `gbdt-binary-v1` is held to the same
+ * columns, and the walk asserts it found at least the two it knows about.
+ */
+function modelFiles(dir: string, out: string[] = []): string[] {
+  for (const name of readdirSync(dir)) {
+    if (name === "node_modules" || name.startsWith(".next") || name === ".git") continue;
+    const full = join(dir, name);
+    const st = statSync(full);
+    if (st.isDirectory()) modelFiles(full, out);
+    else if (name.endsWith(".json") && st.size < 50_000_000) {
+      let text: string;
+      try { text = readFileSync(full, "utf8"); } catch { continue; }
+      if (text.includes('"gbdt-binary-v1"')) out.push(full);
+    }
+  }
+  return out;
+}
+
+describe("every gbdt-binary-v1 model file in apps/web", () => {
+  it("CARRIES THIS BUILD'S COLUMNS, IN ORDER — the committed model and the e2e fixture both", () => {
+    const files = modelFiles(join(__dirname, "..", ".."));
+    expect(files.length, "the walk found fewer model files than the repo is known to hold").toBeGreaterThanOrEqual(2);
+    for (const file of files) {
+      const model = JSON.parse(readFileSync(file, "utf8")) as { features?: string[] };
+      expect(model.features, file).toEqual([...SHIPPED_MODEL_COLUMNS]);
+    }
   });
 });
