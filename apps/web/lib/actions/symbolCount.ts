@@ -9,6 +9,9 @@ import { applyPrintedScales } from "./takeoff";
 
 const SETTINGS_ONLY =
   "The company's settings aren't part of your job function. The account owner sets who sees what, on the Team page.";
+/** The same words every takeoff action refuses with — the capability census reads the sentence, not the intent. */
+const JOB_COSTS_ONLY =
+  "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
 /** "Find all like this": the per-company switch, OFF until the owner turns it on. */
 export async function saveSymbolCountSwitch(formData: FormData): Promise<ActionResult> {
@@ -55,7 +58,7 @@ const MAX_POINTS = 5000;
 
 export async function saveSymbolCountAcrossSheets(jobId: string, planId: string, input: AcrossSheetsInput): Promise<ActionResultWith<AcrossSheetsResult>> {
   const context = await requireCompanyContext();
-  if (!can(context, "VIEW_JOB_COSTS")) return actionFail("Only someone who can see job costs can save a count.");
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company, id: userId } = context;
   const plan = await prisma.takeoffPlan.findFirst({ where: { id: planId, jobId, companyId: company.id }, select: { id: true } });
   if (!plan) return actionFail("That plan is no longer on this job. Reload the page.");
