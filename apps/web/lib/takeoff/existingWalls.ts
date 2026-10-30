@@ -189,7 +189,7 @@ export function legendPens(rows: readonly TextRow[], segments: readonly StrokeSe
 }
 
 /** The strokes lying along one face of the wall (`side` +1 or −1). */
-function faceStrokes(wall: WallCandidate, side: 1 | -1, segments: readonly StrokeSegment[], feetPerUnit: number): StrokeSegment[] {
+export function faceStrokes(wall: WallCandidate, side: 1 | -1, segments: readonly StrokeSegment[], feetPerUnit: number): StrokeSegment[] {
   const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
   const l = Math.hypot(dx, dy);
   if (l === 0) return [];
