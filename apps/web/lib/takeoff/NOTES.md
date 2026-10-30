@@ -4370,3 +4370,99 @@ on the cleaned keys reads 96% precision on training and 89% on held-out,
 both fine. A retrain is worth repeating when more sheets carry the existing
 set-aside's own column, which is the signal the cleanup actually added.
 
+
+## How training sheets draw existing against new, without words — 2026-10-30 (second session, `diego/existing-style`)
+
+Against new-work-only keys most offered junk is existing walls on
+renovation sheets, and the word-reading set-aside fires on no held-out
+sheet. So `realplan/zzExistingCensus.eval.ts`: for every OFFERED paired run
+on a training sheet (product path, every set-aside on, the four notes-only
+sheets excluded, snapshot `labels-snap-20261030T2027`), its verdict by the
+labels and its drawing style — filled between the faces or outline, the
+fill's grey, the faces' pen grey and width, a dashed face, hatch between
+the faces, the layer — tallied per sheet and per binary split.
+
+**Training, paired runs offered: 55,698 ft; junk 14,255 (26%), real
+39,074, unverdicted 2,369.** (The 62% headline is per offered footage of
+every kind on the scorecard's path; this is the paired-run product list
+with the set-asides already applied, so the denominators differ.)
+
+**Which conventions hold within a sheet** — both sides of a split carrying
+at least 15% of the sheet's offered feet, and one side at least 80% junk:
+
+| convention | sheets where it holds | junk it would take | real it would cost | where |
+| --- | --- | --- | --- | --- |
+| outline = existing (sheet also draws filled walls) | 4 | 2,057 | 117 | Camp Bow Wow A101/A104, Bunkie A100, Green Bay A3.2 |
+| white/no fill = existing (sheet also fills grey) | 4 | 1,425 | 26 | Camp Bow Wow A101/A102, Bunkie A100, Supreme A111 |
+| grey pen = existing (sheet also draws black) | 5 | 1,197 | 91 | Baker A100, E Street A2.1, Camp Bow Wow A103/A104/A120 |
+| not-heavy pen = existing (sheet has heavy walls) | 4 | 979 | 109 | Bunkie A100, Fairgrounds A-101, Camp Bow Wow A103/A120 |
+| a dashed face = existing | 4 | 378 | 11 | Bunkie A100/A104, Fairgrounds, Supreme |
+| layer name | 0 | — | — | two training sheets carry layers at all, neither an existing layer |
+
+**And the same conventions where they do NOT hold, which is the part that
+decides.** Simulated as sheet-relative rules — fire only when both styles
+carry ≥15% (or 20%) of the sheet's footage — per building:
+
+- **Fill / outline is the biggest by footage and the direction is not
+  consistent.** Camp Bow Wow and Bunkie draw new walls as poché and the
+  existing building as outline (outline = existing: 2,399 / 370 and 645 /
+  55). Joplin, ELEVEN03, MHK, Crosslines, SW and HPL draw NEW partitions as
+  outline and only masonry filled (outline = existing would cost 1,051,
+  4,906, 493, 1,651, 842 and 158 ft of real). As a sheet-relative rule it
+  fires on 21 sheets, takes 8,285 ft of junk for 9,992 of real and fails
+  nine buildings. The opposite direction fails eleven. **Not a rule;** what
+  separates the two kinds of sheet is nothing the drawing says without
+  words.
+- **Grey pen vs black** is the only convention that survives per building,
+  and only at a LIGHT grey and a real share: pen luminance ≥ 0.6, each of
+  grey and black ≥ 20% of the sheet's paired footage. Then it fires on two
+  sheets — Baker A100 (640 junk / 61 real) and E Street A2.1 (240 / 22) —
+  and nowhere else. At ≥ 0.5 it takes Crosslines A100 (69 junk / 1,061
+  real: Crosslines draws real walls in a 0.5 grey) and Green Bay A3.1 (601
+  / 125); at 15% share it takes Topeka p76 (353 / 238). Two buildings is
+  thin evidence; it passes the rule and it is recorded as thin.
+- Pen weight, hatch and the single dashed face each fail per building or
+  are too small to matter (dashed: 378 / 11 on three buildings, and both
+  faces dashed is already a rule).
+
+**Built:** route 3 in `existingWalls.ts`, `pen` — on a sheet with no
+legend pen read, a run whose faces are drawn in a grey pen (≥ 0.6) is set
+aside when the sheet draws ≥ 20% of its paired footage in that grey AND ≥
+20% black; a sheet in one pen, or with a mid grey, or with a small grey
+share, is untouched. Tests: two of six walls grey → the two; all black, all
+grey, one of seven grey, a 0.45 grey → nothing.
+
+**Sweep, 53 sheets, this branch against its base (the rebased
+`diego/existing-walls` tip 861afeff on main 7834c42a), snapshot
+`labels-snap-20261030T2027`, four notes-only sheets excluded:**
+
+| building | key | recall | junk per 100 ft | real lost | junk removed |
+| --- | --- | --- | --- | --- | --- |
+| Baker A100 | 1,218 | 94.2% → 91.4% | 111 → 57 | 34 | 651 |
+| E Street A2.1 | 612 | 98.2% → 98.2% | 77 → 38 | 0 | 238 |
+| every other training building | | unchanged | unchanged | 0 | 0 |
+| **TRAINING** | 42,802 | 91.7% → 91.7% | 40 → 38 | **34** | **889** |
+
+26 ft of junk per foot of real, no building worse by more than 34 ft, and
+it fires on exactly the two sheets the census said. **Held-out, as a delta:
+real −334 ft, junk −922 ft.** So on held-out the rule fires (the inventory
+of word routes never did), takes junk at 2.8 to 1, and costs real wall on
+sets that draw some real walls in a light grey beside black — which is the
+Crosslines/Topeka shape again, on sheets this cannot look at. Reported, not
+tuned on; the training rule passes and the held-out number says the two
+buildings it rests on are not yet the population.
+
+**What share of the junk this reaches, and what to add.** Of the 14,255 ft
+of training junk after the set-asides, the grey-pen rule takes ~880 (6%).
+The existing-building junk this census can SEE is roughly Camp Bow Wow's
+2,400 ft of outline, Bunkie's 650, Baker's 800 grey, E Street's 250, Green
+Bay's 600 grey and Topeka's 350 — about 5,000 ft, a third of the junk —
+and only the grey-pen part of it is separable from new work by style
+alone. The rest of the junk (ELEVEN03 2,200, SW 1,400, Crosslines 200,
+Joplin 650, MHK 590) is not existing walls. To test the rule and the
+fill/outline question the set needs **renovation plans with a stated
+graphic convention**: a legend that keys existing to grey or to outline
+(Murray's and Bunkie's kind, which the legend route already reads), and
+tenant-improvement sets where the existing shell is drawn outline and the
+new partitions poché (Camp Bow Wow's kind) — at least three more buildings
+of each before the grey rule rests on more than two.
