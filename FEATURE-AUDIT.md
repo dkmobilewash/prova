@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**154 items audited — 132 built / 16 partial / 5 missing / 1 descoped**
+**155 items audited — 132 built / 17 partial / 5 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -102,7 +102,7 @@ header cannot.)
 | Status | Count |
 | --- | --- |
 | Built | 132 |
-| Partial | 16 |
+| Partial | 17 |
 | Missing | 5 |
 | Descoped | 1 |
 
@@ -292,7 +292,7 @@ forecasting shipped 26 Aug 2026.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Built | Change order requests/PCOs as a distinct pre-approval state | `ChangeOrderStatus` (DRAFT → SUBMITTED → APPROVED/REJECTED, plus VOID). A pending CO's content lives in `ChangeOrderProposal` and never touches `JobLineItem`, so contract value, WIP, retainage and pay applications only ever count scope the GC has agreed to. A draft can start from site evidence: a logged delay (`draftChangeOrderFromDelay`) or, since 2026-10-30, a signed T&M ticket (`draftChangeOrderFromTmTicket`, crew tab) whose FROZEN snapshot — hours per worker, materials, signer and time — becomes the draft's text; `TmTicket.changeOrderId` links the two and a ticket starts one draft only. Not priced: how hours become a sell price (markup, burden, equipment) is a decision in front of Diego, so the draft carries no proposals |
+| Built | Change order requests/PCOs as a distinct pre-approval state | `ChangeOrderStatus` (DRAFT → SUBMITTED → APPROVED/REJECTED, plus VOID). A pending CO's content lives in `ChangeOrderProposal` and never touches `JobLineItem`, so contract value, WIP, retainage and pay applications only ever count scope the GC has agreed to. A draft can start from site evidence: a logged delay (`draftChangeOrderFromDelay`) or, since 2026-10-30, a signed T&M ticket (`draftChangeOrderFromTmTicket`, crew tab) whose FROZEN snapshot — hours per worker, materials, signer and time — becomes the draft's text; `TmTicket.changeOrderId` links the two and a ticket starts one draft only. Priced per Diego's 2026-10-30 decision (`lib/change-order-pricing.ts`): every costed ADD line goes through `bidRecap` at the job's rates, labor burdened at the work date's employer burden before markup, never a defaulted wage; `ChangeOrderProposal.costCategory` carries the type and travels onto the line item on approval; the estimate card and the DocuSign document show the backup (cost, each recap step, sell) with a sell-only option |
 | Built | Correcting an approved change order | `reopenChangeOrder` unwinds it back to draft while its scope is untouched; once costed or billed, `reviseChangeOrder` raises a linked revision and the original stays approved |
 | Built | Change order approval workflow with the GC | `submitChangeOrder` / `approveChangeOrder` / `rejectChangeOrder` / `voidChangeOrder` in `lib/actions/changeOrders.ts`. Sent and decided dates are entered rather than stamped, so a backdated PCO records real turnaround. A rejected CO keeps its proposals as evidence it was priced and refused |
 | Built | Approved COs flow into new/modified `JobLineItem` rows and update contract value | `approveChangeOrder` applies every proposal in one transaction and writes the `ChangeOrderLineItemEdit` audit rows; `appliedAt` stops the same CO reaching the budget twice |
@@ -312,7 +312,7 @@ forecasting shipped 26 Aug 2026.*
 | Status | Feature | Note |
 | --- | --- | --- |
 | Built | Certificates of insurance (issued to GCs, received from lower-tier subs) | `ComplianceDocument.type = CERTIFICATE_OF_INSURANCE`, plus `CompanyInsurancePolicy` for the company's own coverage |
-| Built | Lien waivers (conditional/unconditional, progress/final) per pay period | `LienWaiver` (liens/`lien-waivers.prisma`) is the OUTBOUND waiver — the one handed to a GC to get paid — as two axes, condition × stage, so all four statutory forms are distinct. Issued on the job's billing tab against a pay application, with `exceptedAmount` required and defaultless: retainage held and SUBMITTED change orders are offered as candidate exceptions beside the field and never written into it, and three live warnings (`lib/lien-waiver.ts`) say what an unconditional or final waiver would give up. Advisory, never blocking, and nothing anywhere says a waiver is safe to sign. `ComplianceDocumentType.LIEN_WAIVER` remains the INBOUND direction — waivers collected from subs and vendors — and is unchanged. Signed status is ENTERED off the executed form; there is no Prova e-sign page for a waiver, so the two e-signature rows below are untouched |
+| Built | Lien waivers (conditional/unconditional, progress/final) per pay period | `LienWaiver` (liens/`lien-waivers.prisma`) is the OUTBOUND waiver — the one handed to a GC to get paid — as two axes, condition × stage, so all four statutory forms are distinct. Issued on the job's billing tab against a pay application, with `exceptedAmount` required and defaultless: retainage held and SUBMITTED change orders are offered as candidate exceptions beside the field and never written into it, and three live warnings (`lib/lien-waiver.ts`) say what an unconditional or final waiver would give up. Advisory, never blocking, and nothing anywhere says a waiver is safe to sign. `ComplianceDocumentType.LIEN_WAIVER` remains the INBOUND direction — waivers collected from subs and vendors — and is unchanged. Signed status is ENTERED off the executed form; there is no Prova e-sign page for a waiver, so the two e-signature rows below are untouched. Since 2026-10-30 (`lib/lien-waiver-followups.ts`): the newest pay application with no waiver offers its conditional progress waiver pre-filled with the current payment due and the period-to (exceptions never pre-filled), and every pay application row and the certificate page warn, by name, which lower-tier parties (vendors with orders, past waiver senders) have no RECEIVED inbound `LIEN_WAIVER` document through the previous application's period — advisory, never an all-clear |
 | Built | Certified payroll submissions | type exists, now with AI extraction on upload |
 | Built | Union fringe/benefit filings | `UNION_FRINGE_BENEFIT_FILING` type |
 | Built | License/registration records per state | `CompanyLicense`, with create/edit/delete on `/settings` — it was marked Built on the model alone from 25 Aug until 29 Aug, during which no licence could be created at all |

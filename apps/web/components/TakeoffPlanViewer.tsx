@@ -2787,7 +2787,7 @@ export function TakeoffPlanViewer({
       // dropped, kept on screen instead. See `modelVerdicts`.
       const byModel =
         wallModelRef.current !== null
-          ? modelVerdicts(wallModelRef.current.model, wallModelRef.current.cut, walls, pairings, feetPerUnit)
+          ? modelVerdicts(wallModelRef.current.model, wallModelRef.current.cut, walls, pairings, feetPerUnit, { scanned: raster !== undefined })
           : null;
       const doubted = byModel !== null && byModel.size > 0 ? byModel : null;
       setLabels(doubted);

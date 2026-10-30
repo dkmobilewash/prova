@@ -36,6 +36,7 @@ import { createElement } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { QUICKBOOKS_ACCOUNT_PURPOSES } from "@/lib/quickbooks-constants";
 
 vi.mock("@/lib/actions", () => ({
   loadQuickBooksAccounts: vi.fn(),
@@ -99,8 +100,12 @@ async function renderLoaded() {
   const forms = container.querySelectorAll("form");
   // One row per purpose Settings offers. Asserted so that a form list which
   // quietly shrank — or a render that produced none — fails here rather than
-  // letting the assertions below pass over an empty page.
-  expect(forms.length).toBe(5);
+  // letting the assertions below pass over an empty page. Against the list
+  // itself rather than a literal: the literal read 5 and went red the day
+  // EQUIPMENT joined the list (2026-10-30), which was the count doing its job
+  // once and then becoming the thing to maintain.
+  expect(forms.length).toBe(QUICKBOOKS_ACCOUNT_PURPOSES.length);
+  expect(forms.length).toBeGreaterThanOrEqual(5);
   return forms;
 }
 

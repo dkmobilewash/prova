@@ -61,7 +61,8 @@ export interface BuyoutLineInput {
   /** JobLineItem.budgetedUnitCost: the cost the bid carried. */
   budgetedUnitCost: number | null;
   costCategory: CostCategory | null;
-  sourceCatalogEntryId: string | null;
+  /** The catalog item this line came from; how quotes are matched to it. */
+  catalogEntryId: string | null;
 }
 
 /** Labor is the sub's own crew, so there is nothing to buy out. */
@@ -104,8 +105,8 @@ export function buyoutRows(
   return lines.filter(isBuyoutLine).map((line) => {
     const done = commitments.get(line.id) ?? { drafted: 0, committed: 0, quantityBought: 0 };
     const quantityLeft = Math.max(0, round2(line.quantity - done.quantityBought));
-    const forEntry = line.sourceCatalogEntryId
-      ? quotes.filter((quote) => quote.catalogEntryId === line.sourceCatalogEntryId)
+    const forEntry = line.catalogEntryId
+      ? quotes.filter((quote) => quote.catalogEntryId === line.catalogEntryId)
       : [];
     const comparisons = currentByUnit([...forEntry], today);
     const same = comparisons.find((c) => unitKey(c.unit) === unitKey(line.unit));

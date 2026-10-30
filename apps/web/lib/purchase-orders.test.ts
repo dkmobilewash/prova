@@ -26,7 +26,7 @@ const line: BuyoutLineInput = {
   quantity: 1000,
   budgetedUnitCost: 0.8,
   costCategory: "MATERIAL",
-  sourceCatalogEntryId: "cat",
+  catalogEntryId: "cat",
 };
 const TODAY = "2026-10-30";
 
@@ -80,7 +80,7 @@ describe("the buyout comparison", () => {
   });
 
   it("matches nothing on a line that did not come from the catalog", () => {
-    const [row] = buyoutRows([{ ...line, sourceCatalogEntryId: null }], [quote({ catalogEntryId: null })], new Map(), TODAY);
+    const [row] = buyoutRows([{ ...line, catalogEntryId: null }], [quote({ catalogEntryId: null })], new Map(), TODAY);
     expect(row.offers).toEqual([]);
   });
 

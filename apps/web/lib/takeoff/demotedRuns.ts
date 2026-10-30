@@ -107,8 +107,21 @@ export function modelVerdicts(
   runs: readonly (Line & { thicknessFeet: number })[],
   pairings: readonly ScoredPairing[],
   feetPerUnit: number,
+  /**
+   * ── NOT ON A SCANNED SHEET ──
+   *
+   * The model was trained on vector sheets' feature rows — pen widths, layer
+   * names, exact face geometry. A scanned sheet's lines come off a bitmap
+   * (`rasterStrokes`): no pen, no layer, faces that wobble by a pixel. On
+   * Evergreen, the one scanned set with keys, the demotion cost 11.7 points
+   * of recall and removed about no junk (Diego, 2026-10-30). So on a page
+   * whose lines are the raster stage's the model says nothing, and every
+   * run stays on the list as the finder offered it.
+   */
+  options: { scanned?: boolean } = {},
 ): Map<number, RunVerdict> {
   const out = new Map<number, RunVerdict>();
+  if (options.scanned === true) return out;
   runs.forEach((run, at) => {
     let best = -1;
     for (const p of pairings) {

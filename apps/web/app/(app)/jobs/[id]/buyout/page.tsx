@@ -68,7 +68,7 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
       quantity: Number(item.quantity),
       budgetedUnitCost: item.budgetedUnitCost == null ? null : Number(item.budgetedUnitCost),
       costCategory: item.costCategory as CostCategory | null,
-      sourceCatalogEntryId: item.sourceCatalogEntryId,
+      catalogEntryId: item.sourceCatalogEntryId,
     })),
     quotes.map((quote) => ({
       id: quote.id,
