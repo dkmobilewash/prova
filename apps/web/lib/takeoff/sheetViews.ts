@@ -2,7 +2,7 @@ import { findWallsOnSheet, type FoundOnSheet, type SheetTextItem } from "./findW
 import { printedScalesAt } from "./printedScales";
 import { takeoffRank } from "./sheetSuitability";
 import { isPlanView, viewKind } from "./viewKind";
-import { isLevelPlan, planLevel, viewClass, viewTitles } from "./viewTitles";
+import { isLevelPlan, planLevel, viewClass, viewTitles, planSubject } from "./viewTitles";
 
 export { isLevelPlan, planLevel } from "./viewTitles";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
@@ -1468,14 +1468,26 @@ export function textBlockBoxes(views: readonly SheetView[]): { from: number; to:
 /** The measured plan views whose walls the sheet keeps, one per level named, and the rest. */
 export function keptPlanViews(measured: readonly ViewWalls[]): { kept: ViewWalls[]; others: ViewWalls[] } {
   if (measured.length === 0) return { kept: [], others: [] };
+  // ── A SHEET WITH NO FLOOR PLAN IS A SHEET OF ROOMS, AND EVERY ROOM COUNTS ──
+  //
+  // Typical-room and enlarged plans beside a FLOOR plan are that plan drawn
+  // again at a larger scale, and are rightly dropped (S15's enlarged bath).
+  // With no floor plan on the sheet they are the only drawings there are, and
+  // each distinct subject is a distinct room: Joplin A-111 carries seven of
+  // them and the one-per-level rule kept one. So the group is the level where
+  // the caption names one and the SUBJECT where it does not, and the primary
+  // of each group is kept — an enlarged plan over a sloping plan of the same
+  // room, by `takeoffRank`.
   const floors = measured.filter((m) => viewClass(m.view.name).kind !== "enlarged-plan");
-  if (floors.length === 0) {
+  const noFloorPlan = !measured.some((m) => viewClass(m.view.name).kind === "floor-plan");
+  const grouped = noFloorPlan ? measured : floors;
+  if (grouped.length === 0) {
     const p = primaryView(measured);
     return { kept: p.primary === null ? [] : [p.primary], others: p.others };
   }
   const byLevel = new Map<string, ViewWalls[]>();
-  for (const m of floors) {
-    const level = planLevel(m.view.name) ?? "";
+  for (const m of grouped) {
+    const level = planLevel(m.view.name) ?? (noFloorPlan ? `subject:${planSubject(m.view.name)}` : "");
     byLevel.set(level, [...(byLevel.get(level) ?? []), m]);
   }
   const kept: ViewWalls[] = [];
