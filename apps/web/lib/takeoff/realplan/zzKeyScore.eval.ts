@@ -116,7 +116,12 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
 
     for (const file of held) {
       const saved = JSON.parse(readFileSync(file.path, "utf8")) as Saved;
-      const { key, fromTracedFeet } = keyFromLabels(saved);
+      // feetPerUnit so a trace and an accepted wall on the same line are
+      // counted ONCE. Chrome accepted candidates over existing traces in the
+      // re-judge round — Central Bank A101 has 56 — and without this the key
+      // carries both, inflating keyFeet and flattering junk-per-100-ft.
+      const { key, fromTracedFeet, tracesFoldedIn } = keyFromLabels(saved, saved.feetPerUnit);
+      if (tracesFoldedIn > 0) notes.push(`  ${file.dir.slice(0, 26)}/${file.sheet}: ${tracesFoldedIn} trace(s) folded into an accepted wall, counted once`);
       if (key.length === 0) {
         notes.push(`  ${file.dir}/${file.sheet}: labelled, but no accepted or traced walls`);
         continue;

@@ -278,22 +278,32 @@ export function totalScore(sheets: readonly SheetScore[]): {
  * Exported because getting this wrong is silent — a key built from accepted
  * runs alone looks complete and measures the finder against its own output.
  */
-export function keyFromLabels(saved: {
-  verdicts: ReadonlyArray<{
-    x1: number;
-    y1: number;
-    x2: number;
-    y2: number;
-    lengthFeet: number;
-    thicknessFeet?: number;
-    verdict: string;
-  }>;
-}): { key: ScoredRun[]; fromTracedFeet: number } {
-  const key: ScoredRun[] = [];
-  let fromTracedFeet = 0;
+export function keyFromLabels(
+  saved: {
+    verdicts: ReadonlyArray<{
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      lengthFeet: number;
+      thicknessFeet?: number;
+      verdict: string;
+    }>;
+  },
+  /**
+   * Needed to tell whether a trace and an accepted wall are the same wall.
+   * Optional so every existing caller keeps working, and WITHOUT it no overlap
+   * test runs and the old double-counting behaviour is kept rather than a
+   * silently different one — a missing argument must not quietly change a
+   * score. Callers that have it should pass it.
+   */
+  feetPerUnit?: number,
+): { key: ScoredRun[]; fromTracedFeet: number; tracesFoldedIn: number } {
+  const accepted: ScoredRun[] = [];
+  const traces: ScoredRun[] = [];
   for (const v of saved.verdicts) {
     if (v.verdict !== "wall" && v.verdict !== "traced") continue;
-    key.push({
+    const run: ScoredRun = {
       x1: v.x1,
       y1: v.y1,
       x2: v.x2,
@@ -302,8 +312,39 @@ export function keyFromLabels(saved: {
       // Carried through so the band can be derived. A traced wall's is zero,
       // which is honest: the reviewer drew a line, not a pair of faces.
       thicknessFeet: v.thicknessFeet,
-    });
-    if (v.verdict === "traced") fromTracedFeet += v.lengthFeet;
+    };
+    (v.verdict === "wall" ? accepted : traces).push(run);
   }
-  return { key, fromTracedFeet };
+
+  // ── A WALL IS COUNTED ONCE, EVEN WHEN BOTH KINDS DESCRIBE IT ──
+  //
+  // Chrome's re-judge round accepted candidates ON TOP OF existing traces —
+  // Central Bank A101 has 56 — and both kinds went into the key, so the same
+  // physical wall entered twice. That inflates `keyFeet`, which makes "junk
+  // per 100 ft of key" look better than it is on every sheet, because the
+  // denominator grew.
+  //
+  // A trace contributes only what no accepted wall already covers. A trace
+  // PARTLY covered still enters: its uncovered part is real wall the finder
+  // missed, and dropping it would hide a miss. The accepted candidate is the
+  // one kept because it carries the finder's thickness, and a traced wall's is
+  // zero by design.
+  let fromTracedFeet = 0;
+  let tracesFoldedIn = 0;
+  const key = [...accepted];
+  for (const trace of traces) {
+    if (feetPerUnit === undefined) {
+      key.push(trace);
+      fromTracedFeet += trace.lengthFeet ?? 0;
+      continue;
+    }
+    const left = uncoveredFeet(trace, accepted, feetPerUnit);
+    if (left <= 0.5) {
+      tracesFoldedIn += 1;
+      continue;
+    }
+    key.push(trace);
+    fromTracedFeet += left;
+  }
+  return { key, fromTracedFeet, tracesFoldedIn };
 }

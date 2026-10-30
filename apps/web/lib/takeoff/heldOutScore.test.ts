@@ -373,3 +373,57 @@ describe("uncovered footage: judged junk against never judged", () => {
     expect(got.confirmedJunkFeet).toBeLessThanOrEqual(got.extraFeet + 0.001);
   });
 });
+
+describe("a wall both traced and accepted is counted once", () => {
+  // 1 unit = 1 ft, so the numbers read directly.
+  const FPU = 1;
+  const v = (x1: number, x2: number, verdict: string) => ({
+    x1,
+    y1: 0,
+    x2,
+    y2: 0,
+    lengthFeet: x2 - x1,
+    verdict,
+  });
+
+  it("folds a trace that an accepted wall already covers", () => {
+    const got = keyFromLabels({ verdicts: [v(0, 100, "wall"), v(0, 100, "traced")] }, FPU);
+    expect(got.key).toHaveLength(1);
+    expect(got.tracesFoldedIn).toBe(1);
+    expect(got.fromTracedFeet, "the trace contributes nothing it does not add").toBeCloseTo(0, 0);
+    const feet = got.key.reduce((n, r) => n + (r.lengthFeet ?? 0), 0);
+    expect(feet, "the wall was counted twice").toBeCloseTo(100, 0);
+  });
+
+  it("keeps a trace that NO accepted wall covers", () => {
+    const got = keyFromLabels({ verdicts: [v(0, 100, "wall"), v(200, 260, "traced")] }, FPU);
+    expect(got.key).toHaveLength(2);
+    expect(got.tracesFoldedIn).toBe(0);
+    expect(got.fromTracedFeet).toBeCloseTo(60, 0);
+  });
+
+  it("keeps a PARTLY covered trace, because the uncovered part is a real miss", () => {
+    // Dropping this would hide 50 ft of wall the finder never offered.
+    const got = keyFromLabels({ verdicts: [v(0, 50, "wall"), v(0, 100, "traced")] }, FPU);
+    expect(got.key, "the partly covered trace was dropped").toHaveLength(2);
+    expect(got.tracesFoldedIn).toBe(0);
+    expect(got.fromTracedFeet, "only the uncovered part is the trace's contribution").toBeCloseTo(50, 0);
+  });
+
+  it("without feetPerUnit it keeps the OLD behaviour rather than a different one", () => {
+    // A missing argument must not quietly change a score: every existing
+    // caller that cannot supply the scale gets exactly what it got before.
+    const got = keyFromLabels({ verdicts: [v(0, 100, "wall"), v(0, 100, "traced")] });
+    expect(got.key).toHaveLength(2);
+    expect(got.tracesFoldedIn).toBe(0);
+    expect(got.fromTracedFeet).toBeCloseTo(100, 0);
+  });
+
+  it("the folded key is what the score is taken on", () => {
+    // The point of the whole change: keyFeet must not double.
+    const { key } = keyFromLabels({ verdicts: [v(0, 100, "wall"), v(0, 100, "traced")] }, FPU);
+    const score = scoreSheet({ set: "s", sheet: "A1", key, proposed: key, feetPerUnit: FPU });
+    expect(score.keyFeet, "keyFeet still carries the double").toBeCloseTo(100, 0);
+    expect(score.recallPercent).toBeCloseTo(100, 0);
+  });
+});
