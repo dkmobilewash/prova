@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { excludedViews, keptPlanViews, sheetDrawings, type ViewWalls } from "./sheetViews";
-import { isLevelPlan, planLevel, viewClass, viewTitles } from "./viewTitles";
+import { isLevelPlan, planLevel, planSubject, viewClass, viewTitles } from "./viewTitles";
 import type { StrokeSegment } from "./wallVectors";
 
 /** An invented sheet, 2592pt wide: notes at 8pt, two big ruled titles, one big unruled room name. */
@@ -96,6 +96,17 @@ describe("every floor keeps its walls; a floor drawn twice keeps one", () => {
     expect(planLevel("Penthouse Floor (P2)")).toBe("PENTHOUSE");
     expect(planLevel("CRITICAL DIMENSION PLAN - MAIN LEVEL")).toBe("MAIN LEVEL");
     expect(planLevel("FLOOR PLAN - WAREHOUSE")).toBeNull();
+    // A leading DRAWING number is not the level: Supreme Court A111's three
+    // plans read as levels 1, "2 MEZZANINE" and 3 before this, which happens
+    // to be three groups — and reads a floor plan and a dimension plan of one
+    // level as two levels, keeping both.
+    expect(planLevel("1 FLOOR PLAN - LEVEL 2")).toBe("2");
+    expect(planLevel("2 FLOOR PLAN - LEVEL 2 - MEZZANINE")).toBe("2 MEZZANINE");
+    expect(planLevel("3 FLOOR PLAN - LEVEL 3")).toBe("3");
+    expect(planLevel("2 DIMENSION PLAN - LEVEL 1")).toBe(planLevel("1 FLOOR PLAN - LEVEL 1"));
+    expect(planSubject("ENLARGED PLAN - TYP. TOILET/SHOWER")).toBe(planSubject("SLOPING PLAN - TYP. TOILET/SHOWER"));
+    expect(planSubject("ENLARGED PLAN - STORM SHELTER")).not.toBe(planSubject("ENLARGED PLAN - TYP. TOILET/SHOWER"));
+    expect(planSubject("3 ENLARGED RECEPTION FLOOR PLAN")).toBe("RECEPTION");
     expect(planLevel("FLOOR PLAN - LEVEL 2 - MEZZANINE")).toBe("2 MEZZANINE");
     expect(viewClass("Penthouse Floor (P2)").kind).toBe("floor-plan");
     expect(isLevelPlan("Penthouse Floor (P2)")).toBe(true);
@@ -118,6 +129,23 @@ describe("every floor keeps its walls; a floor drawn twice keeps one", () => {
     const enlarged = keptPlanViews([vw("FLOOR PLAN", 400), vw("ENLARGED TOILET PLAN", 90)]);
     expect(enlarged.kept.map((k) => k.view.name)).toEqual(["FLOOR PLAN"]);
     expect(keptPlanViews([vw("RESTROOM - ENLARGED PLAN", 16)]).kept).toHaveLength(1);
+    // Joplin A-111: seven typical-room plans and no floor plan. One per ROOM —
+    // the enlarged plan over the sloping plan of the same room — not one per sheet.
+    const rooms = keptPlanViews([
+      vw("SLOPING PLAN - TYP. TOILET/SHOWER", 90),
+      vw("ENLARGED PLAN - TYP. TOILET/SHOWER", 85),
+      vw("ENLARGED PLAN - STORM SHELTER", 200),
+      vw("SLOPING PLAN - STORM SHELTER", 80),
+      vw("ENLARGED PLAN - TYP. INDIVIDUAL TOILET", 30),
+      vw("SLOPING PLAN - TYP. INDIVIDUAL TOILET", 29),
+    ]);
+    expect(rooms.kept.map((k) => k.view.name)).toEqual([
+      "ENLARGED PLAN - STORM SHELTER",
+      "ENLARGED PLAN - TYP. TOILET/SHOWER",
+      "ENLARGED PLAN - TYP. INDIVIDUAL TOILET",
+    ]);
+    // Beside a floor plan the same enlarged rooms are still dropped.
+    expect(keptPlanViews([vw("FLOOR PLAN", 400), vw("ENLARGED PLAN - STORM SHELTER", 200), vw("ENLARGED PLAN - TYP. TOILET/SHOWER", 85)]).kept.map((k) => k.view.name)).toEqual(["FLOOR PLAN"]);
   });
 });
 

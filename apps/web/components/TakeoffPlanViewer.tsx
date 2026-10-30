@@ -802,11 +802,11 @@ export function TakeoffPlanViewer({
    *  Per page for the reason `labelsByPage` is: it names the drawing a FIND
    *  was about, and on any other sheet it names the wrong one. */
   const [primaryViewByPage, setPrimaryViewByPage] = useState<
-    Record<number, { name: string; scaleName: string | null }>
+    Record<number, { name: string; scaleName: string | null }[]>
   >({});
   const primaryViewShown = onThisSheet(primaryViewByPage, pageNumber);
   const setPrimaryViewShown = useCallback(
-    (next: { name: string; scaleName: string | null } | null) =>
+    (next: { name: string; scaleName: string | null }[] | null) =>
       setPrimaryViewByPage((prev) => setOnThisSheet(prev, pageNumber, next)),
     [pageNumber],
   );
@@ -2663,17 +2663,11 @@ export function TakeoffPlanViewer({
       }
       const otherViews: ViewWalls[] = detected.others;
       const leftOut: ExcludedView[] = detected.leftOut;
-      // Several floors kept read as one name for the caution: "1st Floor Plan
-      // + 2nd - 9th Floor Plan", at their common scale or none.
-      const primaryShown: { name: string; scaleName: string | null } | null =
-        detected.kept.length === 0
-          ? null
-          : {
-              name: detected.kept.map((k) => k.name).join(" + "),
-              scaleName: detected.kept.every((k) => k.scaleName === detected.kept[0].scaleName)
-                ? detected.kept[0].scaleName
-                : null,
-            };
+      // Every kept drawing, with its own scale: `viewsMeasuredCaution` joins
+      // them — "1st Floor Plan + 2nd - 9th Floor Plan" at a shared scale said
+      // once, or each named with its own where two rooms are drawn at two.
+      const primaryShown: { name: string; scaleName: string | null }[] | null =
+        detected.kept.length === 0 ? null : detected.kept.map((k) => ({ name: k.name, scaleName: k.scaleName }));
       const planBoxes = detected.planBoxes;
       setOtherViewsByPage((prev) => ({ ...prev, [pageNumber]: otherViews }));
       setExcludedByPage((prev) => ({ ...prev, [pageNumber]: leftOut }));

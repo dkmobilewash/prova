@@ -304,23 +304,38 @@ export function multiScaleCaution(printedScales: readonly string[], usedScaleNam
  * see `primaryView`. Summing them would bid that bathroom twice.
  */
 export function viewsMeasuredCaution(
-  primary: { name: string; scaleName: string | null } | null,
+  primary:
+    | { name: string; scaleName: string | null }
+    | readonly { name: string; scaleName: string | null }[]
+    | null,
   others: readonly { name: string; scaleName: string | null; lengthFeet: number }[],
   excluded: readonly { name: string; reason: string }[] = [],
 ): string {
+  // ── SEVERAL KEPT DRAWINGS, EACH AT ITS OWN SCALE, ARE NAMED WITH THEIR SCALES ──
+  //
+  // A sheet of rooms (`keptPlanViews`, no floor plan) keeps one plan per room,
+  // and two enlarged rooms are routinely drawn at two scales — A-401's
+  // restroom at 1/4" beside its stair at 1/2". Collapsing those to "at an
+  // unstated scale" said the one false thing a scale sentence can say: both
+  // scales are printed on the sheet. So where the kept drawings share a scale
+  // it is said once, and where they do not each drawing carries its own.
+  const kept = primary === null ? [] : Array.isArray(primary) ? primary : [primary];
   // AN EXCLUDED DRAWING IS ENOUGH ON ITS OWN to need a sentence. A sheet with
   // one plan and one NTS detail has no second MEASURED view, and the detail
   // still has to be named — which is the case the first version silently
   // skipped, because it returned early on `others.length === 0`.
-  if (primary === null || (others.length === 0 && excluded.length === 0)) return "";
+  if (kept.length === 0 || (others.length === 0 && excluded.length === 0)) return "";
   const measured = others
     .map((one) => `${one.name} at ${one.scaleName ?? "an unstated scale"} measures ${Math.round(one.lengthFeet)} ft`)
     .join("; ");
   const left = excluded.map((one) => `${one.name} — ${one.reason}`).join("; ");
 
+  const shared = kept.every((k) => k.scaleName === kept[0].scaleName);
   const head =
-    `This sheet carries more than one drawing. The quantities here are ${primary.name} at ` +
-    `${primary.scaleName ?? "an unstated scale"}.`;
+    "This sheet carries more than one drawing. The quantities here are " +
+    (shared
+      ? `${kept.map((k) => k.name).join(" + ")} at ${kept[0].scaleName ?? "an unstated scale"}.`
+      : `${kept.map((k) => `${k.name} at ${k.scaleName ?? "an unstated scale"}`).join(" + ")}, each measured at its own scale.`);
   const alsoMeasured =
     measured === ""
       ? ""

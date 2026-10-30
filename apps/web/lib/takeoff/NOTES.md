@@ -4062,3 +4062,34 @@ new-model run and 623 ft in the other two, from the same code and labels. 96 ft 
 difference in what the product offered between two runs is either a nondeterminism in
 `detectForSheet` on that sheet or an artefact of the run; it does not move the totals'
 conclusion and is recorded so the next person checks it rather than inherits it.
+
+## The multi-view path on training — 2026-10-30 (second session, `diego/multi-view`)
+
+The held-out gap report put 86% of the held-out junk gap on five multi-view
+sheets and guessed a left-out view (a key plan, an RCP, wall details) was
+leaking into the offered set. `realplan/zzViewLeak.eval.ts` tests that on
+training: every offered candidate and every key wall is attributed to the
+view whose box holds its midpoint, labelled real / junk / unverdicted from
+the sheet's label file.
+
+**Refuted.** On all sixteen training multi-view sheets, zero offered feet
+come from a left-out or non-kept view; every extra foot sits inside the
+kept drawing, and on the four sheets the report named the kept drawing is
+the right one (HPL's partition plan, Bunkie's warehouse floor plan, Camp Bow
+Wow's enlarged restroom, Supreme Court's three plans). Their ratios were
+ordinary in-view junk over tiny keys (46 ft, 18 ft). The held-out 68/100
+cannot be reproduced from training, and reading the held-out sheets is not
+allowed — so the mechanism there is still unknown.
+
+**What the diagnostic did find, on the four sheets labelled since:**
+
+| sheet | what | fix |
+| --- | --- | --- |
+| Joplin A-111 | 7 typical-room plans, no floor plan; `keptPlanViews` grouped by level, all null, kept ONE (84 ft of key), missed 422 | group by SUBJECT when the sheet has no floor plan — `planSubject`; kept 3 enlarged plans; sweep: real +238, extra +79 (all unverdicted), ratio 3.0 |
+| Joplin A-111 | "TYP. RESIDENT ROOM" at 1/4" left out as an unknown caption, 51 ft of key | not fixed; a caption with no plan word is not made a plan on one sheet's evidence |
+| Supreme A111 | "1 FLOOR PLAN - LEVEL 2" read as level 1 — the drawing number | `planLevel` reads the number after LEVEL first; neutral on all 52 sheets |
+| SW Grand A140, CBW A103/A104 | fixture plan / enlarged rooms kept correctly; extra is fixtures inside them | not a view problem |
+
+Sweep (52 sheets, main `40900004` → this branch): proposed 86,461 → 86,826,
+missing 5,465 → 5,227, extra 23,778 → 23,857; one sheet changes; held-out
+delta 0 / 0.
