@@ -353,20 +353,21 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       pageNumber: task.pageNumber,
       feetPerUnit,
       wallTypes: types,
+      // Diego's call: the finder does not pair with the library's thicknesses
+      // here, so the takeoff is the same with or without wall types; the
+      // groups are built beside it with them (`stageGroups.ts`).
+      pairWithThicknesses: false,
     });
     const said = wallsNoteFor(outcome);
     if (!said.ok) return said;
-    // ── THE SCHEDULE'S THICKNESSES ARE PART OF THE ANSWER, SO THE NOTE NAMES THEM ──
-    // The finder pairs with the thicknesses of the types this company builds
-    // (`findWallsOnSheet`: a 1-1/2 in furring on an 8 in block wall is two
-    // walls because 9-1/2 in is on no schedule; a thin pair at a scheduled
-    // thickness is admitted below the floor). That is the finder's design,
-    // and it means a library WITH thicknesses finds different walls from one
-    // without — Joplin A-101 moved 3,720 → 3,595 ft when its types got them.
-    // A company's settings must not move a count silently, so the sheet's
-    // note says which thicknesses the pairing was given.
+    // ── THE NOTE SAYS WHAT THE THICKNESSES WERE USED FOR ──
+    // The finder CAN pair with the thicknesses of the types a company builds
+    // (`findWallsOnSheet`), and measured on Joplin A-101 that moved 145 ft of
+    // real wall off the count; this stage does not let it (above). The
+    // thicknesses still decide the grouping, and the note says so, so a
+    // company's settings never move a count silently.
     const scheduled = types.filter((t) => t.thicknessIn !== null).map((t) => `${t.code} ${t.thicknessIn}in`);
-    const paired = scheduled.length > 0 ? `; paired with the schedule's thicknesses: ${scheduled.join(", ")}` : "";
+    const paired = scheduled.length > 0 ? `; found without the library's thicknesses, grouped with them: ${scheduled.join(", ")}` : "";
     // ── THEN THE ROOMS AND THEIR CEILINGS, ON A SHEET THAT GOT WALLS ──
     // The same step the viewer's Find rooms + Save does, so the counted floor
     // plans carry their rooms and ceiling areas before anybody opens them

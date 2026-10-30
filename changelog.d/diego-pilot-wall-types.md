@@ -15,7 +15,11 @@
 - The whole-set WALLS stage writes each sheet's groups onto a takeoff item
   per wall type (`lib/plan-ingest/wallItems.ts`; label says tag, carried,
   U.N.O. or by thickness; the rest on "Walls — untyped"), so Send to estimate
-  prices each type with its own assembly. The sheet's note names the
-  thicknesses the finder paired with, since a library with thicknesses
-  finds different walls from one without. `wallTypes.eval.ts` reports feet
+  prices each type with its own assembly. The stage hands the finder the
+  types WITHOUT their thicknesses — a library with thicknesses had found
+  different walls from one without (Joplin A-101, 145 ft of real wall
+  missed) — and rebuilds the groups beside it with them, so a whole-set
+  takeoff is identical with or without wall types; the sheet's note says so.
+- A hatched band is a filled wall: it never takes a drywall U.N.O. default,
+  takes a masonry one where the legend names it, and is otherwise untyped. `wallTypes.eval.ts` reports feet
   typed per sheet and per type.

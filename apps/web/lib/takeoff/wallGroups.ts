@@ -103,6 +103,9 @@ export type WallGroup = {
  */
 export const THICKNESS_SLACK_IN = CLUSTER_INCHES / 2;
 
+/** A U.N.O. sentence about the filled walls — "ALL INTERIOR MASONRY PARTITIONS ARE TYPE 'B'". */
+export const MASONRY_NOTE = /\b(MASONRY|CMU|CONCRETE|BLOCK|BRICK)\b/i;
+
 /** The company's postable types that could be a wall of this thickness. */
 export function typesAtThickness(
   inches: number,
@@ -142,15 +145,22 @@ export function wallGroups(
   tagByRun: ReadonlyMap<WallCandidate, string>,
   wallTypes: readonly MatchableWallType[],
   fromNote: WallTypeFromNote | null = null,
+  /**
+   * Runs drawn with hatch strokes across their band — a filled wall. A
+   * hatched run never takes a default whose sentence is about drywall, and
+   * an unhatched one never takes a masonry default (`stageGroups.ts`).
+   */
+  hatched: ReadonlySet<WallCandidate> = new Set(),
 ): WallGroup[] {
   const out: WallGroup[] = [];
   for (const cluster of clusters) {
     const byTag = new Map<string, WallCandidate[]>();
-    const untagged: WallCandidate[] = [];
+    const untaggedPlain: WallCandidate[] = [];
+    const untaggedHatched: WallCandidate[] = [];
     for (const run of cluster.runs) {
       const tag = tagByRun.get(run);
       if (tag === undefined) {
-        untagged.push(run);
+        (hatched.has(run) ? untaggedHatched : untaggedPlain).push(run);
         continue;
       }
       const group = byTag.get(tag);
@@ -172,7 +182,8 @@ export function wallGroups(
     }));
 
     out.push(...tagged);
-    if (untagged.length > 0) {
+    for (const [untagged, isHatched] of [[untaggedPlain, false], [untaggedHatched, true]] as const) {
+      if (untagged.length === 0) continue;
       // ── THE GENERAL NOTE'S TYPE IS OFFERED FIRST — NEVER APPLIED ──
       //
       // "ALL PARTITIONS TYPE A1 U.N.O." covers whatever the architect did not
@@ -195,7 +206,10 @@ export function wallGroups(
       // those buckets stay a question, which `verdictFor` asks.
       const defaults = fromNote === null ? [] : [fromNote, ...(fromNote.others ?? [])];
       const covers = (n: WallTypeFromNote) => n.type.thicknessIn === null || Math.abs(n.type.thicknessIn - cluster.inches) <= THICKNESS_SLACK_IN;
-      const note = defaults.find(covers) ?? null;
+      // A hatched band is a filled wall: only a masonry sentence names it,
+      // and a masonry sentence names nothing drawn hollow.
+      const forThisFill = (n: WallTypeFromNote) => MASONRY_NOTE.test(n.note) === isHatched;
+      const note = defaults.find((n) => covers(n) && forThisFill(n)) ?? null;
       const atThickness = typesAtThickness(cluster.inches, wallTypes);
       out.push({
         inches: cluster.inches,

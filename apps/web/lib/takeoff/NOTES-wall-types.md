@@ -79,10 +79,10 @@ changes how many tags a drafter printed.
 
 | set | walls | on the job by type | untyped |
 | --- | --- | --- | --- |
-| Joplin A-101 | 3,570 ft | A 1,105 (U.N.O.), A3 578, L 175, B 163, V 26 — 2,047 ft, 57% | 1,522 ft |
+| Joplin A-101 | 3,656 ft | A 723 (U.N.O.), A3 518, L 175, B 152, V 26 — 1,554 ft, 43% | 2,062 ft |
 | Baker A101 | 701 ft | C8B 230, S8C 50, S6A 33, S8B 31 — 344 ft, 49% | 357 ft |
 | SW A110 + A400 | 1,714 ft | A3 170, A1 133, B1 25, B2 13, A4 9 — 351 ft, 20% | 1,363 ft |
-| Glen-hazel (whole set) | 20,390 ft | P1 5,711 by thickness alone (the pilot's one type) | 14,678 ft |
+| Glen-hazel (whole set) | 20,198 ft | P1 4,938 by thickness alone (the pilot's one placeholder type) | 15,260 ft |
 
 Two things the pilot showed that a measurement on the finder alone does
 not. Giving the company wall types with thicknesses moves the finder's
@@ -139,13 +139,54 @@ thicknesses exist the guidance moves the count, and on Joplin it moves it
 the wrong way**: 145 ft more missed against the label, 19 ft more extra;
 with thicknesses on the five drawn types only, still 51 ft more missed. On
 the other training sets the cached legends carry no thickness, so with and
-without are identical. That is one sheet with a hand-keyed schedule against
-the finder authors' measured gain on two others, so the behaviour stands
-and stops being silent: the sheet's task note now says "paired with the
-schedule's thicknesses: A 4.875in, B 7.625in, …" whenever the pairing was
-given any, and the original session can decide from this table whether the
-WALLS stage should pass thicknesses to the finder at all (one line in
-`walls.ts`'s `loadWallTypes`).
+without are identical. **Diego's call (2026-10-29, after this table): the WALLS stage does not
+pass wall-type thicknesses to the finder.** A whole-set takeoff is now
+identical with or without wall types. The one-line version — strip
+`thicknessIn` in `loadWallTypes` — is wrong on its own, because the finder's
+own `regroup` reads the same types and a type with NO thickness is offered
+for every bucket, so the legend's U.N.O. default would have covered the
+whole sheet. So `detectWallsForCalibration` takes `pairWithThicknesses`
+(the stage says false): the finder gets the types without thickness, and
+the groups are rebuilt beside it with the thick ones by
+`lib/takeoff/stageGroups.ts` — the finder's clusters, the finder's tag map,
+the sheet's note — deciding only which NAME each of the finder's runs sits
+under. The viewer's calibration path is untouched and still pairs with
+thicknesses. The sheet's task note says "found without the library's
+thicknesses, grouped with them: A 4.875in, B 7.625in" so nothing moves
+silently. Pilot, with and without wall types (§3): Joplin A-101 3,656 ft · 46 rooms · 5,768 sf both ways; Baker A101 701 ft · 9 rooms both ways; SW A110 + A400 1,714 ft · 14 rooms both ways (`shots/pilot/full5/`, with the legend's types and with none).
+
+## 3c. A hatched band never takes a drywall default
+
+Two of the ten Joplin runs checked by eye were a cross-hatched masonry
+wall read at 4.3 in and 5.0 in and typed A by "all interior drywall
+partitions are type A", because A is 4-7/8 in and thickness cannot see
+hatch. `stageGroups.hatchedRuns` can: a run whose band holds short strokes
+across it, both ends inside the band, at least three and at least 0.3 per
+foot, is a filled wall. `wallGroups` keeps the hatched and the hollow
+untagged runs of a cluster apart; a hatched run takes a default only if
+the default's own sentence names masonry (MASONRY, CMU, CONCRETE, BLOCK,
+BRICK), a hollow run never takes a masonry one, and otherwise the run is
+untyped. Joplin A-101: 27 of 190 runs hatched (every cross-hatched CMU wall, and no plain partition — the first cut, anything 20° off axis, had flagged 150 of 190, every partition with two doors in it, before the rule was made oblique and dense). Note-typed feet 1,029 → 598 in the measurement; in the pilot the drywall note types 723 ft of A instead of 1,105, and the two hatched walls read at 4.3 and 5.0 in are now untyped, since the masonry note covers 7-5/8 in only.
+
+## 3d. The legend read on the real product path, without the stand-ins
+
+What the pilot used: the second session's cached model reads for Baker
+(p25) and SW (p6), and a hand key of Joplin's G-111 with a `uno` list. What
+the product does: `legendForPlan` (on the calibration path) and the
+WALL_LEGEND ingest stage both rank the set's pages with `legendPages`
+(deterministic) and send the top candidate's lines to the model
+(`extractWallLegend`, prompt `wall-legend.1`), the stage adding a sight
+read from crops. Run here with no key, no cache and no hand key:
+
+| set | `legendPages` top candidate | what the model half would read | against the pilot |
+| --- | --- | --- | --- |
+| Joplin | p5, rank 1 — "a block headed PARTITION TYPE, 70 assembly lines" (then p50, p74) | the partition types A/B/K/L/V with their suffix schedule and the U.N.O. notes 3 and 6 | same page the hand key was made from; the `uno` list is NOT something the prompt asks for, so the product would type nothing by Joplin's notes until the prompt does (1,105 ft of the pilot's A) |
+| Baker | p25, rank 1 — "a block headed WALL TYPES, 40 assembly lines" (then p28 PARTITION TYPE) | a WALL TAG LEGEND composing codes from core letter (S steel, C concrete, M masonry, W wood) + size digit + suffix | the same page the cache was read from, by the same function and prompt; the S6A/C8B codes the pilot used are that read |
+
+The model half is unrun in this checkout: no model key in its `.env`, and
+I did not go looking for one. So "works without the stand-ins" means the
+page selection; the codes themselves need the stage to run with a key, and
+Joplin's U.N.O. typing needs a prompt that extracts the sentences.
 
 ## 4. Glen-hazel: the T1/T2 tags are finish types
 

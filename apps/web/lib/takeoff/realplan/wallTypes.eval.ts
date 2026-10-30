@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { sheetStrokes } from "../sheetStrokes";
 import { detectForSheet } from "../offeredCandidates";
+import { groupsForStage } from "../stageGroups";
 import { planTextTagByRun, isPropagatedTag, plainTag, tagVocabulary } from "../planTextTags";
 import { wallTypeTags } from "../wallTags";
 import type { MatchableWallType } from "../wallTypeMatch";
@@ -78,16 +79,19 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
       // block's and the legend boxes' borders are not offered as walls. The
       // first by-eye sample on Joplin had two "A" walls that were the GENERAL
       // PLAN NOTES box, from a whole-sheet call this eval no longer makes.
+      // …and, as the WALLS stage does, the finder is given the types WITHOUT
+      // their thicknesses and the groups are rebuilt beside it with them.
       const found = detectForSheet({
         segments: read.segments,
         textItems: items,
         pageSize: { widthPt: W, heightPt: read.heightPt },
         feetPerUnit: fpu,
-        wallTypes,
+        wallTypes: wallTypes.map((t) => ({ ...t, thicknessIn: null })),
         sampledSheets: null,
         ...(planText === undefined ? {} : { planText }),
       }).found;
-      const groups: WallGroup[] = found.groups;
+      const staged = groupsForStage({ found, segmentsPt: read.segments, textItems: items, widthPt: W, feetPerUnit: fpu, wallTypes, legendCodes: planText?.legendCodes ?? null });
+      const groups: WallGroup[] = staged.groups;
       const total = groups.reduce((s, g) => s + g.feet, 0);
       const by = { tagged: 0, carried: 0, note: 0, untyped: 0 };
       const perType = new Map<string, { tagged: number; carried: number }>();
@@ -102,7 +106,7 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
       }
       const report = planText === undefined ? null : planTextTagByRun({ segments: read.segments, text: items, widthPt: W, walls: found.walls, feetPerUnit: fpu, legendCodes: vocabulary, textTags: wallTypeTags(items, W), wallTypes }).report;
       const pct = (n: number) => (total > 0 ? `${((100 * n) / total).toFixed(0)}%` : "-");
-      console.log(`\nWT ${set} p${page}: ${found.walls.length} runs, ${Math.round(total)} ft; legend ${legend === null ? "none" : legendCodes.join("/")}`);
+      console.log(`\nWT ${set} p${page}: ${found.walls.length} runs, ${Math.round(total)} ft, ${staged.hatched.size} hatched; legend ${legend === null ? "none" : legendCodes.join("/")}`);
       console.log(`   typed ${pct(by.tagged + by.carried + by.note)} — tagged ${Math.round(by.tagged)} ft (${pct(by.tagged)}), carried ${Math.round(by.carried)} ft (${pct(by.carried)}), note ${Math.round(by.note)} ft (${pct(by.note)}), untyped ${Math.round(by.untyped)} ft (${pct(by.untyped)})`);
       console.log(`   per type: ${[...perType].sort((a, b) => b[1].tagged + b[1].carried - a[1].tagged - a[1].carried).map(([c, f]) => `${c} ${Math.round(f.tagged + f.carried)} ft (${Math.round(f.tagged)} tagged)`).join(" · ") || "none"}`);
       if (process.env.WT_DEBUG === "1") {
@@ -116,7 +120,7 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
       if (report) console.log(`   tags: ${report.symbols} symbols, ${report.coded} coded, ${report.bareText} bare, ${report.direct} runs tagged, ${report.propagated} carried, ${report.conflicts} conflicts, shape ${report.shape}, shortForm ${report.shortForm}`);
       // ── TEN RANDOM RUNS, FOR THE CROPS ──
       const typeOf = new Map<WallGroup["runs"][number], string>();
-      for (const g of groups) for (const r of g.runs) typeOf.set(r, g.source.kind === "TAG" ? g.source.tag : g.source.kind === "GENERAL_NOTE" ? `${g.candidates[0]?.code ?? "?"} (note)` : "untyped");
+      for (const g of groups) for (const r of g.runs) typeOf.set(r, `${g.source.kind === "TAG" ? g.source.tag : g.source.kind === "GENERAL_NOTE" ? `${g.candidates[0]?.code ?? "?"} (note)` : "untyped"}${staged.hatched.has(r) ? " [hatched]" : ""}`);
       const next = rng(SEED + page);
       const runs = [...found.walls];
       const sample: typeof runs = [];
