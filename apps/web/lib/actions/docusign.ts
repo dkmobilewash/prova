@@ -195,7 +195,16 @@ async function prepare(companyId: string, formData: FormData): Promise<{ error: 
         status: true,
         submittedOn: true,
         proposals: {
-          select: { changeType: true, lineItemId: true, description: true, quantity: true, unit: true, unitPrice: true },
+          select: {
+            changeType: true,
+            lineItemId: true,
+            description: true,
+            quantity: true,
+            unit: true,
+            unitPrice: true,
+            budgetedUnitCost: true,
+            costCategory: true,
+          },
           orderBy: { createdAt: "asc" },
         },
       },
@@ -226,6 +235,32 @@ async function prepare(companyId: string, formData: FormData): Promise<{ error: 
         describeChangeOrderProposal(proposal, proposal.lineItemId ? targetsById.get(proposal.lineItemId) ?? null : null),
       ),
     };
+    // THE BACKUP IS ON BY DEFAULT and off only when the sender unticked it
+    // (Diego, 2026-10-30): the GC sees hours × rate, burden, cost, each
+    // recap step and the sell under every priced ADD line. The box posts
+    // "off" when unticked; a form that never had the box posts nothing and
+    // gets the default. The figures come from the same module that priced
+    // the lines, at this job's own recap rates.
+    if (String(formData.get("showBackup") ?? "on") !== "off") {
+      const [recap, defaults] = await Promise.all([
+        prisma.jobBidRecap.findUnique({ where: { jobId: job.id } }),
+        prisma.companyBidDefaults.findUnique({ where: { companyId } }),
+      ]);
+      const { pricingBackupLines, recapRatesFrom } = await import("@/lib/change-order-pricing");
+      const rates = recapRatesFrom(recap ?? defaults);
+      snapshot.backup = co.proposals.map((proposal) =>
+        proposal.changeType === "ADD" && proposal.budgetedUnitCost != null && proposal.unitPrice != null
+          ? pricingBackupLines(
+              {
+                quantity: Number(proposal.quantity ?? 1),
+                unitCost: Number(proposal.budgetedUnitCost),
+                costCategory: proposal.costCategory ?? null,
+              },
+              rates,
+            )
+          : [],
+      );
+    }
     return {
       jobId: job.id,
       subject,
