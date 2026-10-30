@@ -1,5 +1,6 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { bothFacesDashedInPoints } from "./dashedFaces";
+import { dimensionStringOrGridLine, type NotAWall } from "./dimensionStrings";
 import { existingSentence, existingWalls, type ExistingWall } from "./existingWalls";
 import { isTableRows, isUnderline } from "./textRows";
 import { legendBoxes } from "./legendBoxes";
@@ -294,7 +295,34 @@ export function offeredCandidates(
     if (ex !== undefined && !framed.sides.has(w) && !framed.inside.has(w)) existingRuns.push(ex);
   }
   const isExisting = new Set(existingRuns.map((e) => e.wall));
-  const offeredRuns = onPlan.filter((w) => !framed.sides.has(w) && !framed.inside.has(w) && !isExisting.has(w));
+  const survivors = onPlan.filter((w) => !framed.sides.has(w) && !framed.inside.has(w) && !isExisting.has(w));
+  // ── A DIMENSION STRING OR A GRID LINE IS NOT A WALL — see `dimensionStrings.ts` ──
+  //
+  // Judged among the survivors, because "nothing meets it" is a question
+  // about the other walls on offer; priced on every offered run against
+  // the cleaned keys, per building, before it was written.
+  const notWalls = new Map<WallCandidate, NotAWall>();
+  if (sheet.textItems !== undefined) {
+    const words = sheet.textItems.map((t) => ({ str: t.str.trim(), x: (t.x + t.width / 2) / sheet.widthPt, y: (t.y - t.height / 2) / sheet.widthPt })).filter((w) => w.str !== "");
+    for (const w of survivors) {
+      const verdict = dimensionStringOrGridLine(w, survivors, words, unitSegments, sheet.feetPerUnit);
+      if (verdict !== null) notWalls.set(w, verdict);
+    }
+  }
+  const offeredRuns = survivors.filter((w) => !notWalls.has(w));
+  for (const kind of ["dimension-string", "grid-line"] as const) {
+    const n = [...notWalls.values()].filter((v) => v.kind === kind).length;
+    if (n > 0) {
+      aside.set(kind, {
+        kind,
+        why:
+          kind === "dimension-string"
+            ? "dimensions written between the two lines and at most one wall meeting them — a dimension string, not a wall"
+            : "a line pair running the whole width of the drawing that at most one wall meets — a grid line, a property line or a border, not a wall",
+        n,
+      });
+    }
+  }
   if (framedRuns.length > 0) {
     aside.set("legend-box", {
       kind: "legend-box",
@@ -368,6 +396,7 @@ export function offeredCandidates(
     setAsideLines: [
       ...equipment.map((e) => ({ kind: "site-equipment", why: `'${e.word}' is written ${e.feet.toFixed(0)} ft away`, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
       ...existingRuns.map((e) => ({ kind: "existing", why: e.why, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
+      ...[...notWalls].map(([w, v]) => ({ kind: v.kind, why: v.why, lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...dashed.map((w) => ({ kind: "dashed-faces", why: "both faces are dashed lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...tables.map((w) => ({ kind: "table-rows", why: "rows of text between the lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...underlines.map((w) => ({ kind: "underlines", why: "ruled under a word, as long as the word", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
