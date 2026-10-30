@@ -257,6 +257,10 @@ export const laborExclusions: Exclusion[] = [
     reason: "Starts a change order from a delay's record; done on the job page in front of that delay, page only.",
   },
   {
+    action: "draftChangeOrderFromTmTicket",
+    reason: "Starts a change order from a signed T&M ticket's frozen snapshot; done on the crew tab in front of that ticket, page only.",
+  },
+  {
     action: "archiveCrewMember",
     reason: "Taking a person off the crew is an owner's roster decision, made on the Team page in front of the name; page only.",
   },

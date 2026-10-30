@@ -540,6 +540,8 @@ model ChangeOrder {
   docuSignEnvelopes DocuSignEnvelope[]
   /// Delays this change order was drafted from (DelayEvent.changeOrderId).
   delayEvents    DelayEvent[]
+  /// T&M tickets this change order was drafted from (TmTicket.changeOrderId).
+  tmTickets      TmTicket[]
 
   @@unique([jobId, number])
   @@index([jobId])
