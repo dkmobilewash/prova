@@ -3,6 +3,7 @@ import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { detectWallsForCalibration, type DetectOutcome, type DetectTarget } from "@/lib/takeoff/detectWallsForCalibration";
 import { takeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
+import { wallItemsForSheet, wallItemsNoteFor, type WallItemsOutcome } from "./wallItems";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { effectiveSheetNumber, effectiveTitle, type SheetRow } from "./sheetIndex";
 import { levelFromTitle } from "./sheetLevel";
@@ -271,11 +272,14 @@ export type WallsDeps = {
   detect: (target: DetectTarget) => Promise<DetectOutcome>;
   /** Rooms and ceilings for a sheet whose walls were just written; `roomsForSheet` unless a test says otherwise. */
   findRooms?: (input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null }) => Promise<RoomsOutcome>;
+  /** The sheet's walls onto the job, an item per wall type; `wallItemsForSheet` unless a test says otherwise. */
+  writeWallItems?: (input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null }) => Promise<WallItemsOutcome>;
 };
 
 const realDeps: WallsDeps = {
   detect: (target) => detectWallsForCalibration(target),
   findRooms: (input) => roomsForSheet(input),
+  writeWallItems: (input) => wallItemsForSheet(input),
 };
 
 /** The note a task carries once its rooms were looked for, after the walls' own note. */
@@ -340,6 +344,7 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       await note(task.id, "already found");
       return { ok: true };
     }
+    const types = await loadWallTypes();
     const outcome = await deps.detect({
       pageId: page.id,
       calibrationId: calibration.id,
@@ -347,17 +352,43 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       companyId: ctx.companyId,
       pageNumber: task.pageNumber,
       feetPerUnit,
-      wallTypes: await loadWallTypes(),
+      wallTypes: types,
+      // Diego's call: the finder does not pair with the library's thicknesses
+      // here, so the takeoff is the same with or without wall types; the
+      // groups are built beside it with them (`stageGroups.ts`).
+      pairWithThicknesses: false,
     });
     const said = wallsNoteFor(outcome);
     if (!said.ok) return said;
+    // ── THE NOTE SAYS WHAT THE THICKNESSES WERE USED FOR ──
+    // The finder CAN pair with the thicknesses of the types a company builds
+    // (`findWallsOnSheet`), and measured on Joplin A-101 that moved 145 ft of
+    // real wall off the count; this stage does not let it (above). The
+    // thicknesses still decide the grouping, and the note says so, so a
+    // company's settings never move a count silently.
+    const scheduled = types.filter((t) => t.thicknessIn !== null).map((t) => `${t.code} ${t.thicknessIn}in`);
+    const paired = scheduled.length > 0 ? `; found without the library's thicknesses, grouped with them: ${scheduled.join(", ")}` : "";
     // ── THEN THE ROOMS AND THEIR CEILINGS, ON A SHEET THAT GOT WALLS ──
     // The same step the viewer's Find rooms + Save does, so the counted floor
     // plans carry their rooms and ceiling areas before anybody opens them
     // (`lib/plan-ingest/rooms.ts`). Its outcome rides on the task's note; a
     // failure there does not fail the sheet, whose walls are already written.
-    let text = said.note;
+    let text = `${said.note}${paired}`;
     if (outcome === "written") {
+      // ── THE WALLS ONTO THE JOB, BY TYPE (`lib/plan-ingest/wallItems.ts`) ──
+      const writeWallItems = deps.writeWallItems ?? realDeps.writeWallItems!;
+      try {
+        const items = await writeWallItems({ planId: ctx.planId, companyId: ctx.companyId, jobId: ctx.jobId, pageNumber: task.pageNumber, userId: ctx.startedByUserId });
+        // "no walls found" here means the detection stored no rows, which the
+        // detector's own note already says — repeating it after "walls found"
+        // would read as a contradiction, and the one place it can happen is a
+        // test whose `detect` returns "written" without writing (the whole-set
+        // dbtest's stub). Every other skip and every write is worth a clause.
+        if (!(items.kind === "skipped" && items.why === "no walls found")) text = `${text}; ${wallItemsNoteFor(items)}`;
+      } catch (error) {
+        console.error("[walls] wall items after walls threw", { planId: ctx.planId, pageNumber: task.pageNumber, error });
+        text = `${text}; walls on job failed`;
+      }
       const findRooms = deps.findRooms ?? realDeps.findRooms!;
       try {
         const rooms = await findRooms({ planId: ctx.planId, companyId: ctx.companyId, jobId: ctx.jobId, pageNumber: task.pageNumber, userId: ctx.startedByUserId });
@@ -378,7 +409,7 @@ export type WallsSummaryRow = {
   pageNumber: number;
   label: string;
   status:
-    | { kind: "walls"; groups: number; feet: number; rooms?: number; ceilingSqFt?: number }
+    | { kind: "walls"; groups: number; feet: number; typedFeet?: number; rooms?: number; ceilingSqFt?: number }
     | { kind: "skipped"; why: WallsSkip }
     | { kind: "looked"; note: string }
     | { kind: "failed"; error: string }
@@ -390,7 +421,7 @@ export function wallsSummaryRows(input: {
   /** Rooms the run wrote per page, and the ceiling area it read, derived from the ROOM_FINDER rows. */
   rooms?: Map<number, { rooms: number; ceilingSqFt: number }>;
   /** Found walls per page, for its current scale: group count and feet. */
-  walls: Map<number, { groups: number; feet: number }>;
+  walls: Map<number, { groups: number; feet: number; typedFeet?: number }>;
   /** The newest WALLS run's tasks, by page. */
   tasks: Map<number, { finishedAt: Date | null; note: string | null; error: string | null; attempts: number }>;
   maxAttempts: number;
@@ -442,7 +473,7 @@ export async function wholeSetSummary(planId: string, companyId: string, maxAtte
     hasParts: type._count.components > 0,
     thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
   }));
-  const walls = new Map<number, { groups: number; feet: number }>();
+  const walls = new Map<number, { groups: number; feet: number; typedFeet: number }>();
   // Rooms and the ceiling area the run read, from the ROOM_FINDER rows on the
   // sheet's current scale — derived, like the walls, never stored.
   const rooms = new Map<number, { rooms: number; ceilingSqFt: number }>();
@@ -473,7 +504,12 @@ export async function wholeSetSummary(planId: string, companyId: string, maxAtte
       feetPerUnit,
     );
     if (groups !== null && groups.length > 0) {
-      walls.set(page.pageNumber, { groups: groups.length, feet: groups.reduce((sum, group) => sum + group.feet, 0) });
+      walls.set(page.pageNumber, {
+        groups: groups.length,
+        feet: groups.reduce((sum, group) => sum + group.feet, 0),
+        // Feet the drawing named — by a tag or its U.N.O. note; the rest is a thickness and a question.
+        typedFeet: groups.filter((group) => group.source.kind !== "REMAINDER").reduce((sum, group) => sum + group.feet, 0),
+      });
     }
   }
   return wallsSummaryRows({

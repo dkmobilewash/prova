@@ -7,9 +7,10 @@ import { pagesToSample } from "./sheetTemplate";
 import { inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
 import { detectForSheet } from "./offeredCandidates";
 import { SheetTooDenseError, type StrokeSegment } from "./wallVectors";
-import type { MatchableWallType } from "./wallTypeMatch";
+import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
 import { matchGroups } from "./proposalMatch";
+import { groupsForStage } from "./stageGroups";
 import { aiGate } from "@/lib/ai/settings";
 import { tagVocabulary } from "./planTextTags";
 import { doorScheduleForPlan, doorsOnSheet, legendForPlan, typedFeetOf, writeSheetResult } from "./planTextRead";
@@ -87,6 +88,14 @@ export type DetectTarget = {
   /** Feet per page WIDTH unit, from the calibration this is keyed to. */
   feetPerUnit: number;
   wallTypes: MatchableWallType[];
+  /**
+   * Whether the finder may pair with the types' thicknesses. The WALLS
+   * stage says false (Diego, 2026-10-29): the finder then gets the types
+   * without thickness, so a whole-set takeoff is identical with or without
+   * wall types, and the groups are rebuilt beside it with the thick ones
+   * (`stageGroups.ts`). Absent, the finder behaves as it always has.
+   */
+  pairWithThicknesses?: boolean;
 };
 
 export async function detectWallsForCalibration(
@@ -193,12 +202,18 @@ export async function detectWallsForCalibration(
     const planTextOn = (await aiGate(target.companyId, "PLAN_TEXT_READ")).ok;
     let legendCodes: string[] | null = null;
     let legendPage: number | null = null;
+    // The company's types, with the legend's own "unless noted otherwise"
+    // sentence on the type it names (`MatchableWallType.unoNote`), so a sheet
+    // with no such note of its own still gets the legend's default.
+    let wallTypes: MatchableWallType[] = target.wallTypes;
     if (planTextOn) {
       try {
         const legend = await legendForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime });
         if (legend !== null) {
           legendCodes = legend.codes;
           legendPage = legend.page;
+          const uno = legend.uno ?? [];
+          if (uno.length > 0) wallTypes = target.wallTypes.map((type) => ({ ...type, unoNote: uno.find((u) => sameDesignation(u.code, type.code))?.note ?? type.unoNote ?? null }));
         }
       } catch (error) {
         console.error("[takeoff] legend read failed; detecting without it", { planId: target.planId }, error);
@@ -209,7 +224,7 @@ export async function detectWallsForCalibration(
     // (`tagVocabulary`). A company with no wall types has no vocabulary and
     // gets the detection it always had.
     const vocabulary = tagVocabulary(
-      target.wallTypes.map((type) => type.code),
+      wallTypes.map((type) => type.code),
       legendCodes,
     );
     const planText = vocabulary.length === 0 ? undefined : { legendCodes: vocabulary };
@@ -224,17 +239,23 @@ export async function detectWallsForCalibration(
     //
     // Everything downstream inherited it — the calibration save, the whole-set
     // takeoff, and every row they wrote. One pipeline, one answer.
+    const pairWithThicknesses = target.pairWithThicknesses !== false;
     const detected = detectForSheet({
       segments: strokes.segments,
       textItems,
       pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt },
       feetPerUnit: target.feetPerUnit,
-      wallTypes: target.wallTypes,
+      wallTypes: pairWithThicknesses ? wallTypes : wallTypes.map((type) => ({ ...type, thicknessIn: null })),
       scanned: raster !== null,
       sampledSheets: sampleFailed ? null : sampledSheets,
       ...(planText === undefined ? {} : { planText }),
     });
     const found = detected.found;
+    // The groups: the finder's own when it paired with the thicknesses, else
+    // rebuilt here with them — same runs, same feet, named with the types.
+    const groups = pairWithThicknesses
+      ? found.groups
+      : groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: planText?.legendCodes ?? null }).groups;
     if (planTextOn) {
       try {
         const schedule = await doorScheduleForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime });
@@ -258,7 +279,7 @@ export async function detectWallsForCalibration(
           calibrationId: target.calibrationId,
           legend: legendCodes === null || legendPage === null ? null : { page: legendPage, codes: legendCodes },
           doors,
-          typed: typedFeetOf(found.groups),
+          typed: typedFeetOf(groups),
         });
       } catch (error) {
         console.error("[takeoff] door join failed; proposals unaffected", { planId: target.planId }, error);
@@ -269,7 +290,7 @@ export async function detectWallsForCalibration(
     // on it — a schedule, a detail page, a site plan — is a fact about the
     // drawing, and a row saying "no walls" would be indistinguishable from
     // never having looked.
-    if (found.groups.length === 0) return "nothing-found";
+    if (groups.length === 0) return "nothing-found";
 
     // APPEND-ONLY, so there is nothing to delete first. A second run under the
     // same calibration writes a second set; the reader takes the newest
@@ -299,7 +320,7 @@ export async function detectWallsForCalibration(
       select: { id: true, name: true, thicknessIn: true, wallType: { select: { code: true } } },
     });
     const { matched } = matchGroups(
-      found.groups.map((group) => ({
+      groups.map((group) => ({
         namedCode: namedCodeOf(group),
         thicknessInches: group.inches,
       })),
@@ -313,7 +334,7 @@ export async function detectWallsForCalibration(
 
     await prisma.takeoffWallProposal.createMany({
       data: proposalRowsFor(
-        found.groups,
+        groups,
         { pageId: target.pageId, calibrationId: target.calibrationId },
         matched,
       ),

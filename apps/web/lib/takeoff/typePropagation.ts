@@ -178,10 +178,27 @@ function continuation(
   // look across a gap, and then to the NEAREST run on the line — the one
   // past the door, not the one past the next door too.
   if (candidates.length > 0) return candidates.length === 1 ? candidates[0] : null;
-  if (gapped.length === 0) return null;
-  gapped.sort((a, b) => a.along - b.along);
-  if (gapped.length > 1 && gapped[1].along - gapped[0].along <= touch) return null;
-  return gapped[0].wall;
+  if (gapped.length > 0) {
+    gapped.sort((a, b) => a.along - b.along);
+    if (gapped.length > 1 && gapped[1].along - gapped[0].along <= touch) return null;
+    return gapped[0].wall;
+  }
+  // ── ROUND A CORNER, WHEN THE CORNER IS THE ONLY WAY ON ──
+  // Measured on nine training floor plans (2026-10-29): collinear carrying
+  // typed under 4% of the footage on every sheet, because a tag's wall ends
+  // at the room's corner and the next wall of the same room — same studs,
+  // same board — starts there. A run of the same thickness whose END meets
+  // this endpoint, and nothing else meeting it, is that wall. Two runs
+  // leaving the point (a T seen from its stem, a crossing) is a question and
+  // the walk stops; a run this endpoint lands in the MIDDLE of is a wall
+  // passing by, not one continuing, and is not a candidate.
+  const corners = walls.filter((other) => {
+    if (seen.has(other)) return false;
+    const thick = Math.max(run.thicknessFeet, other.thicknessFeet);
+    if (thick > 0 && Math.abs(run.thicknessFeet - other.thicknessFeet) > thick * SAME_THICKNESS_SHARE) return false;
+    return Math.hypot(other.x1 - at.x, other.y1 - at.y) <= touch || Math.hypot(other.x2 - at.x, other.y2 - at.y) <= touch;
+  });
+  return corners.length === 1 ? corners[0]! : null;
 }
 
 function atIsEnd(run: WallCandidate, at: { x: number; y: number }): boolean {
