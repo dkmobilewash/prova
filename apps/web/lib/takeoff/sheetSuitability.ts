@@ -58,6 +58,80 @@ const PLAN: SheetSuitability = { likelyDuplicate: false, kind: "floor plan", cau
  * girders drawn double, which the finder reads as a wall thickness apart.
  * Nothing on it is a stud wall.
  */
+/**
+ * ── THE LETTERS BEFORE THE NUMBER SAY WHOSE SHEET IT IS ──
+ *
+ * The list below names the prefixes whose caution has a specific sentence.
+ * `disciplineFromNumber` is the general rule it sits inside: ANY prefix that
+ * does not start with A is somebody else's discipline, and on the pilot of
+ * 2026-10-29 the ones the list did not name were exactly the ones that got
+ * through — `ED1.01` (electrical demolition), `EL1.01`, `EP1.01`, `MEP-201`,
+ * `G-101` — each carrying the architectural walls again. Two A-prefixes are
+ * not plans either: `AD` is the demolition series and `AS` the site series.
+ * Interiors (`I`, `ID`, `AI`) are left alone: a partition plan is an
+ * interiors sheet on some offices' sets.
+ */
+const PREFIX = /^([A-Z]{1,3})[-.\s]?\d/i;
+const PREFIX_KINDS: ReadonlyArray<readonly [RegExp, string, string]> = [
+  [/^AD$/, "demolition plan", "walls being removed, which are not the walls being built"],
+  [/^AS$/, "site plan", "site work rather than the building's partitions"],
+  [/^G/, "general or code sheet", "the code footprint, with the architectural walls repeated under the rating hatches"],
+  [/^M/, "mechanical plan", "the architectural walls repeated in grey under the ductwork"],
+  [/^ED/, "electrical demolition plan", "walls being removed, under the devices coming out"],
+  [/^E/, "electrical plan", "the architectural walls repeated in grey under the power plan"],
+  [/^P/, "plumbing plan", "the architectural walls repeated in grey under the piping"],
+  [/^FA/, "fire alarm plan", "the architectural walls repeated in grey under the devices"],
+  [/^F/, "fire protection plan", "the architectural walls repeated in grey under the sprinkler layout"],
+  [/^T/, "telecom plan", "the architectural walls repeated in grey under the cabling"],
+  [/^S/, "structural plan", "girders and joists, which are drawn a wall's thickness apart"],
+  [/^C/, "civil drawing", "site work rather than the building's partitions"],
+  [/^L/, "landscape drawing", "site work rather than the building's partitions"],
+  [/^D/, "demolition plan", "walls being removed, which are not the walls being built"],
+];
+
+/**
+ * ── WORDS THAT REFUSE A SHEET, AND ONLY A SHEET ──
+ *
+ * These are read by `takeoffSheetVerdict` (the whole-set run and the sheet's
+ * own button) and NOT by `takeoffRank`, which the viewer's view splitter also
+ * consults for every caption on a page. Putting "CODE" or "FIRE PROTECTION"
+ * into the shared rank moved two labelled sheets in the sweep — a notes block
+ * captioned "FIRE PROTECTION AND FIRE ALARM" became its own view — which is a
+ * change to measured quantities this fix has no business making. A sheet
+ * TITLE with these words is not a floor plan; a caption with them is a block
+ * the splitter already handles its own way.
+ */
+export const NOT_A_FLOOR_PLAN_SHEET: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\bCODE\b/i, "a code plan"],
+  [/\bLIFE\s+SAFETY\b/i, "a life-safety plan"],
+  [/\bF\.?\s?F\.?\s?&?\s?E\.?\b/i, "an FF&E plan"],
+  [/\bCEILING\s+PLAN\b/i, "a ceiling plan"],
+  [/\bFIRE\s+PROTECTION\b/i, "a fire protection plan"],
+  [/\bDEMO(LITION)?\b/i, "a demolition plan"],
+  [/\bASSEMBL(Y|IES)\b/i, "an assemblies sheet"],
+  [/\bCEILING\s+TYPES?\b/i, "a ceiling-types sheet"],
+];
+
+/** The first of `NOT_A_FLOOR_PLAN_SHEET` a sheet title matches, or null. */
+export function sheetTitleRefusal(title: string | null | undefined): string | null {
+  const name = (title ?? "").trim();
+  for (const [pattern, kind] of NOT_A_FLOOR_PLAN_SHEET) if (pattern.test(name)) return kind;
+  return null;
+}
+
+/** What a sheet number's prefix says the sheet is when it is NOT an architectural sheet, or null. */
+export function disciplineFromNumber(sheetNumber: string | null | undefined): { kind: string; caution: string } | null {
+  const match = PREFIX.exec((sheetNumber ?? "").trim());
+  if (!match) return null;
+  const prefix = match[1].toUpperCase();
+  if (prefix.startsWith("A") && prefix !== "AD" && prefix !== "AS") return null;
+  if (prefix.startsWith("I")) return null;
+  for (const [pattern, kind, caution] of PREFIX_KINDS) {
+    if (pattern.test(prefix)) return { kind, caution };
+  }
+  return { kind: `${prefix}-series sheet`, caution: "another discipline's sheet, with the architectural walls repeated as its background" };
+}
+
 const BACKGROUND_DISCIPLINES: ReadonlyArray<readonly [RegExp, string, string]> = [
   [/^M[-\s]?\d/i, "mechanical plan", "the architectural walls repeated in grey under the ductwork"],
   [/^E[-\s]?\d/i, "electrical plan", "the architectural walls repeated in grey under the power plan"],
@@ -133,7 +207,9 @@ export function sheetSuitability(
   // Then the sheet number's discipline letter.
   for (const [pattern, kind, caution] of BACKGROUND_DISCIPLINES) {
     if (pattern.test(number)) return { likelyDuplicate: true, kind, caution };
-  }
+  }  const discipline = disciplineFromNumber(number);
+  if (discipline) return { likelyDuplicate: true, kind: discipline.kind, caution: discipline.caution };
+
 
   // Then what the reader made of the page, which is the weakest of the three
   // because it is a model's answer rather than something printed on the sheet.
@@ -456,6 +532,14 @@ export function takeoffRank(
 
   if (worst !== null) {
     return { score: worst[1] + discipline, why: worst[2] };
+  }
+  // ── A NUMBER FROM ANOTHER DISCIPLINE IS REFUSED WHATEVER THE TITLE SAYS ──
+  // "LEVEL 1 PLAN" on EP1.01 is a power plan: the title is the floor's name,
+  // the number is whose drawing it is. Measured 2026-10-29: this is how one
+  // floor was counted ten times.
+  const other = disciplineFromNumber(number);
+  if (other !== null) {
+    return { score: -120, why: other.kind };
   }
   if (repeats.likelyDuplicate) {
     return { score: -100 + discipline, why: repeats.kind };

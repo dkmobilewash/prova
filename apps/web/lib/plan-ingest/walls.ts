@@ -5,6 +5,7 @@ import { takeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { effectiveSheetNumber, effectiveTitle, type SheetRow } from "./sheetIndex";
+import { levelFromTitle } from "./sheetLevel";
 import { sheetIndexFor } from "./sheetIndexQuery";
 import type { StageCtx, StageWork } from "./stages";
 
@@ -48,10 +49,10 @@ export type WallsSheet = {
   hasWalls: boolean;
 };
 
-export type WallsSkip = "no scale" | "not a floor plan" | "already found";
+export type WallsSkip = "no scale" | "not a floor plan" | "already found" | `same level as ${string}`;
 
-/** Why a sheet is not a task, or null when it is one. Pure, and the whole
- *  of the planning rule, so the test can say it in four lines. */
+/** Why a sheet, on its own, is not a task — or null when it could be one.
+ *  Pure. The set-level rule, one plan per floor, is `wallsPlan` below. */
 export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
   if (!sheet.hasScale) return "no scale";
   if (sheet.hasWalls) return "already found";
@@ -59,6 +60,141 @@ export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
     return "not a floor plan";
   }
   return null;
+}
+
+/**
+ * ── ONE PLAN PER FLOOR ──
+ *
+ * Measured 2026-10-29 on two training sets: Baker's A100 (overall floor
+ * plan) and A101 (floor plan) are the same level, and the one-press run
+ * measured both and the estimate added them. A set shows a floor more than
+ * once — an overall plan and a dimensioned one, a plan and its enlarged
+ * areas — and the walls are the same walls.
+ *
+ * So the plan is made for the SET, not sheet by sheet. Sheets that could be
+ * tasks (or already have walls) are grouped by the level their title names;
+ * one is kept per level AND AREA — the one with walls already, else the
+ * OVERALL plan, else a plan that is not ENLARGED, else the lowest sheet
+ * number — and the others are "same level as A100", listed as such in the
+ * summary and never measured. A floor drawn in parts (LEVEL 3 EAST / WEST,
+ * AREA A / B) keeps every part, unless a plan of the whole floor is there
+ * too, in which case the whole floor is kept and the parts are not. A set whose plans name one level, or none, is one floor, and
+ * its whole-floor and enlarged plans are grouped the same way; a sheet with
+ * no title, or an unlevelled plan on a set that names several levels, is
+ * left alone, because nothing says which floor it repeats.
+ */
+export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip | null> {
+  const out = new Map<number, WallsSkip | null>(sheets.map((sheet) => [sheet.pageNumber, wallsSkipReason(sheet)]));
+  const candidates = sheets.filter((sheet) => {
+    const reason = out.get(sheet.pageNumber);
+    return reason === null || reason === "already found";
+  });
+  const named = new Map<WallsSheet, string>();
+  for (const sheet of candidates) {
+    const level = levelFromTitle(sheet.title, "PLAN");
+    if (level) named.set(sheet, level.label);
+  }
+  // With no level named anywhere, the set is one floor: its whole-floor
+  // plans and its ENLARGED plans are that floor (an enlarged toilet plan is
+  // part of the floor plan beside it — Joplin A-111's 103 ft were A-101's
+  // walls again), and one whole-floor plan is kept for all of them. A sheet
+  // with no title at all says nothing about which floor it is, and is left
+  // alone, as is a set with no whole-floor plan to keep.
+  // A set whose plans name ONE level is a single storey too (Joplin says
+  // "OVERALL FIRST FLOOR PLAN" once and "ENLARGED FLOOR PLANS" for its
+  // toilets): an unlevelled plan there can only be that floor. With several
+  // levels named, an unlevelled plan is left alone.
+  const levels = new Set(named.values());
+  const only = levels.size === 1 ? [...levels][0] : levels.size === 0 && candidates.some((sheet) => isWholeFloorTitle(sheet.title)) ? "" : null;
+  const groups = new Map<string, WallsSheet[]>();
+  for (const sheet of candidates) {
+    const key = named.get(sheet) ?? (only !== null && (isWholeFloorTitle(sheet.title) || isEnlargedPlanTitle(sheet.title)) ? only : null);
+    if (key === null) continue;
+    (groups.get(key) ?? groups.set(key, []).get(key)!).push(sheet);
+  }
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    // ── A FLOOR SPLIT BY AREA IS NOT THE SAME PLAN TWICE ──
+    // "LEVEL 3 EAST" and "LEVEL 3 WEST" (or AREA A/B, PART 1/2, NORTH/SOUTH)
+    // are two halves of one floor, joined at a match line, and both must
+    // count. A plan with no area word on that level is the whole floor; if
+    // there is one, it is kept and the parts are the same walls again. If
+    // there is none, one plan is kept PER AREA, and the enlarged plans — a
+    // part of some part — are the same walls again.
+    const whole = group.filter((sheet) => isWholeFloorTitle(sheet.title) && areaOfTitle(sheet.title) === null);
+    if (whole.length > 0) {
+      const keep = [...whole].sort(preferWholeFloor)[0];
+      for (const sheet of group) {
+        if (sheet !== keep && out.get(sheet.pageNumber) === null) out.set(sheet.pageNumber, `same level as ${nameOf(keep)}`);
+      }
+      continue;
+    }
+    const byArea = new Map<string, WallsSheet[]>();
+    for (const sheet of group) {
+      const area = areaOfTitle(sheet.title);
+      if (area !== null && isWholeFloorTitle(sheet.title)) (byArea.get(area) ?? byArea.set(area, []).get(area)!).push(sheet);
+    }
+    const kept: WallsSheet[] = [];
+    for (const part of byArea.values()) {
+      const keep = [...part].sort(preferWholeFloor)[0];
+      kept.push(keep);
+      for (const sheet of part) {
+        if (sheet !== keep && out.get(sheet.pageNumber) === null) out.set(sheet.pageNumber, `same level as ${nameOf(keep)}`);
+      }
+    }
+    if (kept.length === 0) {
+      // Only enlarged plans on this level: nothing to fold them into.
+      continue;
+    }
+    const first = [...kept].sort(preferWholeFloor)[0];
+    for (const sheet of group) {
+      if (!kept.includes(sheet) && areaOfTitle(sheet.title) === null && out.get(sheet.pageNumber) === null) {
+        out.set(sheet.pageNumber, `same level as ${nameOf(first)}`);
+      }
+    }
+  }
+  return out;
+}
+
+function nameOf(sheet: WallsSheet): string {
+  return sheet.sheetNumber ?? `sheet ${sheet.pageNumber}`;
+}
+
+/**
+ * The AREA of a floor a title names, normalised — `EAST`, `AREA B`, `PART 2`,
+ * `NORTH` — or null for a plan of the whole floor. Evergreen numbers its
+ * floors "LEVEL 3 EAST" / "LEVEL 3 WEST"; other offices write AREA A/B,
+ * PART 1/2, SECTOR, ZONE or WING. Two sheets with different areas on one
+ * level are two drawings, not one twice.
+ */
+export function areaOfTitle(title: string | null): string | null {
+  const text = (title ?? "").toUpperCase();
+  const compass = /\b(NORTH\s?EAST|NORTH\s?WEST|SOUTH\s?EAST|SOUTH\s?WEST|NORTH|SOUTH|EAST|WEST|N\.?E\.?|N\.?W\.?|S\.?E\.?|S\.?W\.?)\b(?!\s+ELEVATION)/.exec(text);
+  if (compass) return compass[1].replace(/[\s.]/g, "");
+  const named = /\b(AREA|PART|SECTOR|ZONE|WING|QUADRANT|SEGMENT)\s+([A-Z0-9]{1,3})\b/.exec(text);
+  if (named) return `${named[1]} ${named[2]}`;
+  return null;
+}
+
+/** A title that names a plan of the whole floor rather than a part of it. */
+export function isWholeFloorTitle(title: string | null): boolean {
+  const text = title ?? "";
+  // "PLANS" too: Joplin's A-111 is titled ENLARGED FLOOR PLANS, and a
+  // singular pattern let its 103 ft through on the first re-run.
+  return /\bFLOOR\s+PLANS?\b|\bOVERALL\b/i.test(text) && !/\bENLARGED\b/i.test(text);
+}
+
+/** A title that names a part of a floor drawn larger — walls the floor plan already has. */
+export function isEnlargedPlanTitle(title: string | null): boolean {
+  return /\bENLARGED\b[^.]*\bPLANS?\b/i.test(title ?? "");
+}
+
+function preferWholeFloor(a: WallsSheet, b: WallsSheet): number {
+  const score = (s: WallsSheet) =>
+    (s.hasWalls ? 8 : 0) + (/\bOVERALL\b/i.test(s.title ?? "") ? 4 : 0) + (/\bENLARGED\b/i.test(s.title ?? "") ? 0 : 2);
+  const byScore = score(b) - score(a);
+  if (byScore !== 0) return byScore;
+  return (a.sheetNumber ?? "").localeCompare(b.sheetNumber ?? "", undefined, { numeric: true }) || a.pageNumber - b.pageNumber;
 }
 
 /** Every sheet of the set as the planner sees it: the inventory's rows joined
@@ -212,6 +348,7 @@ export function wallsSummaryRows(input: {
   tasks: Map<number, { finishedAt: Date | null; note: string | null; error: string | null; attempts: number }>;
   maxAttempts: number;
 }): WallsSummaryRow[] {
+  const plan = wallsPlan(input.sheets);
   return input.sheets.map((sheet) => {
     const label = [sheet.sheetNumber, sheet.title].filter(Boolean).join(" — ") || `Sheet ${sheet.pageNumber}`;
     const found = input.walls.get(sheet.pageNumber);
@@ -222,7 +359,7 @@ export function wallsSummaryRows(input: {
     else if (task && !task.finishedAt && task.error && task.attempts >= input.maxAttempts) status = { kind: "failed", error: task.error };
     else if (task && !task.finishedAt) status = { kind: "pending" };
     else {
-      const why = wallsSkipReason(sheet);
+      const why = plan.get(sheet.pageNumber) ?? null;
       status = why === null ? { kind: "pending" } : { kind: "skipped", why };
     }
     return { pageNumber: sheet.pageNumber, label, status };

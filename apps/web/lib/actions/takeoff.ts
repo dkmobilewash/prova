@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { isBlank, labelFromKey, parseNumericInput } from "@/lib/numeric-input";
+import { effectiveSheetNumber, effectiveTitle, type SheetRow } from "@/lib/plan-ingest/sheetIndex";
+import { areaOfTitle, isWholeFloorTitle } from "@/lib/plan-ingest/walls";
+import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
+import { levelFromTitle } from "@/lib/plan-ingest/sheetLevel";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import type { Opening, TakeoffLine } from "@/lib/takeoff";
@@ -1065,6 +1069,57 @@ export async function rescaleTakeoffMeasurements(jobId: string, formData: FormDa
  * and it matters more here because a traced shape LOOKS like a measurement,
  * and a number that came off a screen gets trusted.
  */
+/**
+ * The sheets a set of measurements came from, by number, and whether two of
+ * them show the same floor. A sheet's level is what its title names
+ * (`levelFromTitle`); two whole-floor plans naming no level on a set that
+ * names none are one floor too — the single-storey case. Different AREAS of
+ * one level (LEVEL 3 EAST and WEST) are two drawings and post together;
+ * enlarged plans are left out of the check, because two enlarged areas of
+ * one floor are not the floor twice.
+ */
+async function sheetsFeeding(
+  pages: readonly { pageNumber: number; planId: string }[],
+  companyId: string,
+): Promise<{ ok: true; sheets: string[]; labelled: (label: string) => string } | { ok: false; error: string }> {
+  const distinct = [...new Map(pages.map((p) => [`${p.planId}:${p.pageNumber}`, p])).values()];
+  const byPlan = new Map<string, Map<number, SheetRow>>();
+  for (const planId of new Set(distinct.map((p) => p.planId))) {
+    byPlan.set(planId, new Map((await sheetIndexFor(planId, companyId)).map((row) => [row.pageNumber, row])));
+  }
+  const named = distinct.map((p) => {
+    const row = byPlan.get(p.planId)?.get(p.pageNumber);
+    const number = row ? effectiveSheetNumber(row) : null;
+    const title = row ? effectiveTitle(row) : null;
+    const level = levelFromTitle(title, "PLAN");
+    return { name: number ?? `sheet ${p.pageNumber}`, numbered: number !== null, title, level: level?.label ?? null, wholeFloor: isWholeFloorTitle(title), area: areaOfTitle(title) };
+  });
+  const anyLevel = named.some((n) => n.level !== null);
+  // Two whole-floor plans of one level are one floor twice — unless they are
+  // different AREAS of it (LEVEL 3 EAST and WEST), which are two drawings.
+  const seen = new Map<string, (typeof named)[number]>();
+  for (const one of named) {
+    if (!one.wholeFloor) continue;
+    const floor = one.level ?? (!anyLevel ? "the floor" : null);
+    if (floor === null) continue;
+    const key = `${floor} / ${one.area ?? "whole"}`;
+    const other = seen.get(key) ?? (one.area === null ? [...seen.entries()].find(([k]) => k.startsWith(`${floor} / `))?.[1] : seen.get(`${floor} / whole`));
+    if (other) {
+      const where = one.level ?? "the same floor";
+      return {
+        ok: false,
+        error: `${other.name} and ${one.name} both show ${where} — post one of them, or post them as separate runs if they really are different areas. Nothing was added.`,
+      };
+    }
+    seen.set(key, one);
+  }
+  // Named only when the plan's index knows the sheets; "from sheet 1" tells a
+  // reviewer nothing and would rename every single-sheet post.
+  const sheets = named.map((n) => n.name);
+  const suffix = named.some((n) => n.numbered) ? ` — from ${sheets.join(", ")}` : "";
+  return { ok: true, sheets, labelled: (label: string) => (label.includes(" — from ") ? label : `${label}${suffix}`) };
+}
+
 export async function postTakeoffMeasurements(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
@@ -1077,11 +1132,18 @@ export async function postTakeoffMeasurements(jobId: string, formData: FormData)
 
   const rows = await prisma.takeoffMeasurement.findMany({
     where: { id: { in: ids }, page: { plan: { jobId, companyId: company.id } } },
-    include: { calibration: true },
+    include: { calibration: true, page: { select: { pageNumber: true, planId: true } } },
   });
   if (rows.length !== ids.length) {
     return actionFail("Some of those measurements aren't on this job any more. Reload the page.");
   }
+  // ── THE SAME FLOOR IS NEVER ADDED TWICE, AND THE SHEETS ARE NAMED ──
+  // Measured 2026-10-29: Baker's A100 (overall) and A101 (floor plan) posted
+  // together put one floor on the estimate twice. The sheets behind a post
+  // are read off the plan's index; two of them naming one level is refused
+  // with both names, and the run's label carries the sheets that fed it.
+  const fed = await sheetsFeeding(rows.map((row) => row.page), company.id);
+  if (!fed.ok) return actionFail(fed.error);
   const alreadyPosted = rows.filter((row) => row.postedAt !== null);
   if (alreadyPosted.length > 0) {
     // No create action in this app is idempotent, and posting the same four
@@ -1135,7 +1197,7 @@ export async function postTakeoffMeasurements(jobId: string, formData: FormData)
       return postMeasuredWallRun({
         companyId: company.id,
         jobId,
-        label,
+        label: fed.labelled(label),
         wallTypeId,
         stored,
         measurementIds: ids,
