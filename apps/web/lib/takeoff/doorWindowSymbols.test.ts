@@ -103,6 +103,17 @@ describe("window symbols", () => {
     expect(windowSymbols(triple(0.4).slice(0, 2), [...box, partition], FPU)).toHaveLength(0);
   });
 
+  it("JOINS THE LITES OF A STOREFRONT INTO ONE WINDOW, and leaves two windows apart alone", () => {
+    // Three 4-ft lites with a 4-inch mullion between them, in the north wall: one 12.7-ft window.
+    const lites = [...triple(0.4, 0.5, 0.54), ...triple(0.4, 0.5433, 0.5833), ...triple(0.4, 0.5867, 0.6267)];
+    const one = windowSymbols(lites, [...box, partition], FPU);
+    expect(one).toHaveLength(1);
+    expect(one[0]!.widthFeet).toBeCloseTo(12.67, 1);
+    // The same two lites 3 ft apart are two windows.
+    const two = windowSymbols([...triple(0.4, 0.5, 0.54), ...triple(0.4, 0.57, 0.61)], [...box, partition], FPU);
+    expect(two).toHaveLength(2);
+  });
+
   it("ignores staggered lines — a hatch along the wall — that do not stop together", () => {
     const staggered: StrokeSegment[] = [
       { x1: 0.5, y1: 0.4 - ft(0.33), x2: 0.54, y2: 0.4 - ft(0.33) },
