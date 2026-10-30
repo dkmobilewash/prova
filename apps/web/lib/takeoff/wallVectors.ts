@@ -746,7 +746,7 @@ export function oneFacePerLine(
       .map((piece) => {
         const one = along(piece.x1, piece.y1);
         const two = along(piece.x2, piece.y2);
-        return { from: Math.min(one, two), to: Math.max(one, two), width: piece.width };
+        return { from: Math.min(one, two), to: Math.max(one, two), width: piece.width, gray: piece.gray, layer: piece.layer };
       })
       .sort((a, b) => a.from - b.from);
 
@@ -758,7 +758,7 @@ export function oneFacePerLine(
       const py = open.from * line.uy - line.offset * line.ux;
       const qx = open.to * line.ux + line.offset * line.uy;
       const qy = open.to * line.uy - line.offset * line.ux;
-      joined.push({ x1: px, y1: py, x2: qx, y2: qy, width: open.width });
+      joined.push({ x1: px, y1: py, x2: qx, y2: qy, width: open.width, gray: open.gray, layer: open.layer });
     };
     for (const span of spans.slice(1)) {
       if (span.from - open.to <= gapLimit) {
@@ -774,6 +774,21 @@ export function oneFacePerLine(
               : span.width === undefined
                 ? open.width
                 : Math.max(open.width, span.width),
+          // ── THE PEN COLOUR AND THE LAYER RIDE ALONG, OR THE FEATURES NEVER SEE THEM ──
+          //
+          // This rebuilt every joined face with only its geometry and width, so
+          // `faceGray`/`hasGray` were zero in all 38,123 training rows of two
+          // retrains while the census had colour on 15,728 ft of candidates
+          // (2026-10-30). Same rule as the width: an absent value says nothing,
+          // and where both pieces have a colour the DARKER pen wins, so a face
+          // is grey only when every stretch of it is.
+          gray:
+            open.gray === undefined
+              ? span.gray
+              : span.gray === undefined
+                ? open.gray
+                : Math.min(open.gray, span.gray),
+          layer: open.layer ?? span.layer,
         };
         continue;
       }
