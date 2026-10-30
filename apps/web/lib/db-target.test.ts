@@ -5,6 +5,7 @@ import {
   connectionProblems,
   describe as describeTarget,
   isPooled,
+  localDatabaseProblem,
   neonEndpointId,
   sameDatabase,
   scratchProblem,
@@ -251,5 +252,41 @@ group("the scratch-only rule for the db suite", () => {
   it("missing or malformed is refused, not waved through", () => {
     expect(scratchProblem(undefined, "DATABASE_URL")).toMatch(/missing or not a valid/);
     expect(scratchProblem("not a url", "DIRECT_URL")).toMatch(/missing or not a valid/);
+  });
+});
+
+group("the local-only rule for a script that writes rows", () => {
+  // `backfill-scanned-page-rows.ts` creates page rows AND calibrations — the
+  // number every quantity on a sheet is multiplied by. It refuses a remote
+  // host outright rather than printing it and proceeding; the db suite's
+  // disposable-name rule is the one thing it does not require, because the
+  // scanned sets it exists for live in a local application database.
+  it("refuses every real Neon endpoint, and the message carries no credential", () => {
+    for (const url of [APP, APP_DIRECT, OTHER_DIRECT]) {
+      const problem = localDatabaseProblem(url, "DATABASE_URL");
+      expect(problem).toMatch(/not a local database/);
+      expect(problem).not.toContain(":p@");
+    }
+  });
+
+  it("accepts a local application database by name, which the db suite would not", () => {
+    for (const url of [
+      "postgresql://diego@localhost:5432/prova_dev",
+      "postgresql://diego@127.0.0.1:5432/prova_dev",
+      "postgresql://diego@[::1]/prova_dev",
+      "postgresql://diego@localhost/prova_dev?host=/tmp/pgsock",
+    ]) expect(localDatabaseProblem(url, "DATABASE_URL")).toBeNull();
+    expect(scratchProblem("postgresql://diego@localhost:5432/prova_dev", "DATABASE_URL")).toMatch(/disposable database/);
+  });
+
+  it("refuses host overrides, the wrong protocol, and a missing string", () => {
+    for (const url of [
+      "postgresql://me@localhost/prova_dev?host=remote.example",
+      `${APP_DIRECT}?host=/tmp/pgsock`,
+      "postgresql://me@localhost/prova_dev?hostaddr=203.0.113.1",
+      "https://localhost/prova_dev",
+      undefined,
+      "not a url",
+    ]) expect(localDatabaseProblem(url, "DATABASE_URL")).not.toBeNull();
   });
 });

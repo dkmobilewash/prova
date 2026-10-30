@@ -576,7 +576,10 @@ per `PlanSheetRaster` row with no `TakeoffPlanPage`, from what OCR stored
 raster row whose page exists is not touched, so a hand-made row and whatever
 scale sits on it stay as they were (Evergreen p24/p27). Run it with
 `scripts/backfill-scanned-page-rows.ts` (dry run by default, `--write`, an
-optional plan id); idempotent. The dbtest's third case: two raster rows
+optional plan id); idempotent, and it refuses any `DATABASE_URL` that is
+not localhost, 127.0.0.1, [::1] or a local socket before Prisma is loaded —
+`localDatabaseProblem`, the host half of the db suite's `scratchProblem`,
+with no override, because `--write` creates calibrations. The dbtest's third case: two raster rows
 without pages beside two with, dry run lists the two and writes nothing, the
 write creates the two (one calibrated from its printed scale), leaves the
 hand-set 100 ft alone, and a second run finds nothing. The script itself was

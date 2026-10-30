@@ -13,4 +13,6 @@
   `backfillScannedPageRows` (`scripts/backfill-scanned-page-rows.ts`, dry run
   unless `--write`): one `scannedPageRow` per raster row with no page row, by
   the same rules; a page that exists is not touched. Idempotent; in the same
-  dbtest.
+  dbtest. The script refuses any non-local `DATABASE_URL` before loading
+  Prisma, with no override — `localDatabaseProblem`, the host half of the db
+  suite's `scratchProblem`, now shared.
