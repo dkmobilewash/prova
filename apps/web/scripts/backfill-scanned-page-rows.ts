@@ -11,6 +11,10 @@ import { describe, localDatabaseProblem } from "../../../packages/db/scripts/con
  *     pnpm --filter @prova/web exec tsx scripts/backfill-scanned-page-rows.ts                 # dry run: list, write nothing
  *     pnpm --filter @prova/web exec tsx scripts/backfill-scanned-page-rows.ts --write          # every plan
  *     pnpm --filter @prova/web exec tsx scripts/backfill-scanned-page-rows.ts --write <planId> # one plan
+ *     pnpm --filter @prova/web exec tsx scripts/backfill-scanned-page-rows.ts --write --read-sheet-numbers [<planId>]
+ *         # also read the sheet NUMBER off rows rastered before the corner read existed (#845):
+ *         # render + strips + corner cell per unnamed row, Tesseract only, no model; names the
+ *         # raster row and the page row's label where it has none. Minutes for a hundred pages.
  *
  * ── IT REFUSES ANYTHING BUT A LOCAL DATABASE, AND THERE IS NO OVERRIDE ──
  *
@@ -35,6 +39,7 @@ async function main() {
   const args = process.argv.slice(2);
   const write = args.includes("--write");
   const planId = args.find((a) => !a.startsWith("--"));
+  const numbers = args.includes("--read-sheet-numbers");
   console.log(`backfill scanned page rows: database ${describe(url)?.label}; ${write ? "WRITING" : "dry run — pass --write to write"}; ${planId ? `plan ${planId}` : "every plan"}`);
   // Loaded only once the target is known to be local, so a refusal never opens a connection.
   const { backfillScannedPageRows } = await import("../lib/plan-ingest/scannedPageRow");
@@ -48,6 +53,13 @@ async function main() {
     const scales = new Map<string, number>();
     for (const o of result.outcomes) scales.set(o.outcome.scale, (scales.get(o.outcome.scale) ?? 0) + 1);
     console.log(`wrote ${result.outcomes.length} page rows — ${[...scales].map(([k, n]) => `${k}: ${n}`).join(", ") || "nothing"}`);
+  }
+  if (numbers) {
+    const { backfillScannedSheetNumbers } = await import("../lib/plan-ingest/raster");
+    const named = await backfillScannedSheetNumbers({ planId, dryRun: !write });
+    console.log(`${named.unnamed} raster rows have no sheet number${write ? "" : " (dry run: none read)"}`);
+    for (const o of named.outcomes) console.log(`  ${o.planId} p${o.pageNumber} → ${o.sheetNumber ?? "nothing read"}${o.label ? `, label ${o.label}` : ""}`);
+    if (write) console.log(`named ${named.outcomes.filter((o) => o.sheetNumber !== null).length} of ${named.unnamed}; labels set ${named.outcomes.filter((o) => o.label === "set").length}`);
   }
 }
 

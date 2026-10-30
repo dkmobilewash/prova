@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@prova/db";
-import { rasterWork, storeRaster } from "./raster";
+import { backfillScannedSheetNumbers, rasterWork, storeRaster } from "./raster";
 import { backfillScannedPageRows, scannedPageRow } from "./scannedPageRow";
 import { runIngest, type ClaimedTask, type RunnerPorts } from "./runner";
 import type { RasterizedSheet } from "@/lib/takeoff/raster/rasterizeSheet";
@@ -107,5 +107,27 @@ describe("a scanned sheet's page row after RASTER", () => {
     // Nothing left to do, and nothing done twice.
     expect(await backfillScannedPageRows({ planId })).toMatchObject({ rasters: 4, withRows: 4, missing: [], outcomes: [] });
     expect(await prisma.takeoffScaleCalibration.count({ where: { page: { planId } } })).toBe(3);
+  });
+
+  it("NAMES the rows rastered before the corner read: a row with no sheet number is read again for its number only, the row and an unlabelled page get it, a labelled page keeps its label", async () => {
+    // After the cases above: p1 A-101, p3 A-103 named; p2 and p4 null. p2's page is labelled "A-102" by hand; p4's is not.
+    expect((await prisma.planSheetRaster.findMany({ where: { planId, sheetNumber: null }, select: { pageNumber: true }, orderBy: { pageNumber: "asc" } })).map((r) => r.pageNumber)).toEqual([2, 4]);
+    const asked: number[] = [];
+    const deps = {
+      readPlanBytes: async () => ({ ok: true as const, bytes: Buffer.alloc(8) }),
+      read: async (_bytes: Uint8Array, pageNumber: number) => { asked.push(pageNumber); return { sheetNumber: pageNumber === 2 ? "A-102X" : null }; },
+    };
+    const dry = await backfillScannedSheetNumbers({ planId, dryRun: true }, deps);
+    expect(dry).toEqual({ unnamed: 2, outcomes: [] });
+    expect(asked).toEqual([]);
+    const first = await backfillScannedSheetNumbers({ planId }, deps);
+    expect(asked).toEqual([2, 4]);
+    expect(first.outcomes).toEqual([{ planId, pageNumber: 2, sheetNumber: "A-102X", label: "kept" }, { planId, pageNumber: 4, sheetNumber: null, label: null }]);
+    expect((await prisma.takeoffPlanPage.findUniqueOrThrow({ where: { planId_pageNumber: { planId, pageNumber: 2 } } })).label).toBe("A-102");
+    // A later read that names p4 labels its page, which had no label; p2 is not read again.
+    const again = await backfillScannedSheetNumbers({ planId }, { ...deps, read: async () => ({ sheetNumber: "A-104" }) });
+    expect(again.outcomes).toEqual([{ planId, pageNumber: 4, sheetNumber: "A-104", label: "set" }]);
+    expect((await prisma.takeoffPlanPage.findUniqueOrThrow({ where: { planId_pageNumber: { planId, pageNumber: 4 } } })).label).toBe("A-104");
+    expect(await prisma.planSheetRaster.count({ where: { planId, sheetNumber: null } })).toBe(0);
   });
 });

@@ -134,3 +134,59 @@ export async function storedRasterFor(planId: string, pageNumber: number): Promi
     }),
   );
 }
+
+/**
+ * ── THE NUMBER OF A SHEET RASTERED BEFORE THE CORNER READ EXISTED ──
+ *
+ * Rows written before #845 carry `sheetNumber: null`: the tiled pass misses
+ * the title block's big numerals, and the stored text cannot name the sheet
+ * after the fact (checked: Evergreen p24's 221 stored words read nothing).
+ * So each such row is read again for its number only — render, strips, the
+ * corner cell, stop (`numberOnly`) — and where that names the sheet, the row
+ * gets the number and the page row its label, if it has none. A row that has
+ * a number is not read; a page a person labelled keeps that label. Rows that
+ * still read nothing stay null and are reported, not invented.
+ */
+export type SheetNumberDeps = {
+  readPlanBytes: typeof readPlanBytes;
+  read: (bytes: Uint8Array, pageNumber: number) => Promise<{ sheetNumber: string | null }>;
+};
+
+const numberDeps: SheetNumberDeps = {
+  readPlanBytes,
+  read: (bytes, pageNumber) => rasterizeSheet(bytes, pageNumber, { numberOnly: true }),
+};
+
+export async function backfillScannedSheetNumbers(input: { planId?: string; dryRun?: boolean } = {}, deps: SheetNumberDeps = numberDeps) {
+  const rows = await prisma.planSheetRaster.findMany({
+    where: { sheetNumber: null, ...(input.planId === undefined ? {} : { planId: input.planId }) },
+    select: { planId: true, pageNumber: true, plan: { select: { companyId: true } } },
+    orderBy: [{ planId: "asc" }, { pageNumber: "asc" }],
+  });
+  const outcomes: { planId: string; pageNumber: number; sheetNumber: string | null; label: "set" | "kept" | "no page row" | null }[] = [];
+  if (input.dryRun) return { unnamed: rows.length, outcomes };
+  const bytesByPlan = new Map<string, Uint8Array | null>();
+  for (const row of rows) {
+    if (!bytesByPlan.has(row.planId)) {
+      const file = await deps.readPlanBytes(row.planId, row.plan.companyId);
+      bytesByPlan.set(row.planId, file.ok ? new Uint8Array(file.bytes) : null);
+      if (!file.ok) console.error("[raster] the plan file could not be read for its sheet numbers", { planId: row.planId, error: file.error });
+    }
+    const bytes = bytesByPlan.get(row.planId) ?? null;
+    if (bytes === null) continue;
+    const { sheetNumber } = await deps.read(bytes, row.pageNumber);
+    let label: (typeof outcomes)[number]["label"] = null;
+    if (sheetNumber !== null) {
+      await prisma.planSheetRaster.update({ where: { planId_pageNumber: { planId: row.planId, pageNumber: row.pageNumber } }, data: { sheetNumber } });
+      const page = await prisma.takeoffPlanPage.findUnique({ where: { planId_pageNumber: { planId: row.planId, pageNumber: row.pageNumber } }, select: { id: true, label: true } });
+      if (page === null) label = "no page row";
+      else if (page.label !== null) label = "kept";
+      else {
+        await prisma.takeoffPlanPage.update({ where: { id: page.id }, data: { label: sheetNumber } });
+        label = "set";
+      }
+    }
+    outcomes.push({ planId: row.planId, pageNumber: row.pageNumber, sheetNumber, label });
+  }
+  return { unnamed: rows.length, outcomes };
+}
