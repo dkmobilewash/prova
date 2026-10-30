@@ -90,6 +90,8 @@ describe("every eval refuses to run without a key", () => {
    * and one the guard re-proves is a second kind of guarantee.
    */
   const KEYLESS_EVALS: Record<string, string> = {
+    "zzMissStages.eval.ts":
+      "calls no model: attributes every missed real foot on the PRODUCT path to the stage that lost it; training sheets by default, held-out as aggregate totals only under MISS_HELD_OUT=1. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts label files were found",
     "scaleAudit.eval.ts":
       "calls no model: deterministic geometry over real drawings, guarded by a skip plus a non-zero input assertion",
     "doorWindows.eval.ts":
