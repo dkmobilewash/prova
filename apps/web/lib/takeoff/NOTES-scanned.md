@@ -585,3 +585,40 @@ write creates the two (one calibrated from its printed scale), leaves the
 hand-set 100 ft alone, and a second run finds nothing. The script itself was
 run under tsx against the same scratch database — dry, `--write <planId>`,
 `--write` again — and did the same.
+
+## Find the walls offered nothing on a scanned sheet in the workspace (2026-10-30, `diego/scan-viewer-walls`)
+
+Reported from Chrome's held-out round on Evergreen p24/p27: the sheets open
+at the right page with the 1/8" scale, Find the walls offers nothing, twice,
+and the panel calls them "p24"/"p27". Diagnosed without labelling or tuning
+on the set: the stored raster row for p24 (4,610 lines, 221 words, caption
+1/8" = 1'-0") run through the viewer's own call — `detectForSheet` with
+`scanned: true`, page 2628 × 1764 pt, 292 ft per page width, the template
+sample with and without the page itself — gives 216 walls and 2,233 pairing
+candidates every time. So the finder was fine and the viewer was not getting
+the row. `TakeoffWorkspace.tsx`, the host the answer-key mode uses, passed
+`scannedPages` to the viewer and never `rasterByPage`; the takeoff page
+passed both. The viewer's default is `{}`, so it read the PDF's strokes, of
+which a scan has none, and said so by offering nothing and showing Read this
+sheet. One prop; `scannedViewerHosts.test.ts` makes the pair a rule and goes
+red with the prop removed.
+
+"Read this sheet" is `readScannedSheetTile` → `readSheetTextTile`, a vision
+model call per tile behind the `SHEET_TEXT` gate: it reads the WORDS off the
+picture (room names, dimensions, the scale caption); the lines come from
+`rasterStrokes.ts` in the browser. It predates the RASTER stage. With a
+raster row stored it adds nothing the stage has not already read, and it
+costs money, so a reviewer on a rastered sheet should not press it.
+
+The "p24" label is data, not the viewer: every one of Evergreen's 106 raster
+rows has `sheetNumber: null`, because they were written before #845's
+corner-cell read, and the stored tiled OCR text cannot name the sheet after
+the fact (p24's 221 words through `sheetNumberFrom`: nothing — the big
+numerals are exactly what the tiled pass misses). `workspaceLoad` already
+labels a scanned page from its raster row's number when there is one. So
+`backfill-scanned-page-rows.ts --read-sheet-numbers` reads each unnamed row
+again for its number only (`numberOnly`: render, strips, corner cell, stop;
+Tesseract, no model, seconds a page) and writes it to the row and to an
+unlabelled page row; a page a person labelled is kept. Rows that still read
+nothing stay null and are listed. Same local-only refusal as the rest of the
+script. Not run against Evergreen here; for the original session.

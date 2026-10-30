@@ -88,6 +88,8 @@ export type RasterizeOptions = {
   cachePath?: string;
   /** Stand-in for Tesseract in tests: words in pixels of the raster. */
   ocr?: (gray: { width: number; height: number; data: Uint8Array }) => Promise<OcrItem[]>;
+  /** Read the sheet NUMBER only — the strips and the corner cell — and stop: for naming rows rastered before the cell read existed. Lines are still read (the deskew needs them). */
+  numberOnly?: boolean;
 };
 
 export async function rasterizeSheet(bytes: Uint8Array, pageNumber: number, options: RasterizeOptions = {}): Promise<RasterizedSheet> {
@@ -147,7 +149,7 @@ export async function rasterizeSheet(bytes: Uint8Array, pageNumber: number, opti
       sheetNumberCell = designationFromCell(cell.lines);
       sheetNumber = sheetNumberCell ?? sheetNumberFromStrips;
       const verdict = takeoffSheetVerdict({ sheetNumber, title: reading.regionText });
-      if (verdict.skipAutomatically) {
+      if (verdict.skipAutomatically || options.numberOnly) {
         items = first.items;
         ocrStoppedEarly = true;
       } else {
