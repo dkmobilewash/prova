@@ -113,3 +113,55 @@ describe("making a render look like a scan", () => {
     expect(long.every((l) => Math.abs(l.y1 / 0.72 - 50) < 5 && Math.abs(l.y2 / 0.72 - 50) < 5)).toBe(true);
   });
 });
+
+describe("what a scan does to lines, and what the extractor does back", () => {
+  it("a thick drawn line is ONE line, not its middle plus its two contour edges", () => {
+    const page = blank(400, 200);
+    drawLine(page, 50, 100, 350, 100, 3); // under the fill cutoff (4 px at 100 dpi), so a line, not a poché
+    const lines = rasterLines(page, { dpi: DPI });
+    expect(lines.filter((l) => l.axis === "h").length).toBe(1);
+  });
+  it("a face cut by a joining wall's width is bridged; a door's width is not; dashes stay dashes", () => {
+    const page = blank(600, 200);
+    drawLine(page, 50, 60, 200, 60, 2);
+    drawLine(page, 206, 60, 350, 60, 2); // a 5-px gap: a 5-in join at 1/8", under 0.08 in
+    drawLine(page, 50, 120, 200, 120, 2);
+    drawLine(page, 240, 120, 350, 120, 2); // a 39-px gap: a door
+    for (let x = 50; x < 350; x += 20) drawLine(page, x, 160, x + 8, 160, 2); // 8-px dashes, 12-px gaps, each under the 15-px cut
+    const lines = rasterLines(page, { dpi: DPI, fillThreshold: 0 });
+    const at = (y: number) => lines.filter((l) => l.axis === "h" && Math.round(l.y1 / 0.72) === y);
+    expect(at(60).length).toBe(1);
+    expect(at(120).length).toBe(2);
+    expect(at(160).length).toBe(0);
+  });
+  it("a hairline the blur greyed past the ink threshold is found by the faint pass, and a blurred speck is not", () => {
+    const page = blank(400, 200);
+    drawLine(page, 50, 100, 350, 100, 1, 150); // a light hairline, one pixel: grey 150
+    page.data[60 * 400 + 200] = 0; // one black speck
+    const blurred = blur3(page); // the hairline is now ~220 at its centre, the speck ~227
+    expect(rasterLines(blurred, { dpi: DPI, fillThreshold: 0, faintThreshold: 0 }).length).toBe(0);
+    const lines = rasterLines(blurred, { dpi: DPI, fillThreshold: 0 });
+    expect(lines.length).toBe(1);
+    expect(Math.round(lines[0].y1 / 0.72)).toBe(100);
+  });
+});
+
+describe("the faint pass beside the ink pass", () => {
+  it("a faint face seven pixels from an inked one is a second face, not a copy of the first", () => {
+    const page = blank(400, 200);
+    drawLine(page, 50, 100, 350, 100, 1); // the darker face: black, found at the ink threshold
+    drawLine(page, 50, 107, 350, 107, 1, 150); // the fainter face
+    const blurred = blur3(page);
+    const ys = rasterLines(blurred, { dpi: DPI, fillThreshold: 0 }).filter((l) => l.axis === "h").map((l) => Math.round(l.y1 / 0.72)).sort((a, b) => a - b);
+    expect(ys).toEqual([100, 107]);
+  });
+  it("faint lines in a field of parallels — a hatch — are not reported; a lone pair is", () => {
+    const page = blank(400, 400);
+    for (let y = 60; y <= 180; y += 10) drawLine(page, 50, y, 350, y, 1, 150); // thirteen hatch lines, a tenth of an inch apart
+    drawLine(page, 50, 300, 350, 300, 1, 150);
+    drawLine(page, 50, 307, 350, 307, 1, 150); // a hairline wall, both faces faint
+    const ys = rasterLines(blur3(page), { dpi: DPI, fillThreshold: 0 }).filter((l) => l.axis === "h").map((l) => Math.round(l.y1 / 0.72)).sort((a, b) => a - b);
+    expect(ys.filter((y) => y < 200).length).toBeLessThanOrEqual(2); // at most the field's two outermost lines, which have neighbours on one side only
+    expect(ys.filter((y) => y >= 200)).toEqual([300, 307]);
+  });
+});

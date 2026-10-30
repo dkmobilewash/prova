@@ -57,6 +57,24 @@ export type RasterLinesOptions = {
   fillThreshold?: number;
   /** How fills become faces: `"runs"` (bands of the blurred page) or `"contour"` (edges of hole-filled shapes, `fillContours.ts`). Contour by default. */
   fills?: "runs" | "contour";
+  /**
+   * A white gap along a run no longer than this, in inches, is bridged — 0.08 in
+   * by default. A drawn face is interrupted where a joining wall meets it (the
+   * join's width, 3-8 in on the sheet is 0.03-0.08 in at 1/8"), and on a scan
+   * by dropouts; a door is 2 ft. Bridging happens AFTER the shortest-run cut,
+   * so the dashes of a dashed line, each shorter than that cut, never join.
+   */
+  maxGapInches?: number;
+  /**
+   * A second ink pass for FAINT lines: below this grey a pixel is faint ink,
+   * 228 by default, and only runs at least `faintMinLengthInches` long count —
+   * a hairline face a scanner blurred to grey 210 is long, a blurred speck
+   * (227 at the centre of a 3×3 blur of one black pixel) is three pixels.
+   * Faint lines the ink pass already found are not reported twice. 0 turns it off.
+   */
+  faintThreshold?: number;
+  /** The shortest faint run worth keeping, in inches. 0.5 by default. */
+  faintMinLengthInches?: number;
 };
 
 type Run = { from: number; to: number };
@@ -65,7 +83,7 @@ type Band = { rows: number; first: number; last: number; min: number; max: numbe
 export type RasterLine = StrokeSegment & { width: number; axis: "h" | "v"; filled: boolean };
 
 /** Runs of ink along one line of pixels (a row, or a column via the step). */
-function runsAlong(data: Uint8Array, start: number, step: number, count: number, threshold: number, minLen: number): Run[] {
+function runsAlong(data: Uint8Array, start: number, step: number, count: number, threshold: number, minLen: number, maxGap = 0): Run[] {
   const runs: Run[] = [];
   let from = -1;
   for (let i = 0; i < count; i += 1) {
@@ -77,7 +95,62 @@ function runsAlong(data: Uint8Array, start: number, step: number, count: number,
     }
   }
   if (from >= 0 && count - from >= minLen) runs.push({ from, to: count - 1 });
-  return runs;
+  if (maxGap <= 0 || runs.length < 2) return runs;
+  // ── BRIDGE THE SMALL GAPS, between runs that each stood on their own ──
+  // A face line is cut where a joining wall meets it and, on a scan, where
+  // the ink dropped out; the finder pairs faces by their overlap, and a face
+  // in four pieces pairs with nothing. Only runs that passed the shortest-run
+  // cut are joined, so a dashed line's dashes never become a solid one.
+  const joined: Run[] = [runs[0]];
+  for (let i = 1; i < runs.length; i += 1) {
+    const last = joined[joined.length - 1];
+    if (runs[i].from - last.to - 1 <= maxGap) last.to = runs[i].to;
+    else joined.push(runs[i]);
+  }
+  return joined;
+}
+
+/**
+ * The lines in `fresh` that no line in `have` already covers: same axis,
+ * within `tolPx` across it, overlapping it along at least half of `fresh`'s
+ * own length. A thick drawn line is found three times without this — once by
+ * the ink pass along its middle and once per EDGE by the contour pass — and
+ * the finder then pairs the two edges into a wall three inches thick, the
+ * whole length of the line. On Crosslines A100 that was 187 ft of "wall"
+ * along a dimension line, twice. The same check keeps the faint pass from
+ * re-reporting what the ink pass found.
+ */
+function notCoveredBy(fresh: RasterLine[], have: RasterLine[], slackPt: number): RasterLine[] {
+  const across = (l: RasterLine) => (l.axis === "h" ? (l.y1 + l.y2) / 2 : (l.x1 + l.x2) / 2);
+  const along = (l: RasterLine): [number, number] => (l.axis === "h" ? [Math.min(l.x1, l.x2), Math.max(l.x1, l.x2)] : [Math.min(l.y1, l.y2), Math.max(l.y1, l.y2)]);
+  const byAxis = { h: [] as RasterLine[], v: [] as RasterLine[] };
+  for (const l of have) byAxis[l.axis].push(l);
+  for (const k of ["h", "v"] as const) byAxis[k].sort((a, b) => across(a) - across(b));
+  const keys = { h: byAxis.h.map(across), v: byAxis.v.map(across) };
+  const lowerBound = (arr: number[], v: number) => {
+    let lo = 0, hi = arr.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (arr[mid] < v) lo = mid + 1; else hi = mid; }
+    return lo;
+  };
+  return fresh.filter((f) => {
+    const m = across(f);
+    const [a1, a2] = along(f);
+    const len = a2 - a1;
+    const list = byAxis[f.axis], ks = keys[f.axis];
+    // Within the EXISTING line's own half-width plus a pixel or two: the edge
+    // of a thick line sits half its width from the middle the ink pass found.
+    // Not a fixed band — the two faces of a thin partition are 7 px apart at
+    // 200 dpi and 1/8", and a band that wide dropped the fainter face as a
+    // copy of the darker one (Crosslines A100: 1,098 ft of key wall with
+    // lines under it and no candidate).
+    const reach = Math.max(...list.map((l) => l.width / 2)) + slackPt;
+    for (let i = lowerBound(ks, m - reach); i < ks.length && ks[i] <= m + reach; i += 1) {
+      if (Math.abs(ks[i] - m) > list[i].width / 2 + slackPt) continue;
+      const [b1, b2] = along(list[i]);
+      if (Math.min(a2, b2) - Math.max(a1, b1) >= 0.5 * len) return false;
+    }
+    return true;
+  });
 }
 
 /**
@@ -136,6 +209,9 @@ export function rasterLines(gray: Gray, options: RasterLinesOptions): RasterLine
   const fillThreshold = options.fillThreshold ?? 245;
   const minLen = Math.max(3, Math.round((options.minLengthInches ?? 0.15) * options.dpi));
   const maxLine = Math.max(1, Math.round((options.maxLineInches ?? 0.04) * options.dpi));
+  const maxGap = Math.round((options.maxGapInches ?? 0.08) * options.dpi);
+  const faintThreshold = options.faintThreshold ?? 228;
+  const faintMinLen = Math.max(minLen, Math.round((options.faintMinLengthInches ?? 0.5) * options.dpi));
   const ptPerPx = 72 / options.dpi;
   const out: RasterLine[] = [];
 
@@ -161,23 +237,75 @@ export function rasterLines(gray: Gray, options: RasterLinesOptions): RasterLine
     }
   };
 
-  const pass = (page: Uint8Array, cut: number, fillsOnly: boolean) => {
+  const pass = (page: Uint8Array, cut: number, fillsOnly: boolean, shortest = minLen) => {
     const rows: Run[][] = [];
-    for (let y = 0; y < height; y += 1) rows.push(runsAlong(page, y * width, 1, width, cut, minLen));
+    for (let y = 0; y < height; y += 1) rows.push(runsAlong(page, y * width, 1, width, cut, shortest, maxGap));
     for (const band of bandsFrom(rows)) emit(band, "h", fillsOnly);
     const cols: Run[][] = [];
-    for (let x = 0; x < width; x += 1) cols.push(runsAlong(page, x, width, height, cut, minLen));
+    for (let x = 0; x < width; x += 1) cols.push(runsAlong(page, x, width, height, cut, shortest, maxGap));
     for (const band of bandsFrom(cols)) emit(band, "v", fillsOnly);
   };
+  // Lines a later pass finds that an earlier one already has are dropped —
+  // within a line's own thickness across, covering half its length along.
+  const slackPt = 1.5 * ptPerPx;
+  const addNew = (from: number) => {
+    const fresh = out.splice(from);
+    out.push(...notCoveredBy(fresh, out, slackPt));
+  };
+  /**
+   * Faint lines standing in a FIELD of parallels are hatch, not faces. The
+   * blur that greys a hairline face greys a hatch pattern's lines the same,
+   * and Bunkie A100's existing building — hatched at a tenth of an inch — came
+   * out of the faint pass as 1,137 ft of long thin "wall". A wall face has one
+   * parallel neighbour, the other face; a hatch line has them on both sides.
+   */
+  const notInAField = (fresh: RasterLine[], all: RasterLine[]): RasterLine[] => {
+    const reachPt = 0.2 * 72;
+    const across = (l: RasterLine) => (l.axis === "h" ? (l.y1 + l.y2) / 2 : (l.x1 + l.x2) / 2);
+    const along = (l: RasterLine): [number, number] => (l.axis === "h" ? [Math.min(l.x1, l.x2), Math.max(l.x1, l.x2)] : [Math.min(l.y1, l.y2), Math.max(l.y1, l.y2)]);
+    const byAxis = { h: all.filter((l) => l.axis === "h").sort((a, b) => across(a) - across(b)), v: all.filter((l) => l.axis === "v").sort((a, b) => across(a) - across(b)) };
+    const keys = { h: byAxis.h.map(across), v: byAxis.v.map(across) };
+    return fresh.filter((f) => {
+      const m = across(f);
+      const [a1, a2] = along(f);
+      const len = a2 - a1;
+      const ks = keys[f.axis], list = byAxis[f.axis];
+      let lo = 0, hi = ks.length;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (ks[mid] < m - reachPt) lo = mid + 1; else hi = mid; }
+      let before = 0, after = 0;
+      for (let i = lo; i < ks.length && ks[i] <= m + reachPt; i += 1) {
+        if (list[i] === f) continue;
+        const [b1, b2] = along(list[i]);
+        if (Math.min(a2, b2) - Math.max(a1, b1) < 0.5 * len) continue;
+        if (ks[i] < m) before += 1; else after += 1;
+      }
+      return !(before >= 1 && after >= 1 && before + after >= 3);
+    });
+  };
   pass(data, threshold, false);
+  if (faintThreshold > 0 && faintThreshold > threshold) {
+    // ── THE FAINT PASS: hairlines a scanner greyed past the ink threshold ──
+    // Measured on six training sheets rasterised and blurred like a scan:
+    // 3,013 ft of key wall had NO line under it at the ink threshold, 2,562
+    // of them on Crosslines A100, whose partition faces are 0.4-pt hairlines
+    // — one pixel at 200 dpi, grey 210 after the blur. Long runs only, so a
+    // speck (227 at its centre, three pixels wide) is never one.
+    const before = out.length;
+    pass(data, faintThreshold, false, faintMinLen);
+    const faint = notCoveredBy(out.splice(before), out, slackPt);
+    out.push(...notInAField(faint, [...out, ...faint]));
+  }
   if (fillThreshold > 0) {
     if ((options.fills ?? "contour") === "contour") {
       // The fill's outline as thin ink, through the same bands; every band
-      // is a face of a fill, so it is marked so.
+      // is a face of a fill, so it is marked so. A thick LINE is a fill to
+      // the contour too, and its two edges would come out beside the middle
+      // the ink pass found — see `notCoveredBy`.
       const { edges } = fillEdges(gray, { fillThreshold, dpi: options.dpi });
       const before = out.length;
       pass(edges.data, 128, false);
       for (let i = before; i < out.length; i += 1) out[i].filled = true;
+      addNew(before);
     } else {
       pass(blur3(gray).data, fillThreshold, true);
     }
