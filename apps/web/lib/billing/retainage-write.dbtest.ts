@@ -117,13 +117,15 @@ describe("the retainage snapshot, written both ways", () => {
   });
 
   it("is $100.04 on a pay application for the identical amount", async () => {
-    const result = await submitPayApplication(
-      jobId,
-      multiForm([{ lineItemId, thisPeriodBilled: AMOUNT, materialsStoredValue: "0" }]),
-    );
+    const fd = multiForm([{ lineItemId, thisPeriodBilled: AMOUNT, materialsStoredValue: "0" }]);
+    // PERIOD TO as a date input posts it: a calendar day, stored at UTC
+    // midnight exactly as typed.
+    fd.set("periodTo", "2026-10-31");
+    const result = await submitPayApplication(jobId, fd);
     expect(result).toEqual({ ok: true });
 
     const invoice = await prisma.invoice.findFirstOrThrow({ where: { jobId, number: 2 } });
+    expect(invoice.periodTo?.toISOString()).toBe("2026-10-31T00:00:00.000Z");
     // THE ASSERTION THIS FILE EXISTS FOR. This read $100.03 before the fix,
     // against the $100.04 the lump-sum path wrote for the same bill on the
     // same job at the same rate.
@@ -151,6 +153,11 @@ describe("the G702 certificate after a lump-sum bill on the same job", () => {
     if (!view) throw new Error("loadPayApplication returned null for a job it should find");
 
     expect(view.isPayApplication).toBe(true);
+    // The G702 header reads these off the same view: the entered period,
+    // no approved change orders on this job, no executed contract recorded.
+    expect(view.invoice.periodTo?.toISOString()).toBe("2026-10-31T00:00:00.000Z");
+    expect(view.netChangeByChangeOrders).toBe(0);
+    expect(view.contractDate).toBeNull();
 
     // Invoice #1 was a lump-sum bill. It is not a previous certificate on
     // this contract, so it is on neither side of the certificate. Before

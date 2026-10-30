@@ -171,6 +171,18 @@ model Invoice {
   dueAt       DateTime?
   status      InvoiceStatus @default(SUBMITTED)
 
+  /// The last day of the billing period this application covers — the
+  /// PERIOD TO on a G702, the date a GC's accounting keys the application
+  /// on. A calendar day ENTERED by the person submitting (stored at UTC
+  /// midnight, rendered in UTC), never stamped: `issuedAt` is the moment of
+  /// submission and the two differ by however late the application went
+  /// out. Nullable because invoices predating 2026-10-30 have none, and a
+  /// lump-sum bill does not need one. Not a natural key: two applications
+  /// may legitimately carry the same period (a correction re-issued the
+  /// same month), so the 10-second duplicate guard in submitPayApplication
+  /// still stands on its own.
+  periodTo DateTime?
+
   /// Retainage withheld from this specific invoice — snapshotted at
   /// creation from Job.retainagePercent × amount, not recomputed live.
   /// Null when the job has no retainage rate set. This is the per-invoice

@@ -307,6 +307,7 @@ export default async function JobBillingPage({
                         </Link>
                         {" · issued "}
                         {formatInstant(invoice.issuedAt, timeZone)}
+                        {invoice.periodTo ? ` · period to ${formatCalendarDate(invoice.periodTo)}` : ""}
                         {" · "}
                         <Link href={`/jobs/${job.id}/pay-applications/${invoice.id}`} className="text-link hover:underline">
                           View pay application →
