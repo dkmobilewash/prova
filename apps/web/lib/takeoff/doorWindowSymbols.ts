@@ -471,6 +471,9 @@ export function mergeLites(windows: readonly WindowSymbol[], feetPerUnit: number
         const gap = Math.max(bLo - aHi, aLo - bHi);
         if (gap > gapMax) continue;
         const lo = Math.min(aLo, bLo), hi = Math.max(aHi, bHi);
+        // No wider than a window can be: Joplin's resident-room wall joined its
+        // G windows and the wall-face bands between them into one 89-ft "window".
+        if ((hi - lo) * feetPerUnit > WIDEST_WINDOW_FEET) continue;
         merged[i] = { ...a, x1: a.x1 + ux * lo, y1: a.y1 + uy * lo, x2: a.x1 + ux * hi, y2: a.y1 + uy * hi, widthFeet: (hi - lo) * feetPerUnit, lines: Math.max(a.lines, b.lines) };
         merged.splice(j, 1);
         joined = true;
