@@ -594,7 +594,7 @@ export async function loadTakeoffWorkspace(
   // same load that decides everything else on the screen.
   const roomFinder = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOff: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOn: true },
+    select: { roomFinderOn: true, demotedWallsOff: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOff: true },
   });
   // The door schedule rows the ingest read, newest per page, for the doors
   // panel's join — only for a company whose switch is on.
@@ -605,7 +605,7 @@ export async function loadTakeoffWorkspace(
     doorScheduleRows,
     plan,
     sheets,
-    symbolCountOn: roomFinder?.symbolCountOn ?? false,
+    symbolCountOn: !(roomFinder?.symbolCountOff ?? false),
     roomFinderOn: roomFinder?.roomFinderOn ?? false,
     // ON unless this company turned it off, and on for a company with no row.
     demotedWallsOn: !(roomFinder?.demotedWallsOff ?? false),

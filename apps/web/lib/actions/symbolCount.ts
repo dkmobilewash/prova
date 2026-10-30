@@ -9,7 +9,7 @@ import { actionFail, actionOk, ownerRefusal, type ActionResult } from "./shared"
 const SETTINGS_ONLY =
   "The company's settings aren't part of your job function. The account owner sets who sees what, on the Team page.";
 
-/** "Find all like this": the per-company switch, OFF until the owner turns it on. */
+/** "Count like this": ON for every company unless its owner turns it off — the box ticked means on, stored as `symbolCountOff: false`. */
 export async function saveSymbolCountSwitch(formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_COMPLIANCE")) return actionFail(SETTINGS_ONLY);
@@ -19,7 +19,7 @@ export async function saveSymbolCountSwitch(formData: FormData): Promise<ActionR
   );
   if (refusal) return refusal;
   const on = formData.get("symbolCountOn") === "on";
-  await prisma.company.update({ where: { id: context.company.id }, data: { symbolCountOn: on } });
+  await prisma.company.update({ where: { id: context.company.id }, data: { symbolCountOff: !on } });
   revalidatePath("/settings");
   return actionOk;
 }
