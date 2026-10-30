@@ -1483,3 +1483,22 @@ describe("a series is strokes that look alike, not merely strokes nearby", () =>
     expect(wallsFromStrokes(six, EIGHTH), "a six-stroke fill leaked a wall").toEqual([]);
   });
 });
+
+describe("oneFacePerLine carries the pen colour and the layer through a join", () => {
+  it("keeps gray and layer on a joined face, the darker pen winning", () => {
+    const joined = oneFacePerLine(
+      [
+        { x1: 0, y1: 0, x2: 10, y2: 0, width: 1, gray: 0.6, layer: "A-WALL" },
+        { x1: 10.5, y1: 0, x2: 20, y2: 0, width: 1, gray: 0.2 },
+        { x1: 0, y1: 50, x2: 20, y2: 50, width: 1 },
+      ],
+      1 / 48,
+    );
+    const faces = [...joined].sort((a, b) => a.y1 - b.y1);
+    expect(faces).toHaveLength(2);
+    expect(faces[0].gray).toBe(0.2);
+    expect(faces[0].layer).toBe("A-WALL");
+    expect(faces[1].gray).toBeUndefined();
+    expect(faces[1].layer).toBeUndefined();
+  });
+});
