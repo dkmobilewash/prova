@@ -281,15 +281,15 @@ describe("nothing is excluded silently", () => {
 
   it("names each kept drawing with its own scale when they differ, and the shared scale once when they do not", () => {
     type Kept = { name: string; scaleName: string | null };
-    const restroom: Kept = { name: "ENLARGED RESTROOM PLAN", scaleName: "1/4\" = 1'-0\"" };
-    const stair: Kept = { name: "ENLARGED STAIR PLAN", scaleName: "1/2\" = 1'-0\"" };
-    const detail = { name: "HEAD OF WALL DETAIL", reason: "a details sheet, not to scale, not measured" };
-    const two = viewsMeasuredCaution([restroom, stair], [], [detail]);
+    const restroomView: Kept = { name: "ENLARGED RESTROOM PLAN", scaleName: "1/4\" = 1'-0\"" };
+    const stairView: Kept = { name: "ENLARGED STAIR PLAN", scaleName: "1/2\" = 1'-0\"" };
+    const detailLeft = { name: "HEAD OF WALL DETAIL", reason: "a details sheet, not to scale, not measured" };
+    const two = viewsMeasuredCaution([restroomView, stairView], [], [detailLeft]);
     expect(two).toContain("ENLARGED RESTROOM PLAN at 1/4\" = 1'-0\" + ENLARGED STAIR PLAN at 1/2\" = 1'-0\"");
     expect(two).toContain("each measured at its own scale");
     expect(two).not.toContain("unstated");
-    const sameScale: Kept[] = [{ ...restroom, scaleName: stair.scaleName }, stair];
-    const same = viewsMeasuredCaution(sameScale, [], [detail]);
+    const sameScale: Kept[] = [{ ...restroomView, scaleName: stairView.scaleName }, stairView];
+    const same = viewsMeasuredCaution(sameScale, [], [detailLeft]);
     expect(same).toContain("ENLARGED RESTROOM PLAN + ENLARGED STAIR PLAN at 1/2\" = 1'-0\"");
     expect(same).not.toContain("each measured");
     expect(viewsMeasuredCaution(null, [stair], [detail])).toBe("");
