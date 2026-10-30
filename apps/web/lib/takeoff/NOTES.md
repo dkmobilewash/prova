@@ -4370,3 +4370,102 @@ on the cleaned keys reads 96% precision on training and 89% on held-out,
 both fine. A retrain is worth repeating when more sheets carry the existing
 set-aside's own column, which is the signal the cleanup actually added.
 
+
+## Junk by kind on the cleaned keys, and what is still catchable — 2026-10-30 (second session, `diego/junk-rules`)
+
+`zzJunkKinds.eval.ts` re-run on the cleaned training labels (snapshot
+`labels-snap-20261030T2107`, glen-hazel and HACP skipped, existing walls
+now rejected in the keys): offered 57,440 ft, on a real wall 39,133,
+**confirmed junk 15,796 (27%)**, unsure 1,605, unlabelled 891.
+
+| kind | ft | runs |
+| --- | --- | --- |
+| other: a plausible wall the key rejected | 7,129 | 440 |
+| stacked dimension strings | 2,447 | 130 |
+| face-only duplicate of a real wall | 1,685 | 180 |
+| grid line | 1,124 | 13 |
+| repeated unit-plan shape | 1,091 | 125 |
+| furniture / fixtures | 895 | 317 |
+| kennel / fence / run grid | 443 | 25 |
+| casework / counters / shelves | 385 | 66 |
+| hatch lines | 296 | 94 |
+| text or tag box | 189 | 30 |
+
+By what the lines are: unknown 3,402 (Murray 947, Camp Bow Wow 548, SW
+401), unknown drawn grey 2,561 (Green Bay 791, Baker 714, Camp Bow Wow
+641), dimension lines 2,476, second face of a real wall 2,019, Camp Bow
+Wow kennels 1,353, one dashed face 1,049, grid and border 965, furniture
+955, casework 384.
+
+**The "other" 7,129 ft is the existing-building footage the cleanup moved
+into the junk column** — Murray 958, Green Bay 851, Baker 696, Camp Bow Wow
+1,086 + 478, Bunkie 289, E Street 219, McAllen 172 — and the style census
+above is the answer to it (one thin rule, not shipped). Of the kinds that
+are NOT existing walls, the two biggest were re-priced on every offered
+run, junk and real alike (`zzJunkRules.eval.ts`):
+
+- **"Grid line" is misnamed on the cleaned keys.** Crops of the longest
+  runs (Camp Bow Wow A101's 199 ft, Baker A100's 112 ft, MHK's two 109 ft)
+  are not grid lines: every one is a pair of EDGES OF A WHITE-FILLED SHAPE
+  drawn with a 0.12 pt hairline — the boundary of a white mask behind the
+  PROPERTY LINE notes, a white rectangle over MHK's grey shop floor, a
+  Baker shape that paints nothing visible at all. The signature does not
+  separate, though: white fill with a hairline pen is 1,434 ft of junk
+  against 9,980 ft of real, because Topeka draws every unit wall exactly
+  that way (9,089 real). White fill with any pen: 3,981 junk / 22,061 real.
+  A fill-based rule is dead on arrival; what separates those shapes is
+  geometry — how far they reach past every other run, and what meets them.
+
+**Priced on every offered run** (`zzJunkRules.eval.ts`: 55,763 ft offered,
+14,310 junk, 39,097 real), junk removed / real lost, per building under
+the shipping rule:
+
+| rule | junk | real | ratio | buildings failing |
+| --- | --- | --- | --- | --- |
+| dimension text between the faces (the old rule) | 1,900 | 4,326 | 0.4 | 12 |
+| text between + ticks ≥ 1 per 10 ft | 1,733 | 4,124 | 0.4 | 11 |
+| **≥ 2 texts between, ≤ 1 run meets** | **432** | **28** | 15.4 | Camp Clark 0 / 7 |
+| **≥ 1 text between + ticks ≥ 1/10 ft, ≤ 1 meets** | **556** | **61** | 9.2 | Camp Clark 0 / 14 |
+| text between, nothing meets | 173 | 12 | 14.0 | — |
+| ticks ≥ 3 per 10 ft, ≤ 1 meets, no text | 2,713 | 2,203 | 1.2 | 9 |
+| **axis-aligned, spans ≥ 85% of every other run, ≤ 1 meets** | **386** | **8** | 46.8 | Alden 0 / 8 |
+| both ends ≥ 2 ft beyond every other run, ≤ 1 meets | 85 | 0 | ∞ | — |
+| both ends ≥ 5 ft beyond every other run | 85 | 217 | 0.4 | 2 |
+| the three in bold together | 823 | 69 | 11.9 | Camp Clark 0 / 14 |
+
+So the thing a dimension string lacks is not a feature of its own lines
+but of its NEIGHBOURS: no partition tees into a dimension line. The same
+test is what keeps a long exterior wall out of the grid-line rule — every
+partition behind it meets it. Built as `dimensionStrings.ts`, two
+set-aside kinds (`dimension-string`, `grid-line`) judged among the runs
+that survive the earlier set-asides, each with its reason; seven tests,
+including the room whose top wall two partitions meet staying a wall.
+
+**Sweep, 54 sheets, vs main 7a8a19b2, snapshot 20261030T2107, four
+notes-only sheets excluded:**
+
+| building | key | real lost | junk removed |
+| --- | --- | --- | --- |
+| Camp Bow Wow | 2,239 | 23 | 395 |
+| Fairgrounds A-101 | 186 | 13 | 131 |
+| MHK A1.01 | 1,034 | 0 | 123 |
+| Bunkie | 229 | 0 | 83 |
+| SW Grand Junction | 796 | 0 | 55 |
+| Baker | 1,218 | 0 | 22 |
+| Murray | 77 | 11 | 13 |
+| Camp Clark | 1,149 | 13 | 0 |
+| Joplin | 5,295 | 9 | 0 |
+| Alden | 207 | 8 | 8 |
+| Topeka, E Street, HPL | | 0 | 9 each |
+| **TRAINING** | 44,769 | **77** | **857** |
+
+11 ft of junk per foot of real, no building worse by more than 23 ft.
+**Held-out delta: real −139 ft, junk −242 ft** — reported as totals; it
+takes junk there at under two to one, so a held-out set has long line
+pairs or dimension strings that are keyed as walls, and the next
+measurement should say which rule by kind (the eval's set-aside lines
+carry it). Of the 14,255 ft of training junk this is 6%; with the 6% the
+unshipped grey-pen rule would take and the third that is existing walls,
+the rest — the "second face of a real wall" (2,019), furniture (955),
+Camp Bow Wow's kennels (1,353 after the site-equipment rule), the one
+dashed face (1,049, priced at 2.2 before) — is the table for next time.
