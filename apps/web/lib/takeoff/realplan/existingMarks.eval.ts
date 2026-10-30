@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { existingMarks } from "../existingMarks";
 
@@ -29,7 +29,8 @@ describe.skipIf(DIRS.length === 0 || SHEETS.length === 0)("existing marks on rea
       const doc = await openPlanPdf(Buffer.from(readFileSync(path)));
       const text = await doc.pageText(page);
       const strokes = await doc.pageStrokes(page);
-      if (text.items.length === 0 && strokes.pathOperators === 0) throw new Error(`${set} p${page}: no text and no paths — a bad page, not a result`);
+      // A page with neither words nor paths is a bad page, not a result — the run refuses it rather than printing a clean nothing.
+      expect(text.items.length + strokes.segments.length, `${set} p${page}: no text and no strokes`).toBeGreaterThan(0);
       const m = existingMarks({ textItems: text.items, segments: strokes.segments, widthPt: text.widthPt });
       const pen = (p: { strokes: number; grayMedian: number; medianPieceIn: number; diagonalShare: number; widthMaxPt: number; grey: boolean; dashed: boolean; hatched: boolean }) =>
         `${p.strokes} strokes, gray ${p.grayMedian.toFixed(2)}, piece ${p.medianPieceIn.toFixed(2)} in, diag ${(100 * p.diagonalShare).toFixed(0)}%, w ${p.widthMaxPt.toFixed(1)}` +
