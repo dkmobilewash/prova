@@ -110,6 +110,7 @@ describe("scanned sheets", () => {
           asked.push(pageNumber);
           return read;
         },
+        pageRow: async () => ({ page: "created" as const, scale: "none read" as const }),
         store: storeRaster,
       },
     );

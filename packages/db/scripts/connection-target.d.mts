@@ -23,6 +23,8 @@ export type ConnectionProblem = {
 
 export function neonEndpointId(host: string): string | null;
 export function isPooled(host: string): boolean;
+/** Refuses anything that is not localhost, 127.0.0.1, [::1] or one local unix socket; no override. */
+export function localDatabaseProblem(connectionString: string | undefined | null, name: string): string | null;
 export function scratchProblem(connectionString: string | undefined | null, name: string): string | null;
 export function describe(connectionString: string | undefined | null): ConnectionTarget | null;
 export function sameDatabase(
