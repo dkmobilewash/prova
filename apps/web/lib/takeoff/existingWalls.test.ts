@@ -35,12 +35,14 @@ describe("textRows joins a line's items and keeps columns apart", () => {
 
 describe("the words: what is a wall tag and what marks an area", () => {
   it("a wall tag: (E), (E) WALL, (E) DEMISING, EXIST. 8\" CMU WALL, EXISTING WALL TO REMAIN, WALL TO REMAIN — not a room name, a note, a slab or a fixture", () => {
-    for (const yes of ["(E)", "(E) WALL", "(E) DEMISING", "EXIST. 8\" CMU WALL", "EXISTING WALL TO REMAIN", "WALL TO REMAIN", "EXIST'G PARTITION", "PARTITION TO REMAIN."]) expect(isWallTag(yes), yes).toBe(true);
-    for (const no of ["(E) OFFICE", "EXISTING WALLS TO REMAIN SHALL BE PATCHED AND PAINTED", "E", "NEW WALL", "WALL", "EXISTING CONCRETE", "EXISTING MIRROR TOILET PARTITION", "(E) COLUMN TO REMAIN"]) expect(isWallTag(no), no).toBe(false);
+    for (const yes of ["(E) WALL", "(E) DEMISING", "EXIST. 8\" CMU WALL", "EXISTING WALL TO REMAIN", "WALL TO REMAIN", "EXIST'G PARTITION", "PARTITION TO REMAIN."]) expect(isWallTag(yes), yes).toBe(true);
+    // A bare (E) names whatever it sits beside — a door, a column — and took 120 ft of new wall on the cleaned labels.
+    for (const no of ["(E)", "(E) OFFICE", "EXISTING WALLS TO REMAIN SHALL BE PATCHED AND PAINTED", "E", "NEW WALL", "WALL", "EXISTING CONCRETE", "EXISTING MIRROR TOILET PARTITION", "(E) COLUMN TO REMAIN"]) expect(isWallTag(no), no).toBe(false);
   });
   it("an area label: NIC, N.I.C., NIC - REFER TO ARCH PLANS, NIC, TYP ALL, AREA \"NOT IN CONTRACT\", NO WORK THIS AREA, EXISTING BUILDING (NIC), LIMITED SCOPE — not a wall tag, a niche or a note", () => {
-    for (const yes of ["NIC", "N.I.C.", "NIC - REFER TO ARCH PLANS", "NIC, TYP ALL", 'AREA "NOT IN CONTRACT"', "NOT IN CONTRACT", "NO WORK THIS AREA", "EXISTING BUILDING (NIC)", "EXISTING BUILDING - NO WORK", "LIMITED SCOPE", "EXISTING TO REMAIN"]) expect(AREA_LABEL.test(yes), yes).toBe(true);
-    for (const no of ["(E) WALL", "NICHE", "EXISTING WALL", "OFFICE", "ALL EXISTING CONSTRUCTION TO REMAIN SHALL BE PATCHED, REPAIRED, AND PREP AS", "NICKEL FINISH"]) expect(AREA_LABEL.test(no), no).toBe(false);
+    for (const yes of ["NIC", "N.I.C.", "NIC - REFER TO ARCH PLANS", "NIC (SEE A-101)", 'AREA "NOT IN CONTRACT"', "NOT IN CONTRACT", "NO WORK THIS AREA", "EXISTING BUILDING (NIC)", "EXISTING BUILDING - NO WORK", "LIMITED SCOPE", "EXISTING TO REMAIN"]) expect(AREA_LABEL.test(yes), yes).toBe(true);
+    // NIC, TYP ALL annotates the furniture on E Street A2.1; read as an area it took 144 ft of new wall.
+    for (const no of ["NIC, TYP ALL", "NIC FURNITURE", "(E) WALL", "NICHE", "EXISTING WALL", "OFFICE", "ALL EXISTING CONSTRUCTION TO REMAIN SHALL BE PATCHED, REPAIRED, AND PREP AS", "NICKEL FINISH"]) expect(AREA_LABEL.test(no), no).toBe(false);
   });
   it("an existing room's name: (E) OFFICE, (E) DISPATCH, (E) STORAGE 104 — not a wall tag, a column, an overhead door, or the first line of a split note", () => {
     for (const yes of ["(E) OFFICE", "(E) DISPATCH", "(E) STORAGE 104", "(E) DELIVERY /"]) expect(isExistingRoomName(yes), yes).toBe(true);
@@ -60,8 +62,8 @@ describe("route 1 — a tag beside the wall", () => {
     const got = ask([word("(E) WALL", 25, 51.5)]);
     expect(got.map((e) => [e.route, e.why])).toEqual([["tag", 'tagged "(E) WALL" 1 ft away']]);
   });
-  it("a bare (E) and a split EXISTING / WALL / TO / REMAIN count; a room named (E) OFFICE and a tag 4 ft away do not", () => {
-    expect(ask([word("(E)", 25, 51.5)])).toHaveLength(1);
+  it("a split EXISTING / WALL / TO / REMAIN counts; a bare (E), a room named (E) OFFICE and a tag 4 ft away do not", () => {
+    expect(ask([word("(E)", 25, 51.5)])).toHaveLength(0);
     expect(ask([word("EXISTING", 20, 51.5), { str: "WALL TO REMAIN", x: 224, y: 515, width: 60, height: 8 }])).toHaveLength(1);
     expect(ask([word("(E) OFFICE", 25, 51.5)])).toHaveLength(0);
     expect(ask([word("(E) WALL", 25, 54.5)])).toHaveLength(0);
