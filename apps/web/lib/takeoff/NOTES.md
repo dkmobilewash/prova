@@ -4092,4 +4092,31 @@ allowed — so the mechanism there is still unknown.
 
 Sweep (52 sheets, main `40900004` → this branch): proposed 86,461 → 86,826,
 missing 5,465 → 5,227, extra 23,778 → 23,857; one sheet changes; held-out
+## A framed legend, schedule or notes block is not four walls — 2026-10-30 (second session, `diego/legend-box`)
+
+Joplin G-101 frames its CODE FOOTPRINT LEGEND and CODE SUMMARY in a double
+rule; A-101 frames GENERAL PLAN NOTES and FLOOR PLAN LEGEND. Two rules five
+inches apart pair as a wall, four of them meet at corners as a room's do,
+and the product offered all of them — 95 + 94 + 32 + 32 ft on one box. The
+table-rows rule looks BETWEEN a run's faces and cannot see a frame whose
+text is a yard inside it. `realplan/zzLegendBox.eval.ts` found the shape on
+the training sheets; crops confirmed the four frames.
+
+`legendBoxes.ts`: a frame is two uprights whose ends agree, closed by a rail
+at the top or the bottom or both (three of Joplin's four arrive with the top
+rule already filtered away). It is set aside whole — sides and every run
+inside, since a legend's inside is wall SAMPLES — when a word from a short
+vocabulary (LEGEND, SCHEDULE, KEYNOTES, NOTES, SUMMARY, SYMBOLS,
+ABBREVIATIONS, WALL TYPES) sits in its top band IN LARGE TYPE, at least 1.4
+times the sheet's median word height.
+
+**The version before that one lost 178 ft of real wall**, and it is the
+reason the rule is title-only: it also accepted text density (twenty words
+at one per twenty square feet), which Joplin's CODE SUMMARY meets — and so
+does a 56 by 6 ft row of nine labelled kennel runs on Camp Bow Wow A102.
+Never a room means never a room.
+
+Sweep vs main `ca376067`, labels snapshotted at 04:22 (Chrome was re-judging
+sheets): Joplin G-101 extra 819 → 343, A-101 1,007 → 786, **697 ft of junk
+removed, 0 ft of real lost**, every other sheet byte-identical, held-out
 delta 0 / 0.
