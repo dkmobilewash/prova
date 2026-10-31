@@ -1,9 +1,13 @@
-import type { Prisma } from "@prova/db";
+import { Prisma } from "@prova/db";
 
-import { componentRunQuantity, type RunGeometry, type WallComponentBasis } from "@/lib/wall-assemblies";
+import { componentRunQuantity, openingsFromJson, type RunGeometry, type WallComponentBasis } from "@/lib/wall-assemblies";
+import { openingThresholdSqFt as thresholdFor } from "@/lib/businessScope";
 import { itemQuantity, type ItemMeasurement, type ItemProperties } from "@/lib/takeoff/itemQuantities";
 import { studsRequired } from "@/lib/takeoff";
 import { isCheckFigureItem } from "@/lib/takeoff/roomItems";
+import { nextItemColor } from "@/lib/takeoff/itemColors";
+import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
+import { boardedArea } from "@/lib/takeoff";
 
 /**
  * ── A TAKEOFF ITEM'S SHARE OF THE ESTIMATE ──
@@ -61,6 +65,8 @@ export type ItemForLines = {
    * existing estimate changes, and the flag came out the same day.
    */
   studSpacingIn?: number | null;
+  /** The company's own "openings smaller than this stay", when it answered. */
+  openingThresholdSqFt?: number | null;
 };
 
 export type ItemLineSummary = {
@@ -108,12 +114,16 @@ export function itemGeometry(item: ItemForLines): RunGeometry {
   const heightFt = item.heightFt ?? 0;
   const sides = item.sides ?? 0;
   const depthFt = (item.depthIn ?? 0) / 12;
+  // Every opening comes off unless the company says small ones stay: Diego's
+  // call, 2026-10-31. A 3 x 7 door is 21 sf, under the rule's usual 32.
+  const openings = item.measurements.flatMap((m) => m.openings ?? []);
+  const deduct = { openingDeductionThresholdSqFt: item.openingThresholdSqFt ?? 0 };
 
   return {
     linearFt: quantity.linearFt,
     heightFt,
-    faceSqFt: quantity.linearFt * heightFt,
-    boardedSqFt: quantity.linearFt * heightFt * sides,
+    faceSqFt: boardedArea({ lengthFt: quantity.linearFt, heightFt, sides: 1, openings }, deduct),
+    boardedSqFt: boardedArea({ lengthFt: quantity.linearFt, heightFt, sides: sides as 1 | 2, openings }, deduct),
     // An item has no stud spacing of its own; the assembly's `studSpacingIn`
     // is handed in (see `ItemForLines`). Without one: zero rather than a
     // guess, because a guessed stud count is a number that looks right and
@@ -136,6 +146,22 @@ export function itemGeometry(item: ItemForLines): RunGeometry {
   };
 }
 
+const CEILING_ITEM_PREFIX = "Ceiling — ";
+/** Holds the finish lines, so a re-send updates them and a removed one stays removed. */
+export const FINISH_ITEM = "Finish schedule";
+
+export type FinishLineStored = { description: string; quantity: number; unit: string };
+export function finishTakeoffFrom(value: unknown): { lines: FinishLineStored[]; ceilingRooms: string[] } {
+  const v = (value ?? {}) as { lines?: FinishLineStored[]; ceilingRooms?: string[] };
+  return { lines: Array.isArray(v.lines) ? v.lines : [], ceilingRooms: Array.isArray(v.ceilingRooms) ? v.ceilingRooms : [] };
+}
+
+async function finishItem(tx: Tx, companyId: string, jobId: string): Promise<string> {
+  const existing = await tx.takeoffItem.findMany({ where: { jobId }, select: { colorHex: true, sortOrder: true }, orderBy: { sortOrder: "desc" } });
+  const made = await tx.takeoffItem.create({ data: { companyId, jobId, name: FINISH_ITEM, type: "COUNT", colorHex: nextItemColor(existing.map((i) => i.colorHex)), sortOrder: (existing[0]?.sortOrder ?? -1) + 1 }, select: { id: true } });
+  return made.id;
+}
+
 /** The item `saveDemoTakeoff` writes: lengths with no assembly, which still belong on the estimate. */
 const DEMO_WALLS = "Demo walls";
 
@@ -149,6 +175,11 @@ export async function loadItemsForLines(tx: Tx, companyId: string, jobId: string
         select: {
           id: true,
           postedAt: true,
+          ceilingFamily: true,
+          roomNumber: true,
+          label: true,
+          openings: true,
+          pageId: true,
           kind: true,
           xs: true,
           ys: true,
@@ -162,7 +193,8 @@ export async function loadItemsForLines(tx: Tx, companyId: string, jobId: string
     },
   });
 
-  const assemblyIds = [...new Set(items.map((item) => item.wallTypeId).filter((id): id is string => id !== null))];
+  const fallback = await tx.wallType.findFirst({ where: { companyId, isDefaultPartition: true }, select: { id: true } });
+  const assemblyIds = [...new Set([...items.map((item) => item.wallTypeId), fallback?.id ?? null].filter((id): id is string => id !== null))];
   const job = await tx.job.findUniqueOrThrow({
     where: { id: jobId },
     select: { assemblyLibraryPinnedAt: true },
@@ -190,7 +222,8 @@ export async function loadItemsForLines(tx: Tx, companyId: string, jobId: string
       })
     : [];
 
-  return { items, assemblies, pinnedAt: job.assemblyLibraryPinnedAt };
+  const pages = await tx.takeoffPlanPage.findMany({ where: { plan: { jobId, companyId }, finishTakeoff: { not: Prisma.AnyNull } }, select: { id: true, finishTakeoff: true } });
+  return { items, assemblies, pinnedAt: job.assemblyLibraryPinnedAt, defaultPartitionId: fallback?.id ?? null, finishPages: pages };
 }
 
 const num = (value: { toString(): string } | number | null | undefined): number | null =>
@@ -207,19 +240,25 @@ export async function syncTakeoffItemLines(
   companyId: string,
   jobId: string,
 ): Promise<ItemLineSummary> {
-  const { items, assemblies } = await loadItemsForLines(tx, companyId, jobId);
+  const { items, assemblies, defaultPartitionId, finishPages } = await loadItemsForLines(tx, companyId, jobId);
   const assemblyById = new Map(assemblies.map((assembly) => [assembly.id, assembly]));
+  const company = await tx.company.findUniqueOrThrow({ where: { id: companyId }, select: { openingDeduction: true, openingDeductionSqFt: true } });
+  const openingThresholdSqFt = company.openingDeduction === null ? 0 : thresholdFor(company.openingDeduction, company.openingDeductionSqFt === null ? null : Number(company.openingDeductionSqFt));
+  const finish = finishPages.map((p) => ({ pageId: p.id, ...finishTakeoffFrom(p.finishTakeoff) }));
+  // A room the finish schedule covers has its ceiling there, so the ceiling plan's copy stays off.
+  const onFinishLines = (m: { pageId: string; ceilingFamily: string | null; roomNumber: string | null; label: string | null }) =>
+    m.ceilingFamily !== null && finish.some((f) => f.pageId === m.pageId && f.ceilingRooms.includes(m.roomNumber ?? (m.label ?? "").replace(/ ceiling$/, "")));
 
   const unpriced: { id: string; name: string }[] = [];
   const checkFigures: ItemLineSummary["checkFigures"] = [];
   const emptyAssembly: { id: string; name: string }[] = [];
 
-  /** `${itemId}:${componentId}` → the line it should produce. */
+  /** `${itemId}:${componentId or description}` → the line it should produce. */
   const wanted = new Map<
     string,
     {
       itemId: string;
-      /** Null for a count, which is a line with no assembly behind it. */
+      /** Null for a plain line, which has no assembly behind it. */
       componentId: string | null;
       description: string;
       unit: string | null;
@@ -229,42 +268,53 @@ export async function syncTakeoffItemLines(
       component: (typeof assemblies)[number]["components"][number] | null;
     }
   >();
+  const plainLine = (itemId: string, description: string, unit: string, quantity: number) =>
+    wanted.set(`${itemId}:${description}`, {
+      itemId,
+      componentId: null,
+      description,
+      unit,
+      quantity,
+      laborHours: null,
+      productionRate: null,
+      component: null,
+    });
 
-  for (const item of items) {
+  for (const raw of items) {
+    const item = { ...raw, measurements: raw.measurements.filter((m) => !onFinishLines(m)) };
     const measured = item.measurements.length > 0;
-    if (item.wallTypeId === null) {
+    const untyped = item.name === UNTYPED_ITEM;
+    // ── NO FOOTAGE IS EVER DROPPED ──
+    // Untyped walls take the company's default partition, labelled as assumed,
+    // or arrive as footage with no price. Diego's call, 2026-10-31.
+    const assumed = item.wallTypeId === null && untyped ? defaultPartitionId : null;
+    const wallTypeId = item.wallTypeId ?? assumed;
+    if (wallTypeId === null) {
       if (measured && isCheckFigureItem(item.name)) {
         const area = itemQuantity(
           item.measurements.map((m) => ({ id: m.id, pageNumber: m.page.pageNumber, kind: m.kind, xs: m.xs, ys: m.ys, cutouts: [], feetPerPageWidth: m.calibration === null ? null : feetAcross(m.calibration) })),
           { type: item.type, heightFt: null, sides: null, wastePercent: 0, depthIn: null },
         ).areaSqFt;
         checkFigures.push({ id: item.id, name: item.name, squareFeet: Math.round(area) });
-      } else if (measured && (item.type === "COUNT" || item.name === DEMO_WALLS)) {
-        // ── A COUNT NEEDS NO ASSEMBLY TO BE A LINE ──
-        // It was named to become one. It arrives with a quantity and no price,
-        // and what a person already posted from the list is not counted again.
+      } else if (measured && (item.type === "COUNT" || untyped || item.name === DEMO_WALLS || item.name.startsWith(CEILING_ITEM_PREFIX))) {
+        // ── A MEASURED THING NEEDS NO ASSEMBLY TO BE A LINE ──
+        // It arrives with a quantity and no price, and what a person already
+        // posted from the list is not counted again.
         const open = item.measurements.filter((m) => m.postedAt === null);
         const total = itemQuantity(
           open.map((m) => ({ id: m.id, pageNumber: m.page.pageNumber, kind: m.kind, xs: m.xs, ys: m.ys, cutouts: [], feetPerPageWidth: m.calibration === null ? null : feetAcross(m.calibration) })),
           { type: item.type, heightFt: null, sides: null, wastePercent: 0, depthIn: null },
         );
-        const quantity = item.type === "COUNT" ? total.count : total.linearFt;
+        const area = item.type === "AREA_WITH_PERIMETER";
+        const quantity = item.type === "COUNT" ? total.count : area ? total.areaSqFt : total.linearFt;
         if (quantity > 0) {
-          wanted.set(`${item.id}:null`, {
-            itemId: item.id,
-            componentId: null,
-            description: item.name,
-            unit: item.type === "COUNT" ? "ea" : "lin ft",
-            quantity,
-            laborHours: null,
-            productionRate: null,
-            component: null,
-          });
+          plainLine(item.id, untyped ? `${item.name} (no type: check)` : item.name, item.type === "COUNT" ? "ea" : area ? "sq ft" : "lin ft", quantity);
+          if (untyped || area) unpriced.push({ id: item.id, name: item.name });
         }
       } else if (measured) unpriced.push({ id: item.id, name: item.name });
       continue;
     }
-    const assembly = assemblyById.get(item.wallTypeId);
+    const assembly = assemblyById.get(wallTypeId);
     if (!assembly) continue;
     if (assembly.components.length === 0) {
       if (measured) emptyAssembly.push({ id: item.id, name: item.name });
@@ -275,12 +325,13 @@ export async function syncTakeoffItemLines(
       id: item.id,
       name: item.name,
       type: item.type,
-      heightFt: num(item.heightFt),
-      sides: item.sides,
+      heightFt: num(item.heightFt) ?? (assumed ? num(assembly.defaultHeightFt) : null),
+      sides: item.sides ?? (assumed ? (assembly.sides === 1 ? 1 : 2) : null),
       wastePercent: num(item.wastePercent),
       depthIn: num(item.depthIn),
-      wallTypeId: item.wallTypeId,
+      wallTypeId,
       studSpacingIn: num(assembly.studSpacingIn),
+      openingThresholdSqFt,
       measurements: item.measurements.map((m) => ({
         id: m.id,
         pageNumber: m.page.pageNumber,
@@ -288,6 +339,7 @@ export async function syncTakeoffItemLines(
         xs: m.xs,
         ys: m.ys,
         cutouts: Array.isArray(m.cutouts) ? (m.cutouts as { xs: number[]; ys: number[] }[]) : [],
+        openings: openingsFromJson(m.openings),
         feetPerPageWidth: m.calibration === null ? null : feetAcross(m.calibration),
       })),
     });
@@ -318,7 +370,7 @@ export async function syncTakeoffItemLines(
       wanted.set(`${item.id}:${component.id}`, {
         itemId: item.id,
         componentId: component.id,
-        description: `${item.name} — ${component.description}`,
+        description: `${item.name}${assumed ? " (assumed type: check)" : ""} — ${component.description}`,
         unit: component.unit,
         quantity,
         laborHours: rate != null && rate > 0 ? quantity / rate : null,
@@ -328,16 +380,23 @@ export async function syncTakeoffItemLines(
     }
   }
 
+  // ── THE FINISH LINES, ONE SOURCE WHETHER THE VIEWER OR THE WHOLE-SET RUN READ THEM ──
+  const finishLines = finish.flatMap((f) => f.lines);
+  if (finishLines.length > 0) {
+    const anchor = items.find((i) => i.name === FINISH_ITEM)?.id ?? (await finishItem(tx, companyId, jobId));
+    for (const line of finishLines) plainLine(anchor, line.description, line.unit, line.quantity);
+  }
+
   // ── WHAT IS ALREADY THERE ──
   //
   // ONLY lines carrying a `takeoffItemId`. A wall-schedule line is not this
   // function's to read, let alone to retire.
   const existing = await tx.jobLineItem.findMany({
     where: { jobId, takeoffItemId: { not: null } },
-    select: { id: true, takeoffItemId: true, wallTypeComponentId: true, isDeleted: true },
+    select: { id: true, takeoffItemId: true, wallTypeComponentId: true, description: true, isDeleted: true },
   });
-  const key = (line: { takeoffItemId: string | null; wallTypeComponentId: string | null }) =>
-    `${line.takeoffItemId}:${line.wallTypeComponentId}`;
+  const key = (line: { takeoffItemId: string | null; wallTypeComponentId: string | null; description: string }) =>
+    `${line.takeoffItemId}:${line.wallTypeComponentId ?? line.description}`;
   const live = new Map(existing.filter((line) => !line.isDeleted).map((line) => [key(line), line.id]));
   const removedByHand = new Set(existing.filter((line) => line.isDeleted).map(key));
 

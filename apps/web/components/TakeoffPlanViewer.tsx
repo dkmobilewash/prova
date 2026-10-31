@@ -4338,9 +4338,10 @@ export function TakeoffPlanViewer({
               onClear={() => setRooms(null)}
             />
           )}
-          {rooms !== null && roomsOnPage === pageNumber && feetPerUnit !== null && pageSize !== null && (
+          {rooms !== null && roomsOnPage === pageNumber && feetPerUnit !== null && pageSize !== null && sheet !== null && (
             <TakeoffFinishPanel
               jobId={jobId}
+              pageId={sheet.id}
               sheetName={sheetLabelByPage[pageNumber] ?? `Sheet ${pageNumber}`}
               rooms={rooms.rooms}
               ceilings={roomCeilings}

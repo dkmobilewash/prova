@@ -7,6 +7,7 @@ import {
   addWallTypeComponent,
   createWallType,
   deleteWallType,
+  setDefaultPartition,
   removeWallTypeComponent,
   updateWallType,
   updateWallTypeComponent,
@@ -41,6 +42,7 @@ export type WallTypeView = {
   /** Overall thickness in inches — what the wall finder matches a drawn group against. */
   thicknessIn: string | null;
   notes: string | null;
+  isDefaultPartition: boolean;
   runCount: number;
   components: WallComponentView[];
 };
@@ -252,6 +254,26 @@ export function WallTypeCard({
         </div>
 
         {type.notes && <p className="mt-2 text-xs text-ink-muted">{type.notes}</p>}
+
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <button
+            type="button"
+            data-testid="default-partition"
+            aria-pressed={type.isDefaultPartition}
+            disabled={isRemoving}
+            onClick={() => {
+              setRemoveError(null);
+              startRemove(async () => {
+                const result = await setDefaultPartition(type.id);
+                if (!result.ok) setRemoveError(result.error);
+              });
+            }}
+            className="min-h-[36px] rounded-md border border-line-card px-3 text-ink-body hover:bg-rail-hover disabled:opacity-50"
+          >
+            {type.isDefaultPartition ? "Default partition: clear" : "Make default partition"}
+          </button>
+          <span className="text-ink-muted">Walls with no type are priced as this, marked "assumed type: check".</span>
+        </div>
 
         <ul className="mt-3 flex flex-col gap-2 border-t border-line-row pt-3">
           {type.components.map((component) => (

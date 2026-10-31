@@ -64,6 +64,10 @@ model WallType {
   code String
   name String
 
+  /// The company's default partition: what "Walls — untyped" is priced as, and
+  /// labelled "assumed type: check". At most one per company, kept by the action.
+  isDefaultPartition Boolean @default(false)
+
   /// Used for a run that gives no height of its own. Nullable on purpose: a
   /// type without a default and a run without a height produce NOTHING rather
   /// than a guessed 10 feet.

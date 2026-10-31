@@ -59,6 +59,7 @@ export default async function WallTypesPage({ searchParams }: { searchParams?: P
     defaultHeightFt: type.defaultHeightFt?.toString() ?? null,
     thicknessIn: type.thicknessIn?.toString() ?? null,
     notes: type.notes,
+    isDefaultPartition: type.isDefaultPartition,
     runCount: type._count.runs,
     components: type.components.map((c) => ({
       id: c.id,

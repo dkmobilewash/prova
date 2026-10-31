@@ -31,6 +31,8 @@ export type ItemMeasurement = {
   ys: number[];
   /** Openings deducted from an AREA. Ignored for the other kinds. */
   cutouts?: { xs: number[]; ys: number[] }[];
+  /** Doors and windows in this wall, taken off its board. Ignored for the other kinds. */
+  openings?: { widthFt: number; heightFt: number }[];
   /**
    * Feet across the page's full width, from the sheet's calibration. Null
    * when the sheet has no scale — those measurements contribute GEOMETRY but
