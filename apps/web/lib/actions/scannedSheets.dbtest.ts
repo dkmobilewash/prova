@@ -136,8 +136,10 @@ describe("scanned sheets", () => {
     if (!loaded) return;
     expect(loaded.scannedPages).toEqual([1]);
     expect(loaded.scannedPlansOn).toBe(true);
-    expect(loaded.rasterByPage[1]?.segments.length).toBe(2);
-    expect(loaded.rasterByPage[2]).toBeUndefined();
+    // The lines themselves are not in the page payload any more (31 MB on a
+    // 106-sheet scan); the page says which pages have a read and where to get it.
+    expect(loaded.rasterPages).toEqual([1]);
+    expect(loaded.rasterUrl).toBe(`/api/takeoff/raster/${planId}`);
     expect(loaded.printedScaleByPage[1]).toBe(`1/8" = 1'-0"`);
     // The scan's own number, read off its corner and stored on the raster row, names it in the picker.
     expect(loaded.sheetLabelByPage[1]).toBe("A101");

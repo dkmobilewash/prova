@@ -6,7 +6,7 @@ import { scaleFromPrinted } from "../scaleFromPrinted";
 import { takeoffSheetVerdict } from "../takeoffSheet";
 import { SheetWorker, type CellLine, type OcrItem, type PxRegion } from "./nodeStack";
 import type { Gray } from "./pgm";
-import { skew } from "./rasterDegrade";
+import { degrade, skew, type Degrade } from "./rasterDegrade";
 import { estimateSkewDegrees, pageSizeOf, rasterLines } from "./rasterLines";
 
 /**
@@ -82,12 +82,28 @@ export type RasterizedSheet = {
   rss: { afterRender: number; afterLines: number; afterOcr: number };
 };
 
+/** Whether two independent reads of the sheet's number both say it is not worth reading in full. */
+export function stopReadingEarly(cell: string | null, strips: string | null, title: string | null | undefined): boolean {
+  if (cell === null || strips === null) return false;
+  return takeoffSheetVerdict({ sheetNumber: cell, title }).skipAutomatically && takeoffSheetVerdict({ sheetNumber: strips, title }).skipAutomatically;
+}
+
 export type RasterizeOptions = {
   dpi?: number;
   /** Where tesseract.js keeps its language file. The OS temp dir by default. */
   cachePath?: string;
   /** Stand-in for Tesseract in tests: words in pixels of the raster. */
   ocr?: (gray: { width: number; height: number; data: Uint8Array }) => Promise<OcrItem[]>;
+  /**
+   * Make the clean render look like a scan before anything reads it — skew,
+   * speckle, blur (`rasterDegrade.ts`). For the evals only: a labelled VECTOR
+   * training sheet put through the stage's own step as a scan, so the
+   * scanned finder is scored against keys that exist. The product never sets
+   * it; a real scan is already degraded.
+   */
+  degrade?: Degrade;
+  /** How long one worker answer may take; the evals raise it on a loaded machine. Default `SHEET_WORKER_TIMEOUT_MS`. */
+  workerTimeoutMs?: number;
   /** Read the sheet NUMBER only — the strips and the corner cell — and stop: for naming rows rastered before the cell read existed. Lines are still read (the deskew needs them). */
   numberOnly?: boolean;
 };
@@ -95,9 +111,10 @@ export type RasterizeOptions = {
 export async function rasterizeSheet(bytes: Uint8Array, pageNumber: number, options: RasterizeOptions = {}): Promise<RasterizedSheet> {
   const dpi = options.dpi ?? RASTER_DPI;
   const t0 = Date.now();
-  const sheet = SheetWorker.start();
+  const sheet = SheetWorker.start(options.workerTimeoutMs === undefined ? {} : { timeoutMs: options.workerTimeoutMs });
   try {
     let gray: Gray = await sheet.render(bytes, pageNumber, dpi);
+    if (options.degrade) gray = degrade(gray, options.degrade);
     const rssAfterRender = process.memoryUsage().rss;
     const t1 = Date.now();
     let lines = rasterLines(gray, { dpi });
@@ -148,8 +165,16 @@ export async function rasterizeSheet(bytes: Uint8Array, pageNumber: number, opti
       gray = cell.gray;
       sheetNumberCell = designationFromCell(cell.lines);
       sheetNumber = sheetNumberCell ?? sheetNumberFromStrips;
-      const verdict = takeoffSheetVerdict({ sheetNumber, title: reading.regionText });
-      if (verdict.skipAutomatically || options.numberOnly) {
+      // ── STOP EARLY ONLY WHEN TWO READS SAY SO ──
+      // On a blurred, skewed scan the corner cell read Crosslines' A100 as
+      // "A00" — a cover-sheet number — and the stage stopped: no captions, no
+      // views, 1,445 of 3,609 ft where the clean raster found 4,024. On Joplin
+      // the scan read NO number and the strips' garbage title alone said
+      // "skip". A number or a title OCR'd off a scan is a guess, and a guess
+      // that throws the whole sheet away needs a second witness: both the
+      // corner cell and the strips must have read a designation, and the
+      // verdict must say skip for each. One read, or none, reads the sheet.
+      if (stopReadingEarly(sheetNumberCell, sheetNumberFromStrips, reading.regionText) || options.numberOnly) {
         items = first.items;
         ocrStoppedEarly = true;
       } else {

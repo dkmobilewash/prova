@@ -289,7 +289,9 @@ describe("job guide facts against a real database", () => {
   it("a job whose bid has gone out has no ask", async () => {
     const guide = (await getJobGuide(companyId, jobs.sent!, NOW))!;
     expect(guide.ask).toBeNull();
-    expect(guide.steps.every((step) => step.status === "done")).toBe(true);
+    // Priced from typed lines with nothing measured: walls read Skipped, not
+    // Done (walk of 2026-10-30), and every other step is done.
+    expect(guide.steps.map((step) => step.status)).toEqual(["done", "skipped", "done", "done", "done"]);
     // Priced has one SUBMITTED invitation as well, so it counts as sent too.
     expect((await getJobGuide(companyId, jobs.priced!, NOW))!.ask).toBeNull();
   });
@@ -645,7 +647,9 @@ describe("the send record", () => {
     expect(facts.invitations[0]).toMatchObject({ status: "INVITED", proposalSentOn: "2026-10-26" });
     const guide = buildJobGuide(facts, NOW);
     expect(guide.ask).toBeNull();
-    expect(guide.steps.every((step) => step.status === "done")).toBe(true);
+    // Priced from typed lines with nothing measured: walls read Skipped, not
+    // Done (walk of 2026-10-30), and every other step is done.
+    expect(guide.steps.map((step) => step.status)).toEqual(["done", "skipped", "done", "done", "done"]);
     expect(guide.steps[4]!.summary).toBe("Sent Oct 26");
     // still on the home list (a sent bid waits on a decision), with no ask
     const home = await getOpenJobGuides(co, NOW);
