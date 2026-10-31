@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { textRows } from "../existingWalls";
+import { suggestedWorkArea } from "../suggestedWorkArea";
 import { demoRuns } from "../demoWalls";
 import { existingWallSet } from "../existingWallSet";
 import { FEW_WALLS_SHARE, MIN_VOTES, onPriorPlan, type PriorLine } from "../planCompare";
@@ -51,9 +52,9 @@ function findPdf(dir: string): string | null {
 type Verdict = { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet?: number; verdict: string };
 type Saved = { page: number; feetPerUnit: number; verdicts: Verdict[] };
 const count = (re: RegExp, text: string) => (text.match(re) ?? []).length;
-const ARMS = ["as offered", "box 2 ft", "box 2 ft + clicks", "box 10 ft + clicks", "compare", "compare + box", "compare + box + clicks"] as const;
+const ARMS = ["as offered", "box 2 ft", "box 2 ft + clicks", "box 10 ft + clicks", "compare", "compare + box", "compare + box + clicks", "suggested", "suggested + clicks"] as const;
 type Arm = (typeof ARMS)[number];
-type Row = { priorPage: number | null; priorHow: string; name: string; held: boolean; renovation: boolean; strict: boolean; arms: Record<Arm, SheetScore>; clicks: number; tries: number };
+type Row = { suggestion: string | null; priorPage: number | null; priorHow: string; name: string; held: boolean; renovation: boolean; strict: boolean; arms: Record<Arm, SheetScore>; clicks: number; tries: number };
 
 describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic user", () => {
   it("scores a box and three clicks per sheet, new-build against renovation", { timeout: 7_200_000 }, async () => {
@@ -100,11 +101,12 @@ describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic use
         const liveFeet = liveRuns.reduce((n, w) => n + w.lengthFeet, 0);
         const doc2 = await openPlanPdf(Buffer.from(readFileSync(pdf)));
         let bestFeet = 0;
+        const demoRemoved: { x1: number; y1: number; x2: number; y2: number; lengthFeet: number }[] = [];
         const myFaces = longFaces(strokes.segments, W, fpu);
         const setPairs = pairsBySet.get(dir) ?? (await pairsForSet(doc2, fpu));
         pairsBySet.set(dir, setPairs);
         // The third session's one pairer decides which demolition plan belongs to this sheet.
-        for (const pair of setPairs.filter((p) => p.newPage === saved.page)) {
+        for (const pair of setPairs.filter((p) => p.newPage === saved.page && p.primary)) {
           const page = pair.demoPage;
           const t = await doc2.pageText(page);
           const its = t.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
@@ -123,6 +125,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic use
             const set = existingWallSet({ level: null, remove, remain, newPlan: liveRuns, feetPerUnit: fpu });
             const shift = !few && set.shift !== null ? set.shift : alignViews(myFaces, faces, fpu);
             if (shift === null || shift.votes < MIN_VOTES) continue;
+            for (const r of remove) demoRemoved.push({ x1: r.x1 + shift.dx, y1: r.y1 + shift.dy, x2: r.x2 + shift.dx, y2: r.y2 + shift.dy, lengthFeet: r.lengthFeet });
             const lines: PriorLine[] = few ? faces.filter((f) => !onRemoved(f)) : remain.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, thicknessFeet: w.thicknessFeet }));
             const aligned = lines.map((p) => ({ ...p, x1: p.x1 + shift.dx, y1: p.y1 + shift.dy, x2: p.x2 + shift.dx, y2: p.y2 + shift.dy }));
             const feet = liveRuns.filter((w) => onPriorPlan(w, aligned, fpu)).reduce((n, w) => n + w.lengthFeet, 0);
@@ -179,8 +182,11 @@ describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic use
           return { kept, tries: tried.size };
         };
         const tight = clicked(box(2)), loose = clicked(box(10)), both = clicked(box(2), priorPlan);
+        const suggestion = suggestedWorkArea({ runs: liveRuns, segments: strokes.segments, textItems, widthPt: W, feetPerUnit: fpu, demoRemoved });
+        const hinted = suggestion?.polygons ?? [];
+        const hintedClicks = clicked(hinted);
         rows.push({
-          priorPage, priorHow, name: `${dir.slice(0, 22)}/${sheet}`, held, renovation, strict, clicks: tight.kept.length, tries: tight.tries,
+          suggestion: suggestion === null ? null : suggestion.sources.join(" + "), priorPage, priorHow, name: `${dir.slice(0, 22)}/${sheet}`, held, renovation, strict, clicks: tight.kept.length, tries: tight.tries,
           arms: {
             "as offered": score(offer()),
             "box 2 ft": score(offer({ workArea: box(2) })),
@@ -189,6 +195,8 @@ describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic use
             compare: score(offer(undefined, priorPlan)),
             "compare + box": score(offer({ workArea: box(2) }, priorPlan)),
             "compare + box + clicks": score(offer({ workArea: box(2), excludeLike: both.kept }, priorPlan)),
+            suggested: score(offer({ workArea: hinted })),
+            "suggested + clicks": score(offer({ workArea: hinted, excludeLike: hintedClicks.kept })),
           },
         });
       }
@@ -216,6 +224,13 @@ describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic use
     }
     const ho = rows.filter((x) => x.held && x.priorPage !== null);
     console.log(`    HELD-OUT, ${ho.length} sheets aligned of ${rows.filter((x) => x.held).length}: junk ${ho.reduce((n, r) => n + r.arms["as offered"].confirmedJunkFeet - r.arms.compare.confirmedJunkFeet, 0).toFixed(0)} · real ${ho.reduce((n, r) => n + r.arms.compare.missingFeet - r.arms["as offered"].missingFeet, 0).toFixed(0)}`);
+    console.log(`\n  suggested work area, per training sheet where it fired: junk removed / real lost`);
+    for (const r of rows.filter((x) => !x.held && x.suggestion !== null)) {
+      const a = r.arms["as offered"], b = r.arms.suggested;
+      console.log(`    ${r.name.padEnd(30)} ${(r.suggestion ?? "").padEnd(42)} · junk ${(a.confirmedJunkFeet - b.confirmedJunkFeet).toFixed(0).padStart(5)} · real ${(b.missingFeet - a.missingFeet).toFixed(0).padStart(5)}`);
+    }
+    const hs = rows.filter((x) => x.held && x.suggestion !== null);
+    console.log(`    HELD-OUT, fired on ${hs.length} of ${rows.filter((x) => x.held).length} sheets`);
     console.log(`\n  scans skipped: ${skippedScans}`);
     console.log(`  training renovation sheets: ${rows.filter((r) => !r.held && r.renovation).map((r) => r.name).join(", ")}`);
     console.log(`  training new-build sheets: ${rows.filter((r) => !r.held && !r.renovation).map((r) => r.name).join(", ")}`);

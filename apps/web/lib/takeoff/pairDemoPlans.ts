@@ -23,6 +23,12 @@ export type DemoPair = {
   basis: "sheet-number" | "title" | "grid" | "none";
   /** Other plans that also fit, for a screen or a caller to offer. */
   alternatives: number[];
+  /**
+   * The best new plan for this demolition plan. False on a row for another
+   * plan the same demolition plan truly aligns with: Bunkie's AD101 lies on A100
+   * and A101 alike, so asking for either sheet's demolition plan has an answer.
+   */
+  primary: boolean;
   /** Page-width units to move the demolition plan onto the new one, where lines were given. */
   shift: { dx: number; dy: number; votes: number } | null;
 };
@@ -67,6 +73,8 @@ const saysPlan = (title: string | null) => /\b(PLANS?|LEVEL|FLOOR)\b/i.test(titl
 /** A twin number loses to a title that plainly says it is not a plan. Green Bay's A1.0 is the architectural information sheet. */
 const NOT_A_PLAN_SHEET = /\b(INFORMATION|INDEX|GENERAL NOTES|ABBREVIATIONS|SYMBOLS)\b/i;
 
+/** A second plan needs this many agreeing walls to be called the same floor: a shared frame or a stair gives fewer. */
+const SECOND_PLAN_MIN_VOTES = 8;
 /** Past this share across the sheet is the title block. */
 const TITLE_STRIP_FROM = 0.85;
 /** A line this long, in page widths, is the sheet's border. */
@@ -120,10 +128,20 @@ export function pairDemoWithNewPlan(
       const a = options.lines?.get(demo.pageNumber), b = options.lines?.get(page);
       return a && b && options.feetPerUnit ? alignViews(drawingOnly(b), drawingOnly(a), options.feetPerUnit) : null;
     };
-    const pair = (newPage: number | null, basis: DemoPair["basis"], alternatives: number[]): DemoPair => ({ demoPage: demo.pageNumber, newPage, level, area, basis, alternatives, shift: newPage === null ? null : align(newPage) });
+    const pair = (newPage: number | null, basis: DemoPair["basis"], alternatives: number[]): DemoPair => ({ demoPage: demo.pageNumber, newPage, level, area, basis, alternatives, primary: true, shift: newPage === null ? null : align(newPage) });
+    /** One row for the best plan, and one for each other plan that aligns at least as well as the floor. */
+    const withOthers = (best: DemoPair, pool: readonly SheetForPairing[]) => {
+      out.push(best);
+      for (const s of pool) {
+        if (s.pageNumber === best.newPage) continue;
+        const shift = align(s.pageNumber);
+        if (shift !== null && shift.votes >= SECOND_PLAN_MIN_VOTES) out.push({ ...best, newPage: s.pageNumber, basis: "grid", alternatives: [], primary: false, shift });
+      }
+    };
 
     const byNumber = twinNumbers(demo.sheetNumber).map((twin) => fresh.find((s) => flat(s.sheetNumber) === flat(twin) && !NOT_A_PLAN_SHEET.test(s.title ?? ""))).find((s) => s !== undefined);
-    if (byNumber) { out.push(pair(byNumber.pageNumber, "sheet-number", [])); continue; }
+    const sameFloor = fits.filter((s) => !isEnlargedPlanTitle(s.title));
+    if (byNumber) { withOthers(pair(byNumber.pageNumber, "sheet-number", []), sameFloor); continue; }
     // Past a number, the title has to say something: never pair by elimination on noise.
     if (!saysPlan(demo.title)) { out.push(pair(null, "none", [])); continue; }
     const whole = fits.filter((s) => !isEnlargedPlanTitle(s.title));
@@ -131,7 +149,7 @@ export function pairDemoWithNewPlan(
     if (pool.length === 0) { out.push(pair(null, "none", [])); continue; }
     if (pool.length === 1) { out.push(pair(pool[0].pageNumber, "title", [])); continue; }
     const voted = pool.map((s) => ({ page: s.pageNumber, votes: align(s.pageNumber)?.votes ?? 0 })).sort((a, b) => b.votes - a.votes);
-    if (voted[0].votes > 0 && voted[0].votes > (voted[1]?.votes ?? 0)) out.push(pair(voted[0].page, "grid", voted.slice(1).map((v) => v.page)));
+    if (voted[0].votes > 0 && voted[0].votes > (voted[1]?.votes ?? 0)) withOthers(pair(voted[0].page, "grid", voted.slice(1).map((v) => v.page)), pool);
     else out.push(pair(null, "none", pool.map((s) => s.pageNumber)));
   }
   return out;

@@ -77,7 +77,7 @@ describe.skipIf(DIR === "" || LABELS === "")("answer keys that may still hold ex
         let onDemo = 0;
         let demoPage: number | null = null;
         const mine = longFaces(st.segments, W, fpu);
-        for (const pair of pairs.filter((p) => p.newPage === saved.page)) {
+        for (const pair of pairs.filter((p) => p.newPage === saved.page && p.primary)) {
           const o = await doc.pageStrokes(pair.demoPage);
           const t = await doc.pageText(pair.demoPage);
           const its = t.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
