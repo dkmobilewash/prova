@@ -97,6 +97,7 @@ export type Media = {
   /** What it was taken for, when the person said so at the shutter. */
   dailyFieldReportId?: string | null;
   punchListItemId?: string | null;
+  tmTicketId?: string | null;
   tags?: { id: string; name: string }[];
 };
 
@@ -219,6 +220,7 @@ export type TmTicket = {
   signedAt: string;
   /** False on tickets signed before the phone took drawn signatures. */
   hasSignature?: boolean;
+  photoCount?: number;
 };
 
 /** A day's hours signed by the foreman. While one exists for a day, that

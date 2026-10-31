@@ -104,7 +104,10 @@ export default async function JobCrewPage({
           where: { jobId: jobRef.id },
           orderBy: { workDate: "desc" },
           take: 20,
-          include: { changeOrder: { select: { number: true, status: true } } },
+          include: {
+            changeOrder: { select: { number: true, status: true } },
+            _count: { select: { media: true } },
+          },
         })
       : Promise.resolve([]),
   ]);
@@ -419,6 +422,9 @@ export default async function JobCrewPage({
                       <span className="text-xs text-ink-muted">
                         Signed by {ticket.signerName}, {formatInstant(ticket.signedAt, timeZone)}
                         {ticket.signaturePath ? "" : " (typed name — signed before the phone took drawn signatures)"}
+                        {ticket._count.media > 0
+                          ? ` · ${ticket._count.media} photo${ticket._count.media === 1 ? "" : "s"}`
+                          : ""}
                       </span>
                     </div>
                     <TmTicketActions

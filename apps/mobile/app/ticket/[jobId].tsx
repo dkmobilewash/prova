@@ -1,7 +1,7 @@
 import { useAuth } from "@clerk/expo";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { DateField } from "@/components/DateField";
@@ -19,7 +19,7 @@ import { NotYourJobFunction } from "@/components/NotYourJobFunction";
 import { SCREEN_CAPABILITY, SCREEN_NOUN } from "@/lib/screen-capabilities";
 import { holds } from "@/lib/capabilities";
 import { useMe } from "@/lib/use-me";
-import { type Palette, space, typography } from "@/lib/theme";
+import { hitTarget, type Palette, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import * as api from "@/lib/api";
 import { uuid } from "@/lib/id";
@@ -40,6 +40,7 @@ export default function TicketScreen() {
   const { me } = useMe();
   const palette = usePalette();
   const styles = useMemo(() => makeStyles(palette), [palette]);
+  const router = useRouter();
   const { jobId } = useLocalSearchParams<{ jobId: string }>();
   const { getToken } = useAuth();
   const [tickets, setTickets] = useState<TmTicket[]>([]);
@@ -142,6 +143,22 @@ export default function TicketScreen() {
                   : t("tickets.snapshot.materials.many", { count: item.snapshot.materials.length })}
               </Text>
             ) : null}
+            {/* The camera screen attaches the photo to THIS ticket at the
+                shutter, the punch list's pattern. This list is server rows, so
+                a ticket still in the queue shows up here once it has synced. */}
+            <Pressable
+              onPress={() => router.push(`/photos/${jobId}?tmTicketId=${item.id}`)}
+              accessibilityRole="button"
+              style={styles.photoAction}
+            >
+              <Text style={styles.photoPrompt}>
+                {!item.photoCount
+                  ? t("tickets.photos.none")
+                  : item.photoCount === 1
+                    ? t("tickets.photos.one")
+                    : t("tickets.photos.many", { count: item.photoCount })}
+              </Text>
+            </Pressable>
           </Card>
         )}
         {...emptyFor(offline, "thing.tickets", {
@@ -196,6 +213,8 @@ function makeStyles(p: Palette) {
     description: { color: p.colors.inkBody, fontSize: typography.size.md, marginTop: space.xxs },
     label: { color: p.colors.inkLabel, fontSize: typography.size.sm, fontWeight: typography.weight.semibold },
     summary: { color: p.colors.inkMuted, fontSize: typography.size.sm, marginTop: space.xxs },
+    photoAction: { minHeight: hitTarget, justifyContent: "center" },
+    photoPrompt: { color: p.colors.link, fontSize: typography.size.sm },
     footer: { padding: space.md, paddingTop: space.xs, borderTopWidth: 1, borderTopColor: p.colors.lineRow },
   });
 }

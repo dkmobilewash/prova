@@ -376,6 +376,10 @@ model TmTicket {
   changeOrderId String?
   changeOrder   ChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
 
+  /// Photos of the extra work, attached from the phone after signing. Not part
+  /// of the frozen snapshot: the signature covers the hours and materials.
+  media JobMedia[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

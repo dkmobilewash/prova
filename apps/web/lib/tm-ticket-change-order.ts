@@ -66,6 +66,10 @@ export interface TmTicketDraftInput {
    * so the draft points at the day's photos rather than claiming the ticket
    * has some. */
   photoCount: number;
+  /** Photos attached to the ticket itself when this was drafted. The change
+   * order shows them through the ticket, so this sentence is for the text that
+   * travels on its own, such as the signature document. */
+  ticketPhotoCount?: number;
 }
 
 const PAY_TYPE_WORDS: Record<string, string> = {
@@ -129,8 +133,12 @@ export function tmTicketDraftDescription(input: TmTicketDraftInput): string {
   for (const row of snapshot.materials) {
     lines.push(`  ${row.description}${row.vendorName ? ` — ${row.vendorName}` : ""}${row.orderedOn ? ` (ordered ${row.orderedOn})` : ""}`);
   }
+  const onTicket = input.ticketPhotoCount ?? 0;
+  lines.push("");
+  if (onTicket > 0) {
+    lines.push(`${onTicket} photo${onTicket === 1 ? " was" : "s were"} attached to this ticket when this was drafted.`);
+  }
   lines.push(
-    "",
     input.photoCount > 0
       ? `Photos: ${input.photoCount} job photo${input.photoCount === 1 ? "" : "s"} captured on ${input.day} — see the job's photos for that day.`
       : `Photos: none captured on this job on ${input.day}.`,
