@@ -30,6 +30,7 @@ import {
 } from "@/components/changeOrderStates";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { DocuSignPanel, type DocuSignEnvelopeView } from "@/components/DocuSignPanel";
+import { COST_CATEGORY_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { Spinner } from "@/components/Spinner";
 import { reportFieldErrors } from "@/components/formFieldErrors";
 import type { DocuSignCardState } from "@/lib/docusign/setup";
@@ -86,6 +87,11 @@ export type ProposalView = {
   changeType: "ADD" | "EDIT" | "REMOVE";
   targetDescription: string | null;
   summary: string;
+  /** "labor", "equipment"… for an ADD with a cost type; null otherwise. */
+  category?: string | null;
+  /** The pricing backup for a costed ADD — cost, each recap step, sell —
+   * from lib/change-order-pricing.ts. Empty when there is nothing to back up. */
+  backup?: string[];
 };
 
 export type ChangeOrderView = {
@@ -230,12 +236,31 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
             />
           </label>
           <label className={labelClass}>
-            Unit price
-            <input name="unitPrice" type="text" inputMode="decimal" className={`${inputClass} w-28`} />
-          </label>
-          <label className={labelClass}>
             Budgeted unit cost
             <input name="budgetedUnitCost" type="text" inputMode="decimal" className={`${inputClass} w-32`} />
+          </label>
+          <label className={labelClass}>
+            Cost type
+            <select name="costCategory" className={`${inputClass} w-40`} defaultValue="">
+              <option value="">—</option>
+              {COST_CATEGORY_VALUES.map((value) => (
+                <option key={value} value={value}>
+                  {COST_CATEGORY_LABEL[value]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {/* Blank with a cost and a cost type = priced from the bid recap
+              (Diego, 2026-10-30, option A). A typed price always wins. */}
+          <label className={labelClass}>
+            Unit price
+            <input
+              name="unitPrice"
+              type="text"
+              inputMode="decimal"
+              placeholder="blank = from the bid recap"
+              className={`${inputClass} w-44`}
+            />
           </label>
           <label className={labelClass}>
             Trade scope
@@ -476,6 +501,7 @@ function ProposalRow({ proposal, canRemove }: { proposal: ProposalView; canRemov
       <div className="flex items-center justify-between gap-2 text-sm text-ink-body">
         <span>
           <span className="text-ink-muted">{proposal.changeType.toLowerCase()}</span> {proposal.summary}
+          {proposal.category ? <span className="text-ink-muted"> · {proposal.category}</span> : null}
         </span>
         {/* RIGHT-PINNED (`shrink-0` in a `justify-between` parent), so
             `pinned="end"`: the LAST control is the one that keeps its
@@ -509,6 +535,9 @@ function ProposalRow({ proposal, canRemove }: { proposal: ProposalView; canRemov
         )}
       </div>
       {error && <p className="text-xs text-tag-rose-ink">{error}</p>}
+      {proposal.backup && proposal.backup.length > 0 && (
+        <p className="text-xs text-ink-muted">{proposal.backup.join(" · ")}</p>
+      )}
     </li>
   );
 }

@@ -353,5 +353,25 @@ describe("the generated documents", () => {
     expect(html).toContain("Change order #3");
     expect(html).toContain("+$1,200.00");
     expect(html).toContain(SIGN_HERE_ANCHOR);
+    // Sell only: no backup array, no nested list.
+    expect(html).not.toContain('<ul class="muted">');
+  });
+
+  it("a change order prints the pricing backup under each line when the sender kept it on", () => {
+    const html = changeOrderHtml({
+      companyName: "Sub",
+      jobName: "Tower",
+      clientName: "GC",
+      number: 4,
+      title: "Extra soffit",
+      description: null,
+      submittedOn: "2026-09-10",
+      valueDelta: "+$1,200.00",
+      proposals: ["Add: Soffit — 40 lf @ $30.00", "Add: Board — 1 @ $50.00"],
+      backup: [["Cost $20.00 × 40 = $800.00", "Labor markup 15%: +$120.00", "Sell $30.00 × 40 = $1,200.00"], []],
+    });
+    expect(html).toContain("Labor markup 15%: +$120.00");
+    expect(html.match(/<ul class="muted">/g)).toHaveLength(1);
+    expect(html.indexOf("Soffit")).toBeLessThan(html.indexOf("Labor markup 15%"));
   });
 });

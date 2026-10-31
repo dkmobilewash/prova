@@ -11,6 +11,7 @@
 // that has been wrong) are testable with no database at all.
 
 import { prisma } from "@prova/db";
+import { changeOrderValueDelta } from "@/lib/change-order";
 import {
   calculatePayAppLineItem,
   calculatePayAppSummary,
@@ -300,6 +301,22 @@ export async function loadPayApplication(jobId: string, invoiceId: string, compa
         orderBy: { number: "asc" },
         include: { lineItems: true },
       },
+      // Line 2 of the G702. APPROVED is the only status whose proposals have
+      // been applied to the schedule of values, so it is the only one that
+      // can have moved line 3 — the same filter the estimate tab's own
+      // "contract after change orders" figure uses.
+      changeOrders: {
+        where: { status: "APPROVED" },
+        include: { proposals: true },
+      },
+      // CONTRACT DATE on the G702: the newest executed subcontract version,
+      // if one has been recorded. Blank on the sheet otherwise.
+      contractDocuments: {
+        where: { executedSignedDate: { not: null } },
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+        select: { executedSignedDate: true },
+      },
     },
   });
   if (!job || job.companyId !== companyId) {
@@ -320,5 +337,15 @@ export async function loadPayApplication(jobId: string, invoiceId: string, compa
     return null;
   }
 
-  return { job, invoice, ...assembly };
+  // `changeOrderValueDelta` reads its targets from the UNFILTERED line
+  // items, which is the shape this query already loads (see the comment on
+  // `lineItems` above and lib/ask/handlers.ts, which does the same).
+  const targets = new Map(job.lineItems.map((item) => [item.id, item]));
+  const netChangeByChangeOrders = job.changeOrders.reduce(
+    (sum, co) => sum + Number(changeOrderValueDelta(co.proposals, targets)),
+    0,
+  );
+  const contractDate = job.contractDocuments[0]?.executedSignedDate ?? null;
+
+  return { job, invoice, netChangeByChangeOrders, contractDate, ...assembly };
 }

@@ -74,6 +74,16 @@ describe("modelVerdicts", () => {
     const runs = [run(0.1, 0.3)];
     const far = { x1: 0.1, y1: 0.7, x2: 0.3, y2: 0.7, thicknessFeet: 0.5, features: feat(0.1) };
     expect(modelVerdicts(stump, 0.3, runs, [far], 100).size).toBe(0);
+  });
+
+  it("SAYS NOTHING ON A SCANNED SHEET: the same runs and pairings that demote on a vector sheet demote nothing with `scanned`", () => {
+    const runs = [run(0.1, 0.3), run(0.4, 0.9)];
+    const pairings = [{ ...run(0.1, 0.3), features: feat(0.1) }, { ...run(0.4, 0.9), features: feat(0.9) }];
+    const vector = modelVerdicts(stump, 0.3, runs, pairings, 100);
+    expect(vector.size).toBeGreaterThan(0);
+    expect(modelVerdicts(stump, 0.3, runs, pairings, 100, { scanned: true }).size).toBe(0);
+    // And `scanned: false` is the vector sheet exactly.
+    expect(modelVerdicts(stump, 0.3, runs, pairings, 100, { scanned: false })).toEqual(vector);
     expect(modelVerdicts(stump, 0.3, runs, [], 100).size).toBe(0);
   });
   it("the AI second opinion overwrites a model verdict: WALL puts the run back", () => {

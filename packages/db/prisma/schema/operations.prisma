@@ -366,12 +366,22 @@ model TmTicket {
   /// instead of duplicating. Null for web writes.
   clientOperationId String?
 
+  /// The change order drafted FROM this ticket, if one has been — the same
+  /// link DelayEvent.changeOrderId carries, for the same reason: a ticket
+  /// starts at most one change order, and the row says which. SetNull so
+  /// deleting a draft frees the ticket to start another. Nothing is priced
+  /// by this link; the draft carries the ticket's hours and materials as
+  /// text and the person prices it on the change-order form.
+  changeOrderId String?
+  changeOrder   ChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([companyId, clientOperationId])
   @@index([companyId])
   @@index([jobId])
+  @@index([changeOrderId])
 }
 
 /// OSHA's recordability ladder, most severe first. Anything above

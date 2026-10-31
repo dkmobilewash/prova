@@ -121,10 +121,27 @@ export type ChangeOrderSnapshot = {
   /** Formatted contract-value delta, as the job page shows it. */
   valueDelta: string;
   proposals: string[];
+  /**
+   * The pricing backup under each proposal — cost, every recap step with
+   * its rate, and the sell — ONE ARRAY PER PROPOSAL, in the same order, an
+   * empty array where a line has no cost to back up. Present when the
+   * sender left "show the pricing backup" ticked (the default per Diego,
+   * 2026-10-30); absent for a sell-only document. Built by
+   * lib/change-order-pricing.ts, never typed here.
+   */
+  backup?: string[][];
 };
 
 export function changeOrderHtml(snapshot: ChangeOrderSnapshot): string {
-  const items = snapshot.proposals.map((line) => `<li>${escapeHtml(line)}</li>`).join("");
+  const items = snapshot.proposals
+    .map((line, index) => {
+      const backup = snapshot.backup?.[index] ?? [];
+      const detail = backup.length
+        ? `<ul class="muted">${backup.map((row) => `<li>${escapeHtml(row)}</li>`).join("")}</ul>`
+        : "";
+      return `<li>${escapeHtml(line)}${detail}</li>`;
+    })
+    .join("");
   return page(
     `Change order #${snapshot.number}`,
     `<h1>Change order #${snapshot.number}: ${escapeHtml(snapshot.title)}</h1>
