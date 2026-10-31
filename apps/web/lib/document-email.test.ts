@@ -1,6 +1,6 @@
 import { sendEmail, senderAddress } from "@prova/integrations/src/email";
 import { describe, expect, it, vi } from "vitest";
-import { payApplicationEmail, purchaseOrderEmail, sendRow, sentOnFromForm } from "./document-email";
+import { packageLinkLine, payApplicationEmail, purchaseOrderEmail, sendRow, sentOnFromForm, submittalPackageEmail } from "./document-email";
 
 const event = (type: string, detail: string | null = null, at = "2026-10-31T12:00:00.000Z") => ({ id: type, type, occurredAt: at, detail });
 
@@ -75,5 +75,21 @@ describe("what reaches the provider", () => {
     expect(bodies[1].from).toBe("docs@cstream.ai");
     expect("reply_to" in bodies[1]).toBe(false);
     vi.unstubAllEnvs();
+  });
+});
+
+describe("a package too big to attach", () => {
+  it("says so, gives the link and its end date", () => {
+    const line = packageLinkLine("https://app.test/x", new Date("2026-11-30T00:00:00Z"));
+    expect(line).toContain("too large to attach");
+    expect(line).toContain("until 2026-11-30");
+    expect(line).toContain("https://app.test/x");
+  });
+
+  it("drafts to the GC and promises nothing", () => {
+    const draft = submittalPackageEmail({ company: "Acme", jobName: "Tower", submittalNumber: 3, revisionNumber: 2, title: "Board", contactName: "GC", contactEmail: "pm@gc.test" });
+    expect(draft).toMatchObject({ toAddress: "pm@gc.test", toName: "GC" });
+    expect(draft.subject).toContain("Submittal 3 rev 2");
+    expect(draft.body).not.toMatch(/guarantee|warrant|certif|agree|comply|complies/i);
   });
 });

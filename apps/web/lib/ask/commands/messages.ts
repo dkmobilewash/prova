@@ -528,6 +528,10 @@ export const messageExclusions: Exclusion[] = [
     reason: "Emails a document to a vendor. A person reads the words and presses send on the document's own page, like a bid package.",
   },
   {
+    action: "sendSubmittalPackage",
+    reason: "Emails a built package to a GC. A person builds it, reads the words and presses send in the submittal's own form.",
+  },
+  {
     action: "sendPayApplication",
     reason: "Emails a pay application to a GC. A person reads the words and presses send on the document's own page, like a bid package.",
   },

@@ -15,8 +15,8 @@ declare global {
 
 const draft = { toAddress: "f@x.test", toName: "Foundation", subject: "PO 1", body: "Attached." };
 const history = [
-  { id: "a", toAddress: "f@x.test", sentOn: "Oct 31, 2026", status: "Bounced", needsAction: true, detail: "Mailbox full" },
-  { id: "b", toAddress: "g@x.test", sentOn: "Oct 30, 2026", status: "Delivered", needsAction: false, detail: null },
+  { id: "a", toAddress: "f@x.test", sentOn: "Oct 31, 2026", status: "Bounced", needsAction: true, detail: "Mailbox full", linkUntil: null },
+  { id: "b", toAddress: "g@x.test", sentOn: "Oct 30, 2026", status: "Delivered", needsAction: false, detail: null, linkUntil: "Nov 30, 2026" },
 ];
 
 describe("what was sent", () => {
@@ -25,6 +25,7 @@ describe("what was sent", () => {
     expect(html).toContain("Bounced · Mailbox full");
     expect(html).toContain("Delivered");
     expect(html).toContain('href="/api/sent-documents/a"');
+    expect(html).toContain("sent as a link, works until Nov 30, 2026");
   });
 
   it("says nothing when nothing was sent", () => {

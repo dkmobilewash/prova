@@ -166,6 +166,7 @@ export const DOCUMENT_UPLOAD_PURPOSES = [
   "bid-addendum",
   "bid-spec-section",
   "bid-package",
+  "submittal-package",
 ] as const;
 
 export type DocumentUploadPurpose = (typeof DOCUMENT_UPLOAD_PURPOSES)[number];
@@ -286,6 +287,17 @@ export const DOCUMENT_UPLOAD_TARGETS: Record<DocumentUploadPurpose, DocumentUplo
     capability: "MANAGE_ESTIMATING",
     refusal: "Estimating isn't part of your job function.",
     maxBytes: DOCUMENT_UPLOAD_MAX_BYTES,
+  },
+  "submittal-package": {
+    root: "submittal-packages",
+    scope: "company",
+    // Mirrors `sendSubmittalPackage`. A TRANSIT BUFFER like `bid-package` below:
+    // the action keeps the file through `lib/sent-document-store.ts` and deletes
+    // this blob in a `finally`. Larger than the default because a package
+    // collects cut sheets, and past 20MB it goes by link rather than attached.
+    capability: "MANAGE_JOBS",
+    refusal: "Sending submittals isn't part of your job function.",
+    maxBytes: 50 * 1024 * 1024,
   },
   "bid-package": {
     root: "bid-packages",

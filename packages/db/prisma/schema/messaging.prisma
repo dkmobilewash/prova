@@ -149,6 +149,7 @@ model OutboundMessageEvent {
 enum SentDocumentKind {
   PURCHASE_ORDER
   PAY_APPLICATION
+  SUBMITTAL_PACKAGE
 }
 
 /// The exact PDF that went with a message, so "what did we send" has a real
@@ -177,7 +178,14 @@ model SentDocument {
   documentId String
 
   fileName String
-  content  Bytes
+  /// One or the other, written through `lib/sent-document-store.ts`.
+  content      Bytes?
+  blobPathname String?
+
+  /// A package too big for one email goes by this link, because a GC has no
+  /// login. The token is the whole of its access control, from `linkToken()`.
+  linkToken     String?   @unique
+  linkExpiresAt DateTime?
 
   /// Entered: pre-filled with the day it was sent, and the person can change it.
   sentOn DateTime

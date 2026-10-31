@@ -6,7 +6,7 @@ import { formatCalendarDate } from "@/lib/render-date";
  * file. Tenant scoping is by company here, because the ids come from the page. */
 export async function loadSends(
   companyId: string,
-  kind: "PURCHASE_ORDER" | "PAY_APPLICATION",
+  kind: "PURCHASE_ORDER" | "PAY_APPLICATION" | "SUBMITTAL_PACKAGE",
   documentIds: readonly string[],
 ): Promise<Map<string, SendRow[]>> {
   const rows = await prisma.sentDocument.findMany({
@@ -16,6 +16,7 @@ export async function loadSends(
       id: true,
       documentId: true,
       sentOn: true,
+      linkExpiresAt: true,
       message: {
         select: {
           toAddress: true,
@@ -29,6 +30,7 @@ export async function loadSends(
     const line = sendRow({
       id: row.id,
       sentOn: formatCalendarDate(row.sentOn),
+      linkUntil: row.linkExpiresAt ? formatCalendarDate(row.linkExpiresAt) : null,
       toAddress: row.message.toAddress,
       events: row.message.events.map((event) => ({ ...event, occurredAt: event.occurredAt.toISOString() })),
     });

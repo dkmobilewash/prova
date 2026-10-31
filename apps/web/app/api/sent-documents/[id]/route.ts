@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@prova/db";
 import { requireApiContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
+import { readSentCopy, sentCopyResponse } from "@/lib/sent-document-store";
 
 export const dynamic = "force-dynamic";
 
@@ -15,15 +16,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const { id } = await params;
   const sent = await prisma.sentDocument.findUnique({ where: { id } });
   if (!sent || sent.companyId !== context.companyId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const capability = sent.kind === "PAY_APPLICATION" ? "MANAGE_BILLING" : "VIEW_JOB_COSTS";
-  if (!can(context, capability)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const capability = { PAY_APPLICATION: "MANAGE_BILLING", PURCHASE_ORDER: "VIEW_JOB_COSTS", SUBMITTAL_PACKAGE: "MANAGE_JOBS" } as const;
+  if (!can(context, capability[sent.kind])) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  return new NextResponse(Buffer.from(sent.content), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${sent.fileName.replace(/["\r\n]/g, "")}"`,
-      "Cache-Control": "private, no-store",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+  const body = await readSentCopy(sent);
+  if (!body) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return sentCopyResponse(body, sent.fileName);
 }
