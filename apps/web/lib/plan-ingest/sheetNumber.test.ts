@@ -225,3 +225,21 @@ describe("what it is FOR: the duplicate-walls caution with no proposal row", () 
     expect(judge(planWithNote).likelyDuplicate).toBe(false);
   });
 });
+
+describe("numbers the title block prints in pieces or with extras", () => {
+  const item = (str: string, x: number, width = 30, height = 32) => ({ str, x, y: 1600, width, height });
+  const page = (items: ReturnType<typeof item>[]) => ({ pageNumber: 1, widthPt: 3024, heightPt: 2160, rotation: 0, items: items.map((i) => ({ ...i, y: 1900 })) });
+  it("joins a number set as separate items, whatever the dash", () => {
+    expect(sheetNumberFrom(page([item("I", 2700, 10), item("-", 2715, 10), item("000", 2730, 50)])).sheetNumber).toBe("I-000");
+    expect(sheetNumberFrom(page([item("G", 2700, 20), item("\u2212", 2725, 10), item("001", 2740, 50)])).sheetNumber).toBe("G-001");
+  });
+  it("does not join a number printed twice over itself, or pieces far apart", () => {
+    expect(sheetNumberFrom(page([item("A110", 2700, 80), item("A110", 2701, 80)])).sheetNumber).toBe("A110");
+    expect(sheetNumberFrom(page([item("I", 2500, 10), item("-", 2700, 10), item("000", 2900, 50)])).sheetNumber).toBeNull();
+  });
+  it("reads a two-part prefix, and drops the sheet's place in the set", () => {
+    expect(sheetNumberFrom(page([item("P-A1.1", 2700, 100)])).sheetNumber).toBe("P-A1.1");
+    expect(sheetNumberFrom(page([item("C0.10 (2 OF 29)", 2700, 200)])).sheetNumber).toBe("C0.10");
+  });
+});
+

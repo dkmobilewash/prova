@@ -115,7 +115,15 @@ export const CORNER_Y = 0.72;
  * `PERMIT SET` has a space, `07231.14` and `01-12-18` start with a digit, so
  * they are job numbers and dates.
  */
-export const SHEET_DESIGNATION = /^[A-Z]{1,3}[-.]?\d[\dA-Z.\-]{0,6}$/i;
+export const SHEET_DESIGNATION = /^[A-Z]{1,3}[-.]?[A-Z]?\d[\dA-Z.\-]{0,6}$/i;
+
+/** `C0.10 (2 OF 29)`: Eleven03 prints the sheet's place in the set after its number. */
+const PLACE_IN_SET = /\s*\(\s*\d+\s+OF\s+\d+\s*\)$/i;
+/** The dashes a set can print between a letter and a number. */
+const DASHES = /[\u2010-\u2015\u2212]/g;
+/** How far apart, in type heights, two pieces of one number can sit. */
+const PIECE_GAP = 0.8;
+
 
 /** How far down the type sizes to look before giving up, so a template whose
  *  largest corner text is a logo's wordmark does not cost the reading. */
@@ -140,6 +148,37 @@ export type SheetNumberReading = {
 };
 
 type Candidate = { str: string; height: number };
+type Placed = Candidate & { x: number; y: number; width: number };
+
+/**
+ * A number set as separate text items, `I` `-` `000` on HPL and `G` `−` `001` on
+ * Topeka, read as one. Pieces share a line and a type size and nearly touch, and
+ * the joined text must itself be a designation, or the pieces stay as they were.
+ * A piece that already is one is left alone: Murray prints each number twice,
+ * one over the other.
+ */
+function withSplitNumbers(items: readonly Placed[]): Placed[] {
+  const pieces = items.filter((i) => !/\s/.test(i.str)).sort((a, b) => a.x - b.x);
+  const used = new Set<Placed>();
+  const joined: Placed[] = [];
+  for (const start of pieces) {
+    if (used.has(start) || SHEET_DESIGNATION.test(start.str)) continue;
+    const chain = [start];
+    for (let at = start; ; ) {
+      const end = at.x + at.width;
+      const next = pieces.find((p) => !used.has(p) && !chain.includes(p) && p.x >= end - 0.3 * start.height && Math.abs(p.height - start.height) <= 0.1 * start.height && Math.abs(p.y - start.y) <= 0.3 * start.height && p.x - end <= PIECE_GAP * start.height);
+      if (!next) break;
+      chain.push(next);
+      at = next;
+    }
+    if (chain.length < 2) continue;
+    const str = chain.map((p) => p.str).join("");
+    if (!SHEET_DESIGNATION.test(str)) continue;
+    for (const p of chain) used.add(p);
+    joined.push({ ...start, str, width: chain[chain.length - 1]!.x + chain[chain.length - 1]!.width - start.x });
+  }
+  return [...items.filter((i) => !used.has(i)), ...joined];
+}
 
 function designationIn(items: readonly Candidate[]): string | null {
   const biggestFirst = [...items].sort((a, b) => b.height - a.height);
@@ -162,8 +201,12 @@ export function sheetNumberFrom(page: PlanPageText): SheetNumberReading {
     return { sheetNumber: null, regionText: "", source: "none" };
   }
 
-  const clean = (items: readonly { str: string; height: number }[]): Candidate[] =>
-    items.map((item) => ({ str: item.str.trim(), height: item.height })).filter((item) => item.str.length > 0);
+  const clean = (items: readonly { str: string; height: number; x: number; y: number; width: number }[]): Candidate[] =>
+    withSplitNumbers(
+      items
+        .map((item) => ({ str: item.str.trim().replace(DASHES, "-").replace(PLACE_IN_SET, ""), height: item.height, x: item.x, y: item.y, width: item.width }))
+        .filter((item) => item.str.length > 0),
+    );
 
   // FIRST the corner, where the number has no competition.
   const corner = clean(
