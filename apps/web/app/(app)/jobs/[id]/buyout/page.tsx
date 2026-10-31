@@ -175,7 +175,6 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
                       <PurchaseOrderActions
                         id={po.id}
                         status={po.status}
-                        today={today}
                         document={{
                           number: po.number,
                           status: po.status,

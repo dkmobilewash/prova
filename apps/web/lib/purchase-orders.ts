@@ -13,6 +13,7 @@
 
 import { currentByUnit, unitKey, type QuoteData } from "@/components/vendorPricing";
 import type { CostCategory } from "@/lib/cost-category";
+import { money } from "@/lib/money";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -51,6 +52,16 @@ export function commitmentsByLine(lines: readonly PoLineForSum[]): Map<string, L
     out.set(line.lineItemId, row);
   }
   return out;
+}
+
+/** What the Estimate tab says on a line's closed row. Null when nothing is on
+ * a PO. Shown beside Actual, never added to it. */
+export function commitmentNote(line: LineCommitment | undefined): string | null {
+  const parts = [
+    line?.committed ? `Committed ${money(line.committed)}` : "",
+    line?.drafted ? `Drafted on a PO ${money(line.drafted)}` : "",
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 export interface BuyoutLineInput {
