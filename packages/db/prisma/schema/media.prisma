@@ -181,6 +181,11 @@ model JobMedia {
   dailyFieldReport   DailyFieldReport? @relation(fields: [dailyFieldReportId], references: [id], onDelete: SetNull)
   punchListItemId    String?
   punchListItem      PunchListItem?    @relation(fields: [punchListItemId], references: [id], onDelete: SetNull)
+  /// The signed T&M ticket this was taken for, the same shape and the same
+  /// SetNull as the punch item above. A change order drafted from the ticket
+  /// reads its photos through this link rather than copying them.
+  tmTicketId String?
+  tmTicket   TmTicket? @relation(fields: [tmTicketId], references: [id], onDelete: SetNull)
 
   /// Idempotency key from the phone's upload queue, so a photo retried after
   /// a lost signal replays instead of uploading twice. Null for web uploads.
@@ -272,6 +277,7 @@ model JobMedia {
   @@index([companyId, capturedAt])
   @@index([dailyFieldReportId])
   @@index([punchListItemId])
+  @@index([tmTicketId])
   /// The job page's own query: one job, newest first.
   @@index([jobId, capturedAt])
 }

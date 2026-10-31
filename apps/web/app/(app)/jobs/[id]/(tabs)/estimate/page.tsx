@@ -161,6 +161,16 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
           proposals: { orderBy: { createdAt: "asc" } },
           supersedes: { select: { number: true } },
           revisions: { select: { number: true }, orderBy: { number: "asc" } },
+          // Through the ticket, not copied, so a photo added later still shows.
+          tmTickets: {
+            select: {
+              media: {
+                where: { contentType: { startsWith: "image/" } },
+                orderBy: { capturedAt: "asc" },
+                select: { id: true, blobUrl: true, caption: true },
+              },
+            },
+          },
         },
       },
       // Every hour on the job, not just hours tied to a line item — the
@@ -528,6 +538,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
           : [],
     })),
     edits: co.edits.map((edit) => ({ id: edit.id, field: edit.field, oldValue: edit.oldValue, newValue: edit.newValue })),
+    ticketPhotos: co.tmTickets.flatMap((ticket) => ticket.media),
   }));
 
   const pendingExposure = Number(pendingChangeOrderExposure(job.changeOrders, changeOrderTargetsById));

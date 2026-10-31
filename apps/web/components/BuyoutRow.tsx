@@ -4,7 +4,11 @@ import { useState, useTransition } from "react";
 import { closePurchaseOrder, draftPurchaseOrderLine, issuePurchaseOrder, removePurchaseOrderLine } from "@/lib/actions";
 import type { PurchaseOrderDocument } from "@/lib/purchase-order-pdf";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Disclosure } from "@/components/Disclosure";
 import { money } from "@/lib/money";
+import type { BuyoutFinding } from "@/lib/buyout-spec-check";
+import { rowSources, specHint, specHintSentence, specHintTally, type SpecHint, type TextSource } from "@/lib/buyout-spec-hints";
+import { SPEC_FINDING_LABEL } from "@/lib/specs/spec-findings";
 import type { BuyoutRow as BuyoutRowData } from "@/lib/purchase-orders";
 
 const inputClass =
@@ -18,20 +22,71 @@ function overBudgetText(amount: number | null): string | null {
   return amount > 0 ? `${money(amount)} over budget` : `${money(-amount)} under budget`;
 }
 
+/** A word search result, in words. The text it hit is shown because a hit can
+ * sit inside a refusal such as "excludes Firecode". */
+function HintLine({ hint }: { hint: SpecHint }) {
+  return (
+    <span className="mt-1 block text-ink-label">
+      {specHintSentence(hint)}
+      {hint.state === "POSSIBLE" &&
+        [...new Set(hint.hits.map((hit) => hit.text))].map((text) => (
+          <span key={text} className="block text-ink-muted">
+            {text}
+          </span>
+        ))}
+    </span>
+  );
+}
+
+/** Spec findings a person compares for themselves. Shown, not judged: nothing
+ * here says the quote meets or misses them. Each carries its quote and page. */
+export function SpecFindingList({
+  findings,
+  summary,
+  sources,
+}: {
+  findings: BuyoutFinding[];
+  summary: string;
+  /** The row's text to search. Findings with no row get no hint. */
+  sources?: TextSource[];
+}) {
+  return (
+    <Disclosure variant="plain" summary={summary}>
+      <ul className="flex flex-col gap-2">
+        {findings.map((finding) => (
+          <li key={`${finding.sectionNumber}-${finding.ordinal}-${finding.label}`} className="text-xs text-ink-body">
+            <span className="font-medium text-ink-label">
+              {SPEC_FINDING_LABEL[finding.kind]} · {finding.sectionNumber}
+              {finding.sourcePageLabel ? ` · p ${finding.sourcePageLabel}` : ""}
+            </span>
+            <span className="block">{finding.requirement}</span>
+            <span className="block text-ink-muted">&ldquo;{finding.quote}&rdquo;</span>
+            {sources && <HintLine hint={specHint(finding, sources)} />}
+          </li>
+        ))}
+      </ul>
+    </Disclosure>
+  );
+}
+
 /** One scope line: what it was budgeted at, what is drafted and committed,
  * the quotes on file in its own unit, and a typed price for everything else. */
 export function BuyoutRow({
   jobId,
   row,
   vendors,
+  findings = [],
 }: {
   jobId: string;
   row: BuyoutRowData;
   vendors: { id: string; name: string }[];
+  findings?: BuyoutFinding[];
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(String(row.quantityLeft || row.line.quantity));
+  const sources = rowSources(row);
+  const tally = specHintTally(findings.map((finding) => specHint(finding, sources)));
 
   function draft(fill: (form: FormData) => void) {
     const form = new FormData();
@@ -59,6 +114,13 @@ export function BuyoutRow({
           <span>Committed {money(row.committed)}</span>
         </p>
       </div>
+      {findings.length > 0 && (
+        <SpecFindingList
+          findings={findings}
+          sources={sources}
+          summary={`Spec says · ${findings.length} to compare before buying${tally ? ` · ${tally}` : ""}`}
+        />
+      )}
       <label className="flex items-center gap-2 text-xs text-ink-muted">
         Quantity to buy
         <input
