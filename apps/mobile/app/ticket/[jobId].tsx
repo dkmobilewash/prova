@@ -52,6 +52,10 @@ export default function TicketScreen() {
   const [workDescription, setWorkDescription] = useState("");
   const [signerName, setSignerName] = useState("");
   const [signaturePath, setSignaturePath] = useState<string | null>(null);
+  const [perDiem, setPerDiem] = useState("");
+  const [travel, setTravel] = useState("");
+  const [miles, setMiles] = useState("");
+  const [mileRate, setMileRate] = useState("");
 
   const load = async () => {
     if (!jobId) return;
@@ -71,7 +75,14 @@ export default function TicketScreen() {
 
   const { pending, sync, refused, dismissRefused, retrySetAside } = useSync(load);
 
-  const canSubmit = !!workDate && !!workDescription.trim() && !!signerName.trim() && signaturePath !== null;
+  // The server refuses the same two things. Caught here, because a refusal
+  // after signing would come back on a ticket the client has already left.
+  const extras = { perDiem: perDiem.trim(), travel: travel.trim(), miles: miles.trim(), mileRate: mileRate.trim() };
+  const extrasOk =
+    Object.values(extras).every((value) => /^(\d+([.,]\d+)?)?$/.test(value)) && (!extras.mileRate || !!extras.miles);
+
+  const canSubmit =
+    !!workDate && !!workDescription.trim() && !!signerName.trim() && signaturePath !== null && extrasOk;
 
   const submit = async () => {
     if (!jobId || !canSubmit || !signaturePath) return;
@@ -83,6 +94,7 @@ export default function TicketScreen() {
       workDescription: workDescription.trim(),
       signerName: signerName.trim(),
       signaturePath,
+      extras,
     };
     // Queued BEFORE the form is cleared — see lib/save-queued.ts. This
     // one carries a signature the GC's super just drew; losing it
@@ -96,6 +108,10 @@ export default function TicketScreen() {
     setWorkDescription("");
     setSignerName("");
     setSignaturePath(null);
+    setPerDiem("");
+    setTravel("");
+    setMiles("");
+    setMileRate("");
     setShowForm(false);
     await sync();
   };
@@ -141,6 +157,7 @@ export default function TicketScreen() {
                 {item.snapshot.materials.length === 1
                   ? t("tickets.snapshot.materials.one")
                   : t("tickets.snapshot.materials.many", { count: item.snapshot.materials.length })}
+                {item.snapshot.extras?.length ? ` · ${t("tickets.snapshot.extras")}` : ""}
               </Text>
             ) : null}
             {/* The camera screen attaches the photo to THIS ticket at the
@@ -195,6 +212,10 @@ export default function TicketScreen() {
           value={signerName}
           onChangeText={setSignerName}
         />
+        <Field label={t("tickets.field.perDiem")} value={perDiem} onChangeText={setPerDiem} keyboardType="decimal-pad" />
+        <Field label={t("tickets.field.travel")} value={travel} onChangeText={setTravel} keyboardType="decimal-pad" />
+        <Field label={t("tickets.field.miles")} value={miles} onChangeText={setMiles} keyboardType="decimal-pad" />
+        <Field label={t("tickets.field.mileRate")} value={mileRate} onChangeText={setMileRate} keyboardType="decimal-pad" />
         <Text style={styles.label}>{t("tickets.field.signature")}</Text>
         <SignaturePad key={showForm ? "open" : "closed"} onChange={setSignaturePath} />
       </Sheet>

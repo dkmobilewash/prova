@@ -97,6 +97,7 @@ describe("a T&M ticket drafts one change order", () => {
   });
 
   afterAll(async () => {
+    await prisma.timeEntry.deleteMany({ where: { jobId } });
     await prisma.tmTicket.deleteMany({ where: { jobId } });
     await prisma.jobLineItem.deleteMany({ where: { jobId } });
     await prisma.changeOrderProposal.deleteMany({ where: { changeOrder: { jobId } } });
@@ -237,5 +238,44 @@ describe("a T&M ticket drafts one change order", () => {
       await prisma.contact.delete({ where: { id: contact.id } });
       await prisma.company.delete({ where: { id: other.id } });
     }
+  });
+
+  it("freezes per diem, travel and mileage at signing, and drafts priced lines from them", async () => {
+    const { POST } = await import("@/app/api/v1/jobs/[id]/tickets/route");
+    const day = "2026-09-14";
+    const entry = await prisma.timeEntry.create({
+      data: { jobId, date: new Date(`${day}T00:00:00Z`), hours: 8, perDiemAmount: 60, travelPayAmount: 30, employeeUserId: context.id },
+    });
+    const post = (extras: unknown) =>
+      POST(
+        new Request("http://x.test", {
+          method: "POST",
+          body: JSON.stringify({ workDate: day, workDescription: "Extra", signerName: "Sam", extras }),
+        }) as never,
+        { params: Promise.resolve({ id: jobId }) },
+      );
+
+    expect((await post({ miles: "lots" })).status).toBe(400);
+    const made = await post({ travel: "45", miles: "40", mileRate: "0.725" });
+    expect(made.status).toBe(201);
+    const { id } = (await made.json()) as { id: string };
+
+    // The ticket holds what it froze, even with the entry gone.
+    await prisma.timeEntry.delete({ where: { id: entry.id } });
+    expect(await draftChangeOrderFromTmTicket(id)).toEqual({ ok: true });
+
+    const { changeOrderId } = await prisma.tmTicket.findUniqueOrThrow({ where: { id } });
+    const lines = await prisma.changeOrderProposal.findMany({
+      where: { changeOrderId: changeOrderId!, costCategory: { in: ["OTHER", "EQUIPMENT"] } },
+      orderBy: { description: "asc" },
+    });
+    expect(lines.map((line) => [line.description?.split(" — ")[0], line.costCategory, Number(line.budgetedUnitCost)])).toEqual([
+      ["Mileage", "EQUIPMENT", 29],
+      ["Per diem", "OTHER", 60],
+      ["Travel", "OTHER", 45],
+    ]);
+    expect(lines[1].description).toContain("$60.00 from the day's time entries");
+    expect(lines[2].description).toContain("the time entries show $30.00, not added");
+    for (const line of lines) expect(line.unitPrice).not.toBeNull();
   });
 });
