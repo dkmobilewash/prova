@@ -45,6 +45,7 @@ export async function removeBillingClickFixture(prisma: PrismaClient, companyId:
     await prisma.materialOrderDelivery.deleteMany({ where: { order: { jobId } } });
     await prisma.materialOrder.deleteMany({ where: { jobId } });
     await prisma.materialOrderCounter.deleteMany({ where: { jobId } });
+    await prisma.timeEntry.deleteMany({ where: { jobId } });
     await prisma.jobLineItem.deleteMany({ where: { jobId } });
     await prisma.changeOrderLineItemEdit.deleteMany({ where: { changeOrder: { jobId } } });
     await prisma.changeOrder.deleteMany({ where: { jobId } });
@@ -129,7 +130,7 @@ export async function seedBillingClickFixture(prisma: PrismaClient, companyId: s
 
   // $100,000 contract, plus a $5,000 approved change order.
   const framing = await prisma.jobLineItem.create({
-    data: { jobId, description: "Framing labor", unit: "LS", quantity: "1", unitPrice: "60000", budgetedUnitCost: "40000", costCategory: "LABOR" },
+    data: { jobId, description: "Framing labor", unit: "LS", quantity: "1", unitPrice: "60000", laborHours: "200", budgetedUnitCost: "40000", costCategory: "LABOR" },
   });
   const boardLine = await prisma.jobLineItem.create({
     // Through the app's own mapping, so the quotes match the way a real
@@ -285,6 +286,17 @@ export async function seedBillingClickFixture(prisma: PrismaClient, companyId: s
       signedAt: new Date("2026-10-20T22:12:00Z"),
       signaturePath: "M10 80L60 40L110 90L160 50L210 80",
     },
+  });
+
+  // Hours on the framing line, for the suggested amount on a new application.
+  // The last row falls after October, so it shows the period-to cutoff.
+  const worker = await prisma.user.findFirstOrThrow({ where: { companyId }, select: { id: true } });
+  await prisma.timeEntry.createMany({
+    data: [
+      { jobId, lineItemId: framing.id, employeeUserId: worker.id, date: day("2026-09-30"), hours: "100" },
+      { jobId, lineItemId: framing.id, employeeUserId: worker.id, date: day("2026-10-20"), hours: "40" },
+      { jobId, lineItemId: framing.id, employeeUserId: worker.id, date: day("2026-11-05"), hours: "60" },
+    ],
   });
 
   await prisma.$transaction(async (tx) => {
