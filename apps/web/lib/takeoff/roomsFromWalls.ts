@@ -1,3 +1,4 @@
+import { BOX_TITLE, HEADING_SIZE } from "./legendBoxes";
 import { NARROWEST_DOOR_FEET, openingsInWalls } from "./openings";
 import { ringCorners, RING_TOLERANCE_CELLS, traceRing } from "./roomAreas";
 import { readRoomTags, type PositionedText, type RoomTag } from "./roomTags";
@@ -387,6 +388,7 @@ export function roomsFromWalls(input: {
   // 4. tags
   const unplacedTags: RoomTag[] = [];
   const mergedTags: RoomTag[] = [];
+  const tagged = new Set<RoomFromWalls>();
   if (input.text && input.widthPt) {
     const w = input.widthPt;
     const tagsOfRoom = new Map<RoomFromWalls, RoomTag[]>();
@@ -405,11 +407,34 @@ export function roomsFromWalls(input: {
       else tagsOfRoom.set(room, [placed]);
     }
     for (const [room, tags] of tagsOfRoom) {
+      tagged.add(room);
       if (tags.length === 1) room.tag = tags[0];
       else mergedTags.push(...tags);
     }
   }
-  return { rooms, unplacedTags, mergedTags, grid: size };
+  return { rooms: withoutFramedText(rooms, tagged, input.text, input.widthPt, (x, y) => {
+    const cx = Math.floor((x - x0) / unitsPerCellX), cy = Math.floor((y - y0) / unitsPerCellY);
+    const inside = cx >= 0 && cy >= 0 && cx < size.width && cy < size.height ? label[cy * size.width + cx] : -1;
+    return inside >= 0 ? roomOfRegion.get(inside) : undefined;
+  }), unplacedTags, mergedTags, grid: size };
+}
+
+/**
+ * A framed legend or notes block closes like a room. Same test as
+ * `legendBoxes.ts`, a title in heading type, and only on a region no room tag
+ * names: Joplin A-101's GENERAL PLAN NOTES came back as a 2,321 sf room.
+ */
+function withoutFramedText(rooms: RoomFromWalls[], tagged: ReadonlySet<RoomFromWalls>, text: readonly PositionedText[] | undefined, widthPt: number | undefined, roomAt: (x: number, y: number) => RoomFromWalls | undefined): RoomFromWalls[] {
+  if (!text || !widthPt || text.length === 0) return rooms;
+  const heights = text.map((t) => t.height).sort((a, b) => a - b);
+  const median = heights[Math.floor(heights.length / 2)]!;
+  const framed = new Set<RoomFromWalls>();
+  for (const t of text) {
+    if (t.height < HEADING_SIZE * median || !BOX_TITLE.test(t.str)) continue;
+    const room = roomAt((t.x + t.width / 2) / widthPt, t.y / widthPt);
+    if (room && !tagged.has(room)) framed.add(room);
+  }
+  return framed.size === 0 ? rooms : rooms.filter((r) => !framed.has(r));
 }
 
 /**

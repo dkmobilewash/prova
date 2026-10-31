@@ -989,3 +989,7 @@ TAG_DISAGREES group must show "Add as <code> — priced" and the
 `data-takeoff="update-thickness"` button, and pressing it must change the
 type under /wall-types; then the same with the read ON, which must not
 change the groups.
+
+## Framed notes are not rooms (2026-10-31)
+
+A closed region with no room tag and a title in heading type (`legendBoxes.ts`'s test) is dropped. Joplin A-101: 64 regions to 62, losing GENERAL PLAN NOTES at 2,321 sf and FLOOR PLAN LEGEND at 537 sf.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
-import { doorArcCandidates, doorSymbols, exteriorWalls, tagsNameEveryWindow, windowSymbols, WIDEST_WINDOW_FEET } from "./doorWindowSymbols";
+import { doorArcCandidates, doorSymbols, exteriorWalls, tagsNameEveryWindow, windowSymbols, WIDEST_WINDOW_FEET, onlyMarkedDoors } from "./doorWindowSymbols";
 
 /** One foot = 0.01 page-width units here, so feetPerUnit is 100. */
 const FPU = 100;
@@ -186,5 +186,17 @@ describe("a sheet that tags its windows", () => {
   it("counts W tags, and not bare marks or a stray pair", () => {
     expect(tagsNameEveryWindow(["W1", "W2", "W-3", "S8B"])).toBe(true);
     expect(tagsNameEveryWindow(["W1", "W2", "A", "7"])).toBe(false);
+  });
+});
+
+describe("onlyMarkedDoors", () => {
+  const door = (x: number) => ({ kind: "door", hinge: { x, y: 0.5 }, strike: { x: x + 0.01, y: 0.5 }, widthFeet: 3, wall: null, leaves: 1, sweepDegrees: 90 }) as never;
+  const doors = [0.1, 0.2, 0.3, 0.4, 0.8].map(door);
+  it("drops the unmarked door on a sheet that marks its doors", () => {
+    const marks = [0.1, 0.2, 0.3, 0.4].map((x) => ({ x: x + 0.005, y: 0.505 }));
+    expect(onlyMarkedDoors(doors, marks, 100)).toHaveLength(4);
+  });
+  it("keeps every door where the marks could not be read", () => {
+    expect(onlyMarkedDoors(doors, [{ x: 0.105, y: 0.505 }], 100)).toHaveLength(5);
   });
 });
