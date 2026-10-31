@@ -657,6 +657,9 @@ test.describe("C Stream Bid — a drywall sub bids one TI job, start to finish",
       // estimate is then built by hand in step 6, and the log says so.
       let takeoffProblem: string | null = null;
       try {
+        // Step 4b left the page on /bid/wall-types: come back to THIS job's
+        // takeoff tab before looking for it (round 2's first run stopped here).
+        await page.goto(`/bid/estimates/${estimateId}/takeoff`);
         await expect(page.getByRole("heading", { name: "Takeoff", level: 2, exact: true })).toBeVisible();
         const empty = page.getByText("No drawing on this job yet");
         walk(`takeoff tab · ${(await empty.count()) > 0 ? '"No drawing on this job yet"' : "(no empty-state sentence)"}`);
