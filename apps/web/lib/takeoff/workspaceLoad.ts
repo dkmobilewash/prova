@@ -342,7 +342,7 @@ export async function loadTakeoffWorkspace(
       xs: m.xs,
       ys: m.ys,
       cutouts: cutoutsFromJson(m.cutouts),
-      feetPerPageWidth: feetPerPageWidth({
+      feetPerPageWidth: m.calibration === null ? null : feetPerPageWidth({
         x1: m.calibration.x1,
         y1: m.calibration.y1,
         x2: m.calibration.x2,
@@ -469,7 +469,7 @@ export async function loadTakeoffWorkspace(
       label: m.label,
       packageLabel: m.packageLabel,
       postedAt: m.postedAt ? m.postedAt.toISOString() : null,
-      calibration: {
+      calibration: m.calibration === null ? null : {
         x1: m.calibration.x1,
         y1: m.calibration.y1,
         x2: m.calibration.x2,
@@ -484,7 +484,7 @@ export async function loadTakeoffWorkspace(
           ? { family: m.ceilingFamily, code: m.ceilingCode, heightFeet: m.ceilingHeightFeet, from: m.ceilingFrom, guess: m.ceilingGuess }
           : null,
       cutouts: cutoutsFromJson(m.cutouts),
-      outOfDate: current !== null && m.calibrationId !== current.id,
+      outOfDate: current !== null && m.calibrationId !== null && m.calibrationId !== current.id,
       scaleLabel: measurementScaleLabel(m.calibrationId, zones, notices),
     }));
     return {

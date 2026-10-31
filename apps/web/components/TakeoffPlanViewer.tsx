@@ -2573,8 +2573,9 @@ export function TakeoffPlanViewer({
     s.measurements
       .filter((m) => m.ceiling !== null && m.ceiling !== undefined && m.kind === "AREA")
       .map((m) => {
-        const span = Math.hypot(m.calibration.x2 - m.calibration.x1, m.calibration.y2 - m.calibration.y1);
-        const fpu = span > 0 ? m.calibration.declaredDistanceFeet / span : 0;
+        const scale = m.calibration;
+        const span = scale === null ? 0 : Math.hypot(scale.x2 - scale.x1, scale.y2 - scale.y1);
+        const fpu = scale !== null && span > 0 ? scale.declaredDistanceFeet / span : 0;
         const units = ringArea(m.xs, m.ys) ?? 0;
         return { pageNumber: s.pageNumber, squareFeet: Math.abs(units) * fpu * fpu, family: m.ceiling!.family, code: m.ceiling!.code };
       }),
@@ -3108,6 +3109,7 @@ export function TakeoffPlanViewer({
 
   // ── What the draft currently measures, for the live readout ───────────
   const draftReading = useMemo(() => {
+    if (tool === "count") return draft.xs.length === 0 ? null : `${draft.xs.length}`;
     if (!calibration || draft.xs.length === 0) return null;
     const stored: StoredCalibration = calibration;
     const scale = feetPerPageWidth(stored);
@@ -3120,7 +3122,6 @@ export function TakeoffPlanViewer({
       const area = ringArea(draft.xs, draft.ys);
       return area === null ? null : `${Math.round(area * scale * scale)} sq ft`;
     }
-    if (tool === "count") return `${draft.xs.length}`;
     return null;
   }, [calibration, draft, tool]);
 
@@ -3145,7 +3146,7 @@ export function TakeoffPlanViewer({
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line-card bg-surface-card p-2">
         <div className="flex items-center gap-1">
           {TOOLS.filter((entry) => entry.id !== "symbol" || symbolCount).map((entry) => {
-            const disabled = entry.id !== "pan" && entry.id !== "calibrate" && !calibration;
+            const disabled = !calibration && (entry.id === "linear" || entry.id === "area" || entry.id === "rect" || entry.id === "cutout");
             return (
               <button
                 key={entry.id}
@@ -4072,11 +4073,12 @@ export function TakeoffPlanViewer({
           onSaved={() => setDemo(null)}
         />
       )}
-      {symbols !== null && symbols.page === pageNumber && sheet !== null && (
+      {symbols !== null && symbols.page === pageNumber && (
         <TakeoffSymbolPanel
           jobId={jobId}
           planId={planId}
-          pageId={sheet.id}
+          pageId={sheet?.id ?? null}
+          pageNumber={pageNumber}
           itemId={activeItemId}
           state={symbols}
           across={across}
@@ -4922,10 +4924,12 @@ export function TakeoffPlanViewer({
             />
           )}
 
-          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && sheet && draft.xs.length > 0 && (
+          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && (sheet || tool === "count") && draft.xs.length > 0 && (
             <MeasurementForm
               jobId={jobId}
-              pageId={sheet.id}
+              pageId={sheet?.id ?? null}
+              planId={planId}
+              pageNumber={pageNumber}
               kind={kindOf(tool) ?? "LINEAR"}
               draft={draft}
               reading={draftReading}
@@ -5059,7 +5063,7 @@ export function TakeoffPlanViewer({
             </div>
           )}
 
-          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && !sheet && (
+          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && tool !== "count" && tool !== "symbol" && !calibration && (
             <p className="mt-2 text-xs text-tag-amber-ink">Set the scale on this sheet before measuring it.</p>
           )}
         </div>
@@ -5847,6 +5851,8 @@ function CalibrationForm({
 function MeasurementForm({
   jobId,
   pageId,
+  planId,
+  pageNumber,
   kind,
   draft,
   reading,
@@ -5854,7 +5860,9 @@ function MeasurementForm({
   onSaved,
 }: {
   jobId: string;
-  pageId: string;
+  pageId: string | null;
+  planId: string;
+  pageNumber: number;
   kind: MeasurementKind;
   draft: Draft;
   reading: string | null;
@@ -5881,7 +5889,9 @@ function MeasurementForm({
         onSaved(typeof value?.id === "string" ? { id: value.id } : null);
       }}
     >
-      <input type="hidden" name="pageId" value={pageId} />
+      <input type="hidden" name="pageId" value={pageId ?? ""} />
+      <input type="hidden" name="planId" value={planId} />
+      <input type="hidden" name="pageNumber" value={pageNumber} />
       {/* Blank when nothing is selected, which the action reads as
           Unassigned rather than as an error. */}
       <input type="hidden" name="itemId" value={activeItemId ?? ""} />

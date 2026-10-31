@@ -303,8 +303,13 @@ model TakeoffMeasurement {
   /// Nothing is lost by cascading: this table is append-only, so the only way
   /// a calibration is ever deleted is with the page it belongs to, and the
   /// measurements on that page are going with it regardless.
-  calibrationId String
-  calibration   TakeoffScaleCalibration @relation(fields: [calibrationId], references: [id], onDelete: Cascade)
+  ///
+  /// NULL ONLY FOR A COUNT. A count is a number of things and no scale changes
+  /// it, so electrical and plumbing sheets can be counted without one. The
+  /// migration's CHECK `TakeoffMeasurement_scale_unless_count` keeps the guard
+  /// above structural for lines and areas; Prisma cannot express it here.
+  calibrationId String?
+  calibration   TakeoffScaleCalibration? @relation(fields: [calibrationId], references: [id], onDelete: Cascade)
 
   kind TakeoffMeasurementKind
 
