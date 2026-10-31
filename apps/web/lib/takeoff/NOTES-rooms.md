@@ -1032,3 +1032,15 @@ Three decisions in `finishTakeoff.ts`, all stated on screen:
 - For a schedule of types, an untagged group of regions takes a type only when every typed neighbour has that type and is at least 100 sf. Without the size floor, rooms beside glen-hazel's elevator shafts took T7, the elevator finish.
 
 A bare number in a region is deliberately NOT a join: door marks print the room's own number.
+
+## Splitting leaked regions (2026-10-31)
+
+`roomsSplitAtDrawnWalls` runs the finder's walls first, then, only inside a region holding two or more tags, believes the sheet's own lines of 8 ft and over, door leaves and corner seals. A split stands if at least two parts carry tags and the parts keep 70% of the area, and each part must lie wholly inside the region.
+
+Measured, because each number below was a failed first version. Every line everywhere: Joplin grew a 17,153 sf room outside the building. Parts judged by their centre: a 13,052 sf outside region landed inside a leak. Lines of 3 or 5 ft: casework shredded rooms, with Joplin's 108 at 61 sf. 8 and 12 ft gave the same named count, and 8 split more.
+
+Unnamed parts under 100 sf are dropped from a split, and unnamed regions under 20 sf from the list, because they only add blank rows. A tag in no closed region names an unnamed room within 4 ft of its number.
+
+Joplin's largest region left, 1,642 sf, is DINING + KITCHEN + HALL, which the plan draws as one open space. That is correct, not a miss. Baker's 100, 106 and 112 never close, and no split reaches them, because a split needs a region to start from.
+
+A corridor no longer has a say in a neighbour's finish type: once split out, glen-hazel's T3 corridor blocked every T1 room behind it, 25 joined to 16.

@@ -33,6 +33,12 @@ const SOURCE_WORD: Record<string, string> = {
   estimator: "typed by you",
 };
 
+/** A region holding several rooms says which, rather than a blank row. */
+function sharedName(room: RoomsFromWallsResult["rooms"][number]) {
+  if (!room.sharedTags) return null;
+  return { name: room.sharedTags.map((t) => t.name).join(" + "), number: room.sharedTags.map((t) => t.number).filter(Boolean).join(", ") };
+}
+
 export function TakeoffRoomsPanel({
   jobId,
   pageId,
@@ -83,7 +89,7 @@ export function TakeoffRoomsPanel({
   function onSave() {
     setError(null);
     const rooms: RoomToSave[] = result.rooms.map((room) => {
-      const edited = nameOf(room.id, room.tag);
+      const edited = nameOf(room.id, room.tag ?? sharedName(room));
       const label = [edited.name, edited.number].filter(Boolean).join(" ").trim();
       const c = ceilingOf(room.id);
       return {
@@ -137,7 +143,7 @@ export function TakeoffRoomsPanel({
               line, because the panel is too narrow for seven columns and a
               ceiling that scrolls sideways is a ceiling nobody checks. */}
           {result.rooms.map((room) => {
-              const edited = nameOf(room.id, room.tag);
+              const edited = nameOf(room.id, room.tag ?? sharedName(room));
               return (
                 <tbody
                   key={room.id}
