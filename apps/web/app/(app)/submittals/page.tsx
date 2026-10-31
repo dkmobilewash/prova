@@ -3,6 +3,7 @@ import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
 import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
+import { can } from "@/lib/permissions";
 import { NoAccess } from "@/components/NoAccess";
 import { SubmittalForm } from "@/components/SubmittalForm";
 import { EmptyState } from "@/components/EmptyState";
@@ -143,6 +144,13 @@ export default async function SubmittalsPage({
         route="/submittals"
         subtitle="Shop drawings and product data sent for approval, and which revision you can build from."
       />
+      {activeJob && can(context, "MANAGE_ESTIMATING") && (
+        <p className="mt-2 text-sm">
+          <Link href={`/jobs/${activeJob}/specs`} className="text-link hover:underline">
+            Spec sections for this job →
+          </Link>
+        </p>
+      )}
 
       <section className="mb-8" data-tour="submittals-log">
         <SubmittalForm jobs={jobs} defaultJobId={activeJob ?? undefined} startOpen={startNew === "1"} />

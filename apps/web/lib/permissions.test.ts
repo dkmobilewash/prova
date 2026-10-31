@@ -324,6 +324,8 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // so an ACCOUNTING member reaches the link and gets NoAccess, deliberately:
   // pricing a bid for a GC is an estimator's job, not a bookkeeper's.
   "/jobs/[id]/proposal": "MANAGE_ESTIMATING",
+  // Same gate as the upload token that attaches a section's file.
+  "/jobs/[id]/specs": "MANAGE_ESTIMATING",
 
   // The job page's rebuild into tabs, 2026-09-20 — see
   // `app/(app)/jobs/[id]/(tabs)/layout.tsx`'s doc comment. Photos is the
