@@ -4,6 +4,7 @@ import { RowActions, ConfirmDelete } from "@/components/RowActions";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
 import { isInstallable } from "@/lib/installed-quantities";
 import { estimatedHours } from "@/lib/labor-productivity";
+import { loadSends } from "@/lib/sent-documents-query";
 import { LogPaymentForm } from "@/components/LogPaymentForm";
 import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
 import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
@@ -200,6 +201,7 @@ export default async function JobBillingPage({
     ),
   }));
 
+  const sends = await loadSends(company.id, "PAY_APPLICATION", job.invoices.map((invoice) => invoice.id));
   const timeZone = await viewerTimeZone();
   // The reader's calendar day, for "overdue N days" (lib/due-date.ts).
   const asOf = await viewerAsOf();
@@ -386,6 +388,11 @@ export default async function JobBillingPage({
                         <Link href={`/jobs/${job.id}/pay-applications/${invoice.id}`} className="text-link hover:underline">
                           View pay application →
                         </Link>
+                      </p>
+                    )}
+                    {sends.get(invoice.id)?.[0] && (
+                      <p className={sends.get(invoice.id)?.[0].needsAction ? "text-xs text-danger" : "text-xs text-ink-muted"}>
+                        Emailed {sends.get(invoice.id)?.[0].sentOn} · {sends.get(invoice.id)?.[0].status}
                       </p>
                     )}
                     <p className="flex flex-wrap items-baseline gap-x-4">

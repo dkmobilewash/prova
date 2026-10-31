@@ -193,6 +193,7 @@ model Company {
   delayEvents               DelayEvent[]
   deviceTokens              DeviceToken[]
   dailyFieldReports         DailyFieldReport[]
+  sentDocuments SentDocument[]
   jobMedia                  JobMedia[]
   takeoffPlans              TakeoffPlan[]
   takeoffItems              TakeoffItem[]

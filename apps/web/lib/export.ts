@@ -554,6 +554,14 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: (companyId: string) => ({ report: { companyId } }),
   },
   {
+    key: "sent-documents",
+    model: "sentDocument",
+    label: "Documents emailed",
+    note: "Each purchase order and pay application emailed from the app: which document, the message that carried it, the file name and the date sent. The files themselves download from the document's own page.",
+    columns: ["id", "jobId", "messageId", "kind", "documentId", "fileName", "sentOn", "createdAt"],
+    scope: byCompany,
+  },
+  {
     key: "delays",
     model: "delayEvent",
     label: "Delays",
@@ -1105,6 +1113,8 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
  * nobody asks for.
  */
 export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
+  content:
+    "the PDF itself, which does not fit in a spreadsheet cell. Each one downloads from the document's page.",
   assemblyLibraryPinnedAt:
     "when this job stopped following the company assembly library, or null for most jobs. " +
     "Plumbing for the expander that turns a takeoff into estimate lines: it decides whether a " +

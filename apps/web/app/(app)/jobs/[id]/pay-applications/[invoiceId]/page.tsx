@@ -12,7 +12,12 @@ import { loadPayApplication } from "@/lib/pay-application-query";
 import { loadLowerTierWaiverInputs } from "@/lib/lien-waiver-query";
 import { missingLowerTierWaivers } from "@/lib/lien-waiver-followups";
 import Link from "next/link";
-import { formatPercent, g702Document, G702_LINES, party } from "@/lib/billing/g702";
+import { formatPercent, G702_LINES } from "@/lib/billing/g702";
+import { g702FileName } from "@/lib/billing/g702-pdf";
+import { payApplicationDocument } from "@/lib/billing/pay-application-document";
+import { payApplicationEmail } from "@/lib/document-email";
+import { loadSends } from "@/lib/sent-documents-query";
+import { SendDocument, SendHistory } from "@/components/SendDocument";
 
 /** A header field as the form prints it: label, then the value or a blank
  * to be written on. */
@@ -76,30 +81,9 @@ export default async function PayApplicationPage({
   // ONE object for the screen and the PDF. The page below reads its labels
   // and figures from this, and the download button is handed the same
   // object, so what is on screen and what is in the file cannot differ.
-  const doc = g702Document({
-    header: {
-      project: job.name,
-      projectLocation: job.projectLocation ?? job.siteAddress ?? null,
-      to: party(job.contact.name, job.contact.address),
-      from: party(
-        company.dbaName ? `${company.name} (dba ${company.dbaName})` : company.name,
-        company.hqAddressLine1,
-        company.hqAddressLine2,
-        [company.hqCity, company.hqState, company.hqZip].filter(Boolean).join(" ").replace(/^(\S.*) (\S+) (\S+)$/, "$1, $2 $3") || null,
-        company.phone,
-      ),
-      contractFor: job.scope ?? null,
-      applicationNumber: invoice.number,
-      applicationDate: formatInstant(invoice.issuedAt, timeZone),
-      periodTo: invoice.periodTo ? formatCalendarDate(invoice.periodTo) : null,
-      contractDate: view.contractDate ? formatCalendarDate(view.contractDate) : null,
-      projectNumber: job.contractNumber ?? null,
-    },
-    lineItems: lineItemResults,
-    summary,
-    netChangeByChangeOrders: view.netChangeByChangeOrders,
-  });
+  const doc = payApplicationDocument(view, company, timeZone);
   const { header, lines, continuation } = doc;
+  const sends = (await loadSends(company.id, "PAY_APPLICATION", [invoice.id])).get(invoice.id) ?? [];
 
   return (
     // PRINTED OUTPUT: on screen the page wears the shared header; on paper it
@@ -135,6 +119,24 @@ export default async function PayApplicationPage({
             Compliance →
           </Link>
         </p>
+      )}
+      {isPayApplication && (
+        <div className="mt-3 flex flex-col items-start gap-2 print:hidden">
+          <SendHistory sends={sends} />
+          <SendDocument
+            target={{ kind: "PAY_APPLICATION", jobId: job.id, id: invoice.id }}
+            draft={payApplicationEmail({
+              company: company.dbaName ?? company.name,
+              jobName: job.name,
+              number: invoice.number,
+              periodTo: invoice.periodTo ? formatCalendarDate(invoice.periodTo) : null,
+              paymentDue: money(summary.currentPaymentDue),
+              fileName: g702FileName(doc),
+              contactName: job.contact.name,
+              contactEmail: job.contact.email,
+            })}
+          />
+        </div>
       )}
       <p className="mt-3 max-w-2xl text-xs text-ink-muted">
         Laid out to follow AIA Documents G702 and G703 — the summary, the continuation sheet with columns A–I, and

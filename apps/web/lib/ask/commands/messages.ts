@@ -524,6 +524,14 @@ export const messageExclusions: Exclusion[] = [
       "on the job's proposal page. Never a command.",
   },
   {
+    action: "sendPurchaseOrder",
+    reason: "Emails a document to a vendor. A person reads the words and presses send on the document's own page, like a bid package.",
+  },
+  {
+    action: "sendPayApplication",
+    reason: "Emails a pay application to a GC. A person reads the words and presses send on the document's own page, like a bid package.",
+  },
+  {
     action: "sendHelpRequestEmail",
     reason:
       "#352: the internal sender behind help.ts's requestHelp, the 'Ask us for help' panel. Takes no recipient argument and always addresses the configured support inbox — not a command, and not something a model prompt should be able to trigger toward an arbitrary address even if send_email's own address resolution stays honest.",

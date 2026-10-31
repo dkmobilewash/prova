@@ -13,7 +13,12 @@ import {
 } from "@/lib/document-uploads";
 import { recipientFor, submissionBody, submissionSubject } from "@/lib/estimating/bid-submission";
 import { RFQ_SOURCE_PURPOSE, attachmentsFit, rfqRecipient, type RfqSourceKind } from "@/lib/estimating/rfq";
+import { payApplicationDocument } from "@/lib/billing/pay-application-document";
+import { sentOnFromForm } from "@/lib/document-email";
+import { loadPayApplication } from "@/lib/pay-application-query";
 import { can } from "@/lib/permissions";
+import { purchaseOrderDocument } from "@/lib/purchase-order-document";
+import { viewerTimeZone } from "@/lib/viewerToday";
 import { readSupportAddress } from "@/lib/help-config";
 import { outboundEmailAllowance } from "@/lib/outbound-email-limit";
 import {
@@ -130,6 +135,11 @@ async function deliverEmail(input: {
    * and it is deliberately not smuggled in here.
    */
   attachments?: readonly { filename: string; content: Buffer }[];
+  /** The name shown as sender and where a reply goes. Document sends only. */
+  sender?: { name: string; replyTo: string | null };
+  /** The file to keep. Written with the message row, so there is no moment at
+   * which a sent document has no copy. */
+  keepCopy?: { kind: "PURCHASE_ORDER" | "PAY_APPLICATION"; documentId: string; sentOn: Date; fileName: string; content: Buffer };
 }): Promise<ActionResult> {
   const config = readEmailConfig();
   // Recorded even when unconfigured, so the from-address on the row is
@@ -149,6 +159,21 @@ async function deliverEmail(input: {
       relatedType: input.relatedType,
       relatedId: input.relatedId,
       sentByUserId: input.sentByUserId,
+      ...(input.keepCopy && input.jobId
+        ? {
+            sentDocument: {
+              create: {
+                companyId: input.companyId,
+                jobId: input.jobId,
+                kind: input.keepCopy.kind,
+                documentId: input.keepCopy.documentId,
+                sentOn: input.keepCopy.sentOn,
+                fileName: input.keepCopy.fileName,
+                content: new Uint8Array(input.keepCopy.content),
+              },
+            },
+          }
+        : {}),
     },
   });
 
@@ -166,6 +191,8 @@ async function deliverEmail(input: {
     subject: input.subject,
     text: input.body,
     attachments: input.attachments,
+    fromName: input.sender?.name,
+    replyTo: input.sender?.replyTo ?? undefined,
   });
 
   if (!result.ok) {
@@ -243,6 +270,11 @@ async function deliverEmail(input: {
   return ok;
 }
 
+const PO_ONLY =
+  "Emailing a purchase order needs job cost access, which your role doesn't have here. Ask the account owner.";
+const BILLING_ONLY =
+  "Emailing a pay application needs billing access, which your role doesn't have here. Ask the account owner.";
+
 const JOBS_ONLY =
   "Sending email to a client or GC needs the Jobs capability, which your role doesn't have here. Ask the account owner to send it, or to add Jobs to your role on the Team page.";
 
@@ -306,6 +338,116 @@ export async function sendOutboundEmail(formData: FormData): Promise<ActionResul
       relatedId: text(formData, "relatedId") || null,
       sentByUserId: user.id,
     });
+  });
+}
+
+type DocumentSend = {
+  company: { id: string; name: string; dbaName: string | null };
+  user: { id: string; email: string | null };
+  formData: FormData;
+  jobId: string;
+  kind: "PURCHASE_ORDER" | "PAY_APPLICATION";
+  documentId: string;
+  fileName: string;
+  pdf: Uint8Array;
+};
+
+/** The shared half of sending a document. The server built the PDF from its own
+ * records, so the file kept is the file sent. The sender's capability and the
+ * rate cap are checked before anything is written, which is the rule above for
+ * anything reaching `deliverEmail`. */
+async function deliverDocument(send: DocumentSend): Promise<ActionResult> {
+  const { formData } = send;
+  const toAddress = required(formData, "toAddress", "Recipient");
+  if (!looksLikeEmail(toAddress)) return fail(`"${toAddress}" doesn't look like an email address`);
+  const subject = required(formData, "subject", "Subject");
+  const body = required(formData, "body", "Message");
+  const sentOn = sentOnFromForm(formData.get("sentOn"));
+  if (!sentOn) return fail("Enter the date this is being sent.");
+
+  const content = Buffer.from(send.pdf);
+  const fits = attachmentsFit([content.byteLength]);
+  if (!fits.ok) return fail(fits.problem);
+  const allowance = await outboundEmailAllowance(send.company.id);
+  if (!allowance.ok) return fail(allowance.error);
+
+  return deliverEmail({
+    companyId: send.company.id,
+    jobId: send.jobId,
+    toAddress,
+    toName: text(formData, "toName") || null,
+    subject,
+    body,
+    relatedType: send.kind,
+    relatedId: send.documentId,
+    sentByUserId: send.user.id,
+    attachments: [{ filename: send.fileName, content }],
+    sender: { name: send.company.dbaName ?? send.company.name, replyTo: send.user.email },
+    keepCopy: { kind: send.kind, documentId: send.documentId, sentOn, fileName: send.fileName, content },
+  });
+}
+
+/** Emails an issued purchase order with its PDF. A draft is refused: it is not a
+ * commitment and must not reach a vendor looking like one. */
+export async function sendPurchaseOrder(purchaseOrderId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
+  if (!can(context, "VIEW_JOB_COSTS")) return fail(PO_ONLY);
+
+  return runAction(async () => {
+    const po = await prisma.purchaseOrder.findFirst({
+      where: { id: purchaseOrderId, companyId: company.id },
+      include: {
+        vendor: { select: { name: true, contactName: true, phone: true, email: true } },
+        lines: { orderBy: { createdAt: "asc" } },
+        job: { select: { id: true, name: true, siteAddress: true, projectLocation: true, contractNumber: true } },
+      },
+    });
+    if (!po) return fail("That purchase order is gone. Reload the page.");
+    if (po.status === "DRAFT") return fail(`PO ${po.number} is still a draft. Mark it as issued before emailing it.`);
+
+    const doc = purchaseOrderDocument(po, po.job, company);
+    const { buildPurchaseOrderPdf, purchaseOrderFileName } = await import("@/lib/purchase-order-pdf");
+    const sent = await deliverDocument({
+      company,
+      user,
+      formData,
+      jobId: po.jobId,
+      kind: "PURCHASE_ORDER",
+      documentId: po.id,
+      fileName: purchaseOrderFileName(doc),
+      pdf: await buildPurchaseOrderPdf(doc),
+    });
+    revalidatePath(`/jobs/${po.jobId}/buyout`);
+    return sent;
+  });
+}
+
+/** Emails a pay application with its G702/G703 PDF. */
+export async function sendPayApplication(jobId: string, invoiceId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
+  if (!can(context, "MANAGE_BILLING")) return fail(BILLING_ONLY);
+
+  return runAction(async () => {
+    const view = await loadPayApplication(jobId, invoiceId, company.id);
+    if (!view || !view.isPayApplication) return fail("That pay application is gone. Reload the page.");
+
+    const doc = payApplicationDocument(view, company, await viewerTimeZone());
+    const { buildG702Pdf, g702FileName } = await import("@/lib/billing/g702-pdf");
+    const sent = await deliverDocument({
+      company,
+      user,
+      formData,
+      jobId,
+      kind: "PAY_APPLICATION",
+      documentId: invoiceId,
+      fileName: g702FileName(doc),
+      pdf: await buildG702Pdf(doc),
+    });
+    revalidatePath(`/jobs/${jobId}/pay-applications/${invoiceId}`);
+    revalidatePath(`/jobs/${jobId}/billing`);
+    return sent;
   });
 }
 

@@ -100,6 +100,9 @@ model OutboundMessage {
 
   events OutboundMessageEvent[]
 
+  /// The exact file, when this message carried a document we keep.
+  sentDocument SentDocument?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -141,4 +144,47 @@ model OutboundMessageEvent {
 
   @@index([messageId])
   @@index([occurredAt])
+}
+
+enum SentDocumentKind {
+  PURCHASE_ORDER
+  PAY_APPLICATION
+}
+
+/// The exact PDF that went with a message, so "what did we send" has a real
+/// answer. `OutboundMessage` keeps the words and deliberately not the bytes;
+/// this is the separate decision that comment points at. Written in one step
+/// with the message, before the provider is reached, so a send can never exist
+/// without its copy. Whether it arrived is the message's events, never a column
+/// here.
+///
+/// THE BYTES ARE IN THE ROW, because that is the private store: file storage
+/// here is public to anyone holding the link, and Diego's call was signed-in
+/// download only. These are small server-built PDFs, and nothing edits a row:
+model SentDocument {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  messageId String          @unique
+  message   OutboundMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  kind SentDocumentKind
+  /// The purchase order or invoice. A type and id pair, for the reason
+  /// `OutboundMessage.relatedId` gives.
+  documentId String
+
+  fileName String
+  content  Bytes
+
+  /// Entered: pre-filled with the day it was sent, and the person can change it.
+  sentOn DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([kind, documentId])
+  @@index([jobId])
+  @@index([companyId])
 }
