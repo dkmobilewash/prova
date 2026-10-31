@@ -665,3 +665,7 @@ on Evergreen, and 704 against 80 on Joplin. The whole browser stayed near 3 GB i
 both arms, on a vector set too, and the blank was never reproduced. Heap alone
 misled twice here: a first run read 2 MB on a scan, and process totals need the
 whole tree.
+
+## Find on a scanned sheet (2026-10-31)
+
+Chrome saw a second Find on Evergreen freeze for about 7 s. In Node on p24: detection 1.5 s, plus about 2 s opening six sample sheets, all of which came back with 0 strokes. The scanned path no longer samples, which is provably the same result: the walls are identical to the coordinate with empty samples or none. The spinner now paints before detection starts. Detection itself is still synchronous, 1.5 s in Node and more in a browser; moving it to a Web Worker is the fix if that still reads as a freeze. The 7 s was not reproduced in a browser here.
