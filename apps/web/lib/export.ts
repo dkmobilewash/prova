@@ -213,9 +213,9 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     key: "material-orders",
     model: "materialOrder",
     label: "Material orders",
-    note: "lineItemId is attribution only — no money is summed through it, by agreement.",
+    note: "lineItemId and purchaseOrderLineId are attribution only — no money is summed through them, by agreement.",
     columns: [
-      "id", "jobId", "number", "vendorId", "lineItemId", "description",
+      "id", "jobId", "number", "vendorId", "lineItemId", "purchaseOrderLineId", "description",
       "vendorReference", "notes", "orderedOn", "promisedFor", "orderedByUserId",
       "createdAt", "updatedAt",
     ],
@@ -471,7 +471,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "purchaseOrder",
     label: "Purchase orders",
     note: "A draft is not a commitment. Only issued and closed orders count as committed.",
-    columns: ["id", "jobId", "number", "vendorId", "status", "createdByUserId", "createdAt", "updatedAt"],
+    columns: ["id", "jobId", "number", "vendorId", "status", "issuedOn", "closedOn", "createdByUserId", "createdAt", "updatedAt"],
     scope: byCompany,
   },
   {
@@ -743,6 +743,16 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "calibration it was measured at. That is the line this table exists to keep — found is " +
       "not chosen — and the export boundary is where it shows.",
     models: ["TakeoffWallProposal"],
+  },
+  {
+    key: "takeoff-sheet-exclusions",
+    title: "Walls excluded on a sheet, and work areas",
+    detail:
+      "Instructions to the wall finder about one sheet: this wall's style is not in the job, this " +
+      "is the area of work. They shape what is proposed and are not themselves a quantity; the " +
+      "walls an estimator kept are exported as measurements in the takeoff dataset. Geometry on a " +
+      "PDF this file does not contain, and meaningless without it.",
+    models: ["TakeoffSheetExclusion"],
   },
   {
     key: "plan-schedule-readings",

@@ -301,6 +301,17 @@ function pairLeaves(doors: DoorSymbol[], feetPerUnit: number): DoorSymbol[] {
   return out;
 }
 
+/** This many W-numbered tags on a sheet means it tags its windows. One or two could be a stray wall mark. */
+export const WINDOW_TAGS_MEAN_ALL = 3;
+
+/** Whether a sheet names its windows with W tags. A bare letter or number is too often something else to count. */
+export function tagsNameEveryWindow(tags: readonly string[]): boolean {
+  return tags.filter((t) => /^W-?\d/i.test(t.trim())).length >= WINDOW_TAGS_MEAN_ALL;
+}
+
+/** An interior window's tag sits this close. Baker's W2s are 1.4 ft from theirs. */
+export const INTERIOR_TAG_REACH_FEET = 2;
+
 /** The widest wall a window symbol sits in, feet, frame line to frame line. */
 export const WINDOW_BAND_FEET = 1.25;
 
@@ -321,6 +332,13 @@ export function windowSymbols(
   feetPerUnit: number,
   /** Window tags on the sheet (text inside a symbol), page-width units, when known. */
   tags: readonly { x: number; y: number }[] = [],
+  /**
+   * The sheet tags every window, so a candidate with no tag is not one. On
+   * Baker A101 the wall between new and existing is drawn with three to five
+   * parallel lines and read as a 14 ft window; there W1 to W5 name the windows
+   * and that wall has no tag. See `tagsNameEveryWindow`.
+   */
+  tagsNameEvery = false,
 ): WindowSymbol[] {
   if (!(feetPerUnit > 0)) return [];
   const minLen = NARROWEST_WINDOW_FEET / feetPerUnit, maxLen = WIDEST_WINDOW_FEET / feetPerUnit;
@@ -384,10 +402,11 @@ export function windowSymbols(
     // its ends, running parallel. Measured before this rule: the pattern on
     // its own is also a desk, a cubicle panel, a counter, a closet shelf, a
     // rated wall's hatch and an underlined room name — 183 of them on MHK's
-    // office floor, 55 on Baker, where the plan has no window at all.
+    // office floor, where the plan has no window at all.
     let wall = -1, best = Infinity;
     walls.forEach((w, wi) => {
-      if (w.curved || !exterior[wi]) return;
+      // Where the sheet tags its windows the tag decides, so an interior window counts (Baker's W2s).
+      if (w.curved || (!exterior[wi] && !tagsNameEvery)) return;
       const wx = w.x2 - w.x1, wy = w.y2 - w.y1, wl = Math.hypot(wx, wy);
       if (wl === 0) return;
       const wa = Math.atan2(wy, wx);
@@ -445,6 +464,10 @@ export function windowSymbols(
   const out: WindowSymbol[] = [];
   cands.forEach((c, ci) => {
     const { a, offs, aLo, aHi, wall, fromWall } = c;
+    if (tagsNameEvery && !tagged.has(ci)) return;
+    // An interior window needs its tag right beside it. The tag's usual reach
+    // let Bunkie's interior wall pieces take tags meant for the wall outside.
+    if (!exterior[wall] && !tags.some((t) => Math.hypot(t.x - c.mx, t.y - c.my) <= INTERIOR_TAG_REACH_FEET / feetPerUnit)) return;
     if (!tagged.has(ci)) {
       // ── GLASS INSIDE THE WALL, OR IT IS NOT A WINDOW ──
       // Joplin A-101 (2026-10-29, by eye over 54 candidates): the exterior

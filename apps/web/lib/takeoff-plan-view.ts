@@ -58,7 +58,8 @@ export type PlanMeasurementRow = {
   ceiling?: { family: string | null; code: string | null; heightFeet: number | null; from: string | null; guess: boolean } | null;
   /** The calibration THIS shape was drawn to, which is not always the
    * sheet's current one — that is the whole point of the FK. */
-  calibration: StoredCalibration;
+  /** Null only on a COUNT, which no scale changes. */
+  calibration: StoredCalibration | null;
   /** True when this measurement reads at a scale the sheet has since moved
    * on from. Derived by the page, never stored. */
   outOfDate: boolean;
@@ -96,6 +97,8 @@ export type PlanSheet = {
    * second zone. `zoneNotices` is that discriminator.
    */
   zoneNotices: ZoneNotice[];
+  /** What the user excluded on this sheet — see `lib/takeoff/userExclusions.ts`. Absent reads as none. */
+  exclusions?: { kind: "EXCLUDE_LIKE" | "WORK_AREA"; xs: number[]; ys: number[] }[];
 };
 
 /*
@@ -328,7 +331,7 @@ export function printedScalesFromProposals(
   return byPage;
 }
 
-export type ToolId = "pan" | "calibrate" | "linear" | "area" | "rect" | "count" | "cutout" | "edit" | "symbol";
+export type ToolId = "pan" | "calibrate" | "linear" | "area" | "rect" | "count" | "cutout" | "edit" | "symbol" | "exclude" | "workarea";
 
 /**
  * The measuring vocabulary, and it is deliberately the same three primitives
@@ -373,7 +376,8 @@ export const TOOLS: { id: ToolId; label: string; hint: string }[] = [
     label: "Cut out",
     hint:
       "Click round an opening INSIDE an area you have already saved, to take it off that area. Pick the area first.",
-  },
+  },  { id: "exclude", label: "Exclude like this", hint: "After Find the walls: click one wall that is not in the job. Every wall on this sheet drawn the same way is set aside, with a count and an undo." },
+  { id: "workarea", label: "Work area", hint: "Click round the area of work and close the shape. Walls outside it are set aside; walls across its edge are cut at it." },
 ];
 
 /**

@@ -1971,6 +1971,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // "Demote, don't hide": the owner's switch (behind /settings).
   demotedWalls: () => import("./actions/demotedWalls"),
   symbolCount: () => import("./actions/symbolCount"),
+  // Find demolition's save, behind the takeoff's job-costs gate.
+  demoTakeoff: () => import("./actions/demoTakeoff"),
   // Whole-set takeoff: the owner's switch (behind /settings) and the per-sheet
   // summary read (behind the takeoff's job-costs gate). The run itself is
   // planIngest's start/advance, listed above.
@@ -1982,6 +1984,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   doorsWindows: () => import("./actions/doorsWindows"),
   takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
+  takeoffExclusions: () => import("./actions/takeoffExclusions"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),
   // Crew & time. Five of the seven actions here are decided per SECTION
   // rather than per page (SECTION_DECIDED) — `/jobs/[id]/crew` withholds

@@ -172,6 +172,7 @@ model Job {
   retainageReleases              RetainageRelease[]
   punchListItems                 PunchListItem[]
   tmTickets                      TmTicket[]
+  specSections                   BidSpecSection[]
   timesheetSignoffs              TimesheetSignoff[]
   delayEvents                    DelayEvent[]
   dailyFieldReports              DailyFieldReport[]

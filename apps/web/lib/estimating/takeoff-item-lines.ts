@@ -230,7 +230,7 @@ export async function syncTakeoffItemLines(
     if (item.wallTypeId === null) {
       if (measured && isCheckFigureItem(item.name)) {
         const area = itemQuantity(
-          item.measurements.map((m) => ({ id: m.id, pageNumber: m.page.pageNumber, kind: m.kind, xs: m.xs, ys: m.ys, cutouts: [], feetPerPageWidth: feetAcross(m.calibration) })),
+          item.measurements.map((m) => ({ id: m.id, pageNumber: m.page.pageNumber, kind: m.kind, xs: m.xs, ys: m.ys, cutouts: [], feetPerPageWidth: m.calibration === null ? null : feetAcross(m.calibration) })),
           { type: item.type, heightFt: null, sides: null, wastePercent: 0, depthIn: null },
         ).areaSqFt;
         checkFigures.push({ id: item.id, name: item.name, squareFeet: Math.round(area) });
@@ -261,7 +261,7 @@ export async function syncTakeoffItemLines(
         xs: m.xs,
         ys: m.ys,
         cutouts: Array.isArray(m.cutouts) ? (m.cutouts as { xs: number[]; ys: number[] }[]) : [],
-        feetPerPageWidth: feetAcross(m.calibration),
+        feetPerPageWidth: m.calibration === null ? null : feetAcross(m.calibration),
       })),
     });
 

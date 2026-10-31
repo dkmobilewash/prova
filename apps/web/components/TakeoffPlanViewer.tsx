@@ -69,6 +69,8 @@ import {
   toEighth,
 } from "@/lib/takeoff/wallVectors";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
+import { addSheetExclusion, clearSheetExclusions } from "@/lib/actions/takeoffExclusions";
+import { runAt, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
 import { loadPlanText, type PlanTextView } from "@/lib/actions/planTextRead";
 import { PlanTextPanel } from "@/components/PlanTextPanel";
 import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
@@ -128,10 +130,14 @@ import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
 import { TakeoffDoorsPanel } from "./TakeoffDoorsPanel";
 import { doorsAndWindowsForSheet, type DoorsWindowsResult, type StoredScheduleRow } from "@/lib/takeoff/doorsWindows";
+import { TakeoffDemoPanel } from "./TakeoffDemoPanel";
+import { demoEvidence, demoForSheet, demoSheetTitle, type DemoSheet } from "@/lib/takeoff/demoWalls";
 import { TakeoffSymbolPanel, type AcrossRow, type AcrossState } from "./TakeoffSymbolPanel";
 import { findSymbolsFrom, scaleSymbolTemplate, symbolTemplate, type Box as SymbolBox, type SymbolMatch, type SymbolTemplate } from "@/lib/takeoff/symbolSignature";
 import { sheetInScope, type SheetScope } from "@/lib/takeoff/symbolScope";
 import { scaleFromPrinted } from "@/lib/takeoff/scaleFromPrinted";
+/** One scanned page's stored read, as the raster route and `rasterByPage` both give it. */
+type RasterRead = { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[]; widthPt?: number; heightPt?: number; printedScale?: string | null };
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
 import { roomsFromWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
@@ -262,6 +268,8 @@ export function TakeoffPlanViewer({
   // which is the failure this prop exists to fix.
   scannedPages = [],
   rasterByPage = {},
+  rasterPages = [],
+  rasterUrl = null,
   storedWallsByPage,
   takeoffItems = [],
   levelByPage,
@@ -441,8 +449,17 @@ export function TakeoffPlanViewer({
    * WHAT THE RASTER STAGE READ OFF A SCANNED SHEET, keyed by page: the lines
    * and the words in points, for Find the walls to use instead of the file's
    * strokes (a scan has none). Absent for every sheet the stage has not read.
+   *
+   * A host that already holds a page's read passes it here; the workspace
+   * passes `rasterPages` and `rasterUrl` instead and the viewer fetches a
+   * page's read when it is opened — every page's read in one payload is 31 MB
+   * on Evergreen and blanked the tab.
    */
   rasterByPage?: Record<number, { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[] }>;
+  /** The pages that have a raster read to fetch from `rasterUrl`. */
+  rasterPages?: number[];
+  /** Base of the per-page raster route: `${rasterUrl}/${page}` returns one page's read. */
+  rasterUrl?: string | null;
   /**
    * THE WALLS ALREADY FOUND ON EACH SHEET, from `TakeoffWallProposal`, keyed by
    * page number.
@@ -953,6 +970,18 @@ export function TakeoffPlanViewer({
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
 
   const sheet = sheets.find((s) => s.pageNumber === pageNumber) ?? null;
+  // ── WHAT THE USER EXCLUDED, THIS SHEET ONLY ──
+  //
+  // Refs, because a change finds again in the same tick, before any re-render
+  // or server refresh could hand the new rows down.
+  const exclusionRowsRef = useRef<NonNullable<PlanSheet["exclusions"]>>([]);
+  const exclusionsRef = useRef<ReturnType<typeof userExclusionsFromRows>>(null);
+  const [userAside, setUserAside] = useState<{ kind: string; why: string; n: number }[]>([]);
+  useEffect(() => {
+    exclusionRowsRef.current = sheet?.exclusions ?? [];
+    exclusionsRef.current = userExclusionsFromRows(exclusionRowsRef.current);
+    setUserAside([]);
+  }, [sheet?.id, sheet?.exclusions]);
   const calibration = sheet?.calibration ?? null;
   /**
    * What the last detection on this page was computed FROM.
@@ -1315,6 +1344,7 @@ export function TakeoffPlanViewer({
         const page = (await doc.getPage(pageNumber)) as {
           getViewport: (o: { scale: number }) => { width: number; height: number };
           render: (o: unknown) => { promise: Promise<void>; cancel: () => void };
+          cleanup: () => void;
         };
         if (cancelled) return;
 
@@ -1354,6 +1384,15 @@ export function TakeoffPlanViewer({
         const task = page.render({ canvasContext, viewport });
         renderTaskRef.current = task;
         await task.promise;
+        const words = await pageTextItems(page as never, (await import("pdfjs-dist/legacy/build/pdf.mjs")) as never).catch(() => []);
+        if (!cancelled && demoEvidence(words) !== null) setDemoOnPage(pageNumber);
+        // ── RELEASE THE PAGE ──
+        // pdf.js keeps every decoded page until told otherwise, and nothing
+        // here told it. In real Chromium the JS heap after walking Evergreen
+        // was 361 MB without this and 82 MB with it; Joplin, 704 MB and 80 MB.
+        // The whole browser stayed near 3 GB either way, so this reduces one
+        // cause of a blank tab. The blank itself was never reproduced.
+        page.cleanup();
       } catch (error) {
         // A cancelled render is the normal result of changing page or zoom
         // quickly, not a failure worth telling anybody about.
@@ -1394,6 +1433,31 @@ export function TakeoffPlanViewer({
   );
 
   const drawing = tool !== "pan";
+
+  /**
+   * ── ONE PAGE'S RASTER READ, FETCHED WHEN IT IS WANTED ──
+   * The host's `rasterByPage` first (a page it already holds), then the
+   * per-page route for a page `rasterPages` names, cached for the session.
+   * A page with neither is a vector page and reads its own strokes.
+   */
+  const rasterCache = useRef<Map<number, RasterRead | null>>(new Map());
+  const rasterFor = async (n: number): Promise<RasterRead | undefined> => {
+    const held = rasterByPage[n];
+    if (held) return held;
+    if (rasterUrl === null || !rasterPages.includes(n)) return undefined;
+    const cached = rasterCache.current.get(n);
+    if (cached !== undefined) return cached ?? undefined;
+    try {
+      const response = await fetch(`${rasterUrl}/${n}`, { credentials: "same-origin" });
+      if (!response.ok) { rasterCache.current.set(n, null); return undefined; }
+      const read = (await response.json()) as RasterRead;
+      rasterCache.current.set(n, read);
+      return read;
+    } catch {
+      rasterCache.current.set(n, null);
+      return undefined;
+    }
+  };
 
   /**
    * ── "FIND ON ALL SHEETS": THE SAME TEMPLATE OVER THE REST OF THE SET ──
@@ -1453,6 +1517,7 @@ export function TakeoffPlanViewer({
           page: n, number, count: best.matches.length, ms: performance.now() - t0, scaling: best.scaling,
           xs: best.matches.map((m) => (m.box.x1 + m.box.x2) / 2), ys: best.matches.map((m) => (m.box.y1 + m.box.y2) / 2),
         };
+        (page as { cleanup: () => void }).cleanup();
         state = { ...state, rows: [...state.rows, row].sort((a, b) => a.page - b.page) };
         setAcross(state);
         // Let the row paint before the next sheet is read.
@@ -1461,6 +1526,28 @@ export function TakeoffPlanViewer({
       setAcross({ ...state, running: false, done: !acrossCancel.current });
     } catch {
       setAcross({ ...state, running: false, done: false, error: "A sheet could not be read; what was counted so far is kept." });
+    }
+  };
+
+  /** ── FIND THE DEMOLITION: double dashed walls and keynoted doors. See `lib/takeoff/demoWalls.ts`. ── */
+  const [demo, setDemo] = useState<{ page: number; read: DemoSheet | null; busy: boolean; error: string | null } | null>(null);
+  const [demoDropped, setDemoDropped] = useState<ReadonlySet<number>>(new Set());
+  /** A demolition plan on a sheet titled otherwise, read off the page's own words. */
+  const [demoOnPage, setDemoOnPage] = useState<number | null>(null);
+  const onFindDemolition = async () => {
+    const doc = docRef.current;
+    if (!doc || !pageSize || feetPerUnit === null) return;
+    setDemoDropped(new Set());
+    setDemo({ page: pageNumber, read: null, busy: true, error: null });
+    try {
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const page = await doc.getPage(pageNumber);
+      const layers = await layersOf(doc as never).catch(() => null);
+      const { segments } = await segmentsFromOpenPage(page as never, pdfjs as never, pageNumber, layers as never);
+      const textItems = await pageTextItems(page as never, pdfjs as never);
+      setDemo({ page: pageNumber, read: demoForSheet({ segments, textItems, widthPt: pageSize.widthPt, heightPt: pageSize.heightPt, feetPerUnit }), busy: false, error: null });
+    } catch {
+      setDemo({ page: pageNumber, read: null, busy: false, error: "The sheet could not be read for demolition. Try again in a moment." });
     }
   };
 
@@ -1580,7 +1667,7 @@ export function TakeoffPlanViewer({
   const kindOf = (id: ToolId): MeasurementKind | null =>
     id === "linear"
       ? "LINEAR"
-      : id === "area" || id === "rect"
+      : id === "area" || id === "rect" || id === "workarea"
         ? "AREA"
         : id === "count"
           ? "COUNT"
@@ -1678,6 +1765,12 @@ export function TakeoffPlanViewer({
     if (!drawing) return;
     const raw = pointAt(event);
     if (!raw) return;
+    // ── "EXCLUDE WALLS LIKE THIS" PICKS A RUN, IT DRAWS NOTHING ──
+    if (tool === "exclude") {
+      event.preventDefault();
+      void onExcludeAt(raw);
+      return;
+    }
     event.preventDefault();
 
     // ── EDIT MODE SELECTS RATHER THAN DRAWS ──
@@ -1755,7 +1848,7 @@ export function TakeoffPlanViewer({
       // Closing is a no-op on the geometry — `ringArea` already treats the
       // list as closed — so this just stops the click adding a duplicate of
       // the first vertex, which would read as a zero-length final edge.
-      if ((tool === "area" || tool === "cutout") && closesRing(point, current.xs, current.ys, SNAP_RADIUS / Math.max(1, zoomFactor))) {
+      if ((tool === "area" || tool === "cutout" || tool === "workarea") && closesRing(point, current.xs, current.ys, SNAP_RADIUS / Math.max(1, zoomFactor))) {
         return current;
       }
 
@@ -2500,12 +2593,58 @@ export function TakeoffPlanViewer({
     s.measurements
       .filter((m) => m.ceiling !== null && m.ceiling !== undefined && m.kind === "AREA")
       .map((m) => {
-        const span = Math.hypot(m.calibration.x2 - m.calibration.x1, m.calibration.y2 - m.calibration.y1);
-        const fpu = span > 0 ? m.calibration.declaredDistanceFeet / span : 0;
+        const scale = m.calibration;
+        const span = scale === null ? 0 : Math.hypot(scale.x2 - scale.x1, scale.y2 - scale.y1);
+        const fpu = scale !== null && span > 0 ? scale.declaredDistanceFeet / span : 0;
         const units = ringArea(m.xs, m.ys) ?? 0;
         return { pageNumber: s.pageNumber, squareFeet: Math.abs(units) * fpu * fpu, family: m.ceiling!.family, code: m.ceiling!.code };
       }),
   );
+
+  /** Add or clear one kind of exclusion, then find again so the list answers at once. */
+  async function afterExclusionChange(result: { ok: boolean; error?: string }, next: NonNullable<PlanSheet["exclusions"]>) {
+    if (!result.ok) {
+      setFindError(result.error ?? "That did not save. Try again.");
+      return;
+    }
+    exclusionRowsRef.current = next;
+    exclusionsRef.current = userExclusionsFromRows(next);
+    await onFindWalls();
+  }
+
+  async function onExcludeAt(at: { x: number; y: number }) {
+    const feet = feetAcrossRef.current;
+    if (!sheet || feet === null || runsRef.current.length === 0) {
+      setFindError("Find the walls on this sheet first, then click one to exclude.");
+      return;
+    }
+    // `runAt` takes a line, so a click is a short nudge along each axis.
+    const reach = 0.5 / feet;
+    const hit =
+      runAt({ x1: at.x - reach, y1: at.y, x2: at.x + reach, y2: at.y }, runsRef.current, feet) ??
+      runAt({ x1: at.x, y1: at.y - reach, x2: at.x, y2: at.y + reach }, runsRef.current, feet);
+    if (hit === null) {
+      setFindError("No wall there. Click on one of the found walls.");
+      return;
+    }
+    const xs = [hit.x1, hit.x2];
+    const ys = [hit.y1, hit.y2];
+    await afterExclusionChange(await addSheetExclusion(jobId, sheet.id, "EXCLUDE_LIKE", xs, ys), [...exclusionRowsRef.current, { kind: "EXCLUDE_LIKE", xs, ys }]);
+  }
+
+  async function onSaveWorkArea() {
+    if (!sheet) return;
+    const xs = [...draft.xs];
+    const ys = [...draft.ys];
+    await afterExclusionChange(await addSheetExclusion(jobId, sheet.id, "WORK_AREA", xs, ys), [...exclusionRowsRef.current, { kind: "WORK_AREA", xs, ys }]);
+    setDraft(EMPTY);
+    setTool("pan");
+  }
+
+  async function onUndoExclusion(kind: "EXCLUDE_LIKE" | "WORK_AREA") {
+    if (!sheet) return;
+    await afterExclusionChange(await clearSheetExclusions(jobId, sheet.id, kind), exclusionRowsRef.current.filter((r) => r.kind !== kind));
+  }
 
   async function onFindWalls() {
     const doc = docRef.current;
@@ -2569,7 +2708,7 @@ export function TakeoffPlanViewer({
       // ── A SCANNED SHEET: the lines and words the raster stage stored ──
       // The file has no strokes for it; the stage read them off the bitmap
       // in the same points. The finder below is the same finder.
-      const raster = rasterByPage[pageNumber];
+      const raster = await rasterFor(pageNumber);
       const { segments } = raster ? { segments: raster.segments } : await segmentsFromOpenPage(page, pdfjs, pageNumber, layers);
       setStrokesSeen(segments.length);
 
@@ -2768,7 +2907,27 @@ export function TakeoffPlanViewer({
       setOtherViewsByPage((prev) => ({ ...prev, [pageNumber]: otherViews }));
       setExcludedByPage((prev) => ({ ...prev, [pageNumber]: leftOut }));
       setPrimaryViewShown(primaryShown);
-      const walls = found.walls;
+      // ── THE CUSTOMER'S LIST IS THE ESTIMATE'S LIST ──
+      //
+      // The same call the WALLS stage makes, with what the user excluded on
+      // this sheet, so the screen and the estimate cannot disagree. Labelling
+      // mode keeps the finder's own runs: a key grades them.
+      const W = pageSize.widthPt;
+      const offered =
+        answerKey !== undefined
+          ? null
+          : offeredCandidates({
+              walls: found.walls,
+              segments: found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })),
+              pageSegments: segments,
+              widthPt: W,
+              feetPerUnit,
+              planBoxes: detected.planBoxes,
+              textItems,
+              ...(exclusionsRef.current === null ? {} : { user: exclusionsRef.current }),
+            });
+      setUserAside((offered?.setAside ?? []).filter((a) => a.kind === "excluded-like" || a.kind === "outside-work-area"));
+      const walls = offered?.offeredRuns ?? found.walls;
       const regroup = found.regroup;
       setTemplateStrokes(found.templateDropped);
       setLayerDropped(found.layerDropped);
@@ -2830,7 +2989,7 @@ export function TakeoffPlanViewer({
       setFound(
         doubted !== null
           ? regroup(runs.filter((_, at) => !doubted.has(at)))
-          : runs === walls
+          : runs === found.walls
             ? found.groups
             : regroup(runs),
       );
@@ -3035,6 +3194,7 @@ export function TakeoffPlanViewer({
 
   // ── What the draft currently measures, for the live readout ───────────
   const draftReading = useMemo(() => {
+    if (tool === "count") return draft.xs.length === 0 ? null : `${draft.xs.length}`;
     if (!calibration || draft.xs.length === 0) return null;
     const stored: StoredCalibration = calibration;
     const scale = feetPerPageWidth(stored);
@@ -3047,7 +3207,6 @@ export function TakeoffPlanViewer({
       const area = ringArea(draft.xs, draft.ys);
       return area === null ? null : `${Math.round(area * scale * scale)} sq ft`;
     }
-    if (tool === "count") return `${draft.xs.length}`;
     return null;
   }, [calibration, draft, tool]);
 
@@ -3072,7 +3231,7 @@ export function TakeoffPlanViewer({
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line-card bg-surface-card p-2">
         <div className="flex items-center gap-1">
           {TOOLS.filter((entry) => entry.id !== "symbol" || symbolCount).map((entry) => {
-            const disabled = entry.id !== "pan" && entry.id !== "calibrate" && !calibration;
+            const disabled = !calibration && (entry.id === "linear" || entry.id === "area" || entry.id === "rect" || entry.id === "cutout");
             return (
               <button
                 key={entry.id}
@@ -3205,6 +3364,19 @@ export function TakeoffPlanViewer({
         >
           {finding ? "Reading the lines…" : "Find the walls"}
         </button>
+        {/* Only on a sheet that says it is demolition, and it stays on the toolbar with no scale, with the title saying why it waits. */}
+        {(demoOnPage === pageNumber || demoSheetTitle(sheetLabelByPage[pageNumber] ?? sheet?.label) || /demolition/i.test(takeoffVerdict?.why ?? "")) && (
+          <button
+            type="button"
+            onClick={onFindDemolition}
+            disabled={!calibration || !pageSize || demo?.busy === true}
+            data-takeoff="find-demolition"
+            title={!calibration ? "Set the scale on this sheet first — demolition is measured in feet." : undefined}
+            className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Find demolition
+          </button>
+        )}
         {/* ── FIND THE ROOMS, ONLY WITH THE COMPANY SWITCH ON ──
             Absent, not disabled, when the switch is off: the feature was
             measured and switched off once (`takeoffRoomFinder.test.tsx`) and
@@ -3268,7 +3440,7 @@ export function TakeoffPlanViewer({
             had by reading the picture, and this is the thing that reads it —
             so gating on it made the feature unreachable on every sheet it was
             built for. See `scannedPages`. */}
-        {rasterByPage[pageNumber] !== undefined && (
+        {(rasterByPage[pageNumber] !== undefined || rasterPages.includes(pageNumber)) && (
           <p data-takeoff="scanned-caution" className="w-full text-xs text-ink-muted">
             Scanned sheet: the lines were read from an image, not from the drawing. Check each group against the sheet
             more carefully than usual.
@@ -3546,6 +3718,20 @@ export function TakeoffPlanViewer({
               and a person may have corrected; the one below is read off the
               title block here and only fills a silence. One slot, never two
               cautions saying the same thing in different words. */}
+          {userAside.map((one) => (
+            <p key={one.kind} className="mb-2 flex flex-wrap items-center gap-2 text-xs text-ink-muted" data-takeoff={one.kind}>
+              <span>
+                {one.n} wall{one.n === 1 ? "" : "s"} {one.why}.
+              </span>
+              <button
+                type="button"
+                className="underline"
+                onClick={() => void onUndoExclusion(one.kind === "excluded-like" ? "EXCLUDE_LIKE" : "WORK_AREA")}
+              >
+                Undo
+              </button>
+            </p>
+          ))}
           {sheetCaution && found.length > 0 && (
             <p
               className="mb-3 rounded-md bg-tag-amber p-2 text-xs text-tag-amber-ink"
@@ -3975,11 +4161,23 @@ export function TakeoffPlanViewer({
         </div>
       )}
 
-      {symbols !== null && symbols.page === pageNumber && sheet !== null && (
+      {demo !== null && demo.page === pageNumber && sheet !== null && (
+        <TakeoffDemoPanel
+          jobId={jobId}
+          pageId={sheet.id}
+          state={demo}
+          dropped={demoDropped}
+          onToggle={(i) => setDemoDropped((prev) => { const next = new Set(prev); if (!next.delete(i)) next.add(i); return next; })}
+          onClear={() => setDemo(null)}
+          onSaved={() => setDemo(null)}
+        />
+      )}
+      {symbols !== null && symbols.page === pageNumber && (
         <TakeoffSymbolPanel
           jobId={jobId}
           planId={planId}
-          pageId={sheet.id}
+          pageId={sheet?.id ?? null}
+          pageNumber={pageNumber}
           itemId={activeItemId}
           state={symbols}
           across={across}
@@ -4497,6 +4695,12 @@ export function TakeoffPlanViewer({
                   vectorEffect="non-scaling-stroke"
                 />
               )}
+              {demo?.page === pageNumber && demo.read !== null && (
+                <g data-takeoff="demo-overlay">
+                  {demo.read.runs.map((r, i) => !demoDropped.has(i) && <line key={`${r.x1}:${r.y1}`} x1={r.x1} y1={r.y1} x2={r.x2} y2={r.y2} stroke="#dc2626" strokeWidth={STROKE_PX + 1} vectorEffect="non-scaling-stroke" />)}
+                  {demo.read.doors.map((d) => <circle key={`${d.x}:${d.y}`} cx={d.x} cy={d.y} r={0.006} fill="none" stroke="#dc2626" strokeWidth={STROKE_PX} vectorEffect="non-scaling-stroke" />)}
+                </g>
+              )}
               {symbols !== null && symbols.page === pageNumber && (
                 <g data-takeoff="symbol-matches">
                   {symbols.matches.map((m, i) => {
@@ -4819,10 +5023,23 @@ export function TakeoffPlanViewer({
             />
           )}
 
-          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && sheet && draft.xs.length > 0 && (
+          {tool === "workarea" && sheet && draft.xs.length >= 3 && (
+            <button
+              type="button"
+              data-takeoff="save-work-area"
+              onClick={() => void onSaveWorkArea()}
+              className="mt-3 rounded-md bg-brand px-3 py-1 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
+            >
+              Save work area
+            </button>
+          )}
+
+          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && tool !== "exclude" && tool !== "workarea" && (sheet || tool === "count") && draft.xs.length > 0 && (
             <MeasurementForm
               jobId={jobId}
-              pageId={sheet.id}
+              pageId={sheet?.id ?? null}
+              planId={planId}
+              pageNumber={pageNumber}
               kind={kindOf(tool) ?? "LINEAR"}
               draft={draft}
               reading={draftReading}
@@ -4956,7 +5173,7 @@ export function TakeoffPlanViewer({
             </div>
           )}
 
-          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && !sheet && (
+          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && tool !== "count" && tool !== "symbol" && !calibration && (
             <p className="mt-2 text-xs text-tag-amber-ink">Set the scale on this sheet before measuring it.</p>
           )}
         </div>
@@ -5744,6 +5961,8 @@ function CalibrationForm({
 function MeasurementForm({
   jobId,
   pageId,
+  planId,
+  pageNumber,
   kind,
   draft,
   reading,
@@ -5751,7 +5970,9 @@ function MeasurementForm({
   onSaved,
 }: {
   jobId: string;
-  pageId: string;
+  pageId: string | null;
+  planId: string;
+  pageNumber: number;
   kind: MeasurementKind;
   draft: Draft;
   reading: string | null;
@@ -5778,7 +5999,9 @@ function MeasurementForm({
         onSaved(typeof value?.id === "string" ? { id: value.id } : null);
       }}
     >
-      <input type="hidden" name="pageId" value={pageId} />
+      <input type="hidden" name="pageId" value={pageId ?? ""} />
+      <input type="hidden" name="planId" value={planId} />
+      <input type="hidden" name="pageNumber" value={pageNumber} />
       {/* Blank when nothing is selected, which the action reads as
           Unassigned rather than as an error. */}
       <input type="hidden" name="itemId" value={activeItemId ?? ""} />

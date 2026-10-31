@@ -12,6 +12,7 @@ import { inputClass, labelClass } from "@/components/RfiFields";
 import {
   MaterialOrderFields,
   type LineItemOption,
+  type PoLineOption,
   type MaterialOrderDefaults,
   type VendorOption,
 } from "@/components/MaterialOrderFields";
@@ -35,6 +36,7 @@ export type MaterialOrderRowData = MaterialOrderDefaults & {
   jobId: string;
   jobName: string;
   lineItemDescription: string | null;
+  purchaseOrderNumber?: number | null;
   vendorName: string;
   orderedOn: string;
   orderedByName: string | null;
@@ -51,6 +53,7 @@ export function MaterialOrderRow({
   today,
   vendors,
   lineItems,
+  poLines,
   canDelete,
   showJob,
 }: {
@@ -58,6 +61,7 @@ export function MaterialOrderRow({
   today: string;
   vendors: VendorOption[];
   lineItems: LineItemOption[];
+  poLines?: PoLineOption[];
   canDelete: boolean;
   showJob: boolean;
 }) {
@@ -108,7 +112,7 @@ export function MaterialOrderRow({
             Order {order.number} · {order.jobName} · ordered {order.orderedOn}
           </p>
           <FormDraftNotice draft={editDraft} />
-          <MaterialOrderFields defaults={order} vendors={vendors} lineItems={lineItems} fixedJobId={order.jobId} />
+          <MaterialOrderFields defaults={order} vendors={vendors} lineItems={lineItems} poLines={poLines} fixedJobId={order.jobId} />
           {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button type="submit" disabled={isPending} className={primaryBtn}>
@@ -290,6 +294,9 @@ export function MaterialOrderRow({
 
         <p className="mt-1 text-xs text-ink-muted">
           {showJob && <span className="text-link">{order.jobName} · </span>}
+          {order.purchaseOrderNumber != null && (
+            <span className="text-ink-body">on PO {order.purchaseOrderNumber} · </span>
+          )}
           {order.lineItemDescription && (
             <span className="text-ink-body">for {order.lineItemDescription} · </span>
           )}

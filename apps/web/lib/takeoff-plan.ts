@@ -85,7 +85,8 @@ export type StoredMeasurement = {
   xs: number[];
   ys: number[];
   label: string | null;
-  calibration: StoredCalibration;
+  /** Null only on a COUNT, which no scale changes. */
+  calibration: StoredCalibration | null;
 };
 
 /**
@@ -160,11 +161,12 @@ export function measurementPrimitive(measurement: StoredMeasurement): Primitive 
     return { kind: "count", count: xs.length, item };
   }
 
-  const scale = feetPerPageWidth(calibration);
+  const scale = calibration === null ? null : feetPerPageWidth(calibration);
   if (scale === null) return null;
 
   if (kind === "LINEAR") {
-    return { kind: "linear", feet: round2(polylineLength(xs, ys) * scale) };
+    const item = measurement.label?.trim();
+    return { kind: "linear", feet: round2(polylineLength(xs, ys) * scale), ...(item ? { item } : {}) };
   }
 
   const area = ringArea(xs, ys);
@@ -248,7 +250,7 @@ function refusalFor(measurement: StoredMeasurement): string {
   if (measurement.kind === "COUNT") {
     return `${named === "One measurement" ? "A count" : named} needs a name for what is being counted.`;
   }
-  if (feetPerPageWidth(measurement.calibration) === null) {
+  if (measurement.calibration === null || feetPerPageWidth(measurement.calibration) === null) {
     return `${named} was drawn to a scale that can no longer be read — re-check the sheet's scale.`;
   }
   return `${named} crosses itself, so it has no area. Redraw it without the crossing.`;
