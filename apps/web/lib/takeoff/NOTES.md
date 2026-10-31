@@ -4511,3 +4511,24 @@ A101 (108 / 0), the two clean results under the coverage pick.
 look rather than a verdict. Legend pen alone flags only Baker A100 (249 ft); the
 demolition plan flags Crosslines A100 (683 of 1,187 ft accepted), E Street A2.1
 (368 of 593) and Green Bay A3.1 (426 of 887).
+
+## A suggested work area — measured, not shipped (2026-10-31, `diego/suggested-area`)
+
+`suggestedWorkArea.ts`: base from a limit-of-work line or the demolition plan's
+extent, minus rooms marked NIC or (E) and hatched NIC fields. Third session's
+pairer 9da2a5db, filtered on `primary`. Snapshot 20261031T0234, which holds
+Chrome's corrections to Crosslines A100, Central Bank A100/A101, Darrington A101.
+
+| held-out renovation, 11 sheets | recall | junk per 100 offered |
+| --- | --- | --- |
+| no box | 90.5% | 66 |
+| suggested box | 83.7% | 63 |
+| oracle box | 90.6% | 62 |
+
+**Fails the gate: 6.8 points of recall against no box, limit 1.** It fired on 5
+of 15 held-out sheets. On training it fired on three: Baker A100 437 junk / 213
+real, from rooms marked (E); Crosslines 42 / 0 and E Street 0 / 0 from the
+demolition extent. A room labelled existing still gets new walls inside it, the
+same failure the area route had. The oracle box's held-out recall is unchanged
+and it removes 4 per 100 offered, so a perfect box is still safe and still weak
+on renovations.
