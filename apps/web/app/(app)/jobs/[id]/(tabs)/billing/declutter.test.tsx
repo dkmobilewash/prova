@@ -68,6 +68,7 @@ vi.mock("@prova/db", () => ({
     quickBooksAccountMapping: { findUnique: vi.fn(async () => null) },
     invoiceCounter: { findUnique: vi.fn(async () => ({ lastNumber: 3 })) },
     timeEntry: { groupBy: vi.fn(async () => []) },
+    sentDocument: { findMany: vi.fn(async () => []) },
     dailyReportInstalledQuantity: { findMany: vi.fn(async () => []) },
   },
 }));
