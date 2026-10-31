@@ -47,6 +47,12 @@ describe("the billing click fixture", () => {
     expect(await prisma.crewMember.count({ where: { companyId } })).toBe(1);
   });
 
+  it("records installed quantities on field reports, and takes them away again", async () => {
+    const job = await prisma.job.findFirstOrThrow({ where: { companyId, name: FIXTURE_JOB } });
+    const rows = await prisma.dailyReportInstalledQuantity.findMany({ where: { report: { jobId: job.id } } });
+    expect(rows.map((row) => Number(row.quantity)).sort()).toEqual([1000, 3000, 3000]);
+  });
+
   it("gives Buyout two read sections through the winning bid", async () => {
     const job = await prisma.job.findFirstOrThrow({ where: { companyId, name: FIXTURE_JOB } });
     const sections = await prisma.bidSpecSection.findMany({ where: { bidInvitation: { wonJobId: job.id } }, include: { readings: true } });
@@ -60,6 +66,7 @@ describe("the billing click fixture", () => {
     expect(await prisma.job.count({ where: { companyId, name: FIXTURE_JOB } })).toBe(0);
     expect(await prisma.vendor.count({ where: { companyId } })).toBe(0);
     expect(await prisma.crewMember.count({ where: { companyId } })).toBe(0);
+    expect(await prisma.dailyFieldReport.count({ where: { companyId } })).toBe(0);
     expect(await prisma.bidInvitation.count({ where: { companyId } })).toBe(0);
     expect(await prisma.job.findUnique({ where: { id: otherJobId } })).not.toBeNull();
     expect(await prisma.contact.count({ where: { companyId } })).toBe(1);
