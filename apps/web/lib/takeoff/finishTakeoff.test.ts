@@ -90,7 +90,7 @@ describe("finishTakeoff", () => {
     const a = room(1, null, 0.1, 0.1, 0.1, 0.1), b = room(2, null, 0.2, 0.1, 0.1, 0.1), c = room(3, null, 0.3, 0.1, 0.1, 0.1), far = room(4, null, 0.6, 0.1, 0.1, 0.1);
     expect([...typesFromNeighbours([a, b, c, far], new Map([[1, "T1"]]), FPU)]).toEqual([[2, "T1"], [3, "T1"]]);
     expect(typesFromNeighbours([a, b, c], new Map([[1, "T1"], [3, "T2"]]), FPU).size).toBe(0);
-    const shaft = room(5, null, 0.1, 0.1, 0.05, 0.05);
+    const shaft = room(5, null, 0.15, 0.1, 0.05, 0.05);
     expect(typesFromNeighbours([shaft, b], new Map([[5, "T7"]]), FPU).size).toBe(0);
   });
 });
