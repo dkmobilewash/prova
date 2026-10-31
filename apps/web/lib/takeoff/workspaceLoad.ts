@@ -145,7 +145,7 @@ export async function loadTakeoffWorkspace(
             orderBy: { createdAt: "asc" },
             include: { calibration: true },
           },
-          exclusions: { orderBy: { createdAt: "asc" }, select: { kind: true, xs: true, ys: true } },
+          exclusions: { orderBy: { createdAt: "asc" }, select: { id: true, kind: true, xs: true, ys: true } },
         },
       },
     },

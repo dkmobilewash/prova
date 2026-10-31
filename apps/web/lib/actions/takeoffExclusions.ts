@@ -73,7 +73,19 @@ export async function addSheetExclusion(jobId: string, pageId: string, kind: Kin
   return { ok: true, value: { ids: [row.id] } };
 }
 
-/** One-click undo: every exclusion of this kind on this sheet. */
+/** Take back one exclusion. Gone already is success: an undo may arrive after a clear. */
+export async function removeSheetExclusion(jobId: string, pageId: string, id: string): Promise<Result> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const found = await pageFor(jobId, pageId, context);
+  if (found.kind === "refused") return actionFail(found.error);
+  await prisma.takeoffSheetExclusion.deleteMany({ where: { id, pageId } });
+  refreshAfter(jobId, found);
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  return { ok: true, value: { ids: [] } };
+}
+
+/** Every exclusion of this kind on this sheet: Clear exclusions, Remove work area. */
 export async function clearSheetExclusions(jobId: string, pageId: string, kind: Kind): Promise<Result> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
