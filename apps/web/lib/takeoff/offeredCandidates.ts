@@ -154,6 +154,12 @@ export const SHORTEST_SINGLE_FEET = 12;
  */
 export const SITE_EQUIPMENT_WORDS = /\b(PLAY YARD|RUNS?|CHAIN ?LINK|GATES?|CURBS?|TRENCH DRAINS?|SHELVING)\b/i;
 export const SITE_EQUIPMENT_REACH_FEET = 10;
+/**
+ * A run longer than this is a building's wall, whatever is written near one end
+ * of it. Camp Bow Wow A102 lost two exterior walls, 248 ft of key, to PLAY YARD
+ * written beside them; its other runs on the training sheets are junk or unkeyed.
+ */
+export const SITE_EQUIPMENT_LONGEST_FEET = 100;
 
 /** The nearest equipment word within reach of this wall, or null. */
 export function siteEquipmentWord(
@@ -273,7 +279,10 @@ export function offeredCandidates(
       return false;
     }
     if (!onAPlan(sheet, w.x1, w.y1, w.x2, w.y2)) return false;
-    const hit = sheet.textItems === undefined ? null : siteEquipmentWord(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit);
+    const hit =
+      sheet.textItems === undefined || w.lengthFeet > SITE_EQUIPMENT_LONGEST_FEET
+        ? null
+        : siteEquipmentWord(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit);
     if (hit !== null) {
       equipment.push({ wall: w, word: hit.word, feet: hit.feet });
       return false;

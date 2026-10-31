@@ -104,6 +104,10 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: runs the suggested scale rule over the named pages of one plan set and writes what it proposed. Skips without its env and asserts pages were named",
     "zzAllSets.eval.ts":
       "calls no model: runs the inventory stage through its dependency seam, wallsPlan and detection over one plan set and writes counts and timings. Skips without ALLSETS_PDF and ALLSETS_OUT and asserts the set had pages",
+    "zzMissStages.eval.ts":
+      "calls no model: attributes each missed foot of key wall to a stage on the product path, with held-out as totals only under MISS_HELD_OUT. Skips without its env and asserts sheets were read",
+    "zzAsideRuns.eval.ts":
+      "calls no model: lists every run a named set-aside rule removed on the training sheets, with its key coverage. Skips without its env and asserts sheets were read",
     "scaleAudit.eval.ts":
       "calls no model: deterministic geometry over real drawings, guarded by a skip plus a non-zero input assertion",
     "doorWindows.eval.ts":
