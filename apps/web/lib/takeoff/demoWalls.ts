@@ -1,3 +1,4 @@
+import { SHEET_DESIGNATION } from "../plan-ingest/sheetNumber";
 import { existingMarks } from "./existingMarks";
 import { insideView, sheetDrawings } from "./sheetViews";
 import { tagByRun, wallTypeTags } from "./wallTags";
@@ -287,4 +288,32 @@ export function demoForSheet(input: {
     pattern,
     skippedViews: notPlans.map((v) => v.name ?? ""),
   };
+}
+
+/** This many sheet numbers in one column is a drawing list. */
+const DRAWING_LIST_MIN = 8;
+const CAPTION = /\bDEMO(LITION)?\b.*\bPLANS?\b|\bPLANS?\b.*\bDEMO(LITION)?\b|\bFLOORS?\b.*\bDEMO(LITION)?\b|\bDEMO(LITION)?\b.*\bFLOORS?\b/i;
+/** Words that make a line a sentence about a demolition plan rather than the name of one. */
+const SENTENCE = /\b(REFER|SEE|SHALL|PER|FOR|ON|TO|WITH|IS|ARE|NOTES?|LEGEND|KEYNOTES?|SITE|CIVIL|SECTION)\b/i;
+const HEADING = /^(ARCHITECTURAL\s+)?DEMO(LITION)?\s+(PLAN\s+)?(LEGEND|KEYNOTES?|KEY NOTES)$/i;
+const ROW = /^(REMOVE\s*\/\s*DEMOLISH|DEMOLISH\s*\/\s*REMOVE|DEMOLITION\s*\/\s*REMOVE|(EXISTING\s+)?(WALL|CONSTRUCTION)S?\s+TO BE (REMOVED|DEMOLISHED)|TO BE (REMOVED|DEMOLISHED))\.?$/i;
+
+/**
+ * Whether a sheet draws a demolition plan its title does not admit to. Baker's
+ * A001 is titled KEYNOTE LEGEND and carries a DEMO PLAN. Only strong words
+ * count: a caption, a demolition legend or keynote heading, or a legend row. A
+ * new plan has an existing-wall legend too, and general notes mention
+ * demolition everywhere, so neither counts alone. Returns the caption to read
+ * the drawing's kind and level from, or a generic one.
+ */
+export function demoEvidence(textItems: readonly { str: string; x?: number }[]): string | null {
+  const lines = textItems.map((t) => t.str.trim());
+  // A drawing list names every demolition sheet, so its sheet is not one. Its
+  // numbers stand in a column; a plan's references to other sheets are scattered.
+  const columns = new Map<number, number>();
+  for (const t of textItems) if (SHEET_DESIGNATION.test(t.str.trim())) { const x = Math.round((t.x ?? 0) / 4); columns.set(x, (columns.get(x) ?? 0) + 1); }
+  if (Math.max(0, ...columns.values()) >= DRAWING_LIST_MIN) return null;
+  const caption = lines.find((l) => l.split(/\s+/).length <= 7 && CAPTION.test(l) && !SENTENCE.test(l) && !l.split(/\s+/).some((w) => SHEET_DESIGNATION.test(w) && /\d/.test(w) && w.length >= 3));
+  if (caption) return caption;
+  return lines.some((l) => HEADING.test(l) || ROW.test(l)) ? "DEMOLITION PLAN" : null;
 }

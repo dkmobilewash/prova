@@ -3,7 +3,15 @@ import { areaOfTitle, isEnlargedPlanTitle } from "../plan-ingest/walls";
 import { demoSheetTitle } from "./demoWalls";
 import { alignViews, type Line } from "./viewAlign";
 
-export type SheetForPairing = { pageNumber: number; sheetNumber: string | null; title: string | null };
+export { demoEvidence } from "./demoWalls";
+
+export type SheetForPairing = {
+  pageNumber: number;
+  sheetNumber: string | null;
+  title: string | null;
+  /** What `demoEvidence` read off the sheet, for a demolition plan its title does not admit to. */
+  demoCaption?: string | null;
+};
 
 export type DemoPair = {
   demoPage: number;
@@ -59,12 +67,27 @@ const saysPlan = (title: string | null) => /\b(PLANS?|LEVEL|FLOOR)\b/i.test(titl
 /** A twin number loses to a title that plainly says it is not a plan. Green Bay's A1.0 is the architectural information sheet. */
 const NOT_A_PLAN_SHEET = /\b(INFORMATION|INDEX|GENERAL NOTES|ABBREVIATIONS|SYMBOLS)\b/i;
 
+/** Past this share across the sheet is the title block. */
+const TITLE_STRIP_FROM = 0.85;
+/** A line this long, in page widths, is the sheet's border. */
+const BORDER_SPAN = 0.55;
+
+/**
+ * Every sheet in a set shares its frame, at no shift, so the frame out-votes
+ * any real agreement: Baker's A001 scored 175 against A100 and 175 against A101,
+ * both at exactly zero. Votes must come from the drawing.
+ */
+function drawingOnly(lines: readonly Line[]): Line[] {
+  return lines.filter((l) => Math.max(l.x1, l.x2) < TITLE_STRIP_FROM && Math.hypot(l.x2 - l.x1, l.y2 - l.y1) < BORDER_SPAN);
+}
+
 const flat = (number: string | null) => (number ?? "").toUpperCase().replace(/[-\s]/g, "");
-const isDemo = (s: SheetForPairing) => demoSheetTitle(s.title) || /^(?:[A-Z]D|D[A-Z]?)[-.\d]/i.test(s.sheetNumber ?? "");
+const isDemo = (s: SheetForPairing) => !!s.demoCaption || demoSheetTitle(s.title) || /^(?:[A-Z]D|D[A-Z]?)[-.\d]/i.test(s.sheetNumber ?? "");
 
 /**
  * Pairs each demolition plan in a set with the new plan of the same level.
  * This is the one pairer: demolition takeoff and plan comparison both use it.
+ * Pass `demoCaption` from `demoEvidence` to find plans the titles hide.
  *
  * A twin sheet number decides first, then discipline, drawing kind, level and
  * area from the titles. Where several plans remain, the drawings' own lines
@@ -78,7 +101,9 @@ export function pairDemoWithNewPlan(
 ): DemoPair[] {
   const fresh = sheets.filter((s) => !isDemo(s));
   const out: DemoPair[] = [];
-  for (const demo of sheets.filter(isDemo)) {
+  for (const sheet of sheets.filter(isDemo)) {
+    // A caption says what the drawing is better than a title that says otherwise.
+    const demo = { ...sheet, title: sheet.demoCaption ?? sheet.title };
     const kind = kindOf(demo.title);
     if (kind === "other" || kind === "site") continue;
     const level = levelFromTitle(demo.title, "PLAN")?.label ?? null;
@@ -93,7 +118,7 @@ export function pairDemoWithNewPlan(
     });
     const align = (page: number) => {
       const a = options.lines?.get(demo.pageNumber), b = options.lines?.get(page);
-      return a && b && options.feetPerUnit ? alignViews(b, a, options.feetPerUnit) : null;
+      return a && b && options.feetPerUnit ? alignViews(drawingOnly(b), drawingOnly(a), options.feetPerUnit) : null;
     };
     const pair = (newPage: number | null, basis: DemoPair["basis"], alternatives: number[]): DemoPair => ({ demoPage: demo.pageNumber, newPage, level, area, basis, alternatives, shift: newPage === null ? null : align(newPage) });
 

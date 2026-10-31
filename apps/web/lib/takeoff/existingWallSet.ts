@@ -1,7 +1,7 @@
 import type { DemoRun } from "./demoWalls";
 import { alignViews, type Line } from "./viewAlign";
 
-export type ExistingWallRun = Line & { lengthFeet: number; fate: "remove" | "remain" };
+export type ExistingWallRun = Line & { lengthFeet: number; thicknessFeet: number; fate: "remove" | "remain" };
 
 export type ExistingWallSet = {
   level: string | null;
@@ -21,13 +21,13 @@ export type ExistingWallSet = {
 export function existingWallSet(input: {
   level: string | null;
   remove: readonly DemoRun[];
-  remain: readonly (Line & { lengthFeet: number })[];
+  remain: readonly (Line & { lengthFeet: number; thicknessFeet: number })[];
   newPlan: readonly Line[];
   feetPerUnit: number;
 }): ExistingWallSet {
   const own: ExistingWallRun[] = [
-    ...input.remove.map((r) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFeet: r.lengthFeet, fate: "remove" as const })),
-    ...input.remain.map((r) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFeet: r.lengthFeet, fate: "remain" as const })),
+    ...input.remove.map((r) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFeet: r.lengthFeet, thicknessFeet: r.thicknessIn / 12, fate: "remove" as const })),
+    ...input.remain.map((r) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFeet: r.lengthFeet, thicknessFeet: r.thicknessFeet, fate: "remain" as const })),
   ];
   const shift = alignViews(input.newPlan, own, input.feetPerUnit);
   if (shift === null) return { level: input.level, shift: null, walls: own };

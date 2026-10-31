@@ -115,6 +115,9 @@ describe("the rest of the demolition path", () => {
     expect(aligned.shift?.dx).toBeCloseTo(0.4);
     expect(aligned.walls[0].x1).toBeCloseTo(0.5);
     expect(aligned.walls[0].fate).toBe("remove");
+    expect(aligned.walls[0].thicknessFeet).toBeCloseTo(5 / 12);
+    const kept = existingWallSet({ level: null, remove: [], remain: [{ x1: 0, y1: 0, x2: 0.1, y2: 0, lengthFeet: 28.8, thicknessFeet: 0.5 }], newPlan: [], feetPerUnit: FPU });
+    expect(kept.walls[0].thicknessFeet).toBe(0.5);
     const lost = existingWallSet({ level: null, remove, remain: [], newPlan: [], feetPerUnit: FPU });
     expect(lost.shift).toBeNull();
     expect(lost.walls[0].x1).toBeCloseTo(0.1);

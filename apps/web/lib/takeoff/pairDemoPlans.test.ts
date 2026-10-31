@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pairDemoWithNewPlan, type SheetForPairing } from "./pairDemoPlans";
+import { demoEvidence, pairDemoWithNewPlan, type SheetForPairing } from "./pairDemoPlans";
 
 const sheet = (pageNumber: number, sheetNumber: string, title: string): SheetForPairing => ({ pageNumber, sheetNumber, title });
 const FPU = 288;
@@ -21,6 +21,14 @@ describe("pairDemoWithNewPlan", () => {
     expect([pair.newPage, pair.basis, pair.alternatives]).toEqual([3, "grid", [2]]);
     expect(pair.shift?.dx).toBeCloseTo(0.3);
   });
+  it("the sheet frame every page shares does not count as agreement", () => {
+    const frame = [{ x1: 0.02, y1: 0.02, x2: 0.98, y2: 0.02 }, { x1: 0.02, y1: 0.68, x2: 0.98, y2: 0.68 }, { x1: 0.9, y1: 0.1, x2: 0.97, y2: 0.1 }, { x1: 0.9, y1: 0.2, x2: 0.97, y2: 0.2 }, { x1: 0.9, y1: 0.3, x2: 0.97, y2: 0.3 }];
+    const set = [sheet(1, "A001", "DEMOLITION PLAN"), sheet(2, "A100", "OVERALL FLOOR PLAN"), sheet(3, "A101", "FLOOR PLAN")];
+    const shared = new Map([[1, frame], [2, frame], [3, frame]]);
+    expect(pairDemoWithNewPlan(set, { lines: shared, feetPerUnit: FPU })[0].newPage).toBeNull();
+    const real = new Map([[1, [...frame, ...walls(0)]], [2, frame], [3, [...frame, ...walls(0.2)]]]);
+    expect(pairDemoWithNewPlan(set, { lines: real, feetPerUnit: FPU })[0].newPage).toBe(3);
+  });
   it("refuses to guess: several candidates and nothing to choose by gives no pair, with the candidates named", () => {
     const [pair] = pairDemoWithNewPlan([sheet(1, "A001", "DEMOLITION PLAN"), sheet(2, "A100", "OVERALL FLOOR PLAN"), sheet(3, "A101", "FLOOR PLAN")]);
     expect([pair.newPage, pair.basis, pair.alternatives]).toEqual([null, "none", [2, 3]]);
@@ -36,5 +44,34 @@ describe("pairDemoWithNewPlan", () => {
   it("a slab or finish plan of the floor is not the floor plan, however well it aligns", () => {
     const set = [sheet(1, "A1.1", "DEMOLITION - FLOOR PLAN"), sheet(2, "A1.2", "SLAB EXISTING CONDITION PLAN"), sheet(3, "A9.1", "FINISH PLAN"), sheet(4, "A2.1", "FLOOR PLAN")];
     expect(pairDemoWithNewPlan(set).map((p) => [p.newPage, p.basis])).toEqual([[4, "title"]]);
+  });
+  it("finds a demolition plan on a sheet titled otherwise", () => {
+    const set = [{ ...sheet(1, "A001", "KEYNOTE LEGEND"), demoCaption: "DEMO PLAN" }, sheet(2, "A101", "FLOOR PLAN")];
+    expect(pairDemoWithNewPlan(set).map((p) => [p.demoPage, p.newPage, p.basis])).toEqual([[1, 2, "title"]]);
+    expect(pairDemoWithNewPlan([sheet(1, "A001", "KEYNOTE LEGEND"), sheet(2, "A101", "FLOOR PLAN")])).toEqual([]);
+  });
+});
+
+describe("demoEvidence", () => {
+  const items = (...lines: string[]) => lines.map((str) => ({ str }));
+  it("reads a caption, a heading or a legend row, and hands back the caption", () => {
+    expect(demoEvidence(items("2 DEMO PLAN", "SCALE: 1/8\" = 1'-0\""))).toBe("2 DEMO PLAN");
+    expect(demoEvidence(items("BASEMENT DEMO", "1/8\" = 1'-0\""))).toBeNull();
+    expect(demoEvidence(items("DEMOLITION LEGEND"))).toBe("DEMOLITION PLAN");
+    expect(demoEvidence(items("EXISTING WALL TO BE DEMOLISHED"))).toBe("DEMOLITION PLAN");
+    expect(demoEvidence(items("REMOVE / DEMOLISH"))).toBe("DEMOLITION PLAN");
+  });
+  it("a drawing list naming a demolition plan is not one", () => {
+    const list = ["A000", "A101", "A102", "A103", "A201", "A301", "A401", "A501"];
+    const column = list.map((str, i) => ({ str, x: 100, y: i * 12 }));
+    expect(demoEvidence([{ str: "DEMOLITION FLOOR PLAN", x: 200 }, ...column])).toBeNull();
+    const scattered = list.map((str, i) => ({ str, x: 100 + i * 90 }));
+    expect(demoEvidence([{ str: "DEMO PLAN", x: 200 }, ...scattered])).toBe("DEMO PLAN");
+  });
+  it("is not fooled by notes or an existing-wall legend on a new plan", () => {
+    expect(demoEvidence(items("EXISTING WALL TO REMAIN", "NEW WALL"))).toBeNull();
+    expect(demoEvidence(items("DEMOLITION: WORK REQUIRED IS NOTED ON PLANS."))).toBeNull();
+    expect(demoEvidence(items("REFER TO CIVIL DEMOLITION PLAN FOR SITE"))).toBeNull();
+    expect(demoEvidence(items("SEE DEMOLITION PLAN AND PLUMBING DWGS."))).toBeNull();
   });
 });

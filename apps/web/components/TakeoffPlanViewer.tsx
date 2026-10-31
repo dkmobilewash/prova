@@ -129,7 +129,7 @@ import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
 import { TakeoffDoorsPanel } from "./TakeoffDoorsPanel";
 import { doorsAndWindowsForSheet, type DoorsWindowsResult, type StoredScheduleRow } from "@/lib/takeoff/doorsWindows";
 import { TakeoffDemoPanel } from "./TakeoffDemoPanel";
-import { demoForSheet, demoSheetTitle, type DemoSheet } from "@/lib/takeoff/demoWalls";
+import { demoEvidence, demoForSheet, demoSheetTitle, type DemoSheet } from "@/lib/takeoff/demoWalls";
 import { TakeoffSymbolPanel, type AcrossRow, type AcrossState } from "./TakeoffSymbolPanel";
 import { findSymbolsFrom, scaleSymbolTemplate, symbolTemplate, type Box as SymbolBox, type SymbolMatch, type SymbolTemplate } from "@/lib/takeoff/symbolSignature";
 import { sheetInScope, type SheetScope } from "@/lib/takeoff/symbolScope";
@@ -1356,6 +1356,8 @@ export function TakeoffPlanViewer({
         const task = page.render({ canvasContext, viewport });
         renderTaskRef.current = task;
         await task.promise;
+        const words = await pageTextItems(page as never, (await import("pdfjs-dist/legacy/build/pdf.mjs")) as never).catch(() => []);
+        if (!cancelled && demoEvidence(words) !== null) setDemoOnPage(pageNumber);
       } catch (error) {
         // A cancelled render is the normal result of changing page or zoom
         // quickly, not a failure worth telling anybody about.
@@ -1469,6 +1471,8 @@ export function TakeoffPlanViewer({
   /** ── FIND THE DEMOLITION: double dashed walls and keynoted doors. See `lib/takeoff/demoWalls.ts`. ── */
   const [demo, setDemo] = useState<{ page: number; read: DemoSheet | null; busy: boolean; error: string | null } | null>(null);
   const [demoDropped, setDemoDropped] = useState<ReadonlySet<number>>(new Set());
+  /** A demolition plan on a sheet titled otherwise, read off the page's own words. */
+  const [demoOnPage, setDemoOnPage] = useState<number | null>(null);
   const onFindDemolition = async () => {
     const doc = docRef.current;
     if (!doc || !pageSize || feetPerUnit === null) return;
@@ -3228,7 +3232,7 @@ export function TakeoffPlanViewer({
           {finding ? "Reading the lines…" : "Find the walls"}
         </button>
         {/* Only on a sheet that says it is demolition, and it stays on the toolbar with no scale, with the title saying why it waits. */}
-        {(demoSheetTitle(sheetLabelByPage[pageNumber] ?? sheet?.label) || /demolition/i.test(takeoffVerdict?.why ?? "")) && (
+        {(demoOnPage === pageNumber || demoSheetTitle(sheetLabelByPage[pageNumber] ?? sheet?.label) || /demolition/i.test(takeoffVerdict?.why ?? "")) && (
           <button
             type="button"
             onClick={onFindDemolition}

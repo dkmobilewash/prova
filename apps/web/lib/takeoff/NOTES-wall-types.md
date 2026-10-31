@@ -389,4 +389,7 @@ strokes (Irving has no text layer).
 level and area by title, then grid votes. A slab or finish plan aligns as well as
 the floor plan, so those are excluded before votes are counted. It returns no
 pair rather than guess. A demolition plan drawn on a sheet titled something else
-(Baker A001, "KEYNOTE LEGEND") cannot be seen from titles.
+(Baker A001, "KEYNOTE LEGEND") is found by `demoEvidence`: a caption, a demolition
+legend or keynote heading, or a remove row. An existing-wall legend alone does not
+count, because new plans have one. Over 1,537 training pages it adds 13 sheets to
+the 44 titles find, about 9 of them real.
