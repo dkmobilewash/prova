@@ -1019,3 +1019,13 @@ Things that look like bugs and are decisions:
 - `EX`, `EX CT` and `EXPOSED` are not priced. `EX ACT/PT-2` is, because the paint is new.
 
 Known limits: north is assumed to be up the page, and the panel says so. Door height 7 ft and window height 4 ft are assumed, also on screen. Baker row 100 prints `STOREFRONT P-1` as one text item across two columns, so its south reads that whole string and its west is empty; that room is not joined today. Composite finishes such as `PT-1, PT-4` stay one line as printed, because the schedule does not say the split.
+
+## Joining what room finding leaves behind (2026-10-30)
+
+Three decisions in `finishTakeoff.ts`, all stated on screen:
+
+- A region holding several scheduled rooms is a leak. Its area cannot be split honestly, so a finish counts only where every room in it has that same finish, and the rest is left out. Inner walls between those rooms are missing from wall and base lengths.
+- Only tags the schedule knows count, so a stray keynote cannot unseat a real room.
+- For a schedule of types, an untagged group of regions takes a type only when every typed neighbour has that type and is at least 100 sf. Without the size floor, rooms beside glen-hazel's elevator shafts took T7, the elevator finish.
+
+A bare number in a region is deliberately NOT a join: door marks print the room's own number.

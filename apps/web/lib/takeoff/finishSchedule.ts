@@ -108,7 +108,9 @@ function rowsUnder(items: readonly TextItem[], c: Columns, headerY: number): Fin
     };
     if (row.floor !== null || row.base !== null || row.wall !== null || row.sides !== null) rows.push(row);
   });
-  return rows;
+  // A keynote list under the table reads as rows with a bare number and no name (Joplin's 1-4).
+  const withName = rows.filter((r) => r.name !== null);
+  return c.name !== null && withName.length * 2 >= rows.length ? withName : rows;
 }
 
 /** Every finish schedule on one page. A page can repeat a table: the first reading of a key wins. */
