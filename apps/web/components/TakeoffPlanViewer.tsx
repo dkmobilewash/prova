@@ -128,6 +128,8 @@ import {
 import { detectForSheet, offeredCandidates } from "@/lib/takeoff/offeredCandidates";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
+import { TakeoffFinishPanel } from "./TakeoffFinishPanel";
+import { readFinishSchedule, type FinishSchedule } from "@/lib/takeoff/finishSchedule";
 import { TakeoffDoorsPanel } from "./TakeoffDoorsPanel";
 import { doorsAndWindowsForSheet, type DoorsWindowsResult, type StoredScheduleRow } from "@/lib/takeoff/doorsWindows";
 import { TakeoffDemoPanel } from "./TakeoffDemoPanel";
@@ -2596,6 +2598,26 @@ export function TakeoffPlanViewer({
       setRoomCeilings(new Map());
     }
   }
+  /**
+   * ── THE ROOM FINISH SCHEDULE, WHEREVER IN THE SET IT IS ──
+   * glen-hazel's sits on A-105 while the plan is A-102, so every page's text is
+   * read and the fullest table wins. Each page is released as it is passed.
+   */
+  async function readSetFinishSchedule(): Promise<FinishSchedule | null> {
+    const doc = docRef.current as { numPages?: number; getPage: (n: number) => Promise<unknown> } | null;
+    if (!doc) return null;
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    let best: FinishSchedule | null = null;
+    for (let n = 1; n <= (doc.numPages ?? 0); n += 1) {
+      const page = (await doc.getPage(n)) as { cleanup: () => void };
+      const items = await pageTextItems(page as never, pdfjs as never);
+      page.cleanup();
+      const read = readFinishSchedule(items);
+      if (read !== null && (best === null || read.rows.length > best.rows.length)) best = read;
+    }
+    return best;
+  }
+
   /** Every saved room on the job with a ceiling, as square feet by family, for the job summary. */
   const savedRoomCeilings = sheets.flatMap((s) =>
     s.measurements
@@ -4158,6 +4180,20 @@ export function TakeoffPlanViewer({
               hovered={hoveredRoom}
               onHover={setHoveredRoom}
               onClear={() => setRooms(null)}
+            />
+          )}
+          {rooms !== null && roomsOnPage === pageNumber && feetPerUnit !== null && pageSize !== null && (
+            <TakeoffFinishPanel
+              jobId={jobId}
+              sheetName={sheetLabelByPage[pageNumber] ?? `Sheet ${pageNumber}`}
+              rooms={rooms.rooms}
+              ceilings={roomCeilings}
+              words={wordsRef.current}
+              widthPt={pageSize.widthPt}
+              feetPerUnit={feetPerUnit}
+              doors={openings?.page === pageNumber ? openings.result.doors : []}
+              windows={openings?.page === pageNumber ? openings.result.windows : []}
+              onRead={readSetFinishSchedule}
             />
           )}
           <button
