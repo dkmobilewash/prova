@@ -10,7 +10,7 @@ import { submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
 import { money } from "@/lib/money";
 import { parseNumericInput } from "@/lib/numeric-input";
 import { payAppRowsFromForm, payAppTotal, thisPeriodForPercentComplete } from "@/lib/pay-application";
-import { suggestThisPeriod, type LineProgress } from "@/lib/pay-app-suggestion";
+import { suggestFromInstalled, suggestThisPeriod, type InstalledProgress, type LineProgress } from "@/lib/pay-app-suggestion";
 
 const inputClass =
   "w-28 rounded-md border border-line-card bg-canvas px-2 py-1 text-right text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -24,6 +24,8 @@ const STATUS_OPTIONS = [
 ] as const;
 
 export type PayAppLineItemOption = LineProgress & {
+  /** Present when the line has a unit field reports can count in. */
+  installedProgress?: InstalledProgress;
   id: string;
   description: string;
   scheduledValue: number;
@@ -44,9 +46,15 @@ export type PayAppLineItemOption = LineProgress & {
 /** Words only, with no field and no button, so a suggestion can never reach the
  * form. The person types the figure or does not. */
 export function SuggestionNote({ item, periodTo }: { item: PayAppLineItemOption; periodTo: string }) {
-  const suggestion = suggestThisPeriod(item, periodTo);
-  if (!suggestion) return null;
-  return <p className="mt-1 ml-auto max-w-[14rem] text-left text-xs text-ink-muted">{suggestion.text}</p>;
+  const notes = [suggestFromInstalled(item, item.installedProgress, periodTo), suggestThisPeriod(item, periodTo)];
+  return notes.map(
+    (note) =>
+      note && (
+        <p key={note.text} className="mt-1 ml-auto max-w-[14rem] text-left text-xs text-ink-muted">
+          {note.text}
+        </p>
+      ),
+  );
 }
 
 /** What the percent box did to this line: where it lands, or why it

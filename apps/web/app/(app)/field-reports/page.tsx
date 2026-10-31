@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { installedForRow, INSTALLED_ON_REPORT, loadInstallLines } from "@/lib/installed-quantities-query";
 import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
 import { PageHeader } from "@/components/PageHeader";
@@ -81,6 +82,7 @@ export default async function FieldReportsPage({
     include: {
       job: { select: { id: true, name: true } },
       filedBy: { select: { name: true, email: true } },
+      installedQuantities: INSTALLED_ON_REPORT,
     },
     orderBy: { reportDate: "desc" },
     // One more than we render, purely so the page can TELL whether it
@@ -131,7 +133,9 @@ export default async function FieldReportsPage({
     delays: row.delays,
     filedByName: row.filedBy?.name ?? row.filedBy?.email ?? null,
     manpower: manpower.get(`${row.job.id}:${row.reportDate.toISOString().slice(0, 10)}`),
+    ...installedForRow(row.installedQuantities),
   }));
+  const linesByJob = Object.fromEntries(await loadInstallLines(jobs.map((job) => job.id)));
 
   // The earliest date this page's records are COMPLETE from.
   //
@@ -164,7 +168,7 @@ export default async function FieldReportsPage({
             composer starts on — the same handover /punch-lists makes. With
             no filter the composer decides for itself, and only when there
             is exactly one active job to decide between. */}
-        <FieldReportComposer jobs={jobOptions} defaultJobId={activeJob ?? undefined} startOpen={startNew === "1"} />
+        <FieldReportComposer jobs={jobOptions} linesByJob={linesByJob} defaultJobId={activeJob ?? undefined} startOpen={startNew === "1"} />
       </div>
 
       {/* The job filter /punch-lists and /photos both have and this page did
@@ -282,6 +286,7 @@ export default async function FieldReportsPage({
                     <FieldReportEntry
                       key={report.id}
                       report={report}
+                      lines={linesByJob[report.jobId]}
                       canDelete={currentUser.role === "OWNER"}
                     />
                   ))}

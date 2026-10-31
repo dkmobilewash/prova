@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
     crewPresent: input.crewPresent,
     weather: input.weather,
     delays: input.delays,
+    installed: input.installed,
     clientId: input.clientId,
     clientOperationId: input.clientOperationId,
     clientUpdatedAt: input.clientUpdatedAt,

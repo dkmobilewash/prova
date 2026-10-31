@@ -42,6 +42,7 @@ export async function prefetchJob(jobId: string, token: string, me: Me | null = 
       incidents: await api.listIncidents(jobId, token),
     })],
     [cacheKeys.tickets(jobId), () => api.listTmTickets(jobId, token)],
+    [cacheKeys.lineItems(jobId), () => api.listLineItems(jobId, token)],
     // Drawings and the schedule are READ-ONLY and are exactly what a
     // phone is opened for once signal has gone: which revision governs,
     // and who is on site tomorrow.
@@ -71,6 +72,7 @@ export async function prefetchJob(jobId: string, token: string, me: Me | null = 
 export const PREFETCHED_KEYS = [
   cacheKeys.punchList,
   cacheKeys.reports,
+  cacheKeys.lineItems,
   cacheKeys.photos,
   cacheKeys.time,
   cacheKeys.materials,

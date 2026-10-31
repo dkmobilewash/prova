@@ -14,6 +14,7 @@ import {
   methodLabel,
   partyLabel,
 } from "@/lib/delays-core";
+import { installedForRow, INSTALLED_ON_REPORT, loadInstallLines } from "@/lib/installed-quantities-query";
 import { requireJob } from "@/lib/jobs/job-access";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
@@ -50,7 +51,7 @@ export default async function JobFieldReportsPage({
       dailyFieldReports: {
         orderBy: { reportDate: "desc" },
         take: reportWindow.take,
-        include: { filedBy: true, _count: { select: { media: true } } },
+        include: { filedBy: true, _count: { select: { media: true } }, installedQuantities: INSTALLED_ON_REPORT },
       },
       _count: { select: { dailyFieldReports: true } },
       delayEvents: {
@@ -62,6 +63,7 @@ export default async function JobFieldReportsPage({
   });
   if (!job) throw new Error("job disappeared between checks");
 
+  const installLines = (await loadInstallLines([job.id])).get(job.id) ?? [];
   const reportWeather = await refreshReportWeather(job, job.dailyFieldReports);
   const reportManpower = await loadManpower(job.id, job.dailyFieldReports.map((r) => r.reportDate));
   const timeZone = await viewerTimeZone();
@@ -91,6 +93,7 @@ export default async function JobFieldReportsPage({
     <PageColumn width="reading">
     <DailyFieldReports
       jobId={job.id}
+      lines={installLines}
       canDelete={currentUser.role === "OWNER"}
       siteNote={siteWeatherNote(job)}
       reports={job.dailyFieldReports.map((report) => {
@@ -112,6 +115,7 @@ export default async function JobFieldReportsPage({
           hasDelayEvent: delayDays.has(day),
           lockedLabel: lockedTimeDays.get(day) ?? null,
           photoCount: report._count.media,
+          ...installedForRow(report.installedQuantities),
         };
       })}
       seeAll={

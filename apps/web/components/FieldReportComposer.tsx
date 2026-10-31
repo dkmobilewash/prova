@@ -12,6 +12,7 @@ import {
 } from "@/components/DailyFieldReports";
 import { jobPickerLabel, type JobOption } from "@/components/jobLabels";
 import { Spinner } from "@/components/Spinner";
+import type { InstallLine } from "@/lib/installed-quantities";
 import { defaultFieldReportJobId } from "@/lib/field-report-jobs";
 
 /** Was its own `{ id, name }` declaration — the fourth in the app, and the
@@ -46,10 +47,13 @@ export type JobChoice = JobOption;
  */
 export function FieldReportComposer({
   jobs,
+  linesByJob = {},
   defaultJobId,
   startOpen = false,
 }: {
   jobs: JobChoice[];
+  /** Each job's lines that can take a quantity. */
+  linesByJob?: Record<string, InstallLine[]>;
   defaultJobId?: string;
   /** Open on arrival — the page was reached by a create shortcut (`?new=1`). */
   startOpen?: boolean;
@@ -189,7 +193,7 @@ export function FieldReportComposer({
         </label>
       </div>
 
-      <FieldReportFields />
+      <FieldReportFields lines={linesByJob[jobId]} />
 
       {error && <p className="text-sm text-danger">{error}</p>}
 

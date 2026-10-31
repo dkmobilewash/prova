@@ -13,6 +13,7 @@ import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { Spinner } from "@/components/Spinner";
 import { Disclosure } from "@/components/Disclosure";
 import { FieldReportFacts } from "@/components/FieldReportFacts";
+import { installedFieldName, installedToDateText, type InstallLine } from "@/lib/installed-quantities";
 
 // `text-base` is load-bearing, not decoration. These inputs sit inside a
 // `text-sm` label and INHERIT 14px, and iOS Safari zooms the whole page
@@ -55,6 +56,10 @@ export type FieldReport = {
   manpower?: { headcount: number; hours: number } | null;
   /** A delay was logged for this day in the delay log. */
   hasDelayEvent?: boolean;
+  /** This report's quantities by line id, for the edit form. */
+  installed?: Record<string, number>;
+  /** The same quantities as a sentence, for the row. */
+  installedLine?: string | null;
 };
 
 /** Date only, formatted from the stored UTC-midnight value. Using UTC here
@@ -72,7 +77,7 @@ function formatDate(iso: string) {
 /** One field set, shared by every surface that files a report — the job
  * page and the company-wide log — so the two can never drift into
  * accepting different things. */
-export function FieldReportFields({ report }: { report?: FieldReport }) {
+export function FieldReportFields({ report, lines = [] }: { report?: FieldReport; lines?: InstallLine[] }) {
   return (
     <>
       {/* The crew itself comes from the day's time entries — nobody retypes
@@ -111,6 +116,25 @@ export function FieldReportFields({ report }: { report?: FieldReport }) {
           className={inputClass}
         />
       </label>
+      {lines.length > 0 && (
+        <Disclosure variant="plain" summary="Installed today (optional)">
+          <div className="flex flex-col gap-2">
+            {lines.map((line) => (
+              <label key={line.id} className={labelClass}>
+                {line.description} ({line.unit})
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  name={installedFieldName(line.id)}
+                  defaultValue={report?.installed?.[line.id] ?? ""}
+                  className={inputClass}
+                />
+                <span className="text-xs text-ink-muted">{installedToDateText(line)}</span>
+              </label>
+            ))}
+          </div>
+        </Disclosure>
+      )}
     </>
   );
 }
@@ -123,12 +147,14 @@ export function FieldReportFields({ report }: { report?: FieldReport }) {
  * clears the draft. */
 function FieldReportEditForm({
   report,
+  lines,
   isPending,
   error,
   onSave,
   onCancel,
 }: {
   report: FieldReport;
+  lines: InstallLine[];
   isPending: boolean;
   error: string | null;
   onSave: (formData: FormData, onSaved: () => void) => void;
@@ -148,7 +174,7 @@ function FieldReportEditForm({
     >
       <p className="text-sm font-medium text-ink">{formatDate(report.reportDate)}</p>
       <FormDraftNotice draft={draft} />
-      <FieldReportFields report={report} />
+      <FieldReportFields report={report} lines={lines} />
       {error && <p className="text-sm text-danger">{error}</p>}
       <div className="flex gap-2">
         <button
@@ -180,6 +206,7 @@ function FieldReportEditForm({
 
 export function DailyFieldReports({
   jobId,
+  lines = [],
   reports,
   canDelete,
   siteNote,
@@ -187,6 +214,8 @@ export function DailyFieldReports({
   seeAll,
 }: {
   jobId: string;
+  /** Lines that can take an installed quantity. */
+  lines?: InstallLine[];
   reports: FieldReport[];
   canDelete: boolean;
   /** Shown when the job has no site address found on a map, so reports
@@ -258,7 +287,7 @@ export function DailyFieldReports({
             Date
             <input type="date" name="reportDate" required defaultValue={localToday()} className={inputClass} />
           </label>
-          <FieldReportFields />
+          <FieldReportFields lines={lines} />
           {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button
@@ -310,6 +339,7 @@ export function DailyFieldReports({
               <li key={report.id} className="py-3">
                 <FieldReportEditForm
                   report={report}
+                  lines={lines}
                   isPending={isPending}
                   error={error}
                   onSave={(formData, onSaved) => {
@@ -346,6 +376,7 @@ export function DailyFieldReports({
                     {report.manpowerLine && <p className="text-ink-body">Crew: {report.manpowerLine}</p>}
                     {report.crewPresent && <p className="text-ink-body">Also on site: {report.crewPresent}</p>}
                     <p className="mt-1 text-ink-label">{report.workPerformed}</p>
+                    {report.installedLine && <p className="mt-1 text-xs text-ink-body">Installed: {report.installedLine}</p>}
                     {report.weatherAutoLine && (
                       <p className="mt-1 text-ink-body">
                         Weather{report.weatherAutoKind === "forecast" ? " (forecast — replaced by the actual day once it's over)" : ""}:{" "}

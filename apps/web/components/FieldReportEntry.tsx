@@ -8,6 +8,7 @@ import {
   type FieldReport,
 } from "@/components/DailyFieldReports";
 import { type ReportData, dayLabel } from "@/components/fieldReportWeeks";
+import type { InstallLine } from "@/lib/installed-quantities";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
 import { Spinner } from "@/components/Spinner";
@@ -32,9 +33,12 @@ const rowBtnConfirm =
  * wrong day, delete it and file the right one. */
 export function FieldReportEntry({
   report,
+  lines,
   canDelete,
 }: {
   report: ReportData;
+  /** This job's lines that can take a quantity. */
+  lines?: InstallLine[];
   canDelete: boolean;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -52,6 +56,7 @@ export function FieldReportEntry({
     weather: report.weather,
     delays: report.delays,
     filedByName: report.filedByName,
+    installed: report.installed,
   };
 
   if (isEditing) {
@@ -78,7 +83,7 @@ export function FieldReportEntry({
             {dayLabel(report.reportDate)} · {report.jobName}
           </p>
           <FormDraftNotice draft={draft} />
-          <FieldReportFields report={asFields} />
+          <FieldReportFields report={asFields} lines={lines} />
           {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex flex-wrap gap-2">
             <button
@@ -147,6 +152,7 @@ export function FieldReportEntry({
           </Link>
           {report.crewPresent && <p className="text-sm text-ink-body">Also on site: {report.crewPresent}</p>}
           <p className="mt-1 text-sm text-ink-label">{report.workPerformed}</p>
+          {report.installedLine && <p className="mt-1 text-xs text-ink-body">Installed: {report.installedLine}</p>}
           {/* ink-body, not ink-muted — the muted level is under
               the 4.5 floor for text. Weather is what a delay claim is argued
               from months later. */}

@@ -183,6 +183,7 @@ const fieldReports = [
     delays: null,
     job: { id: "job-1", name: "Tower B" },
     filedBy: { name: "Tester", email: null },
+    installedQuantities: [],
   },
 ];
 

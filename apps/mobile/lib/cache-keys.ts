@@ -28,6 +28,7 @@ export const cacheKeys = {
   materials: (jobId: string) => `materials.${jobId}`,
   safety: (jobId: string) => `safety.${jobId}`,
   tickets: (jobId: string) => `tickets.${jobId}`,
+  lineItems: (jobId: string) => `line-items.${jobId}`,
   drawings: (jobId: string) => `drawings.${jobId}`,
   sheets: (jobId: string) => `sheets.${jobId}`,
   schedule: (jobId: string) => `schedule.${jobId}`,

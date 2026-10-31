@@ -313,6 +313,8 @@ model DailyFieldReport {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  installedQuantities DailyReportInstalledQuantity[]
+
   /// One report per job per day, enforced here rather than in code. Two
   /// people filing the same day would leave contradictory records of what
   /// happened, which is worse than one person having to edit an existing
@@ -1476,4 +1478,24 @@ model PurchaseOrderCounter {
   jobId      String @id
   job        Job    @relation(fields: [jobId], references: [id])
   lastNumber Int    @default(0)
+}
+
+/// What a crew installed that day on one schedule-of-values line, in the line's
+/// own unit. Absent means nobody said, not zero. The quantity is entered, and the
+/// total to date is derived by summing these, never stored. Written with its
+/// report, so the signed-day lock on `DailyFieldReport` covers it. Cascades from
+/// both parents, so it is never a blocker on deleting a job or a line.
+model DailyReportInstalledQuantity {
+  id         String           @id @default(cuid())
+  reportId   String
+  report     DailyFieldReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  lineItemId String
+  lineItem   JobLineItem      @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+
+  quantity Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+
+  @@unique([reportId, lineItemId])
+  @@index([lineItemId])
 }

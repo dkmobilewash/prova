@@ -297,6 +297,8 @@ export const EN = {
   "reports.new": "New report",
   "reports.sheet.title": "New daily report",
   "reports.sheet.save": "File report",
+  "reports.installed.title": "Installed today (optional)",
+  "reports.installed.toDate": "{done} of {total} to date",
   "reports.sheet.hint": "The crew comes from the day's logged hours and the weather from the job's site address. Log delays separately so each has a cause and crew-hours.",
   "reports.problem.daySigned": "{date} is signed, so its report is locked.",
   "reports.problem.exists": "There's already a report for {date}. Edit it on the web.",

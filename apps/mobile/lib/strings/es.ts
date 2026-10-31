@@ -282,6 +282,8 @@ export const ES: Record<keyof typeof EN, string> = {
   "reports.new": "Nuevo reporte",
   "reports.sheet.title": "Nuevo reporte diario",
   "reports.sheet.save": "Guardar reporte",
+  "reports.installed.title": "Instalado hoy (opcional)",
+  "reports.installed.toDate": "{done} de {total} a la fecha",
   "reports.sheet.hint": "La cuadrilla sale de las horas registradas del día y el clima de la dirección de la obra. Registra los retrasos aparte para que cada uno tenga su causa y sus horas de cuadrilla.",
   "reports.problem.daySigned": "El {date} está firmado, así que su reporte está cerrado.",
   "reports.problem.exists": "Ya hay un reporte del {date}. Edítalo en la computadora.",

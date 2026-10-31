@@ -11,6 +11,7 @@
 
 import { prisma } from "@prova/db";
 import { isUniqueConstraintError, type ActionResultWith } from "@/lib/actions/shared";
+import { parseInstalled, type InstalledEntry } from "@/lib/installed-quantities";
 import { refreshReportWeather } from "@/lib/report-weather";
 import { liveSignoff, lockedDayMessage } from "@/lib/timesheet-signoff";
 
@@ -99,6 +100,19 @@ export function fieldReportFields(input: {
   };
 }
 
+/** The quantities as rows, checked against this job's live lines. Undefined
+ * leaves a report's quantities alone. */
+async function installedRows(jobId: string, raw: unknown): Promise<InstalledEntry[] | undefined> {
+  const rows = parseInstalled(raw);
+  if (rows === null) throw new FieldReportInputError("An installed quantity must be a plain number.");
+  if (!rows?.length) return rows;
+  const found = await prisma.jobLineItem.count({
+    where: { id: { in: rows.map((row) => row.lineItemId) }, jobId, isDeleted: false },
+  });
+  if (found !== rows.length) throw new FieldReportInputError("An installed quantity is on a line that is not on this job.");
+  return rows;
+}
+
 export type FieldReportInput = {
   jobId: string;
   reportDate?: unknown;
@@ -106,6 +120,8 @@ export type FieldReportInput = {
   crewPresent?: unknown;
   weather?: unknown;
   delays?: unknown;
+  /** Per line. Absent on older phones. */
+  installed?: unknown;
   clientId?: unknown;
   clientOperationId?: unknown;
   clientUpdatedAt?: unknown;
@@ -212,6 +228,7 @@ export async function createFieldReport(
     const live = await liveSignoff(input.jobId, reportDate);
     if (live) return { ok: false, error: lockedDayMessage(reportDate, live) };
 
+    const installed = await installedRows(input.jobId, input.installed);
     const data = {
       companyId: company.id,
       jobId: input.jobId,
@@ -224,7 +241,9 @@ export async function createFieldReport(
     };
 
     try {
-      const created = await prisma.dailyFieldReport.create({ data });
+      const created = await prisma.dailyFieldReport.create({
+        data: { ...data, ...(installed?.length ? { installedQuantities: { create: installed } } : {}) },
+      });
       const weather = await refreshReportWeather(job, [created], 1);
       const row = toFieldReportRow(created);
       if (weather.has(created.id)) row.weatherAuto = weather.get(created.id);
@@ -261,6 +280,7 @@ export type UpdateFieldReportInput = {
   crewPresent?: unknown;
   weather?: unknown;
   delays?: unknown;
+  installed?: unknown;
   clientId?: unknown;
   clientUpdatedAt?: unknown;
 };
@@ -295,12 +315,17 @@ export async function updateFieldReport(
     const live = await liveSignoff(report.jobId, report.reportDate);
     if (live) return { ok: false, error: lockedDayMessage(report.reportDate, live) };
 
+    const installed = await installedRows(report.jobId, input.installed);
+
     let updated;
     try {
+      // Nested, so the parent's update fires the day-lock trigger for the
+      // quantities too, and a refused save leaves them as they were.
       updated = await prisma.dailyFieldReport.update({
         where: { id: reportId },
         data: {
           ...fieldReportFields(input),
+          ...(installed ? { installedQuantities: { deleteMany: {}, create: installed } } : {}),
           ...(clientId ? { clientId } : {}),
           ...(clientUpdatedAt ? { clientUpdatedAt } : {}),
         },

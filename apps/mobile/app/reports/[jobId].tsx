@@ -28,6 +28,7 @@ import { type Palette, space, typography } from "@/lib/theme";
 import { usePalette } from "@/lib/use-palette";
 import type { DelayRow, FieldReportRow } from "@/lib/types";
 import { useFieldReports } from "@/lib/use-field-reports";
+import { useInstallLines } from "@/lib/use-install-lines";
 import { useStableGetToken } from "@/lib/use-stable-get-token";
 import { useSync } from "@/lib/use-sync";
 
@@ -160,7 +161,13 @@ export default function ReportsScreen() {
       ? t("reports.problem.daySigned", { date: reportDate })
       : t("reports.problem.exists", { date: reportDate })
     : null;
-  const canFile = workPerformed.trim().length > 0 && reportProblem === null;
+  const installLines = useInstallLines(jobId);
+  const [installed, setInstalled] = useState<Record<string, string>>({});
+  const installedEntries = Object.entries(installed)
+    .map(([lineItemId, quantity]) => ({ lineItemId, quantity: quantity.trim() }))
+    .filter((row) => row.quantity !== "");
+  const installedOk = installedEntries.every((row) => /^\d+([.,]\d+)?$/.test(row.quantity));
+  const canFile = workPerformed.trim().length > 0 && reportProblem === null && installedOk;
 
   const submitReport = async () => {
     if (!canFile) return;
@@ -170,6 +177,7 @@ export default function ReportsScreen() {
       crewPresent: otherTrades.trim() || null,
       weather: conditions.trim() || null,
       delays: null,
+      ...(installedEntries.length > 0 ? { installed: installedEntries } : {}),
     };
     // QUEUED BEFORE THE FORM IS CLEARED — see lib/save-queued.ts. `create`
     // returns the `{ ok }` result for exactly this, and the old order threw
@@ -180,6 +188,7 @@ export default function ReportsScreen() {
     setWorkPerformed("");
     setOtherTrades("");
     setConditions("");
+    setInstalled({});
     setShowReport(false);
     await loadDelays();
   };
@@ -430,6 +439,20 @@ export default function ReportsScreen() {
           value={conditions}
           onChangeText={setConditions}
         />
+        {installLines.length > 0 ? <Text style={styles.hint}>{t("reports.installed.title")}</Text> : null}
+        {installLines.map((line) => (
+          <Field
+            key={line.id}
+            label={`${line.description} (${line.install?.unit})`}
+            placeholder={t("reports.installed.toDate", {
+              done: line.install?.installedToDate ?? 0,
+              total: line.install?.quantity ?? 0,
+            })}
+            value={installed[line.id] ?? ""}
+            onChangeText={(value) => setInstalled((now) => ({ ...now, [line.id]: value }))}
+            keyboardType="decimal-pad"
+          />
+        ))}
         <Text style={styles.hint}>{t("reports.sheet.hint")}</Text>
       </Sheet>
 
