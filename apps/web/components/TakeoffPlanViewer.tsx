@@ -155,7 +155,7 @@ import { scaleFromPrinted } from "@/lib/takeoff/scaleFromPrinted";
 /** One scanned page's stored read, as the raster route and `rasterByPage` both give it. */
 type RasterRead = { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[]; widthPt?: number; heightPt?: number; printedScale?: string | null };
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
-import { roomsFromWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
+import { roomsSplitAtDrawnWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -2640,7 +2640,11 @@ export function TakeoffPlanViewer({
       runs: runsRef.current,
       drawn: sheet?.measurements ?? [],
     });
-    const result = roomsFromWalls({ walls, feetPerUnit, text: wordsRef.current, widthPt: pageSize.widthPt });
+    // Leaked regions may be split along the sheet's own lines and door leaves.
+    const W = pageSize.widthPt;
+    const drawn = lastDetect.current?.page === pageNumber ? lastDetect.current.segments.map((s) => ({ x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W })) : [];
+    const leaves = openings?.page === pageNumber ? openings.result.doors.map((d) => ({ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y })) : [];
+    const result = roomsSplitAtDrawnWalls({ walls, feetPerUnit, text: wordsRef.current, widthPt: W }, [...drawn, ...leaves]);
     setRooms(result);
     setRoomsOnPage(pageNumber);
     onResults?.();
