@@ -413,20 +413,37 @@ describe("the call site, because no test here can open a PDF", () => {
     expect(text).toContain("can still show up below");
   });
 
-  it("FALLS THROUGH to the geometric filters when a page will not parse", () => {
-    // A set with one bad page must still measure the sheet in front of
-    // somebody. The fail-safe direction is "no template filter", never "no
-    // walls".
-    // THE FALL-THROUGH MOVED WITH THE SPLIT. The caller hands `null` when a
-    // page will not parse; the pipeline then filters nothing and the sheet
-    // gets exactly the geometric filters it had before. The fail-safe
-    // direction is unchanged — "no template filter", never "no walls".
+  it("FALLS THROUGH to the geometric filters, but ONE bad page no longer costs the template", () => {
+    // The fail-safe DIRECTION is unchanged and still the point: "no template
+    // filter", never "no walls". A set with a bad page must still measure the
+    // sheet in front of somebody.
+    //
+    // WHAT CHANGED IS THE TRIGGER, and this assertion used to pin the old one.
+    // The viewer caught once around the whole page-sampling loop, so a single
+    // unreadable sampled page abandoned the template for the entire set — and
+    // the template is what removes the title block's own lines down the right
+    // edge. That is why Baker A100 offered 87 candidates in one tab and 104 in
+    // the next: same sheet, same code, one page that read on one attempt and
+    // not the other.
+    //
+    // Now each page is read on its own, a failure is COUNTED rather than
+    // fatal, and the template is given up only when fewer than two pages read.
     const text = source();
     expect(text).toContain("let inUnits = allInUnits;");
     expect(text).toContain("if (input.sampledSheets !== null)");
+
+    const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
+    expect(viewer, "a failed page must be counted, not fatal to the template").toContain("sampleFailed += 1;");
     expect(
-      readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8"),
-      "a page that will not parse is not handed over as an empty set",
-    ).toContain("sampledSheets = null;");
+      viewer,
+      "the template is abandoned only when fewer than two pages read, not when any one fails",
+    ).toContain("sampledSheets = sampled.length > 1 ? sampled : null;");
+    // The catch sits around ONE page's read, inside the sampling loop. A catch
+    // around the loop is the old behaviour wearing the new shape, and the only
+    // difference visible in source is where this counter lives.
+    expect(
+      viewer,
+      "the failure must be caught per page, inside the sampling loop",
+    ).toMatch(/catch \(error\) \{\s*sampleFailed \+= 1;/);
   });
 });

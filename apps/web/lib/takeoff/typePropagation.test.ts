@@ -19,15 +19,26 @@ describe("propagating a type along a wall", () => {
     expect(got.feet).toEqual({ tagged: 10, propagated: 20, default: 0, untyped: 0 });
   });
 
-  it("stops at a thickness change and at a corner, and runs past a T", () => {
+  it("stops at a thickness change, ROUNDS A CORNER that is the only way on, and runs past a T", () => {
     const a = run(0, 0, 0.1, 0);
     const thick = run(0.1, 0, 0.2, 0, 1.0);
     const corner = run(0, 0, 0, 0.1);
     const tee = run(0.05, 0, 0.05, 0.1);
     const got = propagateTypes({ walls: [a, thick, corner, tee], tagged: new Map([[a, "A"]]), feetPerUnit: FPU, defaultCode: null });
     expect(got.byRun.get(thick)).toBeUndefined();
-    expect(got.byRun.get(corner)).toBeUndefined();
+    // The room's next wall starts where the tagged one ends: same type.
+    expect(got.byRun.get(corner)).toEqual({ code: "A", source: "propagated", via: a });
+    // A partition meeting the wall's middle is not reached from it.
     expect(got.byRun.get(tee)).toBeUndefined();
+    // Two walls leaving the endpoint — a stem meeting a split crossing wall — is a question, not a corner.
+    const left = run(0.1, 0, 0.1, -0.1);
+    const right = run(0.1, 0, 0.1, 0.1);
+    const fork = propagateTypes({ walls: [a, left, right], tagged: new Map([[a, "A"]]), feetPerUnit: FPU, defaultCode: null });
+    expect(fork.byRun.get(left)).toBeUndefined();
+    expect(fork.byRun.get(right)).toBeUndefined();
+    // A corner into a thicker wall is not taken either.
+    const thickCorner = run(0.1, 0, 0.1, 0.1, 1.0);
+    expect(propagateTypes({ walls: [a, thickCorner], tagged: new Map([[a, "A"]]), feetPerUnit: FPU, defaultCode: null }).byRun.get(thickCorner)).toBeUndefined();
     // The straight wall continues past the partition that meets it.
     const past = run(0.1, 0, 0.2, 0);
     const again = propagateTypes({ walls: [a, past, tee], tagged: new Map([[a, "A"]]), feetPerUnit: FPU, defaultCode: null });

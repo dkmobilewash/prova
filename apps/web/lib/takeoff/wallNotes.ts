@@ -45,6 +45,12 @@ export type WallTypeFromNote = {
   type: MatchableWallType;
   /** The note itself, verbatim, so the screen can quote its evidence. */
   note: string;
+  /**
+   * Further defaults the legend names for OTHER thicknesses — Joplin's
+   * "all interior masonry partitions are type 'B'" beside its drywall 'A'.
+   * `wallGroups` picks, per thickness cluster, the one whose thickness covers it.
+   */
+  others?: WallTypeFromNote[];
 };
 
 /**
@@ -84,5 +90,12 @@ export function defaultWallTypeFromNotes(
       if (type) return { type, note };
     }
   }
-  return null;
+  // ── THE LEGEND'S OWN U.N.O., WHEN THE SHEET SAYS NOTHING ──
+  // Joplin prints the sentence on the partition sheet, not on the floor plan,
+  // so it reaches here on the type (`unoNote`). More than one — drywall A,
+  // masonry B — are kept together; the thickness decides which covers a run.
+  const fromLegend = wallTypes.filter((one) => typeof one.unoNote === "string" && one.unoNote.trim() !== "").map((type) => ({ type, note: type.unoNote! }));
+  if (fromLegend.length === 0) return null;
+  const [first, ...others] = fromLegend;
+  return others.length > 0 ? { ...first!, others } : first!;
 }

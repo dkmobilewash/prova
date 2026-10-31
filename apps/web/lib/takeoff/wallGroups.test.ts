@@ -700,3 +700,22 @@ describe("a sentence naming a type whose thickness differs", () => {
     expect(text).not.toContain("NaN");
   });
 });
+
+describe("a default per family", () => {
+  it("covers each family's own thickness, leaves the buckets between as questions, and a lone default covers only its own", () => {
+    const a = { id: "a", code: "A", name: "A", hasParts: true, thicknessIn: 4.875 };
+    const b = { id: "b", code: "B", name: "B", hasParts: true, thicknessIn: 7.625 };
+    const run = (thicknessFeet: number): WallCandidate => ({ x1: 0, y1: 0, x2: 0.1, y2: 0, thicknessFeet, lengthFeet: 10 });
+    const clusters = [
+      { inches: 6.5, runs: [run(6.5 / 12)], feet: 10 },
+      { inches: 10, runs: [run(10 / 12)], feet: 10 },
+    ];
+    const both = wallGroups(clusters, new Map(), [a, b], { type: a, note: "ALL INTERIOR DRYWALL PARTITIONS ARE TYPE 'A'", others: [{ type: b, note: "ALL INTERIOR MASONRY PARTITIONS ARE TYPE 'B'" }] });
+    // 6.5 in is neither family's thickness; 10 in is nobody's.
+    expect(both.map((g) => [g.inches, g.source.kind])).toEqual([[6.5, "REMAINDER"], [10, "REMAINDER"]]);
+    const own = wallGroups([{ inches: 4.75, runs: [run(4.75 / 12)], feet: 10 }, { inches: 7.5, runs: [run(7.5 / 12)], feet: 10 }], new Map(), [a, b], { type: a, note: "n", others: [{ type: b, note: "m" }] });
+    expect(own.map((g) => [g.inches, g.source.kind, g.candidates[0]?.code])).toEqual([[4.75, "GENERAL_NOTE", "A"], [7.5, "GENERAL_NOTE", "B"]]);
+    const lone = wallGroups(clusters, new Map(), [a, b], { type: a, note: "ALL PARTITIONS TYPE A U.N.O." });
+    expect(lone.map((g) => g.source.kind)).toEqual(["REMAINDER", "REMAINDER"]);
+  });
+});

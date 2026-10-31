@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   cautionToShow,
+  disciplineFromNumber,
+  sheetTitleRefusal,
   multiScaleCaution,
   sheetSuitability,
   duplicateWallsCaution,
+  takeoffRank,
   viewsMeasuredCaution,
 } from "./sheetSuitability";
+import { viewKind } from "./viewKind";
 
 /**
  * THE DEFECT THIS EXISTS FOR, IN NUMBERS.
@@ -273,6 +277,21 @@ describe("nothing is excluded silently", () => {
 
   it("says nothing at all when there is one drawing and nothing left out", () => {
     expect(viewsMeasuredCaution(plan, [], [])).toBe("");
+  });
+
+  it("names each kept drawing with its own scale when they differ, and the shared scale once when they do not", () => {
+    type Kept = { name: string; scaleName: string | null };
+    const restroomView: Kept = { name: "ENLARGED RESTROOM PLAN", scaleName: "1/4\" = 1'-0\"" };
+    const stairView: Kept = { name: "ENLARGED STAIR PLAN", scaleName: "1/2\" = 1'-0\"" };
+    const detailLeft = { name: "HEAD OF WALL DETAIL", reason: "a details sheet, not to scale, not measured" };
+    const two = viewsMeasuredCaution([restroomView, stairView], [], [detailLeft]);
+    expect(two).toContain("ENLARGED RESTROOM PLAN at 1/4\" = 1'-0\" + ENLARGED STAIR PLAN at 1/2\" = 1'-0\"");
+    expect(two).toContain("each measured at its own scale");
+    expect(two).not.toContain("unstated");
+    const sameScale: Kept[] = [{ ...restroomView, scaleName: stairView.scaleName }, stairView];
+    const same = viewsMeasuredCaution(sameScale, [], [detailLeft]);
+    expect(same).toContain("ENLARGED RESTROOM PLAN + ENLARGED STAIR PLAN at 1/2\" = 1'-0\"");
+    expect(same).not.toContain("each measured");
     expect(viewsMeasuredCaution(null, [stair], [detail])).toBe("");
   });
 
@@ -280,5 +299,44 @@ describe("nothing is excluded silently", () => {
     const said = viewsMeasuredCaution(plan, [], [detail, { name: "JAMB DETAIL", reason: "not to scale, not measured" }]);
     expect(said).toContain("HEAD OF WALL DETAIL");
     expect(said).toContain("JAMB DETAIL");
+  });
+});
+
+describe("FINISH FLOOR is a level, not a finish plan", () => {
+  it("KEEPS BUNKIE A100's PLAN, captioned by its finish-floor level", () => {
+    expect(viewKind("FINISH FLOOR (ADDITION)").kind).toBe("plan");
+    expect(takeoffRank(null, "FINISH FLOOR (ADDITION)").why).toBe("a plan named by its finish-floor level");
+  });
+
+  it("still leaves out a finish plan, a finish floor plan and a finish schedule", () => {
+    for (const title of ["FINISH PLAN", "FINISH FLOOR PLAN", "FIRST FLOOR FINISH PLAN", "ROOM FINISH SCHEDULE"]) {
+      expect(viewKind(title).kind, title).toBe("not-a-plan");
+    }
+  });
+});
+
+describe("the letters before the number, in general — the pilot of 2026-10-29", () => {
+  // Every one of these got through the named list and carried the floor again.
+  it("refuses the prefixes the named list did not know", () => {
+    for (const [number, kind] of [["ED1.01", "electrical demolition plan"], ["EL1.01", "electrical plan"], ["EP1.21", "electrical plan"], ["MEP-201", "mechanical plan"], ["G-101", "general or code sheet"], ["G010", "general or code sheet"], ["AD-101", "demolition plan"], ["D1.1", "demolition plan"], ["T1.01", "telecom plan"], ["FP-101", "fire protection plan"]] as const) {
+      const d = disciplineFromNumber(number);
+      expect(d?.kind, number).toBe(kind);
+      expect(takeoffRank(number, "LEVEL 1 PLAN").score, number).toBeLessThan(0);
+    }
+  });
+  it("leaves every architectural number alone, whatever its second letter", () => {
+    for (const number of ["A101", "A-101", "A2.1", "AA2.1", "AE-101", "AI-201", "ID-101", "I-101"]) {
+      expect(disciplineFromNumber(number), number).toBeNull();
+      expect(takeoffRank(number, "LEVEL 1 FLOOR PLAN").score, number).toBeGreaterThan(0);
+    }
+  });
+  it("keeps the shared rank's words as they were — the sheet-only words live in the verdict", () => {
+    // "FIRE PROTECTION AND FIRE ALARM" is a notes block on Murray A101; the
+    // view splitter reads this rank for every caption, so it must not move.
+    expect(takeoffRank(null, "FIRE PROTECTION AND FIRE ALARM").score).toBe(0);
+    expect(takeoffRank(null, "APPLICABLE CODE (DESIGN CRITERIA)").score).toBe(0);
+    expect(sheetTitleRefusal("ROOF/CEILING/FLOOR ASSEMBLIES")).toBe("an assemblies sheet");
+    expect(sheetTitleRefusal("FIRST FLOOR FF&E PLAN")).toBe("an FF&E plan");
+    expect(sheetTitleRefusal("FIRST FLOOR PLAN")).toBeNull();
   });
 });

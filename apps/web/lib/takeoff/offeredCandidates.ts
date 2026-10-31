@@ -1,4 +1,8 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
+import { bothFacesDashedInPoints } from "./dashedFaces";
+import { existingSentence, existingWalls, type ExistingWall } from "./existingWalls";
+import { isTableRows, isUnderline } from "./textRows";
+import { legendBoxes } from "./legendBoxes";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "./findWallsOnSheet";
 import {
   drawingCount,
@@ -13,8 +17,11 @@ import {
   type ExcludedView,
   type ViewWalls,
 } from "./sheetViews";
+import { withoutNonWallLayers } from "./layerNames";
 import { drawingRegions, segmentsInRegions } from "./planRegion";
 import { classifySingleLines, worthOffering } from "./singleLines";
+import { trustedScanViews } from "./scannedCaptions";
+import { viewKind } from "./viewKind";
 import { oneFacePerLine, wallFromPair, type StrokeSegment, type WallCandidate } from "./wallVectors";
 
 /**
@@ -65,11 +72,27 @@ export type DetectedSheet = {
   feetPerUnit: number;
   /** Where the sheet was measured. Null means the whole page counts. */
   planBoxes: readonly { from: number; to: number; fromY: number; toY: number }[] | null;
+  /** The sheet's text, in page POINTS as the PDF gives it — optional, and only
+   *  read by the site-equipment rule; a caller without it offers as before. */
+  textItems?: readonly { str: string; x: number; y: number; width: number; height: number }[];
+  /** EVERY stroke on the page, in POINTS — optional, read only by the
+   *  existing-wall rule for the legend's swatch, which sits outside the
+   *  drawing `segments` is clipped to. See `existingWalls.ts`. */
+  pageSegments?: readonly StrokeSegment[];
 };
 
 export type OfferedResult = {
   /** Exactly what the panel lists. */
   candidates: Candidate[];
+  /**
+   * The finder's PAIRED runs that survived every set-aside — the same objects
+   * `sheet.walls` holds, so a caller can regroup them (`found.regroup`) and
+   * post them. The WALLS stage reads this; until it did, it posted
+   * `found.groups` straight from the finder and no set-aside — legend box,
+   * dashed faces, underline, existing wall, site equipment — ever reached a
+   * whole-set estimate. One list, the viewer's and the stage's.
+   */
+  offeredRuns: WallCandidate[];
   /** What the classifier withheld, by its own reason, for the panel to say. */
   setAside: { kind: string; why: string; n: number }[];
   /** For a measurement: the paired candidates dropped for being off-plan. */
@@ -98,6 +121,54 @@ export type OfferedResult = {
 
 /** A single line must be at least this long to be worth a reviewer's time. */
 export const SHORTEST_SINGLE_FEET = 12;
+
+/**
+ * ── SITE EQUIPMENT: TWO LINES A WALL APART, WITH A WORD BESIDE THEM SAYING WHAT THEY ARE ──
+ *
+ * Camp Bow Wow A101 is a dog-boarding floor plan whose outdoor runs, play-yard
+ * fencing, concrete curbs and trench drains are drawn exactly as walls are:
+ * two parallel lines 5–8 in apart. Geometry cannot tell them from a partition
+ * (NOTES, round 5: a dashed-face rule and a regular-series rule were both
+ * measured and both take real wall on other sheets). What the drawing does
+ * carry is the label: "OUTDOOR RUN", "INDOOR PLAY YARD", "CONCRETE CURB",
+ * "TRENCH DRAIN", written on or beside the thing.
+ *
+ * Measured on every offered candidate of the 26 training sheets (2026-10-28):
+ * with these words within 10 ft, 529 ft of reviewer-rejected footage is
+ * flagged — Camp Bow Wow 322, Joplin 142, SW 65 — and 0 ft of key wall. At
+ * 15 ft the same words reach Camp Bow Wow's real room walls (365 ft), which is
+ * why the reach is 10 and not more. KENNEL, BOARDING and FENCE are NOT in the
+ * list: each sits beside the room's real walls as often as beside the panels
+ * (KENNEL within 10 ft: 281 ft of key, 107 rejected). A one-building rule in
+ * origin and said so; the candidate is SET ASIDE with the word, not dropped,
+ * so a reviewer who disagrees can still accept it.
+ */
+export const SITE_EQUIPMENT_WORDS = /\b(PLAY YARD|RUNS?|CHAIN ?LINK|GATES?|CURBS?|TRENCH DRAINS?|SHELVING)\b/i;
+export const SITE_EQUIPMENT_REACH_FEET = 10;
+
+/** The nearest equipment word within reach of this wall, or null. */
+export function siteEquipmentWord(
+  wall: { x1: number; y1: number; x2: number; y2: number },
+  textItems: readonly { str: string; x: number; y: number; width: number; height: number }[],
+  widthPt: number,
+  feetPerUnit: number,
+): { word: string; feet: number } | null {
+  let best: { word: string; feet: number } | null = null;
+  for (const item of textItems) {
+    const m = SITE_EQUIPMENT_WORDS.exec(item.str);
+    if (m === null) continue;
+    const px = (item.x + item.width / 2) / widthPt;
+    const py = item.y / widthPt;
+    const dx = wall.x2 - wall.x1;
+    const dy = wall.y2 - wall.y1;
+    const l2 = dx * dx + dy * dy || 1e-12;
+    const t = Math.max(0, Math.min(1, ((px - wall.x1) * dx + (py - wall.y1) * dy) / l2));
+    const feet = Math.hypot(px - (wall.x1 + t * dx), py - (wall.y1 + t * dy)) * feetPerUnit;
+    if (feet > SITE_EQUIPMENT_REACH_FEET) continue;
+    if (best === null || feet < best.feet) best = { word: m[1].toUpperCase(), feet };
+  }
+  return best;
+}
 
 /** Is this part of the sheet one that was measured? */
 function onAPlan(sheet: DetectedSheet, x1: number, y1: number, x2: number, y2: number): boolean {
@@ -142,10 +213,11 @@ export function offeredCandidates(
       !faces.some((other) => other !== f && wallFromPair(f, other, pairOptions) !== null),
   );
 
+  const unitSegments = sheet.segments.map(inPageWidthUnits(sheet.widthPt));
   const classified = classifySingleLines({
     unclaimed,
     faces,
-    segments: sheet.segments.map(inPageWidthUnits(sheet.widthPt)),
+    segments: unitSegments,
     walls: sheet.walls,
     feetPerUnit: sheet.feetPerUnit,
     hatchPitchRule,
@@ -161,11 +233,114 @@ export function offeredCandidates(
     aside.set(one.kind, at);
   }
 
-  const onPlan = sheet.walls.filter((w) => onAPlan(sheet, w.x1, w.y1, w.x2, w.y2));
+  const equipment: { wall: WallCandidate; word: string; feet: number }[] = [];
+  // ── EXISTING WORK IS NOT A WALL TO TAKE OFF — see `existingWalls.ts` ──
+  //
+  // Read once over every run, because the area route closes rooms from all
+  // of them; a wall tagged (E), bounding only an area marked NIC or existing,
+  // or drawn with the legend's own existing-wall pen is set aside with the
+  // words that said so.
+  const existing = new Map<WallCandidate, ExistingWall>(
+    sheet.textItems === undefined
+      ? []
+      : existingWalls({ walls: sheet.walls, segments: unitSegments, pageSegments: sheet.pageSegments?.map(inPageWidthUnits(sheet.widthPt)), textItems: sheet.textItems, widthPt: sheet.widthPt, feetPerUnit: sheet.feetPerUnit }).map((e) => [e.wall, e]),
+  );
+  const existingRuns: ExistingWall[] = [];
+  const dashed: WallCandidate[] = [];
+  const tables: WallCandidate[] = [];
+  let zeroExtent = 0;
+  const underlines: WallCandidate[] = [];
+  const onPlan = sheet.walls.filter((w) => {
+    // A run with no extent — a closed loop's chord, a degenerate merge — is
+    // nothing a reviewer can draw, accept or join, whatever its `lengthFeet`
+    // says. Counted, never offered. The curve engine refuses the loop at its
+    // source (`curvedWalls`, `MIN_CHORD_SHARE`); this is the guard at the door.
+    if (!(Math.hypot(w.x2 - w.x1, w.y2 - w.y1) > 0)) {
+      zeroExtent += 1;
+      return false;
+    }
+    if (!onAPlan(sheet, w.x1, w.y1, w.x2, w.y2)) return false;
+    const hit = sheet.textItems === undefined ? null : siteEquipmentWord(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit);
+    if (hit !== null) {
+      equipment.push({ wall: w, word: hit.word, feet: hit.feet });
+      return false;
+    }
+    // Both faces dash patterns: a hidden, overhead or demolished line — see `dashedFaces.ts`.
+    if (bothFacesDashedInPoints(w, sheet.segments, sheet.widthPt, sheet.feetPerUnit)) {
+      dashed.push(w);
+      return false;
+    }
+    // Rows of text between the faces and nothing meeting the run: a schedule, a notes box — see `textRows.ts`.
+    if (sheet.textItems !== undefined && isTableRows(w, sheet.textItems, sheet.walls, sheet.widthPt, sheet.feetPerUnit)) {
+      tables.push(w);
+      return false;
+    }
+    // A line ruled under a word, as long as the word: a title's underline — see `isUnderline`.
+    if (sheet.textItems !== undefined && isUnderline(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit)) {
+      underlines.push(w);
+      return false;
+    }
+    return true;
+  });
+  // ── A FRAMED LEGEND, SCHEDULE OR NOTES BLOCK IS SET ASIDE WHOLE — see `legendBoxes.ts` ──
+  const boxWords = (sheet.textItems ?? []).map((t) => ({ x: (t.x + t.width / 2) / sheet.widthPt, y: (t.y - t.height / 2) / sheet.widthPt, str: t.str, h: t.height / sheet.widthPt }));
+  const framed = legendBoxes(onPlan, boxWords, sheet.feetPerUnit);
+  const framedRuns = onPlan.filter((w) => framed.sides.has(w) || framed.inside.has(w));
+  // Existing work is judged AFTER the frame, so a legend's existing-wall row
+  // cannot take the frame's own upright and leave the samples inside it
+  // offered; and so `existing` counts only what would otherwise be offered.
+  for (const w of onPlan) {
+    const ex = existing.get(w);
+    if (ex !== undefined && !framed.sides.has(w) && !framed.inside.has(w)) existingRuns.push(ex);
+  }
+  const isExisting = new Set(existingRuns.map((e) => e.wall));
+  const offeredRuns = onPlan.filter((w) => !framed.sides.has(w) && !framed.inside.has(w) && !isExisting.has(w));
+  if (framedRuns.length > 0) {
+    aside.set("legend-box", {
+      kind: "legend-box",
+      why: framed.boxes.map((b) => b.why).join("; "),
+      n: framedRuns.length,
+    });
+  }
+  if (existingRuns.length > 0) {
+    aside.set("existing", { kind: "existing", why: existingSentence(existingRuns), n: existingRuns.length });
+  }
+  if (underlines.length > 0) {
+    aside.set("underlines", {
+      kind: "underlines",
+      why: "a line ruled under a word and no longer than the word — a title's or a note's underline, not a wall",
+      n: underlines.length,
+    });
+  }
+  if (dashed.length > 0) {
+    aside.set("dashed-faces", {
+      kind: "dashed-faces",
+      why: "both faces are dashed lines — a canopy, mezzanine, setback or demolished wall drawn above or beside the plan, not a wall to build",
+      n: dashed.length,
+    });
+  }
+  if (tables.length > 0) {
+    aside.set("table-rows", {
+      kind: "table-rows",
+      why: "rows of text between the two lines and no wall meeting them — a schedule, a notes box or a legend, not a wall",
+      n: tables.length,
+    });
+  }
+  if (equipment.length > 0) {
+    aside.set("site-equipment", {
+      kind: "site-equipment",
+      why: `${[...new Set(equipment.map((e) => e.word))].join(", ")} written within ${SITE_EQUIPMENT_REACH_FEET} ft — a run, a fence, a curb or a drain, drawn like a wall`,
+      n: equipment.length,
+    });
+  }
 
+  if (zeroExtent > 0) {
+    aside.set("zero-extent", { kind: "zero-extent", why: "a run with no extent — the same start and end — which nothing can draw or accept", n: zeroExtent });
+  }
   return {
+    offeredRuns,
     candidates: candidatesFromSheet({
-      walls: onPlan.map((w) => ({
+      walls: offeredRuns.map((w) => ({
         x1: w.x1,
         y1: w.y1,
         x2: w.x2,
@@ -190,18 +365,26 @@ export function offeredCandidates(
         })),
     }),
     setAside: [...aside.values()].sort((a, b) => b.n - a.n),
-    setAsideLines: classified
-      .filter((one) => !worthOffering(one.kind))
-      .map((one) => ({
-        kind: one.kind,
-        why: one.why,
-        lengthFeet: one.lengthFeet,
-        x1: one.line.x1,
-        y1: one.line.y1,
-        x2: one.line.x2,
-        y2: one.line.y2,
-      })),
-    offPlanPaired: sheet.walls.length - onPlan.length,
+    setAsideLines: [
+      ...equipment.map((e) => ({ kind: "site-equipment", why: `'${e.word}' is written ${e.feet.toFixed(0)} ft away`, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
+      ...existingRuns.map((e) => ({ kind: "existing", why: e.why, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
+      ...dashed.map((w) => ({ kind: "dashed-faces", why: "both faces are dashed lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...tables.map((w) => ({ kind: "table-rows", why: "rows of text between the lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...underlines.map((w) => ({ kind: "underlines", why: "ruled under a word, as long as the word", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...framedRuns.map((w) => ({ kind: "legend-box", why: framed.boxes[0]?.why ?? "inside a framed legend, schedule or notes block", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...classified
+        .filter((one) => !worthOffering(one.kind))
+        .map((one) => ({
+          kind: one.kind,
+          why: one.why,
+          lengthFeet: one.lengthFeet,
+          x1: one.line.x1,
+          y1: one.line.y1,
+          x2: one.line.x2,
+          y2: one.line.y2,
+        })),
+    ],
+    offPlanPaired: sheet.walls.length - onPlan.length - equipment.length,
   };
 }
 
@@ -237,7 +420,15 @@ export function offeredCandidates(
  */
 export type SheetDetectInput = {
   segments: readonly StrokeSegment[];
-  textItems: readonly { str: string; x: number; y: number; width: number; height: number }[];
+  /** `confidence` travels with a word OCR read off a scan; a vector sheet's words have none. */
+  textItems: readonly { str: string; x: number; y: number; width: number; height: number; confidence?: number }[];
+  /**
+   * True when the lines and words came off a BITMAP (the RASTER stage). The
+   * view detector then believes a caption only when OCR was sure of it and
+   * its words are real — see `scannedCaptions.ts` — and a sheet with fewer
+   * than two believable captions is measured as one drawing.
+   */
+  scanned?: boolean;
   pageSize: { widthPt: number; heightPt: number };
   feetPerUnit: number;
   wallTypes?: Parameters<typeof findWallsOnSheet>[0]["wallTypes"];
@@ -256,10 +447,26 @@ export type SheetDetectInput = {
   onCandidate?: Parameters<typeof findWallsOnSheet>[0]["onCandidate"];
   /** The title size ratio `viewTitles` uses; an eval's knob, left alone by the app. */
   titleSizeRatio?: number;
+  /**
+   * The company's wall-type codes plus the legend's, for symbol tagging.
+   *
+   * `detectWallsForCalibration` has always passed this to `findWallsOnSheet`
+   * directly. There was no field for it here, so the server could not move
+   * onto this pipeline without losing tagging silently — the same shape as
+   * the veto's own scar in `wallsPerView`, which is why it is declared in
+   * both places rather than spread in.
+   */
+  planText?: Parameters<typeof findWallsOnSheet>[0]["planText"];
 };
 
 export type SheetDetectResult = {
   found: FoundOnSheet;
+  /**
+   * Set when the sheet's drawings were found but NONE could be measured and
+   * none was set aside for a reason an estimator could check, so the whole
+   * sheet was measured as one drawing instead — see `wholeSheetFallback`.
+   */
+  wholeSheet?: { why: string } | null;
   planBoxes: { from: number; to: number; fromY: number; toY: number }[] | null;
   /** How many DRAWINGS the sheet was split into — under two means measured whole. */
   views: number;
@@ -294,8 +501,30 @@ export type SheetDetectResult = {
  *   3. Two or more: every plan view at its own scale (`wallsPerView`), one
  *      kept per LEVEL named (`keptPlanViews`), joined (`mergeViewWalls`).
  */
+/**
+ * Whether to measure the whole sheet because its drawings were found but
+ * none could be understood. Fires ONLY when every drawing was found and
+ * none measured, and none of them was set aside for a NAMED reason — notes,
+ * a legend, a schedule, an elevation, a section, a detail. A drawing the
+ * caption reader could not place ("check it") or could not scale is not a
+ * named reason: it is the shape OCR noise takes. Pure, so it has a test.
+ */
+export function wholeSheetFallback(
+  views: readonly { name: string; textBlock?: boolean }[],
+  measured: readonly unknown[],
+): { why: string } | null {
+  if (views.length === 0 || measured.length > 0) return null;
+  const named = views.some((view) => view.textBlock === true || viewKind(view.name).kind === "not-a-plan");
+  if (named) return null;
+  return {
+    why:
+      "the drawings' captions could not be read well enough to tell them apart, so the whole sheet was measured as one drawing — check each group against the sheet",
+  };
+}
+
 export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
-  const views = sheetDrawings({ items: input.textItems, segments: input.segments, pageSize: input.pageSize, sizeRatio: input.titleSizeRatio });
+  const everyView = sheetDrawings({ items: input.textItems, segments: input.segments, pageSize: input.pageSize, sizeRatio: input.titleSizeRatio });
+  const views = input.scanned ? trustedScanViews(everyView, input.textItems) : everyView;
   const base = {
     segments: [...input.segments],
     textItems: [...input.textItems],
@@ -305,6 +534,7 @@ export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
     sampledSheets: input.sampledSheets ?? null,
     veto: input.veto,
     onCandidate: input.onCandidate,
+    planText: input.planText,
   };
   const leftOut = excludedViews(views);
 
@@ -323,10 +553,21 @@ export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
           (b) => r.from >= b.from - 1e-9 && r.to <= b.to + 1e-9 && r.fromY >= b.fromY - 1e-9 && r.toY <= b.toY + 1e-9,
         ),
     );
-    const drawing = drawingRegions(regions, base.segments, input.pageSize.widthPt);
+    // ── THE BUSIEST REGION, COUNTED IN STROKES THAT COULD BE WALLS ──
+    //
+    // Counted in every stroke, Michigan State p4's title-block column
+    // (26,908 A-TITLEBLOCK strokes) beat its plan (2,405, mostly A-TEXT and
+    // A-EXIST) and was measured: 155 phantom walls. A region of lettering is
+    // never the drawing, so the count is taken after the layer filter — and
+    // with `emptyIsAnswer`, because a page that is all annotation has no
+    // busiest drawing and `drawingRegions` then keeps every region, which the
+    // finder's own layer filter empties in turn and says so.
+    const couldBeWalls = withoutNonWallLayers(base.segments, { emptyIsAnswer: true }).kept;
+    const drawing = drawingRegions(regions, couldBeWalls, input.pageSize.widthPt);
     const onTheDrawing = segmentsInRegions(base.segments, drawing, input.pageSize.widthPt);
     return {
-      found: findWallsOnSheet({ ...base, segments: onTheDrawing }),
+      found: findWallsOnSheet({ ...base, segments: onTheDrawing, regionClipped: true }),
+      wholeSheet: null,
       planBoxes: drawing.length > 0 ? [...drawing] : null,
       views: drawingCount(views),
       kept: [],
@@ -338,7 +579,30 @@ export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
 
   const measured = wallsPerView({ ...base, views });
   const { kept, others } = keptPlanViews(measured);
+  // ── DRAWINGS FOUND, NONE UNDERSTOOD: MEASURE THE SHEET AND SAY SO ──
+  //
+  // On a SCAN the captions come from OCR, and OCR noise reads as captions
+  // the view detector splits the sheet by and then cannot classify or
+  // scale — so nothing is kept, nothing is excluded for a reason, and the
+  // sheet measured nothing (Bunkie A100 at 300 dpi: 0 of 470 ft). A vector
+  // sheet never lands here: its captions name what they are, and a sheet of
+  // eight elevations stays at zero because every one of them is set aside
+  // for a reason the estimator can check (Baker A201).
+  const fallback = wholeSheetFallback(views, measured);
+  if (fallback !== null) {
+    return {
+      found: findWallsOnSheet(base),
+      wholeSheet: fallback,
+      planBoxes: null,
+      views: drawingCount(views),
+      kept: [],
+      primaryName: null,
+      others: [],
+      leftOut: [{ name: "every drawing on this sheet", reason: fallback.why }],
+    };
+  }
   return {
+    wholeSheet: null,
     // ── A SHEET WITH NO PLAN ON IT MEASURES NOTHING ──
     //
     // The real pipeline on no geometry rather than a hand-built empty result,

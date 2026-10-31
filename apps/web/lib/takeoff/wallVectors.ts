@@ -105,6 +105,18 @@ export type StrokeSegment = {
    * cannot place and `withoutNonWallLayers`, which keeps every `unknown`.
    */
   layer?: string;
+  /**
+   * The stroke colour as luminance, 0 black to 1 white, when the content set
+   * one. Existing construction is drawn grey on most sets; see
+   * `sheetStrokes.ts`. Carried by `inPageWidthUnits` like `layer` is.
+   */
+  gray?: number;
+  /**
+   * The FILL's luminance when this edge belongs to a filled path — a poché
+   * wall's grey, a hatch swatch's white — 0 black to 1 white; absent on a
+   * stroked line. Set by `sheetStrokes.ts`, read by `existingWalls.ts`.
+   */
+  fill?: number;
 };
 
 /** A wall this module is willing to claim: the centreline, in page points. */
@@ -199,6 +211,10 @@ export type WallFinderOptions = {
    * Extraction only — it changes nothing about what is returned.
    */
   onCandidate?: (features: number[], wall: WallCandidate, i: number, j: number) => void;
+  /** The sheet's words, centred, in page units — for `wordsBetween`. */
+  words?: readonly { str: string; x: number; y: number }[];
+  /** The sheet's raw strokes in page units — for `dashedFaces`. */
+  strokes?: readonly StrokeSegment[];
   /**
    * Scores a candidate pairing, higher being more wall-like.
    *
@@ -1646,6 +1662,8 @@ export function wallsFromStrokes(
           inHatchSeries: hatchSeries,
           sheetSpan,
           penPercentile,
+          words: options.words,
+          strokes: options.strokes,
         });
         const iLen = lengthOf(order[i]);
         const jLen = lengthOf(order[j]);

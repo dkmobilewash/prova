@@ -110,3 +110,18 @@ describe("the wall type a sheet's general notes make the default", () => {
     expect(found?.type.code).toBe("A1");
   });
 });
+
+describe("the legend's own U.N.O., carried on the type", () => {
+  it("names the legend's default when the sheet has no note, and keeps a second default for another thickness", () => {
+    const a = { id: "a", code: "A", name: "A", hasParts: true, thicknessIn: 4.875, unoNote: "ALL INTERIOR DRYWALL PARTITIONS ARE TYPE 'A'" };
+    const b = { id: "b", code: "B", name: "B", hasParts: true, thicknessIn: 7.625, unoNote: "ALL INTERIOR MASONRY PARTITIONS ARE TYPE 'B'" };
+    const c = { id: "c", code: "C", name: "C", hasParts: true, thicknessIn: null };
+    const got = defaultWallTypeFromNotes([{ str: "KEYNOTES" }], [c, a, b]);
+    expect(got?.type.code).toBe("A");
+    expect(got?.others?.map((o) => o.type.code)).toEqual(["B"]);
+    // The sheet's own note still wins.
+    const own = defaultWallTypeFromNotes([{ str: "ALL PARTITIONS TYPE C1 U.N.O." }], [{ ...c, code: "C1" }, a]);
+    expect(own?.type.code).toBe("C1");
+    expect(own?.others).toBeUndefined();
+  });
+});

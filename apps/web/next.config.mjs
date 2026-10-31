@@ -154,7 +154,21 @@ const nextConfig = {
   // walks per route into one. The engine binary is still force-included,
   // which is the whole reason this entry exists (see the note above).
   outputFileTracingIncludes: {
-    "/**": ["../../node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client/**"],
+    "/**": [
+      "../../node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client/**",
+      // THE RASTER WORKER THREAD'S SCRIPT, loaded by path at run time
+      // (`rasterWorkerPath()` in lib/takeoff/raster/nodeStack.ts) precisely so
+      // webpack does NOT bundle it — the bundled form hung every scanned page
+      // on the server, 2026-10-29. Loaded by path, nothing traces it, so it is
+      // named here or a deploy ships a thread with no script to run.
+      "./lib/takeoff/raster/rasterWorker.mjs",
+      // THE WALL CLASSIFIER'S MODEL, read by path from TAKEOFF_WALL_MODEL
+      // (`loadWallModel` in lib/takeoff/wallModelFile.ts). Same reason as the
+      // line above: a readFileSync traces nothing, so without this a deploy
+      // sets the variable and ships no file — and a missing model looks
+      // exactly like a classifier that is switched off.
+      "./models/wall-model.json",
+    ],
   },
   // The free lien waiver tool lives at cstream.ai/lien-waiver (Diego,
   // 2026-10-12) but is a SEPARATE app: apps/lien-waiver, its own Vercel

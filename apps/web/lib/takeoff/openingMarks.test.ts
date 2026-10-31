@@ -393,6 +393,34 @@ describe("a mark the gap join already used", () => {
   });
 });
 
+describe("a wide door in the gap between two runs", () => {
+  // SW Grand Junction 101: a 10 ft sliding storefront door, no swing, and
+  // no run where it sits — the finder's runs are the piers 5 ft either side.
+  const ft = 1 / 144;
+  const west = { x1: 0.3, y1: 0.5, x2: 0.5 - 5 * ft, y2: 0.5 };
+  const east = { x1: 0.5 + 5 * ft, y1: 0.5, x2: 0.7, y2: 0.5 };
+  const rows = [{ mark: "101", widthFt: 10, heightFt: 7.67, description: "storefront" }];
+
+  it("is placed between the two runs, centred on its tag, when the tag is in a symbol", () => {
+    const got = joinOpeningsToSchedule({ openings: [], marks: [{ text: "101", x: 0.5, y: 0.5 + 1.2 * ft, inSymbol: true }], rows, feetPerUnit: 144, walls: [west, east] });
+    expect(got.placedByMark).toBe(1);
+    const door = got.openings[0]!;
+    expect(door.placedBy).toBe("mark");
+    expect((door.opening.x1 + door.opening.x2) / 2).toBeCloseTo(0.5, 6);
+    expect(door.opening.y1).toBeCloseTo(0.5, 6);
+    expect(Math.hypot(door.opening.x2 - door.opening.x1, door.opening.y2 - door.opening.y1) * 144).toBeCloseTo(10, 6);
+  });
+
+  it("is not placed from loose text, nor when the runs are not in line, nor when they are farther than half the door", () => {
+    const loose = joinOpeningsToSchedule({ openings: [], marks: [{ text: "101", x: 0.5, y: 0.5 + 1.2 * ft }], rows, feetPerUnit: 144, walls: [west, east] });
+    expect(loose.placedByMark).toBe(0);
+    const crossing = joinOpeningsToSchedule({ openings: [], marks: [{ text: "101", x: 0.5, y: 0.5 + 1.2 * ft, inSymbol: true }], rows, feetPerUnit: 144, walls: [west, { x1: 0.5 + 5 * ft, y1: 0.5, x2: 0.5 + 5 * ft, y2: 0.7 }] });
+    expect(crossing.placedByMark).toBe(0);
+    const narrow = joinOpeningsToSchedule({ openings: [], marks: [{ text: "101", x: 0.5, y: 0.5 + 1.2 * ft, inSymbol: true }], rows: [{ ...rows[0]!, widthFt: 3 }], feetPerUnit: 144, walls: [west, east] });
+    expect(narrow.placedByMark).toBe(0);
+  });
+});
+
 describe("a door tag in a symbol reaches further than loose text", () => {
   // FPU 100: 0.01 is a foot. One run along y=0.5 and nothing else near it.
   const walls = [{ x1: 0.1, y1: 0.5, x2: 0.5, y2: 0.5 }];

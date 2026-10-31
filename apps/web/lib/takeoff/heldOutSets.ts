@@ -83,6 +83,54 @@ export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: str
     why: "SIBLING of the held-out Albany Readiness Center — kept out of training, not a test key",
   },
   {
+    match: "Modbox-Bistro-plans",
+    why: "modular restaurant build — held out 2026-10-29, before a label was written",
+  },
+  {
+    match: "Darrington-Library-Tenant-Improvements",
+    why: "library tenant improvement — held out 2026-10-29, before a label was written",
+  },
+  {
+    match: "HILLSIDE-VILLAGE-Apartments",
+    why: "multi-family apartments — held out 2026-10-29, before a label was written",
+  },
+  {
+    // ── THE SCANNED ANSWER KEY ──
+    //
+    // The first set in the corpus that is a scan rather than a vector export:
+    // 106 pages, one 400-dpi 1-bit image each. Held out 2026-10-29 before a
+    // label was written, so the scanned pipeline has a test it has never seen.
+    // The two sheets to label are p24 (A242B, level 3 east) and p27 (A244A,
+    // level 5 west), both printed 1/8" = 1'-0".
+    match: "8102 EVERGREEN WAY",
+    why: "scanned multi-family set — the SCANNED answer key, held out 2026-10-29, before a label was written",
+  },
+  {
+    // ── DECLARED HELD OUT IN ROUND 7, ADDED TO THE CODE IN ROUND 9 ──
+    //
+    // These three were named held out when round 7 was planned and never
+    // reached this list, so for two rounds they were held out in prose and
+    // trainable in code. The third session's round-9 survey caught it while
+    // deciding what to label next. Nothing else would have: a set missing
+    // from this list is indistinguishable from a set nobody mentioned.
+    //
+    // Added before any label exists for them, which is the only order in
+    // which holding out means anything.
+    match: "lodi-memorial-library",
+    why: "public library — declared held out for round 7, added to the list 2026-10-29 before a label was written",
+  },
+  {
+    match: "Missouri-New-Outdoor-Pavilion",
+    why: "open-air pavilion — declared held out for round 7, added to the list 2026-10-29 before a label was written",
+  },
+  {
+    // The round-9 survey's own argument for keeping this one: it is an office
+    // fit-out, the building type that round wants, so it is worth more as a
+    // test than as training.
+    match: "Nall-Wealth-Plans",
+    why: "office fit-out — declared held out for round 7, added to the list 2026-10-29 before a label was written",
+  },
+  {
     // Spelled without the hyphen deliberately. `flatten` strips punctuation
     // from both sides, so this matches "Cedar Hollow.pdf" exactly as the
     // hyphenated form would — and `truthWall.test.ts` greps the tree for
@@ -152,4 +200,88 @@ export function splitForTraining<T>(
     }
   }
   return { train, refused };
+}
+
+/**
+ * ── SHEETS THAT ARE NEITHER TRAINING NOR A KEY ──
+ *
+ * A held-out SET is still an answer key: it is scored, just never trained on.
+ * These are different. They are labelled, the labels are correct, and the
+ * sheet is the wrong question — so it is excluded from training AND from
+ * scoring, and the `why` has to say which kind of wrong.
+ *
+ * Keep this short. A sheet that merely scores badly belongs in the scorecard,
+ * not in here; the bar is that the sheet asks the finder for something it
+ * should not do.
+ */
+export const EXCLUDED_SHEETS: readonly { readonly set: string; readonly sheet: string; readonly why: string }[] = [
+  {
+    set: "michigan-state-universtity",
+    sheet: "A3",
+    why:
+      "its traced walls are mostly EXISTING (A-EXIST) — a trace means 'a wall the finder missed', so " +
+      "training on it teaches walls nobody is building and scoring against it counts a correct refusal " +
+      "as a miss. Excluded by Diego 2026-10-29; see BOARD.md.",
+  },
+  // ── THE SCOPE IS IN THE NOTES AND THE WALLS LOOK NEW ──
+  //
+  // Diego, 2026-10-30, after Chrome's existing-walls cleanup. These four are
+  // not excluded for being renovations: Murray, Baker, Bunkie, Supreme Court,
+  // NG Green Bay A3.2 and Darrington are renovations too and they STAY IN,
+  // because their DRAWINGS mark what is existing — a legend fill or outline,
+  // (E) tags, a NEW | EXISTING line — so new work can be told from existing
+  // and the key can say which is which.
+  //
+  // On these four the scope is set only by NOTES (finishes, windows and doors
+  // in an existing building) and the walls are drawn exactly like new walls.
+  // So an honest key is all-R — every wall rejected, because none of it is
+  // being built — and a key that rejects every ordinary-looking wall on a
+  // floor plan cannot teach "this is existing", because nothing in the
+  // geometry says so. It teaches that ORDINARY WALLS ARE JUNK, which is the
+  // opposite of the finder's job, and it scores a correct find as a false
+  // positive.
+  //
+  // Michigan A3 above is the same failure from the other side: there, traced
+  // existing walls taught walls nobody is building.
+  {
+    set: "glen-hazel-bernice",
+    sheet: "A-101",
+    why:
+      "the scope is set only by the notes (finishes, windows and doors in an existing building) and " +
+      "the walls are drawn like new walls, so an honest key is all-R and would teach that ordinary " +
+      "walls are junk. Excluded by Diego 2026-10-30; see BOARD.md.",
+  },
+  {
+    set: "glen-hazel-bernice",
+    sheet: "A-111",
+    why:
+      "the scope is set only by the notes (finishes, windows and doors in an existing building) and " +
+      "the walls are drawn like new walls, so an honest key is all-R and would teach that ordinary " +
+      "walls are junk. Excluded by Diego 2026-10-30; see BOARD.md.",
+  },
+  {
+    set: "DEVELOPMENT-AND-DERNIZATION-DEPARTMENT",
+    sheet: "A-2",
+    why:
+      "the scope is set only by the notes (finishes, windows and doors in an existing building) and " +
+      "the walls are drawn like new walls, so an honest key is all-R and would teach that ordinary " +
+      "walls are junk. Excluded by Diego 2026-10-30; see BOARD.md.",
+  },
+  {
+    set: "DEVELOPMENT-AND-DERNIZATION-DEPARTMENT",
+    sheet: "A-5",
+    why:
+      "the scope is set only by the notes (finishes, windows and doors in an existing building) and " +
+      "the walls are drawn like new walls, so an honest key is all-R and would teach that ordinary " +
+      "walls are junk. Excluded by Diego 2026-10-30; see BOARD.md.",
+  },
+];
+
+/** The reason this exact sheet is neither trained on nor scored, or null. */
+export function excludedSheetReason(set: string, sheet: string): string | null {
+  const want = flatten(set);
+  for (const one of EXCLUDED_SHEETS) {
+    if (flatten(one.set) === want && flatten(one.sheet) === flatten(sheet)) return one.why;
+  }
+  return null;
 }

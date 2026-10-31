@@ -29,13 +29,16 @@ import type { StrokeSegment } from "./wallVectors";
 
 const PAPER = 1 / 36; // units per paper inch, on a 36in ARCH D sheet
 
-/** A circle flattened into `n` segments, the way pdf.js delivers a curve. */
-function circle(cx: number, cy: number, r: number, n = 24): StrokeSegment[] {
+/** A circle flattened into `n` segments, the way pdf.js delivers a curve —
+ *  every piece marked `curved`, which is what a Bézier's pieces carry. With
+ *  `curved: false` it is the same shape drawn as a polygon of `lineTo`s, which
+ *  is how a cooktop burner or a sink basin reaches the sheet. */
+function circle(cx: number, cy: number, r: number, n = 24, curved = true): StrokeSegment[] {
   const out: StrokeSegment[] = [];
   for (let i = 0; i < n; i += 1) {
     const a = (i / n) * Math.PI * 2;
     const b = ((i + 1) / n) * Math.PI * 2;
-    out.push({ x1: cx + r * Math.cos(a), y1: cy + r * Math.sin(a), x2: cx + r * Math.cos(b), y2: cy + r * Math.sin(b) });
+    out.push({ x1: cx + r * Math.cos(a), y1: cy + r * Math.sin(a), x2: cx + r * Math.cos(b), y2: cy + r * Math.sin(b), curved });
   }
   return out;
 }
@@ -46,7 +49,7 @@ function arc(cx: number, cy: number, r: number, turn: number, n = 12): StrokeSeg
   for (let i = 0; i < n; i += 1) {
     const a = (i / n) * turn;
     const b = ((i + 1) / n) * turn;
-    out.push({ x1: cx + r * Math.cos(a), y1: cy + r * Math.sin(a), x2: cx + r * Math.cos(b), y2: cy + r * Math.sin(b) });
+    out.push({ x1: cx + r * Math.cos(a), y1: cy + r * Math.sin(a), x2: cx + r * Math.cos(b), y2: cy + r * Math.sin(b), curved: true });
   }
   return out;
 }
@@ -105,6 +108,32 @@ describe("finding the grid bubbles", () => {
       { x1: 0.3 - r, y1: 0.3 + r, x2: 0.3 - r, y2: 0.3 - r },
     ];
     expect(gridBubbles(square, PAPER)).toEqual([]);
+  });
+
+  it("REFUSES THE SAME CIRCLE DRAWN WITH STRAIGHT PIECES — a 12-gon of lineTos is a burner, not a bubble", () => {
+    expect(gridBubbles(circle(0.3, 0.4, HALF_INCH, 12), PAPER)).toHaveLength(1);
+    expect(gridBubbles(circle(0.3, 0.4, HALF_INCH, 12, false), PAPER)).toEqual([]);
+  });
+
+  it("refuses a hexagon and an octagon, whose corners are all one radius from the centre", () => {
+    expect(gridBubbles(circle(0.3, 0.4, HALF_INCH, 6, false), PAPER)).toEqual([]);
+    expect(gridBubbles(circle(0.3, 0.4, HALF_INCH, 8, false), PAPER)).toEqual([]);
+  });
+
+  it("refuses a curved ellipse, which is drawn round and is not", () => {
+    const n = 16;
+    const out: StrokeSegment[] = [];
+    for (let i = 0; i < n; i += 1) {
+      const a = (i / n) * Math.PI * 2;
+      const b = ((i + 1) / n) * Math.PI * 2;
+      out.push({ x1: 0.3 + HALF_INCH * Math.cos(a), y1: 0.4 + HALF_INCH * 0.7 * Math.sin(a), x2: 0.3 + HALF_INCH * Math.cos(b), y2: 0.4 + HALF_INCH * 0.7 * Math.sin(b), curved: true });
+    }
+    expect(gridBubbles(out, PAPER)).toEqual([]);
+  });
+
+  it("refuses a curved chain that goes round but never closes", () => {
+    const open = arc(0.3, 0.4, HALF_INCH, Math.PI * 1.8, 16);
+    expect(gridBubbles(open, PAPER)).toEqual([]);
   });
 
   it("returns nothing rather than throwing on an empty sheet or no scale", () => {

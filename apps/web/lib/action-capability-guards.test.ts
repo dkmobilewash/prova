@@ -1056,6 +1056,12 @@ const SECTION_DECIDED: Record<
     reason:
       "Same section and the same capability as the upload it reverses, for the same reason. Nothing is sent to the local either way; the row and the link to any scanned slip are this company's own record of the referral.",
   },
+  "changeOrders.draftChangeOrderFromTmTicket": {
+    capability: "MANAGE_FIELD",
+    section: "T&M tickets",
+    reason:
+      "The T&M tickets section of the crew tab is withheld behind `showsField` (MANAGE_FIELD), and the Draft change order button sits on each ticket row inside it. Drafting creates a DRAFT and prices nothing, so VIEW_JOB_COSTS is not the gate — the person pricing it meets that one on the change-order form. The delay draft on the Overview tab asserts nothing because its section withholds nothing; this one's section does.",
+  },
 
   /* ---- Ten that ALREADY assert the right capability, and which this
    * file has never once executed.
@@ -1935,6 +1941,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // — two modules because they sit behind two different doors.
   procore: () => import("./actions/procore"),
   procoreFeed: () => import("./actions/procoreFeed"),
+  purchaseOrders: () => import("./actions/purchaseOrders"),
   projectLookup: () => import("./actions/projectLookup"),
   // Finding public projects out to bid, reachable from /pipeline alone, which
   // withholds on MANAGE_ESTIMATING. The capability is the DOOR's, copied from
@@ -1992,6 +1999,16 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   roomFinder: () => import("./actions/roomFinder"),
   // "Demote, don't hide": the owner's switch (behind /settings).
   demotedWalls: () => import("./actions/demotedWalls"),
+  symbolCount: () => import("./actions/symbolCount"),
+  // Whole-set takeoff: the owner's switch (behind /settings) and the per-sheet
+  // summary read (behind the takeoff's job-costs gate). The run itself is
+  // planIngest's start/advance, listed above.
+  wholeSetTakeoff: () => import("./actions/wholeSetTakeoff"),
+  // Scanned sheets: the owner's switch (behind /settings).
+  scannedSheets: () => import("./actions/scannedSheets"),
+  // The Takeoff features list's one action: AI on plus the opt-in, in one save (behind /settings).
+  takeoffFeatures: () => import("./actions/takeoffFeatures"),
+  doorsWindows: () => import("./actions/doorsWindows"),
   takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),

@@ -42,6 +42,8 @@ const EVERY_FIELD: Required<StrokeSegment> = {
   width: 0.7,
   curved: true,
   layer: "A-WALL",
+  gray: 0.5,
+  fill: 0.75,
 };
 
 describe("inPageWidthUnits carries every field of a stroke", () => {

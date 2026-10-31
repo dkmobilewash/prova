@@ -267,6 +267,9 @@ async function main() {
     await del("submittalRevision", () => prisma.submittalRevision.deleteMany({ where: { submittal: { jobId: { in: jobIds } } } }));
     await del("submittal", () => prisma.submittal.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("submittalCounter", () => prisma.submittalCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("purchaseOrderLine", () => prisma.purchaseOrderLine.deleteMany({ where: { purchaseOrder: { jobId: { in: jobIds } } } }));
+    await del("purchaseOrder", () => prisma.purchaseOrder.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("purchaseOrderCounter", () => prisma.purchaseOrderCounter.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("materialOrderDelivery", () => prisma.materialOrderDelivery.deleteMany({ where: { order: { jobId: { in: jobIds } } } }));
     await del("materialOrder", () => prisma.materialOrder.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("materialOrderCounter", () => prisma.materialOrderCounter.deleteMany({ where: { jobId: { in: jobIds } } }));

@@ -101,6 +101,13 @@ export async function deleteVendor(vendorId: string): Promise<ActionResult> {
           `deleting it would leave those orders with nobody on the hook for them.`,
       );
     }
+    const purchaseOrders = await prisma.purchaseOrder.count({ where: { vendorId: vendor.id } });
+    if (purchaseOrders > 0) {
+      return fail(
+        `${vendor.name} is on ${plural(purchaseOrders, "purchase order", "purchase orders")}, so the record stays. ` +
+          `Remove the draft lines on the job's Buyout page first.`,
+      );
+    }
 
     await prisma.vendor.delete({ where: { id: vendor.id } });
 

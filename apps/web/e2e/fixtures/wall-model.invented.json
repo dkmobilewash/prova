@@ -1,6 +1,6 @@
 {
  "format": "gbdt-binary-v1",
- "note": "INVENTED for e2e: one stump on lengthPercentile; short runs score 0.119, long ones 0.88. Not a trained model.",
+ "note": "INVENTED for e2e: one stump on lengthPercentile; short runs score 0.119, long ones 0.88. Not a trained model. Columns follow FEATURE_NAMES exactly \u2014 28 since 2026-10-29 (the four census signals appended); wallModelColumns.test.ts checks every gbdt-binary-v1 file in the repo against the build's list.",
  "features": [
   "thicknessVsCommon",
   "thicknessPercentile",
@@ -25,7 +25,11 @@
   "nearestNeighbourThicknessRatio",
   "hasNearestNeighbour",
   "densityPercentile",
-  "inHatchSeries"
+  "inHatchSeries",
+  "wordsBetween",
+  "dashedFaces",
+  "runsMeeting",
+  "twinFaces"
  ],
  "learningRate": 1,
  "init": 0,

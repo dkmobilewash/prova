@@ -67,10 +67,48 @@ export const BUBBLE_INCHES_MAX = 0.75;
  * down. 0.06 clears 0.082 with room for a sheet reduced further still.
  */
 
-/** How far a flattened arc's points may stray from a common radius, as a
- *  fraction of it. A circle flattened into segments is regular to well inside
- *  this; a rounded rectangle or a door swing is not. */
-const ROUNDNESS = 0.18;
+/** How far a flattened arc's points — its vertices AND the midpoints of its
+ *  pieces — may stray from a common radius, as a fraction of it. A circle
+ *  flattened into segments is regular to well inside this; a rounded
+ *  rectangle, a door swing or a hexagon is not.
+ *
+ *  Measured on seven training sheets (2026-10-27): every bubble drawn with
+ *  arcs is 12–16 pieces with vertices within 0.09 and midpoints within 0.11
+ *  of its radius. A hexagon's midpoints sit 0.134 in, an octagon's 0.076 — so
+ *  the midpoint test alone cannot refuse an octagonal burner, which is why
+ *  `STRAIGHT` below exists. */
+const ROUNDNESS = 0.13;
+
+/** 4πA/P², which is 1 for a circle, 0.987 for a 16-piece one, 0.907 for a
+ *  hexagon and 0.785 for a square. A chain that doubles back on itself or
+ *  never closes is nowhere near, whatever its radii say. */
+const CIRCULARITY = 0.9;
+
+/** How far from its start a chain may end and still be a closed shape, as a
+ *  fraction of the radius. pdf.js closes a circle exactly; the shipped test
+ *  accepted chains ending a whole diameter away because a turn of 1.5π is
+ *  reached before the gap is. */
+const CLOSED = 0.1;
+
+/*
+ * ── ROUND MEANS DRAWN ROUND ──
+ *
+ * The test above this one used to be the vertex radii alone, and every
+ * rectangle, hexagon and regular polygon passes that — its corners are all
+ * the same distance from its centre. On Topeka p74 it accepted 316
+ * straight-sided loops against 2 real circles: hexagonal window tags and the
+ * window symbols drawn inside the wall, each of which then took every stroke
+ * ending within two radii with it, 46% of the sheet and the wall faces under
+ * the tags among them (NOTES, "Round-4 misses"). Joplin lost 34%.
+ *
+ * So a bubble must be DRAWN round: every piece of the chain flattened from a
+ * Bézier (`StrokeSegment.curved`), none a `lineTo`. A straight side is what a
+ * polygon has and a circle does not, and that is the one test geometry cannot
+ * do on its own — a cooktop burner emitted as a 12-gon of lineTos is a circle
+ * to every measure of radius and area, and it is not a grid bubble. The
+ * midpoint spread, the circularity and the closure are the belt to that
+ * brace: a curved ellipse, a rounded rectangle and an open arc each fail one.
+ */
 
 /** The least of a full turn a run of segments must cover to be a closed bubble
  *  rather than an arc. A door swing is a quarter turn and must not qualify. */
@@ -132,12 +170,14 @@ export function gridBubbles(
   for (let n = 0; n < short.length; n += 1) {
     if (walked.has(n)) continue;
     const points: { x: number; y: number }[] = [];
+    let straight = 0;
     let at = n;
     // Bounded: a chain cannot be longer than the pool it is drawn from.
     for (let step = 0; step < short.length + 1; step += 1) {
       if (walked.has(at)) break;
       walked.add(at);
       const s = short[at].s;
+      if (s.curved !== true) straight += 1;
       points.push({ x: s.x1, y: s.y1 });
       const next = (startsAt.get(key(s.x2, s.y2)) ?? []).find((c) => !walked.has(c));
       if (next === undefined) {
@@ -153,9 +193,28 @@ export function gridBubbles(
     const radii = points.map((p) => Math.hypot(p.x - cx, p.y - cy));
     const radius = radii.reduce((t, r) => t + r, 0) / radii.length;
     if (radius < minR || radius > maxR) continue;
+    // A straight side is a polygon's, never a circle's — see above.
+    if (straight > 0) continue;
     // Every point the same distance from the centre — that is what a circle is,
     // and what separates one from a rounded corner or a stretch of door swing.
     if (radii.some((r) => Math.abs(r - radius) > radius * ROUNDNESS)) continue;
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (Math.hypot(last.x - first.x, last.y - first.y) > radius * CLOSED) continue;
+    // The midpoints too, and the area the chain encloses against its length.
+    let area = 0;
+    let perimeter = 0;
+    let flat = false;
+    for (let k = 1; k < points.length; k += 1) {
+      const p = points[k - 1];
+      const q = points[k];
+      area += (p.x * q.y - q.x * p.y) / 2;
+      perimeter += Math.hypot(q.x - p.x, q.y - p.y);
+      const mid = Math.hypot((p.x + q.x) / 2 - cx, (p.y + q.y) / 2 - cy);
+      if (Math.abs(mid - radius) > radius * ROUNDNESS) flat = true;
+    }
+    if (flat) continue;
+    if ((4 * Math.PI * Math.abs(area)) / (perimeter * perimeter) < CIRCULARITY) continue;
     // And it must go most of the way round. A door swing is a quarter turn at a
     // plausible radius and would otherwise pass everything above.
     let turn = 0;

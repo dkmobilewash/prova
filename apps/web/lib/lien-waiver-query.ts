@@ -1,6 +1,7 @@
 import { prisma } from "@prova/db";
 import { calculateRetainageSummary } from "@/lib/retainage";
 import { pendingChangeOrderExposure } from "@/lib/change-order";
+import type { InboundWaiver } from "@/lib/lien-waiver-followups";
 
 /**
  * Everything the lien-waiver section on a job's billing tab needs, in one
@@ -134,5 +135,31 @@ export async function loadLienWaiverSection(jobId: string): Promise<LienWaiverSe
     })),
     retainageBalance: retainage.balance,
     pendingChangeOrderTotal: Number(pendingChangeOrderExposure(changeOrders, targets)),
+  };
+}
+
+/** The two sides of the lower-tier check (lib/lien-waiver-followups.ts):
+ * who the sub buys from on this job, and the lien waivers that have come
+ * in from them. Read once per page; the pure function composes it per
+ * application. */
+export interface LowerTierWaiverInputs {
+  parties: string[];
+  inbound: InboundWaiver[];
+}
+
+export async function loadLowerTierWaiverInputs(jobId: string): Promise<LowerTierWaiverInputs> {
+  const [orders, docs] = await Promise.all([
+    prisma.materialOrder.findMany({ where: { jobId }, select: { vendor: { select: { name: true } } } }),
+    prisma.complianceDocument.findMany({
+      where: { jobId, type: "LIEN_WAIVER" },
+      select: { partyName: true, periodEnd: true, status: true },
+    }),
+  ]);
+  // A vendor with an order on the job, and anyone who has ever sent a
+  // waiver on it — a party collected from once is expected every period.
+  const parties = [...new Set([...orders.map((o) => o.vendor.name), ...docs.map((d) => d.partyName)])];
+  return {
+    parties,
+    inbound: docs.map((d) => ({ partyName: d.partyName, periodEnd: d.periodEnd, status: d.status })),
   };
 }

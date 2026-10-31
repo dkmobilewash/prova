@@ -227,6 +227,11 @@ const REACHED_FROM: Record<string, Reached> = {
     parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/estimate/page.tsx"],
     needle: "/proposal`",
   },
+  "/jobs/[id]/buyout": {
+    reason: "The Buyout link on the job's Estimate tab, shown once the job is contracted.",
+    parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/estimate/page.tsx"],
+    needle: "/buyout`",
+  },
   "/jobs/[id]/takeoff/legend": {
     reason: "The 'Review the N wall types read off this set' link on the job's Takeoff tab, shown once a legend has been read.",
     parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx"],

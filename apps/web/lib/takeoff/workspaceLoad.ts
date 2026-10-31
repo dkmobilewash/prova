@@ -1,9 +1,12 @@
 import { loadWallModel } from "@/lib/takeoff/wallModelFile";
+import type { StoredScheduleRow } from "./doorsWindows";
 import { prisma } from "@prova/db";
 import { aiGate } from "@/lib/ai/settings";
 import { wallTypeSummary } from "@/lib/takeoff/wallTypeMatch";
 
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
+import { isScannedSheet } from "@/lib/plan-ingest/scannedSheet";
+import { storedRasterFrom, type StoredRaster } from "@/lib/plan-ingest/raster";
 import { cutoutsFromJson, type ItemMeasurement, type TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
 import { scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
 import { effectiveSheetNumber, effectiveTitle, sheetPickerLabel } from "@/lib/plan-ingest/sheetIndex";
@@ -376,7 +379,31 @@ export async function loadTakeoffWorkspace(
    *
    * `sheetIndexFor` already selects `hasTextLayer`, so this is free.
    */
-  const scannedPages = sheetRows.filter((row) => !row.hasTextLayer).map((row) => row.pageNumber);
+  const scannedPages = sheetRows.filter(isScannedSheet).map((row) => row.pageNumber);
+  // ── WHAT THE RASTER STAGE READ OFF THE SCANNED SHEETS ──
+  // Lines and words in points, for the viewer's Find the walls; and the
+  // printed scale OCR read, as a prefill where the inventory has none — so a
+  // scan whose caption was read gets the one-press scale, and one whose
+  // caption was not gets the ordinary set-the-scale prompt, nothing new.
+  const rasterByPage: Record<number, StoredRaster> = {};
+  const scannedNumberByPage: Record<number, string> = {};
+  for (const row of await prisma.planSheetRaster.findMany({
+    where: { planId: plan.id },
+    select: { pageNumber: true, widthPt: true, heightPt: true, lines: true, text: true, printedScale: true, sheetNumber: true },
+  })) {
+    const stored = storedRasterFrom(row);
+    if (stored === null) continue;
+    rasterByPage[row.pageNumber] = stored;
+    if (stored.printedScale !== null && printedScaleByPage[row.pageNumber] === undefined) printedScaleByPage[row.pageNumber] = stored.printedScale;
+    // ── WHAT A SCANNED SHEET IS CALLED ──
+    // The inventory has no text to name a scan by, so its number is the one
+    // OCR read off the title-block corner (`rasterizeSheet`, the sparse
+    // re-read) — a jump target, like the labels below, never a name on a
+    // quantity. Snapping it against the set's other pages was measured on
+    // Evergreen and HURT (71 → 67 of 106 right): a right read one edit from
+    // a neighbour named twice moved to the neighbour. So it is used as read.
+    if (row.sheetNumber !== null) scannedNumberByPage[row.pageNumber] = row.sheetNumber;
+  }
   const duplicateWallsByPage: Record<number, string> = {};
   /**
    * WHAT EACH SHEET IS CALLED, so the pager can be jumped to one.
@@ -409,7 +436,7 @@ export async function loadTakeoffWorkspace(
       number,
     );
     if (caution) duplicateWallsByPage[row.pageNumber] = caution;
-    const label = sheetPickerLabel(number, title);
+    const label = sheetPickerLabel(number ?? scannedNumberByPage[row.pageNumber] ?? null, title);
     if (label !== null) sheetLabelByPage[row.pageNumber] = label;
   }
 
@@ -569,14 +596,22 @@ export async function loadTakeoffWorkspace(
   // same load that decides everything else on the screen.
   const roomFinder = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOn: true },
+    select: { roomFinderOn: true, demotedWallsOff: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOn: true },
   });
+  // The door schedule rows the ingest read, newest per page, for the doors
+  // panel's join — only for a company whose switch is on.
+  const doorScheduleRows = roomFinder?.doorsWindowsOn ? await doorScheduleRowsOf(plan.id) : [];
 
   return {
+    doorsWindowsOn: roomFinder?.doorsWindowsOn ?? false,
+    doorScheduleRows,
     plan,
     sheets,
+    symbolCountOn: roomFinder?.symbolCountOn ?? false,
     roomFinderOn: roomFinder?.roomFinderOn ?? false,
-    demotedWallsOn: roomFinder?.demotedWallsOn ?? false,
+    // ON unless this company turned it off, and on for a company with no row.
+    demotedWallsOn: !(roomFinder?.demotedWallsOff ?? false),
+    scannedPlansOn: roomFinder?.scannedPlansOn ?? false,
     // The plan-text opt-in: the rail ranks the floor plans to scale first and
     // offers every sheet's printed scale in one press only for a company that
     // has turned plan-text reading on, the same switch the keyless sheet
@@ -584,7 +619,7 @@ export async function loadTakeoffWorkspace(
     planTextReadOn: (await aiGate(company.id, "PLAN_TEXT_READ")).ok,
     // The trained wall model, only for a company whose switch is on: ~80 KB
     // of trees that nobody else's page should carry.
-    wallModel: roomFinder?.demotedWallsOn ? loadWallModel(process.env) : null,
+    wallModel: (roomFinder?.demotedWallsOff ?? false) ? null : loadWallModel(process.env),
     // The plan's pages whose title block says ceiling plan or finish schedule, for the
     // room finder's ceilings: the viewer reads those pages' text itself when rooms are found.
     ceilingPages: roomFinder?.roomFinderOn ? await ceilingPagesOf(plan.id) : [],
@@ -592,6 +627,7 @@ export async function loadTakeoffWorkspace(
     postableWallTypes,
     printedScaleByPage,
     scannedPages,
+    rasterByPage,
     storedWallsByPage,
     matchableItems,
     levelByPage,
@@ -765,3 +801,25 @@ export async function takeoffSavedSignature(companyId: string, jobId: string): P
   return [plan.id, part(calibrations), part(measurements), part(proposals)].join("|");
 }
 
+/** Every row of the newest DOOR schedule read on each page of the plan, flattened. */
+async function doorScheduleRowsOf(planId: string): Promise<StoredScheduleRow[]> {
+  const proposals = await prisma.planScheduleProposal.findMany({
+    where: { planId, kind: "DOOR" },
+    orderBy: { createdAt: "desc" },
+    select: { pageNumber: true, rows: true },
+  });
+  const seen = new Set<number>();
+  const out: StoredScheduleRow[] = [];
+  for (const p of proposals) {
+    if (seen.has(p.pageNumber)) continue;
+    seen.add(p.pageNumber);
+    const rows = Array.isArray(p.rows) ? (p.rows as unknown[]) : [];
+    for (const r of rows) {
+      if (r !== null && typeof r === "object" && typeof (r as { mark?: unknown }).mark === "string") {
+        const row = r as { mark: string; size?: string | null; description?: string | null };
+        out.push({ mark: row.mark, size: row.size ?? null, description: row.description ?? null });
+      }
+    }
+  }
+  return out;
+}

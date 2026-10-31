@@ -26,11 +26,15 @@ import { formatCalendarDay } from "@/lib/render-date";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Disclosure } from "@/components/Disclosure";
 import { Spinner } from "@/components/Spinner";
+import { SubmittalPackageBuilder } from "@/components/SubmittalPackageBuilder";
+import { packageSummary, type PackageContents } from "@/lib/submittal-package";
 
 export type SubmittalRowData = SubmittalDefaults & {
   id: string;
   number: number;
   jobName: string;
+  /** Who the package goes to: the job's contact. Printed on the cover. */
+  gcName: string;
   submittedByName: string | null;
   revisions: RevisionData[];
 };
@@ -45,15 +49,21 @@ export function SubmittalRow({
   today,
   canDelete,
   showJob,
+  companyName,
 }: {
   submittal: SubmittalRowData;
   today: string;
   canDelete: boolean;
   showJob: boolean;
+  companyName: string;
 }) {
   const [mode, setMode] = useState<"view" | "edit" | "send" | "respond">("view");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Set by the package builder and added at submit rather than held in a
+  // hidden input, so a saved form draft can never restore a list for a
+  // package nobody built in this sitting.
+  const [packageContents, setPackageContents] = useState<PackageContents | null>(null);
   // Keyed by the submittal id so two rows can never share a draft; the
   // three modes are different forms with different fields, so three keys.
   const editDraft = useFormDraft(`submittal:edit:${submittal.id}`);
@@ -131,10 +141,12 @@ export function SubmittalRow({
           onSubmit={(event) => {
             event.preventDefault();
             const formData = new FormData(event.currentTarget);
+            if (packageContents) formData.set("packageContents", JSON.stringify(packageContents));
             run(
               () => sendSubmittalRevision(submittal.id, formData),
               () => {
                 sendDraft.clear();
+                setPackageContents(null);
                 setMode("view");
               },
             );
@@ -161,6 +173,21 @@ export function SubmittalRow({
               <input type="date" name="dueBack" defaultValue="" className={inputClass} />
             </label>
           </div>
+
+          <SubmittalPackageBuilder
+            cover={{
+              companyName,
+              gcName: submittal.gcName,
+              jobName: submittal.jobName,
+              submittalNumber: submittal.number,
+              revisionNumber: nextRevisionNumber,
+              title: submittal.title,
+              description: submittal.description ?? null,
+              specSection: submittal.specSection ?? null,
+              drawingReference: submittal.drawingReference ?? null,
+            }}
+            onContents={setPackageContents}
+          />
 
           {error && <p className="text-sm text-danger">{error}</p>}
 
@@ -350,6 +377,9 @@ export function SubmittalRow({
                       )}
                       {rev.responseNotes && (
                         <span className="text-ink-muted"> — {rev.responseNotes}</span>
+                      )}
+                      {rev.packageContents && (
+                        <span className="block text-ink-muted">Sent: {packageSummary(rev.packageContents)}</span>
                       )}
                       {rev.responseUrl && (
                         <>

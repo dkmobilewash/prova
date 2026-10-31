@@ -21,6 +21,7 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
 import { SubmitButton } from "@/components/SubmitButton";
 import { canvasPlan } from "@/lib/takeoff/canvasPlan";
+import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 import { DISTINCT_MARKS, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
 import { formatFeetInches, parseFeetInches } from "@/lib/feet-inches";
 import {
@@ -129,6 +130,12 @@ import {
 import { detectForSheet, offeredCandidates } from "@/lib/takeoff/offeredCandidates";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
+import { TakeoffDoorsPanel } from "./TakeoffDoorsPanel";
+import { doorsAndWindowsForSheet, type DoorsWindowsResult, type StoredScheduleRow } from "@/lib/takeoff/doorsWindows";
+import { TakeoffSymbolPanel, type AcrossRow, type AcrossState } from "./TakeoffSymbolPanel";
+import { findSymbolsFrom, scaleSymbolTemplate, symbolTemplate, type Box as SymbolBox, type SymbolMatch, type SymbolTemplate } from "@/lib/takeoff/symbolSignature";
+import { sheetInScope, type SheetScope } from "@/lib/takeoff/symbolScope";
+import { scaleFromPrinted } from "@/lib/takeoff/scaleFromPrinted";
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
 import { roomsFromWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
@@ -258,6 +265,7 @@ export function TakeoffPlanViewer({
   // is a build error rather than a button that silently never appears —
   // which is the failure this prop exists to fix.
   scannedPages = [],
+  rasterByPage = {},
   storedWallsByPage,
   takeoffItems = [],
   levelByPage,
@@ -275,8 +283,11 @@ export function TakeoffPlanViewer({
   panelOpen = true,
   readOnly = false,
   roomFinder = false,
+  symbolCount = false,
   demotedWalls = false,
   wallTypesHref = "/wall-types",
+  doorsWindows = false,
+  doorScheduleRows = [],
   wallModel = null,
   ceilingPages = [],
   onMeasurementSaved,
@@ -361,6 +372,17 @@ export function TakeoffPlanViewer({
    * button absent. See `lib/takeoff/NOTES-rooms.md`.
    */
   roomFinder?: boolean;
+  /** "Find all like this": box one symbol, count every match on the sheet. `Company.symbolCountOn`. */
+  symbolCount?: boolean;
+  /**
+   * "Doors and windows from the plan": after Find the walls, the door swings
+   * and window symbols read off the sheet, counted, measured and joined to the
+   * door schedule. Read from `Company.doorsWindowsOn`, false until chosen.
+   * See `lib/takeoff/NOTES-doors.md`.
+   */
+  doorsWindows?: boolean;
+  /** The set's door schedule rows as the ingest read them, for the join; empty when none. */
+  doorScheduleRows?: StoredScheduleRow[];
   /**
    * "Demote, don't hide": a run the check labels casework or reference stays
    * on the sheet greyed, out of the total, one click to take back. Read from
@@ -424,6 +446,12 @@ export function TakeoffPlanViewer({
    * gate is that fact, and nothing else.
    */
   scannedPages: number[];
+  /**
+   * WHAT THE RASTER STAGE READ OFF A SCANNED SHEET, keyed by page: the lines
+   * and the words in points, for Find the walls to use instead of the file's
+   * strokes (a scan has none). Absent for every sheet the stage has not read.
+   */
+  rasterByPage?: Record<number, { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[] }>;
   /**
    * THE WALLS ALREADY FOUND ON EACH SHEET, from `TakeoffWallProposal`, keyed by
    * page number.
@@ -728,6 +756,16 @@ export function TakeoffPlanViewer({
   const pairingsRef = useRef<{ x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet: number }[]>([]);
   const wordsRef = useRef<{ str: string; x: number; y: number; width: number; height: number }[]>([]);
   const [rooms, setRooms] = useState<RoomsFromWallsResult | null>(null);
+  /** Doors and windows read from this sheet's symbols at the last Find, with the page they are about. */
+  const [openings, setOpenings] = useState<{ page: number; result: DoorsWindowsResult; walls: WallCandidate[] } | null>(null);
+  const [hoveredOpening, setHoveredOpening] = useState<string | null>(null);
+  /** "Count like this": the box being dragged, and the matches it found, with the ones the estimator dropped. */
+  const [symbolBox, setSymbolBox] = useState<SymbolBox | null>(null);
+  const [symbols, setSymbols] = useState<{ page: number; matches: SymbolMatch[]; dropped: Set<number>; ms: number; busy: boolean; error: string | null; label?: string | null; tag?: string | null } | null>(null);
+  /** The boxed symbol as a template, kept so "Find on all sheets" lays the same one over the rest of the set. */
+  const symbolTemplateRef = useRef<{ made: SymbolTemplate; widthPt: number; fpu: number | null; number: string | null } | null>(null);
+  const [across, setAcross] = useState<AcrossState | null>(null);
+  const acrossCancel = useRef(false);
   const [roomsOnPage, setRoomsOnPage] = useState<number | null>(null);
   const [hoveredRoom, setHoveredRoom] = useState<number | null>(null);
   /**
@@ -791,11 +829,11 @@ export function TakeoffPlanViewer({
    *  Per page for the reason `labelsByPage` is: it names the drawing a FIND
    *  was about, and on any other sheet it names the wrong one. */
   const [primaryViewByPage, setPrimaryViewByPage] = useState<
-    Record<number, { name: string; scaleName: string | null }>
+    Record<number, { name: string; scaleName: string | null }[]>
   >({});
   const primaryViewShown = onThisSheet(primaryViewByPage, pageNumber);
   const setPrimaryViewShown = useCallback(
-    (next: { name: string; scaleName: string | null } | null) =>
+    (next: { name: string; scaleName: string | null }[] | null) =>
       setPrimaryViewByPage((prev) => setOnThisSheet(prev, pageNumber, next)),
     [pageNumber],
   );
@@ -977,6 +1015,9 @@ export function TakeoffPlanViewer({
   const lastDetect = useRef<{
     page: number;
     segments: StrokeSegment[];
+    /** Every stroke on the page, in points — for the existing-wall rule's
+     *  legend swatch, which sits outside the drawing `segments` is clipped to. */
+    pageSegments: StrokeSegment[];
     feetPerUnit: number;
     widthPt: number;
     walls: WallCandidate[];
@@ -991,6 +1032,8 @@ export function TakeoffPlanViewer({
      * a single-view sheet is.
      */
     planBoxes: { from: number; to: number; fromY: number; toY: number }[] | null;
+    /** The page's words, for the site-equipment rule in `offeredCandidates`. */
+    textItems: { str: string; x: number; y: number; width: number; height: number }[];
   } | null>(null);
 
   /**
@@ -1020,9 +1063,11 @@ export function TakeoffPlanViewer({
       {
         walls: last.walls,
         segments: last.segments,
+        pageSegments: last.pageSegments,
         widthPt: last.widthPt,
         feetPerUnit: last.feetPerUnit,
         planBoxes: last.planBoxes,
+        textItems: last.textItems,
       },
       offerAll,
       // ── ON FOR LABELLING, OFF FOR CUSTOMERS ──
@@ -1252,6 +1297,7 @@ export function TakeoffPlanViewer({
           // are no credentials to send and nothing is lost by not sending
           // them. See `blobPdfCredentials.test.ts`.
           standardFontDataUrl: "/pdfjs/standard_fonts/",
+          ...PLAN_PDF_TRANSPORT,
         }).promise;
         if (cancelled) return;
         docRef.current = doc as never;
@@ -1403,6 +1449,119 @@ export function TakeoffPlanViewer({
   );
 
   const drawing = tool !== "pan";
+
+  /**
+   * ── "FIND ON ALL SHEETS": THE SAME TEMPLATE OVER THE REST OF THE SET ──
+   *
+   * Walked HERE, in the browser, one page at a time off the open document:
+   * the same strokes and words the single-sheet count reads, so there is one
+   * pipeline; no server time limit to run into on a 130-page set; and a row
+   * per sheet appears as it is counted, with the seconds it took, so the
+   * estimator can stop a walk that is going nowhere. Pages out of scope cost
+   * their text only (the sheet number is read before any stroke is).
+   *
+   * Scale: the template keeps its size ON PAPER (corrected for the two
+   * pages' widths); where both sheets print a scale and the scales differ,
+   * the model-space size is tried too and the larger count kept, saying so
+   * in the row — an annotative symbol and a model-space fixture behave the
+   * two ways, and nothing on the sheet says which a block is.
+   */
+  const searchAcrossSheets = async (scope: SheetScope) => {
+    const doc = docRef.current;
+    const tpl = symbolTemplateRef.current;
+    const own = symbols;
+    if (!doc || !tpl || !own || own.page !== pageNumber) return;
+    acrossCancel.current = false;
+    const total = doc.numPages;
+    const keptOwn = own.matches.filter((_, i) => !own.dropped.has(i));
+    const ownRow: AcrossRow = {
+      page: pageNumber, number: tpl.number, count: keptOwn.length, ms: own.ms, scaling: "paper",
+      xs: keptOwn.map((m) => (m.box.x1 + m.box.x2) / 2), ys: keptOwn.map((m) => (m.box.y1 + m.box.y2) / 2),
+    };
+    let state: AcrossState = { scope, fromNumber: tpl.number, running: true, looked: 0, total, rows: [ownRow], error: null, done: false };
+    setAcross(state);
+    try {
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const layers = await layersOf(doc as never).catch(() => null);
+      for (let n = 1; n <= total; n += 1) {
+        if (acrossCancel.current) break;
+        state = { ...state, looked: n };
+        if (n === pageNumber) { setAcross(state); continue; }
+        const t0 = performance.now();
+        const page = await doc.getPage(n);
+        const words = await pageTextItems(page as never, pdfjs as never);
+        const viewport = (page as { getViewport: (o: { scale: number }) => { width: number; height: number } }).getViewport({ scale: 1 });
+        const W = viewport.width;
+        const number = sheetNumberFrom({ pageNumber: n, widthPt: W, heightPt: viewport.height, rotation: 0, items: words } as never).sheetNumber;
+        if (!sheetInScope(scope, tpl.number, number)) { setAcross(state); continue; }
+        const { segments } = await segmentsFromOpenPage(page as never, pdfjs as never, n, layers as never);
+        const segs = segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W }));
+        const text = words.map((w) => ({ x: w.x / W, y: (w.y - w.height) / W, width: w.width / W, height: w.height / W, str: w.str }));
+        const paper = scaleSymbolTemplate(tpl.made, tpl.widthPt / W);
+        let best = { matches: findSymbolsFrom(segs, text, paper).matches, scaling: "paper" };
+        const printed = scaleFromPrinted(printedScalesOnPage(words), W, viewport.height)?.declaredDistanceFeet ?? null;
+        if (tpl.fpu !== null && printed !== null && Math.abs(tpl.fpu / printed - 1) > 0.05) {
+          const model = findSymbolsFrom(segs, text, scaleSymbolTemplate(tpl.made, (tpl.widthPt / W) * (tpl.fpu / printed))).matches;
+          if (model.length > best.matches.length) best = { matches: model, scaling: `at this sheet's scale (x${(tpl.fpu / printed).toFixed(2)})` };
+        }
+        const row: AcrossRow = {
+          page: n, number, count: best.matches.length, ms: performance.now() - t0, scaling: best.scaling,
+          xs: best.matches.map((m) => (m.box.x1 + m.box.x2) / 2), ys: best.matches.map((m) => (m.box.y1 + m.box.y2) / 2),
+        };
+        state = { ...state, rows: [...state.rows, row].sort((a, b) => a.page - b.page) };
+        setAcross(state);
+        // Let the row paint before the next sheet is read.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      setAcross({ ...state, running: false, done: !acrossCancel.current });
+    } catch {
+      setAcross({ ...state, running: false, done: false, error: "A sheet could not be read; what was counted so far is kept." });
+    }
+  };
+
+  /**
+   * ── "COUNT LIKE THIS": EVERY MATCH OF THE BOXED SYMBOL ON THIS SHEET ──
+   * The sheet's strokes and words are read the way Find the walls reads
+   * them, the box and the strokes go to `findSymbols` in page-width units,
+   * and the matches come back as footprints to mark. Pure geometry; no
+   * model. See `lib/takeoff/symbolSignature.ts` and NOTES-symbols.md.
+   */
+  const searchSymbols = async (box: SymbolBox) => {
+    const doc = docRef.current;
+    if (!doc || !pageSize) return;
+    setSymbols({ page: pageNumber, matches: [], dropped: new Set(), ms: 0, busy: true, error: null });
+    try {
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const page = await doc.getPage(pageNumber);
+      const layers = await layersOf(doc as never).catch(() => null);
+      const { segments } = await segmentsFromOpenPage(page as never, pdfjs as never, pageNumber, layers as never);
+      const words = await pageTextItems(page as never, pdfjs as never);
+      const W = pageSize.widthPt;
+      const text = words.map((w) => ({ x: w.x / W, y: (w.y - w.height) / W, width: w.width / W, height: w.height / W, str: w.str }));
+      const t0 = performance.now();
+      const segs = segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W }));
+      const made = symbolTemplate(segs, text, box);
+      const found = made === null ? null : findSymbolsFrom(segs, text, made);
+      const printed = scaleFromPrinted(printedScalesOnPage(words), W, pageSize.heightPt);
+      symbolTemplateRef.current =
+        made === null
+          ? null
+          : { made, widthPt: W, fpu: printed?.declaredDistanceFeet ?? feetPerUnit ?? null, number: sheetNumberFrom({ pageNumber, widthPt: W, heightPt: pageSize.heightPt, rotation: 0, items: words } as never).sheetNumber };
+      setAcross(null);
+      setSymbols({
+        page: pageNumber,
+        matches: found?.matches ?? [],
+        dropped: new Set(),
+        ms: performance.now() - t0,
+        busy: false,
+        error: found === null ? "Nothing drawn inside that box — draw it round the symbol's lines, not just the lettering." : null,
+        label: found?.label ?? null,
+        tag: found?.tag ?? null,
+      });
+    } catch {
+      setSymbols({ page: pageNumber, matches: [], dropped: new Set(), ms: 0, busy: false, error: "The sheet could not be read for symbols. Try again in a moment." });
+    }
+  };
 
   /**
    * ── WHAT A CLICK CAN SNAP TO ──
@@ -1561,6 +1720,14 @@ export function TakeoffPlanViewer({
       event.preventDefault();
       setKeyShift(event.shiftKey);
       setKeyBox({ x1: raw.x, y1: raw.y, x2: raw.x, y2: raw.y });
+      return;
+    }
+    // ── "COUNT LIKE THIS" DRAGS A BOX ROUND ONE SYMBOL ──
+    if (tool === "symbol") {
+      const raw = pointAt(event);
+      if (!raw) return;
+      event.preventDefault();
+      setSymbolBox({ x1: raw.x, y1: raw.y, x2: raw.x, y2: raw.y });
       return;
     }
     if (!drawing) return;
@@ -2455,7 +2622,11 @@ export function TakeoffPlanViewer({
       // downstream behaves exactly as it did before layers existed.
       const layers = await layersOf(doc);
       const page = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pageNumber);
-      const { segments } = await segmentsFromOpenPage(page, pdfjs, pageNumber, layers);
+      // ── A SCANNED SHEET: the lines and words the raster stage stored ──
+      // The file has no strokes for it; the stage read them off the bitmap
+      // in the same points. The finder below is the same finder.
+      const raster = rasterByPage[pageNumber];
+      const { segments } = raster ? { segments: raster.segments } : await segmentsFromOpenPage(page, pdfjs, pageNumber, layers);
       setStrokesSeen(segments.length);
 
       // ── WHERE THE WORDS ARE ──
@@ -2465,7 +2636,7 @@ export function TakeoffPlanViewer({
       // itself, once, so the browser and the server cannot disagree about where
       // a word is — which they would, because `planPdf.pageText` stores the
       // baseline and this used to subtract before passing anything on.
-      const vectorWords = await pageTextItems(page, pdfjs);
+      const vectorWords = raster ? raster.textItems : await pageTextItems(page, pdfjs);
       wordsRef.current = vectorWords;
       // ── A SCAN'S WORDS ENTER EXACTLY HERE ──
       //
@@ -2495,23 +2666,40 @@ export function TakeoffPlanViewer({
       // another page; what it produces is handed over as data. A page that will
       // not parse yields `null`, which is not an error — the geometric filters
       // still run and the sheet gets exactly what it had before this existed.
+      //
+      // ── ONE PAGE THAT WILL NOT PARSE MUST NOT COST THE WHOLE TEMPLATE ──
+      //
+      // This caught ONCE around the whole loop and fell back to `null`, so a
+      // single page failing to read threw away every page that had read, and
+      // the finder ran with no template at all. That is why the same sheet
+      // gave two answers in two tabs: Baker A100 offers 99 candidates without
+      // the template and 83 with it, the 16 being the title block's own lines
+      // down the right edge, which the template is what removes. Now each
+      // page is read on its own, a page that fails is counted and named in the
+      // console, and the finder gets every page that did read. `sampleFailed`
+      // travels with the other diagnostics so the discrepancy is visible
+      // instead of silent.
       let sampledSheets: StrokeSegment[][] | null = null;
-      try {
+      let sampleFailed = 0;
+      {
         const sampled: StrokeSegment[][] = [];
         for (const n of pagesToSample(doc.numPages, pageNumber)) {
           if (n === pageNumber) {
             sampled.push(segments.map(inPageWidthUnits(pageSize.widthPt)));
             continue;
           }
-          const other = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(n);
-          const read = await segmentsFromOpenPage(other, pdfjs, n, layers);
-          // ITS OWN width, not this sheet's. A set with a mixed page size would
-          // otherwise compare one sheet's coordinates against another's scale.
-          sampled.push(read.segments.map(inPageWidthUnits(read.widthPt || pageSize.widthPt)));
+          try {
+            const other = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(n);
+            const read = await segmentsFromOpenPage(other, pdfjs, n, layers);
+            // ITS OWN width, not this sheet's. A set with a mixed page size would
+            // otherwise compare one sheet's coordinates against another's scale.
+            sampled.push(read.segments.map(inPageWidthUnits(read.widthPt || pageSize.widthPt)));
+          } catch (error) {
+            sampleFailed += 1;
+            console.warn(`[takeoff] template sample: page ${n} did not read, so the template is thinner on this run`, error);
+          }
         }
-        sampledSheets = sampled;
-      } catch {
-        sampledSheets = null;
+        sampledSheets = sampled.length > 1 ? sampled : null;
       }
 
       // ── ONE PIPELINE, SHARED ──
@@ -2571,6 +2759,7 @@ export function TakeoffPlanViewer({
         wallTypes,
         sampledSheets,
         onCandidate: collect,
+        scanned: raster !== undefined,
       });
       const found: FoundOnSheet = detected.found;
       // ── WHAT THE FINDER SAW, FOR THE LABELLING HARNESS ONLY ──
@@ -2610,6 +2799,7 @@ export function TakeoffPlanViewer({
           segments: segments.length,
           text: textItems.length,
           sampled: sampledSheets?.length ?? 0,
+          sampleFailed,
           wallTypes: wallTypes.length,
           feetPerUnit,
           walls: detected.found.walls.length,
@@ -2625,17 +2815,11 @@ export function TakeoffPlanViewer({
       }
       const otherViews: ViewWalls[] = detected.others;
       const leftOut: ExcludedView[] = detected.leftOut;
-      // Several floors kept read as one name for the caution: "1st Floor Plan
-      // + 2nd - 9th Floor Plan", at their common scale or none.
-      const primaryShown: { name: string; scaleName: string | null } | null =
-        detected.kept.length === 0
-          ? null
-          : {
-              name: detected.kept.map((k) => k.name).join(" + "),
-              scaleName: detected.kept.every((k) => k.scaleName === detected.kept[0].scaleName)
-                ? detected.kept[0].scaleName
-                : null,
-            };
+      // Every kept drawing, with its own scale: `viewsMeasuredCaution` joins
+      // them — "1st Floor Plan + 2nd - 9th Floor Plan" at a shared scale said
+      // once, or each named with its own where two rooms are drawn at two.
+      const primaryShown: { name: string; scaleName: string | null }[] | null =
+        detected.kept.length === 0 ? null : detected.kept.map((k) => ({ name: k.name, scaleName: k.scaleName }));
       const planBoxes = detected.planBoxes;
       setOtherViewsByPage((prev) => ({ ...prev, [pageNumber]: otherViews }));
       setExcludedByPage((prev) => ({ ...prev, [pageNumber]: leftOut }));
@@ -2659,7 +2843,7 @@ export function TakeoffPlanViewer({
       // dropped, kept on screen instead. See `modelVerdicts`.
       const byModel =
         wallModelRef.current !== null
-          ? modelVerdicts(wallModelRef.current.model, wallModelRef.current.cut, walls, pairings, feetPerUnit)
+          ? modelVerdicts(wallModelRef.current.model, wallModelRef.current.cut, walls, pairings, feetPerUnit, { scanned: raster !== undefined })
           : null;
       const doubted = byModel !== null && byModel.size > 0 ? byModel : null;
       setLabels(doubted);
@@ -2670,7 +2854,42 @@ export function TakeoffPlanViewer({
       // next line went with it: `clusterByThickness` was called, assigned and
       // then deliberately discarded, because the real clustering happens inside
       // `regroup`. The pipeline still returns it for the bench.
-      setFound(doubted !== null ? regroup(walls.filter((_, at) => !doubted.has(at))) : found.groups);
+      // ── THE DOORS AND WINDOWS, FROM THE SAME STROKES ──
+      // Only with the company's switch on, and never in labelling mode: the
+      // key is about walls. Pure geometry over what is already in hand. Read
+      // BEFORE grouping, because each door's width becomes its run's opening
+      // in place of the gap `mergeWalls` inferred — the leaf is the door, the
+      // gap is a fifth narrow (openingMarks.ts).
+      let runs: WallCandidate[] = walls;
+      if (doorsWindows && answerKey === undefined) {
+        const W = pageSize.widthPt;
+        const result = doorsAndWindowsForSheet({
+          segments: found.inUnits,
+          segmentsPt: found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })),
+          textPt: textItems,
+          widthPt: W,
+          walls,
+          feetPerUnit,
+          scheduleRows: doorScheduleRows,
+        });
+        const byWall = new Map<number, { widthFt: number }[]>();
+        result.doors.forEach((d, i) => {
+          if (d.wall === null) return;
+          const joined = result.join?.openings[i];
+          (byWall.get(d.wall) ?? byWall.set(d.wall, []).get(d.wall)!).push({ widthFt: joined?.widthFt ?? d.widthFeet });
+        });
+        runs = walls.map((w, i) => (byWall.has(i) ? { ...w, openings: byWall.get(i)! } : w));
+        setOpenings({ page: pageNumber, walls: runs, result });
+      } else {
+        setOpenings(null);
+      }
+      setFound(
+        doubted !== null
+          ? regroup(runs.filter((_, at) => !doubted.has(at)))
+          : runs === walls
+            ? found.groups
+            : regroup(runs),
+      );
 
       // ── AND, FOR A REVIEWER, EVERYTHING THE DETECTOR COULD NOT REACH ──
       //
@@ -2695,10 +2914,12 @@ export function TakeoffPlanViewer({
           x2: one.x2 * pageSize.widthPt,
           y2: one.y2 * pageSize.widthPt,
         })),
+        pageSegments: segments,
         feetPerUnit,
         widthPt: pageSize.widthPt,
         walls: [...found.walls],
         planBoxes,
+        textItems,
       };
       if (answerKey?.onCandidates) {
         const candidates = candidatesFromLastDetect();
@@ -2766,6 +2987,22 @@ export function TakeoffPlanViewer({
     for (const opening of openingsFromDoors(planTextDoors.get(index) ?? []).openings) {
       body.append("openingWidth", String(opening.widthFt));
       body.append("openingHeight", String(opening.heightFt));
+    }
+    // ── AND THE DOORS READ OFF THE SWINGS, WHERE THE SCHEDULE GAVE A HEIGHT ──
+    // A door the symbol pass found on one of this group's runs and the join
+    // named: its schedule row has the height a deduction needs. One the
+    // plan-text read already placed by the same mark is not added twice.
+    if (openings !== null && openings.page === pageNumber) {
+      const marksDone = new Set(openingsFromDoors(planTextDoors.get(index) ?? []).openings.map((o) => o.mark));
+      const group = found[index];
+      openings.result.doors.forEach((d, i) => {
+        if (d.wall === null || group === undefined || !group.runs.includes(openings.walls[d.wall]!)) return;
+        const joined = openings.result.join?.openings[i];
+        const height = joined?.matched?.heightFt ?? null;
+        if (joined?.mark == null || height === null || marksDone.has(joined.mark)) return;
+        body.append("openingWidth", String(joined.widthFt));
+        body.append("openingHeight", String(height));
+      });
     }
     // ── THE LABEL CARRIES THE DRAWING'S OWN WORD WHERE THERE IS ONE ──
     //
@@ -2909,7 +3146,7 @@ export function TakeoffPlanViewer({
       {!readOnly && (
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line-card bg-surface-card p-2">
         <div className="flex items-center gap-1">
-          {TOOLS.map((entry) => {
+          {TOOLS.filter((entry) => entry.id !== "symbol" || symbolCount).map((entry) => {
             const disabled = entry.id !== "pan" && entry.id !== "calibrate" && !calibration;
             return (
               <button
@@ -3106,6 +3343,12 @@ export function TakeoffPlanViewer({
             had by reading the picture, and this is the thing that reads it —
             so gating on it made the feature unreachable on every sheet it was
             built for. See `scannedPages`. */}
+        {rasterByPage[pageNumber] !== undefined && (
+          <p data-takeoff="scanned-caution" className="w-full text-xs text-ink-muted">
+            Scanned sheet: the lines were read from an image, not from the drawing. Check each group against the sheet
+            more carefully than usual.
+          </p>
+        )}
         {scannedPages.includes(pageNumber) && (
           <button
             type="button"
@@ -3829,6 +4072,18 @@ export function TakeoffPlanViewer({
               <PlanTextPanel view={planText} wallTypes={wallTypes} />
             </>
           )}
+          {openings !== null && openings.page === pageNumber && (
+            <TakeoffDoorsPanel
+              result={openings.result}
+              groupOfWall={(at) => {
+                const run = openings.walls[at];
+                const g = run === undefined ? -1 : found.findIndex((group) => group.runs.includes(run));
+                return g < 0 ? null : g + 1;
+              }}
+              hovered={hoveredOpening}
+              onHover={setHoveredOpening}
+            />
+          )}
           {rooms !== null && roomsOnPage === pageNumber && sheet !== null && feetPerUnit !== null && (
             <TakeoffRoomsPanel
               jobId={jobId}
@@ -3852,6 +4107,24 @@ export function TakeoffPlanViewer({
         </div>
       )}
 
+      {symbols !== null && symbols.page === pageNumber && sheet !== null && (
+        <TakeoffSymbolPanel
+          jobId={jobId}
+          planId={planId}
+          pageId={sheet.id}
+          itemId={activeItemId}
+          state={symbols}
+          across={across}
+          pageCount={pageCount}
+          onAcross={(scope) => void searchAcrossSheets(scope)}
+          onCancelAcross={() => { acrossCancel.current = true; }}
+          onClear={() => { acrossCancel.current = true; setAcross(null); setSymbols(null); }}
+          onSaved={(saved) => {
+            setSymbols(null);
+            onMeasurementSaved?.({ id: saved.id, kind: "COUNT" });
+          }}
+        />
+      )}
       {/* ── The sheet ─────────────────────────────────────────────── */}
       {/* The height reserve shrinks to 11rem once the panel is beside rather
           than above; that reserve is the toolbar and the page's own padding,
@@ -3973,6 +4246,10 @@ export function TakeoffPlanViewer({
                   if (traceAdded !== null) setTraceAdded(null);
                   if (traceTo !== null) return;
                 }
+                if (symbolBox !== null) {
+                  const raw = pointAt(event);
+                  if (raw) setSymbolBox({ ...symbolBox, x2: raw.x, y2: raw.y });
+                }
                 if (keyBox !== null) {
                   const raw = pointAt(event);
                   if (raw) setKeyBox({ ...keyBox, x2: raw.x, y2: raw.y });
@@ -3992,6 +4269,12 @@ export function TakeoffPlanViewer({
                 setEditDraft(moveVertex(editDraft.xs, editDraft.ys, draggingVertex, point));
               }}
               onPointerUp={() => {
+                if (symbolBox !== null) {
+                  const box = symbolBox;
+                  setSymbolBox(null);
+                  if (Math.abs(box.x2 - box.x1) > 0.001 && Math.abs(box.y2 - box.y1) > 0.001) void searchSymbols(box);
+                  return;
+                }
                 if (keyBox !== null && answerKey !== undefined) {
                   // ── SHIFT-CLICK ACTS ON THE SELECTION, NEVER ON WHAT WAS HIT ──
                   //
@@ -4288,6 +4571,97 @@ export function TakeoffPlanViewer({
                   strokeWidth={STROKE_PX}
                   vectorEffect="non-scaling-stroke"
                 />
+              )}
+              {/* The doors and windows read from this sheet's symbols: a dot at
+                  each hinge, the leaf hinge to strike, a bar across each window.
+                  Page-width units like everything else here. */}
+              {openings !== null && openings.page === pageNumber && (
+                <g data-takeoff="doors-overlay">
+                  {openings.result.doors.map((d, i) => {
+                    const lit = hoveredOpening === `door-${i}`;
+                    return (
+                      <g key={`door-${i}`} data-takeoff="door" opacity={hoveredOpening === null || lit ? 1 : 0.4}>
+                        <line
+                          x1={d.hinge.x}
+                          y1={d.hinge.y}
+                          x2={d.strike.x}
+                          y2={d.strike.y}
+                          stroke={d.wall === null ? "#c026d3" : "#2563eb"}
+                          strokeWidth={lit ? STROKE_PX * 3 : STROKE_PX * 1.5}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                        <circle cx={d.hinge.x} cy={d.hinge.y} r={lit ? 0.004 : 0.0025} fill={d.wall === null ? "#c026d3" : "#2563eb"} />
+                      </g>
+                    );
+                  })}
+                  {openings.result.windows.map((w, i) => {
+                    const lit = hoveredOpening === `window-${i}`;
+                    return (
+                      <line
+                        key={`window-${i}`}
+                        data-takeoff="window"
+                        x1={w.x1}
+                        y1={w.y1}
+                        x2={w.x2}
+                        y2={w.y2}
+                        stroke="#16a34a"
+                        strokeWidth={lit ? STROKE_PX * 4 : STROKE_PX * 2.5}
+                        opacity={hoveredOpening === null || lit ? 0.9 : 0.35}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    );
+                  })}
+                </g>
+              )}
+              {/* "Count like this": the box being dragged, then every match as a
+                  footprint. A click on a match drops it from the count. */}
+              {symbolBox !== null && (
+                <rect
+                  data-takeoff="symbol-box"
+                  x={Math.min(symbolBox.x1, symbolBox.x2)}
+                  y={Math.min(symbolBox.y1, symbolBox.y2)}
+                  width={Math.abs(symbolBox.x2 - symbolBox.x1)}
+                  height={Math.abs(symbolBox.y2 - symbolBox.y1)}
+                  fill="#2563eb"
+                  fillOpacity={0.08}
+                  stroke="#2563eb"
+                  strokeWidth={STROKE_PX}
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+              {symbols !== null && symbols.page === pageNumber && (
+                <g data-takeoff="symbol-matches">
+                  {symbols.matches.map((m, i) => {
+                    const dropped = symbols.dropped.has(i);
+                    const pad = 0.002;
+                    return (
+                      <rect
+                        key={i}
+                        data-takeoff="symbol-match"
+                        data-dropped={dropped ? "true" : undefined}
+                        x={Math.min(m.box.x1, m.box.x2) - pad}
+                        y={Math.min(m.box.y1, m.box.y2) - pad}
+                        width={Math.abs(m.box.x2 - m.box.x1) + 2 * pad}
+                        height={Math.abs(m.box.y2 - m.box.y1) + 2 * pad}
+                        fill={dropped ? "#9ca3af" : "#16a34a"}
+                        fillOpacity={dropped ? 0.12 : 0.18}
+                        stroke={dropped ? "#9ca3af" : "#16a34a"}
+                        strokeWidth={STROKE_PX * 1.5}
+                        vectorEffect="non-scaling-stroke"
+                        style={{ cursor: "pointer" }}
+                        onClick={() => {
+                          setSymbols((current) => {
+                            if (current === null) return current;
+                            const next = new Set(current.dropped);
+                            if (next.has(i)) next.delete(i);
+                            else next.add(i);
+                            return { ...current, dropped: next };
+                          });
+                        }}
+                      />
+                    );
+                  })}
+                </g>
               )}
               {/* The calibration line, redrawn over the sheet so the scale is
                   something a reviewer can SEE rather than take on faith.

@@ -793,6 +793,25 @@ export function TakeoffWorkspace({
    * would re-add every trace. And it only loads into a review with NO
    * decisions yet — reopening must never overwrite work in progress, and a
    * reviewer who has started judging has told us they do not want the file.
+   *
+   * ── "ONCE PER SHEET" MEANS ONCE IT HAS AN ANSWER, NOT ONCE IT HAS TRIED ──
+   *
+   * `triedSaved` used to be set immediately before the fetch, so a response
+   * that was not ok, or a fetch that threw, spent the sheet's only attempt and
+   * left no notice. Chrome reported Bunkie A100 reopening as "12 of 69
+   * reviewed, 0 walls, blank reviewer" with the file on disk intact: nothing
+   * was lost, the restore simply never happened and said nothing.
+   *
+   * It is marked now only on a DEFINITE outcome — restored, refused with a
+   * reason, or the server saying there is no file for this sheet. A transport
+   * failure leaves the sheet eligible, so the next render tries again.
+   *
+   * ── AND A SHEET WITH NOWHERE TO RESTORE INTO STILL REPORTS THE FILE ──
+   *
+   * On a sheet the finder refused, the reviewer presses "Run anyway" and the
+   * candidates arrive later. Until they do there is nothing to put verdicts
+   * on, so this cannot restore — but it CAN say the file is there, and
+   * silence is what made a reviewer believe their work was gone.
    */
   const [savedNotice, setSavedNotice] = useState<{ page: number; note: string } | null>(null);
   const [restoredReviewer, setRestoredReviewer] = useState<string | null>(null);
@@ -814,7 +833,19 @@ export function TakeoffWorkspace({
     const sheetKey = `${draftSet}#${page}`;
     if (!keyMode || draftSet === "" || triedSaved.current === sheetKey) return;
     const current = keyStateRef.current;
-    if (current === null || current.candidates.length === 0) return;
+    if (current === null) return;
+    // ── NO CANDIDATES IS NOT NOTHING TO RESTORE ──
+    //
+    // This used to return here, and then (briefly) to fetch the file only so
+    // it could say the file existed. Both skipped the sheet that proves the
+    // bug: Michigan State A3 holds 20 TRACES and no candidates, because the
+    // finder offers nothing on a single-line renovation plan.
+    //
+    // A trace is standalone geometry — not a verdict ON a candidate — so it
+    // needs no candidate list to land in, and `addTraced` never consults one.
+    // `restoreSaved` refuses only a file with no verdicts at all. So the
+    // ordinary path runs: traces come back, a candidate verdict with nothing
+    // to match becomes `carried`, and the notice says which.
 
     // ── "UNTOUCHED" IS NOT "NO DECISIONS" ──
     //
@@ -831,7 +862,6 @@ export function TakeoffWorkspace({
       baselineDecided.current = { key: sheetKey, count: decided };
     }
     if (decided > baselineDecided.current.count) return;
-    triedSaved.current = sheetKey;
     let cancelled = false;
     void (async () => {
       try {
@@ -839,12 +869,20 @@ export function TakeoffWorkspace({
           `/api/takeoff/labels?set=${encodeURIComponent(draftSet)}&sheet=${encodeURIComponent(sheetNumber)}`,
           { cache: "no-store" },
         );
+        // NOT marked tried: a transport failure is not an answer about this
+        // sheet, and spending the attempt on one is what hid the file.
         if (!response.ok) return;
         const body = (await response.json()) as { ok?: boolean; saved?: SavedSheet | null };
         const saved = body.saved;
-        if (cancelled || saved === null || saved === undefined) return;
+        if (cancelled) return;
+        if (saved === null || saved === undefined) {
+          // The server has answered: there is no file. THAT is definite.
+          triedSaved.current = sheetKey;
+          return;
+        }
         const fresh = keyStateRef.current;
         if (fresh === null) return;
+        triedSaved.current = sheetKey;
         const got = restoreSaved(saved, fresh, scaleFeetPerUnit);
         if (got.ok) {
           setKeyState(got.state);
@@ -1336,6 +1374,7 @@ export function TakeoffWorkspace({
               sheets={sheets}
               printedScaleByPage={data.printedScaleByPage}
               scannedPages={data.scannedPages}
+              rasterByPage={data.rasterByPage}
               storedWallsByPage={data.storedWallsByPage}
               takeoffItems={data.matchableItems}
               levelByPage={data.levelByPage}
@@ -1378,7 +1417,6 @@ export function TakeoffWorkspace({
                                 currentSheet?.calibration != null
                                   ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
                                   : 0,
-                                current.traced.length,
                               ),
                             ),
                           );
@@ -1448,6 +1486,9 @@ export function TakeoffWorkspace({
               sheetLabelByPage={data.sheetLabelByPage}
               wallTypes={data.viewerWallTypes}
               roomFinder={data.roomFinderOn}
+              doorsWindows={data.doorsWindowsOn}
+              doorScheduleRows={data.doorScheduleRows}
+              symbolCount={data.symbolCountOn}
               demotedWalls={data.demotedWallsOn}
               wallModel={data.wallModel}
               ceilingPages={data.ceilingPages}

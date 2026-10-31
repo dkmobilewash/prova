@@ -315,29 +315,52 @@ export function joinOpeningsToSchedule(input: {
       byKey.set(key, entry);
     }
     for (const [key, { row, instances }] of byKey) {
-      let best: { mark: PlacedMark; wall: (typeof walls)[number]; t: number; distance: number } | null = null;
+      let best: { mark: PlacedMark; wall: (typeof walls)[number]; t: number; distance: number; gap: boolean } | null = null;
       for (const mark of instances) {
         // Nearest run and the next, so a symbol's longer reach only counts
         // when the nearest run is clearly the one.
-        let first: { wall: (typeof walls)[number]; t: number; distance: number } | null = null;
-        let second = Infinity;
+        let first: { wall: (typeof walls)[number]; t: number; raw: number; distance: number } | null = null;
+        let second: { wall: (typeof walls)[number]; t: number; distance: number } | null = null;
         for (const wall of walls) {
           const dx = wall.x2 - wall.x1;
           const dy = wall.y2 - wall.y1;
           const len2 = dx * dx + dy * dy;
           if (len2 === 0) continue;
-          const t = Math.max(0, Math.min(1, ((mark.x - wall.x1) * dx + (mark.y - wall.y1) * dy) / len2));
+          const raw = ((mark.x - wall.x1) * dx + (mark.y - wall.y1) * dy) / len2;
+          const t = Math.max(0, Math.min(1, raw));
           const distance = Math.hypot(mark.x - (wall.x1 + t * dx), mark.y - (wall.y1 + t * dy));
           if (first === null || distance < first.distance) {
-            second = first?.distance ?? Infinity;
-            first = { wall, t, distance };
-          } else if (distance < second) second = distance;
+            second = first === null ? null : { wall: first.wall, t: first.t, distance: first.distance };
+            first = { wall, t, raw, distance };
+          } else if (second === null || distance < second.distance) second = { wall, t, distance };
         }
         if (first === null) continue;
+        const secondDistance = second?.distance ?? Infinity;
         const within =
           first.distance <= onWall ||
-          (mark.inSymbol === true && first.distance <= symbolReach && second >= first.distance * MARK_CLEAR_MARGIN);
-        if (within && (best === null || first.distance < best.distance)) best = { mark, ...first };
+          (mark.inSymbol === true && first.distance <= symbolReach && secondDistance >= first.distance * MARK_CLEAR_MARGIN);
+        if (within) {
+          if (best === null || best.gap || first.distance < best.distance) best = { mark, wall: first.wall, t: first.t, distance: first.distance, gap: false };
+          continue;
+        }
+        // ── A WIDE DOOR IN THE GAP BETWEEN TWO RUNS ──
+        // SW Grand Junction's 10 ft sliding storefront door (101): no swing,
+        // and no run where it sits — the finder's runs are the brick piers 5
+        // ft either side, so the tag under the door's middle is half a door
+        // from both and clearly nearest to neither. A symbol mark past the
+        // END of two collinear runs, each within half the scheduled width of
+        // it, is the door between them, centred where the mark projects onto
+        // their line. A room number never sits in line with two wall ends.
+        if (mark.inSymbol !== true || second === null) continue;
+        const gapReach = (row.widthFt / 2) / feetPerUnit + onWall;
+        if (first.distance > gapReach || second.distance > gapReach) continue;
+        const offEnd = (t: number) => t <= 0 || t >= 1;
+        if (!offEnd(first.raw) || !offEnd(second.t)) continue;
+        const a = first.wall, b = second.wall;
+        const al = Math.hypot(a.x2 - a.x1, a.y2 - a.y1), bl = Math.hypot(b.x2 - b.x1, b.y2 - b.y1);
+        const cos = Math.abs(((a.x2 - a.x1) * (b.x2 - b.x1) + (a.y2 - a.y1) * (b.y2 - b.y1)) / (al * bl));
+        if (cos < Math.cos((5 * Math.PI) / 180)) continue;
+        if (best === null || (best.gap && first.distance < best.distance)) best = { mark, wall: a, t: first.raw, distance: first.distance, gap: true };
       }
       if (best === null) continue;
       usedMark.add(best.mark);
@@ -348,6 +371,8 @@ export function joinOpeningsToSchedule(input: {
       const dy = wall.y2 - wall.y1;
       const len = Math.hypot(dx, dy);
       const half = row.widthFt / feetPerUnit / 2;
+      // On the run at the mark's foot; or, in the gap case, on the run's line
+      // past its end, where the mark projects.
       const cx = wall.x1 + t * dx;
       const cy = wall.y1 + t * dy;
       joined.push({

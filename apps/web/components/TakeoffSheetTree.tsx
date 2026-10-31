@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { type TreeGroup, type TreeSheet, buildSheetTree, printedScaleOffers, takeoffProgress } from "@/lib/takeoff/sheetTree";
 import { applyPrintedScales } from "@/lib/actions";
 import type { SheetRow } from "@/lib/plan-ingest/sheetIndex";
+import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 
 /**
  * ── WHICH OF THE 175 SHEETS YOU WANT ──
@@ -92,7 +93,7 @@ function useThumbnails(planId: string, enabled: boolean) {
             // `credentials: omit` for the reason the viewer states at length:
             // a credentialed cross-origin request is refused against Blob's
             // `*`, which turns a readable file into an unreadable one.
-            return pdfjs.getDocument({ url: `/api/takeoff/plan/${planId}` }).promise;
+            return pdfjs.getDocument({ url: `/api/takeoff/plan/${planId}`, ...PLAN_PDF_TRANSPORT }).promise;
           })();
         }
         const pdf = await doc.current;

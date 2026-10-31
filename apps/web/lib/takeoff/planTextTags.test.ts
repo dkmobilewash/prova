@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isPropagatedTag, plainTag, planTextTagByRun, propagatedTag } from "./planTextTags";
 import { sameDesignation } from "./wallTypeMatch";
+import { wallTypeTags } from "./wallTags";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 const W = 1000; // points across the sheet
@@ -70,5 +71,35 @@ describe("the run-to-type map from the drawing's own symbols", () => {
     });
     expect(got.byRun.get(walls[2])).toBe("B");
     expect(got.report.bareText).toBe(1);
+  });
+});
+
+describe("a detail callout is not a wall tag", () => {
+  it("drops a text tag that sits inside a symbol the symbol pass rejected as a sheet reference", () => {
+    // A 10 ft wall along y = 100 pt, and "A3" printed inside a split circle
+    // with "A-621" under it, 2 ft off the wall — detail A3 on sheet A-621.
+    const W = 1000;
+    const walls = [{ x1: 0.1, y1: 0.1, x2: 0.2, y2: 0.1, thicknessFeet: 0.4, lengthFeet: 10 }];
+    const circle = (cx: number, cy: number, r: number) => Array.from({ length: 32 }, (_, i) => {
+      const a0 = (i / 32) * 2 * Math.PI, a1 = ((i + 1) / 32) * 2 * Math.PI;
+      return { x1: cx + r * Math.cos(a0), y1: cy + r * Math.sin(a0), x2: cx + r * Math.cos(a1), y2: cy + r * Math.sin(a1) };
+    });
+    const segments = [...circle(150, 120, 12), { x1: 138, y1: 120, x2: 162, y2: 120 }];
+    const text = [
+      { str: "A3", x: 144, y: 118, width: 12, height: 6 },
+      { str: "A-621", x: 140, y: 129, width: 20, height: 6 },
+    ];
+    const types = [{ id: "a3", code: "A3", name: "A3", hasParts: true, thicknessIn: null }];
+    const textTags = wallTypeTags(text, W);
+    expect(textTags.map((t) => t.name)).toContain("A3");
+    const got = planTextTagByRun({ segments, text, widthPt: W, walls, feetPerUnit: 100, legendCodes: ["A3"], textTags, wallTypes: types });
+    expect(got.byRun.size).toBe(0);
+    // The same text printed loose beside the wall is a tag.
+    const loose = planTextTagByRun({ segments: [], text: [text[0]!], widthPt: W, walls, feetPerUnit: 100, legendCodes: ["A3"], textTags: wallTypeTags([text[0]!], W), wallTypes: types });
+    expect(loose.byRun.get(walls[0]!)).toBe("A3");
+    // A section marker with no shape at all: "B4/" and "A-621" side by side is a callout too.
+    const marker = [{ str: "B4/", x: 144, y: 118, width: 14, height: 6 }, { str: "A-621", x: 160, y: 118, width: 20, height: 6 }];
+    const section = planTextTagByRun({ segments: [], text: marker, widthPt: W, walls, feetPerUnit: 100, legendCodes: ["B4"], textTags: wallTypeTags(marker, W), wallTypes: [{ ...types[0]!, code: "B4" }] });
+    expect(section.byRun.size).toBe(0);
   });
 });

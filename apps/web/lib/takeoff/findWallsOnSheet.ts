@@ -110,6 +110,9 @@ export type FindWallsInput = {
    */
   onCandidate?: WallFinderOptions["onCandidate"];
   decide?: WallFinderOptions["decide"];
+  /** The strokes were clipped to a drawing region or a view: a set the layer
+   *  filter empties holds no wall, and the filter's fail-safe must not fire. */
+  regionClipped?: boolean;
   /** Removes a wall the rules chose, and nothing else — see `WallFinderOptions.veto`. */
   veto?: WallFinderOptions["veto"];
   /**
@@ -222,6 +225,8 @@ export function inPageWidthUnits(over: number) {
     // `strokeFieldsCensus.test.ts` now fails the build on the THIRD occurrence
     // rather than waiting for somebody to notice it.
     layer: one.layer,
+    gray: one.gray,
+    fill: one.fill,
   });
 }
 
@@ -294,7 +299,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // that simple the geometric filters already cope. P16 therefore asserts only
   // what it can see — the line never reaches the pairer — and says so.
   stage("layers");
-  const onWallLayers = withoutNonWallLayers(input.segments);
+  const onWallLayers = withoutNonWallLayers(input.segments, { emptyIsAnswer: input.regionClipped === true });
   const allInUnits = onWallLayers.kept.map(inPageWidthUnits(pageSize.widthPt));
 
   // ── THE SET'S OWN TEMPLATE, READ FROM OTHER SHEETS ──
@@ -376,6 +381,9 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
     feetPerPoint: feetPerUnit,
     knownThicknessesIn: scheduleIn,
     onCandidate: input.onCandidate,
+    // For the census-born features: the words, centred, and the raw strokes.
+    words: textItems.map((item) => ({ str: item.str, x: (item.x + item.width / 2) / pageSize.widthPt, y: (item.y + item.height / 2) / pageSize.widthPt })),
+    strokes: inUnits,
     decide: input.decide,
     veto: input.veto,
   });

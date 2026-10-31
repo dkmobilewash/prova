@@ -7,6 +7,12 @@ import { viewerToday } from "@/lib/viewerToday";
 import { prisma } from "@prova/db";
 import { reopenBlockers } from "@/lib/change-order";
 import { causeLabel, formatMinutes, methodLabel, partyLabel } from "@/lib/delays-core";
+import { tmTicketDraftDescription, tmTicketDraftTitle } from "@/lib/tm-ticket-change-order";
+import { priceLine, recapRatesFrom, tmTicketProposals } from "@/lib/change-order-pricing";
+import { asCostCategory } from "@/lib/cost-category";
+import { employerBurdenPercentOn } from "@/lib/employer-burden";
+import { loadEmployerBurdenRates } from "@/lib/employer-burden-query";
+import { loadFringeSchedulesByCraft } from "@/lib/fringe-schedules-query";
 import { Prisma } from "@prova/db";
 import {
   InputError,
@@ -322,6 +328,127 @@ export async function draftChangeOrderFromDelay(delayId: string): Promise<Action
   });
 }
 
+/** The job's recap rates, else the company's defaults — the rule the
+ * estimate tab applies, so a change order is priced at the rates the bid
+ * was. */
+async function recapRatesForJob(jobId: string, companyId: string) {
+  const [recap, defaults] = await Promise.all([
+    prisma.jobBidRecap.findUnique({ where: { jobId } }),
+    prisma.companyBidDefaults.findUnique({ where: { companyId } }),
+  ]);
+  return recapRatesFrom(recap ?? defaults);
+}
+
+/**
+ * Starts a DRAFT change order from a signed T&M ticket — the same move as
+ * `draftChangeOrderFromDelay`, from the other piece of evidence a sub
+ * collects on site. The title and description are the ticket's FROZEN
+ * snapshot (hours per worker, materials, who signed and when), so the
+ * draft says what the GC's representative signed for rather than what the
+ * time entries read today. Nothing is priced and no proposals are created:
+ * how hours become a sell price is an open decision
+ * (coordination/decisions/2026-10-30-change-order-markup-and-burden.md),
+ * so the person prices it on the change-order form as they would any draft.
+ * The ticket keeps a link to it and can start only one.
+ *
+ * MANAGE_FIELD, unlike the delay draft, which asserts nothing: the delay
+ * log sits on the Overview tab in a section that withholds nothing, while
+ * the T&M tickets section of the crew tab is withheld behind MANAGE_FIELD
+ * (`showsField`), and an action behind a withheld section answers to the
+ * same capability — action-capability-guards.test.ts, SECTION_DECIDED.
+ */
+export async function draftChangeOrderFromTmTicket(ticketId: string): Promise<ActionResult> {
+  return runAction(async () => {
+    const context = await requireCompanyContext();
+    if (!can(context, "MANAGE_FIELD")) {
+      throw new InputError(
+        "Field records aren't part of your job function. The account owner sets who sees what, on the Team page.",
+      );
+    }
+    const { company } = context;
+    const ticket = await prisma.tmTicket.findUnique({ where: { id: ticketId } });
+    if (!ticket || ticket.companyId !== company.id) throw new InputError("That ticket is gone. Reload the page.");
+    if (ticket.changeOrderId) throw new InputError("A change order was already drafted from this ticket.");
+    const job = await requireJob(ticket.jobId, company.id);
+    requireEditableViaChangeOrder(job);
+
+    const day = ticket.workDate.toISOString().slice(0, 10);
+    // Photos captured on this job on the work date. The ticket holds none
+    // itself; the draft points at the day's.
+    const dayStart = new Date(`${day}T00:00:00.000Z`);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const photoCount = await prisma.jobMedia.count({
+      where: { jobId: ticket.jobId, capturedAt: { gte: dayStart, lt: dayEnd } },
+    });
+
+    const title = tmTicketDraftTitle({ day, workDescription: ticket.workDescription });
+    const description = tmTicketDraftDescription({
+      day,
+      workDescription: ticket.workDescription,
+      snapshot: ticket.snapshot,
+      signerName: ticket.signerName,
+      signedAtText: siteMoment(ticket.signedAt, job.siteTimeZone),
+      hasDrawnSignature: ticket.signaturePath !== null,
+      photoCount,
+    });
+
+    // PRICING, per Diego's decision of 2026-10-30 (lib/change-order-pricing.ts):
+    // each labor row costs its craft's wage, fringes and the burden in force
+    // on the WORK DATE, then goes through this job's bid recap; a craft with
+    // no wage on file lands unpriced and says so; materials land unpriced.
+    // The snapshot froze craft NAMES, so schedules are keyed by name here.
+    const [schedulesByCraftId, crafts, burdenRates, rates] = await Promise.all([
+      loadFringeSchedulesByCraft(company.id),
+      prisma.craftClassification.findMany({ where: { companyId: company.id }, select: { id: true, name: true } }),
+      loadEmployerBurdenRates(company.id),
+      recapRatesForJob(ticket.jobId, company.id),
+    ]);
+    const schedulesByCraftName = new Map(
+      crafts.map((craft) => [craft.name, schedulesByCraftId.get(craft.id) ?? []] as const),
+    );
+    const proposals = tmTicketProposals(ticket.snapshot, {
+      schedulesByCraftName,
+      burdenPercent: employerBurdenPercentOn(burdenRates, ticket.workDate),
+      rates,
+      workDate: ticket.workDate,
+    });
+
+    await prisma.$transaction(async (tx) => {
+      const number = await issueChangeOrderNumber(tx, ticket.jobId);
+      const changeOrder = await tx.changeOrder.create({
+        data: {
+          jobId: ticket.jobId,
+          number,
+          title,
+          description,
+          status: "DRAFT",
+          proposals: {
+            create: proposals.map((line) => ({
+              changeType: "ADD" as const,
+              description: line.description,
+              unit: line.unit,
+              quantity: line.quantity.toFixed(2),
+              unitPrice: line.unitPrice == null ? null : line.unitPrice.toFixed(2),
+              budgetedUnitCost: line.budgetedUnitCost == null ? null : line.budgetedUnitCost.toFixed(2),
+              currentEstimatedUnitCost: line.budgetedUnitCost == null ? null : line.budgetedUnitCost.toFixed(2),
+              costCategory: line.costCategory,
+            })),
+          },
+        },
+      });
+      // Conditional, so two clicks cannot both link a change order: the
+      // second finds the link already set and rolls its draft back.
+      const { count } = await tx.tmTicket.updateMany({
+        where: { id: ticket.id, changeOrderId: null },
+        data: { changeOrderId: changeOrder.id },
+      });
+      if (count === 0) throw new InputError("A change order was already drafted from this ticket.");
+    });
+
+    revalidatePath(`/jobs/${ticket.jobId}`);
+  });
+}
+
 /**
  * Adds proposed NEW scope to a draft. On approval this becomes a
  * JobLineItem tagged with originChangeOrderId — the same row shape the
@@ -341,6 +468,23 @@ export async function proposeAddedScope(
     const description = required(formData, "itemDescription", "Line item description");
     const unit = text(formData, "unit");
     const budgetedUnitCost = nullableDecimalFromForm(formData, "budgetedUnitCost");
+    const quantity = decimalFromForm(formData, "quantity");
+    const costCategory = asCostCategory(text(formData, "costCategory"));
+
+    // UNIT PRICE: what was typed wins. Left blank with a cost on the line,
+    // the price is the cost through this job's bid recap at the line's
+    // category — Diego's option A, lib/change-order-pricing.ts — so a PM
+    // enters what the work costs and the GC is quoted what the bid would
+    // have quoted. Blank with no cost stays blank: nothing is invented.
+    let unitPrice = nullableDecimalFromForm(formData, "unitPrice");
+    if (unitPrice == null && budgetedUnitCost != null) {
+      const rates = await recapRatesForJob(changeOrder.jobId, company.id);
+      const priced = priceLine(
+        { quantity: Number(quantity), unitCost: Number(budgetedUnitCost), costCategory },
+        rates,
+      );
+      if (priced.unitPrice != null) unitPrice = priced.unitPrice.toFixed(2);
+    }
 
     await prisma.changeOrderProposal.create({
       data: {
@@ -348,11 +492,12 @@ export async function proposeAddedScope(
         changeType: "ADD",
         description,
         unit: unit || null,
-        quantity: decimalFromForm(formData, "quantity"),
-        unitPrice: nullableDecimalFromForm(formData, "unitPrice"),
+        quantity,
+        unitPrice,
         budgetedUnitCost,
         currentEstimatedUnitCost: nullableDecimalFromForm(formData, "currentEstimatedUnitCost") ?? budgetedUnitCost,
         tradeScope: tradeScopeFromForm(formData),
+        costCategory,
       },
     });
 
@@ -545,6 +690,9 @@ export async function approveChangeOrder(
               budgetedUnitCost: proposal.budgetedUnitCost,
               currentEstimatedUnitCost: proposal.currentEstimatedUnitCost,
               tradeScope: proposal.tradeScope,
+              // The cost type travels with the scope, so the recap and the
+              // job-cost screens read the new line the way the CO priced it.
+              costCategory: proposal.costCategory,
               originChangeOrderId: changeOrder.id,
             },
           });

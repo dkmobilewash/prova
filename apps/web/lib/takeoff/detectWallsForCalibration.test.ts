@@ -24,8 +24,15 @@ vi.mock("@/lib/plan-ingest/planBytes", () => ({
   readPlanBytes: (planId: string, companyId: string) => readPlanBytes(planId, companyId),
 }));
 vi.mock("@/lib/plan-ingest/planPdf", () => ({ openPlanPdf: (bytes: unknown) => openPlanPdf(bytes) }));
+// No scanned sheets here: every page reads its strokes and text from the file.
+vi.mock("@/lib/plan-ingest/raster", () => ({ storedRasterFor: async () => null }));
 vi.mock("@prova/db", () => ({
-  prisma: { takeoffWallProposal: { createMany: (args: unknown) => createMany(args) } },
+  prisma: {
+    takeoffWallProposal: { createMany: (args: unknown) => createMany(args) },
+    // The job's items, for matching groups into conditions: none here.
+    takeoffPlan: { findUnique: async () => null },
+    takeoffItem: { findMany: async () => [] },
+  },
 }));
 // `after()` throws outside a request scope, which is the documented behaviour
 // `detectWallsAfterResponse` relies on. These tests call the inner function
@@ -183,5 +190,51 @@ describe("PLAN_TEXT_READ (the per-company opt-in)", () => {
     expect(writeSheetResult).toHaveBeenCalledWith(
       expect.objectContaining({ planId: "plan-1", pageNumber: 1, legend: { page: 25, codes: ["A", "B"] }, doors: null }),
     );
+  });
+});
+
+describe("THE STAGE POSTS THE VIEWER'S LIST, NOT THE FINDER'S", () => {
+  // 1224 pt wide at 136 ft across is 9 pt per foot. A 60 x 40 ft room of
+  // 6 in walls, and 60 ft to its right a 30 ft wall with "(E) WALL" written
+  // a foot above it — the one set-aside a synthetic sheet can carry with no
+  // legend, no frame and no dash pattern.
+  const T = 4.5;
+  const seg = (x1: number, y1: number, x2: number, y2: number) => ({ x1, y1, x2, y2, width: 1 });
+  const strokes = [
+    seg(200, 150, 740, 150), seg(200, 150 + T, 740, 150 + T),
+    seg(200, 510, 740, 510), seg(200, 510 - T, 740, 510 - T),
+    seg(200, 150, 200, 510), seg(200 + T, 150, 200 + T, 510),
+    seg(740, 150, 740, 510), seg(740 - T, 150, 740 - T, 510),
+    seg(800, 300, 1070, 300), seg(800, 300 + T, 1070, 300 + T),
+  ];
+  const tag = { str: "(E) WALL", x: 900, y: 290, width: 50, height: 8 };
+  const sheet = (items: { str: string; x: number; y: number; width: number; height: number }[]) => ({
+    pageCount: 1,
+    pageStrokes: vi.fn(async () => ({ pageNumber: 1, widthPt: 1224, heightPt: 792, rotation: 0, segments: strokes, pathOperators: strokes.length })),
+    pageText: vi.fn(async () => ({ items })),
+    close: vi.fn(async () => {}),
+  });
+  type StoredRun = { x1: number; y1: number; x2: number; y2: number };
+  const postedRuns = (): StoredRun[] => {
+    const call = createMany.mock.calls.at(-1)?.[0] as { data: { runs: StoredRun[] }[] } | undefined;
+    return (call?.data ?? []).flatMap((row) => row.runs);
+  };
+  // The tagged wall's centreline, page-width units: y = (300 + T/2) / 1224.
+  const onTaggedWall = (run: StoredRun) => Math.abs(run.y1 - (300 + T / 2) / 1224) < 1e-3 && Math.abs(run.y2 - run.y1) < 1e-3 && run.x1 > 0.6;
+
+  it("without the tag every wall is posted — the control that proves the fixture is read", async () => {
+    openPlanPdf.mockResolvedValue(sheet([]));
+    expect(await detectWallsForCalibration(target, { now: tickingClock(0), budgetMs: 45_000 })).toBe("written");
+    const runs = postedRuns();
+    expect(runs).toHaveLength(5);
+    expect(runs.some(onTaggedWall)).toBe(true);
+  });
+
+  it("A SET-ASIDE LINE NEVER REACHES THE ESTIMATE: tagged (E) WALL, the wall is left out of what is posted and the room's four stay", async () => {
+    openPlanPdf.mockResolvedValue(sheet([tag]));
+    expect(await detectWallsForCalibration(target, { now: tickingClock(0), budgetMs: 45_000 })).toBe("written");
+    const runs = postedRuns();
+    expect(runs).toHaveLength(4);
+    expect(runs.some(onTaggedWall)).toBe(false);
   });
 });

@@ -8,6 +8,8 @@ import { claimPorts, closeIfSettled, ingestViewOf } from "@/lib/plan-ingest/clai
 import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
 import { runIngest, MAX_ATTEMPTS, type IngestView } from "@/lib/plan-ingest/runner";
 import { isRunnableStage, stageWork, STAGE_SPENDS } from "@/lib/plan-ingest/stages";
+import { wallsPlan, wallsSheetsFor } from "@/lib/plan-ingest/walls";
+import { scannedPageNumbers } from "@/lib/plan-ingest/raster";
 import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "./shared";
 
 /**
@@ -136,6 +138,37 @@ export async function startPlanIngest(planId: string, stage: PlanIngestStage): P
   // plan set would otherwise create two jobs over the same pages, and the
   // progress figure would be over whichever one was queried — a bar that jumps
   // backwards depending on who is looking.
+  let pageNumbers: number[] | null = null;
+  // ── WALLS: only the sheets it can do, and only when the owner turned it on ──
+  //
+  // The other stages take every page because every page might be anything.
+  // Finding walls needs a scale, wants a floor plan and has nothing to add to a
+  // sheet already found — so its tasks are exactly those sheets, and the
+  // progress reads "12 of 18 sheets" rather than "12 of 100" with 82 no-ops.
+  // `lib/plan-ingest/walls.ts` has the rule and the summary of the rest.
+  if (stage === "WALLS") {
+    const on = await prisma.company.findUnique({ where: { id: companyId }, select: { wholeSetTakeoffOn: true } });
+    if (!on?.wholeSetTakeoffOn) {
+      return { ok: false, error: "Finding walls across the whole set is off for your company. The account owner can turn it on under Settings." };
+    }
+    const sheets = await wallsSheetsFor(planId, companyId);
+    const plan = wallsPlan(sheets);
+    pageNumbers = sheets.filter((sheet) => plan.get(sheet.pageNumber) === null).map((sheet) => sheet.pageNumber);
+    if (pageNumbers.length === 0) {
+      return { ok: false, error: "There is no floor plan with a scale that still needs its walls found. Set a scale on a floor plan first, or open a sheet to see the walls already found." };
+    }
+  }
+  // ── RASTER: only the scanned pages, and only with the switch on ──
+  if (stage === "RASTER") {
+    const company = await prisma.company.findUnique({ where: { id: companyId }, select: { scannedPlansOn: true } });
+    if (!company?.scannedPlansOn) {
+      return { ok: false, error: "Reading scanned sheets is off for your company. The account owner can turn it on under Settings." };
+    }
+    pageNumbers = (await scannedPageNumbers(planId)).filter((n) => n <= pageCount);
+    if (pageNumbers.length === 0) {
+      return { ok: false, error: "No sheet of this set is a scan, so there is nothing to read this way." };
+    }
+  }
   const existing = await prisma.planIngestJob.findFirst({
     where: { planId, stage, finishedAt: null },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -144,17 +177,14 @@ export async function startPlanIngest(planId: string, stage: PlanIngestStage): P
   if (existing) return { ok: true, value: await ingestViewOf(existing.id, existing.stage) };
 
   const created = await prisma.$transaction(async (tx) => {
+    const pages = pageNumbers ?? Array.from({ length: pageCount }, (_, index) => index + 1);
     const job = await tx.planIngestJob.create({
-      data: { planId, companyId, stage, pageCount, startedByUserId: context.id },
+      data: { planId, companyId, stage, pageCount: pages.length, startedByUserId: context.id },
       select: { id: true, stage: true },
     });
-    if (pageCount > 0) {
+    if (pages.length > 0) {
       await tx.planIngestTask.createMany({
-        data: Array.from({ length: pageCount }, (_, index) => ({
-          jobId: job.id,
-          pageNumber: index + 1,
-          stage,
-        })),
+        data: pages.map((pageNumber) => ({ jobId: job.id, pageNumber, stage })),
       });
     }
     return job;

@@ -32,7 +32,7 @@ import { reportUsage, type ModelUsageReporter } from "./anthropic";
  * model that returns the phrase has read a drawing.
  */
 
-export const WALL_LEGEND_PROMPT_VERSION = "wall-legend.1";
+export const WALL_LEGEND_PROMPT_VERSION = "wall-legend.2";
 
 const TOOL_NAME = "record_wall_types";
 
@@ -45,8 +45,24 @@ export type WallTypeRead = {
   name: string | null;
 };
 
+/**
+ * One "unless noted otherwise" sentence and the type it names as the
+ * default — Joplin G-111: "UNLESS NOTED OTHERWISE ON THE FLOOR PLAN, ALL
+ * INTERIOR DRYWALL PARTITIONS … ARE TYPE 'A' PARTITIONS", and a second for
+ * masonry naming B. The floor plans then tag only the exceptions, so
+ * without this list a sheet's untagged footage has no type at all.
+ */
+export type WallLegendDefault = {
+  /** The code of the type the sentence names, as printed in the legend. */
+  code: string;
+  /** The sentence, verbatim. */
+  note: string;
+};
+
 export type WallLegendRead = {
   types: WallTypeRead[];
+  /** The legend's U.N.O. defaults; empty when the sheet states none. */
+  uno: WallLegendDefault[];
   /** Which part of the page these came from, in words somebody can check. */
   reason: string;
   confidence: "HIGH" | "MEDIUM" | "LOW";
@@ -67,6 +83,8 @@ Record what you find through the ${TOOL_NAME} tool.
 4. GENERAL NOTES ARE NOT A TYPE. A sheet carries notes that apply to all of them — "ALL LOAD BEARING STUDS TO BE 14 GAUGE", "SEAL ALL GAPS IN FIRE RATED WALLS". Do not attach these to any single type and do not invent a type for them.
 
 5. IGNORE WHAT IS NOT A WALL TYPE. Title blocks, revision tables, drawing indexes, sheet numbers, copyright notices, and the detail callouts that reference other sheets.
+
+7. THE DEFAULTS, VERBATIM. A partition sheet often says which type applies where the floor plan tags nothing — "UNLESS NOTED OTHERWISE, ALL INTERIOR PARTITIONS ARE TYPE 'A'", "ALL INTERIOR MASONRY PARTITIONS ARE TYPE 'B' U.N.O.", "ALL PARTITIONS TYPE P1 UNLESS NOTED". Record each such sentence in "uno" with the code it names, copied as printed. A sentence that sets a DIMENSION or a MATERIAL for everything ("all studs are 3 5/8\" unless noted", "all gypsum board is 5/8\" type X") names no type and is not a default. A sheet may state none, one, or one per family (drywall, masonry).
 
 6. CONFIDENCE is HIGH when each type's code and lines are unambiguous, MEDIUM when you had to judge which detail a line belonged to, LOW when the page may not be a partition legend at all. REASON says in one sentence where on the sheet you read these and what made it hard.
 
@@ -111,10 +129,18 @@ export async function extractWallLegend(params: {
                 required: ["code", "lines"],
               },
             },
+            uno: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: { code: { type: "string" }, note: { type: "string" } },
+                required: ["code", "note"],
+              },
+            },
             reason: { type: "string" },
             confidence: { type: "string", enum: ["HIGH", "MEDIUM", "LOW"] },
           },
-          required: ["types", "reason", "confidence"],
+          required: ["types", "uno", "reason", "confidence"],
         },
       },
     ],
@@ -136,8 +162,20 @@ export async function extractWallLegend(params: {
   if (block === undefined || block.type !== "tool_use") {
     throw new Error("The model returned no legend reading.");
   }
-  const raw = block.input as {
+  return wallLegendReadFrom(block.input);
+}
+
+/**
+ * The tool's input into a read. Exported so the shape the model is asked
+ * for and the shape the app reads are tested against each other without a
+ * call: a type with no code names nothing, a type with no lines describes
+ * nothing, a default with no code or no sentence is dropped, and the
+ * confidence falls to LOW rather than to an invented value.
+ */
+export function wallLegendReadFrom(input: unknown): WallLegendRead {
+  const raw = input as {
     types?: { code?: unknown; name?: unknown; lines?: unknown }[];
+    uno?: { code?: unknown; note?: unknown }[];
     reason?: unknown;
     confidence?: unknown;
   };
@@ -152,9 +190,16 @@ export async function extractWallLegend(params: {
     // A type with no code names nothing, and a type with no lines describes
     // nothing. Either way there is no assembly to propose.
     .filter((one) => one.code !== "" && one.lines.length > 0);
+  const uno: WallLegendDefault[] = (Array.isArray(raw.uno) ? raw.uno : [])
+    .map((one) => ({
+      code: typeof one.code === "string" ? one.code.trim() : "",
+      note: typeof one.note === "string" ? one.note.replace(/\s+/g, " ").trim() : "",
+    }))
+    .filter((one) => one.code !== "" && one.note !== "");
 
   return {
     types,
+    uno,
     reason: typeof raw.reason === "string" ? raw.reason : "",
     confidence:
       raw.confidence === "HIGH" || raw.confidence === "MEDIUM" || raw.confidence === "LOW"

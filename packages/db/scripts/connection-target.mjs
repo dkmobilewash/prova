@@ -164,23 +164,36 @@ export function wrongTarget(expected, ...targets) {
  * There is deliberately NO env-var escape hatch: the day somebody needs
  * one is the day this happens again.
  */
-export function scratchProblem(connectionString, name) {
+export function localDatabaseProblem(connectionString, name) {
   const target = describe(connectionString);
   if (!target) return `${name} is missing or not a valid connection string, so there is nothing safe to run against.`;
   const url = new URL(connectionString);
   if (!["postgres:", "postgresql:"].includes(url.protocol)) {
-    return `${name} must be a PostgreSQL connection string for a local test database.`;
+    return `${name} must be a PostgreSQL connection string for a local database.`;
   }
   const local =
     target.host === "localhost" ||
     target.host === "127.0.0.1" ||
     target.host === "[::1]";
-  if (!local) return `${name} is not a local database. The db suite creates and DELETES rows; use the scratch recipe in vitest.db.config.mts.`;
+  if (!local) return `${name} is not a local database (${target.host}). This writes rows and refuses anything but localhost, 127.0.0.1 or a unix socket; there is no override.`;
   const hosts = url.searchParams.getAll("host");
   if (hosts.length > 1 || hosts.some((host) => !host.startsWith("/") || host.startsWith("//")) ||
       url.searchParams.has("hostaddr") || url.searchParams.has("service")) {
     return `${name} contains an unsafe host override. Only one absolute local socket path is allowed.`;
   }
+  return null;
+}
+
+/**
+ * The db suite's rule: local AND disposable by name. The host half is
+ * `localDatabaseProblem`, shared with the scripts that write rows
+ * (`backfill-scanned-page-rows.ts`), because a printed host is information
+ * and not a refusal.
+ */
+export function scratchProblem(connectionString, name) {
+  const problem = localDatabaseProblem(connectionString, name);
+  if (problem) return problem;
+  const target = describe(connectionString);
   if (!target.database || !/^[a-z0-9_]+_(?:test|dbtest)$/.test(target.database)) {
     return `${name} must name a disposable database ending in _test or _dbtest, not an application database.`;
   }

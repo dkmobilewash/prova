@@ -68,7 +68,7 @@ afterAll(() => vi.unstubAllEnvs());
 /** Every H2 the page had before it was tabbed, by the tab it now lives on. */
 const EXPECTED: Record<string, string[]> = {
   company: ["Company", "Set up for your work", "Company locations"],
-  estimating: ["How you take off board", "Default markup", "Phase codes", "Employer burden"],
+  estimating: ["Takeoff features", "How you take off board", "Default markup", "Phase codes", "Employer burden"],
   quickbooks: ["QuickBooks Online"],
   licences: ["Contractor licences", "Insurance policies", "Bonding"],
   appearance: ["Appearance"],
@@ -94,8 +94,9 @@ describe("/settings tabs", () => {
   it("puts every section the page had in exactly one tab", async () => {
     const all = Object.values(EXPECTED).flat();
     // The twelve H2 sections of the untabbed page (the audit's "15" also
-    // counted the link paragraphs and banners, which were never sections).
-    expect(all.length).toBe(12);
+    // counted the link paragraphs and banners, which were never sections),
+    // plus "Takeoff features", the one list of every takeoff switch.
+    expect(all.length).toBe(13);
     const seen = new Map<string, number>();
     for (const tab of Object.keys(EXPECTED)) {
       for (const h of h2s(await render(tabParams(tab)))) seen.set(h, (seen.get(h) ?? 0) + 1);

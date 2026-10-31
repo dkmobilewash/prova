@@ -139,8 +139,8 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Invoices / pay applications",
     // `status` added #525 — an invoice export with no status cannot tell a
     // draft from one a GC has been sent, on the file a person reconciles from.
-    columns: ["id", "jobId", "number", "description", "amount", "status", "issuedAt", "dueAt", "retainageWithheld"],
-    note: "retainageWithheld is what was held on that application, not a running balance.",
+    columns: ["id", "jobId", "number", "description", "amount", "status", "issuedAt", "periodTo", "dueAt", "retainageWithheld"],
+    note: "retainageWithheld is what was held on that application, not a running balance. periodTo is the G702 period-ending date, blank on applications before 2026-10-30.",
     scope: byJob,
   },
   {
@@ -481,6 +481,25 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byCompany,
   },
   {
+    key: "purchase-orders",
+    model: "purchaseOrder",
+    label: "Purchase orders",
+    note: "A draft is not a commitment. Only issued and closed orders count as committed.",
+    columns: ["id", "jobId", "number", "vendorId", "status", "createdByUserId", "createdAt", "updatedAt"],
+    scope: byCompany,
+  },
+  {
+    key: "purchase-order-lines",
+    model: "purchaseOrderLine",
+    label: "Purchase order lines",
+    note: "Description, unit and price are snapshots taken when the line was added.",
+    columns: [
+      "id", "purchaseOrderId", "lineItemId", "description", "unit", "quantity", "unitPrice",
+      "costCategory", "vendorPriceQuoteId", "createdAt",
+    ],
+    scope: (companyId: string) => ({ purchaseOrder: { companyId } }),
+  },
+  {
     key: "safety-incidents",
     model: "safetyIncident",
     label: "Safety incidents",
@@ -716,8 +735,11 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       " is the scale a sheet declares about itself, derived from the dimension strings and" +
       " stroked lines already in the PDF, so it is re-read at no cost and nobody's own work is" +
       " lost by leaving it out. The calibration an estimator ACCEPTED from it is a different" +
-      " matter and is `TakeoffScaleCalibration`, exported with the takeoff.",
-    models: ["PlanSheetText", "PlanSheetProposal", "PlanSheetScaleReading"],
+      " matter and is `TakeoffScaleCalibration`, exported with the takeoff." +
+      " `PlanSheetRaster` is the same kind of thing for a SCANNED sheet: the lines and words" +
+      " the raster stage read off the picture, re-read from the file at no cost by running" +
+      " the stage again, and nobody's own work.",
+    models: ["PlanSheetText", "PlanSheetProposal", "PlanSheetScaleReading", "PlanSheetRaster"],
   },
   {
     key: "plan-wall-proposals",
@@ -1135,6 +1157,7 @@ export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
   RfiCounter: "sequence counter — the numbers it issued are on the exported RFIs",
   SafetyCaseCounter: "sequence counter — the numbers it issued are on the exported incidents",
   SubmittalCounter: "sequence counter — the numbers it issued are on the exported submittals",
+  PurchaseOrderCounter: "sequence counter — the numbers it issued are on the exported purchase orders",
   Wh347PayrollCounter: "sequence counter — the numbers it issued are on Wh347PayrollNumber, itself withheld above (payroll-rates)",
   QuickBooksConnection: "an integration connection: tokens into another system, withheld above",
   IntegrationConnection: "an integration connection: tokens into another system, withheld above",

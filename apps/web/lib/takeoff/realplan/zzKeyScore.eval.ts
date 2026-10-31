@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { storedRasterFrom } from "../../plan-ingest/raster";
 import { prisma } from "@prova/db";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { findWallsOnSheet, inPageWidthUnits } from "../findWallsOnSheet";
@@ -74,7 +75,7 @@ type Saved = {
 
 describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
   it("scores the finder against the answer key — rules, or rules with the model's vetoes", { timeout: 7_200_000 }, async () => {
-    const plans = await prisma.takeoffPlan.findMany({ select: { fileName: true, fileUrl: true } });
+    const plans = await prisma.takeoffPlan.findMany({ select: { id: true, fileName: true, fileUrl: true } });
     const flat = (s: string) => s.replace(/[^a-z0-9]+/gi, "").toUpperCase();
 
     // Every label file, then the held-out ones. Both counts are reported, so
@@ -116,26 +117,38 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
 
     for (const file of held) {
       const saved = JSON.parse(readFileSync(file.path, "utf8")) as Saved;
-      const { key, fromTracedFeet } = keyFromLabels(saved);
+      // feetPerUnit so a trace and an accepted wall on the same line are
+      // counted ONCE. Chrome accepted candidates over existing traces in the
+      // re-judge round — Central Bank A101 has 56 — and without this the key
+      // carries both, inflating keyFeet and flattering junk-per-100-ft.
+      const { key, fromTracedFeet, tracesFoldedIn, acceptedFoldedIn } = keyFromLabels(saved, saved.feetPerUnit);
+      if (tracesFoldedIn + acceptedFoldedIn > 0) notes.push(`  ${file.dir.slice(0, 26)}/${file.sheet}: FOLDED ${tracesFoldedIn} trace(s) and ${acceptedFoldedIn} accepted line(s), counted once`);
       if (key.length === 0) {
         notes.push(`  ${file.dir}/${file.sheet}: labelled, but no accepted or traced walls`);
         continue;
       }
-      const pdf =
-        plans.find((p) => flat(p.fileName ?? "") === flat(file.dir))?.fileUrl?.replace(/^local:/, "") ??
-        null;
+      const plan = plans.find((p) => flat(p.fileName ?? "") === flat(file.dir));
+      const pdf = plan?.fileUrl?.replace(/^local:/, "") ?? null;
       if (pdf === null) {
         notes.push(`  ${file.dir}/${file.sheet}: no ingested plan — SKIPPED, not scored`);
         continue;
       }
-      const bytes = Buffer.from(readFileSync(join(DIR, pdf)));
-      const read = await sheetStrokes(bytes, saved.page);
+      // A scanned sheet: the lines and words the raster stage stored, as the
+      // viewer reads them. No sampled sheets, so template lines are not dropped.
+      const raster = storedRasterFrom(
+        await prisma.planSheetRaster.findFirst({
+          where: { planId: plan!.id, pageNumber: saved.page },
+          select: { widthPt: true, heightPt: true, lines: true, text: true, printedScale: true },
+        }),
+      );
+      const bytes = raster === null ? Buffer.from(readFileSync(join(DIR, pdf))) : null;
+      const read = raster ?? (await sheetStrokes(bytes!, saved.page));
       if (read === null) {
         notes.push(`  ${file.dir}/${file.sheet}: unreadable — SKIPPED, not scored`);
         continue;
       }
-      const doc = await openPlanPdf(bytes);
-      const text = await doc.pageText(saved.page);
+      const doc = bytes === null ? null : await openPlanPdf(bytes);
+      const words = raster?.textItems ?? (await doc!.pageText(saved.page)).items;
       // ── SCORED ON WHAT THE APP WOULD OFFER, NOT ON THE FINDER'S RAW OUTPUT ──
       //
       // This called `findWallsOnSheet` on the raw page, which is a different
@@ -149,7 +162,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
       // NOT on multi-view ones (Murray 160 against the app's 32). The per
       // sheet view count is printed so a reader can tell which rows are
       // affected rather than having to trust this sentence.
-      const textItems = text.items.map((i) => ({
+      const textItems = words.map((i) => ({
         str: i.str,
         x: i.x,
         y: i.y,
@@ -157,7 +170,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
         height: i.height,
       }));
       const sampledSheets: StrokeSegment[][] = [];
-      for (const n of pagesToSample(doc.pageCount, saved.page)) {
+      for (const n of doc === null ? [] : pagesToSample(doc.pageCount, saved.page)) {
         // FRESH bytes per page: pdf.js detaches the array it is handed.
         const other =
           n === saved.page ? read : await sheetStrokes(Buffer.from(readFileSync(join(DIR, pdf))), n);
@@ -171,6 +184,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
         pageSize: { widthPt: read.widthPt, heightPt: read.heightPt },
         feetPerUnit: saved.feetPerUnit,
         sampledSheets,
+        scanned: raster !== null,
       });
       const found = detected.found;
       const offered = offeredCandidates({
@@ -185,6 +199,10 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
         widthPt: read.widthPt,
         feetPerUnit: saved.feetPerUnit,
         planBoxes: detected.planBoxes,
+        // What the viewer passes. Without these the word and stroke set-asides
+        // never ran, so this scored a list no reviewer has ever been shown.
+        textItems,
+        pageSegments: read.segments,
       });
       views.push(
         `  ${file.dir.slice(0, 26)}/${file.sheet}: views ${detected.views}` +
@@ -217,6 +235,22 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
             // explicit and a single keeps no thickness rather than a zero.
             thicknessFeet: w.thicknessIn === null ? undefined : w.thicknessIn / 12,
           })),
+          // ── THE LINES THE REVIEWER REJECTED ──
+          //
+          // Without these every uncovered foot is "unjudged", and the finder's
+          // confirmed junk cannot be told from footage nobody has looked at.
+          // Centreline coordinates and the same inches-to-feet conversion as
+          // the proposals above, for the same thickness-band reason.
+          judged: (saved.verdicts ?? [])
+            .filter((v) => v.verdict === "not-wall")
+            .map((v) => ({
+              x1: v.x1,
+              y1: v.y1,
+              x2: v.x2,
+              y2: v.y2,
+              lengthFeet: v.lengthFeet,
+              thicknessFeet: v.thicknessFeet,
+            })),
           feetPerUnit: saved.feetPerUnit,
           keyFromTracedFeet: fromTracedFeet,
         }),
@@ -233,7 +267,12 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
         ` (traced ${s.keyFromTraced.toFixed(0)})` +
         ` · proposed ${s.proposedFeet.toFixed(0).padStart(6)}` +
         ` · missing ${s.missingFeet.toFixed(0).padStart(5)}` +
-        ` · extra ${s.extraFeet.toFixed(0).padStart(5)}` +
+        ` · recall ${s.recallPercent.toFixed(0).padStart(3)}%` +
+        // Junk and unjudged SEPARATELY. One "extra" number counted a line the
+        // reviewer called junk and a line nobody has looked at identically,
+        // and only the first is the finder's fault.
+        ` · junk ${s.confirmedJunkFeet.toFixed(0).padStart(5)}` +
+        ` · unjudged ${s.unjudgedFeet.toFixed(0).padStart(5)}` +
         ` · net ${s.netFeet >= 0 ? "+" : ""}${s.netFeet.toFixed(0)}`,
     );
 
@@ -249,7 +288,11 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
             `${notes.length === 0 ? "" : `${notes.join("\n")}\n`}` +
             `  TOTAL  key ${total.keyFeet.toFixed(0)} ft ` +
             `(${total.keyFromTraced.toFixed(0)} of it traced) · ` +
-            `missing ${total.missingFeet.toFixed(0)} · extra ${total.extraFeet.toFixed(0)} · ` +
+            `missing ${total.missingFeet.toFixed(0)} · ` +
+            `recall ${total.keyFeet === 0 ? 0 : (((total.keyFeet - total.missingFeet) / total.keyFeet) * 100).toFixed(1)}% · ` +
+            `junk ${total.confirmedJunkFeet.toFixed(0)} ` +
+            `(${total.keyFeet === 0 ? "0" : ((total.confirmedJunkFeet / total.keyFeet) * 100).toFixed(0)} per 100 ft of key) · ` +
+            `unjudged ${total.unjudgedFeet.toFixed(0)} · ` +
             `net ${total.netFeet >= 0 ? "+" : ""}${total.netFeet.toFixed(0)}`,
     );
 
@@ -258,7 +301,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the held-out buildings", () => {
     // but silently not scored must not pass as success.
     expect(all.length, "no label files at all — check TAKEOFF_LABEL_DIR").toBeGreaterThan(0);
     expect(scores.length, "held-out sheets were found but none could be scored").toBe(
-      held.length - notes.length,
+      held.length - notes.filter((n) => n.includes("SKIPPED")).length,
     );
   });
 });

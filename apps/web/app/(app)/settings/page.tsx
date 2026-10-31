@@ -32,7 +32,15 @@ import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
 import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsForm";
 import { OpeningDeductionForm } from "@/components/OpeningDeductionForm";
 import { RoomFinderSwitch } from "@/components/RoomFinderSwitch";
+import { ScannedPlansSwitch } from "@/components/ScannedPlansSwitch";
+import { SymbolCountSwitch } from "@/components/SymbolCountSwitch";
 import { DemotedWallsSwitch } from "@/components/DemotedWallsSwitch";
+import { WholeSetTakeoffSwitch } from "@/components/WholeSetTakeoffSwitch";
+import { TakeoffFeaturesSection } from "@/components/TakeoffFeaturesSection";
+import { takeoffFeatureRows } from "@/lib/takeoff/features";
+import { aiSettingsFor } from "@/lib/ai/settings";
+import { anthropicIsConfigured } from "@prova/integrations";
+import { DoorsWindowsSwitch } from "@/components/DoorsWindowsSwitch";
 import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import { QuickBooksMapping, QuickBooksSyncLog } from "@/components/QuickBooksMapping";
 import { QuickBooksReconcile } from "@/components/QuickBooksReconcile";
@@ -173,12 +181,37 @@ export default async function SettingsPage({
   const { context, allowed } = await requireCapability("MANAGE_COMPLIANCE");
   if (!allowed) return <NoAccess capability="MANAGE_COMPLIANCE" />;
   const { company, ...currentUser } = context;
+  // ONE read for all three takeoff switches. The merge of two lanes left two
+  // queries here, each selecting roomFinderOn and redeclaring it; the switches
+  // are columns on the same row and there is no reason to ask twice.
   const switches = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOn: true },
+    select: { roomFinderOn: true, demotedWallsOff: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOn: true },
   });
   const roomFinderOn = switches?.roomFinderOn ?? false;
-  const demotedWallsOn = switches?.demotedWallsOn ?? false;
+  // The switch reads as ON unless this company turned it off, so the box is
+  // ticked for everybody who has never touched it.
+  const demotedWallsOn = !(switches?.demotedWallsOff ?? false);
+  const wholeSetTakeoffOn = switches?.wholeSetTakeoffOn ?? false;
+  const scannedPlansOn = switches?.scannedPlansOn ?? false;
+  const symbolCountOn = switches?.symbolCountOn ?? false;
+  const doorsWindowsOn = switches?.doorsWindowsOn ?? false;
+  // Every takeoff switch in one list (PILOT.md's first finding); the switches
+  // themselves stay in their own sections below and on the Assistant page.
+  const aiSettings = await aiSettingsFor(company.id);
+  const featureRows = takeoffFeatureRows({
+    roomFinderOn,
+    demotedWallsOn,
+    ai: { aiEnabled: aiSettings.aiEnabled, planTextReadOptedIn: aiSettings.optedInFeatures.includes("PLAN_TEXT_READ") },
+    anthropicConfigured: anthropicIsConfigured(),
+    // Both of these shipped after this list was written, and they are OPTIONAL
+    // inputs that render "not on this build yet" when omitted. Leaving them out
+    // would tell an owner that two switches they can use do not exist.
+    wholeSetTakeoffOn,
+    scannedPlansOn,
+    doorsWindowsOn,
+    symbolCountOn,
+  });
   const { qb, qb_detail, tab: tabParam } = await searchParams;
   // The same rule PageTabs highlights by, so the tab lit is the group shown.
   const tab =
@@ -540,6 +573,7 @@ export default async function SettingsPage({
       )}
       {tab === "estimating" && (
         <>
+          <TakeoffFeaturesSection rows={featureRows} isOwner={currentUser.role === "OWNER"} />
           <Disclosure summary="How this works" className="mb-8">
             <div className="flex flex-col gap-3 text-sm text-ink-body">
               <p>
@@ -598,11 +632,20 @@ export default async function SettingsPage({
                 Shown to everyone so the absence of the button on the takeoff
                 has an explanation somewhere a person can find; saved by the
                 owner only. See `lib/takeoff/NOTES-rooms.md`. */}
-            <div className="mt-4">
+            <div id="room-finder" className="mt-4 scroll-mt-20">
               <RoomFinderSwitch on={roomFinderOn} isOwner={currentUser.role === "OWNER"} />
+              <WholeSetTakeoffSwitch on={wholeSetTakeoffOn} isOwner={currentUser.role === "OWNER"} />
+            </div>
+            <div id="demoted-walls" className="mt-4 scroll-mt-20">
+              <DemotedWallsSwitch on={demotedWallsOn} isOwner={currentUser.role === "OWNER"} />
+            </div>
+            {/* Scanned sheets, same posture: off until chosen. */}
+            <div className="mt-4">
+              <ScannedPlansSwitch on={scannedPlansOn} isOwner={currentUser.role === "OWNER"} />
             </div>
             <div className="mt-4">
-              <DemotedWallsSwitch on={demotedWallsOn} isOwner={currentUser.role === "OWNER"} />
+              <DoorsWindowsSwitch on={doorsWindowsOn} isOwner={currentUser.role === "OWNER"} />
+              <SymbolCountSwitch on={symbolCountOn} isOwner={currentUser.role === "OWNER"} />
             </div>
           </section>
 

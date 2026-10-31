@@ -62,6 +62,39 @@ export const CLAIM_LEASE_MS = 90_000;
 export const MAX_ATTEMPTS = 3;
 
 /**
+ * ── A PAGE THAT NEVER COMES BACK IS A FAILURE, AND IT IS WRITTEN DOWN ──
+ *
+ * The loop awaited `work` with no bound. A stage that hung — Evergreen's
+ * RASTER stage on the server, 2026-10-29, whose worker thread never answered
+ * — held the claim until the lease lapsed, the next tick claimed the page
+ * again and cleared its error, and after three such rounds the task sat
+ * exhausted with NOTHING recorded: no error, no reason, a server idle on a
+ * claimed task. The timeout is set a little short of the lease so the
+ * failure is recorded by the worker that owns the claim, before another can
+ * take it. The work itself cannot be cancelled from here; the stage owns
+ * that (the sheet worker has its own, shorter, timeout and terminates its
+ * thread).
+ */
+export const WORK_TIMEOUT_BEFORE_LEASE_MS = 5_000;
+
+export class WorkTimedOut extends Error {
+  constructor(readonly stage: string, readonly pageNumber: number, readonly afterMs: number) {
+    super(`page ${pageNumber} did not finish the ${stage} stage within ${Math.round(afterMs / 1000)} s`);
+  }
+}
+
+function withinTime(work: Promise<WorkOutcome>, ms: number, task: ClaimedTask): Promise<WorkOutcome> {
+  return new Promise<WorkOutcome>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new WorkTimedOut(task.stage, task.pageNumber, ms)), ms);
+    timer.unref();
+    work.then(
+      (outcome) => { clearTimeout(timer); resolve(outcome); },
+      (error: unknown) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+/**
  * How long to wait before a failed page may be tried again, by attempt number.
  *
  * Index is the attempt that just failed, so a first failure waits 30s and a
@@ -154,12 +187,16 @@ export async function runIngest(options: {
   budgetMs?: number;
   leaseMs?: number;
   maxAttempts?: number;
+  /** How long one page's work may run before it is recorded as failed.
+   *  Defaults to `WORK_TIMEOUT_BEFORE_LEASE_MS` short of the lease. */
+  workTimeoutMs?: number;
 }): Promise<RunReport> {
   const { ports } = options;
   const now = options.now ?? (() => Date.now());
   const budgetMs = options.budgetMs ?? DEFAULT_RUN_BUDGET_MS;
   const leaseMs = options.leaseMs ?? CLAIM_LEASE_MS;
   const maxAttempts = options.maxAttempts ?? MAX_ATTEMPTS;
+  const workTimeoutMs = options.workTimeoutMs ?? Math.max(1_000, leaseMs - WORK_TIMEOUT_BEFORE_LEASE_MS);
 
   const startedAt = now();
   const report: RunReport = { done: 0, retryable: 0, exhausted: 0, stopped: "drained" };
@@ -188,7 +225,7 @@ export async function runIngest(options: {
 
     let outcome: WorkOutcome;
     try {
-      outcome = await ports.work(claimed);
+      outcome = await withinTime(ports.work(claimed), workTimeoutMs, claimed);
     } catch (err) {
       // A THROWN error is a bug in the stage, not a failed page, and it must
       // still be recorded against the page rather than taking the run down.
@@ -196,7 +233,10 @@ export async function runIngest(options: {
       // carry a connection string, and this string is rendered on a screen.
       outcome = {
         ok: false,
-        error: "This page could not be read. Nothing about it was saved. Retry it, and tell C Stream if it keeps failing.",
+        error:
+          err instanceof WorkTimedOut
+            ? `This page did not finish within ${Math.round(err.afterMs / 1000)} seconds at the ${err.stage} stage. Nothing about it was saved. Retry it, and tell C Stream if it keeps failing.`
+            : "This page could not be read. Nothing about it was saved. Retry it, and tell C Stream if it keeps failing.",
       };
       console.error("[plan-ingest] stage threw", {
         taskId: claimed.id,

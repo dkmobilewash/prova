@@ -2703,6 +2703,13 @@ async function undo(companyId) {
     await del("toolboxTalk", () =>
       prisma.toolboxTalk.deleteMany({ where: { jobId: { in: jobIds } } }),
     );
+    await del("purchaseOrderLine", () =>
+      prisma.purchaseOrderLine.deleteMany({ where: { purchaseOrder: { jobId: { in: jobIds } } } }),
+    );
+    await del("purchaseOrder", () => prisma.purchaseOrder.deleteMany({ where: { jobId: { in: jobIds } } }));
+    await del("purchaseOrderCounter", () =>
+      prisma.purchaseOrderCounter.deleteMany({ where: { jobId: { in: jobIds } } }),
+    );
     await del("materialOrderDelivery", () =>
       prisma.materialOrderDelivery.deleteMany({ where: { order: { jobId: { in: jobIds } } } }),
     );

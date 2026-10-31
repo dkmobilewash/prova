@@ -84,6 +84,11 @@ export type SheetStrokes = {
    * the eval asserts it is non-zero before reading any other figure off a run.
    */
   pathOperators: number;
+  /** Image-drawing operators: a scan is one of these and no paths. */
+  imageOperators: number;
+  /** Paths the page carried that painted nothing — a clip or a bare `n` — and
+   *  were therefore not read as lines. Counted inside `pathOperators` too. */
+  unpaintedPaths: number;
 };
 
 /**
@@ -265,6 +270,8 @@ export async function segmentsFromOpenPage(
 
       const segments: StrokeSegment[] = [];
       let pathOperators = 0;
+      let imageOperators = 0;
+      let unpaintedPaths = 0;
 
       // The CTM stack. `ctm` is the matrix in force now; `q` pushes a copy and
       // `Q` pops back to it. A `Q` with nothing pushed is malformed PDF, so the
@@ -276,7 +283,13 @@ export async function segmentsFromOpenPage(
       // a separate stack would drift the moment a path changed one and not the
       // other. 1.0 is the PDF default for a page that never sets it.
       let lineWidth = 1;
-      const stack: { ctm: number[]; lineWidth: number }[] = [];
+      let gray: number | undefined;
+      // The FILL colour, kept apart from the pen's: a wall drawn as a grey
+      // poché between two black outlines is black-stroked and grey-filled,
+      // and the legend's EXISTING WALL sample on Murray A101 and Bunkie A100
+      // is exactly that — see `existingWalls.ts`.
+      let fillGray: number | undefined;
+      const stack: { ctm: number[]; lineWidth: number; gray?: number; fillGray?: number }[] = [];
 
       // ── THE MARKED-CONTENT STACK, WHICH IS NOT THE GRAPHICS STACK ──
       //
@@ -352,17 +365,53 @@ export async function segmentsFromOpenPage(
         }
 
         if (fn === OPS.save) {
-          stack.push({ ctm, lineWidth });
+          stack.push({ ctm, lineWidth, gray, fillGray });
           continue;
         }
         if (fn === OPS.restore) {
           const popped = stack.pop();
           ctm = popped?.ctm ?? IDENTITY;
           lineWidth = popped?.lineWidth ?? 1;
+          gray = popped?.gray;
+          fillGray = popped?.fillGray;
           continue;
         }
         if (fn === OPS.setLineWidth) {
           lineWidth = Number((ops.argsArray[i] as number[])[0]) || 0;
+          continue;
+        }
+        // ── THE PEN'S COLOUR, AS ONE NUMBER ──
+        //
+        // Existing construction is drawn grey on most sets and the reviewer
+        // rejects it; the reader threw the colour away, so nothing downstream
+        // could tell a grey line from a black one. Kept as luminance 0 (black)
+        // to 1 (white), undefined until the content sets a stroke colour.
+        if (fn === OPS.setStrokeRGBColor) {
+          const [r, g, b] = ops.argsArray[i] as number[];
+          gray = (0.299 * (r ?? 0) + 0.587 * (g ?? 0) + 0.114 * (b ?? 0)) / 255;
+          continue;
+        }
+        if (fn === OPS.setStrokeGray) {
+          gray = Number((ops.argsArray[i] as number[])[0]) || 0;
+          continue;
+        }
+        if (fn === OPS.setStrokeCMYKColor) {
+          const [c, m, y, k] = ops.argsArray[i] as number[];
+          gray = 1 - Math.min(1, Math.max(c ?? 0, m ?? 0, y ?? 0) * (1 - (k ?? 0)) + (k ?? 0));
+          continue;
+        }
+        if (fn === OPS.setFillRGBColor) {
+          const [r, g, b] = ops.argsArray[i] as number[];
+          fillGray = (0.299 * (r ?? 0) + 0.587 * (g ?? 0) + 0.114 * (b ?? 0)) / 255;
+          continue;
+        }
+        if (fn === OPS.setFillGray) {
+          fillGray = Number((ops.argsArray[i] as number[])[0]) || 0;
+          continue;
+        }
+        if (fn === OPS.setFillCMYKColor) {
+          const [c, m, y, k] = ops.argsArray[i] as number[];
+          fillGray = 1 - Math.min(1, Math.max(c ?? 0, m ?? 0, y ?? 0) * (1 - (k ?? 0)) + (k ?? 0));
           continue;
         }
         if (fn === OPS.transform) {
@@ -396,7 +445,7 @@ export async function segmentsFromOpenPage(
         // `q`/`Q` do not bracket a form — the begin/end pair is its own scope —
         // so the matrix is pushed and popped here rather than relying on them.
         if (fn === OPS.paintFormXObjectBegin) {
-          stack.push({ ctm, lineWidth });
+          stack.push({ ctm, lineWidth, gray, fillGray });
           const matrix = (ops.argsArray[i] as unknown[])[0];
           if (Array.isArray(matrix) && matrix.length === 6) {
             ctm = Util.transform(ctm, matrix as number[]);
@@ -413,8 +462,38 @@ export async function segmentsFromOpenPage(
         // operator. `cm` is the only way to change the CTM and it always
         // concatenates, so `q`/`Q` are the only way back. Typecheck caught a
         // first version of this that guessed at an `OPS.setTransform`.
+        if (
+          fn === OPS.paintImageXObject ||
+          fn === OPS.paintInlineImageXObject ||
+          fn === OPS.paintImageMaskXObject ||
+          fn === OPS.paintImageXObjectRepeat
+        ) {
+          imageOperators += 1;
+          continue;
+        }
         if (fn !== OPS.constructPath) continue;
         pathOperators += 1;
+        // ── A PATH THAT PAINTS NOTHING WAS NEVER ON THE SHEET ──
+        //
+        // The operator after `constructPath` says what the path does: stroke,
+        // fill, or `W n` / `W* n` — set a clip and draw nothing — or `n`
+        // alone. A clip path's edges are invisible, and a CAD export is full
+        // of them: every viewport, every block, every hatch boundary. Counted
+        // 2026-10-29 on the training sheets: 42,047 of Topeka p76's 98,222
+        // input strokes, 36,167 of Bunkie A104's 73,563, 17,077 of E Street's
+        // 42,128. They pair like faces, and a candidate whose face is drawn
+        // 95% by clip paths is junk 126 times out of 127 by the labels
+        // (278 ft against 2). Same rule as the OFF layer above: measuring a
+        // line nobody can see is measuring nothing. Counted in
+        // `pathOperators` first, like the OFF layer, so the control still
+        // reports what the page carried.
+        const paint = ops.fnArray[i + 1] as number | undefined;
+        // `paint !== undefined` first: a stub module without these constants
+        // would otherwise match a path at the end of a list on undefined.
+        if (paint !== undefined && (paint === OPS.endPath || paint === OPS.clip || paint === OPS.eoClip)) {
+          unpaintedPaths += 1;
+          continue;
+        }
 
         // ── A LAYER THE DRAWING HAS SWITCHED OFF WAS NEVER ON THE SHEET ──
         //
@@ -449,6 +528,17 @@ export async function segmentsFromOpenPage(
         // The matrix's area scale, square-rooted, is the isotropic factor.
         const widthScale = Math.sqrt(Math.abs(toPage[0] * toPage[3] - toPage[1] * toPage[2])) || 1;
         const w = lineWidth * widthScale;
+        // ── THE EDGES OF A FILLED PATH CARRY THE FILL ──
+        //
+        // A path painted with `f`, `f*`, `B`, `B*`, `b` or `b*` is a REGION;
+        // its edges are emitted like any stroke (they pair as faces, which is
+        // how a poché wall is found at all) and are marked with the fill's
+        // luminance, 0 black to 1 white, so a reader can tell a grey-filled
+        // band from a white one. PDF's default fill is black.
+        const filled =
+          paint !== undefined &&
+          (paint === OPS.fill || paint === OPS.eoFill || paint === OPS.fillStroke || paint === OPS.eoFillStroke || paint === OPS.closeFillStroke || paint === OPS.closeEOFillStroke);
+        const pen = filled ? { width: w, layer, gray, fill: fillGray ?? 0 } : { width: w, layer, gray };
         const toDisplay = (x: number, y: number) => {
           const [dx, dy] = Util.applyTransform([x, y], toPage);
           return { x: dx, y: dy };
@@ -462,7 +552,7 @@ export async function segmentsFromOpenPage(
           } else if (op === OPS.lineTo) {
             const next = toDisplay(coords[at], coords[at + 1]);
             at += 2;
-            if (cursor !== null) segments.push({ x1: cursor.x, y1: cursor.y, x2: next.x, y2: next.y, width: w, layer });
+            if (cursor !== null) segments.push({ x1: cursor.x, y1: cursor.y, x2: next.x, y2: next.y, ...pen });
             cursor = next;
           } else if (op === OPS.curveTo) {
             // ── AN ARC IS FLATTENED, NOT DROPPED ──
@@ -497,7 +587,7 @@ export async function segmentsFromOpenPage(
             if (cursor !== null) {
               let from = cursor;
               for (const to of flattenCubic(cursor, c1, c2, end)) {
-                segments.push({ x1: from.x, y1: from.y, x2: to.x, y2: to.y, width: w, curved: true, layer });
+                segments.push({ x1: from.x, y1: from.y, x2: to.x, y2: to.y, ...pen, curved: true });
                 from = to;
               }
             }
@@ -526,16 +616,16 @@ export async function segmentsFromOpenPage(
             const c = toDisplay(x + w, y + hh);
             const d = toDisplay(x, y + hh);
             segments.push(
-              { x1: a.x, y1: a.y, x2: b.x, y2: b.y, width: w, layer },
-              { x1: b.x, y1: b.y, x2: c.x, y2: c.y, width: w, layer },
-              { x1: c.x, y1: c.y, x2: d.x, y2: d.y, width: w, layer },
-              { x1: d.x, y1: d.y, x2: a.x, y2: a.y, width: w, layer },
+              { x1: a.x, y1: a.y, x2: b.x, y2: b.y, ...pen },
+              { x1: b.x, y1: b.y, x2: c.x, y2: c.y, ...pen },
+              { x1: c.x, y1: c.y, x2: d.x, y2: d.y, ...pen },
+              { x1: d.x, y1: d.y, x2: a.x, y2: a.y, ...pen },
             );
             cursor = a;
             subpathStart = a;
           } else if (op === OPS.closePath) {
             if (cursor !== null && subpathStart !== null) {
-              segments.push({ x1: cursor.x, y1: cursor.y, x2: subpathStart.x, y2: subpathStart.y, width: w, layer });
+              segments.push({ x1: cursor.x, y1: cursor.y, x2: subpathStart.x, y2: subpathStart.y, ...pen });
               cursor = subpathStart;
             }
           }
@@ -549,6 +639,8 @@ export async function segmentsFromOpenPage(
         rotation: page.rotate,
         segments,
         pathOperators,
+        imageOperators,
+        unpaintedPaths,
       };
     }
   }

@@ -164,6 +164,16 @@ describe("dropping the strokes that are not walls", () => {
     expect(out.dropped).toEqual([]);
   });
 
+  it("WITH emptyIsAnswer, AN ALL-ANNOTATION SET COMES BACK EMPTY AND NAMES ITS DROPS", () => {
+    // Michigan State p4 after the region clip: nothing but the title block.
+    // The guard above exists for a mis-tagged export, not for a clip that
+    // left lettering; here the empty set is the answer.
+    const all = [...Array.from({ length: 5 }, () => seg("A-TITLEBLOCK")), seg("A-TEXT")];
+    const out = withoutNonWallLayers(all, { emptyIsAnswer: true });
+    expect(out.kept).toEqual([]);
+    expect(out.dropped.map((d) => d.layer)).toEqual(["A-TITLEBLOCK", "A-TEXT"]);
+  });
+
   it("counts per layer, biggest first, so the sentence names the one that mattered", () => {
     const out = withoutNonWallLayers([
       seg("A-WALL"),

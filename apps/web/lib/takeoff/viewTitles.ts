@@ -204,17 +204,45 @@ export function viewTitles(input: {
  * of the name — a mezzanine of level 2 is not level 2, and Supreme Court
  * A111 draws both, with the mezzanine the bigger drawing.
  */
-const LEVEL_NUMBER =
-  /\b(?:(\d{1,2})(?:ST|ND|RD|TH)?(?:\s*(?:-|–|TO|THRU|THROUGH)\s*(\d{1,2})(?:ST|ND|RD|TH)?)?\s+(?:FLOOR|LEVEL|FLR)|(?:FLOOR|LEVEL|FLR)\s*(\d{1,2})(?:\s*(?:-|–|TO|THRU)\s*(\d{1,2}))?)\b/;
+/**
+ * ── THE NUMBER AFTER "LEVEL" BEATS THE NUMBER BEFORE "FLOOR" ──
+ *
+ * Supreme Court A111 captions its drawings "1 FLOOR PLAN - LEVEL 2",
+ * "2 FLOOR PLAN - LEVEL 2 - MEZZANINE", "3 FLOOR PLAN - LEVEL 3": the leading
+ * figure is the DRAWING number, and one pattern that accepted either form
+ * read it as the level — 1, "2 MEZZANINE", 3 — because it met the drawing
+ * number first. Harmless there (three plans, three groups either way); on a
+ * sheet whose drawings 1 and 2 are a floor plan and a dimension plan of the
+ * SAME level it keeps both, which is every wall twice. So a keyword-first
+ * form ("LEVEL 2", "FLOOR 1") is read before a number-first one ("1ST
+ * FLOOR"), and a bare number before FLOOR only counts when nothing names the
+ * level after the keyword.
+ */
+const LEVEL_AFTER_KEYWORD = /\b(?:FLOOR|LEVEL|FLR)\s*(\d{1,2})(?:\s*(?:-|–|TO|THRU)\s*(\d{1,2}))?\b/;
+const LEVEL_BEFORE_KEYWORD =
+  /\b(\d{1,2})(?:ST|ND|RD|TH)?(?:\s*(?:-|–|TO|THRU|THROUGH)\s*(\d{1,2})(?:ST|ND|RD|TH)?)?\s+(?:FLOOR|LEVEL|FLR)\b/;
 const LEVEL_NAME = /\b(PENTHOUSE|BASEMENT|MEZZANINE|GROUND|MAIN\s+LEVEL|UPPER\s+LEVEL|LOWER\s+LEVEL|CELLAR|ATTIC|LOFT)\b/;
 
+/**
+ * ── A LEVEL WRITTEN AS A WORD IS THE SAME LEVEL ──
+ *
+ * glen-hazel A-111 captions "First Floor Plan" and "Second Floor Plan". Both
+ * parsed to NO level, so `keptPlanViews` grouped them as one floor drawn twice
+ * and dropped the second — 822 of its 1,843 ft of key, measured and thrown
+ * away. The words are spelled out before the digit pattern runs.
+ */
+const ORDINAL_WORDS: Record<string, string> = {
+  FIRST: "1ST", SECOND: "2ND", THIRD: "3RD", FOURTH: "4TH", FIFTH: "5TH", SIXTH: "6TH",
+  SEVENTH: "7TH", EIGHTH: "8TH", NINTH: "9TH", TENTH: "10TH", ELEVENTH: "11TH", TWELFTH: "12TH",
+};
+const ORDINAL_WORD = new RegExp(`\\b(${Object.keys(ORDINAL_WORDS).join("|")})\\b`, "g");
 export function planLevel(title: string): string | null {
-  const up = title.toUpperCase();
-  const num = LEVEL_NUMBER.exec(up);
+  const up = title.toUpperCase().replace(ORDINAL_WORD, (w) => ORDINAL_WORDS[w] ?? w);
+  const num = LEVEL_AFTER_KEYWORD.exec(up) ?? LEVEL_BEFORE_KEYWORD.exec(up);
   const name = LEVEL_NAME.exec(up);
   const number = num === null ? null : (() => {
-    const from = num[1] ?? num[3];
-    const to = num[2] ?? num[4];
+    const from = num[1];
+    const to = num[2];
     return to === undefined ? `${Number(from)}` : `${Number(from)}-${Number(to)}`;
   })();
   const named = name === null ? null : name[1].replace(/\s+/g, " ");
@@ -223,6 +251,27 @@ export function planLevel(title: string): string | null {
 }
 
 /** A level and the word FLOOR, and nothing saying it is some other kind of drawing. */
+/**
+ * ── WHAT A PLAN IS OF, ONCE THE KIND WORDS ARE GONE ──
+ *
+ * "ENLARGED PLAN - TYP. TOILET/SHOWER" and "SLOPING PLAN - TYP. TOILET/SHOWER"
+ * are two drawings of ONE room, and "ENLARGED PLAN - STORM SHELTER" is a
+ * different room. On a sheet with no floor plan — Joplin A-111, seven typical
+ * rooms — `keptPlanViews` grouped by level, every level was null, and it kept
+ * ONE of the seven: 422 ft of key on the other six, all "missing". The
+ * subject is the caption with the drawing number and the kind words stripped,
+ * so that two drawings of one room fall into one group and two rooms do not.
+ */
+const SUBJECT_WORDS = /\b(ENLARGED|SLOPING|PLANS?|FLOOR|DIMENSIONED|DIMENSIONS?|PARTITIONS?|TYPICAL|TYP)\b/g;
+export function planSubject(title: string): string {
+  return title
+    .toUpperCase()
+    .replace(/^\s*\d{1,2}\s*[-.:]?\s*/, "")
+    .replace(SUBJECT_WORDS, " ")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim();
+}
+
 export function isLevelPlan(title: string): boolean {
   return planLevel(title) !== null && /\bFLOOR\b/i.test(title) && !/\b(ELEV|ELEVATION|SECTION|SECT|DETAIL|DET|SCHEDULE|FRAMING|FINISH|CEILING|RCP|DEMO|ROOF|NOTES?|LEGEND)\b/i.test(title);
 }

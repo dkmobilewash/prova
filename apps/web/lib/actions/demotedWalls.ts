@@ -23,8 +23,11 @@ export async function saveDemotedWallsSwitch(formData: FormData): Promise<Action
     "Only the account owner can turn this on or off — it changes what every estimator sees on the takeoff.",
   );
   if (refusal) return refusal;
+  // The form still posts "on"/absent for a box labelled as the feature, which
+  // is what a person reads. The COLUMN is the negation, because the default
+  // had to be on without rewriting anybody's row.
   const on = formData.get("demotedWallsOn") === "on";
-  await prisma.company.update({ where: { id: context.company.id }, data: { demotedWallsOn: on } });
+  await prisma.company.update({ where: { id: context.company.id }, data: { demotedWallsOff: !on } });
   revalidatePath("/settings");
   return actionOk;
 }
