@@ -148,7 +148,14 @@ describe("roomsFromWalls", () => {
     });
     it("stays one region when no drawn line separates the tags, or the line is short", () => {
       expect(roomsSplitAtDrawnWalls(base, []).rooms.filter((r) => r.sharedTags)).toHaveLength(1);
-      expect(roomsSplitAtDrawnWalls(base, [{ x1: ft(10), y1: ft(0), x2: ft(10), y2: ft(4) }]).rooms.filter((r) => r.sharedTags)).toHaveLength(1);
+      const pieces = [0, 3, 6, 9].map((y) => ({ x1: ft(10 + c), y1: ft(y - c), x2: ft(10 + c), y2: ft(y + 3) }));
+      expect(roomsSplitAtDrawnWalls(base, pieces).rooms.filter((r) => r.sharedTags)).toHaveLength(1);
+    });
+    it("does not split when the line leaves every tag on one side", () => {
+      const left = { ...base, text: [text("OFFICE", 2, 4), text("101", 2, 5), text("STORAGE", 7, 4), text("102", 7, 5)] };
+      const split = roomsSplitAtDrawnWalls(left, [{ x1: ft(10 + c), y1: ft(-c), x2: ft(10 + c), y2: ft(10 + c) }]);
+      expect(split.rooms).toHaveLength(1);
+      expect(split.rooms[0]?.squareFeet).toBeGreaterThan(180);
     });
     it("gives an open room's tag to an unnamed room beside it, and only one", () => {
       const beside = roomsSplitAtDrawnWalls({ walls: open, feetPerUnit: W, text: [text("OFFICE", 5, 12), text("101", 5, 13)], widthPt: 1000 }, []);
