@@ -22,16 +22,17 @@ afterAll(async () => {
 });
 
 describe("saveSymbolCountSwitch", () => {
-  it("is off by default, refuses a member, and an owner turns it on and off", async () => {
-    expect((await prisma.company.findUnique({ where: { id: companyId } }))?.symbolCountOn).toBe(false);
+  it("is ON by default (the off column false), refuses a member, and an owner turns it off and back on", async () => {
+    expect((await prisma.company.findUnique({ where: { id: companyId } }))?.symbolCountOff).toBe(false);
     context.role = "MEMBER";
+    const off = new FormData();
+    expect((await saveSymbolCountSwitch(off)).ok).toBe(false);
+    context.role = "OWNER";
+    expect((await saveSymbolCountSwitch(off)).ok).toBe(true);
+    expect((await prisma.company.findUnique({ where: { id: companyId } }))?.symbolCountOff).toBe(true);
     const on = new FormData();
     on.set("symbolCountOn", "on");
-    expect((await saveSymbolCountSwitch(on)).ok).toBe(false);
-    context.role = "OWNER";
     expect((await saveSymbolCountSwitch(on)).ok).toBe(true);
-    expect((await prisma.company.findUnique({ where: { id: companyId } }))?.symbolCountOn).toBe(true);
-    expect((await saveSymbolCountSwitch(new FormData())).ok).toBe(true);
-    expect((await prisma.company.findUnique({ where: { id: companyId } }))?.symbolCountOn).toBe(false);
+    expect((await prisma.company.findUnique({ where: { id: companyId } }))?.symbolCountOff).toBe(false);
   });
 });

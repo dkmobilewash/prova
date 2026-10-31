@@ -29,7 +29,7 @@ export function SymbolCountSwitch({ on, isOwner }: { on: boolean; isOwner: boole
           />
           <span>
             <span className="font-medium text-ink">Count every symbol like the one you box</span>
-            <span className="ml-2 text-xs text-ink-muted">new — off until you turn it on</span>
+            <span className="ml-2 text-xs text-ink-muted">on for everyone unless you turn it off here</span>
             <span className="mt-1 block text-xs text-ink-muted">
               On the takeoff, draw a box round one fixture, outlet, light, sprinkler head or tag and the sheet is
               searched for every match by its drawn shape — turned or mirrored, the lettering beside it ignored.

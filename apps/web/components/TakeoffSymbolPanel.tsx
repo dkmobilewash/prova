@@ -6,6 +6,8 @@ import { Spinner } from "@/components/Spinner";
 import type { SymbolMatch } from "@/lib/takeoff/symbolSignature";
 import { scopeSentence, type SheetScope } from "@/lib/takeoff/symbolScope";
 
+const sheetCount = (n: number) => `${n} ${n === 1 ? "sheet" : "sheets"}`;
+
 /** One sheet of an across-the-set count, as the viewer's walk fills it in. */
 export type AcrossRow = { page: number; number: string | null; count: number; ms: number; scaling: string; xs: number[]; ys: number[] };
 export type AcrossState = {
@@ -166,7 +168,7 @@ export function TakeoffSymbolPanel({
               ) : (
                 <>
                   <p className="text-sm font-medium text-ink" data-takeoff="symbol-across-total">
-                    {acrossTotal} across {across.rows.filter((r) => r.count > 0).length} sheets
+                    {acrossTotal} across {sheetCount(across.rows.filter((r) => r.count > 0).length)}
                     {across.running ? ` — looking at sheet ${across.looked} of ${across.total}…` : across.done ? "" : " (stopped)"}
                   </p>
                   <p className="mt-0.5 text-ink-muted">{scopeSentence(across.scope, across.fromNumber, across.rows.length, across.total)}</p>
@@ -196,13 +198,13 @@ export function TakeoffSymbolPanel({
                         className="rounded-md bg-brand px-3 py-1 text-xs font-medium text-neutral-900 disabled:opacity-50"
                         data-takeoff="symbol-across-save"
                       >
-                        {isPending ? <><Spinner /> Saving…</> : `Save ${acrossTotal} across ${across.rows.filter((r) => r.count > 0).length} sheets`}
+                        {isPending ? <><Spinner /> Saving…</> : `Save ${acrossTotal} across ${sheetCount(across.rows.filter((r) => r.count > 0).length)}`}
                       </button>
                     )}
                   </div>
                   {acrossSaved && (
                     <p className="mt-1 text-ink-muted" data-takeoff="symbol-across-saved">
-                      Saved {acrossSaved.total} on {acrossSaved.sheets} sheets as one count.
+                      Saved {acrossSaved.total} on {sheetCount(acrossSaved.sheets)} as one count.
                     </p>
                   )}
                 </>
