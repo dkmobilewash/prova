@@ -98,6 +98,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: scores the offered list after a simulated user's work-area box and up to three exclude-like clicks with undo, new-build against renovation, held-out as totals. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts sheets were read",
     "zzPlanPairs.eval.ts":
       "calls no model: reads every page of every labelled set for headings naming an existing or demolition plan; training listed, held-out as a count. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts sets were read",
+    "zzStaleKeys.eval.ts":
+      "calls no model: lists labelled sheets whose accepted walls carry the set's legend existing-wall pen or sit on the paired demolition plan as remaining, for a person to re-check; held-out as names only. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts sheets were read",
     "zzExisting.eval.ts":
       "calls no model: tallies the runs the `existing` set-aside takes on every labelled sheet, by route (tag / area / legend), against the labels as real / junk / unverdicted; training per sheet, held-out as one unnamed total. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts sheets were read",
     "zzLegendBox.eval.ts":

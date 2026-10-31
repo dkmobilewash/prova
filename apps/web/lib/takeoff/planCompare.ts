@@ -12,8 +12,7 @@ import { alignViews, type Line } from "./viewAlign";
  *
  * Translation only, at this sheet's scale: a prior plan at another scale or
  * rotated aligns to nothing and sets nothing aside, which is the safe failure.
- * The prior page is chosen by which one covers the most of this sheet, so a
- * wrong title costs nothing.
+ * `pairDemoWithNewPlan` chooses the prior page and refuses to guess.
  */
 /** Fewest agreeing wall pairs that count as the same plan. */
 export const MIN_VOTES = 5;
@@ -24,8 +23,6 @@ export const THICKNESS_BAND_FEET = 1 / 12;
 export const THICKNESS_BAND_SHARE = 0.15;
 /** Share of a wall the prior plan must cover for it to be the same wall. */
 export const SAME_WALL_SHARE = 0.7;
-/** A prior page draws a plan of this level only if its line work is at least this share of this sheet's. Index and cover pages are not. */
-export const SAME_PLAN_INK_SHARE = 0.5;
 /** The finder paired too little on a demolition plan when its walls are under this share of the new sheet's feet: use raw faces. */
 export const FEW_WALLS_SHARE = 0.25;
 

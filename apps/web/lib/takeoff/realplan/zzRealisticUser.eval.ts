@@ -3,11 +3,11 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
-import { sheetNumberFrom } from "../../plan-ingest/sheetNumber";
 import { textRows } from "../existingWalls";
 import { demoRuns } from "../demoWalls";
 import { existingWallSet } from "../existingWallSet";
-import { FEW_WALLS_SHARE, MIN_VOTES, onPriorPlan, SAME_PLAN_INK_SHARE, type PriorLine } from "../planCompare";
+import { FEW_WALLS_SHARE, MIN_VOTES, onPriorPlan, type PriorLine } from "../planCompare";
+import { longFaces, pairsForSet } from "./planPairs";
 import { alignViews } from "../viewAlign";
 import { keyFromLabels, scoreSheet, type SheetScore } from "../heldOutScore";
 import { excludedSheetReason, heldOutReason } from "../heldOutSets";
@@ -52,14 +52,13 @@ type Verdict = { x1: number; y1: number; x2: number; y2: number; lengthFeet: num
 type Saved = { page: number; feetPerUnit: number; verdicts: Verdict[] };
 const count = (re: RegExp, text: string) => (text.match(re) ?? []).length;
 const ARMS = ["as offered", "box 2 ft", "box 2 ft + clicks", "box 10 ft + clicks", "compare", "compare + box", "compare + box + clicks"] as const;
-const OLD_PLAN = /^(?:\S+\s+){0,5}(?:DEMO(?:LITION)?|EXISTING|EX\.|AS[- ]BUILT)\b.{0,40}\b(?:PLAN|LAYOUT)S?\b/i;
-const NOT_FLOOR = /\b(?:ROOF|REFLECTED|RCP|CEILING|SITE|ELECTRICAL|LIGHTING|POWER|PLUMBING|MECHANICAL|HVAC|DUCT|FOUNDATION|FRAMING|GRADING|UTILITY|LANDSCAPE)\b/i;
 type Arm = (typeof ARMS)[number];
 type Row = { priorPage: number | null; priorHow: string; name: string; held: boolean; renovation: boolean; strict: boolean; arms: Record<Arm, SheetScore>; clicks: number; tries: number };
 
 describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic user", () => {
   it("scores a box and three clicks per sheet, new-build against renovation", { timeout: 7_200_000 }, async () => {
     const rows: Row[] = [];
+    const pairsBySet = new Map<string, Awaited<ReturnType<typeof pairsForSet>>>();
     let skippedScans = 0;
     for (const dir of readdirSync(LABELS)) {
       if (!existsSync(join(LABELS, dir))) continue;
@@ -101,24 +100,20 @@ describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic use
         const liveFeet = liveRuns.reduce((n, w) => n + w.lengthFeet, 0);
         const doc2 = await openPlanPdf(Buffer.from(readFileSync(pdf)));
         let bestFeet = 0;
-        const longFaces = (segs: readonly StrokeSegment[], w: number, fp: number): Line[] =>
-          oneFacePerLine([...segs], fp / w).map((f) => ({ x1: f.x1 / w, y1: f.y1 / w, x2: f.x2 / w, y2: f.y2 / w })).filter((f) => Math.hypot(f.x2 - f.x1, f.y2 - f.y1) * fp >= 3);
-        const inkFeet = (ls: readonly Line[]) => ls.reduce((n, f) => n + Math.hypot(f.x2 - f.x1, f.y2 - f.y1) * fpu, 0);
         const myFaces = longFaces(strokes.segments, W, fpu);
-        for (let page = 1; page <= doc2.pageCount; page += 1) {
-          if (page === saved.page) continue;
+        const setPairs = pairsBySet.get(dir) ?? (await pairsForSet(doc2, fpu));
+        pairsBySet.set(dir, setPairs);
+        // The third session's one pairer decides which demolition plan belongs to this sheet.
+        for (const pair of setPairs.filter((p) => p.newPage === saved.page)) {
+          const page = pair.demoPage;
           const t = await doc2.pageText(page);
           const its = t.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
-          if (!textRows(its).some((r) => r.str.trim().length <= 60 && OLD_PLAN.test(r.str.trim()) && !NOT_FLOOR.test(r.str))) continue;
-          // Architectural sheets only: another discipline's demolition plan is not the walls.
-          const number = sheetNumberFrom(t).sheetNumber;
-          if (number !== null && !/^(?:A|AD|D)[-.\d]/i.test(number)) continue;
+          const number = pair.basis;
           const st = await doc2.pageStrokes(page);
           if (st.segments.length < 100) continue;
           try {
             const fpOther = (fpu * st.widthPt) / W;
             const faces = longFaces(st.segments, st.widthPt, fpOther);
-            if (inkFeet(faces) < SAME_PLAN_INK_SHARE * inkFeet(myFaces)) continue; // an index or cover page
             const paired = findWallsOnSheet({ segments: st.segments, textItems: its, pageSize: { widthPt: st.widthPt, heightPt: st.heightPt }, feetPerUnit: fpOther, wallTypes: [], sampledSheets: null }).walls;
             const remove = demoRuns(st.segments, st.widthPt, fpOther, its);
             // A wall to be demolished does not remain, so it is not "on the prior plan".
@@ -136,7 +131,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic use
               bestFeet = feet;
               priorPlan = aligned;
               priorPage = page;
-              priorHow = `${few ? "faces" : "walls"}, ${shift.votes} votes, "${(textRows(its).find((r) => OLD_PLAN.test(r.str.trim()) && !NOT_FLOOR.test(r.str))?.str ?? "").trim().slice(0, 36)}"`;
+              priorHow = `${few ? "faces" : "walls"}, ${shift.votes} votes, paired by ${pair.basis}`;
             }
           } catch { /* a page too dense to detect is not a prior plan */ }
         }

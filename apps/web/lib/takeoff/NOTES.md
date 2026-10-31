@@ -4482,3 +4482,32 @@ ft has not been looked at. Do not read the Crosslines explanation as covering it
 Two earlier forms failed worse: any raw face within reach took recall on training
 renovations to 29.7%, because one face claimed a whole wall and index pages paired.
 `priorPlan` is an input to `offeredCandidates` that nothing in the product sets.
+
+### Plan comparison re-measured after the Crosslines re-judge: not shipped (snapshot 20261031T0120)
+
+Pairing now by the third session's `pairDemoWithNewPlan` with `demoEvidence`
+(61018b13). The re-judge moved Crosslines A100 from 3,266 to 1,200 ft accepted,
+so the stale-key reading was right in the main. Nothing paired except:
+
+| training sheet | prior | junk removed | real lost |
+| --- | --- | --- | --- |
+| Crosslines A100 | p8 D100, sheet number | 1,419 | 438 |
+| E Street A2.1 | p24 A1.1, title | 39 | 199 |
+
+Held-out, 3 sheets aligned of 15, totals: junk 4,276, real 417.
+
+| held-out renovation, 11 sheets | recall | junk per 100 offered |
+| --- | --- | --- |
+| box | 89.5% | 59 |
+| box + comparison | 84.0% | 56 |
+| box + comparison + clicks | 74.9% | 45 |
+
+**Not shipped: Crosslines loses 438 ft and E Street 199, past the ~100 ft limit,
+and held-out renovation recall drops 5.5 points against box alone, past the 1
+point gate.** The strict pairer also dropped Bunkie A100 (261 / 0) and Murray
+A101 (108 / 0), the two clean results under the coverage pick.
+
+`realplan/zzStaleKeys.eval.ts` lists keys worth a re-check, and is a reason to
+look rather than a verdict. Legend pen alone flags only Baker A100 (249 ft); the
+demolition plan flags Crosslines A100 (683 of 1,187 ft accepted), E Street A2.1
+(368 of 593) and Green Bay A3.1 (426 of 887).
