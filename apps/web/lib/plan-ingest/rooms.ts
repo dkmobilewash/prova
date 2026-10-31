@@ -1,7 +1,9 @@
 import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { ceilingsForRooms, type CeilingPageText } from "@/lib/takeoff/roomCeilings";
+import type { DetectedBoundary } from "@/lib/takeoff/detectWallsForCalibration";
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
+import { roomSeals } from "@/lib/takeoff/roomSeals";
 import { roomsFromWalls } from "@/lib/takeoff/roomsFromWalls";
 import { roomRows, writeRoomRows, type RoomToSave } from "@/lib/takeoff/roomRows";
 import { openPlanPdf, type PlanPdf } from "./planPdf";
@@ -52,7 +54,7 @@ async function ceilingPageText(doc: PlanPdf, pageNumber: number): Promise<Ceilin
 
 export type RoomsOutcome = { kind: "written"; rooms: number; ceilingSqFt: number } | { kind: "skipped"; why: string } | { kind: "failed"; error: string };
 
-export async function roomsForSheet(input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null }): Promise<RoomsOutcome> {
+export async function roomsForSheet(input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null; boundary?: DetectedBoundary }): Promise<RoomsOutcome> {
   const company = await prisma.company.findUnique({ where: { id: input.companyId }, select: { roomFinderOn: true } });
   if (!company?.roomFinderOn) return { kind: "skipped", why: "room finding is off" };
   const page = await prisma.takeoffPlanPage.findUnique({
@@ -78,8 +80,11 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
   const doc = await openPlanPdf(read.bytes);
   try {
     const text = await doc.pageText(input.pageNumber);
-    const walls = roomBoundary({ pairings: [], runs, drawn: [] });
-    const found = roomsFromWalls({ walls, feetPerUnit, text: text.items, widthPt: text.widthPt });
+    // The pairings and the doors, when the walls were found in this same step:
+    // the viewer's boundary, so a whole-set room closes as it does on screen.
+    const walls = roomBoundary({ pairings: input.boundary?.pairings ?? [], runs, drawn: [] });
+    const doorSeals = input.boundary === undefined ? [] : roomSeals(walls, input.boundary.segments, feetPerUnit);
+    const found = roomsFromWalls({ walls, feetPerUnit, text: text.items, widthPt: text.widthPt, doorSeals });
     if (found.rooms.length === 0) return { kind: "skipped", why: "no rooms closed" };
     const current: CeilingPageText = { pageNumber: input.pageNumber, items: text.items, widthPt: text.widthPt, tableRows: tableRowsFromPage(text) };
     const others: CeilingPageText[] = [];

@@ -155,6 +155,7 @@ import { scaleFromPrinted } from "@/lib/takeoff/scaleFromPrinted";
 /** One scanned page's stored read, as the raster route and `rasterByPage` both give it. */
 type RasterRead = { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[]; widthPt?: number; heightPt?: number; printedScale?: string | null };
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
+import { roomSeals } from "@/lib/takeoff/roomSeals";
 import { roomsFromWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
 /**
@@ -2640,7 +2641,13 @@ export function TakeoffPlanViewer({
       runs: runsRef.current,
       drawn: sheet?.measurements ?? [],
     });
-    const result = roomsFromWalls({ walls, feetPerUnit, text: wordsRef.current, widthPt: pageSize.widthPt });
+    // The doors on the sheet close the rooms, once a Find has read its strokes.
+    const detected = lastDetect.current;
+    const doorSeals =
+      detected !== null && detected.page === pageNumber && detected.widthPt > 0
+        ? roomSeals(walls, detected.segments.map(inPageWidthUnits(detected.widthPt)), feetPerUnit)
+        : [];
+    const result = roomsFromWalls({ walls, feetPerUnit, text: wordsRef.current, widthPt: pageSize.widthPt, doorSeals });
     setRooms(result);
     setRoomsOnPage(pageNumber);
     onResults?.();
