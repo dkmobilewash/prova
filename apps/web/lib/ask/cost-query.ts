@@ -194,7 +194,7 @@ export async function loadCostReport(companyId: string, from: Date): Promise<Cos
       key: "specPages",
       label: "Spec section pages read",
       noun: "page",
-      features: ["spec-read"],
+      features: ["spec-read", "submittal-read"],
       used: claimed.specPagesUsed,
       failed: claimed.failedSpecPages,
       allowance: settings?.specPagesPerMonth ?? null,

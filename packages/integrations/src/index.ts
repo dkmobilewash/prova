@@ -12,6 +12,7 @@ export * from "./leads";
 export * from "./quotes";
 export * from "./addenda";
 export * from "./specs";
+export * from "./submittalRequirements";
 export * from "./proposalClauses";
 export * from "./planSheets";
 export * from "./wallClassify";

@@ -6,6 +6,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { PageHeader } from "@/components/PageHeader";
 import { requireCapability } from "@/lib/authz";
 import { loadJobSpecSections } from "@/lib/job-spec-sections-query";
+import { formatCalendarDate } from "@/lib/render-date";
 
 /** The job's spec book. MANAGE_ESTIMATING, the gate on the upload token that
  * attaches a section's file. */
@@ -40,6 +41,12 @@ export default async function JobSpecsPage({ params }: { params: Promise<{ id: s
           fileName: section.fileName,
           hasFile: section.fileUrl !== null,
           ownedByJob: section.jobId !== null,
+          lastRead: section.submittalReadings[0]
+            ? {
+                on: formatCalendarDate(section.submittalReadings[0].createdAt),
+                drafts: section.submittalReadings[0]._count.proposals,
+              }
+            : null,
         }))}
       />
     </PageShell>

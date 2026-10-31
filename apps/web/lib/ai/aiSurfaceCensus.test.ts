@@ -156,6 +156,11 @@ const CONTROLS: Record<AiFeatureKey, Control> = {
     file: "components/SpecFindings.tsx",
     why: "Attach a spec section on /bids and list what in it costs money — finish level, ratings, mock-ups, testing, named products — each with the sentence it was read from and a page to check it against.",
   },
+  SUBMITTAL_READ: {
+    kind: "component",
+    file: "components/JobSpecSections.tsx",
+    why: "Read what must be submitted on a job's spec section: draft rows, each with its quote, which a person accepts into the register on /submittals.",
+  },
   SHEET_TEXT: {
     kind: "component",
     file: "components/TakeoffPlanViewer.tsx",

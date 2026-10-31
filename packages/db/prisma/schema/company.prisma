@@ -373,6 +373,8 @@ model User {
   verifiedPunchListItems               PunchListItem[]               @relation("PunchItemVerifiedBy")
   reopenedPunchListItems               PunchListItem[]               @relation("PunchItemReopenedBy")
   createdTmTickets                     TmTicket[]
+  submittalSpecReadings                SubmittalSpecReading[] @relation("SubmittalSpecReadingStartedBy")
+  submittalProposalsDecided            SubmittalProposal[]    @relation("SubmittalProposalDecidedBy")
   createdPurchaseOrders                PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
   signedTimesheets                     TimesheetSignoff[]            @relation("TimesheetSignoffSignedBy")
   approvedTimesheets                   TimesheetSignoff[]            @relation("TimesheetSignoffApprovedBy")

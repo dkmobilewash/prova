@@ -1920,6 +1920,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   procore: () => import("./actions/procore"),
   procoreFeed: () => import("./actions/procoreFeed"),
   purchaseOrders: () => import("./actions/purchaseOrders"),
+  submittalRead: () => import("./actions/submittalRead"),
   projectLookup: () => import("./actions/projectLookup"),
   // Finding public projects out to bid, reachable from /pipeline alone, which
   // withholds on MANAGE_ESTIMATING. The capability is the DOOR's, copied from

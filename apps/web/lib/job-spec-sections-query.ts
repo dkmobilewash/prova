@@ -15,6 +15,18 @@ export async function loadJobSpecSections(jobId: string, companyId: string) {
       ],
     },
     orderBy: { sectionNumber: "asc" },
-    select: { id: true, sectionNumber: true, title: true, fileName: true, fileUrl: true, jobId: true },
+    select: {
+      id: true,
+      sectionNumber: true,
+      title: true,
+      fileName: true,
+      fileUrl: true,
+      jobId: true,
+      submittalReadings: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { createdAt: true, _count: { select: { proposals: true } } },
+      },
+    },
   });
 }
