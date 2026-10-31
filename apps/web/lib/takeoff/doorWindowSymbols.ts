@@ -323,6 +323,25 @@ export const WINDOW_BAND_FEET = 1.25;
  * foot inboard, so a search inside the found wall's band saw none of them.
  * The wall is attached afterwards, when one runs parallel within reach.
  */
+/** A door mark sits this close to its door. Baker A101: 18 doors within 2 ft, the next at 6.6. */
+export const DOOR_TAG_REACH_FEET = 3;
+/** The share of doors a sheet must mark before an unmarked one is doubted. Joplin A-101 is 23%, Baker 90%. */
+export const DOORS_MARKED_SHARE = 0.75;
+
+/**
+ * Where a sheet marks its doors, an unmarked swing is not in the scope: Baker
+ * A101's two are in the existing (E) rooms. A sheet whose marks this cannot read
+ * falls under the share and keeps every door.
+ */
+export function onlyMarkedDoors(doors: readonly DoorSymbol[], marks: readonly { x: number; y: number }[], feetPerUnit: number): DoorSymbol[] {
+  const reach = DOOR_TAG_REACH_FEET / feetPerUnit;
+  const marked = doors.filter((d) => {
+    const x = (d.hinge.x + d.strike.x) / 2, y = (d.hinge.y + d.strike.y) / 2;
+    return marks.some((m) => Math.hypot(m.x - x, m.y - y) <= reach);
+  });
+  return doors.length > 0 && marked.length / doors.length >= DOORS_MARKED_SHARE ? marked : [...doors];
+}
+
 /** A window tag (W1, W2, A, 1…) drawn within this many feet of the window says it is one. */
 export const WINDOW_TAG_REACH_FEET = 6;
 

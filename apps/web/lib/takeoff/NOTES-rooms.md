@@ -990,6 +990,9 @@ TAG_DISAGREES group must show "Add as <code> — priced" and the
 type under /wall-types; then the same with the read ON, which must not
 change the groups.
 
+## Framed notes are not rooms (2026-10-31)
+
+A closed region with no room tag and a title in heading type (`legendBoxes.ts`'s test) is dropped. Joplin A-101: 64 regions to 62, losing GENERAL PLAN NOTES at 2,321 sf and FLOOR PLAN LEGEND at 537 sf.
 ## Naming rooms from the sheet's own tags (2026-10-30)
 
 A tag is placed by its printed NUMBER, with the stack's centre as the fallback. A name can run over a wall while the number stays in its room: glen-hazel's "Elevators" spans two shafts, and Joplin's 149 shared a region with 150 only because of where the stack's centre fell. Detail callouts (`A1/ A-621`) and drafting words (`ALIGN`, `TYP.`, `SIM`) are dropped before stacks are read, so they neither enter a name nor form a tag that knocks a real one out of its room.

@@ -53,7 +53,8 @@ export function TakeoffSymbolPanel({
   onAcross: (scope: SheetScope) => void;
   onCancelAcross: () => void;
   onClear: () => void;
-  onSaved: (saved: { id: string }) => void;
+  /** `keepOpen` leaves the panel up, because the across-the-set result is said here. */
+  onSaved: (saved: { id: string }, keepOpen?: boolean) => void;
 }) {
   const [label, setLabel] = useState("");
   const [scope, setScope] = useState<SheetScope>("discipline");
@@ -70,7 +71,7 @@ export function TakeoffSymbolPanel({
       const result = await saveSymbolCountAcrossSheets(jobId, planId, { label: label.trim(), itemId, sheets });
       if (!result.ok) return setError(result.error);
       setAcrossSaved({ total: result.value.total, sheets: result.value.saved.length });
-      if (result.value.saved[0]) onSaved({ id: result.value.saved[0].measurementId });
+      if (result.value.saved[0]) onSaved({ id: result.value.saved[0].measurementId }, true);
     });
   };
   const save = () => {

@@ -261,3 +261,7 @@ the ones looked at: a hatched rated wall (12.9 ft), two pieces of cavity
 wall drawn with inner lines (8.9 and 5.3 ft) — a cavity wall's layer lines
 are inside the wall too, and nothing in the geometry tells them from
 glass. The pilot's number moved 54 → 44 on the stored proposal walls.
+
+## Doors with no mark (2026-10-31)
+
+Where at least 75% of a sheet's doors have a mark within 3 ft, a door with none is dropped. Baker A101: 18 doors within 2 ft of a tag and the other two at 6.6 and 10.3 ft, in the (E) rooms, so 20 becomes 18, which is the number of tags on the sheet. Joplin A-101 is at 23%, because its door marks are not symbols `tagSymbols` reads, so all 53 stay. Bunkie's pills were not measured for this; the share gate is what protects it.

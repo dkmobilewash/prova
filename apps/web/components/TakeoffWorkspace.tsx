@@ -359,6 +359,8 @@ export function TakeoffWorkspace({
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
+  const onResults = useCallback(() => setPanelOpen(true), []);
+
   const onMeasurementSaved = useCallback(
     (saved: { id: string; kind: string }) => {
       const what = saved.kind === "AREA" ? "area" : saved.kind === "COUNT" ? "count" : "line";
@@ -1487,6 +1489,7 @@ export function TakeoffWorkspace({
               initialPage={openPage}
               fill
               panelOpen={panelOpen && !phone}
+              onResults={onResults}
               readOnly={phone}
               onMeasurementSaved={onMeasurementSaved}
               onUndoable={onUndoable}

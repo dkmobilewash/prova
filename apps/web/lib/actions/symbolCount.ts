@@ -1,5 +1,6 @@
 "use server";
 
+import { countItemFor } from "@/lib/takeoff/countItem";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
@@ -74,6 +75,7 @@ export async function saveSymbolCountAcrossSheets(jobId: string, planId: string,
     if (!item) return actionFail("That takeoff item is no longer on this job. Reload the page.");
   }
 
+  const owner = itemId !== "" ? itemId : await countItemFor(company.id, jobId, label);
   const saved: AcrossSheetsResult["saved"] = [];
   for (const s of sheets) {
     const page = await prisma.takeoffPlanPage.upsert({
@@ -84,7 +86,7 @@ export async function saveSymbolCountAcrossSheets(jobId: string, planId: string,
     });
     const created = await prisma.takeoffMeasurement.create({
       select: { id: true },
-      data: { itemId: itemId === "" ? null : itemId, pageId: page.id, calibrationId: page.calibrations[0]?.id ?? null, kind: "COUNT", xs: s.xs, ys: s.ys, label, createdByUserId: userId },
+      data: { itemId: owner, pageId: page.id, calibrationId: page.calibrations[0]?.id ?? null, kind: "COUNT", xs: s.xs, ys: s.ys, label, createdByUserId: userId },
     });
     saved.push({ pageNumber: s.pageNumber, count: s.xs.length, measurementId: created.id });
   }
