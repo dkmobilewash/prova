@@ -6,6 +6,7 @@ import { TimeEntryRow } from "@/components/TimeEntryRow";
 import { TimesheetSignoffs } from "@/components/TimesheetSignoffs";
 import { SignatureImage } from "@/components/SignatureImage";
 import { TmTicketActions } from "@/components/TmTicketActions";
+import { JobMediaCapture } from "@/components/JobMediaCapture";
 import { DispatchSlipForm } from "@/components/DispatchSlipForm";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
 import { can, canReach } from "@/lib/permissions";
@@ -426,6 +427,12 @@ export default async function JobCrewPage({
                           ? ` · ${ticket._count.media} photo${ticket._count.media === 1 ? "" : "s"}`
                           : ""}
                       </span>
+                      <details className="text-xs text-ink-muted">
+                        <summary className="cursor-pointer">Add a photo from this computer</summary>
+                        <div className="mt-2">
+                          <JobMediaCapture jobId={job.id} tmTicketId={ticket.id} />
+                        </div>
+                      </details>
                     </div>
                     <TmTicketActions
                       ticketId={ticket.id}

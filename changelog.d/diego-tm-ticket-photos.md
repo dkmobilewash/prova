@@ -7,6 +7,9 @@ phone now offers "No photo of the work — add one", which opens the camera with
 the photo tied to that ticket at the shutter, the punch list's pattern, queued
 offline like any other photo.
 
+The crew tab's ticket row also has "Add a photo from this computer", the ordinary
+desktop uploader carrying the ticket's id, so office staff can attach one too.
+
 `JobMedia.tmTicketId` (additive, nullable, SetNull) holds the link. The change
 order shows the photos through the ticket rather than a copy, so one added after
 drafting still appears. The crew tab shows the count, and a change order's
