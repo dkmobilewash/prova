@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Spinner } from "@/components/Spinner";
 import type { SuggestedScale } from "@/lib/takeoff/suggestedScale";
 
 /**
@@ -36,7 +37,13 @@ export function TakeoffScaleSuggestion({
         className="rounded-md bg-brand px-2 py-0.5 font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         data-takeoff="confirm-suggested-scale"
       >
-        {saving ? "Saving…" : "Confirm"}
+        {saving ? (
+          <>
+            <Spinner /> Saving…
+          </>
+        ) : (
+          "Confirm"
+        )}
       </button>
       <button type="button" disabled={saving} onClick={onDismiss} className="underline hover:text-ink-body" data-takeoff="dismiss-suggested-scale">
         Not this
