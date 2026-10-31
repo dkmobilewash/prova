@@ -260,8 +260,8 @@ describe("a T&M ticket drafts one change order", () => {
     expect(made.status).toBe(201);
     const { id } = (await made.json()) as { id: string };
 
-    // An edit after signing changes nothing the ticket froze.
-    await prisma.timeEntry.update({ where: { id: entry.id }, data: { perDiemAmount: 999 } });
+    // The ticket holds what it froze, even with the entry gone.
+    await prisma.timeEntry.delete({ where: { id: entry.id } });
     expect(await draftChangeOrderFromTmTicket(id)).toEqual({ ok: true });
 
     const { changeOrderId } = await prisma.tmTicket.findUniqueOrThrow({ where: { id } });
