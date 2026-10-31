@@ -186,7 +186,7 @@ export default async function SettingsPage({
   // are columns on the same row and there is no reason to ask twice.
   const switches = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOff: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOn: true },
+    select: { roomFinderOn: true, demotedWallsOff: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOff: true },
   });
   const roomFinderOn = switches?.roomFinderOn ?? false;
   // The switch reads as ON unless this company turned it off, so the box is
@@ -194,7 +194,8 @@ export default async function SettingsPage({
   const demotedWallsOn = !(switches?.demotedWallsOff ?? false);
   const wholeSetTakeoffOn = switches?.wholeSetTakeoffOn ?? false;
   const scannedPlansOn = switches?.scannedPlansOn ?? false;
-  const symbolCountOn = switches?.symbolCountOn ?? false;
+  // On unless this company turned it off, like the grey-out.
+  const symbolCountOn = !(switches?.symbolCountOff ?? false);
   const doorsWindowsOn = switches?.doorsWindowsOn ?? false;
   // Every takeoff switch in one list (PILOT.md's first finding); the switches
   // themselves stay in their own sections below and on the Assistant page.
