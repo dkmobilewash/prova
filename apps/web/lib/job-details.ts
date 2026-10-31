@@ -121,6 +121,9 @@ export const JOB_HISTORY_RELATIONS: readonly HistoryRelation[] = [
   },
   { key: "safetyIncidents", table: "SafetyIncident", singular: "safety incident", plural: "safety incidents" },
   { key: "materialOrders", table: "MaterialOrder", singular: "material order", plural: "material orders" },
+  // A PO went (or was drafted to go) to a supplier — same footing as a
+  // material order. Added when #881's purchase orders met estimate removal.
+  { key: "purchaseOrders", table: "PurchaseOrder", singular: "purchase order", plural: "purchase orders" },
   {
     key: "retainageReleases",
     table: "RetainageRelease",
@@ -276,6 +279,7 @@ export const JOB_DRAFT_CHILDREN = [
   { model: "backchargeCounter", table: "BackchargeCounter" },
   { model: "closeoutSubmissionCounter", table: "CloseoutSubmissionCounter" },
   { model: "wh347PayrollCounter", table: "Wh347PayrollCounter" },
+  { model: "purchaseOrderCounter", table: "PurchaseOrderCounter" },
   { model: "jobLineItem", table: "JobLineItem" },
 ] as const;
 

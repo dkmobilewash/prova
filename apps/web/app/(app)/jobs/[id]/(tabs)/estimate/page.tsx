@@ -7,6 +7,7 @@ import { costCategoryLabel } from "@/components/costCategoryLabels";
 import { loadLineCommitments } from "@/lib/purchase-orders-query";
 import type { LineCommitment } from "@/lib/purchase-orders";
 import { pricingBackupLines } from "@/lib/change-order-pricing";
+import type { CostCategoryValue } from "@/lib/bid-recap";
 import { SubmitButton } from "@/components/SubmitButton";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
@@ -87,7 +88,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
 
   const d = await loadJobEstimateData(jobRef.id, company.id);
   if (!d) throw new Error("job disappeared between checks");
-  const { job, isEstimateStage, lineItemWip, jobWip, billingPosition, earnedRevenue, burdenPercentToday, timeZone } = d;
+  const { job, isEstimateStage, lineItemWip, jobWip, billingPosition, earnedRevenue, burdenPercentToday, timeZone, bidRecapRates } = d;
 
   const updateLineItemForecastWithId = (lineItemId: string) => updateLineItemForecast.bind(null, job.id, lineItemId);
   const deleteCostEntryWithId = (costEntryId: string) => deleteCostEntry.bind(null, job.id, costEntryId);

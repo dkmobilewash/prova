@@ -64,6 +64,8 @@ const IMPLIED_BY_HISTORY: Record<string, string> = {
   ChangeOrderLineItemEdit: "ChangeOrder",
   // An invoice line exists only on an invoice.
   InvoiceLineItem: "Invoice",
+  // A purchase-order line exists only on a purchase order.
+  PurchaseOrderLine: "PurchaseOrder",
 };
 
 /** SET NULL children of Job that are deliberately left behind, detached,
