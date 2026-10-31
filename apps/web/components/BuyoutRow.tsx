@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { draftPurchaseOrderLine, removePurchaseOrderLine } from "@/lib/actions";
+import { closePurchaseOrder, draftPurchaseOrderLine, issuePurchaseOrder, removePurchaseOrderLine } from "@/lib/actions";
+import type { PurchaseOrderDocument } from "@/lib/purchase-order-pdf";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { money } from "@/lib/money";
 import type { BuyoutRow as BuyoutRowData } from "@/lib/purchase-orders";
@@ -128,6 +129,93 @@ export function BuyoutRow({
       </form>
       {error && <p className="text-sm text-danger">{error}</p>}
     </li>
+  );
+}
+
+/**
+ * Download, issue and close. Issuing commits the money, so it is its own
+ * deliberate step with a date a person enters, and it says nothing is sent.
+ * The PDF and pdf-lib load only when pressed.
+ */
+export function PurchaseOrderActions({
+  id,
+  status,
+  today,
+  document: doc,
+}: {
+  id: string;
+  status: "DRAFT" | "ISSUED" | "CLOSED";
+  today: string;
+  document: PurchaseOrderDocument;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [date, setDate] = useState(today);
+
+  function move(action: typeof issuePurchaseOrder, key: string) {
+    const form = new FormData();
+    form.set(key, date);
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await action(id, form);
+        if (!result.ok) setError(result.error);
+      } catch {
+        setError("That did not go through. Reload the page and check before trying again.");
+      }
+    });
+  }
+
+  async function download() {
+    setError(null);
+    try {
+      const { buildPurchaseOrderPdf, purchaseOrderFileName } = await import("@/lib/purchase-order-pdf");
+      const bytes = await buildPurchaseOrderPdf(doc);
+      const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = purchaseOrderFileName(doc);
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("That PDF could not be built.");
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className={btn} onClick={() => void download()}>
+          Download PDF
+        </button>
+        {status !== "CLOSED" && (
+          <>
+            <input
+              type="date"
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+              aria-label={status === "DRAFT" ? "Date issued" : "Date closed"}
+              className={inputClass}
+            />
+            {status === "DRAFT" ? (
+              <button type="button" disabled={isPending} className={btn} onClick={() => move(issuePurchaseOrder, "issuedOn")}>
+                Mark as issued
+              </button>
+            ) : (
+              <button type="button" disabled={isPending} className={btn} onClick={() => move(closePurchaseOrder, "closedOn")}>
+                Close
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      {status === "DRAFT" && (
+        <p className="max-w-xs text-right text-xs text-ink-muted">
+          Marking as issued counts this as committed and locks its lines. Nothing is sent to the vendor.
+        </p>
+      )}
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </div>
   );
 }
 

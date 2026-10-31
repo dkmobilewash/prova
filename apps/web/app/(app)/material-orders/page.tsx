@@ -34,7 +34,7 @@ export default async function MaterialOrdersPage({
 
   const today = await viewerToday();
 
-  const [jobRows, vendors, lineItems] = await Promise.all([
+  const [jobRows, vendors, lineItems, issuedPoLines] = await Promise.all([
     prisma.job.findMany({
       where: { companyId: company.id },
       orderBy: { createdAt: "desc" },
@@ -53,7 +53,18 @@ export default async function MaterialOrdersPage({
       orderBy: { description: "asc" },
       select: { id: true, jobId: true, description: true },
     }),
+    // Issued orders only, and no price: this page is open to the field.
+    prisma.purchaseOrderLine.findMany({
+      where: { purchaseOrder: { companyId: company.id, status: { in: ["ISSUED", "CLOSED"] } } },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, description: true, purchaseOrder: { select: { jobId: true, number: true } } },
+    }),
   ]);
+  const poLines = issuedPoLines.map((line) => ({
+    id: line.id,
+    jobId: line.purchaseOrder.jobId,
+    label: `PO ${line.purchaseOrder.number}: ${line.description}`,
+  }));
   // status + contact, not just the name: issue #65 — seven jobs sharing one
   // placeholder name made every picker seven identical rows.
   const jobs = jobRows.map(toJobOption);
@@ -70,6 +81,7 @@ export default async function MaterialOrdersPage({
       vendor: { select: { name: true } },
       orderedBy: { select: { name: true } },
       lineItem: { select: { description: true } },
+      purchaseOrderLine: { select: { purchaseOrder: { select: { number: true } } } },
       deliveries: { orderBy: { deliveredOn: "asc" } },
     },
   });
@@ -80,6 +92,8 @@ export default async function MaterialOrdersPage({
     jobId: order.jobId,
     jobName: order.job.name,
     lineItemId: order.lineItemId,
+    purchaseOrderLineId: order.purchaseOrderLineId,
+    purchaseOrderNumber: order.purchaseOrderLine?.purchaseOrder.number ?? null,
     lineItemDescription: order.lineItem?.description ?? null,
     vendorId: order.vendorId,
     vendorName: order.vendor.name,
@@ -149,6 +163,7 @@ export default async function MaterialOrdersPage({
           jobs={jobs}
           vendors={vendors}
           lineItems={lineItems}
+          poLines={poLines}
           defaultJobId={activeJob ?? undefined}
           startOpen={startNew === "1"}
         />
@@ -235,6 +250,7 @@ export default async function MaterialOrdersPage({
               today={today}
               vendors={vendors}
               lineItems={lineItems}
+              poLines={poLines}
               showJob={!activeJob}
               canDelete={currentUser.role === "OWNER"}
             />
