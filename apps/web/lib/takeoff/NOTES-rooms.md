@@ -989,3 +989,9 @@ TAG_DISAGREES group must show "Add as <code> — priced" and the
 `data-takeoff="update-thickness"` button, and pressing it must change the
 type under /wall-types; then the same with the read ON, which must not
 change the groups.
+
+## Naming rooms from the sheet's own tags (2026-10-30)
+
+A tag is placed by its printed NUMBER, with the stack's centre as the fallback. A name can run over a wall while the number stays in its room: glen-hazel's "Elevators" spans two shafts, and Joplin's 149 shared a region with 150 only because of where the stack's centre fell. Detail callouts (`A1/ A-621`) and drafting words (`ALIGN`, `TYP.`, `SIM`) are dropped before stacks are read, so they neither enter a name nor form a tag that knocks a real one out of its room.
+
+What remains in `mergedTags` on Joplin is real leaks and in `unplacedTags` is rooms that never closed. Neither is a naming problem.
