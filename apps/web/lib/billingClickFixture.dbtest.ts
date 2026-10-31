@@ -39,6 +39,14 @@ describe("the billing click fixture", () => {
     });
   });
 
+  it("logs hours against a worker of its own, so it needs no user on the company", async () => {
+    expect(await prisma.user.count({ where: { companyId } })).toBe(0);
+    const job = await prisma.job.findFirstOrThrow({ where: { companyId, name: FIXTURE_JOB } });
+    const entries = await prisma.timeEntry.findMany({ where: { jobId: job.id }, orderBy: { date: "asc" } });
+    expect(entries.map((entry) => Number(entry.hours))).toEqual([100, 40, 60]);
+    expect(await prisma.crewMember.count({ where: { companyId } })).toBe(1);
+  });
+
   it("gives Buyout two read sections through the winning bid", async () => {
     const job = await prisma.job.findFirstOrThrow({ where: { companyId, name: FIXTURE_JOB } });
     const sections = await prisma.bidSpecSection.findMany({ where: { bidInvitation: { wonJobId: job.id } }, include: { readings: true } });
@@ -51,6 +59,7 @@ describe("the billing click fixture", () => {
     await removeBillingClickFixture(prisma, companyId);
     expect(await prisma.job.count({ where: { companyId, name: FIXTURE_JOB } })).toBe(0);
     expect(await prisma.vendor.count({ where: { companyId } })).toBe(0);
+    expect(await prisma.crewMember.count({ where: { companyId } })).toBe(0);
     expect(await prisma.bidInvitation.count({ where: { companyId } })).toBe(0);
     expect(await prisma.job.findUnique({ where: { id: otherJobId } })).not.toBeNull();
     expect(await prisma.contact.count({ where: { companyId } })).toBe(1);

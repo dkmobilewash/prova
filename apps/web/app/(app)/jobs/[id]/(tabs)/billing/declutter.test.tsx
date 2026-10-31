@@ -67,6 +67,7 @@ vi.mock("@prova/db", () => ({
     quickBooksEntityLink: { findUnique: vi.fn(async () => null), findMany: vi.fn(async () => []) },
     quickBooksAccountMapping: { findUnique: vi.fn(async () => null) },
     invoiceCounter: { findUnique: vi.fn(async () => ({ lastNumber: 3 })) },
+    timeEntry: { groupBy: vi.fn(async () => []) },
   },
 }));
 vi.mock("@/lib/jobs/job-access", () => ({

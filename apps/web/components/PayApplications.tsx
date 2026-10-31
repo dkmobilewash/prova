@@ -10,6 +10,7 @@ import { submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
 import { money } from "@/lib/money";
 import { parseNumericInput } from "@/lib/numeric-input";
 import { payAppRowsFromForm, payAppTotal, thisPeriodForPercentComplete } from "@/lib/pay-application";
+import { suggestThisPeriod, type LineProgress } from "@/lib/pay-app-suggestion";
 
 const inputClass =
   "w-28 rounded-md border border-line-card bg-canvas px-2 py-1 text-right text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none";
@@ -22,7 +23,7 @@ const STATUS_OPTIONS = [
   { value: "DISPUTED", label: "Disputed" },
 ] as const;
 
-export type PayAppLineItemOption = {
+export type PayAppLineItemOption = LineProgress & {
   id: string;
   description: string;
   scheduledValue: number;
@@ -39,6 +40,14 @@ export type PayAppLineItemOption = {
    * 60% again every month. */
   previousBilled: number;
 };
+
+/** Words only, with no field and no button, so a suggestion can never reach the
+ * form. The person types the figure or does not. */
+export function SuggestionNote({ item, periodTo }: { item: PayAppLineItemOption; periodTo: string }) {
+  const suggestion = suggestThisPeriod(item, periodTo);
+  if (!suggestion) return null;
+  return <p className="mt-1 ml-auto max-w-[14rem] text-left text-xs text-ink-muted">{suggestion.text}</p>;
+}
 
 /** What the percent box did to this line: where it lands, or why it
  * produced no figure. Its own component so the conditional and the two
@@ -103,6 +112,8 @@ export function PayApplications({
   // date that could disagree with the browser's. Overwritten freely: most
   // applications run to a month end, and the person knows which.
   const today = useLocalToday();
+  // Blank until the box is touched, which means the default above.
+  const [periodTo, setPeriodTo] = useState<string | null>(null);
   /** Set when the form was opened from the Billing summary's "Start pay app"
    * button, so the cursor lands in it once it has rendered. */
   const focusOnOpen = useRef(false);
@@ -319,6 +330,7 @@ export function PayApplications({
                 type="date"
                 name="periodTo"
                 defaultValue={today}
+                onChange={(event) => setPeriodTo(event.target.value)}
                 className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
               />
               <span className="text-xs text-ink-muted">The last day this application covers. Prints on the G702.</span>
@@ -410,6 +422,7 @@ export function PayApplications({
                           setPctNote((n) => (n[item.id]?.text ? { ...n, [item.id]: { ok: true, text: "" } } : n));
                         }}
                       />
+                      <SuggestionNote item={item} periodTo={periodTo ?? today ?? ""} />
                     </td>
                     <td className="py-1 text-right">
                       {/* Never had a floor, and the reason is the older
