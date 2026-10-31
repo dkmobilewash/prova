@@ -1,3 +1,4 @@
+import { afterEach, expect } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ReactElement } from "react";
@@ -32,12 +33,20 @@ export async function mount(element: ReactElement): Promise<{
     });
   };
   await settle();
-  return {
-    text: () => container.textContent ?? "",
-    settle,
-    unmount: () => {
-      act(() => root.unmount());
-      container.remove();
-    },
+  const unmount = () => {
+    if (!mounted.delete(unmount)) return;
+    act(() => root.unmount());
+    container.remove();
   };
+  mounted.add(unmount);
+  return { text: () => container.textContent ?? "", settle, unmount };
 }
+
+// A screen left mounted keeps its timers, and one that fires after a file's
+// environment is torn down fails the run with every test passing. So nothing
+// outlives its test, whether or not the test remembered to unmount.
+const mounted = new Set<() => void>();
+afterEach(() => {
+  for (const unmount of [...mounted]) unmount();
+  expect(document.body.childElementCount, "a test mounted something without this helper").toBe(0);
+});
