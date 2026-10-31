@@ -268,6 +268,15 @@ describe("the job-cost census", () => {
     // exists yet at bid time, so there is no perDiemAmount/travelPayAmount
     // to add — the concept does not exist until hours are actually logged.
     "apps/web/lib/estimate-labor-cost.ts",
+    // Change-order pricing (laborHourCost). It prices ONE HOUR of a craft on
+    // the work date from the craft's schedule — the sell rate a GC is quoted
+    // for extra work — not a TimeEntry row, and the T&M snapshot it is fed
+    // from froze hours, pay type and craft, never perDiemAmount or
+    // travelPayAmount (tickets route). So there is no allowance figure to
+    // add; a per diem on that day's entries is a cost the CO does not
+    // recover, which is a stated gap in the PR body rather than a quiet
+    // omission. Extending the snapshot is the fix if it matters.
+    "apps/web/lib/change-order-pricing.ts",
   ]);
 
   const timeEntryPricers = sources.filter(
