@@ -166,7 +166,7 @@ function withSplitNumbers(items: readonly Placed[]): Placed[] {
     const chain = [start];
     for (let at = start; ; ) {
       const end = at.x + at.width;
-      const next = pieces.find((p) => !used.has(p) && !chain.includes(p) && p.x >= end - 0.3 * start.height && Math.abs(p.height - start.height) <= 0.1 * start.height && Math.abs(p.y - start.y) <= 0.3 * start.height && p.x - end <= PIECE_GAP * start.height);
+      const next = pieces.find((p) => !used.has(p) && !chain.includes(p) && p.x >= at.x && Math.abs(p.height - start.height) <= 0.1 * start.height && Math.abs(p.y - start.y) <= 0.3 * start.height && p.x - end <= PIECE_GAP * start.height);
       if (!next) break;
       chain.push(next);
       at = next;
