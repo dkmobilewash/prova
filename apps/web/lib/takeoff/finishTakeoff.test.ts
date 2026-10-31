@@ -93,4 +93,10 @@ describe("finishTakeoff", () => {
     const shaft = room(5, null, 0.15, 0.1, 0.05, 0.05);
     expect(typesFromNeighbours([shaft, b], new Map([[5, "T7"]]), FPU).size).toBe(0);
   });
+  it("a corridor has no say in the type of a room behind it", () => {
+    const unit = { ...room(1, null, 0.1, 0.1, 0.1, 0.1), tag: { name: "Bedroom" } as never };
+    const closet = room(2, null, 0.2, 0.1, 0.1, 0.1);
+    const hall = { ...room(3, null, 0.3, 0.1, 0.1, 0.1), tag: { name: "Corridor" } as never };
+    expect([...typesFromNeighbours([unit, closet, hall], new Map([[1, "T1"], [3, "T3"]]), FPU)]).toEqual([[2, "T1"]]);
+  });
 });

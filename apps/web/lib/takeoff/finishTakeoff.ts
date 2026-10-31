@@ -86,6 +86,8 @@ export function finishLineLabel(line: Pick<FinishLine, "kind" | "finish">): stri
 const NEIGHBOUR_FEET = 1.5;
 /** Smaller than this is a chase, not a room to floor. */
 const SMALLEST_FINISHED_SQFT = 20;
+/** A corridor runs past a unit's closet and has no claim on its finish. */
+const CIRCULATION = /\b(CORRIDOR|HALL|LOBBY|STAIR|VESTIBULE)\b/i;
 /** A type taken from anything smaller is an elevator's or a closet's, which says nothing about the room beside it. */
 const SMALLEST_TYPE_SOURCE_SQFT = 100;
 
@@ -93,7 +95,7 @@ const SMALLEST_TYPE_SOURCE_SQFT = 100;
  * A unit carries one type tag and finds as several regions, so its kitchen and
  * bath come back with no tag (glen-hazel A-102). A group of untagged regions
  * takes a type only when every typed region touching the group has that same
- * type and is room-sized, so it cannot matter which of them it really belongs to. The panel counts these.
+ * type, is room-sized and is not a corridor, so it cannot matter which of them it really belongs to. The panel counts these.
  */
 export function typesFromNeighbours(rooms: readonly RoomFromWalls[], typed: ReadonlyMap<number, string>, feetPerUnit: number): Map<number, string> {
   const reach = NEIGHBOUR_FEET / feetPerUnit;
@@ -114,7 +116,7 @@ export function typesFromNeighbours(rooms: readonly RoomFromWalls[], typed: Read
         }
       }
     }
-    const sources = rooms.filter((r) => typed.has(r.id) && group.some((g) => touch(g, r)));
+    const sources = rooms.filter((r) => typed.has(r.id) && !CIRCULATION.test(r.tag?.name ?? "") && group.some((g) => touch(g, r)));
     const types = new Set(sources.map((r) => typed.get(r.id)!));
     if (types.size === 1 && sources.every((r) => r.squareFeet >= SMALLEST_TYPE_SOURCE_SQFT)) for (const g of group) out.set(g.id, [...types][0]);
   }
