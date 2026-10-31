@@ -8,7 +8,7 @@ import {
 
 const snapshot = {
   labor: [
-    { workerName: "Ana Ruiz", hours: "8", payType: "REGULAR", craftLabel: "Carpenter JM", lineItemDescription: "L3 corridor" },
+    { workerName: "Ana Ruiz", hours: "8", payType: "STRAIGHT", craftLabel: "Carpenter JM", lineItemDescription: "L3 corridor" },
     { workerName: "Luis Ortega", hours: "2.5", payType: "OVERTIME", craftLabel: null, lineItemDescription: null },
   ],
   materials: [{ description: "40 sheets 5/8 type X", vendorName: "Foundation", orderedOn: "2026-09-10" }],
@@ -28,7 +28,7 @@ describe("the draft's words", () => {
   it("carries the frozen snapshot: every worker, their hours and pay type, every material, and the total", () => {
     const text = tmTicketDraftDescription(input);
     expect(text).toContain("Labor as signed for — 10.5 hours:");
-    expect(text).toContain("Ana Ruiz — 8 h, regular, Carpenter JM — on L3 corridor");
+    expect(text).toContain("Ana Ruiz — 8 h, straight time, Carpenter JM — on L3 corridor");
     expect(text).toContain("Luis Ortega — 2.5 h, overtime");
     expect(text).toContain("40 sheets 5/8 type X — Foundation (ordered 2026-09-10)");
   });
@@ -46,9 +46,9 @@ describe("the draft's words", () => {
     expect(tmTicketDraftDescription({ ...input, photoCount: 0 })).toContain("Photos: none captured on this job on 2026-09-10.");
   });
 
-  it("says in words that nothing is priced", () => {
+  it("says in words how the lines below were priced and what still needs a figure", () => {
     const text = tmTicketDraftDescription(input);
-    expect(text).toContain("Not priced.");
+    expect(text).toContain("a line marked UNPRICED needs its rate entered, and every material needs its cost");
     expect(text).not.toMatch(/\$\d/);
   });
 

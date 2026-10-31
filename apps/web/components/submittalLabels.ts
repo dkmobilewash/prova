@@ -1,3 +1,4 @@
+import type { PackageContents } from "@/lib/submittal-package";
 /** Shared submittal display semantics, so the form, the row and the
  * counters can't disagree about what state a package is in.
  *
@@ -17,6 +18,9 @@ export type RevisionData = {
   /// own comment in operations.prisma. Null is the ordinary case.
   responseUrl: string | null;
   responseFileName: string | null;
+  /// What went into the package, when one was built here. Names and page
+  /// counts only; the package itself is never stored.
+  packageContents?: PackageContents | null;
 };
 
 export type SubmittalState =

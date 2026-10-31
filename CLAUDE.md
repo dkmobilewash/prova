@@ -361,7 +361,8 @@ scrollback gets broken by whoever didn't scroll far enough.
   bumped inside the same transaction as the insert. Never `max(n)+1`,
   never `count()+1` — anything derived from surviving rows is reissued
   when a row is deleted. `SafetyCaseCounter`, `RfiCounter`,
-  `SubmittalCounter` and `MaterialOrderCounter` (`operations.prisma`),
+  `SubmittalCounter`, `MaterialOrderCounter` and `PurchaseOrderCounter`
+  (`operations.prisma`),
   `ChangeOrderCounter` (`jobs.prisma`), `BackchargeCounter`
   (`backcharges.prisma`), `CloseoutSubmissionCounter` (`closeout.prisma`),
   `InvoiceCounter` and `ContractDocumentVersionCounter`

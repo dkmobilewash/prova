@@ -212,6 +212,8 @@ model Job {
   submittals                     Submittal[]
   submittalCounter               SubmittalCounter?
   materialOrders                 MaterialOrder[]
+  purchaseOrders                 PurchaseOrder[]
+  purchaseOrderCounter           PurchaseOrderCounter?
   materialOrderCounter           MaterialOrderCounter?
   drawingSets                    DrawingSet[]
   closeoutItems                  CloseoutItem[]
@@ -454,6 +456,7 @@ model JobLineItem {
   /// Attribution only — see the note on MaterialOrder.lineItem. No money
   /// is ever summed through this relation; cost stays on CostEntry.
   materialOrders   MaterialOrder[]
+  purchaseOrderLines PurchaseOrderLine[]
 
   @@index([jobId])
   @@index([originChangeOrderId])
@@ -635,6 +638,16 @@ model ChangeOrderProposal {
   budgetedUnitCost         Decimal?    @db.Decimal(12, 2)
   currentEstimatedUnitCost Decimal?    @db.Decimal(12, 2)
   tradeScope               TradeScope?
+
+  /// The cost type this proposal's cost belongs to — the same enum
+  /// JobLineItem.costCategory carries and the one the bid recap marks up
+  /// per category (lib/bid-recap.ts). Set on an ADD, copied onto the line
+  /// item when the change order is approved, and what lib/change-order-
+  /// pricing.ts reads to price a cost at this job's recap rates. Nullable:
+  /// an uncategorised cost is marked up at nothing, as it is on the bid,
+  /// and the screen says so rather than guessing a type. Added 2026-10-30
+  /// by Diego's decision on change-order pricing.
+  costCategory CostCategory?
 
   /// What this proposal replaced, captured at the moment it was applied.
   /// Null until then.

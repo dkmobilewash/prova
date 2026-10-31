@@ -146,7 +146,7 @@ export function zoneNotices(zones: readonly ZoneScale[]): ZoneNotice[] {
  * passes what `zoneNotices` returned, so one decision governs both.
  */
 export function measurementScaleLabel(
-  calibrationId: string,
+  calibrationId: string | null,
   zones: readonly ZoneScale[],
   notices: readonly ZoneNotice[],
 ): string | null {

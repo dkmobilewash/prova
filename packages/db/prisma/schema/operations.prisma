@@ -67,6 +67,7 @@ model Vendor {
   updatedAt DateTime @updatedAt
 
   materialOrders MaterialOrder[]
+  purchaseOrders PurchaseOrder[]
   priceQuotes    VendorPriceQuote[]
   /// Quotes given for a specific bid — see bid-levelling.prisma.
   bidQuotes   BidQuote[]
@@ -703,6 +704,14 @@ model SubmittalRevision {
   /// What to call the link on screen. Null renders the outcome alone.
   responseFileName String?
 
+  /// What went into the package this revision was sent with: file names and
+  /// page counts ONLY, `{ files: [{ name, pages }], totalPages }`, written by
+  /// lib/submittal-package.ts. The package itself is assembled in the
+  /// browser and never stored (Diego, 2026-10-30), so this is what lets the
+  /// register say what was sent rather than only that something was. Null
+  /// on every revision recorded without building a package here.
+  packageContents Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1229,6 +1238,8 @@ model VendorPriceQuote {
   recordedByUserId String?
   recordedBy       User?   @relation(fields: [recordedByUserId], references: [id])
 
+  purchaseOrderLines PurchaseOrderLine[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1361,4 +1372,87 @@ model CrewMembership {
   @@unique([crewId, crewMemberId])
   @@index([scheduledUserId])
   @@index([crewMemberId])
+}
+
+/// DRAFT is not a commitment. ISSUED and CLOSED are, and only those two count
+/// as committed cost (lib/purchase-orders.ts).
+enum PurchaseOrderStatus {
+  DRAFT
+  ISSUED
+  CLOSED
+}
+
+/// What the sub has agreed to pay a vendor for scope on one job. A lower-tier
+/// subcontract is a PO with a SUBCONTRACTOR line for now (Diego, 2026-10-30).
+///
+/// THIS IS NOT MaterialOrder. That is a delivery tracker with deliberately no
+/// quantity and no price, and it stays one. A commitment is its own record.
+///
+/// A COMMITMENT IS NEVER ADDED TO A COST. It is shown BESIDE actuals, never
+/// inside them: lib/open-commitments.ts records why, and
+/// lib/purchase-orders.test.ts fails if job-cost arithmetic reads this model.
+model PurchaseOrder {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  jobId     String
+  job       Job     @relation(fields: [jobId], references: [id])
+
+  /// Issued by PurchaseOrderCounter in the creating transaction.
+  number Int
+
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id])
+
+  status PurchaseOrderStatus @default(DRAFT)
+
+  lines PurchaseOrderLine[]
+
+  createdByUserId String?
+  createdBy       User?   @relation("PurchaseOrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobId, number])
+  @@index([companyId])
+  @@index([vendorId])
+}
+
+model PurchaseOrderLine {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  /// The scope line this buys out. The description, unit and price below are
+  /// SNAPSHOTS, so a later edit to the line or the quote cannot change a PO.
+  lineItemId String
+  lineItem   JobLineItem @relation(fields: [lineItemId], references: [id])
+
+  description String
+  unit        String?
+  quantity    Decimal @db.Decimal(12, 2)
+  unitPrice   Decimal @db.Decimal(12, 2)
+
+  /// Copied from the scope line. SUBCONTRACTOR is what marks a lower-tier
+  /// subcontract.
+  costCategory CostCategory?
+
+  /// The quote this was chosen from. Null for a typed price, and if the quote
+  /// is later deleted; the price above stands either way.
+  vendorPriceQuoteId String?
+  vendorPriceQuote   VendorPriceQuote? @relation(fields: [vendorPriceQuoteId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([purchaseOrderId])
+  @@index([lineItemId])
+  @@index([vendorPriceQuoteId])
+}
+
+/// Same shape and reason as MaterialOrderCounter.
+model PurchaseOrderCounter {
+  jobId      String @id
+  job        Job    @relation(fields: [jobId], references: [id])
+  lastNumber Int    @default(0)
 }

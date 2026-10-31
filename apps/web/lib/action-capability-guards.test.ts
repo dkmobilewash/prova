@@ -1912,6 +1912,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // — two modules because they sit behind two different doors.
   procore: () => import("./actions/procore"),
   procoreFeed: () => import("./actions/procoreFeed"),
+  purchaseOrders: () => import("./actions/purchaseOrders"),
   projectLookup: () => import("./actions/projectLookup"),
   // Finding public projects out to bid, reachable from /pipeline alone, which
   // withholds on MANAGE_ESTIMATING. The capability is the DOOR's, copied from

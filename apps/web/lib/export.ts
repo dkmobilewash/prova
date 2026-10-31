@@ -467,6 +467,25 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byCompany,
   },
   {
+    key: "purchase-orders",
+    model: "purchaseOrder",
+    label: "Purchase orders",
+    note: "A draft is not a commitment. Only issued and closed orders count as committed.",
+    columns: ["id", "jobId", "number", "vendorId", "status", "createdByUserId", "createdAt", "updatedAt"],
+    scope: byCompany,
+  },
+  {
+    key: "purchase-order-lines",
+    model: "purchaseOrderLine",
+    label: "Purchase order lines",
+    note: "Description, unit and price are snapshots taken when the line was added.",
+    columns: [
+      "id", "purchaseOrderId", "lineItemId", "description", "unit", "quantity", "unitPrice",
+      "costCategory", "vendorPriceQuoteId", "createdAt",
+    ],
+    scope: (companyId: string) => ({ purchaseOrder: { companyId } }),
+  },
+  {
     key: "safety-incidents",
     model: "safetyIncident",
     label: "Safety incidents",
@@ -1129,6 +1148,7 @@ export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
   RfiCounter: "sequence counter — the numbers it issued are on the exported RFIs",
   SafetyCaseCounter: "sequence counter — the numbers it issued are on the exported incidents",
   SubmittalCounter: "sequence counter — the numbers it issued are on the exported submittals",
+  PurchaseOrderCounter: "sequence counter — the numbers it issued are on the exported purchase orders",
   Wh347PayrollCounter: "sequence counter — the numbers it issued are on Wh347PayrollNumber, itself withheld above (payroll-rates)",
   QuickBooksConnection: "an integration connection: tokens into another system, withheld above",
   IntegrationConnection: "an integration connection: tokens into another system, withheld above",

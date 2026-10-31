@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**154 items audited — 132 built / 16 partial / 5 missing / 1 descoped**
+**155 items audited — 132 built / 17 partial / 5 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -102,7 +102,7 @@ header cannot.)
 | Status | Count |
 | --- | --- |
 | Built | 132 |
-| Partial | 16 |
+| Partial | 17 |
 | Missing | 5 |
 | Descoped | 1 |
 
@@ -292,7 +292,7 @@ forecasting shipped 26 Aug 2026.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Built | Change order requests/PCOs as a distinct pre-approval state | `ChangeOrderStatus` (DRAFT → SUBMITTED → APPROVED/REJECTED, plus VOID). A pending CO's content lives in `ChangeOrderProposal` and never touches `JobLineItem`, so contract value, WIP, retainage and pay applications only ever count scope the GC has agreed to. A draft can start from site evidence: a logged delay (`draftChangeOrderFromDelay`) or, since 2026-10-30, a signed T&M ticket (`draftChangeOrderFromTmTicket`, crew tab) whose FROZEN snapshot — hours per worker, materials, signer and time — becomes the draft's text; `TmTicket.changeOrderId` links the two and a ticket starts one draft only. Not priced: how hours become a sell price (markup, burden, equipment) is a decision in front of Diego, so the draft carries no proposals |
+| Built | Change order requests/PCOs as a distinct pre-approval state | `ChangeOrderStatus` (DRAFT → SUBMITTED → APPROVED/REJECTED, plus VOID). A pending CO's content lives in `ChangeOrderProposal` and never touches `JobLineItem`, so contract value, WIP, retainage and pay applications only ever count scope the GC has agreed to. A draft can start from site evidence: a logged delay (`draftChangeOrderFromDelay`) or, since 2026-10-30, a signed T&M ticket (`draftChangeOrderFromTmTicket`, crew tab) whose FROZEN snapshot — hours per worker, materials, signer and time — becomes the draft's text; `TmTicket.changeOrderId` links the two and a ticket starts one draft only. Priced per Diego's 2026-10-30 decision (`lib/change-order-pricing.ts`): every costed ADD line goes through `bidRecap` at the job's rates, labor burdened at the work date's employer burden before markup, never a defaulted wage; `ChangeOrderProposal.costCategory` carries the type and travels onto the line item on approval; the estimate card and the DocuSign document show the backup (cost, each recap step, sell) with a sell-only option |
 | Built | Correcting an approved change order | `reopenChangeOrder` unwinds it back to draft while its scope is untouched; once costed or billed, `reviseChangeOrder` raises a linked revision and the original stays approved |
 | Built | Change order approval workflow with the GC | `submitChangeOrder` / `approveChangeOrder` / `rejectChangeOrder` / `voidChangeOrder` in `lib/actions/changeOrders.ts`. Sent and decided dates are entered rather than stamped, so a backdated PCO records real turnaround. A rejected CO keeps its proposals as evidence it was priced and refused |
 | Built | Approved COs flow into new/modified `JobLineItem` rows and update contract value | `approveChangeOrder` applies every proposal in one transaction and writes the `ChangeOrderLineItemEdit` audit rows; `appliedAt` stops the same CO reaching the budget twice |
@@ -351,7 +351,7 @@ file's own Built rows already showed before this update touched anything.*
 
 | Status | Feature | Note |
 | --- | --- | --- |
-| Built | Shop drawing/submittal tracking and GC approval status | `Submittal` + `SubmittalRevision` + `SubmittalCounter`, `/submittals` — numbers issued per job and never reissued, per-revision sent/due/returned dates, outcome (approved / approved-as-noted / revise-and-resubmit / rejected), current-revision state derived, never stored. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
+| Built | Shop drawing/submittal tracking and GC approval status | `Submittal` + `SubmittalRevision` + `SubmittalCounter`, `/submittals` — numbers issued per job and never reissued, per-revision sent/due/returned dates, outcome (approved / approved-as-noted / revise-and-resubmit / rejected), current-revision state derived, never stored. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md`. Since 2026-10-30 the send form builds the package in the browser, per submittal: a cover sheet from the register row plus the picked PDFs, downloaded, nothing stored (`lib/submittal-package.ts`); `SubmittalRevision.packageContents` keeps file names and page counts only. Not yet: the GC's own form as a per-contact template |
 | Built | RFI log per job | `Rfi` + `RfiCounter`, `/rfis` — number issued per job and never reissued, sent/due/answered dates, overdue derived, cost/schedule impact flags. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 | Built | Document intake — drop a folder of a GC's paperwork in and get a table of proposals | `DocumentIntake`, `/intake` — a pure classifier (`lib/intake/classify.ts`) reads the FILENAME only and proposes a kind, a confidence and a reason in words a person can disagree with; `sortForReview` puts the uncertain rows at the top. **Nothing is filed by the machine, including a HIGH-confidence proposal, and an UNKNOWN never files at all.** `proposedKind` and `acceptedKind` are stored side by side on purpose, so "how often did a person change the answer" stays answerable — and since 14 Sep `lib/intake/learn.ts` reads them back: two agreeing corrections make a habit, one contradiction kills it permanently, a HIGH-confidence reading is never overridden, and two habits that disagree leave the row blank. What it learned is shown on the page in the person's own filenames. Suggestions ("4 files need a person", "3 files name Riverside, which is not a job here") are `DOCUMENT_INTAKE` alerts, so dismiss and snooze are the existing yes/no/later. **Needs `BLOB_READ_WRITE_TOKEN`** — without it the drop zone cannot upload and the page is unusable |
 | Built | Current drawing set storage/versioning per job | `DrawingSet` + `DrawingRevision`, `/drawings` — one set per discipline per job, issues recorded under the ARCHITECT'S label (no counter: we don't issue these numbers), issued/received dates entered not stamped, current revision and "issued but never received" both derived per render. The set itself is linked, not uploaded — a Server Action body caps around 1MB and real sets are far larger. Removed from nav 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
@@ -384,7 +384,7 @@ elsewhere in this pass. Reasoning in `NAV-IA-AUDIT.md`.*
 | Built | Multi-job scheduling view (which crews are where, by trade) | `/deployment` — crew-first, one row per person naming every active job they're on and flagging anyone split across more than one, plus the inverse by-job view with crew and equipment together. `/schedule` still answers when jobs run; this answers where everybody is |
 | Built | Equipment/scaffolding/lift allocation per job | `EquipmentAssignment` — which piece went to which job, when it left and when it came back, both dates entered not stamped. Shown per job on `/deployment`, with a separate list of gear still recorded as out on a job that isn't running |
 
-## 19. Materials & Vendor Management — 3 built · 0 partial · 0 missing
+## 19. Materials & Vendor Management — 3 built · 1 partial · 0 missing
 
 *Updated 3 Sep 2026: `/material-orders` stays Built and unchanged — it's
 now rendered `disabled` ("coming soon") in the nav rather than removed,
@@ -395,6 +395,7 @@ same reasoning as `/safety` above. Reasoning in `NAV-IA-AUDIT.md`.*
 | Built | Vendor/supplier directory per trade | `Vendor`, `/vendors` |
 | Built | Material order tracking and delivery status per job | `MaterialOrder` + `MaterialOrderDelivery` + `MaterialOrderCounter`, `/material-orders` — numbers issued per job and never reissued, ordered/promised/delivered dates all entered, partial deliveries as their own rows, late and delivery state derived and never stored. Carries no quantity or unit price by design: that would be a second copy of line-item data (see ARCHITECTURE.md), and material cost already lives on `CostEntry`. Nav entry disabled 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 | Built | Vendor pricing history for estimating | `VendorPriceQuote`, `/vendors/pricing` — what a supplier quoted, on a date entered not stamped, with the source (written quote / invoice / price list / verbal) recorded because the four are not equally trustworthy. Current, expired, stale, cheapest and every movement figure are derived per read, never stored. Compared only WITHIN a unit: MSF is never converted to SF, since the factor is the vendor's to state. Carries no job and no line item by design — a quote is reference data for pricing, and job cost has one home, `CostEntry`. Warns when a `LineItemCatalogEntry` default sits under the cheapest live quote in the same unit, and changes nothing — acting on that warning is an owner-confirmed button on `/catalog` (Sheet 03, 2026-09-22), never anything automatic here |
+| Partial | Buyout and purchase orders | `PurchaseOrder` + `PurchaseOrderLine` + `PurchaseOrderCounter`, `/jobs/[id]/buyout`: each non-labor line's budget beside current quotes in its own unit, and a DRAFT PO from the chosen quote or a typed price; a lower-tier subcontract is a PO with a SUBCONTRACTOR line. Committed shows beside Actual and is never added to a cost. `MaterialOrder` keeps no quantity or price. Not yet: issuing and closing (so committed reads $0), the PO document, a delivery linked to a PO line |
 
 ## 20. Equipment & Tool Tracking — 2 built · 0 partial · 0 missing
 

@@ -6,6 +6,9 @@ import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { TakeoffForm } from "@/components/TakeoffForm";
 import { AddCostEntryForm } from "@/components/AddCostEntryForm";
 import { costCategoryLabel } from "@/components/costCategoryLabels";
+import { loadLineCommitments } from "@/lib/purchase-orders-query";
+import type { LineCommitment } from "@/lib/purchase-orders";
+import { pricingBackupLines } from "@/lib/change-order-pricing";
 import { LaborHoursField } from "@/components/LaborHoursField";
 import { PhaseCodeField } from "@/components/PhaseCodeField";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -508,6 +511,21 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
       changeType: proposal.changeType,
       targetDescription: proposal.lineItemId ? changeOrderTargetsById.get(proposal.lineItemId)?.description ?? null : null,
       summary: describeProposal(proposal),
+      category: proposal.costCategory ? costCategoryLabel(proposal.costCategory).toLowerCase() : null,
+      // The same lines the DocuSign document prints under a costed ADD, at
+      // the same rates (lib/change-order-pricing.ts), so what the PM sees on
+      // this tab is what the GC is sent.
+      backup:
+        proposal.changeType === "ADD" && proposal.budgetedUnitCost != null && proposal.unitPrice != null
+          ? pricingBackupLines(
+              {
+                quantity: Number(proposal.quantity ?? 1),
+                unitCost: Number(proposal.budgetedUnitCost),
+                costCategory: (proposal.costCategory as CostCategoryValue | null) ?? null,
+              },
+              bidRecapRates,
+            )
+          : [],
     })),
     edits: co.edits.map((edit) => ({ id: edit.id, field: edit.field, oldValue: edit.oldValue, newValue: edit.newValue })),
   }));
@@ -546,6 +564,14 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
       Proposal &amp; exclusions →
     </Link>
   );
+  const buyoutLink = (
+    <Link href={`/jobs/${job.id}/buyout`} className="text-sm text-link hover:underline">
+      Buyout →
+    </Link>
+  );
+  // Beside the actual cost on each line, never added to it
+  // (lib/open-commitments.ts). Read after contract, the only stage with a PO.
+  const lineCommitments = isEstimateStage ? new Map<string, LineCommitment>() : await loadLineCommitments(job.id);
 
   // Job costing & WIP. After contract it leads the tab, as it always has.
   // On an ESTIMATE it is folded away at the bottom: an estimator came to
@@ -557,7 +583,12 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
           {!isEstimateStage && <h2 className="text-lg font-semibold text-ink">Job costing &amp; WIP</h2>}
           {/* On an estimate the proposal link sits above the line items. */}
-          {!isEstimateStage && proposalLink}
+          {!isEstimateStage && (
+            <span className="flex gap-4">
+              {buyoutLink}
+              {proposalLink}
+            </span>
+          )}
         </div>
         {/* WHAT THE LABOR IN THESE FIGURES IS MADE OF, SAID OUT LOUD AND
             DRIVEN BY THE DATA. This screen used to describe logged hours as
@@ -692,6 +723,12 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                     Current est. {wip.currentEstimatedCost != null ? money(wip.currentEstimatedCost) : "—"}
                   </span>
                   <span className="text-ink-body">Actual {money(wip.actualCostToDate)}</span>
+                  {(lineCommitments.get(item.id)?.committed ?? 0) > 0 && (
+                    <span className="text-ink-body">Committed {money(lineCommitments.get(item.id)?.committed ?? 0)}</span>
+                  )}
+                  {(lineCommitments.get(item.id)?.drafted ?? 0) > 0 && (
+                    <span className="text-ink-muted">Drafted on a PO {money(lineCommitments.get(item.id)?.drafted ?? 0)}</span>
+                  )}
                   <span className="text-ink-body">% complete {formatPercentComplete(wip.percentComplete) ?? "—"}</span>
                   <span className="text-ink-body">Earned {wip.earnedRevenue != null ? money(wip.earnedRevenue) : "—"}</span>
                 </div>

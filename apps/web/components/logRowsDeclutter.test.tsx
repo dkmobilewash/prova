@@ -78,7 +78,7 @@ describe("a submittal row", () => {
       responseFileName: null,
     });
     const html = renderToStaticMarkup(
-      <SubmittalRow
+      <SubmittalRow companyName="Drywall Co"
         submittal={{
           id: "sub-1",
           number: 8,
@@ -87,6 +87,7 @@ describe("a submittal row", () => {
           description: null,
           specSection: null,
           drawingReference: null,
+          gcName: "Acme General",
           submittedByName: null,
           revisions: [rev(1), rev(2)],
         }}

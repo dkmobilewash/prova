@@ -31,7 +31,7 @@ const MARGIN = 36;
 
 /** Standard-14 Helvetica is WinAnsi: a character outside Latin-1 makes
  * pdf-lib throw on encode, and a line-item description is free text. */
-function safe(text: string): string {
+export function safe(text: string): string {
   return text.replace(/[^\x20-\x7E\xA0-\xFF]/g, "?");
 }
 

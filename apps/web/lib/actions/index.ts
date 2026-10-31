@@ -42,6 +42,7 @@ export * from "./bidPursuits";
 export * from "./safety";
 export * from "./rfis";
 export * from "./changeOrders";
+export * from "./purchaseOrders";
 export * from "./submittals";
 export * from "./dasForms";
 export * from "./materialOrders";

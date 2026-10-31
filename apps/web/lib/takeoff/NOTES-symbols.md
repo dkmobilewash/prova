@@ -199,3 +199,15 @@ should say so rather than offer a box; it does not yet.
 - The panel's half-symbol warning, and "this is a scan" instead of the box
   tool on a scanned sheet.
 - Legend rows as templates: right idea, wrong size on Baker.
+
+## A count needs no scale (2026-10-30, `diego/count-no-scale`)
+
+Chrome was blocked on Baker EL1.01: an electrical sheet with no scale, where
+every drawing tool was greyed out. `TakeoffMeasurement.calibrationId` was
+required, so a count could not exist there at all, and the across-the-set save
+applied printed scales only to give its rows something to point at.
+
+`calibrationId` is now null for a count on an unscaled sheet, and a CHECK keeps
+it required for lines and areas. A placeholder calibration was rejected: it
+would be a made-up scale, and it would mark the sheet as scaled. The save no
+longer applies printed scales, so counting never changes a sheet's scale.
