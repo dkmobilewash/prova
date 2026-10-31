@@ -209,6 +209,7 @@ model Company {
   safetyIncidents           SafetyIncident[]
   toolboxTalks              ToolboxTalk[]
   materialOrders            MaterialOrder[]
+  purchaseOrders            PurchaseOrder[]
   drawingSets               DrawingSet[]
   closeoutItems             CloseoutItem[]
   warrantyPeriods           WarrantyPeriod[]
@@ -372,6 +373,7 @@ model User {
   verifiedPunchListItems               PunchListItem[]               @relation("PunchItemVerifiedBy")
   reopenedPunchListItems               PunchListItem[]               @relation("PunchItemReopenedBy")
   createdTmTickets                     TmTicket[]
+  createdPurchaseOrders                PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
   signedTimesheets                     TimesheetSignoff[]            @relation("TimesheetSignoffSignedBy")
   approvedTimesheets                   TimesheetSignoff[]            @relation("TimesheetSignoffApprovedBy")
   reopenedTimesheets                   TimesheetSignoff[]            @relation("TimesheetSignoffReopenedBy")
