@@ -1723,6 +1723,7 @@ describe("every write behind a guarded page answers to the same capability", () 
       "jobs.updateLineItem": "VIEW_JOB_COSTS",
       "jobs.updateLineItemForecast": "VIEW_JOB_COSTS",
       "jobs.deleteLineItem": "VIEW_JOB_COSTS",
+      "takeoff.addFinishLinesToEstimate": "VIEW_JOB_COSTS",
       "takeoff.addTakeoffLines": "VIEW_JOB_COSTS",
       "jobs.draftLineItemsFromScope": "VIEW_JOB_COSTS",
       "jobs.addCostEntry": "VIEW_JOB_COSTS",

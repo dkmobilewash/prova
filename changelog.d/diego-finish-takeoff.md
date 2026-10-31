@@ -1,0 +1,3 @@
+### Finish takeoff by room
+
+The room finish schedule is read by column, by room number or by finish type, and joined to the found rooms. It gives floor, base, wall finish and ceiling quantities per finish and posts them as estimate lines. Wall area takes doors and windows off the wall they sit in, base takes door widths off, and a room with no height gets no wall area rather than a guess. Rooms and schedule rows that did not join are named on screen, and north-is-up and the door and window heights are stated there as assumptions. Check: on Joplin A-101, room 124's west wall reads PT-5 and its floor is TCF-1.
