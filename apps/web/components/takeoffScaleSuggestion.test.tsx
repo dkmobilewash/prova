@@ -15,7 +15,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
 });
-const suggestion = { scaleName: '1/8" = 1\'-0"', feetPerInch: 8, doors: 14 };
+const suggestion = { scaleName: '1/8" = 1\'-0"', feetPerInch: 8, because: "14 doors" };
 const q = (name: string) => host.querySelector<HTMLButtonElement>(`[data-takeoff="${name}"]`)!;
 function paint(onConfirm = vi.fn(async () => null as string | null), onDismiss = vi.fn()) {
   act(() => root.render(createElement(TakeoffScaleSuggestion, { suggestion, onConfirm, onDismiss })));

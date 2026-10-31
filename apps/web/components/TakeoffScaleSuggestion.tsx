@@ -28,7 +28,7 @@ export function TakeoffScaleSuggestion({
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-body" data-takeoff="scale-suggestion">
       <span>
-        Suggested {suggestion.scaleName} from {suggestion.doors} doors: confirm?
+        Suggested {suggestion.scaleName} from {suggestion.because}: confirm?
       </span>
       <button
         type="button"
