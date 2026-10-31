@@ -1331,7 +1331,7 @@ export function TakeoffWorkspace({
         <main
           className={`flex min-h-0 min-w-0 flex-1 flex-col p-2${
             drawers && panelOpen
-              ? " [&_[data-takeoff=found-walls]]:fixed [&_[data-takeoff=found-walls]]:inset-y-0" +
+              ? " [&_[data-takeoff=found-walls]]:fixed [&_[data-takeoff=found-walls]]:top-11 [&_[data-takeoff=found-walls]]:bottom-0" +
                 " [&_[data-takeoff=found-walls]]:right-0 [&_[data-takeoff=found-walls]]:z-40" +
                 " [&_[data-takeoff=found-walls]]:w-80 [&_[data-takeoff=found-walls]]:overflow-y-auto" +
                 " [&_[data-takeoff=found-walls]]:rounded-none"
@@ -1780,13 +1780,18 @@ export function TakeoffWorkspace({
           page. `fixed` to the viewport cannot. */}
       {drawers && !phone && (sheetsOpen || panelOpen || itemsOpen) && (
         <>
-          <button
-            type="button"
-            aria-label="Close the panels"
-            onClick={closeDrawers}
-            className="fixed inset-0 z-30 bg-black/50"
-            data-takeoff="drawer-backdrop"
-          />
+          {/* Sheets and Items only. The quantities drawer sits beside the work:
+              a backdrop there made the next click anywhere close it instead of
+              doing what it was aimed at. */}
+          {(sheetsOpen || itemsOpen) && (
+            <button
+              type="button"
+              aria-label="Close the panels"
+              onClick={closeDrawers}
+              className="fixed inset-0 z-30 bg-black/50"
+              data-takeoff="drawer-backdrop"
+            />
+          )}
           {sheetsOpen && (
             <aside
               className="fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-line-card bg-surface"
@@ -1828,7 +1833,7 @@ export function TakeoffWorkspace({
           {/* The quantities drawer IS the viewer's panel, lifted by the
               classes on <main> above. A close button lives here because that
               panel has none of its own, and a drawer you can only dismiss by
-              guessing is not a drawer. Escape and the backdrop close it too. */}
+              guessing is not a drawer. Escape closes it too. */}
           {panelOpen && (
             <button
               type="button"

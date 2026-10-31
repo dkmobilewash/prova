@@ -136,6 +136,9 @@ export function itemGeometry(item: ItemForLines): RunGeometry {
   };
 }
 
+/** The item `saveDemoTakeoff` writes: lengths with no assembly, which still belong on the estimate. */
+const DEMO_WALLS = "Demo walls";
+
 /** Everything the expander needs, read through the transaction client. */
 export async function loadItemsForLines(tx: Tx, companyId: string, jobId: string) {
   const items = await tx.takeoffItem.findMany({
@@ -145,6 +148,7 @@ export async function loadItemsForLines(tx: Tx, companyId: string, jobId: string
       measurements: {
         select: {
           id: true,
+          postedAt: true,
           kind: true,
           xs: true,
           ys: true,
@@ -215,13 +219,14 @@ export async function syncTakeoffItemLines(
     string,
     {
       itemId: string;
-      componentId: string;
+      /** Null for a count, which is a line with no assembly behind it. */
+      componentId: string | null;
       description: string;
       unit: string | null;
       quantity: number;
       laborHours: number | null;
       productionRate: number | null;
-      component: (typeof assemblies)[number]["components"][number];
+      component: (typeof assemblies)[number]["components"][number] | null;
     }
   >();
 
@@ -234,6 +239,28 @@ export async function syncTakeoffItemLines(
           { type: item.type, heightFt: null, sides: null, wastePercent: 0, depthIn: null },
         ).areaSqFt;
         checkFigures.push({ id: item.id, name: item.name, squareFeet: Math.round(area) });
+      } else if (measured && (item.type === "COUNT" || item.name === DEMO_WALLS)) {
+        // ── A COUNT NEEDS NO ASSEMBLY TO BE A LINE ──
+        // It was named to become one. It arrives with a quantity and no price,
+        // and what a person already posted from the list is not counted again.
+        const open = item.measurements.filter((m) => m.postedAt === null);
+        const total = itemQuantity(
+          open.map((m) => ({ id: m.id, pageNumber: m.page.pageNumber, kind: m.kind, xs: m.xs, ys: m.ys, cutouts: [], feetPerPageWidth: m.calibration === null ? null : feetAcross(m.calibration) })),
+          { type: item.type, heightFt: null, sides: null, wastePercent: 0, depthIn: null },
+        );
+        const quantity = item.type === "COUNT" ? total.count : total.linearFt;
+        if (quantity > 0) {
+          wanted.set(`${item.id}:null`, {
+            itemId: item.id,
+            componentId: null,
+            description: item.name,
+            unit: item.type === "COUNT" ? "ea" : "lin ft",
+            quantity,
+            laborHours: null,
+            productionRate: null,
+            component: null,
+          });
+        }
       } else if (measured) unpriced.push({ id: item.id, name: item.name });
       continue;
     }
@@ -336,7 +363,7 @@ export async function syncTakeoffItemLines(
     // Somebody removed this one. Their decision outlives a re-sync.
     if (removedByHand.has(id)) continue;
 
-    const entry = line.component.catalogEntry;
+    const entry = line.component?.catalogEntry ?? null;
     await tx.jobLineItem.create({
       data: {
         jobId,
@@ -349,9 +376,9 @@ export async function syncTakeoffItemLines(
         budgetedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
         currentEstimatedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
         tradeScope: entry?.tradeScope ?? null,
-        costCategory: line.component.costCategory ?? entry?.costCategory ?? null,
+        costCategory: line.component?.costCategory ?? entry?.costCategory ?? null,
         craftClassificationId:
-          line.component.craftClassificationId ?? entry?.craftClassificationId ?? null,
+          line.component?.craftClassificationId ?? entry?.craftClassificationId ?? null,
         sourceCatalogEntryId: entry?.id ?? null,
         priceBasis: entry ? "COMPANY_CATALOG" : null,
         wallTypeComponentId: line.componentId,

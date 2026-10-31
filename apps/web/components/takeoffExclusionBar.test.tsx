@@ -6,6 +6,7 @@
  */
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TakeoffPlanViewer } from "./TakeoffPlanViewer";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
@@ -69,6 +70,13 @@ describe("the way back from an exclusion, with the Quantities panel closed", () 
     expect(q("found-walls")).toBeNull();
     expect(q("remove-work-area")?.textContent).toBe("Remove work area");
     expect(q("clear-exclusions")?.textContent).toBe("Clear exclusions");
+  });
+  it("offers Remove work area on the sheet's first paint, with no Find pressed", () => {
+    // Server markup, because no effect runs in it: this IS the first paint.
+    const html = renderToStaticMarkup(
+      createElement(TakeoffPlanViewer, { jobId: "job_1", planId: "plan_1", sheets: [sheet([area])], printedScaleByPage: {}, scannedPages: [], scalePrefillByPage: {}, panelOpen: false } as never),
+    );
+    expect(html).toContain('data-takeoff="remove-work-area"');
   });
   it("removes the work area and leaves the exclusions", async () => {
     viewer([area, like]);

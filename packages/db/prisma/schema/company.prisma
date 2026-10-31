@@ -131,7 +131,13 @@ model Company {
   /// "Find all like this" on the takeoff: box one symbol, count every match
   /// on the sheet by its vector shape, save the count. No model. OFF until
   /// the owner turns it on.
+  /// SUPERSEDED 2026-10-31 by symbolCountOff below, the same move the grey-out
+  /// made: nothing reads this column any more and it is dropped in its own PR.
   symbolCountOn Boolean @default(false)
+  /// "Count like this" is ON for every company unless the owner turns it OFF
+  /// in Settings — an OFF switch, so flipping the default never needs an
+  /// UPDATE over customer rows. `false` means on.
+  symbolCountOff Boolean @default(false)
 
   /// The unguessable half of this company's inbound intake address:
   /// `docs-<token>@<INTAKE_INBOUND_DOMAIN>`. The token IS the routing — an

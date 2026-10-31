@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { roomsFromWalls, type FoundWall } from "./roomsFromWalls";
+import { roomsFromWalls, roomsSplitAtDrawnWalls, type FoundWall } from "./roomsFromWalls";
 
 /**
  * Two 10x10 ft rooms side by side, 6-inch walls, a 3-ft doorway in the wall
@@ -135,6 +135,36 @@ describe("roomsFromWalls", () => {
     expect(roomsFromWalls({ walls, feetPerUnit: W, text: [...words, heading], widthPt: 1000 }).rooms).toHaveLength(1);
     const body = { str: "SEE NOTES", x: 20, y: 30, width: 40, height: 6 };
     expect(roomsFromWalls({ walls, feetPerUnit: W, text: [...words, body], widthPt: 1000 }).rooms).toHaveLength(2);
+  });
+  describe("a leaked region split at a drawn wall", () => {
+    const open = walls.slice(0, 4);
+    const tags = [text("OFFICE", 5, 4), text("101", 5, 5), text("STORAGE", 15, 4), text("102", 15, 5)];
+    const base = { walls: open, feetPerUnit: W, text: tags, widthPt: 1000 };
+    it("splits where the sheet draws the wall, naming both rooms", () => {
+      expect(roomsFromWalls(base).rooms.filter((r) => r.sharedTags)).toHaveLength(1);
+      const split = roomsSplitAtDrawnWalls(base, [{ x1: ft(10 + c), y1: ft(-c), x2: ft(10 + c), y2: ft(10 + c) }]);
+      expect(split.rooms.map((r) => r.tag?.number).sort()).toEqual(["101", "102"]);
+      expect(split.mergedTags).toEqual([]);
+    });
+    it("stays one region when no drawn line separates the tags, or the line is short", () => {
+      expect(roomsSplitAtDrawnWalls(base, []).rooms.filter((r) => r.sharedTags)).toHaveLength(1);
+      const pieces = [0, 3, 6, 9].map((y) => ({ x1: ft(10 + c), y1: ft(y - c), x2: ft(10 + c), y2: ft(y + 3) }));
+      expect(roomsSplitAtDrawnWalls(base, pieces).rooms.filter((r) => r.sharedTags)).toHaveLength(1);
+    });
+    it("does not split when the line leaves every tag on one side", () => {
+      const left = { ...base, text: [text("OFFICE", 2, 4), text("101", 2, 5), text("STORAGE", 7, 4), text("102", 7, 5)] };
+      const split = roomsSplitAtDrawnWalls(left, [{ x1: ft(10 + c), y1: ft(-c), x2: ft(10 + c), y2: ft(10 + c) }]);
+      expect(split.rooms).toHaveLength(1);
+      expect(split.rooms[0]?.squareFeet).toBeGreaterThan(180);
+    });
+    it("gives an open room's tag to an unnamed room beside it, and only one", () => {
+      const beside = roomsSplitAtDrawnWalls({ walls: open, feetPerUnit: W, text: [text("OFFICE", 5, 12), text("101", 5, 13)], widthPt: 1000 }, []);
+      expect(beside.rooms[0]?.tag?.number).toBe("101");
+      expect(beside.unplacedTags).toEqual([]);
+      const far = roomsSplitAtDrawnWalls({ walls: open, feetPerUnit: W, text: [text("OFFICE", 5, 30), text("101", 5, 31)], widthPt: 1000 }, []);
+      expect(far.rooms[0]?.tag).toBeNull();
+      expect(far.unplacedTags).toHaveLength(1);
+    });
   });
 });
 
