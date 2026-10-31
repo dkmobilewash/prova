@@ -146,7 +146,7 @@ export function TopBar({
           aria-label={`C Stream — ${companyName} home`}
           className="flex shrink-0 items-center gap-2.5 rounded-md font-headline text-[22px] leading-none text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus md:text-2xl"
         >
-          <Image src="/brand/cstream-mark.png" alt="" width={28} height={28} className="logo-on-theme h-7 w-7 object-contain" priority />
+          <Image src="/brand/cstream-mark.png" alt="" width={28} height={28} className="logo-on-theme h-7 w-7 object-contain" unoptimized priority />
           C Stream
         </Link>
 
