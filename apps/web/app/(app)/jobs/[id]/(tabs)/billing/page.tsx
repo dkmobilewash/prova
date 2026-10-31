@@ -21,7 +21,8 @@ import { invoiceBalanceLabel, balanceToneClass } from "@/lib/invoice-balance-lab
 import { SubmitButton } from "@/components/SubmitButton";
 import { createInvoice, deletePayment } from "@/lib/actions";
 import { LienWaivers } from "@/components/LienWaivers";
-import { loadLienWaiverSection } from "@/lib/lien-waiver-query";
+import { loadLienWaiverSection, loadLowerTierWaiverInputs } from "@/lib/lien-waiver-query";
+import { missingLowerTierWaivers, waiverOfferFor } from "@/lib/lien-waiver-followups";
 import { ActionForm } from "@/components/ActionForm";
 import { PayAppSummary } from "@/components/job/PayAppSummary";
 import { billingNoun } from "@/components/job/jobStages";
@@ -164,6 +165,10 @@ export default async function JobBillingPage({
   const createInvoiceWithId = createInvoice.bind(null, job.id);
 
   const lienWaiverSection = await loadLienWaiverSection(job.id);
+  // The lower-tier check (lib/lien-waiver-followups.ts): one read of who the
+  // sub buys from on this job and what waivers have come in, composed per
+  // application below against the PREVIOUS application's period.
+  const lowerTierInputs = await loadLowerTierWaiverInputs(job.id);
 
   // The summary at the top is the LATEST pay application, read through
   // loadPayApplication — the same certificate its Review page prints — so
@@ -175,6 +180,34 @@ export default async function JobBillingPage({
   // in issueInvoiceNumber's transaction.
   const invoiceCounter = await prisma.invoiceCounter.findUnique({ where: { jobId: job.id }, select: { lastNumber: true } });
   const latestInvoice = latestPayApp ? job.invoices.find((invoice) => invoice.id === latestPayApp.id) : undefined;
+
+  // THE WAIVER OFFER for the newest pay application with no waiver yet:
+  // amount = its current payment due (G702 line 8), through = its period-to.
+  const waiverOffer =
+    latestInvoice && latestCertificate?.isPayApplication
+      ? waiverOfferFor({
+          invoiceId: latestInvoice.id,
+          number: latestInvoice.number,
+          currentPaymentDue: latestCertificate.summary.currentPaymentDue,
+          periodTo: latestInvoice.periodTo,
+          hasWaiver: lienWaiverSection.waivers.some((w) => w.invoiceId === latestInvoice.id && w.revokedAt === null),
+        })
+      : null;
+
+  // THE LOWER-TIER WARNING per application: the period the previous
+  // application ran through (its period-to, or its issue day when it has
+  // none) against the inbound waivers. Keyed by invoice id for the rows.
+  const payAppsAsc = job.invoices.filter((invoice) => invoice.lineItems.length > 0);
+  const lowerTierWarningByInvoice = new Map<string, string>();
+  payAppsAsc.forEach((invoice, index) => {
+    const previous = index > 0 ? payAppsAsc[index - 1] : null;
+    const check = missingLowerTierWaivers({
+      previousPeriodTo: previous ? (previous.periodTo ?? previous.issuedAt) : null,
+      parties: lowerTierInputs.parties,
+      inbound: lowerTierInputs.inbound,
+    });
+    if (check.warning) lowerTierWarningByInvoice.set(invoice.id, check.warning);
+  });
 
   // Why each QuickBooks button is off — the same two calls, with the same
   // arguments, each button below still makes for itself; repeated here only
@@ -318,6 +351,17 @@ export default async function JobBillingPage({
                       <span className="text-ink-body">Paid {money(paid)}</span>
                       <span className={balanceToneClass[balance.tone]}>{balance.headline}</span>
                     </p>
+                    {/* Before this goes to the GC. Advisory, never blocking,
+                        and never an all-clear: it only ever names who has
+                        NOT sent a waiver for the previous period. */}
+                    {lowerTierWarningByInvoice.has(invoice.id) && (
+                      <p className="max-w-xl text-xs text-warn">
+                        {lowerTierWarningByInvoice.get(invoice.id)}{" "}
+                        <Link href="/compliance" className="text-link hover:underline">
+                          Compliance →
+                        </Link>
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-start gap-4">
                     <StatusForm jobId={job.id} invoiceId={invoice.id} status={invoice.status} />
@@ -459,7 +503,7 @@ export default async function JobBillingPage({
         </div>
       </section>
 
-      <LienWaivers jobId={job.id} section={lienWaiverSection} canManage={showsBilling} />
+      <LienWaivers jobId={job.id} section={lienWaiverSection} canManage={showsBilling} offer={waiverOffer} />
     </div>
   );
 }

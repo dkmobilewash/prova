@@ -104,6 +104,9 @@ vi.mock("@/lib/lien-waiver-query", () => ({
     retainageBalance: 0,
     pendingChangeOrderTotal: 0,
   })),
+  // The lower-tier check reads nothing here: no vendors, no inbound waivers,
+  // so no warning line enters the count below.
+  loadLowerTierWaiverInputs: vi.fn(async () => ({ parties: [], inbound: [] })),
 }));
 vi.mock("@/lib/pay-application-query", () => ({ loadPayApplication: vi.fn(async () => ({})) }));
 vi.mock("@/components/job/PayAppSummary", () => ({ PayAppSummary: () => null }));

@@ -6,6 +6,7 @@ import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { TakeoffForm } from "@/components/TakeoffForm";
 import { AddCostEntryForm } from "@/components/AddCostEntryForm";
 import { costCategoryLabel } from "@/components/costCategoryLabels";
+import { pricingBackupLines } from "@/lib/change-order-pricing";
 import { LaborHoursField } from "@/components/LaborHoursField";
 import { PhaseCodeField } from "@/components/PhaseCodeField";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -508,6 +509,21 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
       changeType: proposal.changeType,
       targetDescription: proposal.lineItemId ? changeOrderTargetsById.get(proposal.lineItemId)?.description ?? null : null,
       summary: describeProposal(proposal),
+      category: proposal.costCategory ? costCategoryLabel(proposal.costCategory).toLowerCase() : null,
+      // The same lines the DocuSign document prints under a costed ADD, at
+      // the same rates (lib/change-order-pricing.ts), so what the PM sees on
+      // this tab is what the GC is sent.
+      backup:
+        proposal.changeType === "ADD" && proposal.budgetedUnitCost != null && proposal.unitPrice != null
+          ? pricingBackupLines(
+              {
+                quantity: Number(proposal.quantity ?? 1),
+                unitCost: Number(proposal.budgetedUnitCost),
+                costCategory: (proposal.costCategory as CostCategoryValue | null) ?? null,
+              },
+              bidRecapRates,
+            )
+          : [],
     })),
     edits: co.edits.map((edit) => ({ id: edit.id, field: edit.field, oldValue: edit.oldValue, newValue: edit.newValue })),
   }));

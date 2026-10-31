@@ -69,9 +69,10 @@ export interface TmTicketDraftInput {
 }
 
 const PAY_TYPE_WORDS: Record<string, string> = {
-  REGULAR: "regular",
+  STRAIGHT: "straight time",
   OVERTIME: "overtime",
   DOUBLE_TIME: "double time",
+  SHIFT_DIFFERENTIAL: "shift differential",
 };
 
 function payTypeWord(payType: string | null | undefined): string | null {
@@ -134,7 +135,7 @@ export function tmTicketDraftDescription(input: TmTicketDraftInput): string {
       ? `Photos: ${input.photoCount} job photo${input.photoCount === 1 ? "" : "s"} captured on ${input.day} — see the job's photos for that day.`
       : `Photos: none captured on this job on ${input.day}.`,
     "",
-    "Not priced. Add the labor, material and equipment lines on this change order and price them; the hours above are what the GC's representative signed for.",
+    "The lines below carry the hours and materials above. Labor is priced at the craft's wage, fringes and burden through this job's bid recap where a wage is on file; a line marked UNPRICED needs its rate entered, and every material needs its cost. The hours are what the GC's representative signed for.",
   );
   return lines.join("\n");
 }
