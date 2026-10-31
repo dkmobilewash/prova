@@ -16,6 +16,7 @@ import { Spinner } from "@/components/Spinner";
 import { Disclosure } from "@/components/Disclosure";
 import { MAX_BOARD_LAYERS, WALL_BASIS_LABELS, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
 import { DEFAULT_WASTE_PERCENT } from "@/lib/takeoff";
+import type { StarterSurface } from "@/lib/wall-type-starters";
 
 /** 1 … MAX_BOARD_LAYERS — the answers the action accepts, and no others. */
 const BOARD_LAYER_OPTIONS: readonly number[] = Array.from({ length: MAX_BOARD_LAYERS }, (_, index) => index + 1);
@@ -165,12 +166,16 @@ export function NewWallTypeForm({ initial }: { initial?: Partial<WallTypeView> }
 export function StarterWallTypesButton({
   missing,
   hasLibrary,
+  surface = "crm",
 }: {
   /** The starter codes this company does not have — `missingStarterTypes`,
    *  the same rule `addStarterWallTypes` writes by. */
   missing: readonly string[];
   /** Whether the company already has wall types of its own. */
   hasLibrary: boolean;
+  /** Which starter set to add — Bid offers only its own trades'. Must match
+   *  the `surface` the page passed to `missingStarterTypes`. */
+  surface?: StarterSurface;
 }) {
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
@@ -186,7 +191,7 @@ export function StarterWallTypesButton({
           disabled={isPending}
           onClick={() =>
             startTransition(async () => {
-              const result = await addStarterWallTypes();
+              const result = await addStarterWallTypes(surface);
               // `join(", ")`, not `" and "`. The starter set was two entries
               // when this was written and is ten now — "W1 and W2 and W3 and…"
               // is what that reads as.
@@ -199,9 +204,10 @@ export function StarterWallTypesButton({
           }
           className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
         >
-          {/* NOT "two common wall types" any more. The set covers partitions,
-              exterior wall, drywall finish, ceilings, flooring, painting, slab
-              and footing — the trades the takeoff workspace can measure.
+          {/* NOT "two common wall types" any more. The CRM's set covers
+              partitions, exterior wall, drywall finish, ceilings, flooring,
+              painting, slab and footing; Bid's stops at the ceilings
+              (`startersFor`).
               And it says HOW MANY it adds (#818), because beside a library
               that already has some of them "Start from…" alone would read as
               an offer to replace what is there. */}

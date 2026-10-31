@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import * as React from "react";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -8,6 +9,7 @@ import {
   GUIDE_FIXTURES,
   GUIDE_JOB_WALK,
   GUIDE_NO_DRAWINGS,
+  GUIDE_PROPOSAL,
   GUIDE_RECAP_READY,
   GUIDE_SENT,
   GUIDE_UNPRICED,
@@ -30,12 +32,17 @@ vi.mock("@/lib/actions", () => ({
   confirmAskProposal: (...args: unknown[]) => confirmAsk(...args),
   cancelAskProposal: (...args: unknown[]) => cancelAsk(...(args as [])),
 }));
-vi.mock("next/navigation", () => ({ usePathname: () => "/bid/estimates/x/takeoff", useRouter: () => ({ refresh }) }));
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/bid/estimates/x/takeoff",
+  useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ refresh }),
+}));
 
 import { JobGuideAsk } from "./JobGuideAsk";
 import { JobGuideAskBox } from "./JobGuideAskBox";
 import { JobGuideRail } from "./JobGuideRail";
 import { JobGuideShell } from "./JobGuideShell";
+import { pickAsk } from "@/lib/bid/guide/pickAsk";
 
 /**
  * THE JOB SCREEN RENDERS ANY GUIDE THE ENGINE CAN HAND IT, AND NONE OF THEM
@@ -576,6 +583,26 @@ describe("tap answers (the board-layer question)", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
+  it("the refresh, and 'Done', run INSIDE a transition, so 'Done' cannot commit over the old screen", async () => {
+    // A state update after an `await` leaves the transition it was written in
+    // (React's async-transition limit). The card used to call `setDone` and
+    // `router.refresh()` there, so "Done" committed urgently while the router
+    // still held the old question and figures (browser test, 2026-10-30).
+    // `T` is React's current-transition slot: non-null only inside one. No
+    // public API answers this, and happy-dom cannot show the old screen held.
+    const internals = (React as unknown as Record<string, { T: unknown }>).__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE!;
+    let inTransition: boolean | null = null;
+    refresh.mockImplementation(() => {
+      inTransition = internals.T != null;
+    });
+    run.mockResolvedValue({ ok: true });
+    const host = await mount(guide);
+    await act(async () => chipButtons(host)[1]!.click());
+    await act(async () => confirmButton(host).click());
+    expect(inTransition).toBe(true);
+    expect(host.querySelector('[role="status"]')?.textContent).toBe("Done.");
+  });
+
   it("a stale answer is refused in words and nothing refreshes", async () => {
     run.mockResolvedValue({ ok: false, error: "Those walls have changed since you saw the question." });
     const host = await mount(guide);
@@ -663,5 +690,15 @@ describe("tap answers (the wall-height question)", () => {
       expect(hrefs(out).length).toBe(guide.ask!.actions.length);
       for (const h of hrefs(out)) expect(h.startsWith("/bid/bids")).toBe(true);
     }
+  });
+});
+
+describe("the ask card on one GC's proposal", () => {
+  const own: JobGuide = { ...GUIDE_PROPOSAL, askByInvitation: { inv_t: { id: "proposal-ready", step: "proposal" as const, title: "Turner's", body: null, actions: [] } } };
+  it("shows that GC's ask only on the proposal opened for it", () => {
+    expect(pickAsk(own, "/bid/estimates/x/proposal", "inv_t").ask!.title).toBe("Turner's");
+    expect(pickAsk(own, "/bid/estimates/x/proposal", null).ask!.title).toBe(own.ask!.title);
+    expect(pickAsk(own, "/bid/estimates/x/estimate", "inv_t").ask!.title).toBe(own.ask!.title);
+    expect(pickAsk(own, "/bid/estimates/x/proposal", "stale").ask!.title).toBe(own.ask!.title);
   });
 });

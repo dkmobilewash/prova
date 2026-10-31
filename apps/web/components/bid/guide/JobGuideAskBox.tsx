@@ -106,7 +106,11 @@ export function JobGuideAskBox({
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
-        setState((current) => applyAskEvent(current, { type: "error", error: "The assistant is unavailable right now. Try again shortly." }));
+        // The status says whether this server refused (4xx) or broke (5xx),
+        // which the bare sentence could not — the model's own failures
+        // arrive inside the stream with Anthropic's reason attached.
+        const error = `The assistant is unavailable right now (this server answered ${response.status}). Try again shortly.`;
+        setState((current) => applyAskEvent(current, { type: "error", error }));
         return;
       }
       await readAskStream<AskBoxEvent>(response.body, (event) => {

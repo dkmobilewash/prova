@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { JobGuideAsk } from "@/components/bid/guide/JobGuideAsk";
+import { JobGuideAskForPage } from "@/components/bid/guide/JobGuideAskForPage";
 import { JobGuideAskBox } from "@/components/bid/guide/JobGuideAskBox";
 import { JobGuideRail } from "@/components/bid/guide/JobGuideRail";
 import type { JobGuide } from "@/lib/bid/guide/types";
@@ -53,7 +53,7 @@ export function JobGuideShell({
           <h2 className="break-words font-headline text-xl font-semibold text-ink sm:text-2xl">{guide.headline}</h2>
         </div>
         <div className="mb-4">
-          <JobGuideAsk guide={guide} />
+          <JobGuideAskForPage guide={guide} />
         </div>
         <div className="print:hidden">{tabs}</div>
         <div className="-mx-4 min-w-0 sm:-mx-6 lg:mx-0 print:mx-0">{children}</div>

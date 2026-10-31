@@ -31,8 +31,9 @@ export default async function BidWallTypesPage({ searchParams }: { searchParams?
   const { context, allowed } = await requireCapability(BID_CAPABILITY);
   if (!allowed) return <BidNoAccess />;
   const { views, catalogOptions, craftOptions, defaultWastePercent } = await loadWallTypesScreen(context.company.id);
-  // Same rule as the CRM page (#818): offered while any starter is missing.
-  const missingStarters = missingStarterTypes(views.map((type) => type.code)).map((type) => type.code);
+  // Same rule as the CRM page (#818): offered while any starter is missing —
+  // but only Bid's trades' starters, not flooring, paint or concrete.
+  const missingStarters = missingStarterTypes(views.map((type) => type.code), "bid").map((type) => type.code);
 
   return (
     <PageShell width="working">
@@ -76,7 +77,7 @@ export default async function BidWallTypesPage({ searchParams }: { searchParams?
       {/* Outside the empty/list branch, as on the CRM page: pressing it swaps
           that branch, and a button inside it would unmount with its "Added …"
           sentence. */}
-      <StarterWallTypesButton missing={missingStarters} hasLibrary={views.length > 0} />
+      <StarterWallTypesButton missing={missingStarters} hasLibrary={views.length > 0} surface="bid" />
 
       <CollapsedForm label="Add wall type">
         <NewWallTypeForm initial={thicknessFromTakeoff === null ? undefined : { thicknessIn: thicknessFromTakeoff.toFixed(2) }} />

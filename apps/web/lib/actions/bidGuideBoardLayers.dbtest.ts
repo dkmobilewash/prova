@@ -146,7 +146,8 @@ describe("the facts, from real rows", () => {
       "W2 — 3⅝″ 20ga track, top and bottom": 300,
       // 150 LF × 10 ft × 2 sides = 3,000 sq ft; / 32 × 1.10 = 103.125 → 104
       "W2 — ⅝″ Type X board, 4x8 sheets": 104,
-      "W2 — Hang, tape and finish ⅝″ board": 3000,
+      "W2 — Hang ⅝″ board": 3000,
+      "W2 — Tape and finish ⅝″ board": 3000,
       "W2 — R-13 batt insulation": 1500,
       // 20 × 10 × 2 × factor 2
       "L1 — 5/8in gypsum board, 2 layers per side": 800,
@@ -184,7 +185,7 @@ describe("setBoardLayers through runGuideAction, real rows", () => {
     }
   });
 
-  it("two layers: the type keeps every other field, the board doubles on THIS job, nothing else moves", async () => {
+  it("two layers: the type keeps every other field, the board and its hanging double on THIS job, nothing else moves", async () => {
     const arg = await chipArg(jobId, "2 layers each side");
     expect(await runGuideAction(jobId, "setBoardLayers", arg)).toEqual({ ok: true });
 
@@ -198,7 +199,9 @@ describe("setBoardLayers through runGuideAction, real rows", () => {
       "W2 — 3⅝″ 20ga track, top and bottom": 300,
       // 3,000 / 32 × 2 × 1.10 = 206.25 → 207
       "W2 — ⅝″ Type X board, 4x8 sheets": 207,
-      "W2 — Hang, tape and finish ⅝″ board": 3000,
+      // Every layer is hung; only the face is taped and finished.
+      "W2 — Hang ⅝″ board": 6000,
+      "W2 — Tape and finish ⅝″ board": 3000,
       "W2 — R-13 batt insulation": 1500,
       "L1 — 5/8in gypsum board, 2 layers per side": 800,
     });

@@ -19,7 +19,8 @@ import { STARTER_TYPES } from "./wall-type-starters";
  *      exactly as its factor says — byte-identical to before the columns
  *      existed — over every starter and over a job's worth of runs.
  *   2. AN ANSWER MOVES ONLY THE PARTS THAT OPTED IN. Board doubles at two
- *      layers; studs, track, insulation and finish do not move.
+ *      layers and so does hanging it; studs, track, insulation and tape and
+ *      finish do not move.
  *   3. A PART THAT DID NOT OPT IN IS NEVER MULTIPLIED, which is what keeps a
  *      legend-made type (layer count already in its factor) from doubling.
  */
@@ -89,8 +90,8 @@ describe("1. unanswered is unchanged", () => {
     expect(now).toEqual(before);
     // Not vacuous: there are lines, a per-layer part among them, and the run
     // with no height is reported rather than dropped.
-    expect(now.lines.length).toBe(4 + 5 + 4 + 6 + 2);
-    expect(typesFor(null).flatMap((type) => type.components).filter((c) => c.perLayer).length).toBe(4);
+    expect(now.lines.length).toBe(5 + 6 + 5 + 7 + 2);
+    expect(typesFor(null).flatMap((type) => type.components).filter((c) => c.perLayer).length).toBe(8);
     expect(now.unpricedRuns).toEqual([{ id: "unsized", label: "unsized" }]);
   });
 
@@ -105,14 +106,20 @@ describe("1. unanswered is unchanged", () => {
     }
   });
 
-  it("the starters that name board mark ONLY the board per-layer — never studs, track, insulation or finish", () => {
+  it("the starters that name board mark ONLY the board and its hanging per-layer — never studs, track, insulation or tape and finish", () => {
     const perLayer = STARTER_TYPES.flatMap((type) => type.parts.filter((part) => part.perLayer).map((part) => `${type.code}: ${part.description}`));
     expect(perLayer).toEqual([
       "W1: ⅝″ Type X board, 4x8 sheets",
+      "W1: Hang ⅝″ board",
       "W2: ⅝″ Type X board, 4x8 sheets",
+      "W2: Hang ⅝″ board",
       "W3: ½″ board, 4x8 sheets",
+      "W3: Hang ½″ board",
       "EW1: ⅝″ Type X board, inside face only",
+      "EW1: Hang inside face board",
     ]);
+    // A combined "Hang, tape and finish" part can be neither per layer nor not.
+    expect(STARTER_TYPES.flatMap((type) => type.parts).filter((part) => part.description.startsWith("Hang, tape"))).toEqual([]);
   });
 });
 
@@ -129,21 +136,23 @@ describe("2. an answer moves only the parts that opted in — the W2 starter, be
       "W2 — 3⅝″ 20ga track, top and bottom": 200,
       // 2,000 / 32 × 1.10 = 68.75 → 69 sheets
       "W2 — ⅝″ Type X board, 4x8 sheets": 69,
-      "W2 — Hang, tape and finish ⅝″ board": 2000,
+      "W2 — Hang ⅝″ board": 2000,
+      "W2 — Tape and finish ⅝″ board": 2000,
       "W2 — R-13 batt insulation": 1000,
     };
     expect(quantities(null)).toEqual(expected);
     expect(quantities(1)).toEqual(expected);
   });
 
-  it("two layers each side doubles the board and nothing else", () => {
+  it("two layers each side doubles the board and its hanging, and nothing else", () => {
     expect(quantities(2)).toEqual({
       "W2 — 3⅝″ 20ga studs": 76,
       "W2 — 3⅝″ 20ga track, top and bottom": 200,
       // 2,000 / 32 × 2 × 1.10 = 137.5 → 138 sheets
       "W2 — ⅝″ Type X board, 4x8 sheets": 138,
-      // Only the face layer is taped and finished.
-      "W2 — Hang, tape and finish ⅝″ board": 2000,
+      // Every layer is hung; only the face layer is taped and finished.
+      "W2 — Hang ⅝″ board": 4000,
+      "W2 — Tape and finish ⅝″ board": 2000,
       "W2 — R-13 batt insulation": 1000,
     });
   });

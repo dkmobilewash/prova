@@ -39,8 +39,9 @@ const STATUS_WORD: Record<string, string> = {
  * they share, and — when the prime contract went to a different GC — that
  * THIS invitation "didn't get the job" (said neutrally: it is not a loss, and
  * it is not counted against the GC). Everything that changes something sits
- * behind "Project", and the two moves that can't be taken back with one click
- * (folding two jobs into one, splitting one out) are two-step.
+ * behind "Project" — except "Start the estimate", the next step on an unpriced
+ * job, which is on the row — and the two moves that can't be taken back with
+ * one click (folding two jobs into one, splitting one out) are two-step.
  *
  * Nothing here decides that two invitations are the same job. A person picks.
  *
@@ -136,7 +137,7 @@ export function BidProjectPanel({
                       </span>
                     )}
                   </span>
-                  <span className="tabular-nums text-ink-muted">Sent {row.sent ?? "—"}</span>
+                  <span className="tabular-nums text-ink-muted">{row.sent ? `Sent ${row.sent}` : "Not sent yet"}</span>
                   <Link
                     href={`${hrefs.proposal}?invitation=${encodeURIComponent(row.invitationId)}`}
                     className="inline-flex min-h-11 items-center text-link hover:underline mouse:min-h-0"
@@ -165,6 +166,25 @@ export function BidProjectPanel({
             </>
           )}
         </p>
+      )}
+
+      {/* ── the one estimate ──
+          ON THE ROW, NOT BEHIND "Project": it is the next step for an unpriced
+          job, and a browser walk found it only after expanding a summary that
+          reads as a link to the project name. */}
+      {!view.estimate && (
+        <ActionForm
+          action={startEstimateFromProject.bind(null, view.projectId, surface)}
+          className="mt-2 flex flex-wrap items-center gap-3"
+        >
+          <SubmitButton type="submit" className={primary} data-bids="start-estimate">
+            Start the estimate
+          </SubmitButton>
+          <p className="text-xs text-ink-muted">
+            One estimate for the whole project. The name, address and bid date come from the project
+            {view.firstGcName ? `; it starts as ${view.firstGcName}'s and switches to the winner at award` : ""}.
+          </p>
+        </ActionForm>
       )}
 
       <details className="mt-1" data-bids="project-controls">
@@ -251,22 +271,6 @@ export function BidProjectPanel({
               GC&apos;s price with it. The reason is for you and never prints on the proposal.
             </p>
           </ActionForm>
-
-          {/* ── the one estimate ── */}
-          {!view.estimate && (
-            <ActionForm
-              action={startEstimateFromProject.bind(null, view.projectId, surface)}
-              className="flex flex-wrap items-center gap-3"
-            >
-              <SubmitButton type="submit" className={primary} data-bids="start-estimate">
-                Start the estimate
-              </SubmitButton>
-              <p className="text-xs text-ink-muted">
-                One estimate for the whole project. The name, address and bid date come from the project
-                {view.firstGcName ? `; it starts as ${view.firstGcName}'s and switches to the winner at award` : ""}.
-              </p>
-            </ActionForm>
-          )}
 
           {/* ── who won the prime ── */}
           <ActionForm

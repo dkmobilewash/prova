@@ -69,13 +69,24 @@ export function JobGuideAsk({ guide }: { guide: JobGuide }) {
     setError(null);
     startTransition(async () => {
       const result = await runGuideAction(guide.jobId, actionId, action.actionArg);
-      if (result.ok) {
+      if (!result.ok) return setError(result.error);
+      // ── "DONE" COMMITS WITH THE NEW SCREEN, NEVER AHEAD OF IT ──
+      //
+      // A state update after an `await` is NOT part of the transition it sits
+      // in (React's documented async-transition limit), so `setDone` used to
+      // commit at once, urgently — while the router's re-render, a transition,
+      // was still holding the OLD screen until the server's post-action render
+      // finished streaming (CLAUDE.md #61: that render is the slow part, and
+      // the takeoff tab's is heavy). The card said "Done. The screen is
+      // updating." over the old question and the old 69 sheets (browser test,
+      // 2026-10-30). Wrapped, the three updates share a transition: the card
+      // stays "Working…" until the refreshed tree is ready, and "Done" lands
+      // in the same commit as the new figures.
+      startTransition(() => {
         setDone(true);
         setArmed(null);
         router.refresh();
-      } else {
-        setError(result.error);
-      }
+      });
     });
   }
 
@@ -185,7 +196,7 @@ export function JobGuideAsk({ guide }: { guide: JobGuide }) {
       ) : null}
       {done && !error ? (
         <p role="status" className="mt-3 text-sm text-tag-green-ink">
-          Done. The screen is updating.
+          Done.
         </p>
       ) : null}
     </section>

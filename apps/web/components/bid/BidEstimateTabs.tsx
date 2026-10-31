@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { activeBidEstimateTab, bidEstimateTabs } from "@/components/bid/bidEstimateTabs";
+import { activeBidEstimateTab, bidEstimateTabs } from "@/components/bid/bidEstimateTabRoutes";
 
 /**
  * The tab row under a C Stream Bid estimate's header. A client component only

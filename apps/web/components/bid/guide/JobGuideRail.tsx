@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { money } from "@/lib/money";
 import { guideStepLink } from "@/lib/bid/guide/stepHrefs";
-import type { GuideStep, GuideStepStatus, JobGuide } from "@/lib/bid/guide/types";
+import type { GuideRailStatus, GuideStep, JobGuide } from "@/lib/bid/guide/types";
 
 /**
  * The left rail of a job's screen: where the bid stands, in five steps.
@@ -16,25 +16,34 @@ import type { GuideStep, GuideStepStatus, JobGuide } from "@/lib/bid/guide/types
  * two can never disagree about a step's status.
  *
  * A STATUS IS A WORD AND A MARK, NEVER A COLOUR ALONE (CLAUDE.md, UI rules):
- * done has a check, current has a ring and `aria-current="step"`, and every
+ * done has a check, skipped a dash (passed, nothing done — buildJobGuide.ts),
+ * current has a ring and `aria-current="step"`, and every
  * step carries its status in text for a screen reader.
  *
  * Done and current steps are links (`guideStepLink`); a step not reached yet is
  * plain text. Presentational: it takes a `JobGuide` and reads nothing else.
  */
 
-const STATUS_WORD: Record<GuideStepStatus, string> = {
+const STATUS_WORD: Record<GuideRailStatus, string> = {
   done: "Done",
+  skipped: "Skipped",
   current: "Current step",
   todo: "Not started",
 };
 
-function StepMark({ status }: { status: GuideStepStatus }) {
+function StepMark({ status }: { status: GuideRailStatus }) {
   const base = "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 text-xs font-bold";
   if (status === "done") {
     return (
       <span aria-hidden="true" data-step-mark="done" className={`${base} border-tag-green-ink bg-tag-green text-tag-green-ink`}>
         ✓
+      </span>
+    );
+  }
+  if (status === "skipped") {
+    return (
+      <span aria-hidden="true" data-step-mark="skipped" className={`${base} border-line-card text-ink-muted`}>
+        –
       </span>
     );
   }
@@ -45,7 +54,7 @@ function StepMark({ status }: { status: GuideStepStatus }) {
 }
 
 function StepBody({ step }: { step: GuideStep }) {
-  const label = step.status === "todo" ? "text-ink-muted" : "text-ink";
+  const label = step.status === "todo" || step.status === "skipped" ? "text-ink-muted" : "text-ink";
   return (
     <>
       <StepMark status={step.status} />

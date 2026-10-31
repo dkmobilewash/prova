@@ -129,6 +129,17 @@ describe("the project line on an invitation", () => {
     // The form that sets it, prefilled for THIS invitation (Acme: none).
     expect(html).toContain("Save price");
     expect(html).toContain("The estimate total, no adjustment");
+    // Acme's price is recorded as sent; BuildCo has none, which says so in words.
+    expect(html).toContain("Sent $412,300");
+    expect(html).toContain("Not sent yet");
+    expect(html).not.toContain("Sent —");
+  });
+
+  it("puts 'Start the estimate' on the row, not inside the collapsed Project controls", () => {
+    const html = render(project());
+    const start = html.indexOf("Start the estimate");
+    expect(start).toBeGreaterThan(-1);
+    expect(start).toBeLessThan(html.indexOf("<details"));
   });
 
   it("with no estimate there is no price table to show", () => {

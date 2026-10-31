@@ -25,11 +25,21 @@ export const GUIDE_STEP_KEYS: readonly GuideStepKey[] = ["invite", "walls", "pri
 /** done = finished; current = the one the person is on; todo = not reached. */
 export type GuideStepStatus = "done" | "current" | "todo";
 
+/**
+ * A rail step's status: the three above, or `skipped` — passed without being
+ * done, because this bid does not need it. Only "Walls measured" is ever
+ * skipped: an estimate priced from typed lines with nothing measured. Saying
+ * Done there claimed walls were measured that never were (walk of 2026-10-30).
+ * Kept out of `GuideStepStatus` so the home's progress bar, which has no
+ * skipped colour, maps it itself (homeView.ts).
+ */
+export type GuideRailStatus = GuideStepStatus | "skipped";
+
 export type GuideStep = {
   key: GuideStepKey;
   /** Short label for the rail: "Invite read", "Walls measured", "Price it"… */
   label: string;
-  status: GuideStepStatus;
+  status: GuideRailStatus;
   /** One line under the label, or null: "1,920 LF · 14 openings · 6 sheets". */
   summary: string | null;
 };
@@ -108,6 +118,16 @@ export type JobGuide = {
   /** Headline for the job screen: "Almost priced. One thing needs you." */
   headline: string;
   ask: GuideAsk | null;
+  /**
+   * The same ask worded for ONE GC's proposal, by invitation id — that GC's
+   * name and that GC's price (estimate total with its adjustment). Set only
+   * when the ask is the proposal being ready, since that is the only ask that
+   * names a GC and a price. The proposal page opened with `?invitation=`
+   * shows this one (`JobGuideAskForPage`); the general ask named the job's GC
+   * at the estimate total, which on Turner's page said Halvorsen and $32,004.00
+   * over a document reading $30,403.80 (walk of 2026-10-30).
+   */
+  askByInvitation?: Record<string, GuideAsk>;
   /** The bid as it stands (bidTotalOf over live lines), or null when nothing is priced. */
   bidSoFar: number | null;
   /** For the home list: the pill, and one short line ("W2 wall has no price"). */

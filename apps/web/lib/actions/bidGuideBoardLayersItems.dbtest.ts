@@ -32,7 +32,8 @@ const W1 = `W1${t}`.toUpperCase();
 const T1 = `T1${t}`.toUpperCase();
 const NOW = new Date("2026-10-26T15:00:00.000Z");
 const SHEETS = "⅝″ Type X board, 4x8 sheets";
-const FINISH = "Hang, tape and finish ⅝″ board";
+const HANG = "Hang ⅝″ board";
+const FINISH = "Tape and finish ⅝″ board";
 let companyId = "";
 let jobId = "";
 let w1 = "";
@@ -143,11 +144,13 @@ describe("answering moves the run lines AND the item lines, in the same press", 
       "run: 3⅝″ 20ga track, top and bottom": 200,
       // 100 × 10 × 2 = 2,000 sq ft; × 0.0313 × 1.10 → 69 sheets
       [`run: ${SHEETS}`]: 69,
+      [`run: ${HANG}`]: 2000,
       [`run: ${FINISH}`]: 2000,
       // 50 × 10 × 2 = 1,000 sq ft; × 0.0313 × 1.10 → 35 sheets (an item has no stud spacing of its own, so studs follow the assembly's)
       "Lobby wall: 3⅝″ 20ga studs": 39,
       "Lobby wall: 3⅝″ 20ga track, top and bottom": 100,
       [`Lobby wall: ${SHEETS}`]: 35,
+      [`Lobby wall: ${HANG}`]: 1000,
       [`Lobby wall: ${FINISH}`]: 1000,
     });
   });
@@ -162,7 +165,7 @@ describe("answering moves the run lines AND the item lines, in the same press", 
     expect(await lines()).toEqual(before);
   });
 
-  it("W1 answered '2 layers each side': BOTH sets of lines double their board immediately; nothing else moves", async () => {
+  it("W1 answered '2 layers each side': BOTH sets of lines double their board and hanging immediately; nothing else moves", async () => {
     const ask = (await guide()).ask!;
     expect(ask.title).toContain(W1);
     const arg = ask.actions.find((action) => action.label === "2 layers each side")!.actionArg!;
@@ -173,11 +176,14 @@ describe("answering moves the run lines AND the item lines, in the same press", 
       "run: 3⅝″ 20ga track, top and bottom": 200,
       // 2,000 × 0.0313 × 2 × 1.10 = 137.72 → 138
       [`run: ${SHEETS}`]: 138,
+      // Every layer is hung; only the face is taped and finished.
+      [`run: ${HANG}`]: 4000,
       [`run: ${FINISH}`]: 2000,
       "Lobby wall: 3⅝″ 20ga studs": 39,
       "Lobby wall: 3⅝″ 20ga track, top and bottom": 100,
       // 1,000 × 0.0313 × 2 × 1.10 = 68.86 → 69 — in the SAME press, not at the next Send
       [`Lobby wall: ${SHEETS}`]: 69,
+      [`Lobby wall: ${HANG}`]: 2000,
       [`Lobby wall: ${FINISH}`]: 1000,
     });
     // (And T1's unsent "Shaft wall" is still not on the estimate — asserted by the equality above.)
@@ -191,6 +197,7 @@ describe("answering moves the run lines AND the item lines, in the same press", 
     for (const [key, quantity] of Object.entries(settled)) expect(after[key], key).toBe(quantity);
     // 30 × 10 × 2 = 600 sq ft; × 0.0313 × 2 × 1.10 = 41.3 → 42
     expect(after[`Shaft wall: ${SHEETS}`]).toBe(42);
+    expect(after[`Shaft wall: ${HANG}`]).toBe(1200);
     expect(after[`Shaft wall: ${FINISH}`]).toBe(600);
   });
 });

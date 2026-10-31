@@ -12,6 +12,7 @@ import { usePastPrice as applyPastPrice } from "./bidGuidePastPrice";
 import { refreshWallSchedule, updateWallType } from "./wallTypes";
 import { actionFail, actionOk, type ActionResult } from "./shared";
 import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
+import { starterNameWithoutLayerCount } from "@/lib/wall-type-starters";
 
 /**
  * The server side of the buttons on a job's guide card (`GuideAction.actionId`
@@ -314,7 +315,12 @@ async function setBoardLayers(jobId: string, actionArg: string | undefined): Pro
   // See `setWallHeight`: a row `updateWallType` would rename is refused.
   if (!roundTrips(type)) return actionFail(EDIT_LAYERS_IN_LIBRARY(type.code));
 
-  const updated = await updateWallType(type.id, wallTypeForm(type, { boardLayers: parsed.layers }));
+  // A starter added before 2026-10-30 is still NAMED "one layer ⅝″ Type X
+  // each side", and this tap is the one place a layer answer is given without
+  // the name in view. Such a name loses its count with the answer; any name a
+  // person typed is sent back exactly as it stands.
+  const name = starterNameWithoutLayerCount(type.name);
+  const updated = await updateWallType(type.id, wallTypeForm({ ...type, name }, { boardLayers: parsed.layers }));
   if (!updated.ok) return updated;
 
   const refreshed = await refreshWallSchedule(jobId);

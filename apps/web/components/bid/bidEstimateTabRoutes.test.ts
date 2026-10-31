@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeBidEstimateTab, bidEstimateTabs } from "./bidEstimateTabs";
+import { activeBidEstimateTab, bidEstimateTabs } from "./bidEstimateTabRoutes";
 
 describe("the four tabs of a Bid estimate", () => {
   it("are the chain in order, each a /bid/estimates/<id> route", () => {

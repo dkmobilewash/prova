@@ -41,9 +41,13 @@ export function needsYou(guides: readonly JobGuide[]): JobGuide[] {
     .map(({ guide }) => guide);
 }
 
-/** Always five statuses, in step order; a step the guide did not list is todo. */
+/** Always five statuses, in step order; a step the guide did not list is todo.
+ * A skipped step is behind the bid, so the bar fills it like a done one. */
 export function progressSegments(guide: Pick<JobGuide, "steps">): GuideStepStatus[] {
-  return GUIDE_STEP_KEYS.map((key) => guide.steps.find((step) => step.key === key)?.status ?? "todo");
+  return GUIDE_STEP_KEYS.map((key) => {
+    const status = guide.steps.find((step) => step.key === key)?.status ?? "todo";
+    return status === "skipped" ? "done" : status;
+  });
 }
 
 /** "3 of 5 steps done" — the bar's text alternative. */

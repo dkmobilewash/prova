@@ -1,8 +1,8 @@
 "use server";
 
 import { prisma } from "@prova/db";
-import { anthropicIsConfigured, BID_INVITE_PROMPT_VERSION, extractBidInvite } from "@prova/integrations";
-import { INVITE_READ_NOT_CONFIGURED, inviteReadSwitchedOff } from "@/lib/bid/inviteReaderAccess";
+import { anthropicFailureCode, anthropicIsConfigured, BID_INVITE_PROMPT_VERSION, extractBidInvite } from "@prova/integrations";
+import { inviteReadFailed, INVITE_READ_NOT_CONFIGURED, inviteReadSwitchedOff } from "@/lib/bid/inviteReaderAccess";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { aiGate } from "@/lib/ai/settings";
@@ -106,12 +106,7 @@ export async function readBidInvitationText(textRaw: string): Promise<ActionResu
       companyId: company.id,
       err,
     });
-    return {
-      ok: false,
-      error:
-        "That invitation couldn't be read. It is recorded as a failed question on this month's allowance — the " +
-        "account owner can see it on Settings → Assistant. Type it in instead; nothing was saved.",
-    };
+    return { ok: false, error: inviteReadFailed(anthropicFailureCode(err)) };
   }
 
   const gcs = await loggableGcs(company.id);

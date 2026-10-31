@@ -342,3 +342,44 @@ describe("BidRecapPanel — the bid on the job, beside the bid the rates make (b
     expect(bidNowRow()).toBeUndefined();
   });
 });
+
+/**
+ * THE WALK OF 2026-10-30. No rates set, typed prices of $33,720.00 over
+ * $22,440.00 of cost: Apply was offered, would have priced every line at its
+ * bare cost, and its title said "Raises" either way.
+ */
+describe("BidRecapPanel — no rates, and which way Apply moves the prices", () => {
+  const PRICED: Props["lines"] = [{ ...LINES[0], unitCost: 1.25, unitPrice: 2 }];
+  const applyButton = () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("Apply to line prices"))!;
+
+  it("is off, and says why, while every rate is empty or zero", () => {
+    render(PRICED, { overheadPercent: 0 });
+    expect(applyButton().disabled).toBe(true);
+    expect(host.querySelector('[data-recap="no-rates"]')?.textContent).toContain("bare cost");
+  });
+
+  it("says lowers when applying lowers the lines", () => {
+    // 2800 × 1.25 = 3,500 cost, +10% = 3,850, landing at 3,864 once the unit price holds two decimals.
+    render(PRICED, { overheadPercent: 10 });
+    expect(applyButton().disabled).toBe(false);
+    expect(applyButton().title).toContain("lowers them from $5,600.00 to $3,864.00");
+    expect(applyButton().title).not.toContain("Raises");
+    expect(host.querySelector('[data-recap="no-rates"]')).toBeNull();
+  });
+
+  it("says raises when applying raises them", () => {
+    render([{ ...LINES[0], unitCost: 1.25, unitPrice: 1 }], { overheadPercent: 10 });
+    expect(applyButton().title).toContain("raises them from $2,800.00 to $3,864.00");
+  });
+
+  it("after Apply, the message shows and the button lets go of Applying… (commit ORDER with the router re-render needs a browser)", async () => {
+    applyBidRecap.mockResolvedValueOnce({ ok: true, value: { bidTotal: 3850, appliedTotal: 3850, lineCount: 1 } });
+    render(PRICED, { overheadPercent: 10 });
+    await act(async () => {
+      applyButton().dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(host.textContent).toContain("Applied to 1 line — they now total $3,850.00.");
+    expect(applyButton().textContent).toBe("Apply to line prices");
+  });
+});

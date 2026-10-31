@@ -29,6 +29,21 @@ export function inviteReadSwitchedOff(refusal: string): string {
   return `${refusal} You can still type the invitation in yourself.`;
 }
 
+/**
+ * The model call itself failed, after a question was claimed. It used to
+ * send the owner to "Settings → Assistant", which C Stream Bid does not have
+ * (it lives in the CRM, and Bid links nowhere outside /bid) — so it named a
+ * page nobody on this screen could reach. It now says what Anthropic said,
+ * when there is something to say.
+ */
+export function inviteReadFailed(apiCode: string | null): string {
+  const said = apiCode ? ` (Anthropic said: ${apiCode})` : "";
+  return (
+    `That invitation couldn't be read — the assistant didn't answer${said}. ` +
+    "It counts as one question on this month's allowance. Type it in instead; nothing was saved."
+  );
+}
+
 export function inviteReaderAccess(facts: {
   /** `anthropicIsConfigured()` — the server has a model key at all. */
   configured: boolean;

@@ -98,9 +98,8 @@ test.describe("C Stream Bid — the bid log, from a logged bid to its estimate",
     await expect(bidRow().getByRole("link", { name: PROJECT })).toHaveAttribute("href", /^\/bid\/bids\/[^/]+$/);
   });
 
-  test("3. open its project and start the estimate; it lands in /bid/estimates", async () => {
-    const controls = bidRow().locator('details[data-bids="project-controls"]');
-    await controls.locator("summary").click();
+  test("3. start the estimate from the row; it lands in /bid/estimates", async () => {
+    // On the row itself, NOT behind the collapsed "Project: …" controls.
     const start = bidRow().getByRole("button", { name: "Start the estimate" });
     await expect(start).toBeVisible();
     await start.click();

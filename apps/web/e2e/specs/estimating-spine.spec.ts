@@ -275,14 +275,15 @@ test.describe("the estimating desk", () => {
     // The action's own summary, not the live preview above it: the preview
     // renders as you type and would be on the page whether the save landed or
     // not (CLAUDE.md, the watcher whose needle is already on the page).
-    await expect(page.getByText(/^Estimate updated: 4 lines added\.$/)).toBeVisible();
+    await expect(page.getByText(/^Estimate updated: 5 lines added\.$/)).toBeVisible();
     await expectHealthy(page, "estimate tab after adding a wall run", { monitor });
 
     await page.reload();
     await expectHealthy(page, "estimate tab reloaded after the wall run", { monitor });
-    // W1 has four parts — studs, track, board, hang-and-finish — so the run
-    // is four derived lines on top of the wizard's one.
-    expect(await lineItemCount(), "one typed line plus W1's four parts").toBe(5);
+    // W1 has five parts — studs, track, board, hang, tape-and-finish (hanging
+    // and finishing split 2026-10-30, since only hanging scales with layers)
+    // — so the run is five derived lines on top of the wizard's one.
+    expect(await lineItemCount(), "one typed line plus W1's five parts").toBe(6);
     // The badge is inside a line's row, which opens on click (declutter round
     // 2). Open the first derived line and read the badge there, on screen —
     // not merely present in a closed row's markup.
@@ -295,7 +296,7 @@ test.describe("the estimating desk", () => {
     // The run's own row is an edit-in-place form, like the wall-type cards, so
     // its name is an input's VALUE and not page text. Read it that way — the
     // first version of this looked for an <li> containing the label and found
-    // none, while the four derived lines above proved the run had saved.
+    // none, while the five derived lines above proved the run had saved.
     await expect(
       section("job-wall-schedule").locator(`input[name="label"][value="${RUN_LABEL}"]`),
       "the run is on the schedule it was added to",
@@ -311,7 +312,7 @@ test.describe("the estimating desk", () => {
     // extension — 1,000 x $2.00, arithmetic this file supplied itself rather
     // than a figure read off the screen and blessed.
     await expect(recap.getByText(DIRECT_COST).first()).toBeVisible();
-    // The four derived lines have no cost type yet, and the panel says so
+    // The five derived lines have no cost type yet, and the panel says so
     // rather than marking them up at some default.
     await expect(recap.getByText(/have no cost type/)).toBeVisible();
 

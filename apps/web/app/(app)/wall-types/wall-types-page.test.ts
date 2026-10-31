@@ -144,3 +144,32 @@ describe("/wall-types starter assemblies (#818)", () => {
     expect(html).not.toContain('data-wall-types="starters"');
   });
 });
+
+/**
+ * C STREAM BID'S /bid/wall-types — the same button, Bid's trades only. Bid is
+ * for framing/drywall, plaster, EIFS, ceilings and fireproofing; its press used
+ * to add flooring, paint, slab and footing too (browser test, 2026-10-30).
+ */
+describe("/bid/wall-types starter assemblies", () => {
+  beforeEach(() => {
+    extraTypes = [];
+  });
+
+  const starterButton = (html: string) =>
+    html.match(/<button[^>]*data-wall-types="add-starters"[^>]*>([^<]*)<\/button>/)?.[1] ?? null;
+  const bidPage = async () => (await import("@/app/bid/(signed-in)/wall-types/page")).default;
+
+  it("offers eight, and names none of the other trades'", async () => {
+    extraTypes = [{ code: "W1" }];
+    const html = renderToStaticMarkup(await (await bidPage())({}));
+    expect(starterButton(html)).toBe("Start from the common trade assemblies (adds 7)");
+    expect(html).toContain("W2, W3, EW1, FIN5, ACT1, ACT2, GYPC1.");
+    for (const code of ["FLR1", "PT1", "SLB1", "FTG1"]) expect(html).not.toContain(code);
+  });
+
+  it("is gone once Bid's eight are there, though the CRM's other four are not", async () => {
+    extraTypes = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "ACT2", "GYPC1"].map((code) => ({ code }));
+    const html = renderToStaticMarkup(await (await bidPage())({}));
+    expect(starterButton(html)).toBeNull();
+  });
+});

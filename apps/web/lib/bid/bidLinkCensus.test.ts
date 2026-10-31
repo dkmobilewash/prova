@@ -153,7 +153,7 @@ const DYNAMIC_ALLOWED: Record<string, string> = {
   "components/bid/BidHeader.tsx: item.href":
     "BID_NAV in components/bid/bidNav.ts — every entry is a literal `href:` property, which this census reads as a prop-href sink.",
   "components/bid/BidEstimateTabs.tsx: tab.href":
-    "bidEstimateTabs() in components/bid/bidEstimateTabs.ts — every entry is a literal `href:` template starting /bid/estimates/, read here as a prop-href sink.",
+    "bidEstimateTabs() in components/bid/bidEstimateTabRoutes.ts — every entry is a literal `href:` template starting /bid/estimates/, read here as a prop-href sink.",
   "components/bid/guide/JobGuideAsk.tsx: action.href":
     "A guide's ask actions (`JobGuide.ask.actions[].href`, built by the guide engine). JobGuideAsk draws a link only when `isBidPath(href)` holds and drops the action otherwise, so a target outside /bid cannot reach the page by construction; jobGuideScreen.test.tsx also requires every fixture href to start with /bid.",
   "components/bid/guide/JobGuideAskBox.tsx: citationHref":

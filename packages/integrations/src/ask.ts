@@ -123,7 +123,9 @@ export type AskEvent<H = never> =
    * an error too, since the passes that ran were billed regardless. */
   | { type: "usage"; usage: AskUsageTotals }
   | { type: "done"; toolsCalled: string[] }
-  | { type: "error"; reason: AskFailureReason };
+  /** `apiCode` is set on an "api" failure only: `anthropicFailureCode`'s
+   * short reading of what the API said, for the sentence on screen. */
+  | { type: "error"; reason: AskFailureReason; apiCode?: string | null };
 
 /** What the executor is told about the call it is running, beyond the
  * input. `toolUseIdsInContext` lists every earlier tool_use whose result
@@ -274,6 +276,27 @@ function apiErrorType(err: { error?: unknown }): string | null {
   const body = err.error as { error?: { type?: unknown } } | undefined;
   const type = body?.error?.type;
   return typeof type === "string" ? type : null;
+}
+
+/**
+ * What the API said, in a few words that are safe to put on screen: the
+ * status and the API's own error type ("400 invalid_request_error"), or
+ * null when the failure was not an answer from the API at all.
+ *
+ * Exists because the preview's ask box said "unavailable right now" for an
+ * afternoon while Check connection said the key worked — the reason was in
+ * a runtime log nobody on the screen could open. The message text stays off
+ * screen (it can carry request details) with ONE exception that is pinned by
+ * name: an empty credit balance arrives as a plain 400 invalid_request_error,
+ * indistinguishable from a malformed request, and it is the one cause whose
+ * fix is a person with a card rather than an engineer.
+ */
+export function anthropicFailureCode(err: unknown): string | null {
+  if (err instanceof Anthropic.APIConnectionError) return "no answer from Anthropic";
+  if (!(err instanceof Anthropic.APIError)) return null;
+  if (/credit balance/i.test(err.message ?? "")) return "the Anthropic credit balance is too low";
+  const type = apiErrorType(err);
+  return [err.status, type].filter((part) => part !== undefined && part !== null).join(" ") || null;
 }
 
 export async function* streamToolConversation<H = never>(
@@ -492,7 +515,7 @@ export async function* streamToolConversation<H = never>(
       // details, and the caller puts this in front of the person.
       // The passes that completed were billed; say so before the error.
       yield { type: "usage", usage };
-      yield { type: "error", reason: "api" };
+      yield { type: "error", reason: "api", apiCode: anthropicFailureCode(err) };
       return;
     }
     throw err;

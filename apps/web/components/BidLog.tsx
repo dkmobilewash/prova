@@ -62,6 +62,22 @@ function SameJobNote({ matches, bidsHref }: { matches: SameJobMatch[] | undefine
   );
 }
 
+/** Drops each flag whose match is already on the bid's own project: two bids
+ * a person linked as one job ("Same job, 2 GCs") have been answered, and asking
+ * again under both rows reads as if the link did not take. */
+export function withoutSameProject(
+  flags: Map<string, SameJobMatch[]>,
+  projectOf: Map<string, string | null>,
+): Map<string, SameJobMatch[]> {
+  const kept = new Map<string, SameJobMatch[]>();
+  for (const [id, matches] of flags) {
+    const project = projectOf.get(id);
+    const rest = project ? matches.filter((match) => projectOf.get(match.id) !== project) : matches;
+    if (rest.length > 0) kept.set(id, rest);
+  }
+  return kept;
+}
+
 const TRADE_SCOPE_OPTIONS = [
   { value: "METAL_FRAMING_DRYWALL", label: "Metal framing / drywall" },
   { value: "LATH_PLASTER", label: "Lath & plaster" },
@@ -151,7 +167,7 @@ export async function BidLog({
   // not happened where they were sitting.
   const zone = await viewerTimeZone();
 
-  const [vendors, outcomesByBid, linkableJobs, gcs, projectChoices, inviteReader] = await Promise.all([
+  const [vendors, outcomesByBid, linkableJobs, gcs, projectChoices, inviteReader, sameJobPrefill] = await Promise.all([
     prisma.vendor.findMany({
       where: { companyId: company.id },
       orderBy: { name: "asc" },
@@ -177,7 +193,32 @@ export async function BidLog({
     loadProjectChoices(company.id),
     // Whether "Fill the form from it" can read a paste, said up front (contractor walk, 2026-10-27).
     loadInviteReaderAccess(company.id),
+    // What "Same job as…" fills in when a project is picked (contractor walk,
+    // 2026-10-30: the name had to be retyped): the project's name and the trade
+    // of its first tagged invitation. Same projects, order and cap as
+    // `loadProjectChoices`, so every choice offered has its fill.
+    prisma.bidProject.findMany({
+      where: { companyId: company.id },
+      orderBy: { createdAt: "desc" },
+      take: 300,
+      select: {
+        id: true,
+        name: true,
+        invitations: {
+          where: { tradeScope: { not: null } },
+          orderBy: { createdAt: "asc" },
+          take: 1,
+          select: { tradeScope: true },
+        },
+      },
+    }),
   ]);
+  const prefillByProject = new Map(
+    sameJobPrefill.map((project) => [
+      project.id,
+      { projectName: project.name, tradeScope: project.invitations[0]?.tradeScope ?? null },
+    ]),
+  );
   // How this company's finished bids have run against what the work cost.
   // Derived here, never stored, and it counts only what has SETTLED — see
   // `bidRecord`, which returns the excluded count so the sentence can say so.
@@ -358,10 +399,11 @@ export async function BidLog({
       status: true,
       dueDate: true,
       notes: true,
+      bidProjectId: true,
       contact: { select: { name: true } },
     },
   });
-  const sameJob = sameJobFlags(
+  const flags = sameJobFlags(
     openForMatching.map((row) => ({
       id: row.id,
       contactId: row.contactId,
@@ -372,6 +414,7 @@ export async function BidLog({
       site: siteFromNotes(row.notes),
     })),
   );
+  const sameJob = withoutSameProject(flags, new Map(openForMatching.map((row) => [row.id, row.bidProjectId])));
   const viewTab = (active: boolean) =>
     `inline-flex min-h-11 items-center rounded-md px-3 text-sm font-medium ${active ? "bg-rail-hover text-ink" : "text-ink-body hover:text-ink"}`;
 
@@ -733,7 +776,13 @@ export async function BidLog({
     <PageShell width="working">
       {header}
 
-      <LogBidForm gcs={gcs} startOpen={isNew === "1"} projectChoices={projectChoices} surface={surface} reader={inviteReader} />
+      <LogBidForm
+        gcs={gcs}
+        startOpen={isNew === "1"}
+        projectChoices={projectChoices.map((choice) => ({ ...choice, ...prefillByProject.get(choice.id) }))}
+        surface={surface}
+        reader={inviteReader}
+      />
 
       {/* ── THE DECLINE PICTURE, WHEN THERE IS ONE ──
 

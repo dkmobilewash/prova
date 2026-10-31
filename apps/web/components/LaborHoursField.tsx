@@ -72,13 +72,13 @@ export function LaborHoursField({ crafts }: { crafts: CraftOption[] }) {
           className={`w-24 ${inputClass}`}
         />
       </label>
-      <label className="flex flex-col gap-1 text-sm text-ink-label">
+      <label className="flex min-w-0 max-w-full flex-col gap-1 text-sm text-ink-label">
         Craft
         <select
           name="craftClassificationId"
           value={craftId}
           onChange={(event) => setCraftId(event.target.value)}
-          className={inputClass}
+          className={`min-w-0 max-w-full ${inputClass}`}
         >
           <option value="">No craft tag</option>
           {crafts.map((option) => (

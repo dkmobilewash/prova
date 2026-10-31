@@ -123,6 +123,9 @@ export type GuideInvitationFact = {
    *  not the UTC day after it, and `buildJobGuide` stays pure. Absent or null =
    *  never sent from the app. Derived from `OutboundMessage` on every read. */
   proposalSentOn?: string | null;
+  /** This GC's price adjustment on the estimate total (`gc-price.ts`), signed
+   *  dollars or percent. Absent or null = none. */
+  priceAdjust?: { amount: number | null; percent: number | null } | null;
 };
 
 /**
@@ -316,6 +319,8 @@ const INVITATION_SELECT = {
   walkMinute: true,
   rfiCutoffDate: true,
   bidProjectId: true,
+  priceAdjustAmount: true,
+  priceAdjustPercent: true,
   contact: { select: { name: true } },
 } as const;
 
@@ -630,6 +635,10 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[], timeZone: stri
         walkMinute: invitation.walkMinute,
         rfiCutoffDate: day(invitation.rfiCutoffDate),
         proposalSentOn: sentOnByInvitation.get(invitation.id) ?? null,
+        priceAdjust: {
+          amount: invitation.priceAdjustAmount != null ? Number(invitation.priceAdjustAmount) : null,
+          percent: invitation.priceAdjustPercent != null ? Number(invitation.priceAdjustPercent) : null,
+        },
       });
       if (invitation.status === "INVITED") openAnchors.push({ id: invitation.id, bidProjectId: invitation.bidProjectId, gcName });
     }

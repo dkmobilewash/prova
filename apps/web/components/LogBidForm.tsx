@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useContext, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { AppRouterContext } from "next/dist/shared/lib/app-router-context.shared-runtime";
 import { checkSameJobFromOtherGc, createBidInvitation, readBidInvitationText } from "@/lib/actions";
 import type { BidInviteReadResult } from "@/lib/actions/bidInviteRead";
 import type { SameJobMatch } from "@/lib/estimating/bid-invitation";
@@ -43,6 +44,28 @@ const field =
  * here it rides in the form. */
 export const logBid = (formData: FormData) => createBidInvitation(String(formData.get("contactId") ?? ""), formData);
 
+type SameJobFill = { projectName?: string; tradeScope?: string | null };
+
+/**
+ * "Same job as…" picked: the project's name and trade go into the form, still
+ * editable. A field is filled only while it is blank or still holds what the
+ * previous pick put there, so nothing a person typed is overwritten — and
+ * going back to "A new job" takes the fill out again. Returns what it filled,
+ * for the next pick to compare against. Dates are left alone: each GC sets its
+ * own due date, and a day apart is the normal case.
+ */
+export function prefillSameJob(
+  fields: { projectName: { value: string }; tradeScope: { value: string } },
+  choice: SameJobFill | undefined,
+  previous: { projectName: string; tradeScope: string },
+) {
+  const next = { projectName: choice?.projectName ?? "", tradeScope: choice?.tradeScope ?? "" };
+  for (const name of ["projectName", "tradeScope"] as const) {
+    if (fields[name].value === "" || fields[name].value === previous[name]) fields[name].value = next[name];
+  }
+  return next;
+}
+
 /** What the same-job check reads off the form. */
 export function sameJobInputFromForm(form: FormData) {
   return {
@@ -69,12 +92,17 @@ export function LogBidForm({
   startOpen?: boolean;
   /** Projects already on file, so a second GC's invitation for the same job
    * can go on the same project instead of a new one. */
-  projectChoices?: { id: string; label: string }[];
+  projectChoices?: ({ id: string; label: string } & SameJobFill)[];
   /** Which product draws it: decides where "Add the GC" and "See it" go.
    * The default is the CRM, whose markup is unchanged. */
   surface?: Surface;
 }) {
   const hrefs = surfaceHrefs(surface, "");
+  // `useRouter()` is this context plus a throw when there is none — and the
+  // two /bids page tests render this form with no app router mounted. Null
+  // there; never null in the app.
+  const router = useContext(AppRouterContext);
+  const lastFill = useRef({ projectName: "", tradeScope: "" });
   const [open, setOpen] = useState(startOpen);
   const [pasted, setPasted] = useState("");
   const [suggestion, setSuggestion] = useState<BidInviteReadResult | null>(null);
@@ -123,11 +151,14 @@ export function LogBidForm({
         return;
       }
       setSuggestion(result.value);
+      // The remount below puts the read's own values in; nothing is a pick's fill any more.
+      lastFill.current = { projectName: "", tradeScope: "" };
       setFormKey((key) => key + 1);
     });
   }
 
   function close() {
+    lastFill.current = { projectName: "", tradeScope: "" };
     setOpen(false);
     setSuggestion(null);
     setMatches([]);
@@ -237,7 +268,22 @@ export function LogBidForm({
           )}
 
           <div ref={formWrap} onChange={scheduleCheck}>
-            <ActionForm key={formKey} action={logBid} onSuccess={close} className="flex flex-wrap items-end gap-3">
+            <ActionForm
+              key={formKey}
+              action={logBid}
+              onSuccess={() => {
+                close();
+                // WHERE A LOGGED BID IS SHOWN: every bid, newest first, no
+                // filter. "Due soon" — the default view whenever anything is
+                // due — lists only invited bids due in the next 30 days, so a
+                // bid with no due date or a later one saved and then appeared
+                // nowhere: the form closed onto a list without it (browser walk,
+                // 2026-10-30). Not a lost update — the action's own re-render
+                // (CLAUDE.md, #61) redrew the view the person was on.
+                router?.push(`${hrefs.bids}?view=all`);
+              }}
+              className="flex flex-wrap items-end gap-3"
+            >
               <label className="flex flex-col gap-1 text-sm text-ink-label">
                 GC
                 <select name="contactId" required defaultValue={suggestion?.contactId ?? ""} className={field}>
@@ -263,7 +309,19 @@ export function LogBidForm({
               {projectChoices.length > 0 && (
                 <label className="flex flex-col gap-1 text-sm text-ink-label">
                   Same job as…
-                  <select name="bidProjectId" defaultValue="" className={`max-w-xs ${field}`}>
+                  <select
+                    name="bidProjectId"
+                    defaultValue=""
+                    onChange={(event) => {
+                      const form = event.currentTarget.form;
+                      const projectName = form?.elements.namedItem("projectName");
+                      const tradeScope = form?.elements.namedItem("tradeScope");
+                      if (!(projectName instanceof HTMLInputElement) || !(tradeScope instanceof HTMLSelectElement)) return;
+                      const choice = projectChoices.find((one) => one.id === event.currentTarget.value);
+                      lastFill.current = prefillSameJob({ projectName, tradeScope }, choice, lastFill.current);
+                    }}
+                    className={`max-w-xs ${field}`}
+                  >
                     <option value="">A new job</option>
                     {projectChoices.map((choice) => (
                       <option key={choice.id} value={choice.id}>

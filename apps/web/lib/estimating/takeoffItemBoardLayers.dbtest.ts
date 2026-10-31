@@ -66,11 +66,12 @@ afterAll(async () => {
 });
 
 describe("a traced wall follows its assembly's board layers", () => {
-  it("unanswered prices one layer; two layers doubles the board and nothing else", async () => {
+  it("unanswered prices one layer; two layers doubles the board and its hanging, and nothing else", async () => {
     await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, jobId));
     const before = await itemQuantities();
-    // 50 ft × 10 ft × 2 sides = 1,000 sq ft boarded; finish and batt are not per layer.
-    expect(before["Hang, tape and finish ⅝″ board"]).toBe(1000);
+    // 50 ft × 10 ft × 2 sides = 1,000 sq ft boarded; tape-and-finish and batt are not per layer.
+    expect(before["Hang ⅝″ board"]).toBe(1000);
+    expect(before["Tape and finish ⅝″ board"]).toBe(1000);
     expect(before["R-13 batt insulation"]).toBe(500);
     const sheetsBefore = before["⅝″ Type X board, 4x8 sheets"]!;
     expect(sheetsBefore).toBeGreaterThan(0);
@@ -82,7 +83,10 @@ describe("a traced wall follows its assembly's board layers", () => {
     // 1,000 × factor × 2 × 1.10, rounded up once — about twice the one-layer count.
     expect(after["⅝″ Type X board, 4x8 sheets"]).toBeGreaterThanOrEqual(2 * sheetsBefore - 1);
     expect(after["⅝″ Type X board, 4x8 sheets"]).toBeLessThanOrEqual(2 * sheetsBefore);
-    expect({ ...after, "⅝″ Type X board, 4x8 sheets": 0 }).toEqual({ ...before, "⅝″ Type X board, 4x8 sheets": 0 });
+    // Every layer is hung.
+    expect(after["Hang ⅝″ board"]).toBe(2000);
+    const perLayer = { "⅝″ Type X board, 4x8 sheets": 0, "Hang ⅝″ board": 0 };
+    expect({ ...after, ...perLayer }).toEqual({ ...before, ...perLayer });
   });
 
   it("`onlyItemIds` re-derives THOSE items' lines and nothing else: another item's lines stay, an unsent item stays off", async () => {

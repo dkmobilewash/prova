@@ -69,6 +69,34 @@ describe("BID_RESEARCH", () => {
     expect(out.summary).toBe("2 new findings on Riverside Clinic.");
   });
 
+  it("says the GC count is of logged bid invitations, not jobs", async () => {
+    await researchBid(ctx);
+    const f = created.find((x) => x.kind === "gc_history")!;
+    expect(f.title).toBe("No other bid invitations logged from Turner");
+    expect(f.body).toContain("Only logged bid invitations are counted here, not jobs or estimates.");
+  });
+
+  it("never counts another GC's bid for the SAME job as a similar past bid", async () => {
+    db.bidInvitation.findFirst.mockResolvedValue({
+      ...(await db.bidInvitation.findFirst()),
+      tradeScope: "METAL_FRAMING_DRYWALL",
+      bidProject: { invitations: [{ id: "bid1" }, { id: "sibling" }] },
+    });
+    const past = (id: string, projectName: string, status: string) => ({
+      id, projectName, status, bidAmount: null, wonJobId: null, contact: { name: "Halvorsen" }, outcome: null,
+    });
+    db.bidInvitation.findMany.mockImplementation(async ({ where }: { where: { tradeScope?: string } }) =>
+      where.tradeScope
+        ? [past("sibling", "Riverside Clinic", "INVITED"), past("old", "Harbor Lofts", "WON")]
+        : [{ id: "bid1", projectName: "Riverside Clinic", status: "INVITED", outcome: null }],
+    );
+    await researchBid(ctx);
+    const f = created.find((x) => x.kind === "similar_jobs")!;
+    expect(f.title).toBe("1 similar past bid: 1 won, 0 lost");
+    expect(f.body).not.toContain("Riverside Clinic");
+    expect(f.sources.map((s) => s.recordId)).toEqual(["old"]);
+  });
+
   it("writes owner/architect from the linked pursuit, cited to it", async () => {
     db.bidInvitation.findFirst.mockResolvedValue({
       ...(await db.bidInvitation.findFirst()),

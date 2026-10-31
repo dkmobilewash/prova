@@ -53,10 +53,12 @@ export type StarterPart = {
   roundUp?: boolean;
   /**
    * The factor is for ONE layer of board, so the wall type's `boardLayers`
-   * answer multiplies it. Set on the BOARD only: tape and finish cover the
-   * face layer whatever is behind it, so a finished square foot does not
-   * change with the count. Every starter names one layer each side, so with
-   * no answer these price exactly as they always have.
+   * answer multiplies it. Set on the board and on HANGING it — each layer is
+   * hung — but never on tape and finish, which cover the face layer whatever
+   * is behind it. That is why the starters carry "Hang" and "Tape and finish"
+   * as two parts rather than one "Hang, tape and finish" (2026-10-30: the
+   * combined part could be neither per layer nor not). With no answer a
+   * per-layer part prices as one layer.
    */
   perLayer?: boolean;
 };
@@ -67,18 +69,19 @@ const STARTER_COMPONENTS: StarterPart[] = [
   { description: "3⅝″ 20ga studs", unit: "ea", basis: "STUDS", factor: "1", roundUp: true },
   { description: "3⅝″ 20ga track, top and bottom", unit: "lin ft", basis: "LINEAR_FT", factor: "2" },
   { description: "⅝″ Type X board, 4x8 sheets", unit: "sheets", basis: "BOARDED_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true, perLayer: true },
-  { description: "Hang, tape and finish ⅝″ board", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
+  { description: "Hang ⅝″ board", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1", perLayer: true },
+  { description: "Tape and finish ⅝″ board", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
 ];
 
 export const STARTER_TYPES: readonly StarterType[] = [
   {
     code: "W1",
-    name: "3⅝″ 20ga steel studs at 16″ o.c., one layer ⅝″ Type X each side",
+    name: "3⅝″ 20ga steel studs at 16″ o.c., ⅝″ Type X each side",
     parts: STARTER_COMPONENTS,
   },
   {
     code: "W2",
-    name: "3⅝″ 20ga steel studs at 16″ o.c., one layer ⅝″ Type X each side, R-13 batt",
+    name: "3⅝″ 20ga steel studs at 16″ o.c., ⅝″ Type X each side, R-13 batt",
     parts: [
       ...STARTER_COMPONENTS,
       { description: "R-13 batt insulation", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
@@ -86,12 +89,13 @@ export const STARTER_TYPES: readonly StarterType[] = [
   },
   {
     code: "W3",
-    name: "2x4 wood studs at 16″ o.c., one layer ½″ board each side",
+    name: "2x4 wood studs at 16″ o.c., ½″ board each side",
     parts: [
       { description: "2x4 studs", unit: "ea", basis: "STUDS", factor: "1", roundUp: true },
       { description: "2x4 plate, one bottom and two top", unit: "lin ft", basis: "LINEAR_FT", factor: "3" },
       { description: "½″ board, 4x8 sheets", unit: "sheets", basis: "BOARDED_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true, perLayer: true },
-      { description: "Hang, tape and finish ½″ board", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
+      { description: "Hang ½″ board", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1", perLayer: true },
+      { description: "Tape and finish ½″ board", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
     ],
   },
   {
@@ -103,7 +107,8 @@ export const STARTER_TYPES: readonly StarterType[] = [
       { description: "½″ exterior sheathing", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10" },
       { description: "R-21 batt insulation", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
       { description: "⅝″ Type X board, inside face only", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10", perLayer: true },
-      { description: "Hang, tape and finish inside face", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
+      { description: "Hang inside face board", unit: "sq ft", basis: "FACE_SQFT", factor: "1", perLayer: true },
+      { description: "Tape and finish inside face", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
     ],
   },
   {
@@ -155,7 +160,10 @@ export const STARTER_TYPES: readonly StarterType[] = [
       { description: "⅞″ hat channel at 16″ o.c.", unit: "lin ft", basis: "AREA_SQFT", factor: "0.75", wastePercent: "5" },
       { description: "1½″ carrying channel at 4' o.c.", unit: "lin ft", basis: "AREA_SQFT", factor: "0.25", wastePercent: "5" },
       { description: "Hanger wire, one per 4x4", unit: "ea", basis: "AREA_SQFT", factor: "0.0625", roundUp: true },
-      { description: "Hang, tape and finish ⅝″ ceiling board", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+      // Split like the walls' (hanging and finishing are different crews and
+      // rates), but neither is per layer: this type's board is not either.
+      { description: "Hang ⅝″ ceiling board", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+      { description: "Tape and finish ⅝″ ceiling board", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
     ],
   },
   {
@@ -203,6 +211,44 @@ export const STARTER_TYPES: readonly StarterType[] = [
 ];
 
 /**
+ * ── WHICH PRODUCT IS ASKING ──
+ *
+ * C Stream Bid is for framing/drywall, plaster, EIFS, ceilings and
+ * fireproofing subs, so it offers only the partitions, the finish and the
+ * ceilings. Flooring, paint, slab and footing are other trades' work and stay
+ * a CRM-only offer — a Bid user pressing "Start from…" got four assemblies
+ * they will never bid (browser test, 2026-10-30). The CRM keeps all of them.
+ */
+export type StarterSurface = "crm" | "bid";
+
+const BID_STARTER_CODES: ReadonlySet<string> = new Set(["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "ACT2", "GYPC1"]);
+
+/** The starters `surface` offers, in the starter order. */
+export function startersFor(surface: StarterSurface): readonly StarterType[] {
+  return surface === "bid" ? STARTER_TYPES.filter((type) => BID_STARTER_CODES.has(type.code)) : STARTER_TYPES;
+}
+
+/**
+ * The name a starter type had BEFORE its layer count came out of it
+ * (2026-10-30), mapped to the name it has now. "one layer" in a name, beside a
+ * "Board layers each side" answer of 2, is a name that lies — and a guide tap
+ * answering the layers cannot see the name it is contradicting.
+ *
+ * Only these exact strings: a name somebody typed is theirs, and is never
+ * rewritten — not even one that happens to say "one layer".
+ */
+const LAYERLESS_STARTER_NAME: ReadonlyMap<string, string> = new Map([
+  ["3⅝″ 20ga steel studs at 16″ o.c., one layer ⅝″ Type X each side", "3⅝″ 20ga steel studs at 16″ o.c., ⅝″ Type X each side"],
+  ["3⅝″ 20ga steel studs at 16″ o.c., one layer ⅝″ Type X each side, R-13 batt", "3⅝″ 20ga steel studs at 16″ o.c., ⅝″ Type X each side, R-13 batt"],
+  ["2x4 wood studs at 16″ o.c., one layer ½″ board each side", "2x4 wood studs at 16″ o.c., ½″ board each side"],
+]);
+
+/** `name` without an old starter's "one layer", or `name` itself when it is not one. */
+export function starterNameWithoutLayerCount(name: string): string {
+  return LAYERLESS_STARTER_NAME.get(name) ?? name;
+}
+
+/**
  * The starter types this company does not have yet, in the starter order.
  *
  * A code counts as HAD case-insensitively and ignoring surrounding space, the
@@ -211,8 +257,8 @@ export const STARTER_TYPES: readonly StarterType[] = [
  * to match ambiguously. Nothing here ever touches a type the company has — the
  * action only CREATES the missing ones.
  */
-export function missingStarterTypes(existingCodes: Iterable<string>): StarterType[] {
+export function missingStarterTypes(existingCodes: Iterable<string>, surface: StarterSurface = "crm"): StarterType[] {
   const had = new Set<string>();
   for (const code of existingCodes) had.add(code.trim().toUpperCase());
-  return STARTER_TYPES.filter((type) => !had.has(type.code.toUpperCase()));
+  return startersFor(surface).filter((type) => !had.has(type.code.toUpperCase()));
 }

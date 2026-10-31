@@ -376,6 +376,21 @@ describe("starter wall types", () => {
     expect(await addStarterWallTypes()).toMatchObject({ ok: false });
     expect(db.wallType.filter((t) => t.companyId === "co_1")).toHaveLength(13);
   });
+
+  it("from Bid, adds only Bid's trades' starters — no flooring, paint, slab or footing", async () => {
+    db.wallType = db.wallType.filter((t) => t.companyId !== "co_1");
+    db.wallTypeComponent = [];
+    const { addStarterWallTypes } = await actions();
+    const expected = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "ACT2", "GYPC1"];
+    expect(await addStarterWallTypes("bid")).toEqual({ ok: true, value: { added: expected } });
+    expect(db.wallType.filter((t) => t.companyId === "co_1").map((t) => t.code)).toEqual(expected);
+    // Complete for Bid, and the sentence names Bid's set, not the CRM's.
+    const again = await addStarterWallTypes("bid");
+    expect(again).toMatchObject({ ok: false });
+    expect((again as { error: string }).error).not.toContain("FLR1");
+    // Anything else a browser posts is the CRM's set: the other four arrive.
+    expect(await addStarterWallTypes("nonsense")).toEqual({ ok: true, value: { added: ["FLR1", "PT1", "SLB1", "FTG1"] } });
+  });
 });
 
 /**
@@ -452,7 +467,7 @@ describe("board layers", () => {
     expect(line("c_board").quantity).toBe("2000");
   });
 
-  it("the starters arrive with ONLY their board parts per layer, and no answer", async () => {
+  it("the starters arrive with ONLY their board and hanging parts per layer, and no answer", async () => {
     db.wallType = db.wallType.filter((t) => t.companyId !== "co_1");
     db.wallTypeComponent = [];
     const { addStarterWallTypes } = await actions();
@@ -462,9 +477,13 @@ describe("board layers", () => {
       .map((c) => `${db.wallType.find((t) => t.id === c.wallTypeId)!.code}: ${c.description}`);
     expect(perLayer).toEqual([
       "W1: ⅝″ Type X board, 4x8 sheets",
+      "W1: Hang ⅝″ board",
       "W2: ⅝″ Type X board, 4x8 sheets",
+      "W2: Hang ⅝″ board",
       "W3: ½″ board, 4x8 sheets",
+      "W3: Hang ½″ board",
       "EW1: ⅝″ Type X board, inside face only",
+      "EW1: Hang inside face board",
     ]);
     expect(db.wallType.filter((t) => t.companyId === "co_1").every((t) => t.boardLayers == null)).toBe(true);
   });

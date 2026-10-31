@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildJobGuide, DATE_HEADS_UP_DAYS, DUE_SOON_HOURS, guideDueMs } from "./buildJobGuide";
 import { buildGuidesFromFacts } from "./index";
 import { isOpenForGuide, type GuideAddendumFact, type GuideWallTypeFact, type JobGuideFacts } from "./facts";
-import { GUIDE_STEP_KEYS, type GuideStepStatus } from "./types";
+import { GUIDE_STEP_KEYS, type GuideRailStatus } from "./types";
 import { WALL_HEIGHT_CHOICES, parseWallHeightArg } from "./wallHeight";
 import { needsYou } from "./homeView";
 import { BOARD_LAYER_CHOICES, parseBoardLayersArg } from "./boardLayers";
@@ -131,7 +131,7 @@ const empty = (over: Partial<JobGuideFacts> = {}): JobGuideFacts =>
     ...over,
   });
 
-const statuses = (facts: JobGuideFacts): GuideStepStatus[] => buildJobGuide(facts, NOW).steps.map((step) => step.status);
+const statuses = (facts: JobGuideFacts): GuideRailStatus[] => buildJobGuide(facts, NOW).steps.map((step) => step.status);
 
 // One fixture per ask kind.
 const FIXTURES = {
@@ -180,7 +180,15 @@ describe("one fixture per ask", () => {
         expect(Boolean(action.href) !== Boolean(action.actionId)).toBe(true); // exactly one of the two
       }
       const current = guide.steps.filter((step) => step.status === "current");
-      expect(current.map((step) => step.key)).toEqual([guide.ask!.step]);
+      expect(current).toHaveLength(1);
+      // A walls ask on an estimate whose lines are already priced (wall height,
+      // board layers) leaves the rail where the pricing got to; every other
+      // ask is the current step.
+      if (guide.ask!.step === "walls" && facts.lineCount > 0) {
+        expect(GUIDE_STEP_KEYS.indexOf(current[0]!.key)).toBeGreaterThan(GUIDE_STEP_KEYS.indexOf("walls"));
+      } else {
+        expect(current[0]!.key).toBe(guide.ask!.step);
+      }
     });
   }
 
@@ -738,10 +746,10 @@ describe("measurements made by hand count as measured", () => {
     expect(guide.ask!.id).toBe("proposal-ready");
   });
 
-  it("a takeoff with nothing measured and lines typed in says so, instead of 'none measured yet' under a done step", () => {
+  it("a takeoff with nothing measured and lines typed in SKIPS the walls step — no tick for walls nobody measured", () => {
     const facts = walkTakeoff({ handMeasurements: NO_HAND, lineCount: 3, bidTotal: 34_915 });
     const guide = buildJobGuide(facts, NOW);
-    expect(guide.steps[1]!.status).toBe("done");
+    expect(guide.steps[1]!.status).toBe("skipped");
     expect(guide.steps[1]!.summary).toBe("1 sheet · lines typed in, nothing measured");
   });
 
@@ -767,7 +775,7 @@ describe("measurements made by hand count as measured", () => {
 
 describe("the rail", () => {
   it("done, current, todo in order, for each stage", () => {
-    const by = (id: keyof typeof FIXTURES): GuideStepStatus[] => statuses(FIXTURES[id]);
+    const by = (id: keyof typeof FIXTURES): GuideRailStatus[] => statuses(FIXTURES[id]);
     expect(by("no-drawings")).toEqual(["done", "current", "todo", "todo", "todo"]);
     expect(by("no-scale")).toEqual(["done", "current", "todo", "todo", "todo"]);
     expect(by("unpriced-wall-types")).toEqual(["done", "done", "current", "todo", "todo"]);
@@ -775,6 +783,27 @@ describe("the rail", () => {
     expect(by("proposal-ready")).toEqual(["done", "done", "done", "current", "todo"]);
     expect(by("send-due-soon")).toEqual(["done", "done", "done", "done", "current"]);
     expect(statuses(empty({ invitations: [], project: null }))).toEqual(["current", "todo", "todo", "todo", "todo"]);
+  });
+
+  // THE WALK OF 2026-10-30. One typed line, nothing measured, read
+  // "✓ Walls measured"; then a wall run added after three lines were priced
+  // pulled the rail back to "Walls measured — Current step / Price it — Not
+  // started".
+  it("typed lines with no drawings and nothing measured skip the walls step", () => {
+    const facts = empty({ lineCount: 1, bidTotal: 12_000 });
+    expect(statuses(facts)).toEqual(["done", "skipped", "done", "current", "todo"]);
+    expect(buildJobGuide(facts, NOW).steps[1]!.summary).toBe("Lines typed in, nothing measured");
+  });
+
+  it("a wall run added after the typed lines were priced does not pull the rail back to the walls", () => {
+    const facts = { ...FIXTURES["walls-not-added"], lineCount: 3, bidTotal: 33_720 };
+    const guide = buildJobGuide(facts, NOW);
+    expect(guide.ask!.id).toBe("walls-not-added");
+    expect(statuses(facts)).toEqual(["done", "done", "done", "current", "todo"]);
+  });
+
+  it("measured walls with no lines yet still sit on the walls step", () => {
+    expect(statuses(FIXTURES["walls-not-added"])).toEqual(["done", "current", "todo", "todo", "todo"]);
   });
 
   it("is always five steps in the contract's order", () => {
@@ -1062,5 +1091,59 @@ describe("the home list order", () => {
       NOW,
     );
     expect(order.map((guide) => guide.name)).toEqual(["Alpha", "Bravo"]);
+  });
+});
+
+// THE WALK OF 2026-10-30: Turner's proposal (−5%, $30,403.80) carried a card
+// reading "ready to open at $32,004.00 … send it to Halvorsen Builders".
+describe("the ready ask for one GC's proposal", () => {
+  const twoGcs = () =>
+    ready({
+      gcName: "Halvorsen Builders",
+      bidTotal: 32_004,
+      invitations: [
+        { id: "inv_h", projectName: "p", status: "INVITED", dueDate: "2026-11-05", dueMinute: 840, gcName: "Halvorsen Builders" },
+        {
+          id: "inv_t",
+          projectName: "p",
+          status: "INVITED",
+          dueDate: "2026-11-05",
+          dueMinute: 840,
+          gcName: "Turner",
+          priceAdjust: { amount: null, percent: -5 },
+        },
+      ],
+    });
+
+  it("names that GC and that GC's adjusted price, and opens that GC's proposal", () => {
+    const guide = buildJobGuide(twoGcs(), NOW);
+    expect(guide.ask!.id).toBe("proposal-ready");
+    const turner = guide.askByInvitation!["inv_t"]!;
+    expect(turner.title).toBe("The proposal is ready to open at $30,403.80.");
+    expect(turner.body).toContain("send it to Turner.");
+    expect(turner.body).not.toContain("Halvorsen");
+    expect(turner.actions[0]).toMatchObject({ href: "/bid/estimates/job_1/proposal?invitation=inv_t", primary: true });
+    expect(guide.askByInvitation!["inv_h"]!.title).toBe("The proposal is ready to open at $32,004.00.");
+  });
+
+  it("an adjustment that cannot be applied gets no figure", () => {
+    const facts = twoGcs();
+    facts.invitations[1]!.priceAdjust = { amount: -40_000, percent: null };
+    const turner = buildJobGuide(facts, NOW).askByInvitation!["inv_t"]!;
+    expect(turner.title).toBe("The proposal for Turner can't go out at this price.");
+    expect(turner.title + (turner.body ?? "")).not.toMatch(/\$\d/);
+  });
+
+  it("only the ready ask has per-GC wording", () => {
+    expect(buildJobGuide({ ...twoGcs(), linesWithoutPrice: 1 }, NOW).askByInvitation).toBeUndefined();
+  });
+});
+
+// THE WALK OF 2026-10-30: no rates, and the card still offered "Apply the
+// recap", which would have priced every line at its bare cost.
+describe("a recap that adds nothing", () => {
+  it("is not offered", () => {
+    const guide = buildJobGuide(ready({ recap: { appliedAt: null, addedTotal: 0, landsAt: 22_440 } }), NOW);
+    expect(guide.ask!.id).not.toBe("apply-recap");
   });
 });

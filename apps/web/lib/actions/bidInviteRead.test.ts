@@ -67,6 +67,7 @@ vi.mock("@/lib/ask/allowance", () => ({
 vi.mock("@prova/integrations", () => ({
   BID_INVITE_PROMPT_VERSION: "bid-invite.test",
   anthropicIsConfigured: () => configured,
+  anthropicFailureCode: () => null,
   extractBidInvite: async (params: { onUsage?: (usage: unknown) => Promise<void> }) => {
     calls.extracted += 1;
     await params.onUsage?.({ inputTokens: 1, outputTokens: 1 });

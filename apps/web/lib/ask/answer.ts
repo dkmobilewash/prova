@@ -428,7 +428,7 @@ export const PROVENANCE_REFUSAL =
 /** Turns a failure from the conversation into something worth reading on a
  * phone. The underlying reasons are deliberately not shown verbatim — they
  * describe the API, and the person asking cares what to do next. */
-function messageFor(reason: "refusal" | "no_text" | "exhausted" | "api"): string {
+function messageFor(reason: "refusal" | "no_text" | "exhausted" | "api", apiCode?: string | null): string {
   switch (reason) {
     case "refusal":
       return "I can't answer that one. Try asking it a different way.";
@@ -437,7 +437,12 @@ function messageFor(reason: "refusal" | "no_text" | "exhausted" | "api"): string
     case "exhausted":
       return "That took more steps than I can do at once. Try asking for one thing at a time.";
     case "api":
-      return "The assistant is unavailable right now. Try again shortly.";
+      // The API's short code goes on screen: without it this sentence was
+      // identical for an empty credit balance and a passing outage, and the
+      // only place the difference lived was a log the owner cannot open.
+      return apiCode
+        ? `The assistant is unavailable right now (Anthropic said: ${apiCode}). Try again shortly.`
+        : "The assistant is unavailable right now. Try again shortly.";
   }
 }
 
@@ -1154,7 +1159,7 @@ export async function* streamAnswer(
         case "error":
           await record(`error:${event.reason}`);
           await markFailed();
-          yield { type: "error", error: messageFor(event.reason) };
+          yield { type: "error", error: messageFor(event.reason, event.apiCode) };
           return;
         case "done": {
           /* THE NUMBER-PROVENANCE GUARD. Every figure the answer says out

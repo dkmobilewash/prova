@@ -154,7 +154,7 @@ export function EstimateLineItems({ data, surface = "crm" }: { data: JobEstimate
                   <select
                     name="tradeScope"
                     defaultValue={item.tradeScope ?? ""}
-                    className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
+                    className="min-w-0 max-w-full rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
                   >
                     <option value="">No trade tag</option>
                     {TRADE_SCOPE_OPTIONS.map((t) => (
@@ -234,7 +234,7 @@ export function EstimateLineItems({ data, surface = "crm" }: { data: JobEstimate
                     name="craftClassificationId"
                     defaultValue={item.craftClassificationId ?? ""}
                     title="Craft classification"
-                    className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
+                    className="min-w-0 max-w-full rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
                   >
                     <option value="">No craft tag</option>
                     {craftClassifications.map((c) => (
@@ -247,7 +247,7 @@ export function EstimateLineItems({ data, surface = "crm" }: { data: JobEstimate
                     phaseCodes={phaseCodes}
                     selectedId={item.phaseCodeId}
                     labelled={false}
-                    className="rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
+                    className="min-w-0 max-w-full rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none"
                   />
                   <SubmitButton
                     type="submit"
@@ -344,12 +344,15 @@ export function EstimateLineItems({ data, surface = "crm" }: { data: JobEstimate
               className="w-28 rounded-md border border-line-card bg-surface px-3 py-2 text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm text-ink-label">
+          <label className="flex min-w-0 max-w-full flex-col gap-1 text-sm text-ink-label">
             Trade
+            {/* Starts on the bid's own trade when it has one: left on "No
+                trade tag", every typed line landed in the proposal's "Other
+                work" (walk of 2026-10-30). Still changeable per line. */}
             <select
               name="tradeScope"
-              defaultValue=""
-              className="rounded-md border border-line-card bg-surface px-3 py-2 text-ink focus:border-link focus:outline-none"
+              defaultValue={job.bidProject?.tradeScope ?? ""}
+              className="min-w-0 max-w-full rounded-md border border-line-card bg-surface px-3 py-2 text-ink focus:border-link focus:outline-none"
             >
               <option value="">No trade tag</option>
               {TRADE_SCOPE_OPTIONS.map((t) => (

@@ -1,5 +1,6 @@
 import { dayAndTime, formatClock, upcomingBidDates, type UpcomingBidDate } from "@/lib/bid-dates";
 import { money } from "@/lib/money";
+import { gcPrice } from "@/lib/estimating/gc-price";
 import { surfaceHrefs } from "@/lib/bid/surfaceHrefs";
 import { bidLogHrefs } from "@/lib/bid/bidLogHrefs";
 import {
@@ -49,8 +50,9 @@ import {
  *                           and an estimate with no lines at all
  *   5. unpriced-wall-types  a used wall type has no price (past-price offer if one exists)
  *   6. unpriced-lines       other lines still have no price (cost-only indirects excepted)
- *   7. apply-recap          the job has a bid recap that was never applied; says what
- *                           Apply does to the line total (lowers/raises/leaves it)
+ *   7. apply-recap          the job has a bid recap that was never applied and adds
+ *                           something over cost; says what Apply does to the line
+ *                           total (lowers/raises/leaves it)
  *  7b. addendum-unacknowledged  an addendum is not acknowledged on a still-open GC's form
  *   8. proposal-ready       priced; read the proposal and send it
  *      send-due-soon        the same moment, but the deadline is inside DUE_SOON_HOURS
@@ -81,8 +83,11 @@ import {
  * "send it now". Once any invitation is SUBMITTED (or WON/LOST), or the app has
  * a record of emailing one (`proposalSentOn`, facts.ts), there is no ask.
  *
- * The rail follows the ask: steps before its step are done, its step is current,
- * the rest are todo. With no ask the bid is sent and all five are done.
+ * The rail follows the ask: steps before its step are done (walls: SKIPPED
+ * when the lines were typed in with nothing measured), its step is current,
+ * the rest are todo — except that a walls ask never pulls the rail back past
+ * the first unfinished step (see `buildJobGuide`). With no ask the bid is sent
+ * and all five are done.
  *
  * Rule 1 does not fire on a hand-built estimate (lines but no drawings), and
  * rule 2 does not fire once any wall is measured: both would nag forever over a
@@ -585,7 +590,12 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
   // "adds $7,385.00 to the bid" while Apply took typed prices of $34,915.00
   // DOWN to $31,990.50. Typed prices above the recap are ordinary, so the
   // change can go either way and the words say which.
-  if (facts.recap && facts.recap.appliedAt === null) {
+  //
+  // NOT WHEN THE RECAP ADDS NOTHING (every rate empty or zero, or no line with
+  // a cost type a rate reaches): Apply would set each line to its bare cost —
+  // $33,720.00 down to $22,440.00 on the walk of 2026-10-30. The recap panel's
+  // button is off for the same reason, and the card must not offer it either.
+  if (facts.recap && facts.recap.appliedAt === null && facts.recap.addedTotal > 0) {
     return {
       ask: {
         id: "apply-recap",
@@ -633,33 +643,94 @@ function decide(facts: JobGuideFacts, now: Date): Decision {
   const total = money(facts.bidTotal);
   if (dueSoon && dueLabel) {
     return {
-      ask: {
-        id: "send-due-soon",
-        step: "send",
-        title:
-          pastDue && due
-            ? `This bid was due ${dayAndTime(due.iso, due.minute)} and has not gone out.`
-            : `This bid is ${dueLabel} and has not gone out yet.`,
-        body: `The proposal is ready at ${total}. Open it, read it through and send it.`,
-        actions: [open("Open the proposal", hrefs.proposal, true)],
-      },
+      ask: readyAsk({ total, gcName: facts.gcName, href: hrefs.proposal, dueLabel, dueSoon: true, pastDue, due }),
       headline: pastDue ? "Ready to send, and the deadline has passed." : "Ready to send, and the clock is running.",
       oneLine: pastDue ? "Past due and not sent" : `${capitalise(dueLabel)}, not sent`,
       tone: pastDue ? "blocked" : "ready",
     };
   }
   return {
-    ask: {
-      id: "proposal-ready",
-      step: "proposal",
-      title: `The proposal is ready to open at ${total}.`,
-      body: dueLabel ? `Read it through, then send it to ${facts.gcName ?? "the GC"}. The bid is ${dueLabel}.` : `Read it through, then send it to ${facts.gcName ?? "the GC"}.`,
-      actions: [open("Open the proposal", hrefs.proposal, true)],
-    },
+    ask: readyAsk({ total, gcName: facts.gcName, href: hrefs.proposal, dueLabel, dueSoon: false, pastDue, due }),
     headline: "Ready to go out.",
     oneLine: `Ready to send, ${total}`,
     tone: "ready",
   };
+}
+
+/** Rule 8's card, for the job's GC at the estimate total or for one GC at its own price. */
+function readyAsk(input: {
+  total: string;
+  gcName: string | null;
+  href: string;
+  dueLabel: string | null;
+  dueSoon: boolean;
+  pastDue: boolean;
+  due: ReturnType<typeof guideDue>;
+  /** The card is on one GC's proposal, so the send line names that GC too. */
+  forOneGc?: boolean;
+}): GuideAsk {
+  const { total, gcName, href, dueLabel, pastDue, due } = input;
+  const actions: GuideAction[] = [{ label: "Open the proposal", href, primary: true }];
+  if (input.dueSoon && dueLabel) {
+    return {
+      id: "send-due-soon",
+      step: "send",
+      title:
+        pastDue && due
+          ? `This bid was due ${dayAndTime(due.iso, due.minute)} and has not gone out.`
+          : `This bid is ${dueLabel} and has not gone out yet.`,
+      body: `The proposal ${input.forOneGc && gcName ? `for ${gcName} ` : ""}is ready at ${total}. Open it, read it through and send it.`,
+      actions,
+    };
+  }
+  return {
+    id: "proposal-ready",
+    step: "proposal",
+    title: `The proposal is ready to open at ${total}.`,
+    body: dueLabel ? `Read it through, then send it to ${gcName ?? "the GC"}. The bid is ${dueLabel}.` : `Read it through, then send it to ${gcName ?? "the GC"}.`,
+    actions,
+  };
+}
+
+/**
+ * The ready ask for each GC's own proposal (`JobGuide.askByInvitation`): that
+ * GC's name and that GC's price, `gcPrice` over the estimate total — the same
+ * function and the same total the proposal page prints from, so the card and
+ * the document cannot disagree. A GC whose adjustment cannot be applied gets
+ * the page's own refusal instead of a figure.
+ */
+function readyAsksByInvitation(facts: JobGuideFacts, ask: GuideAsk, now: Date): Record<string, GuideAsk> | undefined {
+  if (ask.id !== "proposal-ready" && ask.id !== "send-due-soon") return undefined;
+  const due = guideDue(facts);
+  const dueLabel = due ? dueLabelFor(due, now) : null;
+  const pastDue = due ? dueMs(due) < now.getTime() : false;
+  const out: Record<string, GuideAsk> = {};
+  for (const invitation of facts.invitations) {
+    const gcName = invitation.gcName ?? null;
+    const href = `${surfaceHrefs("bid", facts.jobId).proposal}?invitation=${encodeURIComponent(invitation.id)}`;
+    const price = gcPrice(facts.bidTotal, invitation.priceAdjust ?? {});
+    if (!price.ok) {
+      out[invitation.id] = {
+        id: ask.id,
+        step: ask.step,
+        title: `The proposal for ${gcName ?? "this GC"} can't go out at this price.`,
+        body: `${price.error} Fix the adjustment on that GC's bid in the bid log.`,
+        actions: [{ label: "Open the bid log", href: `${bidLogHrefs("bid").list}#${invitation.id}`, primary: true }],
+      };
+      continue;
+    }
+    out[invitation.id] = readyAsk({
+      total: money(price.priceCents / 100),
+      gcName,
+      href,
+      dueLabel,
+      dueSoon: ask.id === "send-due-soon",
+      pastDue,
+      due,
+      forOneGc: true,
+    });
+  }
+  return out;
 }
 
 // ── the rail ─────────────────────────────────────────────────────────────────
@@ -695,12 +766,11 @@ function summaryFor(key: GuideStepKey, facts: JobGuideFacts, dueLabel: string | 
       if (facts.hasTakeoffPlan) {
         if (facts.sheetCount === 0) return "Drawings uploaded";
         const sheets = plural(facts.sheetCount, "sheet", "sheets");
-        // The step reads Done once lines exist (`firstUnfinished`), so "none
-        // measured yet" under a tick would contradict itself: say where the
-        // lines came from instead.
+        // The step reads Skipped once lines exist with nothing measured
+        // (`wallsSkipped`): say where the lines came from.
         return facts.lineCount > 0 ? `${sheets} · lines typed in, nothing measured` : `${sheets}, none measured yet`;
       }
-      return null;
+      return facts.lineCount > 0 ? "Lines typed in, nothing measured" : null;
     }
     case "price": {
       if (facts.lineCount === 0) return null;
@@ -721,9 +791,25 @@ function summaryFor(key: GuideStepKey, facts: JobGuideFacts, dueLabel: string | 
   }
 }
 
+/** Anything measured on the takeoff: a wall run, or a measurement by hand. */
+function anythingMeasured(facts: JobGuideFacts): boolean {
+  return facts.wallRunCount > 0 || facts.handMeasurements.count > 0;
+}
+
+/**
+ * "Walls measured" is passed once the estimate has lines — but it is only DONE
+ * when something was measured. Lines typed in with nothing measured SKIP it:
+ * the bid is priced without walls, and a tick there claimed a takeoff that
+ * never happened (walk of 2026-10-30: one typed line, "✓ Walls measured").
+ */
+function wallsSkipped(facts: JobGuideFacts): boolean {
+  return facts.lineCount > 0 && !anythingMeasured(facts);
+}
+
 function firstUnfinished(facts: JobGuideFacts): number {
   const done: Record<GuideStepKey, boolean> = {
     invite: facts.invitations.length > 0 || !!facts.project || facts.hasTakeoffPlan || facts.lineCount > 0 || facts.wallRunCount > 0,
+    // Passed, not necessarily done: see `wallsSkipped`.
     walls: facts.lineCount > 0,
     price: facts.lineCount > 0 && facts.linesWithoutPrice === 0 && unpricedWallTypes(facts).length === 0,
     proposal: guideWasSent(facts),
@@ -740,12 +826,24 @@ export function buildJobGuide(facts: JobGuideFacts, now: Date): JobGuide {
   const due = guideDue(facts);
   const dueLabel = due ? dueLabelFor(due, now) : null;
 
-  const current = decision.ask ? GUIDE_STEP_KEYS.indexOf(decision.ask.step) : guideWasSent(facts) ? GUIDE_STEP_KEYS.length : firstUnfinished(facts);
+  // A WALLS ASK NEVER PULLS THE RAIL BACK past what the facts have finished.
+  // One that fires after the lines exist (a wall run added after typed lines
+  // were priced, a height or board count to answer) is the card's "one thing
+  // needs you"; it used to drag the rail back to "Walls measured — Current
+  // step / Price it — Not started" with three lines priced (walk of
+  // 2026-10-30). Later asks keep their own step: an unapplied recap is still
+  // pricing, deliberately.
+  const progress = guideWasSent(facts) ? GUIDE_STEP_KEYS.length : firstUnfinished(facts);
+  const askIndex = decision.ask ? GUIDE_STEP_KEYS.indexOf(decision.ask.step) : -1;
+  const current = !decision.ask ? progress : decision.ask.step === "walls" ? Math.max(askIndex, progress) : askIndex;
+  const skipped = wallsSkipped(facts);
+
+  const askByInvitation = decision.ask ? readyAsksByInvitation(facts, decision.ask, now) : undefined;
 
   const steps: GuideStep[] = GUIDE_STEP_KEYS.map((key, index) => ({
     key,
     label: STEP_LABEL[key],
-    status: index < current ? "done" : index === current ? "current" : "todo",
+    status: index < current ? (key === "walls" && skipped ? "skipped" : "done") : index === current ? "current" : "todo",
     summary: summaryFor(key, facts, dueLabel, decision.ask),
   }));
 
@@ -757,6 +855,7 @@ export function buildJobGuide(facts: JobGuideFacts, now: Date): JobGuide {
     steps,
     headline: decision.headline,
     ask: decision.ask,
+    ...(askByInvitation ? { askByInvitation } : {}),
     bidSoFar: facts.bidTotal > 0 ? facts.bidTotal : null,
     tone: decision.tone,
     oneLine: decision.oneLine,

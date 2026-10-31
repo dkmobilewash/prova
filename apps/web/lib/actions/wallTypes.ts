@@ -9,7 +9,7 @@ import { restoreRemovedWallLines, syncWallScheduleLines, type WallSyncSummary } 
 import { wallTypesFromSchedule, type PartitionScheduleRow } from "@/lib/estimating/partitionTypes";
 import { NOT_ESTIMATE_STAGE } from "@/lib/estimating/draft-lines";
 import { MAX_BOARD_LAYERS, openingsFromJson, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
-import { missingStarterTypes, STARTER_TYPES } from "@/lib/wall-type-starters";
+import { missingStarterTypes, startersFor } from "@/lib/wall-type-starters";
 import {
   actionFail,
   actionOk,
@@ -303,7 +303,10 @@ export async function removeWallTypeComponent(componentId: string): Promise<Acti
 
 type StarterResult = ActionResultWith<{ added: string[] }>;
 
-export async function addStarterWallTypes(): Promise<StarterResult> {
+export async function addStarterWallTypes(surfaceArg?: unknown): Promise<StarterResult> {
+  // From the network like every Server Action argument: anything but "bid" is
+  // the CRM's full set. Either way only MISSING starters are ever written.
+  const surface = surfaceArg === "bid" ? "bid" : "crm";
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_ESTIMATING")) return { ok: false, error: NO_ESTIMATING };
   const companyId = context.company.id;
@@ -312,14 +315,14 @@ export async function addStarterWallTypes(): Promise<StarterResult> {
   // The SAME rule the page uses to say how many this will add — see
   // `missingStarterTypes`. Only missing codes are created; a type the company
   // already has, of any starter code, is never read for update or rewritten.
-  const toAdd = missingStarterTypes(existing.map((type) => type.code));
+  const toAdd = missingStarterTypes(existing.map((type) => type.code), surface);
   if (toAdd.length === 0) {
     // NAMES WHAT IS ACTUALLY THERE rather than the two it used to seed. The
     // starter set has ten entries now, and a message naming W1 and W2 would
     // be wrong for anybody who already has an ACT1.
     return {
       ok: false,
-      error: `You already have every starter assembly (${STARTER_TYPES.map((type) => type.code).join(", ")}), so nothing was added.`,
+      error: `You already have every starter assembly (${startersFor(surface).map((type) => type.code).join(", ")}), so nothing was added.`,
     };
   }
 

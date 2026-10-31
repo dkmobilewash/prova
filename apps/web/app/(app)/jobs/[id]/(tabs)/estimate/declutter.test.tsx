@@ -131,6 +131,23 @@ describe("Estimate tab — contracted", () => {
   it("gives the row's Save button the 44px target like every other control", () => {
     expect(page).toMatch(/title="Save"\s+className="min-h-11 [^"]*mouse:min-h-9"/);
   });
+
+  // Walk of 2026-10-30, 390px: an open line's "No craft tag" select was 635px
+  // wide and the page scrolled sideways to 696px. Every select in the row edit
+  // is capped to the row (happy-dom does no layout, so this pins the classes).
+  it("caps every select in a line's edit row to the row's width", () => {
+    const row = page.slice(at("<ActionForm action={updateLineItemWithId(item.id)}"), at("</ActionForm>", at("<ActionForm action={updateLineItemWithId(item.id)}")));
+    const selects = row.match(/<select[\s\S]*?className="[^"]*"/g) ?? [];
+    expect(selects.map((tag) => tag.match(/name="(\w+)"/)?.[1])).toEqual(["tradeScope", "craftClassificationId"]);
+    for (const tag of selects) expect(tag).toMatch(/className="min-w-0 max-w-full /);
+    expect(row).toMatch(/<PhaseCodeField[\s\S]*?className="min-w-0 max-w-full /);
+  });
+
+  // Walk of 2026-10-30: every typed line defaulted to "No trade tag", so the
+  // proposal's By scope view was one "Other work" row.
+  it("starts a new line on the bid's own trade", () => {
+    expect(page).toMatch(/name="tradeScope"\s+defaultValue=\{job\.bidProject\?\.tradeScope \?\? ""\}/);
+  });
 });
 
 vi.mock("@/lib/actions", () => ({

@@ -167,6 +167,21 @@ export function BidRecapPanel({
   const previewOpen = pricePreviewOpen && plan.kind === "PRICE_UNPRICED";
   const descriptionOf = (id: string) => shownLines.find((l) => l.id === id)?.description ?? "a line";
   const roundingGap = Math.round((landsAt - recap.bidTotal) * 100) / 100;
+  // EVERY RATE EMPTY OR ZERO: the recap adds nothing, so Apply would set each
+  // line to its bare cost — on the walk of 2026-10-30, $33,720.00 of typed
+  // prices down to $22,440.00 of cost, wiping a 33.5% margin. Never what a sub
+  // means by "apply my markup", so the button is off and says why.
+  const noRates = RATE_FIELDS.every((f) => {
+    const value = Number(draft[f.key]?.trim() || 0);
+    return !Number.isFinite(value) || value === 0;
+  });
+  // What pressing it does to the line total, in the direction it goes: the
+  // title used to say "Raises" on a press that lowered every price.
+  const applyChangeCents = Math.round(landsAt * 100) - Math.round(bidOnJob * 100);
+  const applyTitle =
+    applyChangeCents === 0
+      ? "Sets each line's unit price from the recap; the lines already add up to the bid. Do this once the price is settled."
+      : `Sets each line's unit price so the estimate's lines add up to the bid — ${applyChangeCents < 0 ? "lowers" : "raises"} them from ${money(bidOnJob)} to ${money(landsAt)}. Do this once the price is settled.`;
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -386,8 +401,8 @@ export function BidRecapPanel({
           )}
           <button
             type="button"
-            disabled={isApplying || recap.addedTotal === 0 || nothing !== null}
-            title="Raises each line's unit price so the estimate's lines add up to the bid. Do this once the price is settled."
+            disabled={isApplying || noRates || recap.addedTotal === 0 || nothing !== null}
+            title={applyTitle}
             onClick={() => {
               // Step one of two when no line has a price: show what will be
               // written and wait. Never silent.
@@ -399,12 +414,25 @@ export function BidRecapPanel({
               startApply(async () => {
                 setApplyMessage(null);
                 const result = await applyBidRecap(jobId, previewOpen ? { priceUnpriced: true } : {});
-                setPricePreviewOpen(false);
-                setApplyMessage(
-                  result.ok
-                    ? `Applied to ${result.value.lineCount} line${result.value.lineCount === 1 ? "" : "s"} — they now total ${money(result.value.appliedTotal)}.`
-                    : result.error,
-                );
+                // ── THE MESSAGE COMMITS WITH THE NEW SCREEN, NEVER AHEAD OF IT ──
+                // A state update after an `await` is NOT part of the
+                // transition it sits in (React's async-transition limit), so
+                // "Applied … they now total $32,004.00" used to commit at once,
+                // urgently, while the router's re-render — the action's own
+                // revalidated page, a transition — still held the old "Bid so
+                // far" and kept this button on "Applying…" until the server's
+                // post-action render finished streaming (CLAUDE.md #61: that
+                // render is the slow part, and this layout loads the whole job
+                // guide). Wrapped, the message, the closed preview and the new
+                // figures land in one commit. Same fix as JobGuideAsk.
+                startApply(() => {
+                  setPricePreviewOpen(false);
+                  setApplyMessage(
+                    result.ok
+                      ? `Applied to ${result.value.lineCount} line${result.value.lineCount === 1 ? "" : "s"} — they now total ${money(result.value.appliedTotal)}.`
+                      : result.error,
+                  );
+                });
               });
             }}
             className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:cursor-not-allowed disabled:opacity-50"
@@ -452,6 +480,12 @@ export function BidRecapPanel({
             a markup to apply: with no rates the button is already disabled and
             the sentence would be about nothing. */}
         {recap.addedTotal !== 0 && nothing && <p className="text-sm text-tag-amber-ink">{nothing}</p>}
+        {noRates && recap.direct.total > 0 && (
+          <p className="text-sm text-ink-body" data-recap="no-rates">
+            No markup, overhead or profit is set, so there is nothing to apply — it would set every line to its bare
+            cost. Set your rates first.
+          </p>
+        )}
         {/* NO LINE HAS A PRICE: Apply offers to price the lines that have a
             cost, and says exactly what that writes before anyone confirms. */}
         {previewOpen && plan.kind === "PRICE_UNPRICED" && (

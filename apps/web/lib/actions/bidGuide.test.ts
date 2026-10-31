@@ -347,6 +347,17 @@ describe("runGuideAction: setBoardLayers", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/bid/wall-types");
   });
 
+  it("drops an old starter's 'one layer' from its name with the answer, and never touches a typed name", async () => {
+    const sentName = () => (updateWallType.mock.calls.at(-1) as [string, FormData])[1].get("name");
+    wallTypeFindFirst.mockResolvedValue({ ...TYPE_ROW, name: "3⅝″ 20ga steel studs at 16″ o.c., one layer ⅝″ Type X each side, R-13 batt" });
+    expect(await runGuideAction("j1", "setBoardLayers", ARG)).toEqual({ ok: true });
+    expect(sentName()).toBe("3⅝″ 20ga steel studs at 16″ o.c., ⅝″ Type X each side, R-13 batt");
+
+    wallTypeFindFirst.mockResolvedValue({ ...TYPE_ROW, name: "Our wall, one layer ⅝″ Type X each side" });
+    expect(await runGuideAction("j1", "setBoardLayers", ARG)).toEqual({ ok: true });
+    expect(sentName()).toBe("Our wall, one layer ⅝″ Type X each side");
+  });
+
   it("reads the job, the type and the runs through THIS company", async () => {
     await runGuideAction("j1", "setBoardLayers", ARG);
     expect(jobFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "j1", companyId: "c1" } }));
