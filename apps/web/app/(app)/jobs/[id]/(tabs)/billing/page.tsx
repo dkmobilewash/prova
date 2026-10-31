@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { RowActions, ConfirmDelete } from "@/components/RowActions";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
+import { estimatedHours } from "@/lib/labor-productivity";
 import { LogPaymentForm } from "@/components/LogPaymentForm";
 import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
 import { PushInvoiceToQuickBooks } from "@/components/PushInvoiceToQuickBooks";
@@ -78,7 +79,10 @@ export default async function JobBillingPage({
     where: { id: jobRef.id },
     include: {
       contact: { select: { id: true, name: true } },
-      lineItems: { where: { isDeleted: false }, select: { id: true, description: true, quantity: true, unitPrice: true } },
+      lineItems: {
+        where: { isDeleted: false },
+        select: { id: true, description: true, quantity: true, unitPrice: true, laborHours: true, productionRate: true },
+      },
       invoices: {
         orderBy: { number: "asc" },
         include: { payments: { orderBy: { receivedAt: "desc" } }, lineItems: true },
@@ -137,7 +141,21 @@ export default async function JobBillingPage({
       amount: Number(invoice.amount),
       issuedAt: invoice.issuedAt.toISOString(),
     }));
+  // Per day, so the form can stop at whatever period-to date is typed.
+  const loggedByLine = await prisma.timeEntry.groupBy({
+    by: ["lineItemId", "date"],
+    where: { jobId: job.id, lineItemId: { not: null } },
+    _sum: { hours: true },
+  });
   const payApplicationLineItemOptions = job.lineItems.map((item) => ({
+    budgeted: estimatedHours({
+      laborHours: item.laborHours == null ? null : Number(item.laborHours),
+      quantity: Number(item.quantity),
+      productionRate: item.productionRate == null ? null : Number(item.productionRate),
+    }),
+    logged: loggedByLine
+      .filter((row) => row.lineItemId === item.id)
+      .map((row) => ({ day: row.date.toISOString().slice(0, 10), amount: Number(row._sum.hours ?? 0) })),
     id: item.id,
     description: item.description,
     scheduledValue: Number(item.quantity) * Number(item.unitPrice ?? 0),
