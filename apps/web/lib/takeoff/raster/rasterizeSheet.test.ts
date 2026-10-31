@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { designationFromCell, rasterizeSheet } from "./rasterizeSheet";
+import { designationFromCell, rasterizeSheet, stopReadingEarly } from "./rasterizeSheet";
 
 /** An ARCH D sheet (36×24 in) with two parallel lines on it: the scale reader
  *  refuses a page too small to be a drawing, so the fixture is a real size. */
@@ -52,5 +52,14 @@ describe("the designation in a corner read", () => {
     expect(designationFromCell([{ str: "A5", confidence: 12, height: 200 }, { str: "A501", confidence: 80, height: 100 }])).toBe("A501");
     expect(designationFromCell([{ str: "PERMIT SET", confidence: 96, height: 26 }])).toBeNull();
     expect(designationFromCell([])).toBeNull();
+  });
+});
+
+describe("stopping the OCR early on a sheet", () => {
+  it("takes two reads that both say skip; one misread number never throws a floor plan away", () => {
+    expect(stopReadingEarly("A00", "A100", "FLOOR PLAN")).toBe(false);
+    expect(stopReadingEarly(null, null, "FLOOR PLAN")).toBe(false);
+    expect(stopReadingEarly(null, "A601", "DOOR SCHEDULE")).toBe(false);
+    expect(stopReadingEarly("A601", "A601", "DOOR SCHEDULE")).toBe(true);
   });
 });
