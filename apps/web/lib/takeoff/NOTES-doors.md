@@ -158,9 +158,7 @@ Crosslines improved; Baker did not; Bunkie got worse for a reason that is
 not the rule: `main` now carries #824's finder, which pairs the dashed
 canopy line 4 ft east of Bunkie's east wall as a 63 ft wall, and the
 ray-cast then calls the east wall interior. The tag override cannot save it,
-because Baker labels its WALL types `W1`–`W7` in the same hexagons Bunkie
-uses for its window tags: a W-tag beside a candidate is evidence on one set
-and the opposite on the other. What Baker's 33 are, from the crops: a
+(CORRECTED 2026-10-31: this said Baker's `W1`–`W7` are wall types. They are not. A611 "WINDOW/DOOR TYPES AND SCHEDULES" lists `W1`–`W6` as window types, Baker's wall types are the `S8B`-style tags, and the plan has 9 tagged windows, so the `0 windows` key above is wrong.) What Baker's 33 are, from the crops: a
 wall-mounted projection screen drawn as a thin rectangle along the west
 wall (four of them, 5.1 ft each), exterior-wall stretches drawn as three
 lines where the finder made no run, and interior walls the ray-cast calls

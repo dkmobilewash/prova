@@ -367,3 +367,29 @@ faces, existing — reaches a whole-set estimate. Second gap: Murray's A101
 prints no scale caption the planner reads, so the whole-set run counts
 A117 (60 ft) and never that sheet. Both are recorded here for the finder
 lane; nothing in this file's module changes them.
+
+## Demolition takeoff (2026-10-30, `diego/demo-takeoff`)
+
+`demoWalls.ts` reads walls to remove as double dashed lines, without the finder,
+which is built to set dashed work aside. Doors come from keynotes that say to
+remove a door. Rejected on measurement: dashed swing geometry, which read 11 on
+E Street against 4 tags and nothing on Green Bay, Murray or Crosslines.
+
+A sheet can lay one line twice in two pens with offset dashes, which reads as
+solid, so dashes are read per pen. `existingWallSet.ts` gives the walls standing
+on a level, moved onto the new plan; it says when it could not align them.
+
+The legend picks the pattern. Murray's demolish sample is slashed (diagonal
+share 0.20), so there only strips with true diagonals are walls and plain dashes
+are fixtures. A heavy solid line within 10 in of a strip means a skin coming off
+a wall that stays (Bunkie AD101). Dashes under 0.05 in are lettering drawn as
+strokes (Irving has no text layer).
+
+`pairDemoPlans.ts` is the one pairer. A twin number decides, then kind, discipline,
+level and area by title, then grid votes. A slab or finish plan aligns as well as
+the floor plan, so those are excluded before votes are counted. It returns no
+pair rather than guess. A demolition plan drawn on a sheet titled something else
+(Baker A001, "KEYNOTE LEGEND") is found by `demoEvidence`: a caption, a demolition
+legend or keynote heading, or a remove row. An existing-wall legend alone does not
+count, because new plans have one. Over 1,537 training pages it adds 13 sheets to
+the 44 titles find, about 9 of them real.

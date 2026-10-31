@@ -14,7 +14,7 @@ describe("the viewer lets go of a page", () => {
   it("releases the page it draws, after the draw finishes", () => {
     const draw = source.indexOf("await task.promise;");
     expect(draw).toBeGreaterThan(0);
-    expect(source.slice(draw, draw + 80)).toMatch(/page\.cleanup\(\)/);
+    expect(source.slice(draw, source.indexOf("catch (error)", draw))).toMatch(/page\.cleanup\(\)/);
   });
   it("releases each page of the walk across the set", () => {
     const walk = source.slice(source.indexOf("const searchAcrossSheets"), source.indexOf("const searchSymbols"));
