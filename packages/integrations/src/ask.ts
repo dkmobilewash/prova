@@ -291,10 +291,12 @@ function apiErrorType(err: { error?: unknown }): string | null {
  * indistinguishable from a malformed request, and it is the one cause whose
  * fix is a person with a card rather than an engineer.
  */
+export const ANTHROPIC_NO_CREDIT = "the Anthropic credit balance is too low";
+
 export function anthropicFailureCode(err: unknown): string | null {
   if (err instanceof Anthropic.APIConnectionError) return "no answer from Anthropic";
   if (!(err instanceof Anthropic.APIError)) return null;
-  if (/credit balance/i.test(err.message ?? "")) return "the Anthropic credit balance is too low";
+  if (/credit balance/i.test(err.message ?? "")) return ANTHROPIC_NO_CREDIT;
   const type = apiErrorType(err);
   return [err.status, type].filter((part) => part !== undefined && part !== null).join(" ") || null;
 }

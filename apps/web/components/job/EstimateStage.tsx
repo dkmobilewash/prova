@@ -7,6 +7,7 @@ import { PhaseCodeField } from "@/components/PhaseCodeField";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ApplyEstimateTemplate } from "@/components/ApplyEstimateTemplate";
 import { dominantTradeScope } from "@/lib/estimate-templates";
+import { newLineTrade } from "@/lib/estimating/lineTrade";
 import { TRADE_SCOPE_OPTIONS, PriceBasisBadge, LaborCostHint, ProductionBackCheckHint } from "@/components/JobEstimateHelpers";
 import { formatInstant } from "@/lib/render-date";
 import { money } from "@/lib/money";
@@ -346,12 +347,11 @@ export function EstimateLineItems({ data, surface = "crm" }: { data: JobEstimate
           </label>
           <label className="flex min-w-0 max-w-full flex-col gap-1 text-sm text-ink-label">
             Trade
-            {/* Starts on the bid's own trade when it has one: left on "No
-                trade tag", every typed line landed in the proposal's "Other
-                work" (walk of 2026-10-30). Still changeable per line. */}
+            {/* Starts on the bid's trade (`newLineTrade`). Still changeable
+                per line. */}
             <select
               name="tradeScope"
-              defaultValue={job.bidProject?.tradeScope ?? ""}
+              defaultValue={newLineTrade(job.bidProject)}
               className="min-w-0 max-w-full rounded-md border border-line-card bg-surface px-3 py-2 text-ink focus:border-link focus:outline-none"
             >
               <option value="">No trade tag</option>

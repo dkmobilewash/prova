@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anthropicFailureCode } from "@prova/integrations";
+import { ANTHROPIC_NO_CREDIT, anthropicFailureCode } from "@prova/integrations";
 import { inviteReadFailed } from "@/lib/bid/inviteReaderAccess";
 
 /**
@@ -22,7 +22,10 @@ describe("anthropicFailureCode", () => {
 
   it("names an empty credit balance, which is otherwise a bare 400 invalid_request_error", () => {
     const err = apiError(400, "invalid_request_error", "Your credit balance is too low to access the Anthropic API.");
-    expect(anthropicFailureCode(err)).toBe("the Anthropic credit balance is too low");
+    expect(anthropicFailureCode(err)).toBe(ANTHROPIC_NO_CREDIT);
+    // Seen on the preview, 2026-10-30, after this helper shipped — the reason
+    // the ask box had been "unavailable" all along.
+    expect(ANTHROPIC_NO_CREDIT).toBe("the Anthropic credit balance is too low");
   });
 
   it("keeps any other message text off the screen", () => {

@@ -146,7 +146,8 @@ describe("Estimate tab — contracted", () => {
   // Walk of 2026-10-30: every typed line defaulted to "No trade tag", so the
   // proposal's By scope view was one "Other work" row.
   it("starts a new line on the bid's own trade", () => {
-    expect(page).toMatch(/name="tradeScope"\s+defaultValue=\{job\.bidProject\?\.tradeScope \?\? ""\}/);
+    // The rule itself is lib/estimating/lineTrade.test.ts; this pins the wiring.
+    expect(page).toMatch(/name="tradeScope"\s+defaultValue=\{newLineTrade\(job\.bidProject\)\}/);
   });
 });
 

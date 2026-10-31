@@ -96,7 +96,7 @@ export async function loadJobEstimateData(jobId: string, companyId: string) {
       invoices: { select: { amount: true } },
       // The bid project's trade, so a new line starts tagged with it
       // (EstimateStage's add form) rather than "No trade tag".
-      bidProject: { select: { tradeScope: true } },
+      bidProject: { select: { tradeScope: true, invitations: { select: { tradeScope: true } } } },
     },
   });
   // `requireJob` / `requireJobGivenContext` has already proved the job is this

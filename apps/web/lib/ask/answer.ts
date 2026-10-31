@@ -440,6 +440,11 @@ function messageFor(reason: "refusal" | "no_text" | "exhausted" | "api", apiCode
       // The API's short code goes on screen: without it this sentence was
       // identical for an empty credit balance and a passing outage, and the
       // only place the difference lived was a log the owner cannot open.
+      // Waiting does not refill a credit balance, so that one case says who
+      // has to act instead of "try again shortly".
+      if (apiCode && /credit balance/.test(apiCode)) {
+        return `The assistant is unavailable (Anthropic said: ${apiCode}). It comes back once credit is added to the Anthropic account this server uses.`;
+      }
       return apiCode
         ? `The assistant is unavailable right now (Anthropic said: ${apiCode}). Try again shortly.`
         : "The assistant is unavailable right now. Try again shortly.";
