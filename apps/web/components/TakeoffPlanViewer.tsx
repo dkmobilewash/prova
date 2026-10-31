@@ -69,8 +69,11 @@ import {
   toEighth,
 } from "@/lib/takeoff/wallVectors";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
-import { addSheetExclusion, clearSheetExclusions } from "@/lib/actions/takeoffExclusions";
-import { runAt, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
+import { addSheetExclusion, clearSheetExclusions, removeSheetExclusion } from "@/lib/actions/takeoffExclusions";
+import { insideWorkArea, openingsInWorkArea, runAt, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
+import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUndo";
+import type { UndoEntry } from "@/lib/takeoff/undoStack";
+import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
 import { loadPlanText, type PlanTextView } from "@/lib/actions/planTextRead";
 import { PlanTextPanel } from "@/components/PlanTextPanel";
 import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
@@ -296,6 +299,7 @@ export function TakeoffPlanViewer({
   wallModel = null,
   ceilingPages = [],
   onMeasurementSaved,
+  onUndoable,
   activeItemId = null,
 }: {
   jobId: string;
@@ -415,6 +419,8 @@ export function TakeoffPlanViewer({
    * owns the keyboard, and on the tab that is the browser. The viewer holds no
    * stack of its own precisely so there cannot be two.
    */
+  /** A change the workspace's top-bar undo can take back. */
+  onUndoable?: (entry: UndoEntry) => void;
   onMeasurementSaved?: (saved: { id: string; kind: MeasurementKind }) => void;
   /**
    * The takeoff item new measurements belong to, when a host has one selected.
@@ -976,14 +982,22 @@ export function TakeoffPlanViewer({
   //
   // Refs, because a change finds again in the same tick, before any re-render
   // or server refresh could hand the new rows down.
-  const exclusionRowsRef = useRef<NonNullable<PlanSheet["exclusions"]>>([]);
+  const exclusionRowsRef = useRef<ExclusionRow[]>([]);
   const exclusionsRef = useRef<ReturnType<typeof userExclusionsFromRows>>(null);
+  const [exclusionRows, setExclusionRows] = useState<ExclusionRow[]>([]);
   const [userAside, setUserAside] = useState<{ kind: string; why: string; n: number }[]>([]);
-  useEffect(() => {
-    exclusionRowsRef.current = sheet?.exclusions ?? [];
-    exclusionsRef.current = userExclusionsFromRows(exclusionRowsRef.current);
-    setUserAside([]);
-  }, [sheet?.id, sheet?.exclusions]);
+  const putExclusionRows = useCallback((rows: ExclusionRow[]) => {
+    exclusionRowsRef.current = rows;
+    exclusionsRef.current = userExclusionsFromRows(rows);
+    setExclusionRows(rows);
+  }, []);
+  useEffect(() => putExclusionRows(sheet?.exclusions ?? []), [sheet?.id, sheet?.exclusions, putExclusionRows]);
+  // On the sheet alone: saving refreshes the page, which hands down a new rows
+  // array, and clearing on that wiped the sentence the save had just written.
+  useEffect(() => setUserAside([]), [sheet?.id]);
+  const findRef = useRef<() => Promise<void>>(async () => {});
+  const sheetIdRef = useRef<string | undefined>(undefined);
+  sheetIdRef.current = sheet?.id;
   const calibration = sheet?.calibration ?? null;
   /**
    * What the last detection on this page was computed FROM.
@@ -2341,9 +2355,12 @@ export function TakeoffPlanViewer({
   const [postedDoorMarks, setPostedDoorMarks] = useState<string[]>([]);
   const planTextDoors = useMemo(() => {
     const posted = new Set(postedDoorMarks.map((m) => m.trim().toUpperCase()));
-    const placed = (planText?.sheet?.doors?.placed ?? []).filter((d) => !posted.has(d.mark.trim().toUpperCase()));
+    const area = userExclusionsFromRows(exclusionRows)?.workArea ?? [];
+    const placed = (planText?.sheet?.doors?.placed ?? [])
+      .filter((d) => !posted.has(d.mark.trim().toUpperCase()))
+      .filter((d) => insideWorkArea(d.x, d.y, area));
     return doorsByGroup(found ?? [], placed, feetPerUnit);
-  }, [found, planText, feetPerUnit, postedDoorMarks]);
+  }, [found, planText, feetPerUnit, postedDoorMarks, exclusionRows]);
 
   useEffect(() => {
     if (seeded.current.has(pageNumber)) return;
@@ -2623,15 +2640,38 @@ export function TakeoffPlanViewer({
       }),
   );
 
-  /** Add or clear one kind of exclusion, then find again so the list answers at once. */
-  async function afterExclusionChange(result: { ok: boolean; error?: string }, next: NonNullable<PlanSheet["exclusions"]>) {
+  /** Save the change's rows, then find again so the list answers at once. */
+  async function afterExclusionChange(result: { ok: boolean; error?: string }, next: ExclusionRow[]) {
     if (!result.ok) {
       setFindError(result.error ?? "That did not save. Try again.");
       return;
     }
-    exclusionRowsRef.current = next;
-    exclusionsRef.current = userExclusionsFromRows(next);
-    await onFindWalls();
+    putExclusionRows(next);
+    await findRef.current();
+  }
+
+  async function addExclusion(kind: ExclusionRow["kind"], xs: number[], ys: number[]) {
+    if (!sheet) return;
+    const pageId = sheet.id;
+    const saved = await addSheetExclusion(jobId, pageId, kind, xs, ys);
+    const row: ExclusionRow = { id: saved.ok ? saved.value.ids[0] : "", kind, xs, ys };
+    await afterExclusionChange(saved, [...exclusionRowsRef.current, row]);
+    if (!saved.ok) return;
+    // The stack outlives this sheet: on another one the action still runs, and
+    // the screen is left alone, because the rows here are not that sheet's.
+    const here = () => sheetIdRef.current === pageId;
+    onUndoable?.(
+      exclusionUndoEntry(row, {
+        remove: (id) => removeSheetExclusion(jobId, pageId, id),
+        add: (r) => addSheetExclusion(jobId, pageId, r.kind, r.xs, r.ys),
+        removed: async (result, id) => {
+          if (here()) await afterExclusionChange(result, exclusionRowsRef.current.filter((r) => r.id !== id));
+        },
+        added: async (result, r) => {
+          if (here()) await afterExclusionChange(result, [...exclusionRowsRef.current, r]);
+        },
+      }),
+    );
   }
 
   async function onExcludeAt(at: { x: number; y: number }) {
@@ -2651,19 +2691,26 @@ export function TakeoffPlanViewer({
     }
     const xs = [hit.x1, hit.x2];
     const ys = [hit.y1, hit.y2];
-    await afterExclusionChange(await addSheetExclusion(jobId, sheet.id, "EXCLUDE_LIKE", xs, ys), [...exclusionRowsRef.current, { kind: "EXCLUDE_LIKE", xs, ys }]);
+    await addExclusion("EXCLUDE_LIKE", xs, ys);
   }
 
   async function onSaveWorkArea() {
     if (!sheet) return;
     const xs = [...draft.xs];
     const ys = [...draft.ys];
-    await afterExclusionChange(await addSheetExclusion(jobId, sheet.id, "WORK_AREA", xs, ys), [...exclusionRowsRef.current, { kind: "WORK_AREA", xs, ys }]);
+    await addExclusion("WORK_AREA", xs, ys);
     setDraft(EMPTY);
     setTool("pan");
   }
 
-  async function onUndoExclusion(kind: "EXCLUDE_LIKE" | "WORK_AREA") {
+  /** The sentence's Undo: the newest exclusion of that kind. */
+  async function onUndoExclusion(kind: ExclusionRow["kind"]) {
+    const last = exclusionRowsRef.current.filter((r) => r.kind === kind).at(-1);
+    if (!sheet || last === undefined) return;
+    await afterExclusionChange(await removeSheetExclusion(jobId, sheet.id, last.id), exclusionRowsRef.current.filter((r) => r.id !== last.id));
+  }
+
+  async function onClearExclusions(kind: ExclusionRow["kind"]) {
     if (!sheet) return;
     await afterExclusionChange(await clearSheetExclusions(jobId, sheet.id, kind), exclusionRowsRef.current.filter((r) => r.kind !== kind));
   }
@@ -2988,7 +3035,7 @@ export function TakeoffPlanViewer({
       let runs: WallCandidate[] = walls;
       if (doorsWindows && answerKey === undefined) {
         const W = pageSize.widthPt;
-        const result = doorsAndWindowsForSheet({
+        const allOpenings = doorsAndWindowsForSheet({
           segments: found.inUnits,
           segmentsPt: found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })),
           textPt: textItems,
@@ -2997,6 +3044,7 @@ export function TakeoffPlanViewer({
           feetPerUnit,
           scheduleRows: doorScheduleRows,
         });
+        const result = openingsInWorkArea(allOpenings, exclusionsRef.current?.workArea ?? []);
         const byWall = new Map<number, { widthFt: number }[]>();
         result.doors.forEach((d, i) => {
           if (d.wall === null) return;
@@ -3238,6 +3286,8 @@ export function TakeoffPlanViewer({
       : null;
 
   const scaleReading = calibration ? readScale(calibration, sheet?.pageWidthPt ?? null) : null;
+
+  findRef.current = onFindWalls;
 
   return (
     <div className={`flex flex-col gap-3${fill ? " h-full min-h-0" : ""}`}>
@@ -3680,6 +3730,17 @@ export function TakeoffPlanViewer({
           honest than "it does your takeoff": the biggest wall types come for
           free. Accepting one group on one real sheet replaced ninety-nine hand
           traces. Whatever it missed is still traced the way it always was. */}
+      {answerKey === undefined && (
+        <TakeoffExclusionBar
+          feet={found === null ? null : found.reduce((sum, group) => sum + group.feet, 0)}
+          aside={userAside}
+          excludes={exclusionRows.filter((r) => r.kind === "EXCLUDE_LIKE").length}
+          workAreas={exclusionRows.filter((r) => r.kind === "WORK_AREA").length}
+          readOnly={readOnly}
+          onUndo={(kind) => void onUndoExclusion(kind)}
+          onClear={(kind) => void onClearExclusions(kind)}
+        />
+      )}
       {/* ── THE SHEET IS THE INSTRUMENT, SO IT GETS THE ROOM ──
           Found walls used to stack ABOVE the drawing, and the frame reserved a
           fixed 22rem for them whether they were there or not. With six groups
@@ -3740,20 +3801,6 @@ export function TakeoffPlanViewer({
               and a person may have corrected; the one below is read off the
               title block here and only fills a silence. One slot, never two
               cautions saying the same thing in different words. */}
-          {userAside.map((one) => (
-            <p key={one.kind} className="mb-2 flex flex-wrap items-center gap-2 text-xs text-ink-muted" data-takeoff={one.kind}>
-              <span>
-                {one.n} wall{one.n === 1 ? "" : "s"} {one.why}.
-              </span>
-              <button
-                type="button"
-                className="underline"
-                onClick={() => void onUndoExclusion(one.kind === "excluded-like" ? "EXCLUDE_LIKE" : "WORK_AREA")}
-              >
-                Undo
-              </button>
-            </p>
-          ))}
           {sheetCaution && found.length > 0 && (
             <p
               className="mb-3 rounded-md bg-tag-amber p-2 text-xs text-tag-amber-ink"
