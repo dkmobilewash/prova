@@ -72,7 +72,6 @@ describe("emailing a document", () => {
           jobId,
           number: 1,
           amount: "100",
-          retainageWithheld: "0",
           lineItems: { create: { lineItemId: line.id, thisPeriodBilled: "100" } },
         },
       })

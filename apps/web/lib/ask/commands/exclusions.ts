@@ -261,14 +261,6 @@ export const notYetRegistered: Exclusion[] = [
   { action: "safety.*", reason: CYRUS },
   { action: "submittals.*", reason: CYRUS },
   {
-    action: "messages.sendPurchaseOrder",
-    reason: "Emails a document to a vendor. A person reads the words and presses send on the document's own page, like a bid package.",
-  },
-  {
-    action: "messages.sendPayApplication",
-    reason: "Emails a pay application to a GC. A person reads the words and presses send on the document's own page, like a bid package.",
-  },
-  {
     action: "submittalRead.*",
     reason:
       "Reads a job's spec section against the paid page allowance. A person starts it in front of the section and checks each draft against its quote, page only.",
