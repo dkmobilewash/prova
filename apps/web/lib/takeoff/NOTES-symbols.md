@@ -219,3 +219,9 @@ Measured on Baker EL1.01. Boxing an OS beside other fixtures gave 1 to 3 "only w
 E0.02's false hits were boxes with XXXXXX across them. A template with nothing printed on it now refuses a match with text overlapping it. E0.03's three to five hits are legend samples and still count; the true fixture count is what EL1.01 says.
 
 `tagBeside` read `made.box` on other sheets, where that box means nothing, so the walk carries `decidedTag` from the boxed sheet.
+
+## Chrome's re-test, 2026-10-31
+
+E0.03 came back 0 where the old list expected 5. Those hits were samples in the sheet's "SYMBOLS LEGEND - LIGHTING" table, not fixtures, so 21 on EL1.01 is the honest count. Nothing was changed for this: with a different box my run still matched 3 there, so a legend sample can still appear, and the row is on screen to be dropped.
+
+Boxing an OS sensor took 12 s against 0.3 s for a troffer. Its circle is 236 arc pieces, and each of 2,770 anchor placements, in four orientations, over two passes, tested them, on every same-size circle on the sheet. Two changes: a spot already matched at 0.9 coverage is not re-tested from its own strokes, and the visit order is kept per weights array rather than sorted per placement. 10.7 s to 4.6 s under the same machine load, the same 16 marks at the same places. Filtering placements to the symbol's letters was tried and removed: it hid the off-label count and only reached 8 s.
