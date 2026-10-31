@@ -98,6 +98,7 @@ export type CreateOp =
       workDescription: string;
       signerName: string;
       signaturePath?: string;
+      extras?: { perDiem?: string; travel?: string; miles?: string; mileRate?: string };
     }
   | {
       type: "media:create";
@@ -727,6 +728,7 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
           signerName: op.signerName,
           signaturePath: op.signaturePath,
           clientOperationId: op.clientOperationId,
+          extras: op.extras,
         },
         token,
       );

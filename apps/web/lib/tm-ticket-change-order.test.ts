@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseTicketExtras,
   readTmTicketSnapshot,
+  ticketAllowances,
   snapshotHours,
   tmTicketDraftDescription,
   tmTicketDraftTitle,
@@ -78,5 +80,59 @@ describe("the draft's words", () => {
     const long = tmTicketDraftTitle({ day: "2026-09-10", workDescription: "x".repeat(200) });
     expect(long.length).toBeLessThanOrEqual(80);
     expect(long.endsWith("…")).toBe(true);
+  });
+});
+
+describe("per diem, travel and mileage on a ticket", () => {
+  const snap = (raw: Record<string, unknown>) => readTmTicketSnapshot({ labor: [], materials: [], ...raw });
+  const worked = (perDiemAmount: string | null, travelPayAmount: string | null) => ({ hours: "8", perDiemAmount, travelPayAmount });
+
+  it("reads what the phone sent, dropping blanks and zeros", () => {
+    expect(parseTicketExtras({ perDiem: "75", travel: "", miles: "40", mileRate: "0.725" })).toEqual({
+      ok: true,
+      extras: [{ kind: "PER_DIEM", amount: "75.00" }, { kind: "MILEAGE", miles: "40", rate: "0.725" }],
+    });
+    expect(parseTicketExtras({ perDiem: "0", travel: " " })).toEqual({ ok: true, extras: [] });
+    expect(parseTicketExtras(undefined)).toEqual({ ok: true, extras: [] });
+    expect(parseTicketExtras({ perDiem: "75,50" })).toEqual({ ok: true, extras: [{ kind: "PER_DIEM", amount: "75.50" }] });
+  });
+
+  it("refuses a figure that is not one, or a rate with no miles, in words", () => {
+    expect(parseTicketExtras({ perDiem: "-5" })).toMatchObject({ ok: false });
+    expect(parseTicketExtras({ miles: "lots" })).toMatchObject({ ok: false });
+    expect(parseTicketExtras({ mileRate: "0.7" })).toEqual({ ok: false, error: "Enter the miles for that mileage rate." });
+  });
+
+  it("totals the day's time entries, without float dust", () => {
+    expect(ticketAllowances(snap({ labor: [worked("0.10", null), worked("0.20", "45")] }))).toEqual([
+      { text: "Per diem — $0.30 from the day's time entries", costCategory: "OTHER", cost: 0.3 },
+      { text: "Travel — $45.00 from the day's time entries", costCategory: "OTHER", cost: 45 },
+    ]);
+  });
+
+  it("never prices the same per diem twice, and says what it left out", () => {
+    const rows = ticketAllowances(snap({ labor: [worked("50", null)], extras: [{ kind: "PER_DIEM", amount: "75.00" }] }));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].cost).toBe(75);
+    expect(rows[0].text).toContain("the time entries show $50.00, not added");
+  });
+
+  it("keeps a mile rate finer than a cent as signed, and costs it to the cent", () => {
+    expect(ticketAllowances(snap({ extras: [{ kind: "MILEAGE", miles: "37", rate: "0.725" }] }))).toEqual([
+      { text: "Mileage — 37 mi @ $0.725", costCategory: "EQUIPMENT", cost: 26.83 },
+    ]);
+  });
+
+  it("invents no mile rate", () => {
+    const [row] = ticketAllowances(snap({ extras: [{ kind: "MILEAGE", miles: "37", rate: null }] }));
+    expect(row.cost).toBeNull();
+    expect(row.text).toContain("UNPRICED");
+  });
+
+  it("leaves an older ticket's words alone", () => {
+    const older = tmTicketDraftDescription({ ...input, snapshot: { labor: [{ workerName: "A", hours: "1" }], materials: [] } });
+    expect(older).not.toContain("Per diem");
+    const newer = tmTicketDraftDescription({ ...input, snapshot: { labor: [], materials: [], extras: [{ kind: "TRAVEL", amount: "45.00" }] } });
+    expect(newer).toContain("Per diem, travel and mileage:\n  Travel — $45.00 entered on the ticket");
   });
 });

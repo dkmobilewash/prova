@@ -275,10 +275,11 @@ export async function seedBillingClickFixture(prisma: PrismaClient, companyId: s
       workDescription: "Reframed the L3 corridor soffit after the duct moved",
       snapshot: {
         labor: [
-          { workerName: "Ana Ruiz", hours: "8", payType: "STRAIGHT", craftLabel: "ZZ Click Carpenter JM", lineItemDescription: "Framing labor" },
+          { workerName: "Ana Ruiz", hours: "8", payType: "STRAIGHT", craftLabel: "ZZ Click Carpenter JM", lineItemDescription: "Framing labor", perDiemAmount: "60.00" },
           { workerName: "Luis Ortega", hours: "2.5", payType: "OVERTIME", craftLabel: "ZZ Click Laborer", lineItemDescription: null },
         ],
         materials: [{ description: "12 lengths 20ga track", vendorName: foundation.name, orderedOn: "2026-10-20" }],
+        extras: [{ kind: "TRAVEL", amount: "45.00" }, { kind: "MILEAGE", miles: "40", rate: "0.725" }],
       },
       signerName: "Sam Patel (GC super)",
       signedAt: new Date("2026-10-20T22:12:00Z"),

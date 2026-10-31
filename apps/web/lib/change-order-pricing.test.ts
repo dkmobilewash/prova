@@ -120,6 +120,27 @@ describe("laborHourCost burdens the wage before anything is marked up", () => {
 });
 
 describe("tmTicketProposals", () => {
+  it("prices per diem and travel as OTHER and mileage as EQUIPMENT, through the recap", () => {
+    const lookups = { schedulesByCraftName: new Map(), burdenPercent: 0, rates: RATES, workDate: WORK_DATE };
+    const rows = tmTicketProposals(
+      {
+        labor: [{ workerName: "A", hours: "8", craftLabel: null, perDiemAmount: "60", travelPayAmount: null }],
+        materials: [],
+        extras: [{ kind: "TRAVEL", amount: "45.00" }, { kind: "MILEAGE", miles: "40", rate: "0.70" }, { kind: "MILEAGE", miles: "9", rate: null }],
+      },
+      lookups,
+    ).filter((row) => row.costCategory !== "LABOR");
+    const sell = (unitCost: number, costCategory: "OTHER" | "EQUIPMENT") => priceLine({ quantity: 1, unitCost, costCategory }, RATES).unitPrice;
+    expect(rows.map((row) => [row.costCategory, row.quantity, row.budgetedUnitCost, row.unitPrice])).toEqual([
+      ["OTHER", 1, 60, sell(60, "OTHER")],
+      ["OTHER", 1, 45, sell(45, "OTHER")],
+      ["EQUIPMENT", 1, 28, sell(28, "EQUIPMENT")],
+      ["EQUIPMENT", 1, null, null],
+    ]);
+    expect(rows[0].unitPrice).toBeGreaterThan(60);
+    expect(pricingBackupLines({ quantity: 1, unitCost: 28, costCategory: "EQUIPMENT" }, RATES, rows[2].unitPrice!).join(" ")).toContain("Equipment markup 20%");
+  });
+
   const snapshot = {
     labor: [
       { workerName: "Ana Ruiz", hours: "8", payType: "STRAIGHT", craftLabel: "Carpenter JM", lineItemDescription: null },
