@@ -656,3 +656,12 @@ Other corrections from the same work:
   `offeredCandidates` without the sheet's words, so no text set-aside ran.
 - **A misread number threw sheets away.** Crosslines read as "A00" and stopped
   OCR; two independent reads are now required.
+
+**The blank tab, measured 2026-10-31.** Canvas size was already capped and the
+candidate overlay is not quadratic. Two causes were found. The page payload
+(31 MB) is removed above. pdf.js also kept every decoded page, because nothing
+called `page.cleanup()`: JS heap after walking the sheets was 361 MB against 82
+on Evergreen, and 704 against 80 on Joplin. The whole browser stayed near 3 GB in
+both arms, on a vector set too, and the blank was never reproduced. Heap alone
+misled twice here: a first run read 2 MB on a scan, and process totals need the
+whole tree.

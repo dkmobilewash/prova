@@ -1328,6 +1328,7 @@ export function TakeoffPlanViewer({
         const page = (await doc.getPage(pageNumber)) as {
           getViewport: (o: { scale: number }) => { width: number; height: number };
           render: (o: unknown) => { promise: Promise<void>; cancel: () => void };
+          cleanup: () => void;
         };
         if (cancelled) return;
 
@@ -1367,6 +1368,13 @@ export function TakeoffPlanViewer({
         const task = page.render({ canvasContext, viewport });
         renderTaskRef.current = task;
         await task.promise;
+        // ── RELEASE THE PAGE ──
+        // pdf.js keeps every decoded page until told otherwise, and nothing
+        // here told it. In real Chromium the JS heap after walking Evergreen
+        // was 361 MB without this and 82 MB with it; Joplin, 704 MB and 80 MB.
+        // The whole browser stayed near 3 GB either way, so this reduces one
+        // cause of a blank tab. The blank itself was never reproduced.
+        page.cleanup();
       } catch (error) {
         // A cancelled render is the normal result of changing page or zoom
         // quickly, not a failure worth telling anybody about.
@@ -1491,6 +1499,7 @@ export function TakeoffPlanViewer({
           page: n, number, count: best.matches.length, ms: performance.now() - t0, scaling: best.scaling,
           xs: best.matches.map((m) => (m.box.x1 + m.box.x2) / 2), ys: best.matches.map((m) => (m.box.y1 + m.box.y2) / 2),
         };
+        (page as { cleanup: () => void }).cleanup();
         state = { ...state, rows: [...state.rows, row].sort((a, b) => a.page - b.page) };
         setAcross(state);
         // Let the row paint before the next sheet is read.
