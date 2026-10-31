@@ -24,6 +24,7 @@ const BURDEN_NOTE = "ZZ Click billing test";
 const day = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
 export async function removeBillingClickFixture(prisma: PrismaClient, companyId: string) {
+  await prisma.bidInvitation.deleteMany({ where: { companyId, projectName: FIXTURE_JOB } });
   for (const job of await prisma.job.findMany({ where: { companyId, name: FIXTURE_JOB }, select: { id: true } })) {
     const jobId = job.id;
     // Raw, because the PO models reach main after this file may; the CLI has
@@ -123,7 +124,7 @@ export async function seedBillingClickFixture(prisma: PrismaClient, companyId: s
   });
 
   const board = await prisma.lineItemCatalogEntry.create({
-    data: { companyId, description: "ZZ Click 5/8 type X board", unit: "SF", defaultBudgetedUnitCost: "0.80", defaultUnitPrice: "1.50", costCategory: "MATERIAL" },
+    data: { companyId, description: "ZZ Click 5/8 type X board", unit: "SF", defaultBudgetedUnitCost: "0.80", defaultUnitPrice: "1.50", costCategory: "MATERIAL", tradeScope: "METAL_FRAMING_DRYWALL" },
   });
 
   // $100,000 contract, plus a $5,000 approved change order.
@@ -223,6 +224,48 @@ export async function seedBillingClickFixture(prisma: PrismaClient, companyId: s
       data: { companyId, vendorId, catalogEntryId: board.id, description: board.description, unit, unitPrice, quotedOn },
     });
   }
+
+  // The bid this job was won from, with one section read, so Buyout has spec
+  // findings to show. Fireproofing's finding has no line of that trade set, so
+  // it lands in "not tied to one line". Deleting the job's invitation cascades.
+  const bid = await prisma.bidInvitation.create({
+    data: { companyId, contactId: contact.id, projectName: FIXTURE_JOB, wonJobId: jobId },
+  });
+  const specFinding = (ordinal: number, kind: string, label: string, requirement: string, quote: string) => ({
+    ordinal, kind, label, requirement, whyItCosts: "Fixture.", confidence: "HIGH", quote, sourcePageLabel: "4",
+  });
+  const boardSection = await prisma.bidSpecSection.create({
+    data: { bidInvitationId: bid.id, sectionNumber: "09 29 00", title: "Gypsum board" },
+  });
+  await prisma.bidSpecReading.create({
+    data: {
+      bidSpecSectionId: boardSection.id,
+      bidInvitationId: bid.id,
+      findings: [
+        specFinding(1, "NAMED_PRODUCT", "Named board", "Board by USG only.", "Gypsum board shall be USG Sheetrock Firecode X. No substitutions."),
+        specFinding(2, "FINISH_LEVEL", "Level 5", "Level 5 finish in the lobby.", "Provide Level 5 finish at lobby walls."),
+        specFinding(3, "LIQUIDATED_DAMAGES", "LDs", "$2,500 a day.", "Liquidated damages of $2,500 per day."),
+      ],
+      readingReason: "Fixture.",
+      pagesCharged: 1,
+      model: "fixture",
+      promptVersion: "fixture",
+    },
+  });
+  const sprayFireSection = await prisma.bidSpecSection.create({
+    data: { bidInvitationId: bid.id, sectionNumber: "07 81 00", title: "Sprayed fire-resistive materials" },
+  });
+  await prisma.bidSpecReading.create({
+    data: {
+      bidSpecSectionId: sprayFireSection.id,
+      bidInvitationId: bid.id,
+      findings: [specFinding(1, "FIRE_RATING", "2-hour", "2-hour rating at beams.", "Provide 2-hour rated assemblies at beams.")],
+      readingReason: "Fixture.",
+      pagesCharged: 1,
+      model: "fixture",
+      promptVersion: "fixture",
+    },
+  });
 
   await prisma.tmTicket.create({
     data: {

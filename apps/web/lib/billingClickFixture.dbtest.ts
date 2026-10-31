@@ -39,10 +39,19 @@ describe("the billing click fixture", () => {
     });
   });
 
+  it("gives Buyout two read sections through the winning bid", async () => {
+    const job = await prisma.job.findFirstOrThrow({ where: { companyId, name: FIXTURE_JOB } });
+    const sections = await prisma.bidSpecSection.findMany({ where: { bidInvitation: { wonJobId: job.id } }, include: { readings: true } });
+    expect(sections.map((s) => s.readings.length)).toEqual([1, 1]);
+    const board = await prisma.jobLineItem.findFirstOrThrow({ where: { jobId: job.id, description: "5/8 type X board" } });
+    expect(board.tradeScope).toBe("METAL_FRAMING_DRYWALL");
+  });
+
   it("removes its own rows and nothing else", async () => {
     await removeBillingClickFixture(prisma, companyId);
     expect(await prisma.job.count({ where: { companyId, name: FIXTURE_JOB } })).toBe(0);
     expect(await prisma.vendor.count({ where: { companyId } })).toBe(0);
+    expect(await prisma.bidInvitation.count({ where: { companyId } })).toBe(0);
     expect(await prisma.job.findUnique({ where: { id: otherJobId } })).not.toBeNull();
     expect(await prisma.contact.count({ where: { companyId } })).toBe(1);
   });
