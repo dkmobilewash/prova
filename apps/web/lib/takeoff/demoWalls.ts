@@ -1,3 +1,4 @@
+import { existingMarks } from "./existingMarks";
 import { insideView, sheetDrawings } from "./sheetViews";
 import { tagByRun, wallTypeTags } from "./wallTags";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
@@ -19,6 +20,8 @@ import type { StrokeSegment, WallCandidate } from "./wallVectors";
 export const DASH_MIN_IN = 0.012;
 /** Longer than this is a gridline's long dash or a solid line. */
 export const DASH_MAX_IN = 0.4;
+/** Lettering drawn as strokes (Irving DA2.1 has no text layer) chains into tiny pieces; a real dash is longer. */
+export const DASH_TYPICAL_MIN_IN = 0.05;
 export const DASH_GAP_MIN_IN = 0.008;
 export const DASH_GAP_MAX_IN = 0.3;
 export const DASH_MIN_PIECES = 4;
@@ -32,12 +35,22 @@ export const WALL_MAX_INCHES = 14;
 export const RUN_MIN_FEET = 2;
 export const PAIR_MIN_OVERLAP = 0.6;
 /** Strokes bridging the two faces per foot of run, above which it is a hatched strip such as a sawcut, not a wall. */
+/** Above the 0.1 ceiling `existingMarks` allows a dashed sample; Murray's slashed one reads 0.20. */
+export const SLASHED_SHARE = 0.15;
+/** A long solid line this close along a dashed strip means a layer stripped off a wall that stays. */
+export const SKIN_REACH_INCHES = 10;
+export const SKIN_MIN_COVER = 0.8;
+/** The wall that stays is drawn heavier than the dashes; a dimension line beside a partition is not. */
+export const SKIN_PEN_RATIO = 1.2;
+/** A slash leans at least this far along the wall per unit across it. */
+export const SLASH_MIN_LEAN = 0.4;
 export const HATCH_PER_FOOT = 0.75;
 /** A legend's sample sits this close left of its words, and level with them. */
 export const SWATCH_REACH_IN = 2.5;
 const LEGEND_WORDS = /\b(REMOVE|DEMOLISH|DEMOLISHED|DEMO|TO BE REMOVED)\b/i;
 
-export type DashLine = { theta: number; perp: number; t0: number; t1: number; pieces: number };
+export type DemoPattern = "dashed" | "slashed";
+export type DashLine = { theta: number; perp: number; t0: number; t1: number; pieces: number; pen: number };
 export type DemoRun = { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessIn: number; /** The wall type tagged beside it, where the plan tags one. */ tag?: string };
 
 type Piece = { theta: number; perp: number; t0: number; t1: number; pen: number };
@@ -74,8 +87,9 @@ export function dashLines(segments: readonly StrokeSegment[]): DashLine[] {
     const flush = () => {
       const t0 = chain[0].t0, span = end - t0;
       const ink = chain.reduce((n, p) => n + (p.t1 - p.t0), 0);
-      if (chain.length >= DASH_MIN_PIECES && span > 0 && ink / span <= DASH_MAX_INK) {
-        out.push({ theta: chain[0].theta, perp: chain.reduce((n, p) => n + p.perp, 0) / chain.length, t0, t1: end, pieces: chain.length });
+      const lengths = chain.map((p) => p.t1 - p.t0).sort((p, q) => p - q);
+      if (chain.length >= DASH_MIN_PIECES && span > 0 && ink / span <= DASH_MAX_INK && lengths[Math.floor(lengths.length / 2)] >= DASH_TYPICAL_MIN_IN * 72) {
+        out.push({ theta: chain[0].theta, perp: chain.reduce((n, p) => n + p.perp, 0) / chain.length, t0, t1: end, pieces: chain.length, pen: chain[0].pen / 100 });
       }
     };
     for (const p of onLine.slice(1)) {
@@ -95,6 +109,8 @@ export function demoRuns(
   widthPt: number,
   feetPerUnit: number,
   textItems: readonly { str: string; x: number; y: number; height: number }[] = [],
+  /** "slashed" when the legend draws demolished walls with slashes across: then only hatched strips are walls. */
+  pattern: DemoPattern = "dashed",
 ): DemoRun[] {
   if (!(widthPt > 0) || !(feetPerUnit > 0)) return [];
   const feetPerPt = feetPerUnit / widthPt;
@@ -122,7 +138,7 @@ export function demoRuns(
     const at = (t: number) => ({ x: (t * ux - perp * uy) / widthPt, y: (t * uy + perp * ux) / widthPt });
     const p = at(lo), q = at(hi);
     const run = { x1: p.x, y1: p.y, x2: q.x, y2: q.y, lengthFeet, thicknessIn: inches };
-    if (sameWallAs(run, runs, feetPerUnit) || isSwatch(run) || isHatched(a, b, lo, hi)) continue;
+    if (sameWallAs(run, runs, feetPerUnit) || isSwatch(run) || isHatched(a, b, lo, hi) !== (pattern === "slashed") || isSkin(a, b, lo, hi)) continue;
     used.add(a); used.add(b);
     runs.push(run);
   }
@@ -135,9 +151,34 @@ export function demoRuns(
     for (const s of segments) {
       const p1 = -s.x1 * uy + s.y1 * ux, p2 = -s.x2 * uy + s.y2 * ux;
       const t = ((s.x1 + s.x2) / 2) * ux + ((s.y1 + s.y2) / 2) * uy;
-      if (t >= lo && t <= hi && Math.min(p1, p2) <= low + 0.25 * (high - low) && Math.max(p1, p2) >= high - 0.25 * (high - low)) bridges += 1;
+      if (!(t >= lo && t <= hi && Math.min(p1, p2) <= low + 0.25 * (high - low) && Math.max(p1, p2) >= high - 0.25 * (high - low))) continue;
+      // On a slashed sheet only a true diagonal counts: a shaft or a window's
+      // mullions cross a strip square, and are not this legend's pattern.
+      const along = Math.abs(s.x2 * ux + s.y2 * uy - (s.x1 * ux + s.y1 * uy));
+      if (pattern === "dashed" || along >= SLASH_MIN_LEAN * Math.abs(p2 - p1)) bridges += 1;
     }
     return bridges / Math.max(1, (hi - lo) * feetPerPt) > HATCH_PER_FOOT;
+  }
+
+  /**
+   * Bunkie AD101 dashes the brick and sheathing coming off an exterior wall
+   * whose solid face runs right beside them. A partition to go stands free.
+   */
+  function isSkin(a: DashLine, b: DashLine, lo: number, hi: number): boolean {
+    const ux = Math.cos(a.theta), uy = Math.sin(a.theta);
+    const low = Math.min(a.perp, b.perp), high = Math.max(a.perp, b.perp);
+    const reach = (SKIN_REACH_INCHES / 12) / feetPerPt;
+    let lowSide = 0, highSide = 0;
+    for (const s of segments) {
+      const t1 = s.x1 * ux + s.y1 * uy, t2 = s.x2 * ux + s.y2 * uy;
+      const p1 = -s.x1 * uy + s.y1 * ux, p2 = -s.x2 * uy + s.y2 * ux;
+      if (Math.abs(p1 - p2) > 1 || Math.abs(t1 - t2) <= DASH_MAX_IN * 72 || (s.width ?? 0) < SKIN_PEN_RATIO * Math.max(a.pen, b.pen)) continue;
+      const cover = Math.max(0, Math.min(hi, Math.max(t1, t2)) - Math.max(lo, Math.min(t1, t2)));
+      const p = (p1 + p2) / 2;
+      if (p < low && low - p <= reach) lowSide = Math.max(lowSide, cover);
+      if (p > high && p - high <= reach) highSide = Math.max(highSide, cover);
+    }
+    return Math.max(lowSide, highSide) >= SKIN_MIN_COVER * (hi - lo);
   }
 
   function isSwatch(run: DemoRun): boolean {
@@ -208,7 +249,13 @@ export function demoSheetTitle(text: string | null | undefined): boolean {
 
 const NOT_A_PLAN = /\b(SECTIONS?|ELEVATIONS?|DETAILS?|LEGEND|SCHEDULE)\b/i;
 
-export type DemoSheet = { runs: DemoRun[]; doors: DemoDoor[]; doorsTypical: boolean; skippedViews: string[] };
+export type DemoSheet = { runs: DemoRun[]; doors: DemoDoor[]; doorsTypical: boolean; skippedViews: string[]; pattern: DemoPattern };
+
+/** The legend says how this sheet draws a wall to go. Slashes across a DEMO row's sample mean slashed walls. */
+export function legendPattern(input: { textItems: Parameters<typeof existingMarks>[0]["textItems"]; segments: readonly StrokeSegment[]; widthPt: number }): DemoPattern {
+  const { legend } = existingMarks({ textItems: input.textItems, segments: input.segments, widthPt: input.widthPt });
+  return legend.some((e) => e.kind === "DEMO" && (e.swatch?.diagonalShare ?? 0) >= SLASHED_SHARE) ? "slashed" : "dashed";
+}
 
 /**
  * One demolition sheet. A section, elevation or detail dashes its lines too
@@ -221,12 +268,14 @@ export function demoForSheet(input: {
   widthPt: number;
   heightPt: number;
   feetPerUnit: number;
+  pattern?: DemoPattern;
 }): DemoSheet {
   const { segments, textItems, widthPt, heightPt, feetPerUnit } = input;
   const views = sheetDrawings({ items: textItems, segments, pageSize: { widthPt, heightPt } });
   const notPlans = views.filter((v) => NOT_A_PLAN.test(v.name ?? ""));
   const outside = (x: number, y: number) => !notPlans.some((v) => insideView(v, x, y));
-  const runs = demoRuns(segments, widthPt, feetPerUnit, textItems).filter((r) => outside((r.x1 + r.x2) / 2, (r.y1 + r.y2) / 2));
+  const pattern = input.pattern ?? legendPattern({ textItems, segments, widthPt });
+  const runs = demoRuns(segments, widthPt, feetPerUnit, textItems, pattern).filter((r) => outside((r.x1 + r.x2) / 2, (r.y1 + r.y2) / 2));
   const candidates = runs.map((r) => ({ ...r, thicknessFeet: r.thicknessIn / 12 })) as unknown as WallCandidate[];
   const tags = tagByRun(candidates, wallTypeTags(textItems, widthPt), feetPerUnit);
   candidates.forEach((c, i) => { const tag = tags.get(c); if (tag) runs[i].tag = tag; });
@@ -235,6 +284,7 @@ export function demoForSheet(input: {
     runs,
     doors: read.doors.filter((d) => outside(d.x, d.y)),
     doorsTypical: read.typical,
+    pattern,
     skippedViews: notPlans.map((v) => v.name ?? ""),
   };
 }

@@ -43,6 +43,31 @@ describe("demoRuns", () => {
   });
 });
 
+describe("the legend sets the pattern", () => {
+  const faces = [...dashed(100, 460, 300), ...dashed(100, 460, 303.75)];
+  const slashes: StrokeSegment[] = [];
+  for (let x = 100; x < 460; x += 6) slashes.push({ x1: x, y1: 299.5, x2: x + 4, y2: 304.25, width: 0.25 } as StrokeSegment);
+  const rungs = slashes.map((s) => ({ ...s, x2: s.x1 }));
+  it("a slashed sheet reads the slashed strip as the wall, and a plain dashed pair as a fixture", () => {
+    expect(demoRuns([...faces, ...slashes], W, FPU, [], "slashed")).toHaveLength(1);
+    expect(demoRuns(faces, W, FPU, [], "slashed")).toEqual([]);
+  });
+  it("square rungs across a strip are not this legend's slashes", () => {
+    expect(demoRuns([...faces, ...rungs], W, FPU, [], "slashed")).toEqual([]);
+  });
+  it("a strip stripped off a heavy wall right beside it is not a wall to remove", () => {
+    const wall = { x1: 90, y1: 308, x2: 470, y2: 308, width: 2 } as StrokeSegment;
+    const dim = { ...wall, width: 0.25 };
+    expect(demoRuns([...faces, wall], W, FPU)).toEqual([]);
+    expect(demoRuns([...faces, dim], W, FPU)).toHaveLength(1);
+  });
+  it("lettering drawn as strokes is not a dashed line", () => {
+    const tiny: StrokeSegment[] = [];
+    for (const y of [300, 303.75]) for (let x = 100; x < 460; x += 3) tiny.push({ x1: x, y1: y, x2: x + 1.8, y2: y, width: 0.5 } as StrokeSegment);
+    expect(demoRuns(tiny, W, FPU)).toEqual([]);
+  });
+});
+
 describe("demoDoors", () => {
   const word = (str: string, x: number, y: number) => ({ str, x, y, width: str.length * 5, height: 8 });
   const titleBlock = word("A101", 2400, 1700);

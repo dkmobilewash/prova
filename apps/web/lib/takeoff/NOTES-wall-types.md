@@ -378,3 +378,15 @@ E Street against 4 tags and nothing on Green Bay, Murray or Crosslines.
 A sheet can lay one line twice in two pens with offset dashes, which reads as
 solid, so dashes are read per pen. `existingWallSet.ts` gives the walls standing
 on a level, moved onto the new plan; it says when it could not align them.
+
+The legend picks the pattern. Murray's demolish sample is slashed (diagonal
+share 0.20), so there only strips with true diagonals are walls and plain dashes
+are fixtures. A heavy solid line within 10 in of a strip means a skin coming off
+a wall that stays (Bunkie AD101). Dashes under 0.05 in are lettering drawn as
+strokes (Irving has no text layer).
+
+`pairDemoPlans.ts` is the one pairer. A twin number decides, then kind, discipline,
+level and area by title, then grid votes. A slab or finish plan aligns as well as
+the floor plan, so those are excluded before votes are counted. It returns no
+pair rather than guess. A demolition plan drawn on a sheet titled something else
+(Baker A001, "KEYNOTE LEGEND") cannot be seen from titles.
