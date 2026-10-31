@@ -133,6 +133,21 @@ describe("a photo taken on the phone", () => {
     expect(await prisma.jobMedia.count({ where: { jobId } })).toBe(1);
   });
 
+  it("ties a photo to a T&M ticket on this job, and refuses another job's", async () => {
+    const onThisJob = await prisma.tmTicket.create({
+      data: { companyId: context.company.id, jobId, workDate: new Date("2026-09-10T00:00:00Z"), workDescription: "x", snapshot: {}, signerName: "A", signedAt: new Date() },
+    });
+    const onOtherJob = await prisma.tmTicket.create({
+      data: { companyId: context.company.id, jobId: otherJobId, workDate: new Date("2026-09-10T00:00:00Z"), workDescription: "x", snapshot: {}, signerName: "A", signedAt: new Date() },
+    });
+    const refused = await upload({ capturedAt: "2026-09-10T15:00:00.000Z", tmTicketId: onOtherJob.id });
+    expect(refused.status).toBe(400);
+    const taken = await upload({ capturedAt: "2026-09-10T15:00:00.000Z", tmTicketId: onThisJob.id });
+    expect((await taken.json()).tmTicketId).toBe(onThisJob.id);
+    await prisma.jobMedia.deleteMany({ where: { tmTicketId: onThisJob.id } });
+    await prisma.tmTicket.deleteMany({ where: { id: { in: [onThisJob.id, onOtherJob.id] } } });
+  });
+
   it("takes a photo with no location at all — the photo is the point", async () => {
     const res = await upload({ capturedAt: "2026-09-19T15:00:00.000Z", clientOperationId: "op-photo-2" });
     expect(res.status).toBe(201);

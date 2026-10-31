@@ -7,6 +7,7 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Disclosure } from "@/components/Disclosure";
 import { money } from "@/lib/money";
 import type { BuyoutFinding } from "@/lib/buyout-spec-check";
+import { rowSources, specHint, specHintSentence, specHintTally, type SpecHint, type TextSource } from "@/lib/buyout-spec-hints";
 import { SPEC_FINDING_LABEL } from "@/lib/specs/spec-findings";
 import type { BuyoutRow as BuyoutRowData } from "@/lib/purchase-orders";
 
@@ -21,9 +22,34 @@ function overBudgetText(amount: number | null): string | null {
   return amount > 0 ? `${money(amount)} over budget` : `${money(-amount)} under budget`;
 }
 
+/** A word search result, in words. The text it hit is shown because a hit can
+ * sit inside a refusal such as "excludes Firecode". */
+function HintLine({ hint }: { hint: SpecHint }) {
+  return (
+    <span className="mt-1 block text-ink-label">
+      {specHintSentence(hint)}
+      {hint.state === "POSSIBLE" &&
+        [...new Set(hint.hits.map((hit) => hit.text))].map((text) => (
+          <span key={text} className="block text-ink-muted">
+            {text}
+          </span>
+        ))}
+    </span>
+  );
+}
+
 /** Spec findings a person compares for themselves. Shown, not judged: nothing
  * here says the quote meets or misses them. Each carries its quote and page. */
-export function SpecFindingList({ findings, summary }: { findings: BuyoutFinding[]; summary: string }) {
+export function SpecFindingList({
+  findings,
+  summary,
+  sources,
+}: {
+  findings: BuyoutFinding[];
+  summary: string;
+  /** The row's text to search. Findings with no row get no hint. */
+  sources?: TextSource[];
+}) {
   return (
     <Disclosure variant="plain" summary={summary}>
       <ul className="flex flex-col gap-2">
@@ -35,6 +61,7 @@ export function SpecFindingList({ findings, summary }: { findings: BuyoutFinding
             </span>
             <span className="block">{finding.requirement}</span>
             <span className="block text-ink-muted">&ldquo;{finding.quote}&rdquo;</span>
+            {sources && <HintLine hint={specHint(finding, sources)} />}
           </li>
         ))}
       </ul>
@@ -58,6 +85,9 @@ export function BuyoutRow({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(String(row.quantityLeft || row.line.quantity));
+  const boughtOut = row.quantityLeft === 0 && row.line.quantity > 0;
+  const sources = rowSources(row);
+  const tally = specHintTally(findings.map((finding) => specHint(finding, sources)));
 
   function draft(fill: (form: FormData) => void) {
     const form = new FormData();
@@ -88,7 +118,8 @@ export function BuyoutRow({
       {findings.length > 0 && (
         <SpecFindingList
           findings={findings}
-          summary={`Spec says · ${findings.length} to compare before buying`}
+          sources={sources}
+          summary={`Spec says · ${findings.length} to compare before buying${tally ? ` · ${tally}` : ""}`}
         />
       )}
       <label className="flex items-center gap-2 text-xs text-ink-muted">
@@ -105,9 +136,10 @@ export function BuyoutRow({
         </span>
       </label>
 
-      {row.offers.length === 0 && <p className="text-xs text-ink-muted">No current quote on file in this unit.</p>}
+      {boughtOut && <p className="text-xs text-ink-muted">All {row.line.quantity} is on a purchase order, so no quote is offered.</p>}
+      {!boughtOut && row.offers.length === 0 && <p className="text-xs text-ink-muted">No current quote on file in this unit.</p>}
       <ul className="flex flex-col gap-1">
-        {row.offers.map((offer) => (
+        {!boughtOut && row.offers.map((offer) => (
           <li key={offer.quoteId} className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-body">
             <span>
               {offer.vendorName}: {money(offer.unitPrice)} = {money(offer.extended)}
@@ -172,17 +204,16 @@ export function BuyoutRow({
 export function PurchaseOrderActions({
   id,
   status,
-  today,
   document: doc,
 }: {
   id: string;
   status: "DRAFT" | "ISSUED" | "CLOSED";
-  today: string;
   document: PurchaseOrderDocument;
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [date, setDate] = useState(today);
+  // Starts empty. The date a PO was issued or closed is entered, never assumed.
+  const [date, setDate] = useState("");
 
   function move(action: typeof issuePurchaseOrder, key: string) {
     const form = new FormData();
@@ -191,7 +222,8 @@ export function PurchaseOrderActions({
     startTransition(async () => {
       try {
         const result = await action(id, form);
-        if (!result.ok) setError(result.error);
+        if (result.ok) setDate("");
+        else setError(result.error);
       } catch {
         setError("That did not go through. Reload the page and check before trying again.");
       }
@@ -222,19 +254,16 @@ export function PurchaseOrderActions({
         </button>
         {status !== "CLOSED" && (
           <>
-            <input
-              type="date"
-              value={date}
-              onChange={(event) => setDate(event.target.value)}
-              aria-label={status === "DRAFT" ? "Date issued" : "Date closed"}
-              className={inputClass}
-            />
+            <label className="flex items-center gap-2 text-xs text-ink-muted">
+              {status === "DRAFT" ? "Date issued" : "Date closed"}
+              <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className={inputClass} />
+            </label>
             {status === "DRAFT" ? (
-              <button type="button" disabled={isPending} className={btn} onClick={() => move(issuePurchaseOrder, "issuedOn")}>
+              <button type="button" disabled={isPending || !date} className={btn} onClick={() => move(issuePurchaseOrder, "issuedOn")}>
                 Mark as issued
               </button>
             ) : (
-              <button type="button" disabled={isPending} className={btn} onClick={() => move(closePurchaseOrder, "closedOn")}>
+              <button type="button" disabled={isPending || !date} className={btn} onClick={() => move(closePurchaseOrder, "closedOn")}>
                 Close
               </button>
             )}

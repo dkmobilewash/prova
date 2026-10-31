@@ -381,6 +381,8 @@ export async function draftChangeOrderFromTmTicket(ticketId: string): Promise<Ac
       where: { jobId: ticket.jobId, capturedAt: { gte: dayStart, lt: dayEnd } },
     });
 
+    const ticketPhotoCount = await prisma.jobMedia.count({ where: { tmTicketId: ticket.id } });
+
     const title = tmTicketDraftTitle({ day, workDescription: ticket.workDescription });
     const description = tmTicketDraftDescription({
       day,
@@ -390,6 +392,7 @@ export async function draftChangeOrderFromTmTicket(ticketId: string): Promise<Ac
       signedAtText: siteMoment(ticket.signedAt, job.siteTimeZone),
       hasDrawnSignature: ticket.signaturePath !== null,
       photoCount,
+      ticketPhotoCount,
     });
 
     // PRICING, per Diego's decision of 2026-10-30 (lib/change-order-pricing.ts):

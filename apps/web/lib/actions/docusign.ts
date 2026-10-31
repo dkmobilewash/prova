@@ -257,6 +257,7 @@ async function prepare(companyId: string, formData: FormData): Promise<{ error: 
                 costCategory: proposal.costCategory ?? null,
               },
               rates,
+              Number(proposal.unitPrice),
             )
           : [],
       );

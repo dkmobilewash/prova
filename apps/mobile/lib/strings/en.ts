@@ -114,6 +114,7 @@ export const EN = {
   "photos.attachTo": "Attach to",
   "photos.onReport": "On the day's report",
   "photos.onPunchItem": "On a punch list item",
+  "photos.onTicket": "On a T&M ticket",
   "photos.stamped": "The time and place are burned into the photo when you save it.",
   "photos.empty.title": "No photos yet",
   "photos.empty.body":
@@ -362,6 +363,9 @@ export const EN = {
   // ticket-materials
   "tickets.signed": "Signed: {name}",
   "tickets.typed": "(typed)",
+  "tickets.photos.none": "No photo of the work — add one",
+  "tickets.photos.one": "1 photo — add another",
+  "tickets.photos.many": "{count} photos — add another",
   "tickets.snapshot.labor.one": "1 labour entry",
   "tickets.snapshot.labor.many": "{count} labour entries",
   "tickets.snapshot.materials.one": "1 material",

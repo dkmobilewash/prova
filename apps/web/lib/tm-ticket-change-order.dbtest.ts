@@ -204,6 +204,22 @@ describe("a T&M ticket drafts one change order", () => {
     expect(line.unitPrice?.toFixed(2)).toBe("1188.00");
   });
 
+  it("reads ticket photos through the ticket, and a deleted ticket leaves the photo behind", async () => {
+    const company = context.company.id;
+    const fresh = await prisma.tmTicket.create({
+      data: { companyId: company, jobId, workDate: new Date(`${DAY}T00:00:00Z`), workDescription: "Photo ticket", snapshot: {}, signerName: "A", signedAt: new Date() },
+    });
+    const photo = await prisma.jobMedia.create({
+      data: { companyId: company, jobId, blobUrl: "https://x.test/t.jpg", contentType: "image/jpeg", byteSize: 1, capturedAt: new Date(`${DAY}T16:00:00Z`), tmTicketId: fresh.id },
+    });
+    expect(await draftChangeOrderFromTmTicket(fresh.id)).toEqual({ ok: true });
+    const co = await prisma.changeOrder.findFirstOrThrow({ where: { jobId, tmTickets: { some: { id: fresh.id } } }, include: { tmTickets: { select: { media: { select: { id: true } } } } } });
+    expect(co.description).toContain("1 photo was attached to this ticket");
+    expect(co.tmTickets.flatMap((t) => t.media).map((m) => m.id)).toEqual([photo.id]);
+    await prisma.tmTicket.delete({ where: { id: fresh.id } });
+    expect((await prisma.jobMedia.findUniqueOrThrow({ where: { id: photo.id } })).tmTicketId).toBeNull();
+  });
+
   it("refuses a ticket from another company in the same words as a missing one", async () => {
     const other = await prisma.company.create({ data: { name: "Other Co" } });
     const contact = await prisma.contact.create({ data: { companyId: other.id, name: "GC2" } });
