@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import { ToolbarScaleOffer } from "./TakeoffPlanViewer";
 
-const viewer = readFileSync(new URL("./TakeoffPlanViewer.tsx", import.meta.url), "utf8");
+const viewer = readFileSync(`${process.cwd()}/components/TakeoffPlanViewer.tsx`, "utf8");
 
 describe("the printed scale on the toolbar", () => {
   it("names the scale and can be pressed", () => {
