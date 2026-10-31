@@ -213,9 +213,9 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     key: "material-orders",
     model: "materialOrder",
     label: "Material orders",
-    note: "lineItemId is attribution only — no money is summed through it, by agreement.",
+    note: "lineItemId and purchaseOrderLineId are attribution only — no money is summed through them, by agreement.",
     columns: [
-      "id", "jobId", "number", "vendorId", "lineItemId", "description",
+      "id", "jobId", "number", "vendorId", "lineItemId", "purchaseOrderLineId", "description",
       "vendorReference", "notes", "orderedOn", "promisedFor", "orderedByUserId",
       "createdAt", "updatedAt",
     ],
@@ -471,7 +471,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "purchaseOrder",
     label: "Purchase orders",
     note: "A draft is not a commitment. Only issued and closed orders count as committed.",
-    columns: ["id", "jobId", "number", "vendorId", "status", "createdByUserId", "createdAt", "updatedAt"],
+    columns: ["id", "jobId", "number", "vendorId", "status", "issuedOn", "closedOn", "createdByUserId", "createdAt", "updatedAt"],
     scope: byCompany,
   },
   {

@@ -121,6 +121,67 @@ export async function draftPurchaseOrderLine(jobId: string, formData: FormData):
   });
 }
 
+function enteredDay(formData: FormData, key: string): Date | null {
+  const raw = String(formData.get(key) ?? "").trim();
+  const date = new Date(`${raw}T00:00:00.000Z`);
+  return raw && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+/**
+ * Issues a DRAFT: from here it counts as committed, and its lines are locked.
+ * The status test is in the write, so two presses cannot both issue. Nothing is
+ * sent to the vendor; the document is downloaded and sent by a person.
+ */
+export async function issuePurchaseOrder(purchaseOrderId: string, formData: FormData): Promise<ActionResult> {
+  return runAction(async () => {
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) return fail(COSTS_ONLY);
+    const po = await prisma.purchaseOrder.findFirst({
+      where: { id: purchaseOrderId, companyId: context.company.id },
+      select: { id: true, jobId: true, number: true, _count: { select: { lines: true } } },
+    });
+    if (!po) return fail("That purchase order is gone. Reload the page.");
+    if (po._count.lines === 0) return fail(`PO ${po.number} has no lines to issue.`);
+    const issuedOn = enteredDay(formData, "issuedOn");
+    if (!issuedOn) return fail("Enter the date this was issued.");
+
+    const { count } = await prisma.purchaseOrder.updateMany({
+      where: { id: po.id, status: "DRAFT" },
+      data: { status: "ISSUED", issuedOn },
+    });
+    if (count === 0) return fail(`PO ${po.number} has already been issued.`);
+
+    revalidatePath(`/jobs/${po.jobId}`);
+    return ok;
+  });
+}
+
+/** Closes an ISSUED order. Closed still counts as committed: the money was
+ * agreed. A PO is evidence, so it closes and never deletes. */
+export async function closePurchaseOrder(purchaseOrderId: string, formData: FormData): Promise<ActionResult> {
+  return runAction(async () => {
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) return fail(COSTS_ONLY);
+    const po = await prisma.purchaseOrder.findFirst({
+      where: { id: purchaseOrderId, companyId: context.company.id },
+      select: { id: true, jobId: true, number: true, issuedOn: true },
+    });
+    if (!po) return fail("That purchase order is gone. Reload the page.");
+    const closedOn = enteredDay(formData, "closedOn");
+    if (!closedOn) return fail("Enter the date this was closed.");
+    if (po.issuedOn && closedOn < po.issuedOn) return fail("A purchase order can't close before it was issued.");
+
+    const { count } = await prisma.purchaseOrder.updateMany({
+      where: { id: po.id, status: "ISSUED" },
+      data: { status: "CLOSED", closedOn },
+    });
+    if (count === 0) return fail(`Only an issued purchase order can be closed. PO ${po.number} is not issued.`);
+
+    revalidatePath(`/jobs/${po.jobId}`);
+    return ok;
+  });
+}
+
 /**
  * Takes a line off a DRAFT purchase order. Taking the last one removes the
  * draft; its number is not reissued, because the counter only goes up. Nothing
