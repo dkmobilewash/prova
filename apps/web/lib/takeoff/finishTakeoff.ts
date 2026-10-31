@@ -20,6 +20,8 @@ export type FinishLine = { kind: FinishKind; finish: string; quantity: number; u
 export type FinishTakeoff = {
   lines: FinishLine[];
   joined: { room: RoomFromWalls; row: FinishRow }[];
+  /** Regions holding several scheduled rooms, joined only for the finishes those rooms share. */
+  shared: { room: RoomFromWalls; rows: FinishRow[]; differ: FinishKind[] }[];
   /** Found rooms the schedule says nothing about. */
   unjoinedRooms: RoomFromWalls[];
   /** Schedule rows with no found room, so their quantities are missing. */
@@ -46,9 +48,77 @@ export function typeTagsInRooms(rooms: readonly RoomFromWalls[], items: readonly
   return new Map([...found].filter(([, keys]) => keys.size === 1).map(([id, keys]) => [id, [...keys][0]]));
 }
 
+/**
+ * What several rooms in one leaked region have in common. Their areas cannot be
+ * told apart, so a finish counts only where every one of them has it: which
+ * room a square foot belongs to then changes nothing. The rest is left out and named.
+ */
+function commonFinishes(rows: readonly FinishRow[]): { row: FinishRow; differ: FinishKind[] } {
+  const differ: FinishKind[] = [];
+  const same = (kind: FinishKind, value: (r: FinishRow) => string | null) => {
+    const first = value(rows[0]);
+    if (rows.every((r) => value(r) === first)) return first;
+    if (!differ.includes(kind)) differ.push(kind);
+    return null;
+  };
+  const side = (s: "N" | "E" | "S" | "W") => same("wall", (r) => r.sides?.[s] ?? r.wall);
+  const sided = rows.every((r) => r.sides !== null);
+  return {
+    differ,
+    row: {
+      key: rows.map((r) => r.key).join("+"),
+      name: rows.map((r) => r.name).join(" + "),
+      floor: same("floor", (r) => r.floor),
+      base: same("base", (r) => r.base),
+      wall: sided ? null : side("N"),
+      sides: sided ? { N: side("N"), E: side("E"), S: side("S"), W: side("W") } : null,
+      ceiling: same("ceiling", (r) => r.ceiling),
+    },
+  };
+}
+
 /** A takeoff line's words on the estimate, with what kind of finish it is. */
 export function finishLineLabel(line: Pick<FinishLine, "kind" | "finish">): string {
   return `${{ floor: "Floor", base: "Base", wall: "Wall finish", ceiling: "Ceiling" }[line.kind]} ${line.finish}`;
+}
+
+/** Regions closer than this share a wall. */
+const NEIGHBOUR_FEET = 1.5;
+/** Smaller than this is a chase, not a room to floor. */
+const SMALLEST_FINISHED_SQFT = 20;
+/** A type taken from anything smaller is an elevator's or a closet's, which says nothing about the room beside it. */
+const SMALLEST_TYPE_SOURCE_SQFT = 100;
+
+/**
+ * A unit carries one type tag and finds as several regions, so its kitchen and
+ * bath come back with no tag (glen-hazel A-102). A group of untagged regions
+ * takes a type only when every typed region touching the group has that same
+ * type and is room-sized, so it cannot matter which of them it really belongs to. The panel counts these.
+ */
+export function typesFromNeighbours(rooms: readonly RoomFromWalls[], typed: ReadonlyMap<number, string>, feetPerUnit: number): Map<number, string> {
+  const reach = NEIGHBOUR_FEET / feetPerUnit;
+  const edges = new Map(rooms.map((r) => [r.id, roomEdges(r, feetPerUnit)]));
+  const touch = (a: RoomFromWalls, b: RoomFromWalls) => a.xs.some((x, i) => edges.get(b.id)!.some((e) => distanceToEdge(x, a.ys[i], e) <= reach)) || b.xs.some((x, i) => edges.get(a.id)!.some((e) => distanceToEdge(x, b.ys[i], e) <= reach));
+  const open = rooms.filter((r) => !typed.has(r.id) && r.tag === null && !r.sharedTags && r.squareFeet >= SMALLEST_FINISHED_SQFT);
+  const out = new Map<number, string>();
+  const seen = new Set<number>();
+  for (const start of open) {
+    if (seen.has(start.id)) continue;
+    const group = [start];
+    seen.add(start.id);
+    for (let i = 0; i < group.length; i += 1) {
+      for (const next of open) {
+        if (!seen.has(next.id) && touch(group[i], next)) {
+          seen.add(next.id);
+          group.push(next);
+        }
+      }
+    }
+    const sources = rooms.filter((r) => typed.has(r.id) && group.some((g) => touch(g, r)));
+    const types = new Set(sources.map((r) => typed.get(r.id)!));
+    if (types.size === 1 && sources.every((r) => r.squareFeet >= SMALLEST_TYPE_SOURCE_SQFT)) for (const g of group) out.set(g.id, [...types][0]);
+  }
+  return out;
 }
 
 function inside(x: number, y: number, xs: readonly number[], ys: readonly number[]): boolean {
@@ -101,15 +171,24 @@ export function finishTakeoff(input: {
 }): FinishTakeoff {
   const { rooms, schedule, doors, windows, feetPerUnit, heightOf } = input;
   const byKey = new Map(schedule.rows.map((r) => [r.key, r]));
+  const keyOf = (number: string | null | undefined) => number?.toUpperCase().replace(/[\s-]+/g, "");
   const joined: FinishTakeoff["joined"] = [];
+  const shared: FinishTakeoff["shared"] = [];
   const unjoinedRooms: RoomFromWalls[] = [];
+  const used = new Set<string>();
   for (const room of rooms) {
-    const key = schedule.byType ? input.typeOfRoom?.get(room.id) : room.tag?.number?.toUpperCase().replace(/[\s-]+/g, "");
-    const row = key === undefined ? undefined : byKey.get(key);
-    if (row) joined.push({ room, row });
-    else unjoinedRooms.push(room);
+    const keys = schedule.byType ? [input.typeOfRoom?.get(room.id)] : (room.sharedTags ?? [room.tag]).map((t) => keyOf(t?.number));
+    // Only tags the schedule knows count, so a stray keynote cannot unseat a real room.
+    const rows = [...new Set(keys)].flatMap((k) => (k !== undefined && byKey.has(k) ? [byKey.get(k)!] : []));
+    for (const r of rows) used.add(r.key);
+    if (rows.length === 0) unjoinedRooms.push(room);
+    else if (rows.length === 1) joined.push({ room, row: rows[0] });
+    else {
+      const common = commonFinishes(rows);
+      shared.push({ room, rows, differ: common.differ });
+      joined.push({ room, row: common.row });
+    }
   }
-  const used = new Set(joined.map((j) => j.row.key));
   const unjoinedRows = schedule.byType ? [] : schedule.rows.filter((r) => !used.has(r.key));
   const totals = new Map<string, FinishLine & { seen: Set<number> }>();
   const add = (kind: FinishKind, finish: string | null, quantity: number, unit: FinishLine["unit"], room: number) => {
@@ -157,5 +236,5 @@ export function finishTakeoff(input: {
   }
   const order: FinishKind[] = ["floor", "base", "wall", "ceiling"];
   const lines = [...totals.values()].map(({ seen: _s, ...l }) => ({ ...l, quantity: Math.round(l.quantity * 100) / 100 })).sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || a.finish.localeCompare(b.finish));
-  return { lines, joined, unjoinedRooms, unjoinedRows, noHeight, doorsDeducted, windowsDeducted };
+  return { lines, joined, shared, unjoinedRooms, unjoinedRows, noHeight, doorsDeducted, windowsDeducted };
 }

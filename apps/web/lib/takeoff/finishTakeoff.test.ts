@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFinishSchedule, type TextItem } from "./finishSchedule";
-import { finishTakeoff, roomEdges, typeTagsInRooms } from "./finishTakeoff";
+import { finishTakeoff, roomEdges, typesFromNeighbours, typeTagsInRooms } from "./finishTakeoff";
 import type { RoomFromWalls } from "./roomsFromWalls";
 
 const t = (str: string, x: number, y: number): TextItem => ({ str, x, y, width: str.length * 5, height: 8 });
@@ -71,5 +71,26 @@ describe("finishTakeoff", () => {
   });
   it("names each edge by its side of the room", () => {
     expect(roomEdges(room(1, null, 0.1, 0.1, 0.2, 0.1), FPU).map((e) => e.side)).toEqual(["N", "E", "S", "W"]);
+  });
+  it("counts a leaked region only for the finishes its rooms share, and names what it left out", () => {
+    const rows = [{ key: "1", name: "HALL", floor: "TCF-1", base: "RB-1", wall: "PT-1", sides: null, ceiling: "ACT-1" }, { key: "2", name: "OFFICE", floor: "TCF-1", base: "RB-2", wall: "PT-1", sides: null, ceiling: "ACT-1" }];
+    const leaked = { ...room(1, null, 0.1, 0.1, 0.2, 0.1), sharedTags: [{ number: "1" }, { number: "2" }, { number: "A3" }] as never };
+    const out = finishTakeoff({ rooms: [leaked], schedule: { byType: false, rows }, doors: [], windows: [], feetPerUnit: FPU, heightOf: () => 9 });
+    expect(out.lines.map((l) => `${l.kind} ${l.finish}`)).toEqual(["floor TCF-1", "wall PT-1", "ceiling ACT-1"]);
+    expect(out.shared.map((s) => [s.rows.length, s.differ])).toEqual([[2, ["base"]]]);
+    expect(out.unjoinedRows).toEqual([]);
+  });
+  it("a stray tag cannot unseat the one room the schedule knows", () => {
+    const leaked = { ...room(1, null, 0.1, 0.1, 0.2, 0.1), sharedTags: [{ number: "101" }, { number: "A3" }] as never };
+    const out = finishTakeoff({ rooms: [leaked], schedule, doors: [], windows: [], feetPerUnit: FPU, heightOf: () => 9 });
+    expect(out.joined.map((j) => j.row.key)).toEqual(["101"]);
+    expect(out.shared).toEqual([]);
+  });
+  it("an untagged region takes a type only when all its typed neighbours agree", () => {
+    const a = room(1, null, 0.1, 0.1, 0.1, 0.1), b = room(2, null, 0.2, 0.1, 0.1, 0.1), c = room(3, null, 0.3, 0.1, 0.1, 0.1), far = room(4, null, 0.6, 0.1, 0.1, 0.1);
+    expect([...typesFromNeighbours([a, b, c, far], new Map([[1, "T1"]]), FPU)]).toEqual([[2, "T1"], [3, "T1"]]);
+    expect(typesFromNeighbours([a, b, c], new Map([[1, "T1"], [3, "T2"]]), FPU).size).toBe(0);
+    const shaft = room(5, null, 0.15, 0.1, 0.05, 0.05);
+    expect(typesFromNeighbours([shaft, b], new Map([[5, "T7"]]), FPU).size).toBe(0);
   });
 });

@@ -43,6 +43,13 @@ export type RoomTag = {
   /** The centre of the stack, in the same points as the input. */
   x: number;
   y: number;
+  /**
+   * Where the printed number sits, same points. A name can run over a wall
+   * (glen-hazel's "Elevators" spans two shafts, Joplin's DECOMPRESSION sits
+   * over its neighbour) while the number stays in its own room, so this places
+   * the tag and the centre is the fallback.
+   */
+  numberAt?: { x: number; y: number } | null;
 };
 
 /** `93 SF`, `1,337 SF`, `3,780 SQFT`, `178 sq ft`, `32.6 m2`. */
@@ -57,6 +64,13 @@ const DIMENSION_TEXT = /^\d+'\s*-?\s*\d*(?:\s+\d+\/\d+)?"?$/;
  *  Damen` and `ELUTUBA+KÖÖK`), with the punctuation tags carry — or a bare
  *  `#1`, which is how Bunkie names its interview rooms. */
 const NAME_TEXT = /^(?=(?:.*\p{L}){2})[\p{L}0-9 #./&+()'-]+$|^#\d+$/u;
+
+/** A detail callout printed on the sheet, `A1/ A-621`. Joplin prints these over its room names. */
+const DRAWING_REFERENCE = /^[A-Z]{1,2}\d{0,2}\s*\/\s*[A-Z]{1,2}-?\d/;
+/** A drafter's aside: it is printed near a tag and is never part of a room's name. */
+const DRAFTING_WORD = /^(?:ALIGN|TYP\.?|TYPICAL|SIM\.?|SIMILAR|NEW|DESCRIPTION|EQ\.?|V\.?I\.?F\.?)$/i;
+/** A sheet number, `A-411`: it reads as a room number and names no room. */
+const SHEET_NUMBER = /^[A-Z]{1,2}-\d{3}$/;
 
 const SQFT_PER_M2 = 10.7639;
 
@@ -93,11 +107,12 @@ export function looksLikeNoteText(name: string): boolean {
 }
 
 export function readRoomTags(items: readonly PositionedText[]): RoomTag[] {
-  return readRoomTagsRaw(items).filter((tag) => !looksLikeNoteText(tag.name));
+  return readRoomTagsRaw(items).filter((tag) => !looksLikeNoteText(tag.name) && !(tag.number !== null && SHEET_NUMBER.test(tag.number)));
 }
 
 function readRoomTagsRaw(items: readonly PositionedText[]): RoomTag[] {
-  const trimmed = items.map((i) => ({ ...i, str: i.str.trim() })).filter((i) => i.str.length > 0);
+  // Asides are dropped up front, so a stack closes over them and `A3 / SIM` is never a tag.
+  const trimmed = items.map((i) => ({ ...i, str: i.str.trim() })).filter((i) => i.str.length > 0 && !DRAWING_REFERENCE.test(i.str) && !DRAFTING_WORD.test(i.str));
   const centre = (i: PositionedText) => i.x + i.width / 2;
   const used = new Set<PositionedText>();
 
@@ -117,18 +132,20 @@ function readRoomTagsRaw(items: readonly PositionedText[]): RoomTag[] {
   const out: RoomTag[] = [];
   const readStack = (anchor: PositionedText, areaSf: number | null) => {
     let number: string | null = null;
+    let numberItem: PositionedText | null = null;
     const names: string[] = [];
     const stack: PositionedText[] = [anchor];
     let at = anchor;
     for (let guard = 0; guard < 6; guard += 1) {
       const next = above(at);
       if (!next) break;
-      if (DIMENSION_TEXT.test(next.str)) {
+      if (DIMENSION_TEXT.test(next.str) || next.str.startsWith("_")) {
         at = next;
         continue;
       }
       if (number === null && names.length === 0 && areaSf !== null && NUMBER_TEXT.test(next.str)) {
         number = next.str;
+        numberItem = next;
         stack.push(next);
         at = next;
         continue;
@@ -145,12 +162,14 @@ function readRoomTagsRaw(items: readonly PositionedText[]): RoomTag[] {
     for (const i of stack) used.add(i);
     const xs = stack.flatMap((i) => [i.x, i.x + i.width]);
     const ys = stack.flatMap((i) => [i.y, i.y + i.height]);
+    const numbered = numberItem ?? (areaSf === null ? anchor : null);
     out.push({
       name: names.join(" "),
       number,
       areaSf,
       x: (Math.min(...xs) + Math.max(...xs)) / 2,
       y: (Math.min(...ys) + Math.max(...ys)) / 2,
+      numberAt: numbered && { x: centre(numbered), y: numbered.y + numbered.height / 2 },
     });
   };
 
@@ -214,6 +233,7 @@ function readRoomTagsRaw(items: readonly PositionedText[]): RoomTag[] {
       areaSf: null,
       x: (Math.min(...xs) + Math.max(...xs)) / 2,
       y: (Math.min(...ys) + Math.max(...ys)) / 2,
+      numberAt: { x: centre(i), y: i.y + i.height / 2 },
     });
   }
   return out;

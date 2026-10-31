@@ -990,6 +990,11 @@ TAG_DISAGREES group must show "Add as <code> — priced" and the
 type under /wall-types; then the same with the read ON, which must not
 change the groups.
 
+## Naming rooms from the sheet's own tags (2026-10-30)
+
+A tag is placed by its printed NUMBER, with the stack's centre as the fallback. A name can run over a wall while the number stays in its room: glen-hazel's "Elevators" spans two shafts, and Joplin's 149 shared a region with 150 only because of where the stack's centre fell. Detail callouts (`A1/ A-621`) and drafting words (`ALIGN`, `TYP.`, `SIM`) are dropped before stacks are read, so they neither enter a name nor form a tag that knocks a real one out of its room.
+
+What remains in `mergedTags` on Joplin is real leaks and in `unplacedTags` is rooms that never closed. Neither is a naming problem.
 ## Finish takeoff by room (2026-10-30)
 
 `finishSchedule.ts` reads a room finish schedule by column, `finishTakeoff.ts` joins it to the found rooms. Two shapes: one row per room number with four wall sides (Baker A631, Joplin A-611), and one row per finish type, joined through a `T#` tag inside the room (glen-hazel A-105, the table repeats on A-106 and A-107).
@@ -1014,3 +1019,13 @@ Things that look like bugs and are decisions:
 - `EX`, `EX CT` and `EXPOSED` are not priced. `EX ACT/PT-2` is, because the paint is new.
 
 Known limits: north is assumed to be up the page, and the panel says so. Door height 7 ft and window height 4 ft are assumed, also on screen. Baker row 100 prints `STOREFRONT P-1` as one text item across two columns, so its south reads that whole string and its west is empty; that room is not joined today. Composite finishes such as `PT-1, PT-4` stay one line as printed, because the schedule does not say the split.
+
+## Joining what room finding leaves behind (2026-10-30)
+
+Three decisions in `finishTakeoff.ts`, all stated on screen:
+
+- A region holding several scheduled rooms is a leak. Its area cannot be split honestly, so a finish counts only where every room in it has that same finish, and the rest is left out. Inner walls between those rooms are missing from wall and base lengths.
+- Only tags the schedule knows count, so a stray keynote cannot unseat a real room.
+- For a schedule of types, an untagged group of regions takes a type only when every typed neighbour has that type and is at least 100 sf. Without the size floor, rooms beside glen-hazel's elevator shafts took T7, the elevator finish.
+
+A bare number in a region is deliberately NOT a join: door marks print the room's own number.
