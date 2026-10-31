@@ -71,6 +71,8 @@ import {
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
 import { addSheetExclusion, clearSheetExclusions } from "@/lib/actions/takeoffExclusions";
 import { runAt, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
+import { suggestScaleFromDoors, suggestionForm, wantsSuggestion, type SuggestedScale } from "@/lib/takeoff/suggestedScale";
+import { TakeoffScaleSuggestion } from "./TakeoffScaleSuggestion";
 import { loadPlanText, type PlanTextView } from "@/lib/actions/planTextRead";
 import { PlanTextPanel } from "@/components/PlanTextPanel";
 import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
@@ -985,6 +987,10 @@ export function TakeoffPlanViewer({
     setUserAside([]);
   }, [sheet?.id, sheet?.exclusions]);
   const calibration = sheet?.calibration ?? null;
+  // A scale proposed from the doors, by page. Null is "nothing to offer" or
+  // "not this", and both stop it being worked out again. See `suggestedScale.ts`.
+  const [scaleSuggestions, setScaleSuggestions] = useState<Record<number, SuggestedScale | null>>({});
+  const scaleSuggestion = calibration === null ? (scaleSuggestions[pageNumber] ?? null) : null;
   /**
    * What the last detection on this page was computed FROM.
    *
@@ -2345,6 +2351,39 @@ export function TakeoffPlanViewer({
     return doorsByGroup(found ?? [], placed, feetPerUnit);
   }, [found, planText, feetPerUnit, postedDoorMarks]);
 
+  const suggestionDue =
+    pageSize !== null &&
+    scaleSuggestions[pageNumber] === undefined &&
+    wantsSuggestion({
+      calibrated: calibration !== null,
+      readOnly,
+      labelling: answerKey !== undefined,
+      printedPrefill: scalePrefillByPage[pageNumber] !== undefined,
+      viewScales: viewScalesByPage?.[pageNumber]?.length ?? 0,
+    });
+  useEffect(() => {
+    if (!suggestionDue) return;
+    const doc = docRef.current as { getPage: (n: number) => Promise<unknown> } | null;
+    if (doc === null) return;
+    let cancelled = false;
+    void (async () => {
+      let suggestion: SuggestedScale | null = null;
+      try {
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const layers = await layersOf(doc as never).catch(() => null);
+        const page = await doc.getPage(pageNumber);
+        const { segments } = await segmentsFromOpenPage(page as never, pdfjs as never, pageNumber, layers as never);
+        suggestion = suggestScaleFromDoors(segments);
+      } catch {
+        // A proposal that cannot be worked out is no proposal; the sheet still opens.
+      }
+      if (!cancelled) setScaleSuggestions((was) => ({ ...was, [pageNumber]: suggestion }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [suggestionDue, pageNumber]);
+
   useEffect(() => {
     if (seeded.current.has(pageNumber)) return;
     const stored = storedWallsFor(storedWallsByPage, pageNumber);
@@ -3239,6 +3278,14 @@ export function TakeoffPlanViewer({
 
   const scaleReading = calibration ? readScale(calibration, sheet?.pageWidthPt ?? null) : null;
 
+  async function onConfirmSuggestion(): Promise<string | null> {
+    if (scaleSuggestion === null || pageSize === null) return "The sheet is still loading. Try again.";
+    const saved = await saveTakeoffCalibration(jobId, suggestionForm(scaleSuggestion, { planId, pageNumber, ...pageSize }));
+    if (!saved.ok) return saved.error;
+    setScaleSuggestions((was) => ({ ...was, [pageNumber]: null }));
+    return null;
+  }
+
   return (
     <div className={`flex flex-col gap-3${fill ? " h-full min-h-0" : ""}`}>
       {/* ── Toolbar ───────────────────────────────────────────────── */}
@@ -3680,6 +3727,13 @@ export function TakeoffPlanViewer({
           honest than "it does your takeoff": the biggest wall types come for
           free. Accepting one group on one real sheet replaced ninety-nine hand
           traces. Whatever it missed is still traced the way it always was. */}
+      {scaleSuggestion !== null && (
+        <TakeoffScaleSuggestion
+          suggestion={scaleSuggestion}
+          onConfirm={onConfirmSuggestion}
+          onDismiss={() => setScaleSuggestions((was) => ({ ...was, [pageNumber]: null }))}
+        />
+      )}
       {/* ── THE SHEET IS THE INSTRUMENT, SO IT GETS THE ROOM ──
           Found walls used to stack ABOVE the drawing, and the frame reserved a
           fixed 22rem for them whether they were there or not. With six groups
