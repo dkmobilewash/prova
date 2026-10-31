@@ -1,5 +1,6 @@
-import { PDFArray, PDFDocument, PDFRawStream, decodePDFRawStream } from "pdf-lib";
+import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
+import { drawnStrings } from "@/lib/pdfDrawnStrings.testutil";
 import { calculatePayAppLineItem, calculatePayAppSummary, type PayAppLineItemInput } from "@/lib/pay-application";
 import { money } from "@/lib/money";
 import { formatPercent, g702Document, G702_LINES, party, type G702Document } from "./g702";
@@ -17,26 +18,6 @@ import { buildG702Pdf, g702FileName } from "./g702-pdf";
  * given must be ABSENT, and the scan must find a plausible number of
  * strings, or an extractor matching nothing would pass every "contains".
  */
-
-async function drawnStrings(bytes: Uint8Array): Promise<string[]> {
-  const pdf = await PDFDocument.load(bytes);
-  const out: string[] = [];
-  for (const page of pdf.getPages()) {
-    const contents = page.node.Contents();
-    const streams =
-      contents instanceof PDFArray
-        ? contents.asArray().map((ref) => pdf.context.lookup(ref))
-        : [contents];
-    for (const stream of streams) {
-      if (!(stream instanceof PDFRawStream)) throw new Error("content stream is not a raw stream");
-      const text = Buffer.from(decodePDFRawStream(stream).decode()).toString("latin1");
-      for (const match of text.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/g)) {
-        out.push(Buffer.from(match[1], "hex").toString("latin1"));
-      }
-    }
-  }
-  return out;
-}
 
 function fixture(rowCount: number): G702Document {
   const inputs: PayAppLineItemInput[] = Array.from({ length: rowCount }, (_, i) => ({

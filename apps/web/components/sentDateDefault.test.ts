@@ -151,6 +151,7 @@ const unsentSubmittal = {
   description: null,
   specSection: "09 22 16",
   drawingReference: null,
+  gcName: "Acme General",
   submittedByName: "Tester",
   revisions: [],
 };
@@ -192,7 +193,7 @@ describe("a new record does not claim to have been sent", () => {
     // where the send is the action already chosen and the field is
     // `required`. A sweep that removed localToday() everywhere fails here.
     render(
-      createElement(SubmittalRow, {
+      createElement(SubmittalRow, { companyName: "Drywall Co",
         submittal: unsentSubmittal,
         today: "2026-09-21",
         canDelete: true,
@@ -223,7 +224,7 @@ describe("a stored calendar day reads the way the rest of the app writes one", (
 
   it("renders a submittal revision's dates the same way", () => {
     render(
-      createElement(SubmittalRow, {
+      createElement(SubmittalRow, { companyName: "Drywall Co",
         submittal: sentSubmittal,
         today: "2026-09-21",
         canDelete: true,

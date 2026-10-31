@@ -120,6 +120,7 @@ const returnedSubmittal = {
   description: null,
   specSection: "09 22 16",
   drawingReference: null,
+  gcName: "Acme General",
   submittedByName: "Tester",
   revisions: [
     {
@@ -186,9 +187,31 @@ describe("an RFI's answer can point at the GC's own letter", () => {
 });
 
 describe("a submittal revision can point at the stamp it records", () => {
-  it("renders the link beside the outcome, labelled the way it was named", () => {
+  it("says what the package held, when one was built here", () => {
     render(
       createElement(SubmittalRow, {
+        companyName: "Drywall Co",
+        submittal: {
+          ...returnedSubmittal,
+          revisions: [
+            {
+              ...returnedSubmittal.revisions[0],
+              packageContents: { files: [{ name: "board.pdf", pages: 3 }], totalPages: 4 },
+            },
+          ],
+        },
+        today: "2026-09-21",
+        canDelete: false,
+        showJob: false,
+      }),
+    );
+    for (const summary of Array.from(document.querySelectorAll("summary"))) (summary as HTMLElement).click();
+    expect(document.body.textContent).toContain("Sent: 1 file, 4 pages: board.pdf (3 p)");
+  });
+
+  it("renders the link beside the outcome, labelled the way it was named", () => {
+    render(
+      createElement(SubmittalRow, { companyName: "Drywall Co",
         submittal: {
           ...returnedSubmittal,
           revisions: [
@@ -214,7 +237,7 @@ describe("a submittal revision can point at the stamp it records", () => {
 
   it("falls back to words rather than a bare URL when no label was given", () => {
     render(
-      createElement(SubmittalRow, {
+      createElement(SubmittalRow, { companyName: "Drywall Co",
         submittal: {
           ...returnedSubmittal,
           revisions: [
@@ -235,7 +258,7 @@ describe("a submittal revision can point at the stamp it records", () => {
 
   it("renders NO link and no dangling separator when there is no document", () => {
     render(
-      createElement(SubmittalRow, {
+      createElement(SubmittalRow, { companyName: "Drywall Co",
         submittal: returnedSubmittal,
         today: "2026-09-21",
         canDelete: false,

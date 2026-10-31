@@ -703,6 +703,14 @@ model SubmittalRevision {
   /// What to call the link on screen. Null renders the outcome alone.
   responseFileName String?
 
+  /// What went into the package this revision was sent with: file names and
+  /// page counts ONLY, `{ files: [{ name, pages }], totalPages }`, written by
+  /// lib/submittal-package.ts. The package itself is assembled in the
+  /// browser and never stored (Diego, 2026-10-30), so this is what lets the
+  /// register say what was sent rather than only that something was. Null
+  /// on every revision recorded without building a package here.
+  packageContents Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
