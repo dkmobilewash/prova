@@ -44,7 +44,7 @@ describe.skipIf(DIR === "" || LABELS === "")("answer keys that may still hold ex
   it("lists them for a person to re-check", { timeout: 7_200_000 }, async () => {
     const training: string[] = [];
     const held: string[] = [];
-    let sheets = 0;
+    const read: string[] = [];
     for (const dir of readdirSync(LABELS)) {
       if (!existsSync(join(LABELS, dir))) continue;
       const pdf = findPdf(dir);
@@ -68,7 +68,7 @@ describe.skipIf(DIR === "" || LABELS === "")("answer keys that may still hold ex
         const saved = JSON.parse(readFileSync(join(LABELS, dir, file), "utf8")) as Saved;
         const st = await doc.pageStrokes(saved.page);
         if (st.segments.length < 100) continue;
-        sheets += 1;
+        read.push(`${dir}/${sheet}`);
         const W = st.widthPt, fpu = saved.feetPerUnit;
         const units = st.segments.map((o) => ({ ...o, x1: o.x1 / W, y1: o.y1 / W, x2: o.x2 / W, y2: o.y2 / W }));
         const key = saved.verdicts.filter((v) => v.verdict === "wall" && (v.thicknessFeet ?? 0) > 0).map((v) => v as unknown as WallCandidate);
@@ -100,7 +100,7 @@ describe.skipIf(DIR === "" || LABELS === "")("answer keys that may still hold ex
       }
       await doc.close();
     }
-    console.log(`\nSTALE-KEY CANDIDATES, ${sheets} sheets read\nTRAINING\n${training.join("\n")}\nHELD-OUT, names only\n  ${held.join("\n  ")}`);
-    expect(sheets, "no sheet was read").toBeGreaterThan(0);
+    console.log(`\nSTALE-KEY CANDIDATES, ${read.length} sheets read\nTRAINING\n${training.join("\n")}\nHELD-OUT, names only\n  ${held.join("\n  ")}`);
+    expect(read.length, "no sheet was read").toBeGreaterThan(0);
   });
 });
