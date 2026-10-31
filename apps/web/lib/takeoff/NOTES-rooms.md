@@ -1044,3 +1044,9 @@ Unnamed parts under 100 sf are dropped from a split, and unnamed regions under 2
 Joplin's largest region left, 1,642 sf, is DINING + KITCHEN + HALL, which the plan draws as one open space. That is correct, not a miss. Baker's 100, 106 and 112 never close, and no split reaches them, because a split needs a region to start from.
 
 A corridor no longer has a say in a neighbour's finish type: once split out, glen-hazel's T3 corridor blocked every T1 room behind it, 25 joined to 16.
+
+## Counts and demolition reach the estimate (2026-10-31)
+
+The end-to-end check found "Send to estimate" wrote lines only for items with an assembly. A count and Demo walls have none, so they were named as unpriced and no line appeared, though the panel says the name becomes the line item. `syncTakeoffItemLines` now writes a plain line for them: a quantity, a unit, no price. Measurements already posted from the list are left out, so a count is never on the estimate twice.
+
+Demolition sheets that are not about walls no longer offer Find demolition. E Street's site, ceiling, roof, electrical and mechanical sheets took Demo walls from 226 ft to 1,706 ft.

@@ -91,6 +91,7 @@ describe("the rest of the demolition path", () => {
   it("a sheet says it is demolition by title or number", () => {
     expect(["A1.1 · DEMOLITION - FLOOR PLAN", "D100", "AD101", "D-1", "BASEMENT DEMO"].every(demoSheetTitle)).toBe(true);
     expect(["A101 · FLOOR PLAN", "E2.01", null].some(demoSheetTitle)).toBe(false);
+    expect(["A0.1 · DEMOLITION SITE PLAN", "A1.3 · DEMOLITION - REFLECTED CEILING PLAN", "A1.4 · DEMOLITION - ROOF PLAN", "M1.1 · MECHANICAL DEMOLITION PLAN", "ED1.01 · ELECTRICAL DEMOLITION LEVEL 1 PLAN"].some(demoSheetTitle)).toBe(false);
   });
   it("a run inside a section view is left out", () => {
     const strokes = [...dashed(100, 460, 300), ...dashed(100, 460, 303.75)];
