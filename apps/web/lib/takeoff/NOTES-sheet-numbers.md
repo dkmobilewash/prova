@@ -92,3 +92,11 @@ confusions inside the number, which a vocabulary cannot see either.
   stores the read; an observation like `printedScale`, not a label.
 - `workspaceLoad.ts` hands it to `sheetPickerLabel` for a scanned page that
   the inventory could not name. Nothing derived is stored.
+
+## 6. Numbers the text-layer reader missed (2026-10-31)
+
+Four causes, all on sheets with a text layer: a number split into items (`I` `-` `000` on HPL, `G` `−` `001` on Topeka, a real minus sign), a two-part prefix (`P-A1.1` on Riverside), the sheet's place in the set after the number (`C0.10 (2 OF 29)` on Eleven03's approved set), and a joined number must not be doubled: Murray prints every number twice over itself, which the first version of the join read as `A110A110`. A sweep of every training set against the old reader caught that.
+
+Eleven03's p19 and p22 had read `C2` and `B3` off the page, wrongly; they now read C5.10 and C6.11.
+
+Lettering drawn as strokes is a different class: all 26 pages of 108049 and Topeka's 34 civil sheets (`C100`). OCR is the only reader for it. The bottom-right cell does not find 108049's, because the sheet's content is turned a quarter inside an unrotated portrait page, so its number sits sideways at bottom-left.
