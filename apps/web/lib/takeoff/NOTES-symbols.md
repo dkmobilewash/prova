@@ -211,3 +211,11 @@ applied printed scales only to give its rows something to point at.
 it required for lines and areas. A placeholder calibration was rejected: it
 would be a made-up scale, and it would mark the sheet as scaled. The save no
 longer applies printed scales, so counting never changes a sheet's scale.
+
+## Chrome's click test, 2026-10-31
+
+Measured on Baker EL1.01. Boxing an OS beside other fixtures gave 1 to 3 "only where it is tagged R1/R2/PC": not a carried tag, but the nearest neighbour's tag applied to a symbol with its own label. A label now wins and no tag is read. Some OS boxes still return 1 or 2, which is box placement, not tags; the ones that catch the circle cleanly return 16.
+
+E0.02's false hits were boxes with XXXXXX across them. A template with nothing printed on it now refuses a match with text overlapping it. E0.03's three to five hits are legend samples and still count; the true fixture count is what EL1.01 says.
+
+`tagBeside` read `made.box` on other sheets, where that box means nothing, so the walk carries `decidedTag` from the boxed sheet.

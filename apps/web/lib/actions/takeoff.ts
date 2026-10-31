@@ -1,5 +1,6 @@
 "use server";
 
+import { countItemFor } from "@/lib/takeoff/countItem";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { isBlank, labelFromKey, parseNumericInput } from "@/lib/numeric-input";
@@ -760,7 +761,8 @@ export async function saveTakeoffMeasurement(
   const created = await prisma.takeoffMeasurement.create({
     select: { id: true },
     data: {
-      itemId: itemId === "" ? null : itemId,
+      // A count is named as it is saved, and that name is its item.
+      itemId: itemId !== "" ? itemId : kind === "COUNT" ? await countItemFor(company.id, jobId, label) : null,
       pageId: page.id,
       calibrationId: calibration?.id ?? null,
       kind,

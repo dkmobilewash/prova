@@ -285,6 +285,7 @@ export function TakeoffPlanViewer({
   onPageChange,
   fill = false,
   panelOpen = true,
+  onResults,
   readOnly = false,
   roomFinder = false,
   symbolCount = false,
@@ -358,6 +359,12 @@ export function TakeoffPlanViewer({
    * canvas takes the space it gives up.
    */
   panelOpen?: boolean;
+  /**
+   * A Find the estimator pressed has come back. The workspace opens its rail on
+   * this: results live in that rail and it starts closed, so without it a Find
+   * ends with nothing on screen.
+   */
+  onResults?: () => void;
   /**
    * No tools and no actions — a phone, where the screen is for LOOKING at a
    * takeoff somebody else made.
@@ -1578,7 +1585,7 @@ export function TakeoffPlanViewer({
       symbolTemplateRef.current =
         made === null
           ? null
-          : { made, widthPt: W, fpu: printed?.declaredDistanceFeet ?? feetPerUnit ?? null, number: sheetNumberFrom({ pageNumber, widthPt: W, heightPt: pageSize.heightPt, rotation: 0, items: words } as never).sheetNumber };
+          : { made: { ...made, decidedTag: found?.tag ?? null }, widthPt: W, fpu: printed?.declaredDistanceFeet ?? feetPerUnit ?? null, number: sheetNumberFrom({ pageNumber, widthPt: W, heightPt: pageSize.heightPt, rotation: 0, items: words } as never).sheetNumber };
       setAcross(null);
       setSymbols({
         page: pageNumber,
@@ -2541,6 +2548,7 @@ export function TakeoffPlanViewer({
     const result = roomsFromWalls({ walls, feetPerUnit, text: wordsRef.current, widthPt: pageSize.widthPt });
     setRooms(result);
     setRoomsOnPage(pageNumber);
+    onResults?.();
     setHoveredRoom(null);
     setRoomCeilings(null);
     // ── THE CEILINGS, FROM THIS SHEET AND THE PLAN'S CEILING PAGES ──
@@ -2986,6 +2994,7 @@ export function TakeoffPlanViewer({
       } else {
         setOpenings(null);
       }
+      onResults?.();
       setFound(
         doubted !== null
           ? regroup(runs.filter((_, at) => !doubted.has(at)))
@@ -4185,8 +4194,8 @@ export function TakeoffPlanViewer({
           onAcross={(scope) => void searchAcrossSheets(scope)}
           onCancelAcross={() => { acrossCancel.current = true; }}
           onClear={() => { acrossCancel.current = true; setAcross(null); setSymbols(null); }}
-          onSaved={(saved) => {
-            setSymbols(null);
+          onSaved={(saved, keepOpen) => {
+            if (!keepOpen) setSymbols(null);
             onMeasurementSaved?.({ id: saved.id, kind: "COUNT" });
           }}
         />

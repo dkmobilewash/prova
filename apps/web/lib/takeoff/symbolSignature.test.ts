@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StrokeSegment } from "./wallVectors";
-import { coverageOf, findSymbols, samePen, signatureDistance, signatureOf, strokesInBox, symbolInk, withoutText } from "./symbolSignature";
+import { coverageOf, findSymbols, findSymbolsFrom, samePen, signatureDistance, signatureOf, strokesInBox, symbolInk, symbolTemplate, withoutText } from "./symbolSignature";
 
 /** A duplex receptacle as CAD draws it: a circle (12 pieces) with two parallel ticks. */
 function receptacle(cx: number, cy: number, r: number, rot = 0, mirror = false): StrokeSegment[] {
@@ -170,6 +170,34 @@ describe("a number inside is the instance, a type tag beside is the kind", () =>
     const found = findSymbols(sheet, text, { x1: 0.195, y1: 0.195, x2: 0.205, y2: 0.205 });
     expect(found.label).toBeNull();
     expect(found.matches.length).toBe(3);
+  });
+  it("letters inside say what it is, so a neighbour's tag asks nothing of the matches", () => {
+    const sheet = [...circle(0.2, 0.2, 0.004), ...circle(0.5, 0.2, 0.004), ...circle(0.5, 0.5, 0.004)];
+    const text = [
+      { x: 0.198, y: 0.199, width: 0.004, height: 0.002, str: "OS" },
+      { x: 0.498, y: 0.199, width: 0.004, height: 0.002, str: "OS" },
+      { x: 0.498, y: 0.499, width: 0.004, height: 0.002, str: "OS" },
+      { x: 0.196, y: 0.19, width: 0.012, height: 0.003, str: "R1" },
+    ];
+    const found = findSymbols(sheet, text, { x1: 0.195, y1: 0.195, x2: 0.205, y2: 0.205 });
+    expect(found.tag).toBeNull();
+    expect(found.matches).toHaveLength(3);
+  });
+  it("an empty symbol does not match the same shape with text across it", () => {
+    const sheet = [...circle(0.2, 0.2, 0.004), ...circle(0.5, 0.2, 0.004), ...circle(0.5, 0.5, 0.004)];
+    const text = [{ x: 0.503, y: 0.499, width: 0.02, height: 0.002, str: "XXXXXX" }];
+    const found = findSymbols(sheet, text, { x1: 0.195, y1: 0.195, x2: 0.205, y2: 0.205 });
+    expect(found.matches).toHaveLength(2);
+  });
+  it("on another sheet the tag decided on the boxed sheet is used, not whatever sits at that spot", () => {
+    const sheet = [...circle(0.2, 0.2, 0.004), ...circle(0.5, 0.2, 0.004)];
+    const text = [{ x: 0.196, y: 0.19, width: 0.012, height: 0.003, str: "E2 /INV-1" }, { x: 0.496, y: 0.19, width: 0.012, height: 0.003, str: "E2 /INV-3" }];
+    const made = symbolTemplate(sheet, text, { x1: 0.195, y1: 0.195, x2: 0.205, y2: 0.205 })!;
+    const other = [...circle(0.2, 0.2, 0.004), ...circle(0.5, 0.2, 0.004), ...circle(0.5, 0.5, 0.004)];
+    const otherText = [{ x: 0.196, y: 0.19, width: 0.012, height: 0.003, str: "S1" }, { x: 0.496, y: 0.19, width: 0.012, height: 0.003, str: "E2" }, { x: 0.496, y: 0.49, width: 0.012, height: 0.003, str: "E2" }];
+    const found = findSymbolsFrom(other, otherText, { ...made, decidedTag: "E2" });
+    expect(found.tag).toBe("E2");
+    expect(found.matches).toHaveLength(2);
   });
   it("the same block tagged E2 and R2 beside it is two kinds", () => {
     const sheet = [...circle(0.2, 0.2, 0.004), ...circle(0.5, 0.2, 0.004), ...circle(0.5, 0.5, 0.004)];

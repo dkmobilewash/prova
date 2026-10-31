@@ -525,6 +525,10 @@ export type SymbolTemplate = {
   signature: Signature;
   /** Strokes the box held before the centre weighting, for the panel's sentence. */
   boxed: number;
+  /** Nothing is printed in the symbol's middle, so a match with text there is something else. */
+  blank?: boolean;
+  /** The tag decided on the boxed sheet, set before the template walks other sheets. */
+  decidedTag?: string | null;
   /**
    * The words printed INSIDE the box, upper-cased and joined — "OS" in an
    * occupancy sensor's circle, "PC" in a photocell's. Baker's lighting plan
@@ -544,6 +548,15 @@ export type SymbolTemplate = {
  * eighteen door hexagons would be eighteen symbols otherwise. Letters name
  * the kind: OS, PC, GFI, WP.
  */
+/** Whether any text overlaps a symbol, digits included. Overlap, not centre: XXXXXX straddles two boxes on E0.02. */
+function textInside(text: readonly TextBox[], box: Box): boolean {
+  const x1 = Math.min(box.x1, box.x2), x2 = Math.max(box.x1, box.x2), y1 = Math.min(box.y1, box.y2), y2 = Math.max(box.y1, box.y2);
+  return text.some((t) => {
+    if (t.str === undefined || t.str.trim() === "") return false;
+    return t.x < x2 && t.x + t.width > x1 && t.y < y2 && t.y + t.height > y1;
+  });
+}
+
 export function labelInside(text: readonly TextBox[], box: Box): string | null {
   // The inner half of the box: a switch-leg "a" at a fixture's corner is in
   // the box the estimator drew and is not inside the symbol.
@@ -604,7 +617,8 @@ export function symbolTemplate(segments: readonly StrokeSegment[], text: readonl
   const own = symbolInk(templateStrokes(clean, box));
   const sig = signatureOf(own);
   if (sig === null) return null;
-  return { strokes: own, box, signature: sig, boxed: own.length, label: labelInside(text, box), tag: tagBeside(text, box, sig.radius) };
+  const ink = { x1: Math.min(...own.flatMap((s) => [s.x1, s.x2])), y1: Math.min(...own.flatMap((s) => [s.y1, s.y2])), x2: Math.max(...own.flatMap((s) => [s.x1, s.x2])), y2: Math.max(...own.flatMap((s) => [s.y1, s.y2])) };
+  return { strokes: own, box, signature: sig, boxed: own.length, label: labelInside(text, box), tag: tagBeside(text, box, sig.radius), blank: !textInside(text, ink) };
 }
 
 /** The box's strokes less the grey background, when black carries the symbol — see `BLACK_IS_THE_SYMBOL`. */
@@ -629,7 +643,7 @@ export function scaleSymbolTemplate(template: SymbolTemplate, factor: number): S
   const strokes = template.strokes.map((s) => ({ ...s, x1: sx(s.x1), y1: sy(s.y1), x2: sx(s.x2), y2: sy(s.y2) }));
   const box = { x1: sx(template.box.x1), y1: sy(template.box.y1), x2: sx(template.box.x2), y2: sy(template.box.y2) };
   const sig = signatureOf(strokes);
-  return { strokes, box, signature: sig ?? template.signature, boxed: template.boxed, label: template.label, tag: template.tag };
+  return { strokes, box, signature: sig ?? template.signature, boxed: template.boxed, label: template.label, tag: template.tag, blank: template.blank, decidedTag: template.decidedTag };
 }
 
 /**
@@ -715,7 +729,9 @@ export function findSymbolsFrom(
   // ── THE LETTERS INSIDE ARE PART OF THE SYMBOL ──
   // A footprint a quarter larger than the template's, because the match box
   // is the strokes' extent and a letter can sit at the rim.
-  const labelled = made.label === null ? matches : matches.filter((m) => {
+  // An empty symbol's matches are empty too: Baker's E0.02 prints XXXXXX in a
+  // box the shape of a troffer's, in its legend of tags.
+  const labelled = made.label === null ? matches.filter((m) => !made.blank || !textInside(text, m.box)) : matches.filter((m) => {
     const w = m.box.x2 - m.box.x1, h = m.box.y2 - m.box.y1;
     return labelInside(text, { x1: m.box.x1 - w / 4, y1: m.box.y1 - h / 4, x2: m.box.x2 + w / 4, y2: m.box.y2 + h / 4 }) === made.label;
   });
@@ -723,7 +739,10 @@ export function findSymbolsFrom(
   // Decided against the matches: of the tag-like tokens beside the template,
   // the one the matches carry too (an exit sign's "X1" over the switch
   // zone's "LV2" written nearer to it).
-  const tag = tagBeside(text, made.box, sig.radius, labelled);
+  // Letters inside already say what the symbol is, so a tag beside it can only
+  // be its neighbour's: an OS sensor by an R1 troffer is still an OS. On another
+  // sheet `made.box` means nothing, so the tag decided on the boxed sheet travels.
+  const tag = made.label !== null ? null : made.decidedTag !== undefined ? made.decidedTag : tagBeside(text, made.box, sig.radius, labelled);
   const tagged = tag === null ? labelled : labelled.filter((m) => tagsWithin(text, m.box, sig.radius).includes(tag));
   return {
     matches: tagged, template: sig, candidates: first.length, kept: tpl.length, boxed: made.boxed,
