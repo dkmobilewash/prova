@@ -1027,6 +1027,12 @@ const SECTION_DECIDED: Record<
     reason:
       "Same section and the same capability as the upload it reverses, for the same reason. Nothing is sent to the local either way; the row and the link to any scanned slip are this company's own record of the referral.",
   },
+  "jobMedia.recordJobMedia": {
+    capability: "MANAGE_FIELD",
+    section: "T&M tickets",
+    reason:
+      "Already asserts MANAGE_FIELD. Its new door is the Add a photo control on a T&M ticket row, inside the section the crew tab withholds behind `showsField`, so the capability matches the action's own and its other doors, /photos and the job's photo section.",
+  },
   "changeOrders.draftChangeOrderFromTmTicket": {
     capability: "MANAGE_FIELD",
     section: "T&M tickets",
@@ -1972,6 +1978,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // "Demote, don't hide": the owner's switch (behind /settings).
   demotedWalls: () => import("./actions/demotedWalls"),
   symbolCount: () => import("./actions/symbolCount"),
+  // Find demolition's save, behind the takeoff's job-costs gate.
+  demoTakeoff: () => import("./actions/demoTakeoff"),
   // Whole-set takeoff: the owner's switch (behind /settings) and the per-sheet
   // summary read (behind the takeoff's job-costs gate). The run itself is
   // planIngest's start/advance, listed above.

@@ -19,6 +19,8 @@ import {
  * typed in as a constant that could drift from the recap.
  */
 
+const RECAP_NONE = recapRatesFrom(null);
+
 const RATES: RecapRates = {
   materialMarkupPercent: 12,
   laborMarkupPercent: 15,
@@ -162,12 +164,20 @@ describe("tmTicketProposals", () => {
 describe("pricingBackupLines", () => {
   it("lists cost, every recap step with its rate, and the sell — and nothing for an unpriced line", () => {
     const line = { quantity: 40, unitCost: 67.56, costCategory: "LABOR" as const };
-    const lines = pricingBackupLines(line, RATES);
+    const lines = pricingBackupLines(line, RATES, priceLine(line, RATES).unitPrice!);
     const expected = bidRecap([{ id: "x", ...line, unitPrice: null }], RATES);
     expect(lines[0]).toBe("Cost $67.56 × 40 = $2,702.40");
     expect(lines).toHaveLength(2 + expected.steps.length);
     expect(lines[1]).toBe("Labor markup 15%: +$405.36");
     expect(lines.at(-1)).toMatch(/^Sell \$[\d,.]+ × 40 = \$[\d,.]+$/);
-    expect(pricingBackupLines({ quantity: 1, unitCost: null, costCategory: "LABOR" }, RATES)).toEqual([]);
+    expect(pricingBackupLines({ quantity: 1, unitCost: null, costCategory: "LABOR" }, RATES, 1)).toEqual([]);
+  });
+
+  it("prints no backup when the line's price is not what these rates give", () => {
+    const line = { quantity: 1, unitCost: 1000, costCategory: "EQUIPMENT" as const };
+    const recapped = priceLine(line, RATES).unitPrice!;
+    expect(pricingBackupLines(line, RATES, recapped).at(-1)).toContain(`Sell $`);
+    expect(pricingBackupLines(line, RATES, 1500)).toEqual([]);
+    expect(pricingBackupLines(line, RECAP_NONE, recapped)).toEqual([]);
   });
 });

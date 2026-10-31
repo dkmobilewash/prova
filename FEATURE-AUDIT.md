@@ -33,7 +33,7 @@ drift failure pointing in the unusual direction: the warning was stale, not
 the data. Same lesson as CLAUDE.md's `MIGRATE_EXPECT_HOST` deletion — a doc
 note that says "X has not been done" is a claim with an expiry date on it.
 
-**155 items audited — 132 built / 17 partial / 5 missing / 1 descoped**
+**155 items audited — 133 built / 16 partial / 5 missing / 1 descoped**
 
 (THIS IS THE FOURTH MERGE IN A DAY WHERE BOTH SIDES' TOTALS WERE WRONG, and
 the count is now worth less than the habit. Sheet 17 gained two rows on
@@ -101,8 +101,8 @@ header cannot.)
 
 | Status | Count |
 | --- | --- |
-| Built | 132 |
-| Partial | 17 |
+| Built | 133 |
+| Partial | 16 |
 | Missing | 5 |
 | Descoped | 1 |
 
@@ -384,7 +384,7 @@ elsewhere in this pass. Reasoning in `NAV-IA-AUDIT.md`.*
 | Built | Multi-job scheduling view (which crews are where, by trade) | `/deployment` — crew-first, one row per person naming every active job they're on and flagging anyone split across more than one, plus the inverse by-job view with crew and equipment together. `/schedule` still answers when jobs run; this answers where everybody is |
 | Built | Equipment/scaffolding/lift allocation per job | `EquipmentAssignment` — which piece went to which job, when it left and when it came back, both dates entered not stamped. Shown per job on `/deployment`, with a separate list of gear still recorded as out on a job that isn't running |
 
-## 19. Materials & Vendor Management — 3 built · 1 partial · 0 missing
+## 19. Materials & Vendor Management — 4 built · 0 partial · 0 missing
 
 *Updated 3 Sep 2026: `/material-orders` stays Built and unchanged — it's
 now rendered `disabled` ("coming soon") in the nav rather than removed,
@@ -395,7 +395,7 @@ same reasoning as `/safety` above. Reasoning in `NAV-IA-AUDIT.md`.*
 | Built | Vendor/supplier directory per trade | `Vendor`, `/vendors` |
 | Built | Material order tracking and delivery status per job | `MaterialOrder` + `MaterialOrderDelivery` + `MaterialOrderCounter`, `/material-orders` — numbers issued per job and never reissued, ordered/promised/delivered dates all entered, partial deliveries as their own rows, late and delivery state derived and never stored. Carries no quantity or unit price by design: that would be a second copy of line-item data (see ARCHITECTURE.md), and material cost already lives on `CostEntry`. Nav entry disabled 3 Sep 2026 — see `NAV-IA-AUDIT.md` |
 | Built | Vendor pricing history for estimating | `VendorPriceQuote`, `/vendors/pricing` — what a supplier quoted, on a date entered not stamped, with the source (written quote / invoice / price list / verbal) recorded because the four are not equally trustworthy. Current, expired, stale, cheapest and every movement figure are derived per read, never stored. Compared only WITHIN a unit: MSF is never converted to SF, since the factor is the vendor's to state. Carries no job and no line item by design — a quote is reference data for pricing, and job cost has one home, `CostEntry`. Warns when a `LineItemCatalogEntry` default sits under the cheapest live quote in the same unit, and changes nothing — acting on that warning is an owner-confirmed button on `/catalog` (Sheet 03, 2026-09-22), never anything automatic here |
-| Partial | Buyout and purchase orders | `PurchaseOrder` + `PurchaseOrderLine` + `PurchaseOrderCounter`, `/jobs/[id]/buyout`: each non-labor line's budget beside current quotes in its own unit, and a DRAFT PO from the chosen quote or a typed price; a lower-tier subcontract is a PO with a SUBCONTRACTOR line. Committed shows beside Actual and is never added to a cost. `MaterialOrder` keeps no quantity or price. Not yet: issuing and closing (so committed reads $0), the PO document, a delivery linked to a PO line |
+| Built | Buyout and purchase orders | `PurchaseOrder` + `PurchaseOrderLine` + `PurchaseOrderCounter`, `/jobs/[id]/buyout`: each non-labor line's budget beside current quotes in its own unit, and a DRAFT PO from the chosen quote or a typed price; a lower-tier subcontract is a PO with a SUBCONTRACTOR line. Committed shows beside Actual and is never added to a cost. Each row also lists the spec findings for its trade with quote and page (`lib/buyout-spec-check.ts`): shown, never judged, and what cannot be placed appears at the top. A word search (`lib/buyout-spec-hints.ts`, no model) adds "possible match" or "no match found" per finding, naming where it looked: a hint, never a verdict. `MaterialOrder` keeps no quantity or price. Issue and close take entered dates; **Download PDF** builds the order in the browser with blank signature fields and no terms; `MaterialOrder.purchaseOrderLineId` ties a delivery to an issued line, attribution only. Not yet: sending from the app, a PO reaching QuickBooks |
 
 ## 20. Equipment & Tool Tracking — 2 built · 0 partial · 0 missing
 

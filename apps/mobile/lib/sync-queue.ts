@@ -116,6 +116,7 @@ export type CreateOp =
       tagIds?: string[];
       dailyFieldReportId?: string;
       punchListItemId?: string;
+      tmTicketId?: string;
       /** Where on a drawing this was taken, when the camera was opened from a
        * sheet. Sent WITH the photo rather than as a second op: the drain runs
        * ops independently on purpose -- see its own comment, a day of time
@@ -753,6 +754,7 @@ async function runOp(op: PendingOp, token: string): Promise<void> {
       }
       if (op.dailyFieldReportId) parameters.dailyFieldReportId = op.dailyFieldReportId;
       if (op.punchListItemId) parameters.punchListItemId = op.punchListItemId;
+      if (op.tmTicketId) parameters.tmTicketId = op.tmTicketId;
       if (op.sheetPageId && op.pinX !== undefined && op.pinY !== undefined) {
         parameters.sheetPageId = op.sheetPageId;
         parameters.pinX = String(op.pinX);

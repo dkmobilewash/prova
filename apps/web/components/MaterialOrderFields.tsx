@@ -10,6 +10,9 @@ export type VendorOption = { id: string; name: string };
  * note on `MaterialOrder.lineItem` in the schema. */
 export type LineItemOption = { id: string; jobId: string; description: string };
 
+/** A line on an issued PO. No price: this form is open to the field. */
+export type PoLineOption = { id: string; jobId: string; label: string };
+
 export type MaterialOrderDefaults = {
   description: string;
   vendorId: string;
@@ -17,6 +20,7 @@ export type MaterialOrderDefaults = {
   notes: string | null;
   promisedFor: string | null;
   lineItemId: string | null;
+  purchaseOrderLineId?: string | null;
 };
 
 /** The order-identity half of a material order, shared by create and edit
@@ -28,6 +32,7 @@ export function MaterialOrderFields({
   jobs,
   defaultJobId,
   lineItems = [],
+  poLines = [],
   fixedJobId,
 }: {
   defaults: MaterialOrderDefaults;
@@ -35,12 +40,14 @@ export function MaterialOrderFields({
   jobs?: JobOption[];
   defaultJobId?: string;
   lineItems?: LineItemOption[];
+  poLines?: PoLineOption[];
   fixedJobId?: string;
 }) {
   // On create the job is chosen here, so the SOV lines on offer have to
   // follow it. On edit the job is fixed and comes in as a prop.
   const [selectedJobId, setSelectedJobId] = useState(fixedJobId ?? defaultJobId ?? "");
   const jobLineItems = lineItems.filter((li) => li.jobId === selectedJobId);
+  const jobPoLines = poLines.filter((line) => line.jobId === selectedJobId);
 
   return (
     <>
@@ -109,6 +116,23 @@ export function MaterialOrderFields({
           <span className="text-xs text-ink-muted">
             Optional, and for attribution only — it ties a late delivery to the scope it holds up. No
             cost is carried here; material cost stays on the job&apos;s cost entries.
+          </span>
+        </label>
+      )}
+
+      {jobPoLines.length > 0 && (
+        <label className={labelClass}>
+          Against which purchase order line
+          <select name="purchaseOrderLineId" defaultValue={defaults.purchaseOrderLineId ?? ""} className={inputClass}>
+            <option value="">Not on a purchase order</option>
+            {jobPoLines.map((line) => (
+              <option key={line.id} value={line.id}>
+                {line.label}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-ink-muted">
+            Optional. It must be with the same vendor. Issued orders only, and for attribution only.
           </span>
         </label>
       )}

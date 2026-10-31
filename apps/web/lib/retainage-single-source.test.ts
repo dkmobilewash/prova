@@ -131,6 +131,8 @@ const RETAINAGE_COLUMN_FILES: Record<string, string> = {
   "app/(app)/cash-flow/page.tsx": "Retainage receivable TABLE — needs job rows, not a total.",
   "app/(app)/contacts/[id]/page.tsx":
     "One invoice's snapshot, fed to calculatePaymentReliability so a retainage-bearing invoice can settle. Per-invoice by necessity; never a total. Arrived with #288.",
+  "scripts/billingClickFixture.ts":
+    "WRITES a fixed snapshot onto two local test invoices for the billing click test. It reads no retainage and computes none; the local-only CLI refuses any other database.",
   "lib/today-dashboard.ts":
     "TWO per-invoice reads, both arrived with #288: the receivables tile nets it out of `outstanding` via arBalanceFor, and the GC reliability column passes it to calculatePaymentReliability. The COMPANY-WIDE retainage figure on this page is still loadRetainageHeld and is asserted below — these are per-invoice rows, never summed into a total here.",
   // jobs/[id]/page.tsx was one file until 2026-09-20, when the job page

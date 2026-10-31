@@ -124,7 +124,7 @@ type LocationOutcome =
 
 const ACCEPT = JOB_MEDIA_CONTENT_TYPES.join(",");
 
-export function JobMediaCapture({ jobId }: { jobId: string }) {
+export function JobMediaCapture({ jobId, tmTicketId }: { jobId: string; tmTicketId?: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ index: number; total: number; percent: number } | null>(
@@ -241,6 +241,7 @@ export function JobMediaCapture({ jobId }: { jobId: string }) {
         // only a fallback for a browser that reports 0. Sent as an instant
         // rather than a date so the ordering within a day survives.
         formData.set("capturedAt", capturedAt.toISOString());
+        if (tmTicketId) formData.set("tmTicketId", tmTicketId);
         // Sent as strings because that is what a FormData field is, and
         // omitted entirely rather than sent empty when there is no location
         // — `parseCapturedLocation` reads three absent fields as "no

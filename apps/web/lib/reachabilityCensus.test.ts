@@ -222,6 +222,11 @@ const REACHED_FROM: Record<string, Reached> = {
     parents: ["apps/web/components/BidWizardSteps.tsx"],
     needle: "/items`",
   },
+  "/jobs/[id]/specs": {
+    reason: "The spec sections link on /submittals when it is filtered to one job.",
+    parents: ["apps/web/app/(app)/submittals/page.tsx"],
+    needle: "/specs`",
+  },
   "/jobs/[id]/proposal": {
     reason: "The proposal link on the job's Estimate tab.",
     parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/estimate/page.tsx"],

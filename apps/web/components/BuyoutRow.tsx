@@ -1,9 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { draftPurchaseOrderLine, removePurchaseOrderLine } from "@/lib/actions";
+import { closePurchaseOrder, draftPurchaseOrderLine, issuePurchaseOrder, removePurchaseOrderLine } from "@/lib/actions";
+import type { PurchaseOrderDocument } from "@/lib/purchase-order-pdf";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Disclosure } from "@/components/Disclosure";
 import { money } from "@/lib/money";
+import type { BuyoutFinding } from "@/lib/buyout-spec-check";
+import { rowSources, specHint, specHintSentence, specHintTally, type SpecHint, type TextSource } from "@/lib/buyout-spec-hints";
+import { SPEC_FINDING_LABEL } from "@/lib/specs/spec-findings";
 import type { BuyoutRow as BuyoutRowData } from "@/lib/purchase-orders";
 
 const inputClass =
@@ -17,20 +22,72 @@ function overBudgetText(amount: number | null): string | null {
   return amount > 0 ? `${money(amount)} over budget` : `${money(-amount)} under budget`;
 }
 
+/** A word search result, in words. The text it hit is shown because a hit can
+ * sit inside a refusal such as "excludes Firecode". */
+function HintLine({ hint }: { hint: SpecHint }) {
+  return (
+    <span className="mt-1 block text-ink-label">
+      {specHintSentence(hint)}
+      {hint.state === "POSSIBLE" &&
+        [...new Set(hint.hits.map((hit) => hit.text))].map((text) => (
+          <span key={text} className="block text-ink-muted">
+            {text}
+          </span>
+        ))}
+    </span>
+  );
+}
+
+/** Spec findings a person compares for themselves. Shown, not judged: nothing
+ * here says the quote meets or misses them. Each carries its quote and page. */
+export function SpecFindingList({
+  findings,
+  summary,
+  sources,
+}: {
+  findings: BuyoutFinding[];
+  summary: string;
+  /** The row's text to search. Findings with no row get no hint. */
+  sources?: TextSource[];
+}) {
+  return (
+    <Disclosure variant="plain" summary={summary}>
+      <ul className="flex flex-col gap-2">
+        {findings.map((finding) => (
+          <li key={`${finding.sectionNumber}-${finding.ordinal}-${finding.label}`} className="text-xs text-ink-body">
+            <span className="font-medium text-ink-label">
+              {SPEC_FINDING_LABEL[finding.kind]} · {finding.sectionNumber}
+              {finding.sourcePageLabel ? ` · p ${finding.sourcePageLabel}` : ""}
+            </span>
+            <span className="block">{finding.requirement}</span>
+            <span className="block text-ink-muted">&ldquo;{finding.quote}&rdquo;</span>
+            {sources && <HintLine hint={specHint(finding, sources)} />}
+          </li>
+        ))}
+      </ul>
+    </Disclosure>
+  );
+}
+
 /** One scope line: what it was budgeted at, what is drafted and committed,
  * the quotes on file in its own unit, and a typed price for everything else. */
 export function BuyoutRow({
   jobId,
   row,
   vendors,
+  findings = [],
 }: {
   jobId: string;
   row: BuyoutRowData;
   vendors: { id: string; name: string }[];
+  findings?: BuyoutFinding[];
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(String(row.quantityLeft || row.line.quantity));
+  const boughtOut = row.quantityLeft === 0 && row.line.quantity > 0;
+  const sources = rowSources(row);
+  const tally = specHintTally(findings.map((finding) => specHint(finding, sources)));
 
   function draft(fill: (form: FormData) => void) {
     const form = new FormData();
@@ -58,6 +115,13 @@ export function BuyoutRow({
           <span>Committed {money(row.committed)}</span>
         </p>
       </div>
+      {findings.length > 0 && (
+        <SpecFindingList
+          findings={findings}
+          sources={sources}
+          summary={`Spec says · ${findings.length} to compare before buying${tally ? ` · ${tally}` : ""}`}
+        />
+      )}
       <label className="flex items-center gap-2 text-xs text-ink-muted">
         Quantity to buy
         <input
@@ -72,9 +136,10 @@ export function BuyoutRow({
         </span>
       </label>
 
-      {row.offers.length === 0 && <p className="text-xs text-ink-muted">No current quote on file in this unit.</p>}
+      {boughtOut && <p className="text-xs text-ink-muted">All {row.line.quantity} is on a purchase order, so no quote is offered.</p>}
+      {!boughtOut && row.offers.length === 0 && <p className="text-xs text-ink-muted">No current quote on file in this unit.</p>}
       <ul className="flex flex-col gap-1">
-        {row.offers.map((offer) => (
+        {!boughtOut && row.offers.map((offer) => (
           <li key={offer.quoteId} className="flex flex-wrap items-center justify-between gap-2 text-sm text-ink-body">
             <span>
               {offer.vendorName}: {money(offer.unitPrice)} = {money(offer.extended)}
@@ -128,6 +193,90 @@ export function BuyoutRow({
       </form>
       {error && <p className="text-sm text-danger">{error}</p>}
     </li>
+  );
+}
+
+/**
+ * Download, issue and close. Issuing commits the money, so it is its own
+ * deliberate step with a date a person enters, and it says nothing is sent.
+ * The PDF and pdf-lib load only when pressed.
+ */
+export function PurchaseOrderActions({
+  id,
+  status,
+  document: doc,
+}: {
+  id: string;
+  status: "DRAFT" | "ISSUED" | "CLOSED";
+  document: PurchaseOrderDocument;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  // Starts empty. The date a PO was issued or closed is entered, never assumed.
+  const [date, setDate] = useState("");
+
+  function move(action: typeof issuePurchaseOrder, key: string) {
+    const form = new FormData();
+    form.set(key, date);
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await action(id, form);
+        if (result.ok) setDate("");
+        else setError(result.error);
+      } catch {
+        setError("That did not go through. Reload the page and check before trying again.");
+      }
+    });
+  }
+
+  async function download() {
+    setError(null);
+    try {
+      const { buildPurchaseOrderPdf, purchaseOrderFileName } = await import("@/lib/purchase-order-pdf");
+      const bytes = await buildPurchaseOrderPdf(doc);
+      const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/pdf" }));
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = purchaseOrderFileName(doc);
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("That PDF could not be built.");
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className={btn} onClick={() => void download()}>
+          Download PDF
+        </button>
+        {status !== "CLOSED" && (
+          <>
+            <label className="flex items-center gap-2 text-xs text-ink-muted">
+              {status === "DRAFT" ? "Date issued" : "Date closed"}
+              <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className={inputClass} />
+            </label>
+            {status === "DRAFT" ? (
+              <button type="button" disabled={isPending || !date} className={btn} onClick={() => move(issuePurchaseOrder, "issuedOn")}>
+                Mark as issued
+              </button>
+            ) : (
+              <button type="button" disabled={isPending || !date} className={btn} onClick={() => move(closePurchaseOrder, "closedOn")}>
+                Close
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      {status === "DRAFT" && (
+        <p className="max-w-xs text-right text-xs text-ink-muted">
+          Marking as issued counts this as committed and locks its lines. Nothing is sent to the vendor.
+        </p>
+      )}
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </div>
   );
 }
 

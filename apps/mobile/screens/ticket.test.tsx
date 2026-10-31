@@ -1,3 +1,4 @@
+import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deviceStore } from "./setup";
 import { mount } from "./render";
@@ -110,6 +111,32 @@ describe("T&M tickets on a phone with no signal", () => {
     const screen = await open();
     expect(screen.text()).toMatch(/hasn't loaded it before/);
     expect(screen.text()).not.toContain("No T&M tickets");
+    screen.unmount();
+  });
+});
+
+describe("photos on a T&M ticket", () => {
+  it("offers a photo on a ticket with none, and opens the camera for THAT ticket", async () => {
+    const { router } = await import("expo-router");
+    vi.mocked(router.push).mockClear();
+    listTmTickets.mockResolvedValueOnce([{ ...TICKET, photoCount: 0 }]);
+    const screen = await open();
+    const button = Array.from(document.querySelectorAll("*")).find(
+      (node) => node.children.length === 0 && node.textContent === "No photo of the work — add one",
+    ) as HTMLElement | undefined;
+    expect(button, "the ticket should offer a photo").toBeTruthy();
+    await act(async () => {
+      button?.click();
+    });
+    expect(router.push).toHaveBeenCalledWith("/photos/job_1?tmTicketId=tm_1");
+    screen.unmount();
+  });
+
+  it("counts the photos a ticket already has", async () => {
+    listTmTickets.mockResolvedValueOnce([{ ...TICKET, photoCount: 1 }, { ...TICKET, id: "tm_2", photoCount: 3 }]);
+    const screen = await open();
+    expect(screen.text()).toContain("1 photo — add another");
+    expect(screen.text()).toContain("3 photos — add another");
     screen.unmount();
   });
 });

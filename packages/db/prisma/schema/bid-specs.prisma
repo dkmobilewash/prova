@@ -60,8 +60,16 @@
 /// than a wider version of this one.
 model BidSpecSection {
   id              String        @id @default(cuid())
-  bidInvitationId String
-  bidInvitation   BidInvitation @relation(fields: [bidInvitationId], references: [id], onDelete: Cascade)
+  /// NULLABLE SINCE 2026-10-31, approved by Diego: a job that never had a bid in
+  /// Prova still has a spec book. Every section has this or `jobId`, enforced by
+  /// the `BidSpecSection_has_an_owner` CHECK in the migration. A won bid's
+  /// sections keep this and reach the job through `BidInvitation.wonJobId`;
+  /// `jobId` is ONLY for a section uploaded directly to a job, so no section is
+  /// ever copied and an addendum cannot land on one copy of two.
+  bidInvitationId String?
+  bidInvitation   BidInvitation? @relation(fields: [bidInvitationId], references: [id], onDelete: Cascade)
+  jobId           String?
+  job             Job?           @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   /// The section number AS PRINTED — "09 21 16", "Section 09 22 16". Free text
   /// and never validated against MasterFormat, which is a decision this repo has
@@ -104,6 +112,7 @@ model BidSpecSection {
   updatedAt DateTime         @updatedAt
 
   @@index([bidInvitationId, sectionNumber])
+  @@index([jobId])
 }
 
 /// One read run over one section — immutable, append-only.

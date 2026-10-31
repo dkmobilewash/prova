@@ -165,7 +165,8 @@ export function measurementPrimitive(measurement: StoredMeasurement): Primitive 
   if (scale === null) return null;
 
   if (kind === "LINEAR") {
-    return { kind: "linear", feet: round2(polylineLength(xs, ys) * scale) };
+    const item = measurement.label?.trim();
+    return { kind: "linear", feet: round2(polylineLength(xs, ys) * scale), ...(item ? { item } : {}) };
   }
 
   const area = ringArea(xs, ys);

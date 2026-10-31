@@ -30,6 +30,7 @@ import { formatInstant } from "@/lib/render-date";
 import { loadJobDocuSign } from "@/lib/docusign/views";
 import { contractExecutionFor, contractIsExecuted } from "@/lib/contract-execution";
 import { money } from "@/lib/money";
+import { commitmentNote } from "@/lib/purchase-orders";
 import {
   calculateLineItemWip,
   calculateJobWip,
@@ -161,6 +162,16 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
           proposals: { orderBy: { createdAt: "asc" } },
           supersedes: { select: { number: true } },
           revisions: { select: { number: true }, orderBy: { number: "asc" } },
+          // Through the ticket, not copied, so a photo added later still shows.
+          tmTickets: {
+            select: {
+              media: {
+                where: { contentType: { startsWith: "image/" } },
+                orderBy: { capturedAt: "asc" },
+                select: { id: true, blobUrl: true, caption: true },
+              },
+            },
+          },
         },
       },
       // Every hour on the job, not just hours tied to a line item — the
@@ -227,8 +238,9 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
     // The bid recap, and the company's defaults which pre-fill a job that has
     // no recap of its own yet — the Contact.defaultRetainagePercent pattern:
     // a starting point, never a value enforced from elsewhere afterwards.
-    isEstimateStage ? prisma.jobBidRecap.findFirst({ where: { jobId: job.id, companyId: company.id } }) : Promise.resolve(null),
-    isEstimateStage ? prisma.companyBidDefaults.findUnique({ where: { companyId: company.id } }) : Promise.resolve(null),
+    // At every stage: a contracted job's change order backup reads these rates.
+    prisma.jobBidRecap.findFirst({ where: { jobId: job.id, companyId: company.id } }),
+    prisma.companyBidDefaults.findUnique({ where: { companyId: company.id } }),
     // Only at estimate stage: applying a template writes JobLineItem rows,
     // and `applyEstimateTemplate` refuses anything past ESTIMATE anyway.
     // Not fetching them at all is what keeps the control off the page
@@ -524,10 +536,12 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                 costCategory: (proposal.costCategory as CostCategoryValue | null) ?? null,
               },
               bidRecapRates,
+              Number(proposal.unitPrice),
             )
           : [],
     })),
     edits: co.edits.map((edit) => ({ id: edit.id, field: edit.field, oldValue: edit.oldValue, newValue: edit.newValue })),
+    ticketPhotos: co.tmTickets.flatMap((ticket) => ticket.media),
   }));
 
   const pendingExposure = Number(pendingChangeOrderExposure(job.changeOrders, changeOrderTargetsById));
@@ -698,6 +712,10 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                         Actual {money(wip.actualCostToDate)} · {formatPercentComplete(wip.percentComplete) ?? "—"} ·
                         Earned {wip.earnedRevenue != null ? money(wip.earnedRevenue) : "—"}
                       </span>
+                      {/* On the closed row, beside Actual, never added to it. */}
+                      {commitmentNote(lineCommitments.get(item.id)) && (
+                        <span className="block text-xs text-ink-muted">{commitmentNote(lineCommitments.get(item.id))}</span>
+                      )}
                     </span>
                     <span className="text-right tabular-nums">{money(wip.contractValue)}</span>
                     <span className={wideCell}>{money(wip.actualCostToDate)}</span>
@@ -723,12 +741,6 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                     Current est. {wip.currentEstimatedCost != null ? money(wip.currentEstimatedCost) : "—"}
                   </span>
                   <span className="text-ink-body">Actual {money(wip.actualCostToDate)}</span>
-                  {(lineCommitments.get(item.id)?.committed ?? 0) > 0 && (
-                    <span className="text-ink-body">Committed {money(lineCommitments.get(item.id)?.committed ?? 0)}</span>
-                  )}
-                  {(lineCommitments.get(item.id)?.drafted ?? 0) > 0 && (
-                    <span className="text-ink-muted">Drafted on a PO {money(lineCommitments.get(item.id)?.drafted ?? 0)}</span>
-                  )}
                   <span className="text-ink-body">% complete {formatPercentComplete(wip.percentComplete) ?? "—"}</span>
                   <span className="text-ink-body">Earned {wip.earnedRevenue != null ? money(wip.earnedRevenue) : "—"}</span>
                 </div>

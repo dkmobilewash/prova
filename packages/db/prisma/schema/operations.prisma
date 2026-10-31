@@ -376,6 +376,10 @@ model TmTicket {
   changeOrderId String?
   changeOrder   ChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
 
+  /// Photos of the extra work, attached from the phone after signing. Not part
+  /// of the frozen snapshot: the signature covers the hours and materials.
+  media JobMedia[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -802,6 +806,12 @@ model MaterialOrder {
   orderedByUserId String?
   orderedBy       User?   @relation(fields: [orderedByUserId], references: [id])
 
+  /// The issued PO line this delivery is against. ATTRIBUTION ONLY, the same
+  /// terms as `lineItemId`: nothing may ever sum money through it, and this
+  /// model still has no quantity and no price. The commitment is on the PO.
+  purchaseOrderLineId String?
+  purchaseOrderLine   PurchaseOrderLine? @relation(fields: [purchaseOrderLineId], references: [id], onDelete: SetNull)
+
   deliveries MaterialOrderDelivery[]
 
   /// Idempotency key from the phone, so a retried offline POST replays
@@ -816,6 +826,7 @@ model MaterialOrder {
   @@index([companyId])
   @@index([jobId])
   @@index([vendorId])
+  @@index([purchaseOrderLineId])
 }
 
 /// One delivery against an order. Partial deliveries are the normal case —
@@ -1406,6 +1417,11 @@ model PurchaseOrder {
 
   status PurchaseOrderStatus @default(DRAFT)
 
+  /// Both ENTERED, not stamped: a PO recorded late must not read as issued late.
+  /// Null until the status moves. A commitment starts at issue, not at draft.
+  issuedOn DateTime?
+  closedOn DateTime?
+
   lines PurchaseOrderLine[]
 
   createdByUserId String?
@@ -1442,6 +1458,8 @@ model PurchaseOrderLine {
   /// is later deleted; the price above stands either way.
   vendorPriceQuoteId String?
   vendorPriceQuote   VendorPriceQuote? @relation(fields: [vendorPriceQuoteId], references: [id], onDelete: SetNull)
+
+  materialOrders MaterialOrder[]
 
   createdAt DateTime @default(now())
 

@@ -68,6 +68,24 @@ describe("the buyout comparison", () => {
     ]);
   });
 
+  it("carries the words of every live quote, in any unit, for the spec word search", () => {
+    const [row] = buyoutRows(
+      [line],
+      [
+        quote({ id: "a", vendorName: "Foundation", description: "Board", notes: "Firecode" }),
+        quote({ id: "b", vendorId: "b", vendorName: "Acme", unit: "MSF", description: "Sheets", notes: null }),
+      ],
+      new Map(),
+      TODAY,
+    );
+    expect(row.quoteTexts).toEqual(
+      expect.arrayContaining([
+        { vendorName: "Foundation", description: "Board", notes: "Firecode" },
+        { vendorName: "Acme", description: "Sheets", notes: null },
+      ]),
+    );
+  });
+
   it("shows a quote in another unit without offering or converting it", () => {
     const [row] = buyoutRows([line], [quote({ unit: "MSF", unitPrice: 800, vendorName: "Foundation" })], new Map(), TODAY);
     expect(row.offers).toEqual([]);

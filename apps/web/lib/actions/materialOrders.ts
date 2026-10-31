@@ -110,6 +110,26 @@ async function optionalLineItemId(formData: FormData, jobId: string): Promise<st
   return line.id;
 }
 
+/** Validates an optional issued PO line. Same job and same vendor as the order,
+ * and only issued or closed: a draft is not a commitment to deliver against.
+ * Attribution only, on `lineItemId`'s terms. */
+async function optionalPurchaseOrderLineId(formData: FormData, jobId: string): Promise<string | null> {
+  const id = text(formData, "purchaseOrderLineId");
+  if (!id) return null;
+  const line = await prisma.purchaseOrderLine.findUnique({
+    where: { id },
+    select: { id: true, purchaseOrder: { select: { jobId: true, vendorId: true, status: true, number: true } } },
+  });
+  const po = line?.purchaseOrder;
+  if (!line || !po || po.jobId !== jobId || po.status === "DRAFT") {
+    throw new InputError("That purchase order line isn't an issued one on this job");
+  }
+  if (po.vendorId !== text(formData, "vendorId")) {
+    throw new InputError(`PO ${po.number} is with a different vendor than this order`);
+  }
+  return line.id;
+}
+
 export async function createMaterialOrder(formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   const { company, ...user } = context;
@@ -146,6 +166,7 @@ export async function createMaterialOrder(formData: FormData): Promise<ActionRes
           orderedOn,
           promisedFor,
           lineItemId: await optionalLineItemId(formData, jobId),
+          purchaseOrderLineId: await optionalPurchaseOrderLineId(formData, jobId),
           orderedByUserId: user.id,
         },
       });
@@ -188,6 +209,7 @@ export async function updateMaterialOrder(orderId: string, formData: FormData): 
         notes: text(formData, "notes") || null,
         promisedFor,
         lineItemId: await optionalLineItemId(formData, order.jobId),
+        purchaseOrderLineId: await optionalPurchaseOrderLineId(formData, order.jobId),
       },
     });
 

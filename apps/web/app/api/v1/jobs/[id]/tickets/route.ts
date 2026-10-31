@@ -29,6 +29,7 @@ function toJson(t: {
   signerName: string;
   signedAt: Date;
   signaturePath: string | null;
+  _count?: { media: number };
 }) {
   return {
     id: t.id,
@@ -38,6 +39,7 @@ function toJson(t: {
     signerName: t.signerName,
     signedAt: t.signedAt.toISOString(),
     hasSignature: t.signaturePath !== null,
+    photoCount: t._count?.media ?? 0,
   };
 }
 
@@ -60,6 +62,7 @@ export async function GET(
   const tickets = await prisma.tmTicket.findMany({
     where: { jobId: id },
     orderBy: { workDate: "desc" },
+    include: { _count: { select: { media: true } } },
   });
 
   return NextResponse.json(tickets.map(toJson));

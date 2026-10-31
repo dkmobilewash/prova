@@ -3,7 +3,11 @@ import { prisma } from "@prova/db";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { NoAccess } from "@/components/NoAccess";
-import { BuyoutRow, PurchaseOrderLineRow } from "@/components/BuyoutRow";
+import { BuyoutRow, PurchaseOrderActions, PurchaseOrderLineRow, SpecFindingList } from "@/components/BuyoutRow";
+import { party } from "@/lib/billing/g702";
+import { buyoutSpecCheck, specCheckSentence } from "@/lib/buyout-spec-check";
+import { loadJobSpecFindings } from "@/lib/buyout-spec-query";
+import { formatCalendarDate } from "@/lib/render-date";
 import { requireCapability } from "@/lib/authz";
 import { money } from "@/lib/money";
 import { viewerToday } from "@/lib/viewerToday";
@@ -28,6 +32,9 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
       id: true,
       name: true,
       status: true,
+      contractNumber: true,
+      projectLocation: true,
+      siteAddress: true,
       lineItems: {
         where: { isDeleted: false },
         orderBy: { createdAt: "asc" },
@@ -38,6 +45,7 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
           quantity: true,
           budgetedUnitCost: true,
           costCategory: true,
+          tradeScope: true,
           sourceCatalogEntryId: true,
         },
       },
@@ -45,7 +53,7 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
   });
   if (!job) notFound();
 
-  const [commitments, quotes, vendors, purchaseOrders, today] = await Promise.all([
+  const [commitments, quotes, vendors, purchaseOrders, today, specSections] = await Promise.all([
     loadLineCommitments(job.id),
     prisma.vendorPriceQuote.findMany({
       where: { companyId: company.id, catalogEntryId: { not: null } },
@@ -55,9 +63,13 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
     prisma.purchaseOrder.findMany({
       where: { jobId: job.id },
       orderBy: { number: "asc" },
-      include: { vendor: { select: { name: true } }, lines: { orderBy: { createdAt: "asc" } } },
+      include: {
+        vendor: { select: { name: true, contactName: true, phone: true, email: true } },
+        lines: { orderBy: { createdAt: "asc" } },
+      },
     }),
     viewerToday(),
+    loadJobSpecFindings(job.id, company.id),
   ]);
 
   const rows = buyoutRows(
@@ -87,6 +99,14 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
     today,
   );
 
+  const specCheck = buyoutSpecCheck(
+    rows.map((row) => ({
+      id: row.line.id,
+      tradeScope: job.lineItems.find((item) => item.id === row.line.id)?.tradeScope ?? null,
+    })),
+    specSections,
+  );
+
   return (
     <PageShell width="working">
       <PageHeader
@@ -106,6 +126,16 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
         <p className="mt-6 text-sm text-ink-muted">This job is still an estimate. Buyout opens once it is contracted.</p>
       ) : (
         <>
+          <div className="mt-6 flex flex-col gap-2">
+            <p className="text-sm text-ink-muted">{specCheckSentence(specCheck)}</p>
+            {specCheck.unplaced.length > 0 && (
+              <SpecFindingList
+                findings={specCheck.unplaced}
+                summary={`Spec says, not tied to one line · ${specCheck.unplaced.length}`}
+              />
+            )}
+          </div>
+
           {rows.length === 0 ? (
             <p className="mt-6 text-sm text-ink-muted">
               No lines to buy out. Labor lines are your own crew, so they are not listed here.
@@ -113,7 +143,13 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
           ) : (
             <ul className="mt-6 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
               {rows.map((row) => (
-                <BuyoutRow key={row.line.id} jobId={job.id} row={row} vendors={vendors} />
+                <BuyoutRow
+                  key={row.line.id}
+                  jobId={job.id}
+                  row={row}
+                  vendors={vendors}
+                  findings={specCheck.byLine.get(row.line.id)}
+                />
               ))}
             </ul>
           )}
@@ -130,9 +166,39 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
                 );
                 return (
                   <li key={po.id} className="rounded-lg border border-line-card bg-surface p-4">
-                    <p className="text-sm text-ink">
-                      PO {po.number} · {po.vendor.name} · {po.status.toLowerCase()} · {money(total)}
-                    </p>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <p className="text-sm text-ink">
+                        PO {po.number} · {po.vendor.name} · {po.status.toLowerCase()} · {money(total)}
+                        {po.issuedOn ? ` · issued ${formatCalendarDate(po.issuedOn)}` : ""}
+                        {po.closedOn ? ` · closed ${formatCalendarDate(po.closedOn)}` : ""}
+                      </p>
+                      <PurchaseOrderActions
+                        id={po.id}
+                        status={po.status}
+                        document={{
+                          number: po.number,
+                          status: po.status,
+                          issuedOn: po.issuedOn ? formatCalendarDate(po.issuedOn) : null,
+                          from: party(
+                            company.dbaName ? `${company.name} (dba ${company.dbaName})` : company.name,
+                            company.hqAddressLine1,
+                            company.hqAddressLine2,
+                            [company.hqCity, company.hqState, company.hqZip].filter(Boolean).join(" ") || null,
+                            company.phone,
+                          ),
+                          vendor: party(po.vendor.name, po.vendor.contactName, po.vendor.phone, po.vendor.email),
+                          jobName: job.name,
+                          shipTo: job.siteAddress ?? job.projectLocation ?? null,
+                          contractNumber: job.contractNumber,
+                          lines: po.lines.map((line) => ({
+                            description: line.description,
+                            quantity: Number(line.quantity),
+                            unit: line.unit,
+                            unitPrice: Number(line.unitPrice),
+                          })),
+                        }}
+                      />
+                    </div>
                     <ul className="mt-2 flex flex-col gap-1">
                       {po.lines.map((line) => (
                         <PurchaseOrderLineRow
