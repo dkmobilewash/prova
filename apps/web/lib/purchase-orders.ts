@@ -105,6 +105,8 @@ export interface BuyoutRow {
   offers: QuoteOffer[];
   /** Live quotes in a different unit: shown, never offered or converted. */
   otherUnits: { vendorName: string; unit: string | null; unitPrice: number }[];
+  /** The words of every live quote above, in any unit, for the spec word search. */
+  quoteTexts: { vendorName: string; description: string | null; notes: string | null }[];
 }
 
 export function buyoutRows(
@@ -142,6 +144,13 @@ export function buyoutRows(
       quantityLeft,
       offers,
       otherUnits,
+      quoteTexts: comparisons.flatMap((c) =>
+        c.quotes.map((quote) => ({
+          vendorName: quote.vendorName,
+          description: quote.description ?? null,
+          notes: quote.notes ?? null,
+        })),
+      ),
     };
   });
 }
