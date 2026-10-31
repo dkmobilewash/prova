@@ -6,6 +6,7 @@ import { TimeEntryRow } from "@/components/TimeEntryRow";
 import { TimesheetSignoffs } from "@/components/TimesheetSignoffs";
 import { SignatureImage } from "@/components/SignatureImage";
 import { TmTicketActions } from "@/components/TmTicketActions";
+import { JobMediaCapture } from "@/components/JobMediaCapture";
 import { DispatchSlipForm } from "@/components/DispatchSlipForm";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
 import { can, canReach } from "@/lib/permissions";
@@ -104,7 +105,10 @@ export default async function JobCrewPage({
           where: { jobId: jobRef.id },
           orderBy: { workDate: "desc" },
           take: 20,
-          include: { changeOrder: { select: { number: true, status: true } } },
+          include: {
+            changeOrder: { select: { number: true, status: true } },
+            _count: { select: { media: true } },
+          },
         })
       : Promise.resolve([]),
   ]);
@@ -419,7 +423,16 @@ export default async function JobCrewPage({
                       <span className="text-xs text-ink-muted">
                         Signed by {ticket.signerName}, {formatInstant(ticket.signedAt, timeZone)}
                         {ticket.signaturePath ? "" : " (typed name — signed before the phone took drawn signatures)"}
+                        {ticket._count.media > 0
+                          ? ` · ${ticket._count.media} photo${ticket._count.media === 1 ? "" : "s"}`
+                          : ""}
                       </span>
+                      <details className="text-xs text-ink-muted">
+                        <summary className="cursor-pointer">Add a photo from this computer</summary>
+                        <div className="mt-2">
+                          <JobMediaCapture jobId={job.id} tmTicketId={ticket.id} />
+                        </div>
+                      </details>
                     </div>
                     <TmTicketActions
                       ticketId={ticket.id}

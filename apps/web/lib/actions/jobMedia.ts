@@ -184,10 +184,19 @@ export async function recordJobMedia(jobId: string, formData: FormData): Promise
   if (!parsedLocation.ok) return fail(locationProblemMessage(parsedLocation.problem));
   const location = parsedLocation.location;
 
+  // The T&M ticket it was taken for, from the desktop uploader on the crew
+  // tab. Same job required, as on the phone's route.
+  const tmTicketId = text(formData, "tmTicketId") || null;
+  if (tmTicketId) {
+    const ticket = await prisma.tmTicket.findUnique({ where: { id: tmTicketId }, select: { jobId: true } });
+    if (!ticket || ticket.jobId !== job.id) return fail("That T&M ticket is not on this job");
+  }
+
   await prisma.jobMedia.create({
     data: {
       companyId: context.companyId,
       jobId: job.id,
+      tmTicketId,
       blobUrl,
       contentType,
       byteSize,

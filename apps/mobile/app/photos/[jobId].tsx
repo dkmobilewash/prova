@@ -91,9 +91,11 @@ export default function PhotosScreen() {
   // than a screen of its own — the capture, the GPS fix, the stamping and
   // the upload queue all live here, and a second copy of that would be a
   // second copy of the stamp.
-  const { jobId, punchListItemId, open, sheetPageId, pinX, pinY } = useLocalSearchParams<{
+  const { jobId, punchListItemId, tmTicketId, open, sheetPageId, pinX, pinY } = useLocalSearchParams<{
     jobId: string;
     punchListItemId?: string;
+    /** Set when the T&M ticket screen sent us here for this ticket's photo. */
+    tmTicketId?: string;
     /** Set when the camera was opened from a sheet: the photo is pinned there
      * at the shutter, the way `punchListItemId` attaches it to an item. The
      * foreman is standing at the wall — he does not have the photo yet, and
@@ -280,6 +282,7 @@ export default function PhotosScreen() {
         tagIds: pickedTags.length ? pickedTags : undefined,
         dailyFieldReportId: attachReport && todaysReportId ? todaysReportId : undefined,
         punchListItemId: punchItemId ?? undefined,
+        tmTicketId: tmTicketId || undefined,
         // Straight through to the op, which sends them WITH the photo. A
         // number the route will parse, not one this screen rounds.
         sheetPageId: sheetPageId || undefined,
@@ -388,11 +391,12 @@ export default function PhotosScreen() {
                     {item.media.tags.map((t) => t.name).join(" · ")}
                   </Text>
                 ) : null}
-                {item.media.dailyFieldReportId || item.media.punchListItemId ? (
+                {item.media.dailyFieldReportId || item.media.punchListItemId || item.media.tmTicketId ? (
                   <Text style={styles.attached} numberOfLines={1}>
                     {[
                       item.media.dailyFieldReportId ? t("photos.onReport") : null,
                       item.media.punchListItemId ? t("photos.onPunchItem") : null,
+                      item.media.tmTicketId ? t("photos.onTicket") : null,
                     ]
                       .filter(Boolean)
                       .join(" · ")}

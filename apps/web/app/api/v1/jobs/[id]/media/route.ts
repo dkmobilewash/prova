@@ -44,6 +44,7 @@ function toJson(m: {
   capturedAccuracyMeters: number | null;
   dailyFieldReportId: string | null;
   punchListItemId: string | null;
+  tmTicketId: string | null;
   tags: { tag: { id: string; name: string } }[];
 }) {
   return {
@@ -58,6 +59,7 @@ function toJson(m: {
     capturedAccuracyMeters: m.capturedAccuracyMeters,
     dailyFieldReportId: m.dailyFieldReportId,
     punchListItemId: m.punchListItemId,
+    tmTicketId: m.tmTicketId,
     tags: m.tags.map((t) => ({ id: t.tag.id, name: t.tag.name })),
   };
 }
@@ -74,6 +76,7 @@ const mediaSelect = {
   capturedAccuracyMeters: true,
   dailyFieldReportId: true,
   punchListItemId: true,
+  tmTicketId: true,
   tags: { select: { tag: { select: { id: true, name: true } } } },
 } as const;
 
@@ -184,6 +187,11 @@ export async function POST(
     });
     if (!item || item.jobId !== job.id) return jsonError("That punch list item is not on this job", 400);
   }
+  const tmTicketId = String(formData.get("tmTicketId") ?? "").trim() || null;
+  if (tmTicketId) {
+    const ticket = await prisma.tmTicket.findUnique({ where: { id: tmTicketId }, select: { jobId: true } });
+    if (!ticket || ticket.jobId !== job.id) return jsonError("That T&M ticket is not on this job", 400);
+  }
 
   // WHERE ON THE DRAWING IT WAS TAKEN, if the camera was opened from a sheet.
   //
@@ -270,6 +278,7 @@ export async function POST(
       capturedAccuracyMeters: location?.accuracyMeters ?? null,
       dailyFieldReportId,
       punchListItemId,
+      tmTicketId,
       clientOperationId,
       tags: tags.length
         ? { create: tags.map((t) => ({ tagId: t.id, taggedByUserId: context.id })) }

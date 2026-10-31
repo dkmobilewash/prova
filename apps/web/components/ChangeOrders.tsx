@@ -30,6 +30,7 @@ import {
 } from "@/components/changeOrderStates";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { DocuSignPanel, type DocuSignEnvelopeView } from "@/components/DocuSignPanel";
+import Image from "next/image";
 import { COST_CATEGORY_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { Spinner } from "@/components/Spinner";
 import { reportFieldErrors } from "@/components/formFieldErrors";
@@ -116,6 +117,8 @@ export type ChangeOrderView = {
   revisedByLabels: string[];
   proposals: ProposalView[];
   edits: { id: string; field: string; oldValue: string; newValue: string }[];
+  /** Photos on the T&M ticket this was drafted from, read through the ticket. */
+  ticketPhotos?: { id: string; blobUrl: string; caption: string | null }[];
 };
 
 export type LineItemChoice = { id: string; description: string };
@@ -644,7 +647,21 @@ function ChangeOrderCard({
           </span>
         </div>
       </div>
-      {co.description && <p className="mt-1 text-sm text-ink-body">{co.description}</p>}
+      {co.description && <p className="mt-1 whitespace-pre-line text-sm text-ink-body">{co.description}</p>}
+      {co.ticketPhotos && co.ticketPhotos.length > 0 && (
+        <div className="mt-2">
+          <p className="text-xs text-ink-muted">Photos on the T&amp;M ticket</p>
+          <ul className="mt-1 flex flex-wrap gap-2">
+            {co.ticketPhotos.map((photo) => (
+              <li key={photo.id} className="relative h-24 w-32 bg-canvas">
+                <a href={photo.blobUrl} target="_blank" rel="noopener noreferrer" className="absolute inset-0">
+                  <Image src={photo.blobUrl} alt={photo.caption ?? "T&M ticket photo"} fill unoptimized className="object-contain" />
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {co.supersedesLabel && (
         <p className="mt-1 text-xs text-tag-brand-ink">Raised to correct {co.supersedesLabel}.</p>

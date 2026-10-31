@@ -46,6 +46,12 @@ describe("the draft's words", () => {
     expect(tmTicketDraftDescription({ ...input, photoCount: 0 })).toContain("Photos: none captured on this job on 2026-09-10.");
   });
 
+  it("says how many photos were on the ticket, and nothing when there were none", () => {
+    expect(tmTicketDraftDescription({ ...input, ticketPhotoCount: 2 })).toContain("2 photos were attached to this ticket when this was drafted.");
+    expect(tmTicketDraftDescription({ ...input, ticketPhotoCount: 1 })).toContain("1 photo was attached");
+    expect(tmTicketDraftDescription(input)).not.toContain("attached to this ticket");
+  });
+
   it("says in words how the lines below were priced and what still needs a figure", () => {
     const text = tmTicketDraftDescription(input);
     expect(text).toContain("a line marked UNPRICED needs its rate entered, and every material needs its cost");

@@ -119,6 +119,7 @@ export const ES: Record<keyof typeof EN, string> = {
   "photos.attachTo": "Adjuntar a",
   "photos.onReport": "Al reporte del día",
   "photos.onPunchItem": "A un pendiente",
+  "photos.onTicket": "En un ticket T&M",
   "photos.stamped": "La hora y el lugar quedan marcados en la foto al guardarla.",
   "photos.empty.title": "Todavía no hay fotos",
   "photos.empty.body":
@@ -347,6 +348,9 @@ export const ES: Record<keyof typeof EN, string> = {
   // ticket-materials
   "tickets.signed": "Firmó: {name}",
   "tickets.typed": "(nombre escrito)",
+  "tickets.photos.none": "Sin foto del trabajo — agrega una",
+  "tickets.photos.one": "1 foto — agrega otra",
+  "tickets.photos.many": "{count} fotos — agrega otra",
   "tickets.snapshot.labor.one": "1 registro de mano de obra",
   "tickets.snapshot.labor.many": "{count} registros de mano de obra",
   "tickets.snapshot.materials.one": "1 material",

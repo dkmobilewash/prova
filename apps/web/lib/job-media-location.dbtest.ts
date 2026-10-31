@@ -213,6 +213,30 @@ describe("where a site capture was taken", () => {
     expect(row.caption).toBe("unlocated");
   });
 
+  it("ties a desktop upload to a T&M ticket on this job, and refuses another job's", async () => {
+    const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: { contactId: true } });
+    const other = await prisma.job.create({ data: { companyId, contactId: job.contactId, name: "Another job" } });
+    const ticketOn = (id: string) =>
+      prisma.tmTicket.create({
+        data: { companyId, jobId: id, workDate: at("2026-09-11T00:00:00.000"), workDescription: "x", snapshot: {}, signerName: "A", signedAt: at("2026-09-11T17:00:00.000") },
+      });
+    const mine = await ticketOn(jobId);
+    const theirs = await ticketOn(other.id);
+    const form = (ticketId: string) => {
+      const fd = recordForm("ticket-photo");
+      fd.set("tmTicketId", ticketId);
+      return fd;
+    };
+
+    expect(await recordJobMedia(jobId, form(theirs.id))).toEqual({ ok: false, error: "That T&M ticket is not on this job" });
+    expect(await recordJobMedia(jobId, form(mine.id))).toEqual({ ok: true });
+    expect(await prisma.jobMedia.count({ where: { tmTicketId: mine.id } })).toBe(1);
+
+    await prisma.jobMedia.deleteMany({ where: { tmTicketId: mine.id } });
+    await prisma.tmTicket.deleteMany({ where: { id: { in: [mine.id, theirs.id] } } });
+    await prisma.job.delete({ where: { id: other.id } });
+  });
+
   it("takes a fix whose accuracy the browser did not report", async () => {
     expect(
       await recordJobMedia(

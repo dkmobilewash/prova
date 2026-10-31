@@ -75,6 +75,7 @@ const changeOrders = [
     proposals: [],
     supersedes: null,
     revisions: [],
+    tmTickets: [],
   },
   {
     id: "co-2",
@@ -92,6 +93,7 @@ const changeOrders = [
     proposals: [],
     supersedes: null,
     revisions: [],
+    tmTickets: [],
   },
 ];
 
