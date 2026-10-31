@@ -1374,7 +1374,8 @@ export function TakeoffWorkspace({
               sheets={sheets}
               printedScaleByPage={data.printedScaleByPage}
               scannedPages={data.scannedPages}
-              rasterByPage={data.rasterByPage}
+              rasterPages={data.rasterPages}
+              rasterUrl={data.rasterUrl}
               storedWallsByPage={data.storedWallsByPage}
               takeoffItems={data.matchableItems}
               levelByPage={data.levelByPage}
