@@ -268,6 +268,8 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // an estimator's business and the field tier's audit row says the same;
   // a whole page of it behind an unguarded URL said otherwise.
   "/jobs/[id]/pay-applications/[invoiceId]": "MANAGE_BILLING",
+  // Budgets and vendor prices, reached from the Estimate tab behind the same gate.
+  "/jobs/[id]/buyout": "VIEW_JOB_COSTS",
   // "certified payroll" is named in MANAGE_COMPLIANCE's own doc comment,
   // and the page prints wage rates per employee per day.
   "/jobs/[id]/certified-payroll": "MANAGE_COMPLIANCE",

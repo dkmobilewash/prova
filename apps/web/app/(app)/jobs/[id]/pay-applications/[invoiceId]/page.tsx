@@ -9,6 +9,9 @@ import { money } from "@/lib/money";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { loadPayApplication } from "@/lib/pay-application-query";
+import { loadLowerTierWaiverInputs } from "@/lib/lien-waiver-query";
+import { missingLowerTierWaivers } from "@/lib/lien-waiver-followups";
+import Link from "next/link";
 import { formatPercent, g702Document, G702_LINES, party } from "@/lib/billing/g702";
 
 /** A header field as the form prints it: label, then the value or a blank
@@ -52,6 +55,19 @@ export default async function PayApplicationPage({
     notFound();
   }
   const { job, invoice, isPayApplication, lineItems: lineItemResults, summary } = view;
+
+  // The lower-tier check for THIS application: the previous pay application's
+  // period against the inbound waivers (lib/lien-waiver-followups.ts). The
+  // page is the document that goes to the GC, so the warning sits on it,
+  // on screen only.
+  const payApps = job.invoices.filter((inv) => inv.lineItems.length > 0);
+  const previousPayApp = [...payApps].reverse().find((inv) => inv.number < invoice.number) ?? null;
+  const lowerTier = isPayApplication
+    ? missingLowerTierWaivers({
+        previousPeriodTo: previousPayApp ? (previousPayApp.periodTo ?? previousPayApp.issuedAt) : null,
+        ...(await loadLowerTierWaiverInputs(job.id)),
+      })
+    : null;
   // `issuedAt` is when the invoice was actually issued, not a date someone
   // typed, so it renders where the reader is standing. `periodTo` and the
   // contract date are ENTERED calendar days and render in UTC.
@@ -112,6 +128,14 @@ export default async function PayApplicationPage({
         {job.contact.name}
         {invoice.description ? ` · ${invoice.description}` : ""}
       </p>
+      {lowerTier?.warning && (
+        <p className="mt-3 max-w-2xl text-xs text-warn print:hidden">
+          {lowerTier.warning}{" "}
+          <Link href="/compliance" className="text-link hover:underline">
+            Compliance →
+          </Link>
+        </p>
+      )}
       <p className="mt-3 max-w-2xl text-xs text-ink-muted">
         Laid out to follow AIA Documents G702 and G703 — the summary, the continuation sheet with columns A–I, and
         blank certification and notary fields. It is not an AIA form; the figures come from this job&rsquo;s schedule of

@@ -7,6 +7,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { SubmittalForm } from "@/components/SubmittalForm";
 import { EmptyState } from "@/components/EmptyState";
 import { SubmittalRow } from "@/components/SubmittalRow";
+import { readPackageContents } from "@/lib/submittal-package";
 import { daysBetween, isOverdue, latestRevision, submittalState } from "@/components/submittalLabels";
 import { StatusLine } from "@/components/StatusLine";
 import { submittalsStatus } from "@/lib/status-sentences";
@@ -61,7 +62,7 @@ export default async function SubmittalsPage({
     },
     orderBy: [{ jobId: "asc" }, { number: "desc" }],
     include: {
-      job: { select: { name: true } },
+      job: { select: { name: true, contact: { select: { name: true } } } },
       submittedBy: { select: { name: true } },
       revisions: { orderBy: { revisionNumber: "asc" } },
     },
@@ -71,6 +72,7 @@ export default async function SubmittalsPage({
     id: submittal.id,
     number: submittal.number,
     jobName: submittal.job.name,
+    gcName: submittal.job.contact.name,
     title: submittal.title,
     description: submittal.description,
     specSection: submittal.specSection,
@@ -85,6 +87,7 @@ export default async function SubmittalsPage({
       responseNotes: rev.responseNotes,
       responseUrl: rev.responseUrl,
       responseFileName: rev.responseFileName,
+      packageContents: readPackageContents(rev.packageContents),
     })),
   }));
 
@@ -229,6 +232,7 @@ export default async function SubmittalsPage({
               today={today}
               showJob={!activeJob}
               canDelete={currentUser.role === "OWNER"}
+              companyName={company.name}
             />
           ))}
         </ul>

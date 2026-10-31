@@ -59,12 +59,24 @@ export const QUICKBOOKS_ACCOUNT_PURPOSES = [
   { value: "LABOR", label: "Labor cost", hint: "Crew wages and burden." },
   { value: "MATERIAL", label: "Material cost", hint: "Board, metal, compound, finishes." },
   { value: "SUBCONTRACTOR", label: "Subcontractor cost", hint: "Lower-tier subs you hire." },
+  { value: "EQUIPMENT", label: "Equipment cost", hint: "Lifts, scaffold, rentals. Posted when the cost push is built." },
   { value: "OTHER", label: "Other cost", hint: "Permits, testing, anything else." },
 ] as const;
 
 /**
- * WHY THERE IS NO "EQUIPMENT" ROW ABOVE, although `CostCategory` grew one on
- * 2026-09-26.
+ * EQUIPMENT JOINED THE LIST ON 2026-10-30, and the paragraph below — written
+ * when it deliberately did not — is kept because its argument is still half
+ * true. Change-order pricing (lib/change-order-pricing.ts) now reads
+ * `CostCategory` FOR MONEY, marking an equipment line up at the equipment
+ * rate, so the five cost types are no longer a label nobody prices by. That
+ * is the reason Diego gave for adding the row in the same PR. What has NOT
+ * changed: Prova still pushes no costs to QuickBooks, so every cost row here
+ * — equipment included — is a mapping waiting for the cost push, and the
+ * hint on the row says so in as many words rather than implying a posting
+ * that does not happen.
+ *
+ * WHY THERE WAS NO "EQUIPMENT" ROW HERE from 2026-09-26 to 2026-10-30,
+ * although `CostCategory` grew one on the earlier date.
  *
  * Because the four COST purposes here are read by nothing. Every lookup of
  * this table in the app asks for `INCOME` (invoice push, and the billing tab's

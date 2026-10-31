@@ -103,6 +103,14 @@ export const NUMBERED_TABLES = {
     counterField: "lastNumber",
     scope: "job",
   },
+  PurchaseOrderCounter: {
+    accessor: "purchaseOrder",
+    helper: "issuePurchaseOrderNumber",
+    counterAccessor: "purchaseOrderCounter",
+    numberField: "number",
+    counterField: "lastNumber",
+    scope: "job",
+  },
   RfiCounter: {
     accessor: "rfi",
     helper: "issueRfiNumber",

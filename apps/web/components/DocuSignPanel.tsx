@@ -199,6 +199,7 @@ function SendForm({
       <input type="hidden" name="jobId" value={jobId} />
       <input type="hidden" name="subject" value={subject} />
       {subjectId && <input type="hidden" name="subjectId" value={subjectId} />}
+      {subject === "CHANGE_ORDER" && <ShowBackupToggle />}
       {Array.from({ length: signers }, (_, index) => (
         <div key={index} className="grid gap-2 sm:grid-cols-2">
           <label className="flex flex-col gap-1 text-xs text-ink-label">
@@ -318,5 +319,23 @@ export function DocuSignPanel({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * "Show the pricing backup" on a change-order document — ON by default
+ * (Diego, 2026-10-30). The action reads `showBackup`: absent or "on" prints
+ * the backup, "off" prints sell only. An unticked checkbox posts nothing,
+ * so unticking renders a hidden "off" in its place rather than relying on
+ * absence, which would read as the default.
+ */
+function ShowBackupToggle() {
+  const [on, setOn] = useState(true);
+  return (
+    <label className="flex items-center gap-2 text-xs text-ink-label">
+      <input type="checkbox" name={on ? "showBackup" : undefined} value="on" checked={on} onChange={(e) => setOn(e.target.checked)} className="h-4 w-4 accent-yellow-500" />
+      {!on && <input type="hidden" name="showBackup" value="off" />}
+      Show the pricing backup under each line (hours × rate, burden, cost, markup, sell). Untick to send sell only.
+    </label>
   );
 }

@@ -13,6 +13,7 @@ import {
   optionalLinkOrThrow,
 } from "./shared";
 import { can } from "@/lib/permissions";
+import { parsePackageContents } from "@/lib/submittal-package";
 
 /** Every entry point to these records is a page guarded by MANAGE_JOBS,
  * so every write here answers to the same capability. A guarded page in
@@ -198,6 +199,12 @@ export async function sendSubmittalRevision(submittalId: string, formData: FormD
     if (dueBack && dueBack < sentOn) {
       return failOn("dueBack", "The answer-back date can't be before the revision was sent");
     }
+    // What went into the package, when one was built here. Names and page
+    // counts only; the file itself never reaches the server.
+    const packageContents = parsePackageContents(text(formData, "packageContents"));
+    if (packageContents === undefined) {
+      return fail("The list of what went into that package could not be read. Build it again.");
+    }
 
     // The guards read the latest revision INSIDE the transaction. Checked
     // outside, two people resubmitting at the same moment both pass and
@@ -232,6 +239,7 @@ export async function sendSubmittalRevision(submittalId: string, formData: FormD
           revisionNumber: bumped.lastRevision,
           sentOn,
           dueBack,
+          ...(packageContents ? { packageContents } : {}),
         },
       });
     });

@@ -329,6 +329,11 @@ export const billingCommands: DirectCommandDefinition[] = [draftInvoiceCommand, 
 
 /** The rest of lib/actions/billing.ts, each with its reason. */
 export const billingExclusions: Exclusion[] = [
+  {
+    action: "draftPurchaseOrderLine",
+    reason: "Choosing a vendor's price against a line's budget is done on the Buyout page, in front of the comparison; page only.",
+  },
+  { action: "removePurchaseOrderLine", reason: "T5: deletes are never commands." },
   { action: "createSignatureRequest", reason: "Mints a bearer link that legally signs a contract (T4 outward); a page action with its own link handling." },
   { action: "signRequest", reason: "The CLIENT signs, on an unauthenticated page, with a token — nothing an assistant inside the app should touch." },
   { action: "revokeSignatureRequest", reason: "Voids a live e-sign link the client may be holding (T5); one deliberate tap on the job page, never a command." },
