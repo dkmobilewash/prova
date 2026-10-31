@@ -215,6 +215,8 @@ export type TmTicket = {
       vendorName: string;
       orderedOn: string;
     }[];
+    /** Per diem, travel and mileage typed at signing. Absent on older tickets. */
+    extras?: unknown[];
   } | null;
   signerName: string;
   signedAt: string;

@@ -199,6 +199,9 @@ export async function listTmTickets(jobId: string, token: string): Promise<TmTic
   return request(`/api/v1/jobs/${encodeURIComponent(jobId)}/tickets`, { token });
 }
 
+/** Optional lines on a ticket, as typed. The server freezes them at signing. */
+export type TicketExtrasInput = { perDiem?: string; travel?: string; miles?: string; mileRate?: string };
+
 export async function createTmTicket(
   jobId: string,
   input: {
@@ -207,6 +210,7 @@ export async function createTmTicket(
     signerName: string;
     signaturePath?: string;
     clientOperationId?: string;
+    extras?: TicketExtrasInput;
   },
   token: string,
 ): Promise<TmTicket> {

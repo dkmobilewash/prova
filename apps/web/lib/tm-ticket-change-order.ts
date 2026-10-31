@@ -12,6 +12,8 @@
 // priced. The frozen snapshot is used rather than today's time entries, so
 // the draft says what was SIGNED FOR even if an entry was corrected since.
 
+import type { CostCategory } from "@/lib/cost-category";
+import { money } from "@/lib/money";
 import { formatHours } from "@/lib/render-hours";
 
 /** The shape `app/api/v1/jobs/[id]/tickets/route.ts` freezes at signing.
@@ -26,8 +28,98 @@ export interface TmTicketSnapshot {
     payType?: string | null;
     craftLabel?: string | null;
     lineItemDescription?: string | null;
+    perDiemAmount?: string | null;
+    travelPayAmount?: string | null;
   }>;
   materials: Array<{ description: string; vendorName?: string | null; orderedOn?: string | null }>;
+  /** Typed on the ticket at signing. Missing on every older ticket. */
+  extras: TicketExtra[];
+}
+
+/** Dollars, except MILEAGE, which keeps its miles and rate: a line's cost column
+ * holds cents, and a mile rate such as $0.725 has to survive as signed. */
+export type TicketExtra =
+  | { kind: "PER_DIEM" | "TRAVEL"; amount: string }
+  | { kind: "MILEAGE"; miles: string; rate: string | null };
+
+const figure = (raw: unknown): number | null => {
+  const text = String(raw ?? "").trim().replace(",", ".");
+  if (text === "") return null;
+  return /^\d+(\.\d+)?$/.test(text) && Number(text) < 1_000_000 ? Number(text) : NaN;
+};
+
+/** What the phone sent, as the snapshot will hold it. Blank or zero is no line.
+ * Refused in a sentence, because the phone shows it on the queued ticket. */
+export function parseTicketExtras(raw: unknown): { ok: true; extras: TicketExtra[] } | { ok: false; error: string } {
+  const input = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const perDiem = figure(input.perDiem);
+  const travel = figure(input.travel);
+  const miles = figure(input.miles);
+  const rate = figure(input.mileRate);
+  if ([perDiem, travel, miles, rate].some((value) => Number.isNaN(value))) {
+    return { ok: false, error: "Per diem, travel and mileage must be plain numbers." };
+  }
+  if (rate && !miles) return { ok: false, error: "Enter the miles for that mileage rate." };
+  const extras: TicketExtra[] = [];
+  if (perDiem) extras.push({ kind: "PER_DIEM", amount: perDiem.toFixed(2) });
+  if (travel) extras.push({ kind: "TRAVEL", amount: travel.toFixed(2) });
+  if (miles) extras.push({ kind: "MILEAGE", miles: String(miles), rate: rate ? String(rate) : null });
+  return { ok: true, extras };
+}
+
+export interface TicketAllowance {
+  /** The line as words, for the draft and the proposal. */
+  text: string;
+  costCategory: CostCategory;
+  /** Null when nothing gives a cost, so the line lands unpriced. */
+  cost: number | null;
+}
+
+/** Priced through the recap under option A. Mileage is EQUIPMENT because it is
+ * the cost of running a vehicle; per diem and travel are OTHER. */
+const ALLOWANCE_CATEGORY = { PER_DIEM: "OTHER", TRAVEL: "OTHER", MILEAGE: "EQUIPMENT" } as const;
+
+const cents = (values: readonly (string | null | undefined)[]) =>
+  values.reduce((sum, value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? sum + Math.round(n * 100) : sum;
+  }, 0) / 100;
+
+/**
+ * Per diem, travel and mileage as lines. A TIME ENTRY ALREADY CARRIES PER DIEM AND
+ * TRAVEL, so the same dollars can arrive twice. An amount typed on the ticket is
+ * the one the signer's day was settled on, so it is the one priced, and the line
+ * says what the entries show instead of adding it. The GC is never billed twice,
+ * and a person sees the difference.
+ */
+export function ticketAllowances(snapshot: TmTicketSnapshot): TicketAllowance[] {
+  const out: TicketAllowance[] = [];
+  const flat = [
+    { kind: "PER_DIEM", word: "Per diem", onEntries: cents(snapshot.labor.map((row) => row.perDiemAmount)) },
+    { kind: "TRAVEL", word: "Travel", onEntries: cents(snapshot.labor.map((row) => row.travelPayAmount)) },
+  ] as const;
+  for (const { kind, word, onEntries } of flat) {
+    const typed = snapshot.extras.find((extra) => extra.kind === kind);
+    const costCategory = ALLOWANCE_CATEGORY[kind];
+    if (typed?.kind === kind) {
+      const cost = cents([typed.amount]);
+      const also = onEntries > 0 ? `; the time entries show ${money(onEntries)}, not added, so check which is right` : "";
+      out.push({ text: `${word} — ${money(cost)} entered on the ticket${also}`, costCategory, cost });
+    } else if (onEntries > 0) {
+      out.push({ text: `${word} — ${money(onEntries)} from the day's time entries`, costCategory, cost: onEntries });
+    }
+  }
+  for (const extra of snapshot.extras) {
+    if (extra.kind !== "MILEAGE") continue;
+    const miles = Number(extra.miles);
+    const costCategory = ALLOWANCE_CATEGORY.MILEAGE;
+    out.push(
+      extra.rate
+        ? { text: `Mileage — ${miles} mi @ $${extra.rate}`, costCategory, cost: Math.round(miles * Number(extra.rate) * 100) / 100 }
+        : { text: `Mileage — ${miles} mi — UNPRICED: no rate on the ticket; enter the cost`, costCategory, cost: null },
+    );
+  }
+  return out;
 }
 
 export function readTmTicketSnapshot(raw: unknown): TmTicketSnapshot {
@@ -41,12 +133,20 @@ export function readTmTicketSnapshot(raw: unknown): TmTicketSnapshot {
       payType: str(row.payType),
       craftLabel: str(row.craftLabel),
       lineItemDescription: str(row.lineItemDescription),
+      perDiemAmount: str(row.perDiemAmount),
+      travelPayAmount: str(row.travelPayAmount),
     })),
     materials: list(obj.materials).map((row) => ({
       description: str(row.description) ?? "(no description)",
       vendorName: str(row.vendorName),
       orderedOn: str(row.orderedOn),
     })),
+    extras: list(obj.extras).flatMap((row): TicketExtra[] => {
+      if ((row.kind === "PER_DIEM" || row.kind === "TRAVEL") && str(row.amount)) {
+        return [{ kind: row.kind, amount: String(row.amount) }];
+      }
+      return row.kind === "MILEAGE" && str(row.miles) ? [{ kind: "MILEAGE", miles: String(row.miles), rate: str(row.rate) }] : [];
+    }),
   };
 }
 
@@ -132,6 +232,10 @@ export function tmTicketDraftDescription(input: TmTicketDraftInput): string {
   }
   for (const row of snapshot.materials) {
     lines.push(`  ${row.description}${row.vendorName ? ` — ${row.vendorName}` : ""}${row.orderedOn ? ` (ordered ${row.orderedOn})` : ""}`);
+  }
+  const allowances = ticketAllowances(snapshot);
+  if (allowances.length > 0) {
+    lines.push("", "Per diem, travel and mileage:", ...allowances.map((row) => `  ${row.text}`));
   }
   const onTicket = input.ticketPhotoCount ?? 0;
   lines.push("");

@@ -4,6 +4,7 @@ import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import { timeEntryWorkerName } from "@/lib/worker-name";
 import { isValidSignaturePath } from "@/lib/signature-path";
+import { parseTicketExtras } from "@/lib/tm-ticket-change-order";
 
 export const dynamic = "force-dynamic";
 
@@ -110,6 +111,10 @@ export async function POST(
     signaturePath = input.signaturePath;
   }
 
+  // Optional, so a phone on an older build still saves its ticket.
+  const extras = parseTicketExtras(input.extras);
+  if (!extras.ok) return jsonError(extras.error, 400);
+
   // Idempotent create: a retried offline POST replays instead of duplicating.
   const clientOperationId = String(input.clientOperationId ?? "").trim() || undefined;
   if (clientOperationId) {
@@ -128,6 +133,8 @@ export async function POST(
       select: {
         hours: true,
         payType: true,
+        perDiemAmount: true,
+        travelPayAmount: true,
         employeeUser: { select: { name: true, email: true } },
         crewMember: { select: { legalFirstName: true, legalMiddleName: true, legalLastName: true } },
         craftClassification: { select: { name: true } },
@@ -148,12 +155,15 @@ export async function POST(
       payType: e.payType,
       craftLabel: e.craftClassification?.name ?? null,
       lineItemDescription: e.lineItem?.description ?? null,
+      perDiemAmount: e.perDiemAmount == null ? null : String(e.perDiemAmount),
+      travelPayAmount: e.travelPayAmount == null ? null : String(e.travelPayAmount),
     })),
     materials: materials.map((m) => ({
       description: m.description,
       vendorName: m.vendor.name,
       orderedOn: m.orderedOn.toISOString().slice(0, 10),
     })),
+    extras: extras.extras,
   };
 
   const ticket = await prisma.tmTicket.create({

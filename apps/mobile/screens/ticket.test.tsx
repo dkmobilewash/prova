@@ -139,4 +139,33 @@ describe("photos on a T&M ticket", () => {
     expect(screen.text()).toContain("3 photos — add another");
     screen.unmount();
   });
+
+  it("sends per diem, travel and mileage with a queued ticket", async () => {
+    listTmTickets.mockResolvedValue([]);
+    createTmTicket.mockResolvedValue({ ...TICKET });
+    queue({
+      type: "ticket:create", jobId: "job_1", clientOperationId: "c1", workDate: "2026-09-19",
+      workDescription: "Extra", signerName: "R. Diaz", signaturePath: "M1 1",
+      extras: { perDiem: "75", travel: "", miles: "40", mileRate: "0.725" },
+    });
+    const view = await open();
+    await act(async () => {});
+    expect(createTmTicket.mock.calls[0]?.[1]).toMatchObject({ extras: { perDiem: "75", miles: "40", mileRate: "0.725" } });
+    view.unmount();
+  });
+
+  it("offers the four fields on a number keypad and holds Sign on a bad figure", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const screen = readFileSync(join(__dirname, "../app/ticket/[jobId].tsx"), "utf8");
+    expect(screen.match(/keyboardType="decimal-pad"/g)).toHaveLength(4);
+    expect(screen).toContain("&& extrasOk");
+  });
+
+  it("shows that a ticket carries them", async () => {
+    listTmTickets.mockResolvedValue([{ ...TICKET, snapshot: { labor: [], materials: [], extras: [{ kind: "TRAVEL" }] } }]);
+    const view = await open();
+    await act(async () => {});
+    expect(view.text()).toContain("per diem, travel or mileage");
+  });
 });

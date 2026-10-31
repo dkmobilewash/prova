@@ -11,7 +11,7 @@ import type { StrokeSegment } from "./wallVectors";
  * scale hidden: at the true scale, door leaves land on whole inches (36, 34,
  * 32, 30, 28), and at a wrong standard scale they mostly do not. So each
  * standard scale is tried and the one that puts the most doors on real door
- * sizes wins, if it wins clearly. 183 sheets: 76 right, 1 wrong, 106 refused.
+ * sizes wins, if it wins clearly. 218 sheets: 91 right, 1 wrong, 126 refused.
  *
  * It is a proposal and nothing more. One wrong door scale multiplies through
  * every wall on a sheet, so this writes nothing: `TakeoffScaleSuggestion`

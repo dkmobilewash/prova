@@ -30,6 +30,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await prisma.takeoffMeasurement.deleteMany({ where: { page: { planId } } });
+  await prisma.takeoffItem.deleteMany({ where: { jobId } });
   await prisma.takeoffScaleCalibration.deleteMany({ where: { page: { planId } } });
   await prisma.takeoffPlanPage.deleteMany({ where: { planId } });
   await prisma.planSheetScaleReading.deleteMany({ where: { planId } });
@@ -87,6 +88,12 @@ describe("saveSymbolCountAcrossSheets", () => {
     const row = sheet?.measurements.find((m) => m.label === "floor drain");
     expect(row?.calibration).toBeNull();
     expect(row?.outOfDate).toBe(false);
+  });
+  it("a named count becomes one item, however many sheets or saves it took", async () => {
+    const across = await saveSymbolCountAcrossSheets(jobId, planId, { label: "ZZ Troffer", sheets: [{ pageNumber: 1, xs: [0.1, 0.2], ys: [0.1, 0.2] }, { pageNumber: 2, xs: [0.3], ys: [0.3] }] });
+    expect(across.ok).toBe(true);
+    const items = await prisma.takeoffItem.findMany({ where: { jobId, name: "ZZ Troffer" }, include: { measurements: true } });
+    expect(items.map((i) => [i.type, i.measurements.length])).toEqual([["COUNT", 2]]);
   });
   it("refuses an empty label, a foreign item and an empty set", async () => {
     expect((await saveSymbolCountAcrossSheets(jobId, planId, { label: " ", sheets: [{ pageNumber: 3, xs: [0.1], ys: [0.1] }] })).ok).toBe(false);

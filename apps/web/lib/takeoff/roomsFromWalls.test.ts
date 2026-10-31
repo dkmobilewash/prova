@@ -127,6 +127,14 @@ describe("roomsFromWalls", () => {
     expect(rooms[0].squareFeet).toBeGreaterThan(195);
     expect(rooms[0].tag).toBeNull();
     expect(mergedTags.map((t) => t.name).sort()).toEqual(["OFFICE", "STORAGE"]);
+    expect(rooms.flatMap((r) => r.sharedTags ?? []).map((t) => t.name).sort()).toEqual(["OFFICE", "STORAGE"]);
+  });
+  it("a framed legend is not a room, and body text saying NOTES does not make one", () => {
+    const words = [...Array.from({ length: 9 }, (_, i) => text(`w${i}`, 1 + i, 30))];
+    const heading = { str: "FLOOR PLAN LEGEND", x: 20, y: 30, width: 40, height: 14 };
+    expect(roomsFromWalls({ walls, feetPerUnit: W, text: [...words, heading], widthPt: 1000 }).rooms).toHaveLength(1);
+    const body = { str: "SEE NOTES", x: 20, y: 30, width: 40, height: 6 };
+    expect(roomsFromWalls({ walls, feetPerUnit: W, text: [...words, body], widthPt: 1000 }).rooms).toHaveLength(2);
   });
 });
 
@@ -149,4 +157,5 @@ describe("door seals from the swing symbols", () => {
     const after = roomsFromWalls({ walls, feetPerUnit: FPU, doorSeals: [{ x1: 0.3, y1: 0.13, x2: 0.3, y2: 0.27 }] });
     expect(after.rooms).toHaveLength(2);
   });
+
 });

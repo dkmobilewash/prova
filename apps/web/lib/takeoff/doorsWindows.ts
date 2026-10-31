@@ -1,5 +1,5 @@
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
-import { doorSymbols, tagsNameEveryWindow, windowSymbols, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
+import { doorSymbols, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
 import { joinOpeningsToSchedule, widthAndHeight, type OpeningJoin, type PlacedMark, type ScheduledOpening } from "./openingMarks";
 import { tagSymbols, type TextForSymbol } from "./tagSymbols";
 
@@ -63,9 +63,10 @@ export function doorsAndWindowsForSheet(input: {
   feetPerUnit: number;
   scheduleRows: readonly StoredScheduleRow[];
 }): DoorsWindowsResult {
-  const doors = doorSymbols(input.segments, input.walls, input.feetPerUnit);
   const symbols = tagSymbols({ segments: input.segmentsPt, text: input.textPt, unitsPerPaperInch: 72 });
   const W = input.widthPt;
+  const doorMarks = symbols.filter((s) => s.rejected === null && !WINDOW_TAG.test(s.text.trim().toUpperCase())).map((s) => ({ x: s.x / W, y: s.y / W }));
+  const doors = onlyMarkedDoors(doorSymbols(input.segments, input.walls, input.feetPerUnit), doorMarks, input.feetPerUnit);
   const windowTags = symbols.filter((s) => s.rejected === null && WINDOW_TAG.test(s.text.trim().toUpperCase())).map((s) => ({ x: s.x / W, y: s.y / W }));
   const tagWords = symbols.filter((s) => s.rejected === null).map((s) => s.text);
   const windows = windowSymbols(input.segments, input.walls, input.feetPerUnit, windowTags, tagsNameEveryWindow(tagWords));

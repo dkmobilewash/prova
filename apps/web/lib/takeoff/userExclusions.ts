@@ -179,6 +179,31 @@ export function userExclusionsFromRows(rows: readonly { kind: string; xs: readon
 
 export type Polygon = { xs: readonly number[]; ys: readonly number[] };
 
+/** No work area drawn means the whole sheet is the job. */
+export function insideWorkArea(x: number, y: number, polygons: readonly Polygon[]): boolean {
+  return polygons.length === 0 || polygons.some((p) => insidePolygon(x, y, p));
+}
+
+/**
+ * Doors and windows inside the work area. `join.openings` runs index for index
+ * with `doors`, so the two are filtered together. Page-width units, like the polygons.
+ */
+export function openingsInWorkArea<
+  D extends { hinge: { x: number; y: number }; strike: { x: number; y: number } },
+  W extends { x1: number; y1: number; x2: number; y2: number },
+  J extends { openings: readonly unknown[] },
+  R extends { doors: D[]; windows: W[]; join: J | null },
+>(result: R, polygons: readonly Polygon[]): R {
+  if (polygons.length === 0) return result;
+  const keep = result.doors.map((d) => insideWorkArea((d.hinge.x + d.strike.x) / 2, (d.hinge.y + d.strike.y) / 2, polygons));
+  return {
+    ...result,
+    doors: result.doors.filter((_, i) => keep[i]),
+    windows: result.windows.filter((w) => insideWorkArea((w.x1 + w.x2) / 2, (w.y1 + w.y2) / 2, polygons)),
+    join: result.join === null ? null : { ...result.join, openings: result.join.openings.filter((_, i) => keep[i]) },
+  };
+}
+
 export function insidePolygon(px: number, py: number, p: Polygon): boolean {
   let inside = false;
   const n = p.xs.length;
@@ -227,7 +252,7 @@ export function clipToWorkArea(runs: readonly WallCandidate[], polygons: readonl
     out.inside.push(...runs);
     return out;
   }
-  const inAny = (x: number, y: number) => polygons.some((p) => insidePolygon(x, y, p));
+  const inAny = (x: number, y: number) => insideWorkArea(x, y, polygons);
   for (const w of runs) {
     if (w.curved === true) {
       if (inAny((w.x1 + w.x2) / 2, (w.y1 + w.y2) / 2)) out.inside.push(w);

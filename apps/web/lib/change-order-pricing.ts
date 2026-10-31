@@ -32,7 +32,7 @@ import {
 } from "@/lib/labor-cost";
 import { money } from "@/lib/money";
 import { formatHours } from "@/lib/render-hours";
-import { readTmTicketSnapshot } from "@/lib/tm-ticket-change-order";
+import { readTmTicketSnapshot, ticketAllowances } from "@/lib/tm-ticket-change-order";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -192,6 +192,20 @@ export function tmTicketProposals(snapshot: unknown, lookups: TmTicketPricingLoo
       costCategory: "MATERIAL",
       budgetedUnitCost: null,
       unitPrice: null,
+    });
+  }
+  // TimeEntry.perDiemAmount and travelPayAmount are frozen on the ticket and
+  // reach this through ticketAllowances. Quantity 1, because the cost column
+  // holds cents and a mile rate may not.
+  for (const row of ticketAllowances(snap)) {
+    const priced = priceLine({ quantity: 1, unitCost: row.cost, costCategory: row.costCategory }, lookups.rates);
+    out.push({
+      description: row.text,
+      unit: null,
+      quantity: 1,
+      costCategory: row.costCategory,
+      budgetedUnitCost: row.cost,
+      unitPrice: priced.unitPrice,
     });
   }
   return out;

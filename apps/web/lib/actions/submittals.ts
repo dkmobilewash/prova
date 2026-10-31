@@ -13,6 +13,7 @@ import {
   optionalLinkOrThrow,
 } from "./shared";
 import { can } from "@/lib/permissions";
+import { mergedSubmittal, submittalFromProposal } from "@/lib/submittal-proposals";
 import { parsePackageContents } from "@/lib/submittal-package";
 
 /** Every entry point to these records is a page guarded by MANAGE_JOBS,
@@ -180,6 +181,74 @@ export async function updateSubmittal(submittalId: string, formData: FormData): 
       },
     });
 
+    revalidatePath("/submittals");
+    return ok;
+  });
+}
+
+/**
+ * Accepts ticked draft rows into the register: one submittal per requirement,
+ * or one for all of them when merge is ticked. The number is issued here and
+ * not before. Each draft is claimed conditionally inside the transaction, so a
+ * second press cannot create the submittal twice.
+ */
+export async function acceptSubmittalProposals(jobId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
+  return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+    const job = await prisma.job.findFirst({ where: { id: jobId, companyId: company.id }, select: { id: true } });
+    if (!job) return fail("That job is not on your account.");
+    const ids = formData.getAll("proposalId").map(String);
+    if (ids.length === 0) return fail("Tick at least one draft.");
+    const rows = await prisma.submittalProposal.findMany({
+      where: { id: { in: ids }, jobId, status: "PROPOSED" },
+      orderBy: { createdAt: "asc" },
+    });
+    if (rows.length !== ids.length) return fail("One of those drafts has already been decided. Reload the page.");
+
+    const merge = String(formData.get("merge") ?? "") === "on";
+    const merged = merge ? mergedSubmittal(rows) : null;
+    if (merge && !merged) return fail("Only drafts from the same spec section can be merged.");
+    const groups = merged ? [{ fields: merged, rows }] : rows.map((row) => ({ fields: submittalFromProposal(row), rows: [row] }));
+
+    await prisma.$transaction(async (tx) => {
+      for (const group of groups) {
+        const submittal = await tx.submittal.create({
+          data: {
+            companyId: company.id,
+            jobId,
+            number: await issueSubmittalNumber(tx, jobId),
+            title: group.fields.title,
+            description: group.fields.description,
+            specSection: group.fields.specSection,
+            submittedByUserId: user.id,
+          },
+        });
+        const { count } = await tx.submittalProposal.updateMany({
+          where: { id: { in: group.rows.map((row) => row.id) }, status: "PROPOSED" },
+          data: { status: "ACCEPTED", submittalId: submittal.id, decidedByUserId: user.id, decidedAt: new Date() },
+        });
+        if (count !== group.rows.length) throw new InputError("One of those drafts has already been decided. Reload the page.");
+      }
+    });
+
+    revalidatePath("/submittals");
+    return ok;
+  });
+}
+
+/** Sets a draft aside. A re-read will not ask about it again. */
+export async function dismissSubmittalProposal(proposalId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
+  return runAction(async () => {
+    if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+    const { count } = await prisma.submittalProposal.updateMany({
+      where: { id: proposalId, status: "PROPOSED", job: { companyId: company.id } },
+      data: { status: "DISMISSED", decidedByUserId: user.id, decidedAt: new Date() },
+    });
+    if (count === 0) return fail("That draft has already been decided. Reload the page.");
     revalidatePath("/submittals");
     return ok;
   });

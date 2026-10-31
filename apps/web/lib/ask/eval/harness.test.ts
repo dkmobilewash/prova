@@ -102,6 +102,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: tallies every offered candidate on the training sheets by whether it is the side of a text-filled, cornered box, against the labels; the probe behind legendBoxes.ts. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts sheets were read",
     "zzSuggestedScale.eval.ts":
       "calls no model: runs the suggested scale rule over the named pages of one plan set and writes what it proposed. Skips without its env and asserts pages were named",
+    "zzAllSets.eval.ts":
+      "calls no model: runs the inventory stage through its dependency seam, wallsPlan and detection over one plan set and writes counts and timings. Skips without ALLSETS_PDF and ALLSETS_OUT and asserts the set had pages",
     "scaleAudit.eval.ts":
       "calls no model: deterministic geometry over real drawings, guarded by a skip plus a non-zero input assertion",
     "doorWindows.eval.ts":
