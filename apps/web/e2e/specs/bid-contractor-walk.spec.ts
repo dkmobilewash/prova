@@ -7,7 +7,7 @@ import { HealthMonitor, expectHealthy } from "../lib/health";
 import { dataTour } from "../lib/dataTour";
 import { openCollapsed, openDisclosure } from "../lib/collapsed";
 import { settleAction } from "../lib/journey";
-import { expectNoCrmLinks } from "../lib/bidLinks";
+import { expectNoCrmLinks, isOutsideBid } from "../lib/bidLinks";
 import { stubDocumentUpload } from "../lib/blobStub";
 
 /**
@@ -55,6 +55,20 @@ import { stubDocumentUpload } from "../lib/blobStub";
  * set up here, which is printed, and the form is then typed by hand as a sub
  * would.
  *
+ * ROUND 2 (2026-10-31) walks the parts nobody had clicked in a browser:
+ *   - 4b: Bid's starter wall types (its eight, never the CRM's flooring, paint
+ *     or concrete) and W1's card — "Board layers each side" unanswered, the
+ *     board part "Per layer";
+ *   - 5b: the board-layers question on walls measured as W1, answered "2
+ *     layers each side", with the board and hang lines doubled and the studs,
+ *     track and tape-and-finish lines unchanged. ANSWERING IT WRITES W1'S
+ *     LAYERS COMPANY-WIDE on TAKEOFF, which other takeoff specs share; none of
+ *     them asserts a board quantity, only that parts have one;
+ *   - 8: the second GC's "Send to" box, which off the live app must refuse in
+ *     a sentence. Nothing here ever presses a send button;
+ *   - 10b and 11: the wall types page after the answer, and the bid log and
+ *     wall types at 375px.
+ *
  * THE KNOWN #418 RACE is recorded, never asserted, exactly as
  * `estimating-spine.spec.ts` records it: `journey.spec.ts` step 11 is what
  * fails a run over it. A real crash (`monitor.crashes`) fails this one.
@@ -72,6 +86,19 @@ const PROJECT_A = `ZZ-E2E Harbor Point Suite 300 TI ${STAMP}`;
 /** The second GC's own words for the same job; deliberately not containing PROJECT_A. */
 const PROJECT_B = `ZZ-E2E Harbor Pt Medical Ste 300 (Ridgeline) ${STAMP}`;
 const SITE = "1450 Harbor Blvd, Suite 300, Oakland, CA 94607";
+/** Test data on a throwaway database; `.example` is reserved and reaches nobody. */
+const GC_B_EMAIL = `estimating+${STAMP}@ridgeline-construction.example`;
+
+/** The wall type the takeoff prices with: the starter partition, studs and board. */
+const STARTER_CODE = "W1";
+/** What C Stream Bid's starter button may offer (lib/wall-type-starters.ts) — and the CRM-only ones it must not. */
+const BID_STARTERS = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "ACT2", "GYPC1"];
+const CRM_ONLY_STARTERS = ["FLR1", "PT1", "SLB1", "FTG1"];
+
+/** "e…@ridgeline-construction.example": the shape of an address, not the address. */
+function addressShape(text: string): string {
+  return text.replace(/([A-Za-z0-9])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+)/g, "$1…@$2");
+}
 
 const DAY_MS = 86_400_000;
 /** A calendar day `offset` days from today, UTC — how the app stores and reads days. */
@@ -280,6 +307,74 @@ test.describe("C Stream Bid — a drywall sub bids one TI job, start to finish",
     );
   }
 
+  type WallTypeCardView = {
+    found: boolean;
+    boardLayers: string;
+    layerOptions: string[];
+    parts: { description: string; perLayer: boolean }[];
+  };
+
+  /** One wall type's card on /bid/wall-types, opened: its layer answer and each part's "Per layer" box. */
+  async function readWallTypeCard(code: string): Promise<WallTypeCardView> {
+    const card = page
+      .locator('details[name="wall-type"]')
+      .filter({ has: page.locator("summary span.font-medium", { hasText: new RegExp(`^${code}$`) }) })
+      .first();
+    if ((await card.count()) === 0) return { found: false, boardLayers: "", layerOptions: [], parts: [] };
+    await openDisclosure(card);
+    const layers = card.locator('select[name="boardLayers"]').first();
+    const layerOptions = (await layers.locator("option").allInnerTexts()).map(squash);
+    const boardLayers = await layers.inputValue();
+    // The part rows are the forms in the card's list; the add-a-part form sits after the list.
+    const parts = await card.locator("ul > li form").evaluateAll((forms) =>
+      forms.map((form) => ({
+        description: (form.querySelector('input[name="description"]') as HTMLInputElement | null)?.value ?? "",
+        perLayer: (form.querySelector('input[name="perLayer"]') as HTMLInputElement | null)?.checked ?? false,
+      })),
+    );
+    return { found: true, boardLayers, layerOptions, parts };
+  }
+
+  type WallLine = { description: string; quantity: number; unit: string };
+
+  /**
+   * The estimate's lines that came from the wall schedule — the ones carrying
+   * the "From wall schedule" badge in their (closed) row — as description,
+   * quantity and unit, read off the row's summary cells.
+   */
+  async function readWallLines(): Promise<WallLine[]> {
+    return page.locator('details[name="estimate-line"]').evaluateAll((rows) =>
+      rows
+        .filter((row) => row.querySelector('[title^="Worked out from the wall schedule"]'))
+        .map((row) => {
+          const summary = row.querySelector("summary");
+          const grid = Array.from(summary?.querySelectorAll("span") ?? []).find((span) => span.children.length >= 4);
+          const cells = grid ? Array.from(grid.children) : [];
+          return {
+            description: (cells[0]?.childNodes[0]?.textContent ?? "").trim(),
+            quantity: Number((cells[1]?.textContent ?? "").replace(/,/g, "").trim()),
+            unit: (cells[2]?.textContent ?? "").trim(),
+          };
+        }),
+    );
+  }
+
+  /** Which part of a partition a wall line is, by its words. Tape before hang: "Tape and finish" names no hanging. */
+  function wallPart(description: string): "tape" | "hang" | "studs" | "track" | "board" | "other" {
+    if (/tape and finish/i.test(description)) return "tape";
+    if (/\bhang\b/i.test(description)) return "hang";
+    if (/\bstuds?\b/i.test(description)) return "studs";
+    if (/\btrack\b/i.test(description)) return "track";
+    if (/board/i.test(description)) return "board";
+    return "other";
+  }
+
+  function totalsByPart(lines: WallLine[]): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const line of lines) out[wallPart(line.description)] = (out[wallPart(line.description)] ?? 0) + line.quantity;
+    return out;
+  }
+
   test.beforeAll(async ({ browser }) => {
     // Read here, never at module scope: a spec that does I/O while Playwright
     // is only LISTING tests can take the whole signed-in suite down with it
@@ -347,12 +442,19 @@ test.describe("C Stream Bid — a drywall sub bids one TI job, start to finish",
       await bidPage("Bid settings");
       const gcForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Add GC" }) });
       await hydrated(gcForm, "the Add GC form");
-      for (const name of [GC_A, GC_B]) {
+      // The second GC gets an estimating address, so step 8's "Send to" box has
+      // somebody to offer. It is test data on a throwaway database, and the
+      // send refuses off the live app anyway (lib/estimating/proposal-send.ts).
+      for (const [name, email] of [
+        [GC_A, ""],
+        [GC_B, GC_B_EMAIL],
+      ] as const) {
         await gcForm.locator('input[name="name"]').fill(name);
+        await gcForm.locator('input[name="email"]').fill(email);
         await settleAction(page, () => gcForm.getByRole("button", { name: "Add GC" }).click());
         await expect(page.locator("[data-bid='gc-list']").getByText(name), `${name} should be on the GC list`).toBeVisible();
       }
-      walk(`settings · added two GCs: "${GC_A}", "${GC_B}"`);
+      walk(`settings · added two GCs: "${GC_A}" (no email), "${GC_B}" (${addressShape(GC_B_EMAIL)})`);
 
       await page.goto("/bid/bids?view=all");
       await bidPage("the bid log");
@@ -427,6 +529,22 @@ test.describe("C Stream Bid — a drywall sub bids one TI job, start to finish",
       await openCollapsed(page, "+ Log a bid", logSection);
       await hydrated(logForm, "the Log a bid form, second time");
       await logForm.locator('select[name="contactId"]').selectOption({ label: GC_B });
+      // "Same job as…" FIRST, on a blank form: since 2026-10-30 picking a
+      // project fills the name and trade (`prefillSameJob`), and it only fills
+      // fields that are still blank — so this is the order that shows it.
+      const join = logForm.locator('select[name="bidProjectId"]');
+      const choices = await join.locator("option").allInnerTexts();
+      walk(`bids · "Same job as…" offers ${choices.length} choices; the first few: ${choices.slice(0, 4).map(squash).join(" / ")}`);
+      const joinValue = await join.locator("option").filter({ hasText: PROJECT_A }).first().getAttribute("value");
+      expect(joinValue, "the first GC's project should be offered under 'Same job as…'").toBeTruthy();
+      await join.selectOption(joinValue!);
+      await expect(join, "the same-job choice must be on the control before it is saved").toHaveValue(joinValue!);
+      const filledName = await logForm.locator('input[name="projectName"]').inputValue();
+      const filledTrade = await logForm.locator('select[name="tradeScope"]').inputValue();
+      walk(`bids · picked "Same job as…" ${PROJECT_A}; the form filled in name "${filledName}", trade "${filledTrade || "(none)"}"`);
+      expect.soft(filledName, "picking the same job fills the project's name").toBe(PROJECT_A);
+      expect.soft(filledTrade, "…and the first GC's trade").toBe("METAL_FRAMING_DRYWALL");
+      // Ridgeline calls the job something else, and a sub types what the GC wrote.
       await logForm.locator('input[name="projectName"]').fill(PROJECT_B);
       await logForm.locator('select[name="tradeScope"]').selectOption("METAL_FRAMING_DRYWALL");
       await logForm.locator('input[name="dueDate"]').fill(DUE);
@@ -439,13 +557,7 @@ test.describe("C Stream Bid — a drywall sub bids one TI job, start to finish",
         .then(() => true)
         .catch(() => false);
       walk(warned ? `bids · second GC, before saving: "${await textOf(sameJob)}"` : "bids · second GC: NO same-job warning appeared within 8s");
-      const join = logForm.locator('select[name="bidProjectId"]');
-      const choices = await join.locator("option").allInnerTexts();
-      walk(`bids · "Same job as…" offers ${choices.length} choices; the first few: ${choices.slice(0, 4).map(squash).join(" / ")}`);
-      const joinValue = await join.locator("option").filter({ hasText: PROJECT_A }).first().getAttribute("value");
-      expect(joinValue, "the first GC's project should be offered under 'Same job as…'").toBeTruthy();
-      await join.selectOption(joinValue!);
-      await expect(join, "the same-job choice must be on the control before it is saved").toHaveValue(joinValue!);
+      await expect(join, "typing the GC's own name must not undo the same-job choice").toHaveValue(joinValue!);
       await settleAction(page, () => logForm.getByRole("button", { name: "Log invitation" }).click());
 
       await page.goto("/bid/bids?view=all");
@@ -464,7 +576,7 @@ test.describe("C Stream Bid — a drywall sub bids one TI job, start to finish",
     // ── 4 ──────────────────────────────────────────────────────────────────
     await test.step("4. start the estimate from the project; the job screen's rail and ask card", async () => {
       const rowA = rowById(invitationA);
-      await openDisclosure(rowA.locator('details[data-bids="project-controls"]'));
+      // On the row since 2026-10-30, not behind the collapsed "Project: …" controls.
       const start = rowA.getByRole("button", { name: "Start the estimate" });
       await hydrated(start, "Start the estimate");
       walk(`bids · project panel: "${await textOf(start.locator("xpath=following-sibling::p[1]"))}"`);
@@ -481,8 +593,65 @@ test.describe("C Stream Bid — a drywall sub bids one TI job, start to finish",
       walk(`job screen · tabs: ${tabs.map(squash).join(" · ")}`);
     });
 
+    // ── 4b ─────────────────────────────────────────────────────────────────
+    // What step 5's board-layers question stands on: a STARTER wall type whose
+    // "Board layers each side" nobody has answered and whose board part is
+    // marked "Per layer" (lib/bid/guide/boardLayers.ts asks only then).
+    let starterReady = false;
+    await test.step("4b. wall types: the starters Bid offers, and the W1 card the takeoff will price with", async () => {
+      await page.goto("/bid/wall-types");
+      await bidPage("Bid wall types");
+      const library = (await page.locator('details[name="wall-type"] > summary').allInnerTexts()).map(squash);
+      walk(`wall types · ${library.length} in the library${library.length > 0 ? `: ${library.slice(0, 10).map((t) => clip(t, 90)).join(" / ")}` : ""}`);
+      const starters = page.locator('[data-wall-types="add-starters"]');
+      if ((await starters.count()) > 0) {
+        const label = await textOf(starters);
+        const offered = await textOf(page.locator('[data-wall-types="starters"] p').first(), "(no list — the library was empty)");
+        walk(`wall types · starter button: "${label}" · ${offered}`);
+        const adds = Number(/\(adds (\d+)\)/.exec(label)?.[1] ?? "NaN");
+        expect.soft(adds, "Bid offers at most its own eight trade starters").toBeLessThanOrEqual(BID_STARTERS.length);
+        for (const code of CRM_ONLY_STARTERS) {
+          expect.soft(offered, `Bid must not offer the CRM-only starter ${code}`).not.toMatch(new RegExp(`\\b${code}\\b`));
+        }
+        await hydrated(starters, "the starter button");
+        await starters.click();
+        // Cannot be on the page before the press: the action's own sentence.
+        const added = page.getByText(/^Added .*Link each part to your price book/);
+        // Soft: a takeoff spec on the same company can add the starters from the
+        // CRM's page in the same second, and the codes below are what matter.
+        await expect.soft(added, "the starter button should add the missing starters").toBeVisible({ timeout: 60_000 });
+        walk(`wall types · pressed it: "${await textOf(page.locator('[data-wall-types="starters"] p').last())}"`);
+        await page.reload();
+        await bidPage("Bid wall types after adding the starters");
+      } else {
+        walk(`wall types · no starter button: every Bid starter (${BID_STARTERS.join(", ")}) is already in the library`);
+      }
+      const codes = (await page.locator('details[name="wall-type"] > summary span.font-medium').allInnerTexts()).map(squash);
+      walk(`wall types · codes now: ${codes.join(", ")}`);
+      for (const code of BID_STARTERS) expect.soft(codes, `the Bid starter ${code} should be in the library`).toContain(code);
+
+      const card = await readWallTypeCard(STARTER_CODE);
+      if (!card.found) {
+        walk(`wall types · ${STARTER_CODE}: NOT in the library, so the board-layers question cannot be reached on this run`);
+      } else {
+        walk(`wall types · ${STARTER_CODE} "Board layers each side": "${card.boardLayers || "Not answered"}" · options: ${card.layerOptions.join(" / ")}`);
+        for (const part of card.parts) walk(`wall types · ${STARTER_CODE} part "${part.description}" · Per layer ${part.perLayer ? "TICKED" : "not ticked"}`);
+        const board = card.parts.find((part) => wallPart(part.description) === "board");
+        const tape = card.parts.find((part) => wallPart(part.description) === "tape");
+        expect.soft(board?.perLayer, `${STARTER_CODE}'s board part should be marked Per layer`).toBe(true);
+        expect.soft(tape?.perLayer, `${STARTER_CODE}'s tape and finish covers the face layer only, so it is not Per layer`).toBe(false);
+        starterReady = card.boardLayers === "" && board?.perLayer === true;
+        if (card.boardLayers !== "") {
+          walk(`wall types · ${STARTER_CODE} already answers ${card.boardLayers} layer(s), so the guide will NOT ask the board-layers question (another spec or an earlier attempt answered it)`);
+        } else if (board?.perLayer !== true) {
+          walk(`wall types · ${STARTER_CODE}'s board part is not Per layer, so no layer answer would change anything and the guide will not ask`);
+        }
+      }
+    });
+
     // ── 5 ──────────────────────────────────────────────────────────────────
     let wallsAdded = 0;
+    const addedAs: string[] = [];
     await test.step("5. takeoff: upload a sheet, set the scale, find the walls, add groups", async () => {
       // A failure in here is RECORDED (soft) rather than ending the walk: the
       // estimate is then built by hand in step 6, and the log says so.
@@ -580,7 +749,11 @@ test.describe("C Stream Bid — a drywall sub bids one TI job, start to finish",
             const options = await choice.locator("option").evaluateAll((nodes) =>
               nodes.map((node) => ({ value: (node as HTMLOptionElement).value, text: (node.textContent ?? "").trim() })),
             );
-            const type = options.find((option) => !["", "create", "plain"].includes(option.value));
+            // The starter partition first (step 4b checked it is unanswered),
+            // then any other type, and plain measurements only when no type is
+            // offered at all — those price nothing and ask no layer question.
+            const types = options.filter((option) => !["", "create", "plain"].includes(option.value));
+            const type = types.find((option) => option.text.startsWith(`${STARTER_CODE} —`)) ?? types[0];
             const pick = type ?? options.find((option) => option.value === "plain");
             walk(`workspace · group "${label}" asks "What are these?" — offers: ${options.map((o) => o.text).join(" / ")}`);
             if (!pick) {
@@ -614,6 +787,7 @@ test.describe("C Stream Bid — a drywall sub bids one TI job, start to finish",
           }, `pressing "${addLabel}" should add the group or say why not`).toPass({ timeout: 30_000 });
           if ((await groups.count()) < before) {
             wallsAdded += 1;
+            addedAs.push(addLabel);
             walk(`workspace · pressed "${addLabel}" on "${label}": added`);
           } else {
             walk(`workspace · pressed "${addLabel}" on "${label}": REFUSED "${await textOf(findError)}"`);
@@ -653,6 +827,65 @@ test.describe("C Stream Bid — a drywall sub bids one TI job, start to finish",
         expect.soft(after?.askId, "the height question should be answered").not.toBe("wall-height");
       } else {
         walk("wall height · the guide did not ask for a wall height on this job");
+      }
+    });
+
+    // ── 5b ─────────────────────────────────────────────────────────────────
+    await test.step("5b. the board-layers question: 2 layers each side doubles the board, and only the board", async () => {
+      await openJobScreen("estimate", "estimate tab, for the board-layers question");
+      const guide = await printGuide("board layers, before", { rail: false });
+      const usedStarter = addedAs.some((label) => label.startsWith(`Add as ${STARTER_CODE} `));
+      walk(`board layers · walls added as: ${addedAs.length > 0 ? addedAs.join(" / ") : "(none)"}`);
+      if (guide?.askId !== "board-layers") {
+        // Say exactly which link in the chain was missing.
+        const why = !starterReady
+          ? `${STARTER_CODE} was not an unanswered starter with a Per layer board part (step 4b says which)`
+          : wallsAdded === 0
+            ? "no group of walls was added from the drawing (step 5 says why)"
+            : !usedStarter
+              ? `the groups were added as ${addedAs.join(" / ")}, not as ${STARTER_CODE}, so no measured wall carries its board`
+              : `the guide asks "${guide?.askId ?? "nothing"}" first — an earlier rule in buildJobGuide.ts outranks board-layers`;
+        walk(`board layers · NOT ASKED: ${why}`);
+        if (starterReady && usedStarter) {
+          expect.soft(guide?.askId, `${STARTER_CODE}'s walls are measured and its layers unanswered, so the guide should ask`).toBe("board-layers");
+        }
+        return;
+      }
+      expect.soft(guide.askTitle, "the question names the wall type").toContain(`How many layers of board are on the ${STARTER_CODE} walls`);
+
+      const before = await readWallLines();
+      for (const line of before) walk(`board layers · before · "${line.description}" ${line.quantity} ${line.unit}`);
+      const beforeTotals = totalsByPart(before);
+      walk(`board layers · before, by part: ${JSON.stringify(beforeTotals)}`);
+      expect.soft(beforeTotals.board ?? 0, "a board (sheets) line from the wall schedule is on the estimate").toBeGreaterThan(0);
+
+      const ask = page.locator('[data-guide="ask"]');
+      const chip = ask.locator('[data-guide="chips"]').getByRole("button", { name: "2 layers each side", exact: true });
+      await hydrated(chip, "the 2 layers each side answer");
+      await chip.click();
+      const confirm = ask.locator('[data-guide="confirm"]');
+      await expect(confirm, "a tap answer arms a confirm").toBeVisible();
+      walk(`board layers · tapped "2 layers each side"; the card asks: "${await textOf(confirm.locator("p").first())}"`);
+      await settleAction(page, () => confirm.getByRole("button", { name: "Yes, do it" }).click());
+      walk("board layers · pressed Yes, do it");
+      await page.reload();
+      await bidPage("estimate tab after answering the board layers");
+      const after = await printGuide("board layers, after", { rail: false });
+      expect.soft(after?.askId, "the board-layers question should be answered").not.toBe("board-layers");
+
+      const lines = await readWallLines();
+      for (const line of lines) walk(`board layers · after · "${line.description}" ${line.quantity} ${line.unit}`);
+      const afterTotals = totalsByPart(lines);
+      walk(`board layers · after, by part: ${JSON.stringify(afterTotals)}`);
+      // Board sheets carry waste and round up to whole sheets, so doubling can
+      // land one sheet either side of twice the old count.
+      const board = { was: beforeTotals.board ?? 0, now: afterTotals.board ?? 0 };
+      expect.soft(Math.abs(board.now - 2 * board.was), `board went ${board.was} → ${board.now}; two layers should double it`).toBeLessThanOrEqual(1);
+      const hang = { was: beforeTotals.hang ?? 0, now: afterTotals.hang ?? 0 };
+      walk(`board layers · hang went ${hang.was} → ${hang.now} (hanging is per layer too, so it should double)`);
+      expect.soft(Math.abs(hang.now - 2 * hang.was), "hanging is per layer, so it doubles with the board").toBeLessThanOrEqual(1);
+      for (const part of ["studs", "track", "tape"] as const) {
+        expect.soft(afterTotals[part] ?? 0, `${part} does not depend on the board layers and must not change`).toBe(beforeTotals[part] ?? 0);
       }
     });
 
@@ -817,6 +1050,41 @@ test.describe("C Stream Bid — a drywall sub bids one TI job, start to finish",
       }
       const amber = await page.locator("p.bg-tag-amber, p.bg-tag-rose").allInnerTexts();
       for (const text of amber) walk(`proposal · banner: "${clip(squash(text))}"`);
+
+      // ── SEND TO THE GC, ON A COPY THAT IS NOT THE LIVE APP ──
+      // The composer is drawn for one GC at a time. Off Vercel production it
+      // must refuse in a sentence (`deploymentSendRefusal`), and THIS WALK
+      // NEVER PRESSES A SEND BUTTON — not "Send to …", not "Yes, send it".
+      const composer = page.locator('[data-proposal="send-composer"]');
+      const blocked = page.locator('[data-proposal="send-blocked"]');
+      await expect(composer.or(blocked).first(), "the GC's proposal should carry its Send box, or say why not").toBeVisible();
+      walk(`send · heading: "${await textOf(composer.getByRole("heading").first(), "(no composer — only the refusal sentence)")}"`);
+      walk(`send · how it goes: "${await textOf(composer.locator("h2 + p").first(), "(not shown)")}"`);
+      const toOptions = (await composer.locator('[data-proposal="send-to"] option').allInnerTexts()).map((text) => addressShape(squash(text)));
+      walk(`send · To: ${toOptions.length > 0 ? toOptions.join(" / ") : "(no To picker — it is not drawn while sending is refused)"}`);
+      const subject = composer.locator('input[name="subject"]');
+      walk(`send · Subject: ${(await subject.count()) > 0 ? `"${await subject.inputValue()}"` : "(no subject field — not drawn while sending is refused)"}`);
+      const refusal = await textOf(blocked, "");
+      walk(`send · refusal: ${refusal ? `"${refusal}"` : "(none — the box would send)"}`);
+      expect.soft(refusal, "off the live app the send refuses, and says so").toContain("only emailed from the live app");
+      const arm = composer.locator('[data-proposal="send-arm"]');
+      walk(`send · a "Send to ${GC_B}" button is ${(await arm.count()) > 0 ? "drawn (NOT pressed)" : "not drawn"}`);
+      expect.soft(await arm.count(), "a refused send draws no button to press").toBe(0);
+
+      // With no GC picked, one "Send to <GC>" link per GC — and none leaves Bid.
+      await page.goto(jobScreen("proposal"));
+      await bidPage("the proposal with no GC picked");
+      const pick = page.locator('[data-proposal="send-pick"]');
+      walk(`send · no GC picked: "${await textOf(pick.getByRole("heading").first())}" — "${await textOf(pick.locator("p").first())}"`);
+      const links = await pick.getByRole("link").evaluateAll((anchors) =>
+        anchors.map((a) => ({ text: (a.textContent ?? "").trim(), href: a.getAttribute("href") ?? "" })),
+      );
+      for (const link of links) walk(`send · "${link.text}" → ${link.href}`);
+      expect.soft(links.length, "one Send link per GC on the job").toBe(2);
+      for (const link of links) {
+        expect.soft(isOutsideBid(link.href, page.url()), `"${link.text}" (${link.href}) must stay inside /bid`).toBe(false);
+        expect.soft(link.href, `"${link.text}" opens that GC's proposal`).toContain("invitation=");
+      }
     });
 
     // ── 9 ──────────────────────────────────────────────────────────────────
@@ -922,13 +1190,36 @@ test.describe("C Stream Bid — a drywall sub bids one TI job, start to finish",
       if ((await side.count()) > 0) walk(`home · Your bids, this job: ${await textOf(side.first())}`);
     });
 
+    // ── 10b ────────────────────────────────────────────────────────────────
+    await test.step("10b. the wall types page after the walk: the starters, and what the layer answer wrote", async () => {
+      await page.goto("/bid/wall-types");
+      await bidPage("Bid wall types, after the walk");
+      const starters = page.locator('[data-wall-types="add-starters"]');
+      walk(
+        (await starters.count()) > 0
+          ? `wall types · starter button still offered: "${await textOf(starters)}" · ${await textOf(page.locator('[data-wall-types="starters"] p').first(), "")}`
+          : "wall types · no starter button: every Bid starter is in the library",
+      );
+      const codes = (await page.locator('details[name="wall-type"] > summary span.font-medium').allInnerTexts()).map(squash);
+      walk(`wall types · Bid's starters in the library: ${BID_STARTERS.filter((code) => codes.includes(code)).join(", ")} · others: ${codes.filter((code) => !BID_STARTERS.includes(code)).join(", ") || "(none)"}`);
+      const card = await readWallTypeCard(STARTER_CODE);
+      if (card.found) {
+        walk(`wall types · ${STARTER_CODE} "Board layers each side" now: "${card.boardLayers || "Not answered"}" · options: ${card.layerOptions.join(" / ")}`);
+        walk(`wall types · ${STARTER_CODE} Per layer: ${card.parts.map((part) => `${part.description} ${part.perLayer ? "✓" : "–"}`).join(" | ")}`);
+      } else {
+        walk(`wall types · ${STARTER_CODE}: not in the library`);
+      }
+    });
+
     // ── 11 ─────────────────────────────────────────────────────────────────
     await test.step("11. the same screens on a phone, 375px", async () => {
       await page.setViewportSize({ width: 375, height: 800 });
       const screens: Array<[string, string]> = [
         ["Home", "/bid/home"],
+        ["the bid log", "/bid/bids?view=all"],
         ["job screen", jobScreen("estimate")],
         [`${GC_B}'s proposal`, `${jobScreen("proposal")}?invitation=${encodeURIComponent(invitationB)}`],
+        ["wall types", "/bid/wall-types"],
       ];
       for (const [name, url] of screens) {
         await page.goto(url);
