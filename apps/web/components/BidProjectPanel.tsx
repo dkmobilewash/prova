@@ -233,9 +233,12 @@ export function BidProjectPanel({
             resetOnSuccess={false}
             className="flex flex-wrap items-end gap-3"
           >
-            <label className="flex flex-col gap-1 text-sm text-ink-label">
+            {/* max-w-full on the label AND the select: a select is as wide as
+                its longest option, and a long GC name ran these past the right
+                edge at 375px (contractor walk, round 2). */}
+            <label className="flex min-w-0 max-w-full flex-col gap-1 break-words text-sm text-ink-label">
               Price to {view.gcs.find((gc) => gc.isThis)?.name}
-              <select name="kind" defaultValue={view.thisAdjustment.kind} className={field}>
+              <select name="kind" defaultValue={view.thisAdjustment.kind} className={`${field} max-w-full`}>
                 <option value="none">The estimate total, no adjustment</option>
                 <option value="amount">Add or take off a dollar amount</option>
                 <option value="percent">Add or take off a percent</option>
@@ -278,9 +281,9 @@ export function BidProjectPanel({
             resetOnSuccess={false}
             className="flex flex-wrap items-end gap-3"
           >
-            <label className="flex flex-col gap-1 text-sm text-ink-label">
+            <label className="flex min-w-0 max-w-full flex-col gap-1 text-sm text-ink-label">
               Prime contract awarded to
-              <select name="contactId" defaultValue={view.primeAwarded?.contactId ?? ""} className={field}>
+              <select name="contactId" defaultValue={view.primeAwarded?.contactId ?? ""} className={`${field} max-w-full`}>
                 <option value="">A GC not on my list / not known</option>
                 {gcs.map((gc) => (
                   <option key={gc.id} value={gc.id}>
