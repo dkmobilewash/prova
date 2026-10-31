@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import type { PrismaClient } from "@prova/db";
+import { catalogLineFields } from "../lib/estimating/catalog-line";
 
 /**
  * One job holding everything the billing click test walks through. Invented
@@ -122,7 +123,7 @@ export async function seedBillingClickFixture(prisma: PrismaClient, companyId: s
   });
 
   const board = await prisma.lineItemCatalogEntry.create({
-    data: { companyId, description: "ZZ Click 5/8 type X board", unit: "SF", defaultBudgetedUnitCost: "0.80", defaultUnitPrice: "1.50" },
+    data: { companyId, description: "ZZ Click 5/8 type X board", unit: "SF", defaultBudgetedUnitCost: "0.80", defaultUnitPrice: "1.50", costCategory: "MATERIAL" },
   });
 
   // $100,000 contract, plus a $5,000 approved change order.
@@ -130,7 +131,9 @@ export async function seedBillingClickFixture(prisma: PrismaClient, companyId: s
     data: { jobId, description: "Framing labor", unit: "LS", quantity: "1", unitPrice: "60000", budgetedUnitCost: "40000", costCategory: "LABOR" },
   });
   const boardLine = await prisma.jobLineItem.create({
-    data: { jobId, description: "5/8 type X board", unit: "SF", quantity: "10000", unitPrice: "1.50", budgetedUnitCost: "0.80", costCategory: "MATERIAL", sourceCatalogEntryId: board.id },
+    // Through the app's own mapping, so the quotes match the way a real
+    // catalog line's do.
+    data: { ...catalogLineFields(board), jobId, description: "5/8 type X board", quantity: "10000" },
   });
   const fireproofing = await prisma.jobLineItem.create({
     data: { jobId, description: "Spray fireproofing", unit: "LS", quantity: "1", unitPrice: "25000", budgetedUnitCost: "18000", costCategory: "SUBCONTRACTOR" },
