@@ -4,11 +4,15 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { NoAccess } from "@/components/NoAccess";
 import { BuyoutRow, PurchaseOrderActions, PurchaseOrderLineRow, SpecFindingList } from "@/components/BuyoutRow";
-import { party } from "@/lib/billing/g702";
 import { buyoutSpecCheck, specCheckSentence } from "@/lib/buyout-spec-check";
 import { loadJobSpecFindings } from "@/lib/buyout-spec-query";
 import { formatCalendarDate } from "@/lib/render-date";
 import { requireCapability } from "@/lib/authz";
+import { SendDocument, SendHistory } from "@/components/SendDocument";
+import { purchaseOrderEmail } from "@/lib/document-email";
+import { purchaseOrderDocument } from "@/lib/purchase-order-document";
+import { purchaseOrderFileName } from "@/lib/purchase-order-pdf";
+import { loadSends } from "@/lib/sent-documents-query";
 import { money } from "@/lib/money";
 import { viewerToday } from "@/lib/viewerToday";
 import { buyoutRows, poLineAmount } from "@/lib/purchase-orders";
@@ -71,6 +75,8 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
     viewerToday(),
     loadJobSpecFindings(job.id, company.id),
   ]);
+
+  const sends = await loadSends(company.id, "PURCHASE_ORDER", purchaseOrders.map((po) => po.id));
 
   const rows = buyoutRows(
     job.lineItems.map((item) => ({
@@ -164,6 +170,7 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
                   (sum, line) => sum + poLineAmount({ quantity: Number(line.quantity), unitPrice: Number(line.unitPrice) }),
                   0,
                 );
+                const document = purchaseOrderDocument(po, job, company);
                 return (
                   <li key={po.id} className="rounded-lg border border-line-card bg-surface p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -172,32 +179,7 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
                         {po.issuedOn ? ` · issued ${formatCalendarDate(po.issuedOn)}` : ""}
                         {po.closedOn ? ` · closed ${formatCalendarDate(po.closedOn)}` : ""}
                       </p>
-                      <PurchaseOrderActions
-                        id={po.id}
-                        status={po.status}
-                        document={{
-                          number: po.number,
-                          status: po.status,
-                          issuedOn: po.issuedOn ? formatCalendarDate(po.issuedOn) : null,
-                          from: party(
-                            company.dbaName ? `${company.name} (dba ${company.dbaName})` : company.name,
-                            company.hqAddressLine1,
-                            company.hqAddressLine2,
-                            [company.hqCity, company.hqState, company.hqZip].filter(Boolean).join(" ") || null,
-                            company.phone,
-                          ),
-                          vendor: party(po.vendor.name, po.vendor.contactName, po.vendor.phone, po.vendor.email),
-                          jobName: job.name,
-                          shipTo: job.siteAddress ?? job.projectLocation ?? null,
-                          contractNumber: job.contractNumber,
-                          lines: po.lines.map((line) => ({
-                            description: line.description,
-                            quantity: Number(line.quantity),
-                            unit: line.unit,
-                            unitPrice: Number(line.unitPrice),
-                          })),
-                        }}
-                      />
+                      <PurchaseOrderActions id={po.id} status={po.status} document={document} />
                     </div>
                     <ul className="mt-2 flex flex-col gap-1">
                       {po.lines.map((line) => (
@@ -211,6 +193,23 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
                         />
                       ))}
                     </ul>
+                    <div className="mt-3 flex flex-col items-start gap-2">
+                      <SendHistory sends={sends.get(po.id) ?? []} />
+                      {po.status !== "DRAFT" && (
+                        <SendDocument
+                          target={{ kind: "PURCHASE_ORDER", id: po.id }}
+                          draft={purchaseOrderEmail({
+                            company: company.dbaName ?? company.name,
+                            jobName: job.name,
+                            number: po.number,
+                            total: money(total),
+                            fileName: purchaseOrderFileName(document),
+                            vendorName: po.vendor.name,
+                            vendorEmail: po.vendor.email,
+                          })}
+                        />
+                      )}
+                    </div>
                   </li>
                 );
               })}

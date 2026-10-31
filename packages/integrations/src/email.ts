@@ -35,6 +35,12 @@ export type EmailSendRequest = {
   text: string;
   /** Overrides the configured default. Recorded per message by the caller. */
   from?: string;
+  /** The name shown as sender, on our verified address. Diego's call for
+   * documents, 2026-10-31: the sub's company name now, per-company domains
+   * later. Ignored when `from` is given. */
+  fromName?: string;
+  /** Where a reply goes, so it reaches the person who sent it. */
+  replyTo?: string;
   /**
    * Files to send with it. Absent on every message this app sent before a bid
    * package needed to reach a GC, and absent is not the same as empty — an
@@ -94,6 +100,15 @@ export function emailSetupProblem(): string | null {
   return null;
 }
 
+/** The configured address under another display name. A company name comes from
+ * a form, so anything that could break out of the header is removed. */
+export function senderAddress(configured: string, name: string | undefined): string {
+  const clean = (name ?? "").replace(/["<>\\\r\n]/g, "").replace(/\s+/g, " ").trim();
+  if (!clean) return configured;
+  const address = configured.match(/<([^>]+)>/)?.[1] ?? configured.trim();
+  return `"${clean}" <${address}>`;
+}
+
 /** A very small sanity check, not RFC validation.
  *
  * Deliberately permissive: real addresses are stranger than most regexes
@@ -145,7 +160,8 @@ export async function sendEmail(
     return { ok: false, error: `"${request.to}" doesn't look like an email address`, configured: true };
   }
 
-  const from = request.from?.trim() || config.from;
+  const from = request.from?.trim() || senderAddress(config.from, request.fromName);
+  const replyTo = request.replyTo && looksLikeEmail(request.replyTo) ? request.replyTo.trim() : undefined;
   const to = request.toName ? `${request.toName} <${request.to}>` : request.to;
 
   // NORMALISED TO UNDEFINED WHEN THERE ARE NONE, so a message with no files
@@ -173,6 +189,7 @@ export async function sendEmail(
         subject: request.subject,
         text: request.text,
         attachments,
+        reply_to: replyTo,
       }),
     });
   } catch (err) {
