@@ -46,6 +46,7 @@ export async function removeBillingClickFixture(prisma: PrismaClient, companyId:
     await prisma.materialOrder.deleteMany({ where: { jobId } });
     await prisma.materialOrderCounter.deleteMany({ where: { jobId } });
     await prisma.timeEntry.deleteMany({ where: { jobId } });
+    await prisma.dailyFieldReport.deleteMany({ where: { jobId } });
     await prisma.jobLineItem.deleteMany({ where: { jobId } });
     await prisma.changeOrderLineItemEdit.deleteMany({ where: { changeOrder: { jobId } } });
     await prisma.changeOrder.deleteMany({ where: { jobId } });
@@ -298,6 +299,20 @@ export async function seedBillingClickFixture(prisma: PrismaClient, companyId: s
       { jobId, lineItemId: framing.id, employeeUserId: worker.id, date: day("2026-11-05"), hours: "60" },
     ],
   });
+
+  // Installed quantities on the board line, for the second suggestion. The last
+  // falls after October, so it shows the period-to cutoff.
+  for (const [date, quantity] of [["2026-09-30", "3000"], ["2026-10-20", "3000"], ["2026-11-05", "1000"]] as const) {
+    await prisma.dailyFieldReport.create({
+      data: {
+        companyId,
+        jobId,
+        reportDate: day(date),
+        workPerformed: "Hung board on L3",
+        installedQuantities: { create: { lineItemId: boardLine.id, quantity } },
+      },
+    });
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.submittalCounter.upsert({ where: { jobId }, create: { jobId, lastNumber: 2 }, update: { lastNumber: 2 } });

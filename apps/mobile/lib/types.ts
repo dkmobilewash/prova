@@ -53,6 +53,8 @@ export type FieldReportFields = {
   crewPresent: string | null;
   weather: string | null;
   delays: string | null;
+  /** Installed today, per line, as typed. Absent means nothing was entered. */
+  installed?: { lineItemId: string; quantity: string }[];
 };
 
 export type CreateFieldReportInput = {
@@ -175,6 +177,8 @@ export type CrewMember = {
 export type LineItem = {
   id: string;
   description: string;
+  /** Present when a field report can take a quantity on this line. */
+  install?: { unit: string; quantity: number; installedToDate: number };
 };
 
 export type Craft = {

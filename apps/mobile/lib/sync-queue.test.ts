@@ -73,6 +73,10 @@ vi.mock("./api", () => ({
     if (failNext) failNext();
     return {};
   },
+  createFieldReport: async (input: { installed?: { lineItemId: string; quantity: string }[] }) => {
+    sent.push(`report:${JSON.stringify(input.installed ?? null)}`);
+    return {};
+  },
   deletePunchListItem: async (_jobId: string, itemId: string) => {
     sent.push(`delete:${itemId}`);
     if (failNext) failNext();
@@ -394,5 +398,27 @@ describe("a punch item removed", () => {
 
     expect(await pendingCount()).toBe(1);
     expect(await listRefused()).toEqual([]);
+  });
+});
+
+describe("a field report filed with no signal", () => {
+  it("takes its installed quantities with it", async () => {
+    await enqueue({
+      type: "field-report:create",
+      jobId: "job_1",
+      reportDate: "2026-10-01",
+      clientOperationId: "op_r",
+      clientId: "c1",
+      clientUpdatedAt: "2026-10-01T22:00:00.000Z",
+      fields: {
+        workPerformed: "Hung board",
+        crewPresent: null,
+        weather: null,
+        delays: null,
+        installed: [{ lineItemId: "l1", quantity: "400" }],
+      },
+    });
+    await flushQueue("token");
+    expect(sent).toEqual(['report:[{"lineItemId":"l1","quantity":"400"}]']);
   });
 });

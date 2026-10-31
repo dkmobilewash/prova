@@ -13,6 +13,9 @@
  */
 
 export type ReportData = {
+  /** This report's quantities by line id, and as a sentence. */
+  installed?: Record<string, number>;
+  installedLine?: string | null;
   id: string;
   jobId: string;
   jobName: string;

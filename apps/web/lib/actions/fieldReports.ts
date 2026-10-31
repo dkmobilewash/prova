@@ -12,6 +12,7 @@ import {
   FIELD_ONLY,
   isReportDayLockError,
 } from "@/lib/field-reports-core";
+import { installedFromForm } from "@/lib/installed-quantities";
 import { liveSignoff, lockedDayMessage } from "@/lib/timesheet-signoff";
 
 /**
@@ -67,6 +68,7 @@ export async function createDailyFieldReport(
     crewPresent: text(formData, "crewPresent"),
     weather: text(formData, "weather"),
     ...(formData.has("delays") ? { delays: text(formData, "delays") } : {}),
+    installed: installedFromForm(formData),
   });
   if (!result.ok) return result;
   revalidateBoth(jobId);
@@ -84,6 +86,7 @@ export async function updateDailyFieldReport(
       crewPresent: text(formData, "crewPresent"),
       weather: text(formData, "weather"),
       ...(formData.has("delays") ? { delays: text(formData, "delays") } : {}),
+      installed: installedFromForm(formData),
     });
     if (!result.ok) return result;
     revalidateBoth(result.value.report.jobId);

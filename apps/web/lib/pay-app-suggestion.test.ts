@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { calculatePayAppLineItem, calculatePayAppSummary } from "./pay-application";
-import { suggestThisPeriod } from "./pay-app-suggestion";
+import { suggestFromInstalled, suggestThisPeriod } from "./pay-app-suggestion";
 
 const line = (over = {}) => ({
   scheduledValue: 60000,
@@ -86,5 +86,33 @@ describe("the G702 is not touched", () => {
       previousCertificatesForPayment: 20700,
       currentPaymentDue: 21600,
     });
+  });
+});
+
+describe("the suggestion from installed quantities", () => {
+  const billed = { scheduledValue: 15000, previousBilled: 3000, materialsStoredToDate: 0 };
+  const progress = { quantity: 10000, unit: "SF", logged: [{ day: "2026-09-30", amount: 2000 }, { day: "2026-10-20", amount: 2000 }, { day: "2026-11-05", amount: 1000 }] };
+
+  it("takes installed over the line's quantity, less what is billed, through the period", () => {
+    expect(suggestFromInstalled(billed, progress, "2026-10-31")).toEqual({
+      amount: 3000,
+      text: "Suggested $3,000.00 from installed qty: 4,000 of 10,000 SF through 2026-10-31, 40.0%.",
+    });
+  });
+
+  it("holds at 100% when more is recorded than the line carries", () => {
+    const over = suggestFromInstalled(billed, { ...progress, logged: [{ day: "2026-10-01", amount: 12000 }] }, "2026-10-31");
+    expect(over?.amount).toBe(12000);
+    expect(over?.text).toContain("over the line's quantity, so held at 100%");
+  });
+
+  it("says nothing is suggested when the line is billed past it", () => {
+    expect(suggestFromInstalled({ ...billed, previousBilled: 9000 }, progress, "2026-10-31")).toMatchObject({ amount: null });
+  });
+
+  it("stays silent with no unit line, nothing installed by then, or no date", () => {
+    expect(suggestFromInstalled(billed, undefined, "2026-10-31")).toBeNull();
+    expect(suggestFromInstalled(billed, progress, "2026-09-01")).toBeNull();
+    expect(suggestFromInstalled(billed, progress, "")).toBeNull();
   });
 });

@@ -454,6 +454,7 @@ model JobLineItem {
   edits            ChangeOrderLineItemEdit[]
   costEntries      CostEntry[]
   timeEntries      TimeEntry[]
+  installedQuantities DailyReportInstalledQuantity[]
   invoiceLineItems InvoiceLineItem[]
   proposedChanges  ChangeOrderProposal[]     @relation("ProposedChangeTarget")
   /// Attribution only — see the note on MaterialOrder.lineItem. No money

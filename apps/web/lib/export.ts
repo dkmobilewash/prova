@@ -546,6 +546,14 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byCompany,
   },
   {
+    key: "installed-quantities",
+    model: "dailyReportInstalledQuantity",
+    label: "Installed quantities",
+    note: "What each daily field report recorded as installed, per schedule-of-values line, in that line's unit.",
+    columns: ["id", "reportId", "lineItemId", "quantity", "createdAt"],
+    scope: (companyId: string) => ({ report: { companyId } }),
+  },
+  {
     key: "delays",
     model: "delayEvent",
     label: "Delays",

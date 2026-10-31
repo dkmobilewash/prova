@@ -112,6 +112,7 @@ export function useFieldReports(jobId: string) {
           crewPresent: fields.crewPresent,
           weather: fields.weather,
           delays: fields.delays,
+          installed: fields.installed,
         },
       });
       if (!saved.ok) {

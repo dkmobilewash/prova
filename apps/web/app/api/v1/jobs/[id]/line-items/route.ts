@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
 import { prisma } from "@prova/db";
+import { loadInstallLines } from "@/lib/installed-quantities-query";
 
 export const dynamic = "force-dynamic";
 
@@ -28,5 +29,13 @@ export async function GET(
     select: { id: true, description: true },
   });
 
-  return NextResponse.json(items);
+  // Cost codes are every line. These extra fields mark the ones a field report
+  // can take a quantity on, for the phone. An older phone ignores them.
+  const installable = (await loadInstallLines([id])).get(id) ?? [];
+  return NextResponse.json(
+    items.map((item) => {
+      const line = installable.find((row) => row.id === item.id);
+      return line ? { ...item, install: { unit: line.unit, quantity: line.quantity, installedToDate: line.installedToDate } } : item;
+    }),
+  );
 }

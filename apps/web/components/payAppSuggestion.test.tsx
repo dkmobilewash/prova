@@ -19,6 +19,7 @@ const item = {
   previousBilled: 20000,
   budgeted: 200,
   logged: [{ day: "2026-09-30", amount: 80 }, { day: "2026-10-20", amount: 40 }],
+  installedProgress: { quantity: 1000, unit: "SF", logged: [{ day: "2026-10-20", amount: 500 }] },
 };
 
 describe("a suggestion on the pay application form", () => {
@@ -40,10 +41,16 @@ describe("a suggestion on the pay application form", () => {
     expect(host.querySelector<HTMLInputElement>('input[name="thisPeriodBilled"]')?.value).toBe("");
   });
 
+  it("shows both sources side by side, with the box still empty", () => {
+    expect(host.textContent).toContain("Suggested $10,000.00 from installed qty: 500 of 1,000 SF through 2026-10-31, 50.0%.");
+    expect(host.textContent).toContain("from hours");
+    expect(host.querySelector<HTMLInputElement>('input[name="thisPeriodBilled"]')?.value).toBe("");
+  });
+
   it("sends nothing from the suggestion when the form is read", () => {
     const form = new FormData(host.querySelector("form")!);
     expect(form.getAll("thisPeriodBilled")).toEqual([""]);
-    expect([...form.values()].join(" ")).not.toContain("16000");
+    expect([...form.values()].join(" ")).not.toMatch(/16000|10000/);
   });
 
   it("follows the period-to date", async () => {

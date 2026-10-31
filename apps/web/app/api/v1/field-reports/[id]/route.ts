@@ -48,6 +48,7 @@ export async function PATCH(
     crewPresent: input.crewPresent,
     weather: input.weather,
     delays: input.delays,
+    installed: input.installed,
     clientId: input.clientId,
     clientUpdatedAt: input.clientUpdatedAt,
   });

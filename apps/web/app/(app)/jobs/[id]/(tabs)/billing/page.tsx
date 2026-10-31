@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@prova/db";
 import { RowActions, ConfirmDelete } from "@/components/RowActions";
 import { PayApplications, StatusForm } from "@/components/PayApplications";
+import { isInstallable } from "@/lib/installed-quantities";
 import { estimatedHours } from "@/lib/labor-productivity";
 import { LogPaymentForm } from "@/components/LogPaymentForm";
 import { PushPaymentToQuickBooks } from "@/components/PushPaymentToQuickBooks";
@@ -81,7 +82,16 @@ export default async function JobBillingPage({
       contact: { select: { id: true, name: true } },
       lineItems: {
         where: { isDeleted: false },
-        select: { id: true, description: true, quantity: true, unitPrice: true, laborHours: true, productionRate: true },
+        select: {
+          id: true,
+          description: true,
+          quantity: true,
+          unit: true,
+          costCategory: true,
+          unitPrice: true,
+          laborHours: true,
+          productionRate: true,
+        },
       },
       invoices: {
         orderBy: { number: "asc" },
@@ -147,7 +157,20 @@ export default async function JobBillingPage({
     where: { jobId: job.id, lineItemId: { not: null } },
     _sum: { hours: true },
   });
+  const installedRows = await prisma.dailyReportInstalledQuantity.findMany({
+    where: { lineItem: { jobId: job.id } },
+    select: { lineItemId: true, quantity: true, report: { select: { reportDate: true } } },
+  });
   const payApplicationLineItemOptions = job.lineItems.map((item) => ({
+    installedProgress: isInstallable({ unit: item.unit, quantity: Number(item.quantity), costCategory: item.costCategory })
+      ? {
+          quantity: Number(item.quantity),
+          unit: item.unit ?? "",
+          logged: installedRows
+            .filter((row) => row.lineItemId === item.id)
+            .map((row) => ({ day: row.report.reportDate.toISOString().slice(0, 10), amount: Number(row.quantity) })),
+        }
+      : undefined,
     budgeted: estimatedHours({
       laborHours: item.laborHours == null ? null : Number(item.laborHours),
       quantity: Number(item.quantity),
