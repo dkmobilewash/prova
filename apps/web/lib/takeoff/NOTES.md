@@ -4370,3 +4370,71 @@ on the cleaned keys reads 96% precision on training and 89% on held-out,
 both fine. A retrain is worth repeating when more sheets carry the existing
 set-aside's own column, which is the signal the cleanup actually added.
 
+
+## The user says which walls are not the job — 2026-10-30 (`diego/user-exclusions`)
+
+Rules cannot separate existing from new on unseen renovation sheets, so two
+tools let the person reading the sheet say it. `userExclusions.ts`, applied in
+`offeredCandidates`, so the viewer and the WALLS stage share one path.
+
+- **Exclude walls like this.** One click on an offered wall; every offered wall
+  on that sheet with the same style is set aside "excluded by you". Style is
+  pen grey band, weight band against the sheet's median, dashed, outline / white
+  fill / grey fill, hatched, and thickness within 1 in or 15%.
+- **Work area.** Polygons; walls wholly outside are set aside, walls across the
+  edge are cut at it, a curved run goes whole by its midpoint.
+
+**Storage is `TakeoffSheetExclusion`, its own table, and that is deliberate.**
+The first draft used two new `TakeoffMeasurement` sources. About fifteen readers
+treat a measurement row as a quantity (estimate lines, crosschecks, posting,
+counts, job-needs), so each would have needed a filter forever.
+
+**An exclusion made after the walls were posted** reaches the estimate through
+`refreshSheetWalls`: detect again and replace the sheet's DETECTED rows. One
+POSTED row leaves the sheet alone. A re-assignment of an unposted detected run
+to another item is lost in the replace.
+
+**The customer list after Find now runs `offeredCandidates`.** It took
+`found.groups` directly, so the screen had been showing walls the stage set
+aside. Labelling mode is unchanged.
+
+### The user, played from the labels (`zzUserAssist.eval.ts`, snapshot 20261030T2120)
+
+| | offered junk / real | one click | ten-click greedy | reads the count, undoes bad clicks | work-area box |
+| --- | --- | --- | --- | --- | --- |
+| training, 32 sheets | 14,310 / 39,097 | 3,212 / 2,391 | 10,955 / 12,781 | 10,394 / 1,674 (229 clicks) | 4,738 / 1 |
+| held-out, 17 sheets | 11,923 / 8,488 | 1,954 / 225 | 8,855 / 2,738 | 8,808 / 1,044 (124 clicks) | 3,291 / 22 |
+
+Junk removed / real lost. **All four are simulations with an oracle.** There is
+no "existing" label, so the click lands on the longest junk-labelled run, which
+is any junk and not only existing walls. The box comes from the key's own bounds
+plus 2 ft, so it is a ceiling for a person who draws the work area perfectly.
+The undo column assumes the person notices every bad click, and its roughly 7
+kept clicks per sheet is a lot of work. Blind clicking is unsafe: one click loses
+2,391 ft on training and greedy loses more real than it removes junk, so the
+count and the undo are the feature rather than decoration. Per-sheet rows are in
+the eval's output. No threshold was tuned on these numbers.
+
+### The realistic user on the scorecard (`zzRealisticUser.eval.ts`, snapshot 20261030T2306)
+
+One work-area box, then up to three kept "exclude like this" clicks (at most six
+tried), through the real `user` input and `scoreSheet`. Vector sheets only.
+Renovation comes from the sheet's own words, fixed before scoring. Box from the
+key's bounds; 10 ft pad is the sloppy drawer.
+
+| | recall | junk per 100 key | junk per 100 offered |
+| --- | --- | --- | --- |
+| training new-build, as offered → box + clicks | 96.2 → 94.1% | 34 → 16 | 24 → 13 |
+| training renovation | 93.0 → 90.4% | 57 → 14 | 33 → 12 |
+| held-out new-build, 4 sheets | 89.8 → 87.8% | 60 → 6 | 39 → 7 |
+| held-out renovation, 11 sheets | 89.4 → 80.0% | 173 → 86 | 63 → 51 |
+| held-out renovation, box alone | 89.5% | 139 | 59 |
+
+The box costs no recall anywhere; on held-out renovations it removes little
+because the existing building sits inside the same bounds as the new work. All
+the recall loss is the clicks: the simulated keep test is only "more junk than
+real". Padding the box to 10 ft moves little (86 → 98 per 100 key).
+
+**Correction to the table above:** its "held-out, 17 sheets" included Evergreen's
+two scanned sheets, which this path cannot read. They offer nothing, so its
+junk and real feet stand; the sheet count is 15 readable plus 2 scans.

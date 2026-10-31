@@ -6,6 +6,7 @@ import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
 import { pagesToSample } from "./sheetTemplate";
 import { inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
 import { detectForSheet, offeredCandidates } from "./offeredCandidates";
+import { userExclusionsFromRows } from "./userExclusions";
 import { SheetTooDenseError, type StrokeSegment } from "./wallVectors";
 import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
@@ -261,6 +262,15 @@ export async function detectWallsForCalibration(
     // Same call, same arguments as `TakeoffPlanViewer`; the stage then
     // regroups what survived with the finder's own grouping.
     const W = strokes.widthPt;
+    // ── AND WHAT THE USER EXCLUDED ON THIS SHEET — see `userExclusions.ts` ──
+    //
+    // The viewer reads the same rows, so the estimate and the screen agree.
+    // A page with none is detected as it always was.
+    const exclusionRows = await prisma.takeoffSheetExclusion.findMany({
+      where: { pageId: target.pageId },
+      select: { kind: true, xs: true, ys: true },
+    });
+    const user = userExclusionsFromRows(exclusionRows);
     const offered = offeredCandidates({
       walls: detected.found.walls,
       segments: detected.found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })),
@@ -269,6 +279,7 @@ export async function detectWallsForCalibration(
       feetPerUnit: target.feetPerUnit,
       planBoxes: detected.planBoxes,
       textItems,
+      ...(user === null ? {} : { user }),
     });
     const found = { ...detected.found, walls: offered.offeredRuns, groups: detected.found.regroup(offered.offeredRuns) };
     // The groups: the finder's own when it paired with the thicknesses, else
