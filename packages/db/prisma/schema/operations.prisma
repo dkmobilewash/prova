@@ -651,6 +651,9 @@ model Submittal {
 
   revisions SubmittalRevision[]
 
+  /// The draft rows this was accepted from, when it came from a spec read.
+  proposals SubmittalProposal[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

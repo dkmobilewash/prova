@@ -243,6 +243,7 @@ export type AskUsageFeature =
    *  could not tell them apart could not answer either "what did the thing we
    *  turned off cost us" or "which allowance did this month go on". */
   | "spec-read"
+  | "submittal-read"
   /** One schedule read off a drawing sheet (lib/plan-ingest/scheduleRows.ts).
    *  Its own row rather than folded into `plan-ingestion`, for the reason
    *  `quote-extract` gives: the two are switched separately, so a bill that
@@ -432,6 +433,7 @@ const FEATURE_LABELS: Record<string, string> = {
   "plan-ingestion": "Plan sheet reading",
   "addendum-read": "Addendum reading",
   "spec-read": "Spec section reading",
+  "submittal-read": "Submittal requirement reading",
   "schedule-read": "Schedule reading",
   "proposal-draft": "Proposal clause drafting",
 };

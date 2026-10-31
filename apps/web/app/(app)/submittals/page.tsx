@@ -8,6 +8,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { SubmittalForm } from "@/components/SubmittalForm";
 import { EmptyState } from "@/components/EmptyState";
 import { SubmittalRow } from "@/components/SubmittalRow";
+import { SubmittalProposals } from "@/components/SubmittalProposals";
 import { readPackageContents } from "@/lib/submittal-package";
 import { daysBetween, isOverdue, latestRevision, submittalState } from "@/components/submittalLabels";
 import { StatusLine } from "@/components/StatusLine";
@@ -135,6 +136,16 @@ export default async function SubmittalsPage({
       active ? "border-brand text-link" : "border-line-card text-ink-label hover:bg-rail-hover"
     }`;
 
+  // Drafts read from this job's spec. Scoped to one job, because accepting
+  // them needs a job in view.
+  const proposals = activeJob
+    ? await prisma.submittalProposal.findMany({
+        where: { jobId: activeJob, status: "PROPOSED", job: { companyId: company.id } },
+        orderBy: [{ sectionNumber: "asc" }, { createdAt: "asc" }],
+        select: { id: true, sectionNumber: true, kind: true, requirement: true, confidence: true, quote: true, sourcePageLabel: true },
+      })
+    : [];
+
   // The GC's records from Procore, if this company links any (see
   // components/ProcoreFeedSection.tsx).
   const procoreFeed = await loadProcoreFeed(company.id, "SUBMITTAL", activeJob);
@@ -147,6 +158,7 @@ export default async function SubmittalsPage({
         route="/submittals"
         subtitle="Shop drawings and product data sent for approval, and which revision you can build from."
       />
+      {activeJob && proposals.length > 0 && <SubmittalProposals jobId={activeJob} proposals={proposals} />}
       {activeJob && can(context, "MANAGE_ESTIMATING") && (
         <p className="mt-2 text-sm">
           <Link href={`/jobs/${activeJob}/specs`} className="text-link hover:underline">

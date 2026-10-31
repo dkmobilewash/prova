@@ -88,6 +88,7 @@ export const AI_FEATURE_LABEL: Record<AiFeatureKey, string> = {
   PLAN_INGESTION: "Reading plan sets",
   ADDENDUM_READ: "Reading addenda",
   SPEC_READ: "Reading spec sections",
+  SUBMITTAL_READ: "Reading what a spec section requires to be submitted",
   SCHEDULE_READ: "Reading schedules off a drawing",
   PROPOSAL_DRAFT: "Drafting proposal clauses",
   AI_AGENTS: "Background agents",
@@ -164,6 +165,8 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
     "Reading an addendum a GC issued on a bid, and listing what it says it changed for you to check against the document. It never decides whether something affects work you have already priced — that stays your tick on the addendum — and with this off you can still log addenda by hand.",
   SPEC_READ:
     "Reading a spec section from the bid documents and listing what in it costs money — finish levels, rated assemblies, mock-ups, testing, named products — for you to check against your number. It never says whether your bid already carries a cost, because it has not seen your estimate. With this off you read the section yourself, as you do today.",
+  SUBMITTAL_READ:
+    "Reading a spec section on a job and listing what it requires to be submitted, as draft rows you accept or dismiss. Nothing enters the submittal register until you accept it, and with this off you add submittals by hand.",
   SCHEDULE_READ:
     "Reading a door, window, finish or partition schedule off a drawing into rows you accept or reject. The rows are proposed, never added to a takeoff on their own — and with this off you can still type a schedule in by hand.",
   PROPOSAL_DRAFT:

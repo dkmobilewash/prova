@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { attachSpecSectionDocument, deleteJobSpecSection, saveJobSpecSection } from "@/lib/actions";
+import { attachSpecSectionDocument, deleteJobSpecSection, readSubmittalRequirements, saveJobSpecSection } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { uploadDocumentFile } from "@/lib/document-upload-client";
 
@@ -18,12 +18,15 @@ export type JobSpecRow = {
   hasFile: boolean;
   /** False for a won bid's section, which is managed on the bid. */
   ownedByJob: boolean;
+  /** The newest submittal read, for the line under the section. */
+  lastRead: { on: string; drafts: number } | null;
 };
 
-function Row({ row, companyId }: { row: JobSpecRow; companyId: string }) {
+function Row({ row, companyId, jobId }: { row: JobSpecRow; companyId: string; jobId: string }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setError(null);
@@ -87,6 +90,33 @@ function Row({ row, companyId }: { row: JobSpecRow; companyId: string }) {
           });
         }}
       />
+      {row.hasFile && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={isPending}
+            className={btn}
+            onClick={() => {
+              setNote(null);
+              run(async () => {
+                const result = await readSubmittalRequirements(jobId, row.id);
+                if (result.ok) {
+                  setNote(`${result.value.draftCount} drafts on the Submittals page. ${result.value.note}`);
+                }
+                return result;
+              });
+            }}
+          >
+            {isPending ? "Working…" : "Read what must be submitted"}
+          </button>
+          {row.lastRead && (
+            <span className="text-xs text-ink-muted">
+              Last read {row.lastRead.on}, {row.lastRead.drafts} new
+            </span>
+          )}
+        </div>
+      )}
+      {note && <p className="text-xs text-ink-body">{note}</p>}
       {error && <p className="text-sm text-danger">{error}</p>}
     </li>
   );
@@ -111,7 +141,7 @@ export function JobSpecSections({
       ) : (
         <ul className="divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {sections.map((row) => (
-            <Row key={row.id} row={row} companyId={companyId} />
+            <Row key={row.id} row={row} companyId={companyId} jobId={jobId} />
           ))}
         </ul>
       )}

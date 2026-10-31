@@ -108,6 +108,7 @@ model BidSpecSection {
   notes String?
 
   readings  BidSpecReading[]
+  submittalReadings SubmittalSpecReading[]
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
@@ -207,4 +208,88 @@ enum BidSpecFindingKind {
   WAGE_REQUIREMENT
   /// Anything the others do not cover.
   GENERAL
+}
+
+// ── WHAT A SECTION REQUIRES TO BE SUBMITTED ──
+//
+// A separate read from `BidSpecReading`, by Diego's decision: the cost reader
+// is untouched and this has its own prompt and version. Pages draw on the same
+// spec allowance. These hang off the JOB, unlike the bid-only cost reading,
+// because a register exists after award. Both cascade from Job, so neither is a
+// RESTRICT child for the cleanup scripts.
+
+/// One read run. Immutable, like `BidSpecReading`.
+model SubmittalSpecReading {
+  id               String         @id @default(cuid())
+  bidSpecSectionId String
+  bidSpecSection   BidSpecSection @relation(fields: [bidSpecSectionId], references: [id], onDelete: Cascade)
+  jobId            String
+  job              Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  readingReason String
+  pagesCharged  Int
+  model         String
+  promptVersion String
+
+  startedByUserId String?
+  startedBy       User?   @relation("SubmittalSpecReadingStartedBy", fields: [startedByUserId], references: [id], onDelete: SetNull)
+
+  proposals SubmittalProposal[]
+
+  createdAt DateTime @default(now())
+
+  @@index([bidSpecSectionId, createdAt])
+  @@index([jobId])
+}
+
+/// One draft register row. A real table, unlike the cost reading's JSON,
+/// because a person decides each one. It takes no submittal number until
+/// accepted, so a dismissed draft leaves no gap in the register.
+model SubmittalProposal {
+  id        String               @id @default(cuid())
+  readingId String
+  reading   SubmittalSpecReading @relation(fields: [readingId], references: [id], onDelete: Cascade)
+  jobId     String
+  job       Job                  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  /// As printed, copied from the section, so a row reads the same after the
+  /// section is replaced.
+  sectionNumber   String
+  kind            SubmittalRequirementKind
+  requirement     String
+  confidence      String
+  quote           String
+  sourcePageLabel String?
+
+  status SubmittalProposalStatus @default(PROPOSED)
+
+  /// The register row this became. SetNull: deleting an unsent submittal leaves
+  /// this record of what was read.
+  submittalId String?
+  submittal   Submittal? @relation(fields: [submittalId], references: [id], onDelete: SetNull)
+
+  decidedByUserId String?
+  decidedBy       User?     @relation("SubmittalProposalDecidedBy", fields: [decidedByUserId], references: [id], onDelete: SetNull)
+  decidedAt       DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([jobId, status])
+  @@index([readingId])
+  @@index([submittalId])
+}
+
+/// Mirrors `SUBMITTAL_REQUIREMENT_KINDS` in `submittalRequirements.ts`.
+enum SubmittalRequirementKind {
+  PRODUCT_DATA
+  SHOP_DRAWINGS
+  SAMPLES
+  CERTIFICATES
+  OTHER
+}
+
+enum SubmittalProposalStatus {
+  PROPOSED
+  ACCEPTED
+  DISMISSED
 }
