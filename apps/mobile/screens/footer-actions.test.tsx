@@ -28,9 +28,8 @@ import { mount } from "./render";
 /** The row a node sits in, identified by its parent chain — enough to answer
  * "are these two in the same row?" without asking for any geometry.
  *
- * `mount` appends a fresh container per call and never removes it, so without
- * the reset below this reads a node from a PREVIOUS test — which is the
- * vacuous-watcher shape CLAUDE.md describes, a needle already on the page. */
+ * `mount` clears up after each test, so this cannot read a node from a PREVIOUS
+ * one, which would be the vacuous-watcher shape CLAUDE.md describes. */
 function parentOf(label: string): Element | null {
   const node = Array.from(document.querySelectorAll("*")).find((n) => n.textContent === label);
   return node?.parentElement?.parentElement ?? null;

@@ -74,6 +74,8 @@ import { insideWorkArea, openingsInWorkArea, runAt, userExclusionsFromRows } fro
 import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUndo";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
+import { suggestScaleFromDoors, suggestionForm, wantsSuggestion, type SuggestedScale } from "@/lib/takeoff/suggestedScale";
+import { TakeoffScaleSuggestion } from "./TakeoffScaleSuggestion";
 import { loadPlanText, type PlanTextView } from "@/lib/actions/planTextRead";
 import { PlanTextPanel } from "@/components/PlanTextPanel";
 import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
@@ -771,6 +773,8 @@ export function TakeoffPlanViewer({
   const [openings, setOpenings] = useState<{ page: number; result: DoorsWindowsResult; walls: WallCandidate[] } | null>(null);
   const [hoveredOpening, setHoveredOpening] = useState<string | null>(null);
   /** "Count like this": the box being dragged, and the matches it found, with the ones the estimator dropped. */
+  /** The toolbar's offer was pressed: the form opens with the line already drawn, and Save is still the estimator's. */
+  const [scaleOnOpen, setScaleOnOpen] = useState(false);
   const [symbolBox, setSymbolBox] = useState<SymbolBox | null>(null);
   const [symbols, setSymbols] = useState<{ page: number; matches: SymbolMatch[]; dropped: Set<number>; ms: number; busy: boolean; error: string | null; label?: string | null; tag?: string | null } | null>(null);
   /** The boxed symbol as a template, kept so "Find on all sheets" lays the same one over the rest of the set. */
@@ -1006,6 +1010,10 @@ export function TakeoffPlanViewer({
   const sheetIdRef = useRef<string | undefined>(undefined);
   sheetIdRef.current = sheet?.id;
   const calibration = sheet?.calibration ?? null;
+  // A scale proposed from the doors, by page. Null is "nothing to offer" or
+  // "not this", and both stop it being worked out again. See `suggestedScale.ts`.
+  const [scaleSuggestions, setScaleSuggestions] = useState<Record<number, SuggestedScale | null>>({});
+  const scaleSuggestion = calibration === null ? (scaleSuggestions[pageNumber] ?? null) : null;
   /**
    * What the last detection on this page was computed FROM.
    *
@@ -2369,6 +2377,39 @@ export function TakeoffPlanViewer({
     return doorsByGroup(found ?? [], placed, feetPerUnit);
   }, [found, planText, feetPerUnit, postedDoorMarks, exclusionRows]);
 
+  const suggestionDue =
+    pageSize !== null &&
+    scaleSuggestions[pageNumber] === undefined &&
+    wantsSuggestion({
+      calibrated: calibration !== null,
+      readOnly,
+      labelling: answerKey !== undefined,
+      printedPrefill: scalePrefillByPage[pageNumber] !== undefined,
+      viewScales: viewScalesByPage?.[pageNumber]?.length ?? 0,
+    });
+  useEffect(() => {
+    if (!suggestionDue) return;
+    const doc = docRef.current as { getPage: (n: number) => Promise<unknown> } | null;
+    if (doc === null) return;
+    let cancelled = false;
+    void (async () => {
+      let suggestion: SuggestedScale | null = null;
+      try {
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+        const layers = await layersOf(doc as never).catch(() => null);
+        const page = await doc.getPage(pageNumber);
+        const { segments } = await segmentsFromOpenPage(page as never, pdfjs as never, pageNumber, layers as never);
+        suggestion = suggestScaleFromDoors(segments);
+      } catch {
+        // A proposal that cannot be worked out is no proposal; the sheet still opens.
+      }
+      if (!cancelled) setScaleSuggestions((was) => ({ ...was, [pageNumber]: suggestion }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [suggestionDue, pageNumber]);
+
   useEffect(() => {
     if (seeded.current.has(pageNumber)) return;
     const stored = storedWallsFor(storedWallsByPage, pageNumber);
@@ -2843,7 +2884,10 @@ export function TakeoffPlanViewer({
       let sampleFailed = 0;
       {
         const sampled: StrokeSegment[][] = [];
-        for (const n of pagesToSample(doc.numPages, pageNumber)) {
+        // A scanned sheet samples nothing: the others have no strokes to read,
+        // and opening six of them is seconds of decoding (Evergreen p24: all
+        // six came back empty) for a template that cannot form.
+        for (const n of raster ? [] : pagesToSample(doc.numPages, pageNumber)) {
           if (n === pageNumber) {
             sampled.push(segments.map(inPageWidthUnits(pageSize.widthPt)));
             continue;
@@ -2911,6 +2955,8 @@ export function TakeoffPlanViewer({
                 features: [...features],
               });
             };
+      // Detection is seconds of synchronous work on a big sheet, so the spinner paints first.
+      await new Promise((resolve) => setTimeout(resolve, 0));
       const detected = detectForSheet({
         segments,
         textItems,
@@ -3296,6 +3342,14 @@ export function TakeoffPlanViewer({
 
   const scaleReading = calibration ? readScale(calibration, sheet?.pageWidthPt ?? null) : null;
 
+  async function onConfirmSuggestion(): Promise<string | null> {
+    if (scaleSuggestion === null || pageSize === null) return "The sheet is still loading. Try again.";
+    const saved = await saveTakeoffCalibration(jobId, suggestionForm(scaleSuggestion, { planId, pageNumber, ...pageSize }));
+    if (!saved.ok) return saved.error;
+    setScaleSuggestions((was) => ({ ...was, [pageNumber]: null }));
+    return null;
+  }
+
   findRef.current = onFindWalls;
 
   return (
@@ -3427,6 +3481,15 @@ export function TakeoffPlanViewer({
             So it is on the toolbar either way, and `title` says what is in the
             way. The measuring tools beside it already take exactly this
             posture — disabled until the sheet is calibrated, never hidden. */}
+        {!calibration && tool !== "calibrate" && scalePrefillByPage[pageNumber] && (
+          <ToolbarScaleOffer
+            prefill={scalePrefillByPage[pageNumber]!}
+            onUse={() => {
+              setScaleOnOpen(true);
+              setTool("calibrate");
+            }}
+          />
+        )}
         <button
           type="button"
           onClick={onFindWalls}
@@ -3739,6 +3802,13 @@ export function TakeoffPlanViewer({
           honest than "it does your takeoff": the biggest wall types come for
           free. Accepting one group on one real sheet replaced ninety-nine hand
           traces. Whatever it missed is still traced the way it always was. */}
+      {scaleSuggestion !== null && (
+        <TakeoffScaleSuggestion
+          suggestion={scaleSuggestion}
+          onConfirm={onConfirmSuggestion}
+          onDismiss={() => setScaleSuggestions((was) => ({ ...was, [pageNumber]: null }))}
+        />
+      )}
       {answerKey === undefined && (
         <TakeoffExclusionBar
           feet={found === null ? null : found.reduce((sum, group) => sum + group.feet, 0)}
@@ -5095,6 +5165,8 @@ export function TakeoffPlanViewer({
               viewScales={viewScalesByPage?.[pageNumber] ?? []}
               printedScale={printedScaleByPage[pageNumber] ?? null}
               prefill={scalePrefillByPage[pageNumber] ?? null}
+              useOnOpen={scaleOnOpen}
+              onOpened={() => setScaleOnOpen(false)}
               declineReason={scaleDeclineByPage?.[pageNumber] ?? null}
               onUsePrefill={(xs, ys) => {
                 // Seeds the draft so the proposed line DRAWS ON THE SHEET over
@@ -5638,6 +5710,20 @@ export function ViewScaleOffer({
   );
 }
 
+/** The scale a sheet reads, on the toolbar, so nobody has to open Set scale to learn there is one. */
+export function ToolbarScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onUse}
+      data-takeoff="toolbar-scale-offer"
+      className="min-h-[36px] rounded-md bg-brand px-3 text-xs font-semibold text-neutral-900 hover:bg-yellow-500"
+    >
+      Use the printed scale{prefill.scaleName ? ` ${prefill.scaleName}` : ""}
+    </button>
+  );
+}
+
 export function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
   // Both of these are PURE and live in `takeoff-plan-view.ts`, where they are
   // tested — the wording of a measured error and the order of the evidence are
@@ -5821,6 +5907,8 @@ function CalibrationForm({
   viewScales,
   declineReason,
   onUsePrefill,
+  useOnOpen,
+  onOpened,
   onSaved,
 }: {
   jobId: string;
@@ -5837,6 +5925,9 @@ function CalibrationForm({
   viewScales: readonly ViewScale[];
   declineReason: string | null;
   onUsePrefill: (xs: readonly [number, number], ys: readonly [number, number]) => void;
+  /** The toolbar's offer opened this form, so the offer is taken as if pressed here. */
+  useOnOpen: boolean;
+  onOpened: () => void;
   onSaved: () => void;
 }) {
   const [typed, setTyped] = useState("");
@@ -5859,6 +5950,30 @@ function CalibrationForm({
    * more than the app does.
    */
   const [note, setNote] = useState("");
+  const applyPrefill = (offer: ScalePrefill) => {
+    onUsePrefill(offer.xs, offer.ys);
+    // The provenance, in words, so it survives the save — see `note` above for
+    // why that is not cosmetic.
+    setNote(
+      offer.unconfirmed
+        ? `From the ${offer.scaleName} printed on this sheet. Nothing measurable on the sheet ` + `confirmed it.`
+        : `Matched ${offer.agreed.length} printed dimension${offer.agreed.length === 1 ? "" : "s"}` +
+            ` on this sheet (${offer.agreed.slice(0, 3).join(", ")}), within ` +
+            `${(offer.inheritedError * 100).toFixed(2)}%.`,
+    );
+    // A PRINTED scale's `declaredText` is the scale NAME, not a distance, so
+    // typing it into the distance box would be nonsense. The figure there is
+    // what the printed scale says the sheet's own width is — see `scaleFromPrinted`.
+    setTyped(offer.unconfirmed ? formatFeetInches(offer.declaredFeet) : offer.declaredText || formatFeetInches(offer.declaredFeet));
+  };
+  useEffect(() => {
+    if (!useOnOpen) return;
+    onOpened();
+    // A reduced print stops at the offer, because its caution has to be read.
+    if (prefill && prefill.reducedPrintCaution === undefined) applyPrefill(prefill);
+    // Once, as the form opens from the toolbar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useOnOpen]);
 
   const preview = useMemo(() => {
     if (!draft) return null;
@@ -5945,28 +6060,7 @@ function CalibrationForm({
         {prefill && (
           <ScaleOffer
             prefill={prefill}
-            onUse={() => {
-              onUsePrefill(prefill.xs, prefill.ys);
-              // The provenance, in words, so it survives the save — see `note`
-              // above for why that is not cosmetic.
-              setNote(
-                prefill.unconfirmed
-                  ? `From the ${prefill.scaleName} printed on this sheet. Nothing measurable on the sheet ` +
-                    `confirmed it.`
-                  : `Matched ${prefill.agreed.length} printed dimension${prefill.agreed.length === 1 ? "" : "s"}` +
-                    ` on this sheet (${prefill.agreed.slice(0, 3).join(", ")}), within ` +
-                    `${(prefill.inheritedError * 100).toFixed(2)}%.`,
-              );
-              // A PRINTED scale's `declaredText` is the scale NAME, not a
-              // distance, so typing it into the distance box would be nonsense.
-              // The figure there is what the printed scale says the sheet's own
-              // width is — see `scaleFromPrinted`.
-              setTyped(
-                prefill.unconfirmed
-                  ? formatFeetInches(prefill.declaredFeet)
-                  : prefill.declaredText || formatFeetInches(prefill.declaredFeet),
-              );
-            }}
+            onUse={() => applyPrefill(prefill)}
           />
         )}
         <p className="text-xs text-ink-muted">Click once at each end of a dimension printed on the drawing.</p>
