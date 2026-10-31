@@ -74,7 +74,16 @@ import { insideWorkArea, openingsInWorkArea, runAt, userExclusionsFromRows } fro
 import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUndo";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
-import { suggestScaleFromDoors, suggestionForm, wantsSuggestion, type SuggestedScale } from "@/lib/takeoff/suggestedScale";
+import {
+  GRID_REFERENCE_SHEETS,
+  feetPerInchOf,
+  gridAxes,
+  suggestScale,
+  suggestionForm,
+  wantsSuggestion,
+  type GridAxis,
+  type SuggestedScale,
+} from "@/lib/takeoff/suggestedScale";
 import { TakeoffScaleSuggestion } from "./TakeoffScaleSuggestion";
 import { loadPlanText, type PlanTextView } from "@/lib/actions/planTextRead";
 import { PlanTextPanel } from "@/components/PlanTextPanel";
@@ -2399,7 +2408,33 @@ export function TakeoffPlanViewer({
         const layers = await layersOf(doc as never).catch(() => null);
         const page = await doc.getPage(pageNumber);
         const { segments } = await segmentsFromOpenPage(page as never, pdfjs as never, pageNumber, layers as never);
-        suggestion = suggestScaleFromDoors(segments);
+        const text = await pageTextItems(page, pdfjs);
+        const numberOf = (n: number) => sheetLabelByPage[n]?.split(" · ")[0] ?? null;
+        const scaled = Object.keys(printedScaleByPage)
+          .map(Number)
+          .flatMap((n) => {
+            const feetPerInch = feetPerInchOf(printedScaleByPage[n]);
+            return n === pageNumber || feetPerInch === null ? [] : [{ page: n, sheetNumber: numberOf(n), feetPerInch }];
+          });
+        // Other sheets are only read when this one has a grid to compare.
+        const gridReferences: { feetPerInch: number; axes: GridAxis[] }[] = [];
+        if (gridAxes(segments, text).length > 0) {
+          const nearest = [...scaled].sort((a, b) => Math.abs(a.page - pageNumber) - Math.abs(b.page - pageNumber));
+          for (const other of nearest.slice(0, GRID_REFERENCE_SHEETS)) {
+            if (cancelled) return;
+            const open = await doc.getPage(other.page);
+            const read = await segmentsFromOpenPage(open as never, pdfjs as never, other.page, layers as never);
+            gridReferences.push({ feetPerInch: other.feetPerInch, axes: gridAxes(read.segments, await pageTextItems(open, pdfjs)) });
+          }
+        }
+        suggestion = suggestScale({
+          segmentsPt: segments,
+          text,
+          doorRows: doorScheduleRows,
+          sheetNumber: numberOf(pageNumber),
+          sameSet: scaled,
+          gridReferences,
+        });
       } catch {
         // A proposal that cannot be worked out is no proposal; the sheet still opens.
       }
