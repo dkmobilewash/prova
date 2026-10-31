@@ -5,7 +5,7 @@ import { addFinishLinesToEstimate } from "@/lib/actions";
 import { Spinner } from "@/components/Spinner";
 import type { DoorSymbol, WindowSymbol } from "@/lib/takeoff/doorWindowSymbols";
 import type { FinishSchedule, TextItem } from "@/lib/takeoff/finishSchedule";
-import { DOOR_HEIGHT_FEET, finishLineLabel, finishTakeoff, typeTagsInRooms, WINDOW_HEIGHT_FEET } from "@/lib/takeoff/finishTakeoff";
+import { DOOR_HEIGHT_FEET, finishLineLabel, finishTakeoff, typesFromNeighbours, typeTagsInRooms, WINDOW_HEIGHT_FEET } from "@/lib/takeoff/finishTakeoff";
 import type { RoomCeiling } from "@/lib/takeoff/roomCeilings";
 import type { RoomFromWalls } from "@/lib/takeoff/roomsFromWalls";
 
@@ -43,8 +43,10 @@ export function TakeoffFinishPanel({
   const fallback = height.trim() !== "" && Number.isFinite(typed) && typed > 0 ? typed : null;
   const result = useMemo(() => {
     if (!schedule) return null;
-    const typeOfRoom = schedule.byType ? typeTagsInRooms(rooms, words, widthPt, new Set(schedule.rows.map((r) => r.key))) : undefined;
-    return finishTakeoff({ rooms, schedule, typeOfRoom, doors, windows, feetPerUnit, heightOf: (room) => ceilings?.get(room.id)?.heightFeet ?? fallback });
+    const tagged = schedule.byType ? typeTagsInRooms(rooms, words, widthPt, new Set(schedule.rows.map((r) => r.key))) : undefined;
+    const inherited = tagged ? typesFromNeighbours(rooms, tagged, feetPerUnit) : new Map<number, string>();
+    const typeOfRoom = tagged ? new Map([...tagged, ...inherited]) : undefined;
+    return { inherited: inherited.size, ...finishTakeoff({ rooms, schedule, typeOfRoom, doors, windows, feetPerUnit, heightOf: (room) => ceilings?.get(room.id)?.heightFeet ?? fallback }) };
   }, [schedule, rooms, words, widthPt, doors, windows, feetPerUnit, ceilings, fallback]);
   const read = async () => {
     setReading(true);
@@ -80,6 +82,8 @@ export function TakeoffFinishPanel({
     <div data-takeoff="finish-panel" className="mt-3 border-t border-line-card pt-3 text-xs">
       <h3 className="text-sm font-semibold text-ink" data-takeoff="finish-joined">{result.joined.length} of {rooms.length} rooms joined to the schedule</h3>
       {rowsMissing.length > 0 && <p className="mt-1 text-tag-amber-ink">{rowsMissing.length} scheduled rooms were not found on this sheet, so their finishes are not counted: {rowsMissing.slice(0, 12).map((r) => r.key).join(", ")}{rowsMissing.length > 12 ? " and more" : ""}.</p>}
+      {result.inherited > 0 && <p className="mt-1 text-tag-amber-ink">{result.inherited} rooms have no type tag and took the type of the rooms around them.</p>}
+      {result.shared.length > 0 && <p className="mt-1 text-tag-amber-ink">{result.shared.length} areas hold more than one scheduled room, because a wall between them was not found. They count only for finishes those rooms share, and inner walls are missing from their wall and base lengths. Left out where they differ: {result.shared.filter((s) => s.differ.length > 0).length}.</p>}
       {result.unjoinedRooms.length > 0 && <p className="mt-1 text-ink-muted">{result.unjoinedRooms.length} found rooms have no schedule row.</p>}
       <label className="mt-2 flex items-center gap-2 text-ink-label">
         Wall height where the drawings give none (ft)

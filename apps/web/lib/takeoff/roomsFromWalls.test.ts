@@ -127,6 +127,7 @@ describe("roomsFromWalls", () => {
     expect(rooms[0].squareFeet).toBeGreaterThan(195);
     expect(rooms[0].tag).toBeNull();
     expect(mergedTags.map((t) => t.name).sort()).toEqual(["OFFICE", "STORAGE"]);
+    expect(rooms.flatMap((r) => r.sharedTags ?? []).map((t) => t.name).sort()).toEqual(["OFFICE", "STORAGE"]);
   });
   it("a framed legend is not a room, and body text saying NOTES does not make one", () => {
     const words = [...Array.from({ length: 9 }, (_, i) => text(`w${i}`, 1 + i, 30))];

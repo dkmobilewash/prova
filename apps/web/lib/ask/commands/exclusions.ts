@@ -260,6 +260,11 @@ export const notYetRegistered: Exclusion[] = [
   { action: "equipment.*", reason: CYRUS },
   { action: "safety.*", reason: CYRUS },
   { action: "submittals.*", reason: CYRUS },
+  {
+    action: "submittalRead.*",
+    reason:
+      "Reads a job's spec section against the paid page allowance. A person starts it in front of the section and checks each draft against its quote, page only.",
+  },
   { action: "drawings.*", reason: CYRUS },
   { action: "closeout.*", reason: CYRUS },
   { action: "certifications.*", reason: CYRUS },

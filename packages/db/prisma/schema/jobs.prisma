@@ -173,6 +173,8 @@ model Job {
   punchListItems                 PunchListItem[]
   tmTickets                      TmTicket[]
   specSections                   BidSpecSection[]
+  submittalSpecReadings          SubmittalSpecReading[]
+  submittalProposals             SubmittalProposal[]
   timesheetSignoffs              TimesheetSignoff[]
   delayEvents                    DelayEvent[]
   dailyFieldReports              DailyFieldReport[]

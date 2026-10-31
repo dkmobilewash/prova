@@ -92,4 +92,24 @@ describe("looksLikeNoteText — what stacks like a tag and is not one", () => {
       expect(looksLikeNoteText(tag), tag).toBe(false);
     }
   });
+  it("keeps callouts and drafting words out of a name, and never reads them as a tag", () => {
+    const tags = readRoomTags([
+      line("A1/ A-621", 100, 0),
+      line("VESTIBULE", 100, 14),
+      line("100", 100, 28),
+      line("ALIGN", 300, 0),
+      line("RESIDENT", 300, 14),
+      line("ROOM 4", 300, 28),
+      line("145", 300, 42),
+      line("A3", 500, 0),
+      line("SIM", 500, 14),
+      line("OVERHEAD CANOPY", 700, 0, 80),
+      line("A-411", 700, 14),
+    ]);
+    expect(tags.map((t) => [t.number, t.name]).sort()).toEqual([["100", "VESTIBULE"], ["145", "RESIDENT ROOM 4"]]);
+  });
+  it("closes a name over a stray leader label, and says where the number sits", () => {
+    const [tag] = readRoomTags([line("RESIDENT", 100, 0), line("ROOM 16", 100, 14), line("_ACCESS", 100, 28), line("162", 100, 42)]);
+    expect(tag).toMatchObject({ name: "RESIDENT ROOM 16", number: "162", numberAt: { x: 100, y: 47 } });
+  });
 });
