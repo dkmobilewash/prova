@@ -18,6 +18,7 @@ const REPORTS = [1, 2, 3].map((n) => ({
   weatherAuto: null,
   delays: n === 3 ? null : "Inspector late",
   filedBy: { name: "Dana" },
+  installedQuantities: [],
   _count: { media: 0 },
 }));
 let delayEvents: unknown[] = [];
@@ -36,6 +37,8 @@ const prismaStub = {
       delayEvents,
     })),
   },
+  jobLineItem: { findMany: async () => [] },
+  dailyReportInstalledQuantity: { groupBy: async () => [] },
   dailyFieldReport: {
     count: vi.fn(async (args: { where: unknown }) => {
       where(args.where);

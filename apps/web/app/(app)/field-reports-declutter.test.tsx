@@ -23,6 +23,7 @@ const REPORTS = Array.from({ length: 10 }, (_, i) => ({
   delays: 10 - i === 9 ? "Inspector late" : null,
   job: { id: "job-1", name: "Riverside Medical" },
   filedBy: { name: "Dana", email: "dana@example.com" },
+  installedQuantities: [],
 }));
 // Two people, 8h each, on Oct 10.
 const ENTRIES = ["crew-a", "crew-b"].map((crewMemberId) => ({
