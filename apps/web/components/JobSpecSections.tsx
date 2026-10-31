@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { attachSpecSectionDocument, deleteJobSpecSection, readSubmittalRequirements, saveJobSpecSection } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Spinner } from "@/components/Spinner";
 import { uploadDocumentFile } from "@/lib/document-upload-client";
 
 const inputClass =
@@ -107,7 +108,14 @@ function Row({ row, companyId, jobId }: { row: JobSpecRow; companyId: string; jo
               });
             }}
           >
-            {isPending ? "Working…" : "Read what must be submitted"}
+            {isPending ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Spinner />
+                Working…
+              </span>
+            ) : (
+              "Read what must be submitted"
+            )}
           </button>
           {row.lastRead && (
             <span className="text-xs text-ink-muted">

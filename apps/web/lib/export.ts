@@ -812,7 +812,7 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "no dataset has been written, not because it would be meaningless. Nothing here is an " +
       "assertion about the bid: whether the bid carries a cost the section demands is the " +
       "estimator's judgement about an estimate the model never saw.",
-    models: ["BidSpecSection", "BidSpecReading"],
+    models: ["BidSpecSection", "BidSpecReading", "SubmittalSpecReading", "SubmittalProposal"],
   },
   {
     key: "retainage-and-backcharges",
