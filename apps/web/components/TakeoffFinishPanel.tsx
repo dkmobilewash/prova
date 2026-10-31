@@ -105,7 +105,7 @@ export function TakeoffFinishPanel({
         </tbody>
       </table>
       <p className="mt-2 text-ink-muted">
-        North is taken as up the page. Wall area takes off {DOOR_HEIGHT_FEET} ft doors and {WINDOW_HEIGHT_FEET} ft windows on the wall they sit in: {result.doorsDeducted} door and {result.windowsDeducted} window deductions. {doors.length === 0 && "No doors were read on this sheet, so none are deducted. "}These replace the ceiling plan's figure for the rooms joined here. Check these against the schedule.
+        North is taken as up the page. Wall area takes off {DOOR_HEIGHT_FEET} ft doors and {WINDOW_HEIGHT_FEET} ft windows on the wall they sit in: {result.doorsDeducted} door and {result.windowsDeducted} window deductions. {doors.length === 0 && "No doors were read on this sheet, so none are deducted. "}These replace the ceiling plan&apos;s figure for the rooms joined here. Check these against the schedule.
       </p>
       {error && <p className="mt-2 text-danger">{error}</p>}
       {added !== null ? (

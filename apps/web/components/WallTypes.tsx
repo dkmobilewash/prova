@@ -272,7 +272,7 @@ export function WallTypeCard({
           >
             {type.isDefaultPartition ? "Default partition: clear" : "Make default partition"}
           </button>
-          <span className="text-ink-muted">Walls with no type are priced as this, marked "assumed type: check".</span>
+          <span className="text-ink-muted">Walls with no type are priced as this, marked &ldquo;assumed type: check&rdquo;.</span>
         </div>
 
         <ul className="mt-3 flex flex-col gap-2 border-t border-line-row pt-3">

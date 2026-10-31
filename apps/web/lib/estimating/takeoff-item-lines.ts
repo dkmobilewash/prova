@@ -1,4 +1,4 @@
-import { Prisma } from "@prova/db";
+import type { Prisma } from "@prova/db";
 
 import { componentRunQuantity, openingsFromJson, type RunGeometry, type WallComponentBasis } from "@/lib/wall-assemblies";
 import { openingThresholdSqFt as thresholdFor } from "@/lib/businessScope";
@@ -222,8 +222,8 @@ export async function loadItemsForLines(tx: Tx, companyId: string, jobId: string
       })
     : [];
 
-  const pages = await tx.takeoffPlanPage.findMany({ where: { plan: { jobId, companyId }, finishTakeoff: { not: Prisma.AnyNull } }, select: { id: true, finishTakeoff: true } });
-  return { items, assemblies, pinnedAt: job.assemblyLibraryPinnedAt, defaultPartitionId: fallback?.id ?? null, finishPages: pages };
+  const pages = await tx.takeoffPlanPage.findMany({ where: { plan: { jobId, companyId } }, select: { id: true, finishTakeoff: true } });
+  return { items, assemblies, pinnedAt: job.assemblyLibraryPinnedAt, defaultPartitionId: fallback?.id ?? null, finishPages: pages.filter((p) => p.finishTakeoff !== null) };
 }
 
 const num = (value: { toString(): string } | number | null | undefined): number | null =>
