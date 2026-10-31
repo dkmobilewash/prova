@@ -284,6 +284,8 @@ async function deliverEmail(input: {
   return ok;
 }
 
+const SUBMITTALS_ONLY =
+  "Sending submittals isn't part of your job function. The account owner sets who sees what, on the Team page.";
 const PO_ONLY =
   "Emailing a purchase order needs job cost access, which your role doesn't have here. Ask the account owner.";
 const BILLING_ONLY =
@@ -411,7 +413,7 @@ async function deliverDocument(send: DocumentSend): Promise<ActionResult> {
 export async function sendSubmittalPackage(submittalId: string, fileUrl: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   const { company, ...user } = context;
-  if (!can(context, "MANAGE_JOBS")) return fail(JOBS_ONLY);
+  if (!can(context, "MANAGE_JOBS")) return fail(SUBMITTALS_ONLY);
 
   return runAction(async () => {
     const urlProblem = documentUrlProblem(fileUrl, "submittal-package", company.id, process.env);

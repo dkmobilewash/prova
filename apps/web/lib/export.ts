@@ -657,6 +657,12 @@ export const EXPORT_WITHHELD: ExportWithheld[] = [
     columns: ["accessToken", "refreshToken", "encryptedAccessToken", "encryptedRefreshToken"],
   },
   {
+    key: "sent-document-links",
+    title: "Download links for emailed packages",
+    detail: "Same reason as the signing links below: anyone holding one can open that file.",
+    columns: ["linkToken"],
+  },
+  {
     key: "portal-and-signing-links",
     title: "Client portal and signing links",
     detail:
@@ -1116,7 +1122,6 @@ export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
   content:
     "the PDF itself, which does not fit in a spreadsheet cell. Each one downloads from the document's page.",
   blobPathname: "where the same PDF sits in storage, which means nothing outside this app.",
-  linkToken: "the secret part of a download link, which is a credential and is never exported.",
   assemblyLibraryPinnedAt:
     "when this job stopped following the company assembly library, or null for most jobs. " +
     "Plumbing for the expander that turns a takeoff into estimate lines: it decides whether a " +
