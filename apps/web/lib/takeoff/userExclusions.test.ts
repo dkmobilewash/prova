@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { offeredCandidates } from "./offeredCandidates";
-import { clipToWorkArea, describeStyle, runAt, sameStyle, wallsLikeThese, wallStyles } from "./userExclusions";
+import { clipToWorkArea, describeStyle, runAt, sameStyle, wallsLikeThese, wallStyles, insideWorkArea, openingsInWorkArea } from "./userExclusions";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 // 100 ft per page-width unit: 1 ft = 0.01 units.
@@ -102,5 +102,26 @@ describe("offeredCandidates: what the user excluded", () => {
     // four walls cut at x = 25 ft to 15 ft pieces; the right-hand wall outside
     expect(got.candidates.map((c) => Math.round(c.lengthFeet)).sort()).toEqual([15, 15, 15, 15]);
     expect(got.setAside[0]).toEqual({ kind: "outside-work-area", why: "outside the work area you drew — 90 ft set aside, 4 walls cut at its edge", n: 5 });
+  });
+});
+
+describe("doors and windows outside the work area", () => {
+  const square = { xs: [0, 0.5, 0.5, 0], ys: [0, 0, 0.5, 0.5] };
+  const door = (x: number) => ({ hinge: { x, y: 0.1 }, strike: { x: x + 0.01, y: 0.1 }, wall: null });
+  const result = {
+    doors: [door(0.1), door(0.8)],
+    windows: [{ x1: 0.1, y1: 0.2, x2: 0.2, y2: 0.2 }, { x1: 0.8, y1: 0.2, x2: 0.9, y2: 0.2 }],
+    join: { openings: ["inside", "outside"] },
+  };
+  it("leaves the ones outside out, and keeps the schedule join lined up with the doors", () => {
+    const got = openingsInWorkArea(result, [square]);
+    expect(got.doors).toEqual([door(0.1)]);
+    expect(got.windows).toHaveLength(1);
+    expect(got.join?.openings).toEqual(["inside"]);
+  });
+  it("with no work area, the whole sheet is the job", () => {
+    expect(openingsInWorkArea(result, [])).toBe(result);
+    expect(insideWorkArea(0.9, 0.9, [])).toBe(true);
+    expect(insideWorkArea(0.9, 0.9, [square])).toBe(false);
   });
 });

@@ -45,6 +45,8 @@ export type UndoEntry = {
   undo: () => Promise<ActionResult>;
   /** Does it again. */
   redo: () => Promise<ActionResult>;
+  /** The entry updates the screen itself, so the workspace must not reload over it. */
+  inPlace?: boolean;
 };
 
 /**
@@ -104,7 +106,7 @@ export const nextRedoLabel = (state: UndoState): string | null =>
  */
 export async function undoOnce(
   state: UndoState,
-): Promise<{ state: UndoState; result: ActionResult; label: string } | null> {
+): Promise<{ state: UndoState; result: ActionResult; label: string; inPlace?: boolean } | null> {
   const entry = state.done[state.done.length - 1];
   if (!entry) return null;
   const result = await entry.undo();
@@ -113,13 +115,14 @@ export async function undoOnce(
     state: { done: state.done.slice(0, -1), undone: [entry, ...state.undone] },
     result,
     label: entry.label,
+    inPlace: entry.inPlace,
   };
 }
 
 /** The mirror of `undoOnce`, with the same failure rule. */
 export async function redoOnce(
   state: UndoState,
-): Promise<{ state: UndoState; result: ActionResult; label: string } | null> {
+): Promise<{ state: UndoState; result: ActionResult; label: string; inPlace?: boolean } | null> {
   const entry = state.undone[0];
   if (!entry) return null;
   const result = await entry.redo();
@@ -128,5 +131,6 @@ export async function redoOnce(
     state: { done: [...state.done, entry], undone: state.undone.slice(1) },
     result,
     label: entry.label,
+    inPlace: entry.inPlace,
   };
 }

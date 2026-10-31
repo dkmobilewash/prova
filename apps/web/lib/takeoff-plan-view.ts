@@ -98,7 +98,7 @@ export type PlanSheet = {
    */
   zoneNotices: ZoneNotice[];
   /** What the user excluded on this sheet — see `lib/takeoff/userExclusions.ts`. Absent reads as none. */
-  exclusions?: { kind: "EXCLUDE_LIKE" | "WORK_AREA"; xs: number[]; ys: number[] }[];
+  exclusions?: { id: string; kind: "EXCLUDE_LIKE" | "WORK_AREA"; xs: number[]; ys: number[] }[];
 };
 
 /*

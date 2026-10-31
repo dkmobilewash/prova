@@ -28,6 +28,7 @@ import { TakeoffSheetSummary } from "@/components/TakeoffSheetSummary";
 import { deleteTakeoffMeasurement } from "@/lib/actions";
 import {
   EMPTY as EMPTY_UNDO,
+  type UndoEntry,
   type UndoState,
   canRedo,
   canUndo,
@@ -382,6 +383,8 @@ export function TakeoffWorkspace({
     [jobId],
   );
 
+  const onUndoable = useCallback((entry: UndoEntry) => setUndoState((was) => pushed(was, entry)), []);
+
   const runUndo = useCallback(
     async (direction: "undo" | "redo") => {
       if (busy) return;
@@ -397,7 +400,7 @@ export function TakeoffWorkspace({
         );
         // The numbers on screen came from the server; after an undo they are
         // one measurement out of date.
-        if (outcome.result.ok) window.location.reload();
+        if (outcome.result.ok && !outcome.inPlace) window.location.reload();
       } finally {
         setBusy(false);
       }
@@ -1489,6 +1492,7 @@ export function TakeoffWorkspace({
               onResults={onResults}
               readOnly={phone}
               onMeasurementSaved={onMeasurementSaved}
+              onUndoable={onUndoable}
               activeItemId={activeItemId}
             />
           </div>
