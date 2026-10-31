@@ -201,11 +201,13 @@ export function tmTicketProposals(snapshot: unknown, lookups: TmTicketPricingLoo
  * The backup a GC reads under a priced line: cost, each recap step with its
  * rate, and the sell. Empty when the line has no cost — there is nothing to
  * back up — so a sell-only or unpriced line prints no backup rather than a
- * misleading one.
+ * misleading one. `charged` is the price on the line: a typed price, or rates
+ * that moved since pricing, also print none, because a backup that ends on a
+ * different sell than the line would be false on a GC's document.
  */
-export function pricingBackupLines(line: CostLine, rates: RecapRates): string[] {
+export function pricingBackupLines(line: CostLine, rates: RecapRates, charged: number): string[] {
   const priced = priceLine(line, rates);
-  if (priced.unitPrice == null || line.unitCost == null) return [];
+  if (priced.unitPrice == null || line.unitCost == null || priced.unitPrice !== charged) return [];
   const lines = [`Cost ${money(line.unitCost)} × ${line.quantity} = ${money(round2(line.unitCost * line.quantity))}`];
   for (const step of priced.steps) {
     lines.push(`${step.label}${step.ratePercent != null ? ` ${step.ratePercent}%` : ""}: +${money(step.amount)}`);
