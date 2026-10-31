@@ -3,7 +3,9 @@ import { prisma } from "@prova/db";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/PageHeader";
 import { NoAccess } from "@/components/NoAccess";
-import { BuyoutRow, PurchaseOrderLineRow } from "@/components/BuyoutRow";
+import { BuyoutRow, PurchaseOrderLineRow, SpecFindingList } from "@/components/BuyoutRow";
+import { buyoutSpecCheck, specCheckSentence } from "@/lib/buyout-spec-check";
+import { loadJobSpecFindings } from "@/lib/buyout-spec-query";
 import { requireCapability } from "@/lib/authz";
 import { money } from "@/lib/money";
 import { viewerToday } from "@/lib/viewerToday";
@@ -38,6 +40,7 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
           quantity: true,
           budgetedUnitCost: true,
           costCategory: true,
+          tradeScope: true,
           sourceCatalogEntryId: true,
         },
       },
@@ -45,7 +48,7 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
   });
   if (!job) notFound();
 
-  const [commitments, quotes, vendors, purchaseOrders, today] = await Promise.all([
+  const [commitments, quotes, vendors, purchaseOrders, today, specSections] = await Promise.all([
     loadLineCommitments(job.id),
     prisma.vendorPriceQuote.findMany({
       where: { companyId: company.id, catalogEntryId: { not: null } },
@@ -58,6 +61,7 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
       include: { vendor: { select: { name: true } }, lines: { orderBy: { createdAt: "asc" } } },
     }),
     viewerToday(),
+    loadJobSpecFindings(job.id, company.id),
   ]);
 
   const rows = buyoutRows(
@@ -87,6 +91,14 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
     today,
   );
 
+  const specCheck = buyoutSpecCheck(
+    rows.map((row) => ({
+      id: row.line.id,
+      tradeScope: job.lineItems.find((item) => item.id === row.line.id)?.tradeScope ?? null,
+    })),
+    specSections,
+  );
+
   return (
     <PageShell width="working">
       <PageHeader
@@ -106,6 +118,16 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
         <p className="mt-6 text-sm text-ink-muted">This job is still an estimate. Buyout opens once it is contracted.</p>
       ) : (
         <>
+          <div className="mt-6 flex flex-col gap-2">
+            <p className="text-sm text-ink-muted">{specCheckSentence(specCheck)}</p>
+            {specCheck.unplaced.length > 0 && (
+              <SpecFindingList
+                findings={specCheck.unplaced}
+                summary={`Spec says, not tied to one line · ${specCheck.unplaced.length}`}
+              />
+            )}
+          </div>
+
           {rows.length === 0 ? (
             <p className="mt-6 text-sm text-ink-muted">
               No lines to buy out. Labor lines are your own crew, so they are not listed here.
@@ -113,7 +135,13 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
           ) : (
             <ul className="mt-6 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
               {rows.map((row) => (
-                <BuyoutRow key={row.line.id} jobId={job.id} row={row} vendors={vendors} />
+                <BuyoutRow
+                  key={row.line.id}
+                  jobId={job.id}
+                  row={row}
+                  vendors={vendors}
+                  findings={specCheck.byLine.get(row.line.id)}
+                />
               ))}
             </ul>
           )}

@@ -3,7 +3,10 @@
 import { useState, useTransition } from "react";
 import { draftPurchaseOrderLine, removePurchaseOrderLine } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
+import { Disclosure } from "@/components/Disclosure";
 import { money } from "@/lib/money";
+import type { BuyoutFinding } from "@/lib/buyout-spec-check";
+import { SPEC_FINDING_LABEL } from "@/lib/specs/spec-findings";
 import type { BuyoutRow as BuyoutRowData } from "@/lib/purchase-orders";
 
 const inputClass =
@@ -17,16 +20,39 @@ function overBudgetText(amount: number | null): string | null {
   return amount > 0 ? `${money(amount)} over budget` : `${money(-amount)} under budget`;
 }
 
+/** Spec findings a person compares for themselves. Shown, not judged: nothing
+ * here says the quote meets or misses them. Each carries its quote and page. */
+export function SpecFindingList({ findings, summary }: { findings: BuyoutFinding[]; summary: string }) {
+  return (
+    <Disclosure variant="plain" summary={summary}>
+      <ul className="flex flex-col gap-2">
+        {findings.map((finding) => (
+          <li key={`${finding.sectionNumber}-${finding.ordinal}-${finding.label}`} className="text-xs text-ink-body">
+            <span className="font-medium text-ink-label">
+              {SPEC_FINDING_LABEL[finding.kind]} · {finding.sectionNumber}
+              {finding.sourcePageLabel ? ` · p ${finding.sourcePageLabel}` : ""}
+            </span>
+            <span className="block">{finding.requirement}</span>
+            <span className="block text-ink-muted">&ldquo;{finding.quote}&rdquo;</span>
+          </li>
+        ))}
+      </ul>
+    </Disclosure>
+  );
+}
+
 /** One scope line: what it was budgeted at, what is drafted and committed,
  * the quotes on file in its own unit, and a typed price for everything else. */
 export function BuyoutRow({
   jobId,
   row,
   vendors,
+  findings = [],
 }: {
   jobId: string;
   row: BuyoutRowData;
   vendors: { id: string; name: string }[];
+  findings?: BuyoutFinding[];
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +84,12 @@ export function BuyoutRow({
           <span>Committed {money(row.committed)}</span>
         </p>
       </div>
+      {findings.length > 0 && (
+        <SpecFindingList
+          findings={findings}
+          summary={`Spec says · ${findings.length} to compare before buying`}
+        />
+      )}
       <label className="flex items-center gap-2 text-xs text-ink-muted">
         Quantity to buy
         <input
