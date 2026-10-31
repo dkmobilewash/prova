@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveRoomMeasurements, type RoomToSave } from "@/lib/actions";
 import { Spinner } from "@/components/Spinner";
@@ -33,6 +33,12 @@ const SOURCE_WORD: Record<string, string> = {
   estimator: "typed by you",
 };
 
+/** A region holding several rooms says which, rather than a blank row. */
+function sharedName(room: RoomsFromWallsResult["rooms"][number]) {
+  if (!room.sharedTags) return null;
+  return { name: room.sharedTags.map((t) => t.name).join(" + "), number: room.sharedTags.map((t) => t.number).filter(Boolean).join(", ") };
+}
+
 export function TakeoffRoomsPanel({
   jobId,
   pageId,
@@ -59,6 +65,11 @@ export function TakeoffRoomsPanel({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const section = useRef<HTMLDivElement | null>(null);
+  // The drawer opens at its top, on the walls, and the rooms are what was just asked for.
+  useEffect(() => {
+    section.current?.scrollIntoView?.({ block: "start" });
+  }, [result]);
   const [names, setNames] = useState<Record<number, { name: string; number: string }>>({});
   const [saved, setSaved] = useState(false);
   /** The estimator's edits to a ceiling, over what was read. */
@@ -83,7 +94,7 @@ export function TakeoffRoomsPanel({
   function onSave() {
     setError(null);
     const rooms: RoomToSave[] = result.rooms.map((room) => {
-      const edited = nameOf(room.id, room.tag);
+      const edited = nameOf(room.id, room.tag ?? sharedName(room));
       const label = [edited.name, edited.number].filter(Boolean).join(" ").trim();
       const c = ceilingOf(room.id);
       return {
@@ -109,7 +120,7 @@ export function TakeoffRoomsPanel({
 
   void feetPerUnit;
   return (
-    <div className="mt-3 border-t border-line-card pt-3" data-takeoff="rooms-panel">
+    <div ref={section} className="mt-3 scroll-mt-2 border-t border-line-card pt-3" data-takeoff="rooms-panel">
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-semibold text-ink">
           {result.rooms.length} {result.rooms.length === 1 ? "room" : "rooms"}
@@ -137,7 +148,7 @@ export function TakeoffRoomsPanel({
               line, because the panel is too narrow for seven columns and a
               ceiling that scrolls sideways is a ceiling nobody checks. */}
           {result.rooms.map((room) => {
-              const edited = nameOf(room.id, room.tag);
+              const edited = nameOf(room.id, room.tag ?? sharedName(room));
               return (
                 <tbody
                   key={room.id}

@@ -121,7 +121,7 @@ export function takeoffFeatureRows(input: TakeoffFeatureInputs): TakeoffFeatureR
         "Draw a box round one symbol on a sheet and every copy of it is marked, turned or mirrored, so a count becomes a measurement instead of a tally on paper. Click a mark to drop a wrong one. No model.",
       status: onOff(input.symbolCountOn),
       where: { href: "/settings?tab=estimating#symbol-count", label: "Settings → Estimating" },
-      field: null,
+      field: "symbolCountOff",
     },
     {
       key: "scannedPlans",
