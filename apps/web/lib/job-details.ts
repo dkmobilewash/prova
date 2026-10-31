@@ -76,39 +76,211 @@ export function mayChangeClient(status: JobStatus): boolean {
  * Everything hanging off a Job that means somebody has WORKED it.
  *
  * `lineItems` is deliberately absent: an estimate always has line items and
- * they ARE the estimate, not evidence that anything happened to it. Every
- * other relation on the model is here, because the safe default for "is
- * this record load-bearing" is yes.
+ * they ARE the estimate, not evidence that anything happened to it. The
+ * rest of the estimate's working papers — the takeoff, the bid recap, the
+ * proposal text — are `JOB_DRAFT_CHILDREN` below, and go with it. Every
+ * table that would block a job delete is in exactly one of the two lists,
+ * and `jobRemoval.test.ts` derives that set from the migration SQL rather
+ * than from this comment. This comment used to say "every other relation on
+ * the model is here", and it stopped being true without anybody noticing:
+ * on 19 Oct 2026 a saved bid recap or an uploaded takeoff plan made "Remove
+ * it" throw a foreign-key error instead of removing the estimate.
+ *
+ * `table` is the SQL table, so the census can match the two. `single` marks
+ * a one-to-one relation, which Prisma's `_count` cannot count;
+ * `throughLineItems` marks a grandchild reached through the job's line
+ * items, which `_count` cannot reach either. The safe default for "is this
+ * record load-bearing" is still yes.
  *
  * `singular`/`plural` are spelled out rather than derived by adding an "s":
  * this list has to produce "1 RFI"/"2 RFIs" and "1 daily field report"/"2
  * daily field reports", and a derivation that works for most of them would
  * be wrong in exactly the cases a person notices.
  */
-export const JOB_HISTORY_RELATIONS = [
-  { key: "invoices", singular: "invoice", plural: "invoices" },
-  { key: "timeEntries", singular: "logged time entry", plural: "logged time entries" },
-  { key: "changeOrders", singular: "change order", plural: "change orders" },
-  { key: "rfis", singular: "RFI", plural: "RFIs" },
-  { key: "submittals", singular: "submittal", plural: "submittals" },
-  { key: "punchListItems", singular: "punch list item", plural: "punch list items" },
-  { key: "dailyFieldReports", singular: "daily field report", plural: "daily field reports" },
-  { key: "safetyIncidents", singular: "safety incident", plural: "safety incidents" },
-  { key: "materialOrders", singular: "material order", plural: "material orders" },
-  { key: "retainageReleases", singular: "retainage release", plural: "retainage releases" },
-  { key: "signatureRequests", singular: "signature request", plural: "signature requests" },
-  { key: "contractDocuments", singular: "contract document", plural: "contract documents" },
-  { key: "estimateVersions", singular: "saved estimate version", plural: "saved estimate versions" },
-  { key: "drawingSets", singular: "drawing set", plural: "drawing sets" },
-  { key: "media", singular: "site photo", plural: "site photos" },
-  { key: "toolboxTalks", singular: "toolbox talk", plural: "toolbox talks" },
-  { key: "dispatchSlips", singular: "dispatch slip", plural: "dispatch slips" },
+export type HistoryRelation = {
+  key: string;
+  table: string;
+  singular: string;
+  plural: string;
+  single?: true;
+  throughLineItems?: true;
+};
+
+export const JOB_HISTORY_RELATIONS: readonly HistoryRelation[] = [
+  { key: "invoices", table: "Invoice", singular: "invoice", plural: "invoices" },
+  { key: "timeEntries", table: "TimeEntry", singular: "logged time entry", plural: "logged time entries" },
+  { key: "changeOrders", table: "ChangeOrder", singular: "change order", plural: "change orders" },
+  { key: "rfis", table: "Rfi", singular: "RFI", plural: "RFIs" },
+  { key: "submittals", table: "Submittal", singular: "submittal", plural: "submittals" },
+  { key: "punchListItems", table: "PunchListItem", singular: "punch list item", plural: "punch list items" },
+  {
+    key: "dailyFieldReports",
+    table: "DailyFieldReport",
+    singular: "daily field report",
+    plural: "daily field reports",
+  },
+  { key: "safetyIncidents", table: "SafetyIncident", singular: "safety incident", plural: "safety incidents" },
+  { key: "materialOrders", table: "MaterialOrder", singular: "material order", plural: "material orders" },
+  // A PO went (or was drafted to go) to a supplier — same footing as a
+  // material order. Added when #881's purchase orders met estimate removal.
+  { key: "purchaseOrders", table: "PurchaseOrder", singular: "purchase order", plural: "purchase orders" },
+  {
+    key: "retainageReleases",
+    table: "RetainageRelease",
+    singular: "retainage release",
+    plural: "retainage releases",
+  },
+  {
+    key: "signatureRequests",
+    table: "SignatureRequest",
+    singular: "signature request",
+    plural: "signature requests",
+  },
+  {
+    key: "contractDocuments",
+    table: "ContractDocument",
+    singular: "contract document",
+    plural: "contract documents",
+  },
+  {
+    key: "estimateVersions",
+    table: "EstimateVersion",
+    singular: "saved estimate version",
+    plural: "saved estimate versions",
+  },
+  { key: "drawingSets", table: "DrawingSet", singular: "drawing set", plural: "drawing sets" },
+  { key: "media", table: "JobMedia", singular: "site photo", plural: "site photos" },
+  { key: "toolboxTalks", table: "ToolboxTalk", singular: "toolbox talk", plural: "toolbox talks" },
+  { key: "dispatchSlips", table: "DispatchSlip", singular: "dispatch slip", plural: "dispatch slips" },
   {
     key: "prevailingWageDeterminations",
+    table: "PrevailingWageDetermination",
     singular: "prevailing wage determination",
     plural: "prevailing wage determinations",
   },
-  { key: "complianceDocuments", singular: "compliance document", plural: "compliance documents" },
+  {
+    key: "complianceDocuments",
+    table: "ComplianceDocument",
+    singular: "compliance document",
+    plural: "compliance documents",
+  },
+  // Added 2026-10-25. Each of these was a RESTRICT child of Job this list
+  // did not name, so a job holding one passed the check and then died on
+  // Postgres's refusal — thrown, and redacted to "This page didn't load".
+  // Every one is a record somebody entered about real work or real
+  // correspondence, so it holds the job rather than going with it.
+  { key: "backcharges", table: "Backcharge", singular: "backcharge", plural: "backcharges" },
+  { key: "closeoutItems", table: "CloseoutItem", singular: "closeout item", plural: "closeout items" },
+  {
+    key: "closeoutSubmissions",
+    table: "CloseoutSubmission",
+    singular: "closeout submission",
+    plural: "closeout submissions",
+  },
+  { key: "das140Notices", table: "Das140Notice", singular: "DAS 140 notice", plural: "DAS 140 notices" },
+  { key: "das142Requests", table: "Das142Request", singular: "DAS 142 request", plural: "DAS 142 requests" },
+  { key: "delayEvents", table: "DelayEvent", singular: "delay event", plural: "delay events" },
+  {
+    key: "docuSignEnvelopes",
+    table: "DocuSignEnvelope",
+    singular: "DocuSign envelope",
+    plural: "DocuSign envelopes",
+  },
+  {
+    key: "equipmentAssignments",
+    table: "EquipmentAssignment",
+    singular: "equipment assignment",
+    plural: "equipment assignments",
+  },
+  { key: "lienDeadlines", table: "LienDeadline", singular: "lien deadline", plural: "lien deadlines" },
+  { key: "lienWaivers", table: "LienWaiver", singular: "lien waiver", plural: "lien waivers" },
+  {
+    key: "timesheetSignoffs",
+    table: "TimesheetSignoff",
+    singular: "timesheet sign-off",
+    plural: "timesheet sign-offs",
+  },
+  { key: "tmTickets", table: "TmTicket", singular: "T&M ticket", plural: "T&M tickets" },
+  {
+    key: "warrantyPeriod",
+    table: "WarrantyPeriod",
+    singular: "warranty period",
+    plural: "warranty periods",
+    single: true,
+  },
+  {
+    key: "warrantyServiceRequests",
+    table: "WarrantyServiceRequest",
+    singular: "warranty service request",
+    plural: "warranty service requests",
+  },
+  {
+    key: "wh347PayrollNumbers",
+    table: "Wh347PayrollNumber",
+    singular: "WH-347 payroll number",
+    plural: "WH-347 payroll numbers",
+  },
+  { key: "wh347Statements", table: "Wh347Statement", singular: "WH-347 statement", plural: "WH-347 statements" },
+  // SET NULL rather than RESTRICT, so it never blocked the delete — it would
+  // have silently detached a message somebody SENT from the job it was
+  // about. Sent correspondence is the evidence-record rule's first example,
+  // so it holds the job the way an RFI does.
+  { key: "outboundMessages", table: "OutboundMessage", singular: "sent message", plural: "sent messages" },
+  // A cost recorded against one of the estimate's own line items. Not a
+  // relation of Job, so `_count` cannot see it and the action counts it
+  // through the line items. Without it, the line-item delete would hit
+  // `CostEntry_lineItemId_fkey` exactly the way the takeoff plan did.
+  {
+    key: "costEntries",
+    table: "CostEntry",
+    singular: "recorded cost",
+    plural: "recorded costs",
+    throughLineItems: true,
+  },
+];
+
+/**
+ * What goes WITH an estimate when it is removed: its own working papers,
+ * deleted in the same transaction as the job.
+ *
+ * The same line `JOB_HISTORY_RELATIONS` draws, from the other side. A
+ * takeoff plan, the items measured on it, the wall runs, the bid recap's
+ * rates, the proposal's clause text, who is assigned and the crew days
+ * pencilled in — none of it was sent, billed or worked. It is how the number
+ * was built, and it means nothing once the estimate it built is gone.
+ * Refusing to remove a job because somebody saved its markups is the bug
+ * this list exists for.
+ *
+ * The per-job COUNTERS are here as well, and that is CLAUDE.md's rule
+ * rather than a judgement: "per-job counters go with their job". A counter
+ * can only have issued a number to a record that is itself in the history
+ * list, and the job is refused while any of those exist.
+ *
+ * `model` is the Prisma delegate, `table` the SQL table for the census.
+ * `jobLineItem` is LAST because the takeoff items it may point at are SET
+ * NULL, so it can safely follow them; nothing else here references anything
+ * else here.
+ */
+export const JOB_DRAFT_CHILDREN = [
+  { model: "jobProposalClause", table: "JobProposalClause" },
+  { model: "jobBidRecap", table: "JobBidRecap" },
+  { model: "wallRun", table: "WallRun" },
+  { model: "takeoffPlan", table: "TakeoffPlan" },
+  { model: "takeoffItem", table: "TakeoffItem" },
+  { model: "crewScheduleDay", table: "CrewScheduleDay" },
+  { model: "jobAssignment", table: "JobAssignment" },
+  { model: "changeOrderCounter", table: "ChangeOrderCounter" },
+  { model: "invoiceCounter", table: "InvoiceCounter" },
+  { model: "rfiCounter", table: "RfiCounter" },
+  { model: "submittalCounter", table: "SubmittalCounter" },
+  { model: "materialOrderCounter", table: "MaterialOrderCounter" },
+  { model: "estimateVersionCounter", table: "EstimateVersionCounter" },
+  { model: "contractDocumentVersionCounter", table: "ContractDocumentVersionCounter" },
+  { model: "backchargeCounter", table: "BackchargeCounter" },
+  { model: "closeoutSubmissionCounter", table: "CloseoutSubmissionCounter" },
+  { model: "wh347PayrollCounter", table: "Wh347PayrollCounter" },
+  { model: "purchaseOrderCounter", table: "PurchaseOrderCounter" },
+  { model: "jobLineItem", table: "JobLineItem" },
 ] as const;
 
 export type JobHistoryCounts = Record<string, number>;

@@ -7,6 +7,7 @@ import { requireCapability } from "@/lib/authz";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
 import { can } from "@/lib/permissions";
 import { loadLegendProposals } from "@/lib/plan-ingest/legendProposalsQuery";
+import { surfaceHrefs, type Surface } from "@/lib/bid/surfaceHrefs";
 
 /**
  * ── THE WALL LEGEND, READ OFF THE SET, FOR REVIEW ──
@@ -22,10 +23,18 @@ import { loadLegendProposals } from "@/lib/plan-ingest/legendProposalsQuery";
  * COMPANY library, which is MANAGE_ESTIMATING, so the button is withheld from
  * anyone who could not press it rather than refusing them after the click.
  */
-export default async function WallLegendReviewPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function WallLegendReviewPage({
+  params,
+  surface = "crm",
+}: {
+  params: Promise<{ id: string }>;
+  /** Which product renders this page; C Stream Bid passes "bid" (`lib/bid/surfaceHrefs.ts`). */
+  surface?: Surface;
+}) {
   const { id } = await params;
+  const hrefs = surfaceHrefs(surface, id);
   const { context, allowed } = await requireCapability("VIEW_JOB_COSTS");
-  if (!allowed) return <NoAccess capability="VIEW_JOB_COSTS" />;
+  if (!allowed) return <NoAccess capability="VIEW_JOB_COSTS" homeHref={hrefs.home} homeLabel={hrefs.homeLabel} />;
   const { company, job } = await requireJobGivenContext(id, context);
   const plans = await prisma.takeoffPlan.findMany({
     where: { jobId: job.id, companyId: company.id },
@@ -60,7 +69,7 @@ export default async function WallLegendReviewPage({ params }: { params: Promise
             price &mdash; you put parts, prices and crews on them under Wall types afterwards.
           </p>
         </div>
-        <Link href={`/jobs/${job.id}/takeoff`} className="text-sm text-link underline-offset-2 hover:underline">
+        <Link href={hrefs.takeoff} className="text-sm text-link underline-offset-2 hover:underline">
           &larr; Back to the takeoff
         </Link>
       </div>

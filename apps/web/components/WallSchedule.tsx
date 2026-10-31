@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState, useTransition, type FormEvent } from "react";
-import { addWallRun, deleteWallRun, refreshWallSchedule, updateWallRun } from "@/lib/actions";
+import { addWallRun, deleteWallRun, refreshWallSchedule, restoreWallLines, updateWallRun } from "@/lib/actions";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
 import { scheduleLines, type WallTypeInput } from "@/lib/wall-assemblies";
@@ -73,11 +73,18 @@ export function WallSchedule({
   types,
   runs,
   unpricedRunLabels,
+  canRestore,
+  wallTypesHref = "/wall-types",
 }: {
   jobId: string;
   types: WallTypeInput[];
   runs: WallRunView[];
   unpricedRunLabels: string[];
+  canRestore: boolean;
+  /** Where the wall-type library is. The CRM's own page by default; C Stream
+   * Bid passes its own (`lib/bid/surfaceHrefs.ts`) so this screen draws no link
+   * out of the product it is in. */
+  wallTypesHref?: string;
 }) {
   const [message, setMessage] = useState<string | null>(null);
   const [isRefreshing, startRefresh] = useTransition();
@@ -88,7 +95,7 @@ export function WallSchedule({
       <div className="rounded-lg border border-line-card bg-surface p-4 text-sm text-ink-body">
         Set up your wall types first — what a W1 or a W2 is made of — and each run you enter here turns into studs,
         track and board on this estimate.{" "}
-        <Link href="/wall-types" className="text-link hover:underline">
+        <Link href={wallTypesHref} className="text-link hover:underline">
           Open wall types
         </Link>
       </div>
@@ -115,6 +122,28 @@ export function WallSchedule({
             className="text-xs text-link hover:underline disabled:opacity-50"
           >
             {isRefreshing ? "Refreshing…" : "Refresh from wall types"}
+          </button>
+        )}
+        {runs.length > 0 && canRestore && (
+          <button
+            type="button"
+            disabled={isRefreshing}
+            title="Brings back wall lines you deleted — for example to reprice them — at today's price book prices."
+            onClick={() =>
+              startRefresh(async () => {
+                const result = await restoreWallLines(jobId);
+                setMessage(
+                  !result.ok
+                    ? result.error
+                    : result.value.restored === 0
+                      ? "No deleted wall lines to bring back."
+                      : `Brought back ${result.value.restored} deleted wall line${result.value.restored === 1 ? "" : "s"} at today's price book prices.`,
+                );
+              })
+            }
+            className="text-xs text-link hover:underline disabled:opacity-50"
+          >
+            Restore deleted lines
           </button>
         )}
       </div>

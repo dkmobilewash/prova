@@ -11,6 +11,7 @@ import { TakeoffPlanViewer, FoundWalls, ClusterMark } from "./TakeoffPlanViewer"
 // proxy rather than the number or the function. The guard caught this the
 // moment these cases were written, which is the whole reason it exists.
 import { DISTINCT_MARKS, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
+import { noWallsMessage } from "@/lib/takeoff/noWallsMessage";
 import { wallsOnThisSheet } from "@/lib/takeoff/wallGroups";
 import { inchLabel, type WallCluster } from "@/lib/takeoff/wallVectors";
 import { fitZoom, stepZoom } from "@/lib/takeoff-plan-view";
@@ -569,20 +570,17 @@ describe("the ghost lines over the sheet", () => {
     // has just counted the strokes and knows which it is.
     const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).toMatch(/\{strokesSeen === 0/);
     expect(code).toMatch(/setStrokesSeen\(segments\.length\)/);
-    // The branch for a sheet that DOES have line work must not claim a scan.
-    //
-    // Anchored on the BRACE, which is the empty state's own ternary. It used
-    // to slice from the first bare `strokesSeen === 0` anywhere in the file,
-    // and the Read this sheet button -- whose condition is `found !== null &&
-    // strokesSeen === 0` and which sits higher up -- moved that first
-    // occurrence into a piece of JSX this case is not about. The property
-    // being asserted has not changed; only which branch it is read from.
-    const branch = code.slice(code.indexOf("{strokesSeen === 0"));
-    const elseArm = branch.slice(branch.indexOf(": `"), branch.indexOf("`}"));
-    expect(elseArm).not.toMatch(/scan/i);
-    expect(elseArm).toMatch(/does have line work/);
+    // The sentences moved to `lib/takeoff/noWallsMessage.ts` (2026-10-25) when a
+    // THIRD kind of empty was added — every found group added to the
+    // measurements — so the property is now asserted on what that module SAYS
+    // rather than sliced out of a ternary here. A sheet that DOES have line
+    // work must not be blamed on a scan.
+    expect(code).toMatch(/noWallsMessage\(\{ strokesSeen, groupsAdded \}\)/);
+    const lineWork = noWallsMessage({ strokesSeen: 50_000, groupsAdded: 0 });
+    expect(lineWork).not.toMatch(/scan/i);
+    expect(lineWork).toMatch(/does have line work/);
+    expect(noWallsMessage({ strokesSeen: 0, groupsAdded: 0 })).toMatch(/scan/);
   });
 
   it("draws nothing before anything has been found", () => {

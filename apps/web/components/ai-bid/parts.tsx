@@ -26,10 +26,14 @@ const CHIP =
 /** Where a finding came from. A record link stays in the app; a web page
  * opens in a new tab and says so; a label with neither is shown plain —
  * the loader is meant to have refused that, so it is drawn rather than hidden. */
-export function SourceChips({ sources }: { sources: Source[] }) {
+export function SourceChips({ sources, fit = false }: { sources: Source[]; fit?: boolean }) {
   if (sources.length === 0) return null;
   return (
-    <ul aria-label="Sources" className="flex flex-wrap gap-1.5">
+    // `fit` bounds the list to its container so a long label truncates inside
+    // its chip instead of widening the page: without it the list is as wide as
+    // its longest unwrapped label. Off by default — the CRM's markup is
+    // unchanged — and on in C Stream Bid, measured at 375px.
+    <ul aria-label="Sources" className={fit ? "flex min-w-0 max-w-full flex-wrap gap-1.5" : "flex flex-wrap gap-1.5"}>
       {sources.map((s, i) => (
         <li key={`${s.label}-${i}`} className="min-w-0 max-w-full">
           {s.href ? (

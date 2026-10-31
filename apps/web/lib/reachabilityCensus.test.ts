@@ -144,12 +144,12 @@ const REACHED_FROM: Record<string, Reached> = {
   },
   "/ai/bids/[id]": {
     reason: "Each bid row on /bids opens its AI workspace.",
-    parents: ["apps/web/app/(app)/bids/page.tsx"],
+    parents: ["apps/web/lib/bid/bidLogHrefs.ts"],
     needle: "`/ai/bids/${",
   },
   "/bids/[id]/regret": {
     reason: 'A lost bid\'s "why we lost" link on /bids.',
-    parents: ["apps/web/app/(app)/bids/page.tsx"],
+    parents: ["apps/web/lib/bid/bidLogHrefs.ts"],
     needle: "/regret`",
   },
   "/contacts/[id]": {
@@ -240,7 +240,9 @@ const REACHED_FROM: Record<string, Reached> = {
   "/jobs/[id]/takeoff/legend": {
     reason: "The 'Review the N wall types read off this set' link on the job's Takeoff tab, shown once a legend has been read.",
     parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx"],
-    needle: "/takeoff/legend`",
+    // The href is `hrefs.legend` since C Stream Bid renders this page too
+    // (`lib/bid/surfaceHrefs.ts`, whose "crm" value is `/jobs/<id>/takeoff/legend`).
+    needle: "reviewHref: hrefs.legend",
   },
   "/jobs/[id]/certified-payroll": {
     reason: "The certified payroll link on the job's Crew & time tab.",

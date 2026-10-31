@@ -62,6 +62,27 @@ model BidAddendum {
   bidInvitationId String
   bidInvitation   BidInvitation @relation(fields: [bidInvitationId], references: [id], onDelete: Cascade)
 
+  /// THE PROJECT THIS PAPER BELONGS TO — an addendum changes the BUILDING's documents, so the document is the project's and every GC invitation on it shows it. Added with the project-level
+  /// papers change: four GCs inviting us to the same building are four
+  /// invitations on ONE project, and a paper about the building is the project's,
+  /// not the one invitation it happened to be filed under.
+  ///
+  /// `bidInvitationId` above STAYS and now means "filed under": which GC's
+  /// invitation this came in with. It is what the row says on screen, what the
+  /// row cascades from, and — for an addendum — where the legacy single
+  /// `acknowledgedOn` is read from. Readers gather by THIS column
+  /// (lib/estimating/bid-papers.ts), falling back to the filing invitation only
+  /// where it is null.
+  ///
+  /// NULLABLE AND SET NULL, the same expand-then-contract shape as
+  /// `BidInvitation.bidProjectId`: the migration backfills it, but a build that
+  /// predates it can still write rows without one while a deploy is in flight, and
+  /// those rows must stay visible (through the filing invitation) rather than
+  /// fail. INVARIANT every write path keeps: when set, it equals the filing
+  /// invitation's own `bidProjectId`.
+  bidProjectId String?
+  bidProject   BidProject? @relation(fields: [bidProjectId], references: [id], onDelete: SetNull)
+
   /// What the GC called it, in their words — "Addendum 3", "ASI 2", "Bulletin
   /// 4". Free text for the reason above.
   reference String
@@ -72,6 +93,16 @@ model BidAddendum {
   issuedOn DateTime?
 
   /// NULL UNTIL ACKNOWLEDGED, and that null is the whole point of the model.
+  ///
+  /// THE ACKNOWLEDGEMENT IS PER GC, THE DOCUMENT IS PER PROJECT. Each GC's bid
+  /// form demands its own acknowledgement of every addendum, so "we acknowledged
+  /// Addendum 3 on GC A's form" says nothing about GC B's — and a project-wide
+  /// date here would tell B's row its form was in order when it was not, which
+  /// is the most common reason a complying bid is thrown out. THIS column is the
+  /// acknowledgement on the FILING invitation (`bidInvitationId` above), exactly
+  /// what it always meant; every OTHER invitation's is a
+  /// `BidAddendumAcknowledgement` row. `lib/estimating/bid-papers.ts`
+  /// `acknowledgedOnFor` is the one place that reads the pair.
   ///
   /// A date rather than a boolean, for the reason every other evidence field
   /// in this schema gives: WHEN you acknowledged it is part of what happened,
@@ -123,11 +154,48 @@ model BidAddendum {
   readings  BidAddendumReading[]
   decisions BidAddendumItemDecision[]
 
+  /// The acknowledgements on the OTHER GCs' bid forms — see `acknowledgedOn`.
+  acknowledgements BidAddendumAcknowledgement[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([bidInvitationId])
+  @@index([bidProjectId])
   @@index([companyId])
+}
+
+/// ONE GC's acknowledgement of ONE addendum — for every GC invitation on the
+/// project EXCEPT the one the addendum was filed under, whose acknowledgement
+/// stays in `BidAddendum.acknowledgedOn`.
+///
+/// WHY A ROW AND NOT A SECOND COLUMN. The number of GCs on a project is not
+/// fixed, and an acknowledgement is something that happened on a particular GC's
+/// form on a particular day — an ENTERED date, never stamped, like the column it
+/// sits beside. No row IS "not acknowledged on that GC's form", which is the
+/// state every pair starts in and the one a derived warning must read, so there
+/// is nothing stored that could disagree with it.
+///
+/// BOTH SIDES CASCADE and neither carries a `jobId` or a `companyId`: tenancy
+/// comes through the addendum, which has one, and a third copy of that id is the
+/// shape `union-tenancy-audit.mjs` exists to catch. The write path checks the
+/// invitation and the addendum are on one project before it writes.
+model BidAddendumAcknowledgement {
+  id            String      @id @default(cuid())
+  bidAddendumId String
+  bidAddendum   BidAddendum @relation(fields: [bidAddendumId], references: [id], onDelete: Cascade)
+
+  bidInvitationId String
+  bidInvitation   BidInvitation @relation(fields: [bidInvitationId], references: [id], onDelete: Cascade)
+
+  /// The day it was acknowledged on THAT GC's form, entered.
+  acknowledgedOn DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bidAddendumId, bidInvitationId])
+  @@index([bidInvitationId])
 }
 
 /// The kinds of requirement a person has to attest to.

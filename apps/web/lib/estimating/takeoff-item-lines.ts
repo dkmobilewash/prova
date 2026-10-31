@@ -137,9 +137,9 @@ export function itemGeometry(item: ItemForLines): RunGeometry {
 }
 
 /** Everything the expander needs, read through the transaction client. */
-export async function loadItemsForLines(tx: Tx, companyId: string, jobId: string) {
+export async function loadItemsForLines(tx: Tx, companyId: string, jobId: string, onlyItemIds?: readonly string[]) {
   const items = await tx.takeoffItem.findMany({
-    where: { jobId, companyId },
+    where: { jobId, companyId, ...(onlyItemIds ? { id: { in: [...onlyItemIds] } } : {}) },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     include: {
       measurements: {
@@ -197,13 +197,25 @@ const num = (value: { toString(): string } | number | null | undefined): number 
  *
  * Called inside the caller's transaction, like `syncWallScheduleLines`, so the
  * items and the lines can never be observed disagreeing.
+ *
+ * ── `onlyItemIds`: RE-DERIVE THESE ITEMS' LINES AND TOUCH NOTHING ELSE ──
+ *
+ * Omitted, this is "Send takeoff to estimate": every item, job-wide, which
+ * CREATES lines for any item with an assembly. Given, only those items are
+ * read and only their existing lines are compared — the (item, part) key
+ * means no other item's lines can be created, updated or retired. The Bid
+ * guide's tap answers pass the items of the answered type that are ALREADY on
+ * the estimate (`lib/actions/bidGuide.ts`): a tap about W1's board must move
+ * W1's traced walls, and must not put another type's unsent tracing on a bid.
+ * Found by the db test, where the job-wide form did exactly that.
  */
 export async function syncTakeoffItemLines(
   tx: Tx,
   companyId: string,
   jobId: string,
+  onlyItemIds?: readonly string[],
 ): Promise<ItemLineSummary> {
-  const { items, assemblies } = await loadItemsForLines(tx, companyId, jobId);
+  const { items, assemblies } = await loadItemsForLines(tx, companyId, jobId, onlyItemIds);
   const assemblyById = new Map(assemblies.map((assembly) => [assembly.id, assembly]));
 
   const unpriced: { id: string; name: string }[] = [];
@@ -254,15 +266,7 @@ export async function syncTakeoffItemLines(
       depthIn: num(item.depthIn),
       wallTypeId: item.wallTypeId,
       studSpacingIn: num(assembly.studSpacingIn),
-      measurements: item.measurements.map((m) => ({
-        id: m.id,
-        pageNumber: m.page.pageNumber,
-        kind: m.kind,
-        xs: m.xs,
-        ys: m.ys,
-        cutouts: Array.isArray(m.cutouts) ? (m.cutouts as { xs: number[]; ys: number[] }[]) : [],
-        feetPerPageWidth: m.calibration === null ? null : feetAcross(m.calibration),
-      })),
+      measurements: item.measurements.map(itemMeasurementOf),
     });
 
     for (const component of assembly.components) {
@@ -275,9 +279,13 @@ export async function syncTakeoffItemLines(
           factor: Number(component.factor),
           wastePercent: Number(component.wastePercent),
           roundUp: component.roundUp,
+          perLayer: component.perLayer,
           productionRate: num(component.productionRate),
         },
         geometry,
+        // The assembly's own board-layer answer, so a traced wall and a wall
+        // run of the same type count the same board (`layerMultiplier`).
+        { boardLayers: assembly.boardLayers },
       );
       // `roundUp` is the part's own answer to "can you buy a fraction of
       // this" — a sheet of board cannot be half-bought, a foot of track can.
@@ -306,7 +314,7 @@ export async function syncTakeoffItemLines(
   // ONLY lines carrying a `takeoffItemId`. A wall-schedule line is not this
   // function's to read, let alone to retire.
   const existing = await tx.jobLineItem.findMany({
-    where: { jobId, takeoffItemId: { not: null } },
+    where: { jobId, takeoffItemId: onlyItemIds ? { in: [...onlyItemIds] } : { not: null } },
     select: { id: true, takeoffItemId: true, wallTypeComponentId: true, isDeleted: true },
   });
   const key = (line: { takeoffItemId: string | null; wallTypeComponentId: string | null }) =>
@@ -384,6 +392,53 @@ export async function syncTakeoffItemLines(
  * numbers. Both are `declaredDistanceFeet / the calibration line's length in
  * page-width units`, which is the definition rather than a convention.
  */
+/** A measurement row as Prisma returns it, the columns `itemMeasurementOf` reads. */
+export type ItemMeasurementRow = {
+  id: string;
+  kind: ItemMeasurement["kind"];
+  xs: number[];
+  ys: number[];
+  cutouts: unknown;
+  page: { pageNumber: number };
+  /** Null for a measurement with no scale: a count needs none (#883). */
+  calibration: { x1: number; y1: number; x2: number; y2: number; declaredDistanceFeet: { toString(): string } } | null;
+};
+
+/** One stored measurement → what `itemGeometry` reads. The sync's own mapping. */
+function itemMeasurementOf(m: ItemMeasurementRow): ItemMeasurement {
+  return {
+    id: m.id,
+    pageNumber: m.page.pageNumber,
+    kind: m.kind,
+    xs: m.xs,
+    ys: m.ys,
+    cutouts: Array.isArray(m.cutouts) ? (m.cutouts as { xs: number[]; ys: number[] }[]) : [],
+    feetPerPageWidth: m.calibration === null ? null : feetAcross(m.calibration),
+  };
+}
+
+/**
+ * The traced length of a LINEAR takeoff item, in feet — the footage the Bid
+ * guide quotes when it asks about the item's wall type. Through the SAME
+ * `itemGeometry` and measurement mapping `syncTakeoffItemLines` prices from,
+ * so the number in the question is the length the estimate lines come from.
+ * Anything that is not a line (an area, a count) has no wall footage: zero.
+ */
+export function itemTracedFeet(item: { id: string; name: string; type: ItemProperties["type"]; measurements: ItemMeasurementRow[] }): number {
+  if (item.type !== "LINEAR") return 0;
+  return itemGeometry({
+    id: item.id,
+    name: item.name,
+    type: item.type,
+    heightFt: null,
+    sides: null,
+    wastePercent: null,
+    depthIn: null,
+    wallTypeId: null,
+    measurements: item.measurements.map(itemMeasurementOf),
+  }).linearFt;
+}
+
 function feetAcross(calibration: {
   x1: number;
   y1: number;

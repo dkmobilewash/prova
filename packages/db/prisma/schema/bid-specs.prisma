@@ -71,6 +71,27 @@ model BidSpecSection {
   jobId           String?
   job             Job?           @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
+  /// THE PROJECT THIS PAPER BELONGS TO — a spec book is the BUILDING's, so every GC invitation on the project reads the same sections. Added with the project-level
+  /// papers change: four GCs inviting us to the same building are four
+  /// invitations on ONE project, and a paper about the building is the project's,
+  /// not the one invitation it happened to be filed under.
+  ///
+  /// `bidInvitationId` above STAYS and now means "filed under": which GC's
+  /// invitation this came in with. It is what the row says on screen, what the
+  /// row cascades from, and — for an addendum — where the legacy single
+  /// `acknowledgedOn` is read from. Readers gather by THIS column
+  /// (lib/estimating/bid-papers.ts), falling back to the filing invitation only
+  /// where it is null.
+  ///
+  /// NULLABLE AND SET NULL, the same expand-then-contract shape as
+  /// `BidInvitation.bidProjectId`: the migration backfills it, but a build that
+  /// predates it can still write rows without one while a deploy is in flight, and
+  /// those rows must stay visible (through the filing invitation) rather than
+  /// fail. INVARIANT every write path keeps: when set, it equals the filing
+  /// invitation's own `bidProjectId`.
+  bidProjectId String?
+  bidProject   BidProject? @relation(fields: [bidProjectId], references: [id], onDelete: SetNull)
+
   /// The section number AS PRINTED — "09 21 16", "Section 09 22 16". Free text
   /// and never validated against MasterFormat, which is a decision this repo has
   /// now made five times: "a product that refuses a code for not being in a
@@ -112,6 +133,7 @@ model BidSpecSection {
   updatedAt DateTime         @updatedAt
 
   @@index([bidInvitationId, sectionNumber])
+  @@index([bidProjectId, sectionNumber])
   @@index([jobId])
 }
 

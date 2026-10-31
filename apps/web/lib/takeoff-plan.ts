@@ -262,8 +262,12 @@ function refusalFor(measurement: StoredMeasurement): string {
 
 /** The imperial scales a drawing is actually printed at, as feet per inch of
  * paper. Architectural first, then engineering — the two families an estimator
- * recognises by name. */
-const STANDARD_SCALES: { feetPerInch: number; name: string }[] = [
+ * recognises by name.
+ *
+ * Exported for the Set-scale picker (`takeoff-scale-picker.ts`), which offers
+ * THIS list rather than a copy of it — so a scale the picker offers is, by
+ * construction, one `readScale` can name back. */
+export const STANDARD_SCALES: readonly { feetPerInch: number; name: string }[] = [
   { feetPerInch: 32, name: '1/32" = 1\'-0"' },
   { feetPerInch: 16, name: '1/16" = 1\'-0"' },
   { feetPerInch: 32 / 3, name: '3/32" = 1\'-0"' },

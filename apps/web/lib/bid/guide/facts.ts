@@ -1,0 +1,740 @@
+import { prisma } from "@prova/db";
+import { bidTotalOf, recapLandsAt, recapStateFor } from "@/lib/estimating/recap-state";
+import { measurementPrimitive } from "@/lib/takeoff-plan";
+import { acknowledgedOnFor, paperWhereMany, papersFor } from "@/lib/estimating/bid-papers";
+import { wallHeightQuestions } from "./wallHeight";
+import { reachedProvider } from "@/components/messageLabels";
+import { todayInZone } from "@/lib/viewer-timezone";
+import { BID_INVITATION_RELATED_TYPE } from "@/lib/estimating/proposal-send";
+import { boardLayerQuestions } from "./boardLayers";
+import { itemTracedFeet } from "@/lib/estimating/takeoff-item-lines";
+
+/**
+ * THE FACTS A JOB GUIDE IS BUILT FROM — one plain, serialisable snapshot per
+ * estimate-stage job. `buildJobGuide` (`./buildJobGuide.ts`) is a pure function
+ * of this and nothing else, so every sentence the guide says can be traced to a
+ * field here, and a test can state a stage of a bid as an object literal.
+ *
+ * Plain on purpose: strings, numbers, booleans, arrays and nulls. No `Date`, no
+ * `Decimal`, no Prisma row — it crosses a server/client boundary and sits in
+ * test fixtures. A calendar day is a `YYYY-MM-DD` string (the app stores days at
+ * UTC midnight and renders them in UTC), a time of day is minutes after
+ * midnight, exactly as `BidInvitation.dueMinute` is stored.
+ *
+ * ── WHERE EACH FACT COMES FROM, because the schema has no "guide" table ──
+ *
+ *   drawings       `TakeoffPlan` rows of the job. A plan is one uploaded PDF.
+ *   sheets read    distinct `PlanSheetText` pages (the PAGE_INVENTORY stage).
+ *   sheet count    the most of: sheets read, the ingest run's `pageCount`, and
+ *                  the pages a person has worked on (`TakeoffPlanPage`).
+ *   needs a scale  a sheet that is a floor PLAN (the newest `PlanSheetProposal`
+ *                  says `proposedPageType = "PLAN"`) or that a person has opened
+ *                  as a `TakeoffPlanPage`, and that has NO `TakeoffScaleCalibration`.
+ *                  A scale the app only PRE-FILLED (`PlanSheetScaleReading`)
+ *                  does not count: nothing on the sheet confirms it until a
+ *                  person accepts it, and accepting it is what writes the
+ *                  calibration. Cover sheets and details are not in the set,
+ *                  so a finished bid is not nagged about them.
+ *   measured walls `WallRun` rows (the wall schedule), by wall type.
+ *   by hand        `TakeoffMeasurement` rows with no `wallRunId`: a plain
+ *                  measurement ("Add as plain measurements — priced by hand")
+ *                  or anything traced by hand. LINEAR ones are read to feet by
+ *                  `measurementPrimitive` against their own calibration. These
+ *                  count as MEASURED — the contractor walk (2026-10-27) added
+ *                  237 LF this way and the guide, which read only `WallRun`,
+ *                  kept saying no walls were measured.
+ *   in the estimate  live `JobLineItem`s (`isDeleted = false`); the wall ones
+ *                  carry a `wallTypeComponentId` and no `takeoffItemId`.
+ *   priced         a wall type is unpriced when it has no components at all, or
+ *                  a live line made from one of its components has no unit
+ *                  price. That is the PRICE BOOK's answer in effect: a new wall
+ *                  line takes its price from the component's catalog entry
+ *                  (`syncWallScheduleLines`), so a catalog entry with no price
+ *                  makes a priceless line. A price typed over the catalog's
+ *                  counts — it is the estimator's.
+ *   recap          `JobBidRecap`: exists, and `appliedAt` is when it was put on
+ *                  the prices. `addedTotal` is recomputed by the same
+ *                  `recapStateFor` the proposal page uses; `landsAt`, what the
+ *                  lines total after Apply, by `recapLandsAt` — the
+ *                  `applyOutcome` the recap panel previews and Apply writes.
+ *   wall height    a wall type used on the job's runs with no `defaultHeightFt`,
+ *                  whose runs have no `heightFt` of their own: those runs add
+ *                  NOTHING to the estimate (`runGeometry` returns null). Worked
+ *                  out by `wallHeightQuestions` (`./wallHeight.ts`), the same
+ *                  function the answer's action re-derives with.
+ *   board layers   a wall type used on the job's runs with no `boardLayers`
+ *                  answer and at least one `perLayer` component, so the answer
+ *                  would multiply its board. Worked out by
+ *                  `boardLayerQuestions` (`./boardLayers.ts`), the same function
+ *                  the answer's action re-derives with.
+ *   walk / RFIs    `BidInvitation.walkDate`/`walkMinute`/`rfiCutoffDate` of each
+ *                  linked invitation, as entered. The walk's minute is the GC's
+ *                  wall clock, exactly like `dueMinute`.
+ *   addenda        `BidAddendum` rows the PROJECT shows (read through
+ *                  `bid-papers.ts`, never by filing invitation alone), and for
+ *                  each still-INVITED invitation whether it is acknowledged on
+ *                  THAT GC's form (`acknowledgedOnFor`: the filing GC's is the
+ *                  addendum's own column, every other GC's is a
+ *                  `BidAddendumAcknowledgement` row). Only the missing pairs are
+ *                  kept. A SENT or DECLINED invitation is not asked about: what
+ *                  went out went out.
+ *   sent           `BidInvitation.status`, OR an email the app sent for the
+ *                  invitation. THE SCHEMA DOES NOT RECORD THAT A PROPOSAL WAS
+ *                  GENERATED OR OPENED: the proposal is a print-styled page,
+ *                  and the bid package is merged in the browser and stores
+ *                  nothing (`bid-package.ts`). What it DOES record is a send:
+ *                  an `OutboundMessage` with `relatedType = "BID_INVITATION"`
+ *                  and `relatedId` = the invitation, written by
+ *                  `sendBidProposal` and `submitBidPackage`, that reached the
+ *                  provider (`reachedProvider` — any event but FAILED, or a
+ *                  provider id). The first such message's day is
+ *                  `proposalSentOn`, which is the only submitted DATE there
+ *                  is: `BidInvitation` has no column for it, and the message
+ *                  is the evidence. Both sends also mark the invitation
+ *                  SUBMITTED, so either answer alone would do; reading the
+ *                  record too means a status somebody set back by hand cannot
+ *                  un-send an email a GC received. WON and LOST are past
+ *                  SUBMITTED, so they count as sent; DECLINED does not
+ *                  (nothing went out) unless a send record says otherwise.
+ *
+ * DERIVED, NEVER STORED: nothing here is written anywhere.
+ */
+
+export type GuideInvitationStatus = "INVITED" | "SUBMITTED" | "WON" | "LOST" | "DECLINED";
+
+export type GuideInvitationFact = {
+  id: string;
+  projectName: string;
+  status: GuideInvitationStatus;
+  /** `YYYY-MM-DD`, or null. */
+  dueDate: string | null;
+  /** Minutes after midnight on the GC's wall clock, or null (the day alone is the deadline). */
+  dueMinute: number | null;
+  /** The GC on this invitation (its contact), when known. Absent in older fixtures = null. */
+  gcName?: string | null;
+  /** The job walk / pre-bid meeting day, `YYYY-MM-DD`, and its wall-clock minute. Absent = none. */
+  walkDate?: string | null;
+  walkMinute?: number | null;
+  /** The last day questions (RFIs) are accepted, `YYYY-MM-DD`. Absent = none. */
+  rfiCutoffDate?: string | null;
+  /** The day the app first emailed this GC the bid (a proposal or a package)
+   *  and the provider took it, `YYYY-MM-DD` ON THE VIEWER'S CALENDAR — the
+   *  loader is handed the zone, so a 6:30pm Pacific send reads as that day and
+   *  not the UTC day after it, and `buildJobGuide` stays pure. Absent or null =
+   *  never sent from the app. Derived from `OutboundMessage` on every read. */
+  proposalSentOn?: string | null;
+  /** This GC's price adjustment on the estimate total (`gc-price.ts`), signed
+   *  dollars or percent. Absent or null = none. */
+  priceAdjust?: { amount: number | null; percent: number | null } | null;
+};
+
+/**
+ * One addendum not yet acknowledged on one still-open GC's bid form. The same
+ * addendum missing on two GCs' forms is two of these: each form is its own.
+ */
+export type GuideAddendumFact = {
+  addendumId: string;
+  /** The GC's own words: "Addendum 2", "ASI 3", or just "2". */
+  reference: string;
+  /** The day the GC issued it, `YYYY-MM-DD`, or null when nobody entered one. */
+  issuedOn: string | null;
+  /** The invitation (GC) whose form is missing it. */
+  invitationId: string;
+  gcName: string | null;
+};
+
+export type GuideWallTypeFact = {
+  wallTypeId: string;
+  code: string;
+  name: string;
+  /** Total measured length of this type's runs, in feet. */
+  lengthFt: number;
+  runCount: number;
+  openingsCount: number;
+  /** How many components the type has. Zero means it can never produce a priced line. */
+  componentCount: number;
+  /** Live estimate lines made from this type's components. */
+  lineCount: number;
+  /** Of those, how many have no unit price. */
+  unpricedLineCount: number;
+  /**
+   * Set when the type has no default height AND some of its runs here have no
+   * height of their own, so those runs add nothing to the estimate. Absent or
+   * null = nothing to ask. See `./wallHeight.ts`.
+   */
+  heightless?: { runCount: number; lengthFt: number; token: string } | null;
+  /**
+   * Set when the type has no board-layer answer AND has a part whose factor is
+   * per layer, so the answer would change its board. `runCount` is every run of
+   * the type on this job, `itemCount` every takeoff item priced through it
+   * (absent = 0), and `lengthFt` both together. Absent or null = nothing to
+   * ask. See `./boardLayers.ts`.
+   *
+   * A type used ONLY through takeoff items appears in `wallTypes` just for this
+   * question — with `runCount` 0, so nothing that reads runs counts it.
+   */
+  layersUnanswered?: { runCount: number; itemCount?: number; lengthFt: number; sides: number; token: string } | null;
+};
+
+/**
+ * OPTIONAL INPUT, NOT LOADED HERE. Built by `lib/bid/guide/pastPrice.ts`
+ * (another agent's) and set on the facts before `buildJobGuide` runs.
+ *
+ * `buildJobGuide` reads ONE entry: the one whose `wallTypeCode` equals the
+ * code of the FIRST unpriced wall type (the first by code order, as listed in
+ * `wallTypes`). It then puts "You priced {label} on {fromJobName} {whenLabel}.
+ * Use that?" in the ask's body and adds the primary action
+ * `{ actionId: "usePastPrice", actionArg: <wallTypeCode> }`.
+ *
+ * `actionArg` IS THE WALL TYPE CODE (e.g. "W2"), unique per company
+ * (`WallType @@unique([companyId, code])`). The job is the screen's own, so the
+ * action needs only the pair (jobId from the page, wallTypeCode from here).
+ */
+export type PastPriceSuggestion = {
+  wallTypeCode: string;
+  /** What the past price was for: `6" 1-HR wall`. */
+  label: string;
+  /** The job it came from: `Civic Center`. */
+  fromJobName: string;
+  /** When, as a phrase that reads after "on {job}": `in September`. */
+  whenLabel: string;
+  /**
+   * The action's own argument, when the suggestion came from
+   * `loadPastPriceSuggestions` (`lib/bid/guide/pastPrice.ts`): `wt:<id>:<token>`,
+   * whose token lets the action refuse a price that changed since the screen
+   * was drawn. Preferred over the bare code whenever present.
+   */
+  actionArg?: string;
+};
+
+export type JobGuideFacts = {
+  jobId: string;
+  name: string;
+  gcName: string | null;
+
+  /** The estimate's own bid date (`Job.bidDueDate`), `YYYY-MM-DD`, or null. */
+  jobBidDueDate: string | null;
+  /** The bid project this estimate belongs to, when one is linked. */
+  project: { id: string; name: string; bidDueDate: string | null } | null;
+  /** Invitations that are the same work as this estimate: the one linked by
+   *  `wonJobId` plus every invitation under the linked project. */
+  invitations: GuideInvitationFact[];
+
+  hasTakeoffPlan: boolean;
+  planCount: number;
+  sheetCount: number;
+  sheetsRead: number;
+  /** Floor-plan sheets with no calibration yet — see the header. */
+  sheetsMissingScale: number;
+
+  wallTypes: GuideWallTypeFact[];
+  wallRunCount: number;
+  /** Total measured wall length across all runs, feet. */
+  measuredFootageFt: number;
+  openingsCount: number;
+  /** Live estimate lines that came from the wall schedule. */
+  wallLineCount: number;
+
+  lineCount: number;
+  /** Live lines with no unit price that are not cost-only indirects. */
+  linesWithoutPrice: number;
+  /** Live lines with no budgeted unit cost. */
+  linesWithoutCost: number;
+  /** The bid as it stands: `bidTotalOf` over the live lines. */
+  bidTotal: number;
+
+  /**
+   * The job's own recap row, or null when it has none. `addedTotal` is the
+   * markup over DIRECT COST; `landsAt` is what the live lines will total once
+   * Apply is pressed (`recapLandsAt` → `applyOutcome`, the function the recap
+   * panel and `applyBidRecap` use), or null when Apply would write nothing.
+   * The ask quotes `landsAt` against `bidTotal`, never `addedTotal`: see
+   * `buildJobGuide.ts`, rule 7.
+   */
+  recap: { appliedAt: string | null; addedTotal: number; landsAt: number | null } | null;
+
+  /**
+   * What a person measured on the takeoff OUTSIDE the wall schedule: every
+   * `TakeoffMeasurement` with no `wallRunId` — "Add as plain measurements —
+   * priced by hand", or a line traced by hand. `lengthFt` sums the LINEAR
+   * ones (`measurementPrimitive`, at the scale each was traced against). A
+   * wall run's own measurements are not here: they are in `wallTypes` and
+   * `measuredFootageFt`, and counting them twice would double the footage.
+   *
+   * No "posted yet" split, on purpose: the guide asks about these only while
+   * the estimate has NO lines, when none of them is on it whatever `postedAt`
+   * says; once lines exist it does not nag (see `buildJobGuide.ts`, rule 4).
+   */
+  handMeasurements: { count: number; lengthFt: number };
+
+  /** Optional — see `PastPriceSuggestion`. */
+  pastPriceSuggestions?: PastPriceSuggestion[];
+
+  /** Addenda not acknowledged on a still-open GC's form, in issued order. Absent = none. */
+  unacknowledgedAddenda?: GuideAddendumFact[];
+};
+
+// ── the pure half ────────────────────────────────────────────────────────────
+
+/** A bid that went out: submitted, or past submitted. DECLINED sent nothing. */
+export function invitationWasSent(status: GuideInvitationStatus): boolean {
+  return status === "SUBMITTED" || status === "WON" || status === "LOST";
+}
+
+/** One invitation went out: by its status, or because the app's own record of
+ *  the email says it did (`proposalSentOn`). */
+export function invitationFactWasSent(invitation: Pick<GuideInvitationFact, "status" | "proposalSentOn">): boolean {
+  return invitationWasSent(invitation.status) || !!invitation.proposalSentOn;
+}
+
+/**
+ * Is this estimate still being worked, for the home list? An estimate whose
+ * every linked invitation has closed one way or another (declined, won, lost)
+ * is finished business; one with no invitation at all is open, and so is one
+ * with any invitation still INVITED or SUBMITTED (a sent bid is waiting on a
+ * decision, which the guide shows as "working").
+ */
+export function isOpenForGuide(facts: Pick<JobGuideFacts, "invitations">): boolean {
+  if (facts.invitations.length === 0) return true;
+  return facts.invitations.some((invitation) => invitation.status === "INVITED" || invitation.status === "SUBMITTED");
+}
+
+// ── the loading half ─────────────────────────────────────────────────────────
+
+const day = (value: Date | null | undefined): string | null => (value ? value.toISOString().slice(0, 10) : null);
+const num = (value: { toString(): string } | number | null | undefined): number => (value == null ? 0 : Number(value));
+
+/** The most open estimate jobs one home list will load; far past any real desk. */
+const OPEN_JOB_LIMIT = 200;
+
+type LoadedJob = Awaited<ReturnType<typeof loadJobRows>>[number];
+
+const INVITATION_SELECT = {
+  id: true,
+  projectName: true,
+  status: true,
+  dueDate: true,
+  dueMinute: true,
+  walkDate: true,
+  walkMinute: true,
+  rfiCutoffDate: true,
+  bidProjectId: true,
+  priceAdjustAmount: true,
+  priceAdjustPercent: true,
+  contact: { select: { name: true } },
+} as const;
+
+function loadJobRows(companyId: string, where: { id?: string; status?: "ESTIMATE" }, take?: number) {
+  return prisma.job.findMany({
+    where: { companyId, ...where },
+    orderBy: [{ createdAt: "desc" }],
+    take,
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      bidDueDate: true,
+      contact: { select: { name: true } },
+      wonFromBid: { select: INVITATION_SELECT },
+      bidProject: {
+        select: {
+          id: true,
+          name: true,
+          bidDueDate: true,
+          invitations: { select: INVITATION_SELECT },
+        },
+      },
+      bidRecap: true,
+    },
+  });
+}
+
+function heightlessOf(questions: ReturnType<typeof wallHeightQuestions>, wallTypeId: string): GuideWallTypeFact["heightless"] {
+  const question = questions.find((q) => q.wallTypeId === wallTypeId);
+  return question ? { runCount: question.runCount, lengthFt: question.lengthFt, token: question.token } : null;
+}
+
+function layersOf(questions: ReturnType<typeof boardLayerQuestions>, wallTypeId: string): GuideWallTypeFact["layersUnanswered"] {
+  const question = questions.find((q) => q.wallTypeId === wallTypeId);
+  return question
+    ? { runCount: question.runCount, itemCount: question.itemCount, lengthFt: question.lengthFt, sides: question.sides, token: question.token }
+    : null;
+}
+
+/**
+ * Facts for a set of jobs the caller has ALREADY scoped to one company. Every
+ * query below is one round trip for the whole set (`jobId in (…)`), never one
+ * per job, and each also carries `companyId` where the table has it.
+ */
+async function factsForJobs(companyId: string, jobs: LoadedJob[], timeZone: string): Promise<JobGuideFacts[]> {
+  if (jobs.length === 0) return [];
+  const jobIds = jobs.map((job) => job.id);
+
+  const [lines, runs, plans, items] = await Promise.all([
+    prisma.jobLineItem.findMany({
+      where: { jobId: { in: jobIds }, isDeleted: false, job: { companyId } },
+      select: {
+        jobId: true,
+        quantity: true,
+        unitPrice: true,
+        budgetedUnitCost: true,
+        costCategory: true,
+        indirectKind: true,
+        wallTypeComponentId: true,
+        takeoffItemId: true,
+        id: true,
+      },
+    }),
+    prisma.wallRun.findMany({
+      where: { jobId: { in: jobIds }, companyId },
+      select: { id: true, jobId: true, wallTypeId: true, lengthFt: true, heightFt: true, openings: true },
+    }),
+    prisma.takeoffPlan.findMany({
+      where: { jobId: { in: jobIds }, companyId },
+      select: { id: true, jobId: true },
+    }),
+    // Traced takeoff items priced through a wall type: they carry its board
+    // too (`syncTakeoffItemLines`), so the board-layer question counts them.
+    prisma.takeoffItem.findMany({
+      where: { jobId: { in: jobIds }, companyId, wallTypeId: { not: null } },
+      select: {
+        id: true,
+        jobId: true,
+        name: true,
+        type: true,
+        wallTypeId: true,
+        measurements: {
+          select: {
+            id: true,
+            kind: true,
+            xs: true,
+            ys: true,
+            cutouts: true,
+            page: { select: { pageNumber: true } },
+            calibration: { select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } },
+          },
+        },
+      },
+    }),
+  ]);
+
+  const planIds = plans.map((plan) => plan.id);
+  const typeIds = [...new Set([...runs.map((run) => run.wallTypeId), ...items.map((item) => item.wallTypeId as string)])];
+
+  // Every invitation any of these jobs is the same work as, for the addenda.
+  const anchors = new Map<string, { id: string; bidProjectId: string | null }>();
+  for (const job of jobs) {
+    for (const invitation of [job.wonFromBid, ...(job.bidProject?.invitations ?? [])]) {
+      if (invitation) anchors.set(invitation.id, { id: invitation.id, bidProjectId: invitation.bidProjectId });
+    }
+  }
+
+  const [sheetTexts, proposals, pages, ingests, wallTypes, addenda, sends, handRows] = await Promise.all([
+    planIds.length
+      ? prisma.planSheetText.findMany({ where: { planId: { in: planIds } }, select: { planId: true, pageNumber: true } })
+      : [],
+    planIds.length
+      ? prisma.planSheetProposal.findMany({
+          where: { planId: { in: planIds } },
+          orderBy: { createdAt: "asc" },
+          select: { planId: true, pageNumber: true, proposedPageType: true },
+        })
+      : [],
+    planIds.length
+      ? prisma.takeoffPlanPage.findMany({
+          where: { planId: { in: planIds } },
+          select: { planId: true, pageNumber: true, _count: { select: { calibrations: true } } },
+        })
+      : [],
+    planIds.length
+      ? prisma.planIngestJob.findMany({ where: { planId: { in: planIds }, companyId }, select: { planId: true, pageCount: true } })
+      : [],
+    typeIds.length
+      ? prisma.wallType.findMany({
+          where: { id: { in: typeIds }, companyId },
+          select: {
+            id: true,
+            code: true,
+            name: true,
+            sides: true,
+            defaultHeightFt: true,
+            boardLayers: true,
+            components: { select: { id: true, perLayer: true } },
+          },
+        })
+      : [],
+    // One query for the whole set: the papers every anchor shows (bid-papers.ts),
+    // with each OTHER GC's acknowledgement row beside the filing GC's column.
+    anchors.size
+      ? prisma.bidAddendum.findMany({
+          where: { companyId, ...paperWhereMany([...anchors.values()]) },
+          orderBy: [{ issuedOn: "asc" }, { createdAt: "asc" }],
+          select: {
+            id: true,
+            reference: true,
+            issuedOn: true,
+            acknowledgedOn: true,
+            bidInvitationId: true,
+            bidProjectId: true,
+            acknowledgements: { select: { bidInvitationId: true, acknowledgedOn: true } },
+          },
+        })
+      : [],
+    // The bid emails the app sent for these invitations, oldest first. One
+    // query for the whole set; only the first that reached the provider counts.
+    anchors.size
+      ? prisma.outboundMessage.findMany({
+          where: { companyId, relatedType: BID_INVITATION_RELATED_TYPE, relatedId: { in: [...anchors.keys()] } },
+          orderBy: { createdAt: "asc" },
+          select: { relatedId: true, createdAt: true, providerMessageId: true, events: { select: { type: true } } },
+        })
+      : [],
+    // Measured by hand: every measurement NOT part of a wall run (those are
+    // counted through `WallRun` above). Scoped through the plans, which are
+    // already this company's.
+    planIds.length
+      ? prisma.takeoffMeasurement.findMany({
+          where: { wallRunId: null, page: { planId: { in: planIds } } },
+          select: {
+            kind: true,
+            xs: true,
+            ys: true,
+            label: true,
+            page: { select: { planId: true } },
+            calibration: { select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } },
+          },
+        })
+      : [],
+  ]);
+
+  const sentOnByInvitation = new Map<string, string>();
+  for (const send of sends) {
+    if (!send.relatedId || sentOnByInvitation.has(send.relatedId)) continue;
+    if (!reachedProvider(send.providerMessageId, send.events)) continue;
+    // An INSTANT, so it is read on the viewer's calendar — unlike every other
+    // day here, which is an entered calendar day stored at UTC midnight.
+    sentOnByInvitation.set(send.relatedId, todayInZone(timeZone, send.createdAt));
+  }
+
+  const typeById = new Map(wallTypes.map((type) => [type.id, type]));
+  const typeOfComponent = new Map<string, string>();
+  for (const type of wallTypes) for (const component of type.components) typeOfComponent.set(component.id, type.id);
+
+  return jobs.map((job): JobGuideFacts => {
+    // ── estimate lines ──
+    const jobLines = lines.filter((line) => line.jobId === job.id);
+    const wallLines = jobLines.filter((line) => line.wallTypeComponentId !== null && line.takeoffItemId === null);
+    const priceless = (line: (typeof jobLines)[number]) => line.unitPrice === null;
+
+    // ── measured walls, by type ──
+    const jobRuns = runs.filter((run) => run.jobId === job.id);
+    const heightQuestions = wallHeightQuestions(
+      jobRuns.map((run) => ({
+        id: run.id,
+        wallTypeId: run.wallTypeId,
+        lengthFt: num(run.lengthFt),
+        heightFt: run.heightFt == null ? null : Number(run.heightFt),
+      })),
+      wallTypes.map((type) => ({
+        id: type.id,
+        code: type.code,
+        defaultHeightFt: type.defaultHeightFt == null ? null : Number(type.defaultHeightFt),
+        componentCount: type.components.length,
+      })),
+    );
+    const jobItems = items.filter((item) => item.jobId === job.id);
+    const layerQuestions = boardLayerQuestions(
+      jobRuns.map((run) => ({ id: run.id, wallTypeId: run.wallTypeId, lengthFt: num(run.lengthFt) })),
+      jobItems.map((item) => ({ id: item.id, wallTypeId: item.wallTypeId as string, lengthFt: itemTracedFeet(item) })),
+      wallTypes.map((type) => ({
+        id: type.id,
+        code: type.code,
+        sides: type.sides,
+        boardLayers: type.boardLayers,
+        perLayerCount: type.components.filter((component) => component.perLayer).length,
+      })),
+    );
+    const wallTypeFacts: GuideWallTypeFact[] = [];
+    for (const typeId of [...new Set(jobRuns.map((run) => run.wallTypeId))]) {
+      const type = typeById.get(typeId);
+      if (!type) continue; // a run whose type is gone or another company's: the schedule calls it an orphan
+      const typeRuns = jobRuns.filter((run) => run.wallTypeId === typeId);
+      const typeLines = wallLines.filter((line) => typeOfComponent.get(line.wallTypeComponentId as string) === typeId);
+      wallTypeFacts.push({
+        wallTypeId: typeId,
+        code: type.code,
+        name: type.name,
+        lengthFt: typeRuns.reduce((sum, run) => sum + num(run.lengthFt), 0),
+        runCount: typeRuns.length,
+        openingsCount: typeRuns.reduce((sum, run) => sum + (Array.isArray(run.openings) ? run.openings.length : 0), 0),
+        componentCount: type.components.length,
+        lineCount: typeLines.length,
+        unpricedLineCount: typeLines.filter(priceless).length,
+        heightless: heightlessOf(heightQuestions, typeId),
+        layersUnanswered: layersOf(layerQuestions, typeId),
+      });
+    }
+    // A type used ONLY through takeoff items, here just for its board-layer
+    // question: no runs, so the height, the measured footage and "add the
+    // walls" never count it, and it has no wall-schedule lines to be unpriced.
+    for (const question of layerQuestions) {
+      if (question.runCount > 0) continue;
+      const type = typeById.get(question.wallTypeId);
+      if (!type) continue;
+      wallTypeFacts.push({
+        wallTypeId: type.id,
+        code: type.code,
+        name: type.name,
+        lengthFt: 0,
+        runCount: 0,
+        openingsCount: 0,
+        componentCount: type.components.length,
+        lineCount: 0,
+        unpricedLineCount: 0,
+        heightless: null,
+        layersUnanswered: layersOf(layerQuestions, type.id),
+      });
+    }
+    wallTypeFacts.sort((a, b) => a.code.localeCompare(b.code));
+
+    // ── drawings and sheets ──
+    const jobPlanIds = new Set(plans.filter((plan) => plan.jobId === job.id).map((plan) => plan.id));
+    let sheetCount = 0;
+    let sheetsRead = 0;
+    let sheetsMissingScale = 0;
+    for (const planId of jobPlanIds) {
+      const read = new Set(sheetTexts.filter((row) => row.planId === planId).map((row) => row.pageNumber));
+      const worked = new Map(pages.filter((row) => row.planId === planId).map((row) => [row.pageNumber, row._count.calibrations]));
+      const ingestPages = Math.max(0, ...ingests.filter((row) => row.planId === planId).map((row) => row.pageCount));
+      const pageType = new Map<number, string | null>(); // asc by createdAt, so the last write is the newest
+      for (const row of proposals) if (row.planId === planId) pageType.set(row.pageNumber, row.proposedPageType);
+
+      const known = new Set([...read, ...worked.keys()]);
+      sheetCount += Math.max(known.size, ingestPages);
+      sheetsRead += read.size;
+      for (const pageNumber of known) {
+        const isFloorPlan = pageType.get(pageNumber) === "PLAN" || worked.has(pageNumber);
+        if (isFloorPlan && (worked.get(pageNumber) ?? 0) === 0) sheetsMissingScale += 1;
+      }
+    }
+
+    // ── invitations: the one linked by wonJobId plus the project's ──
+    const byId = new Map<string, GuideInvitationFact>();
+    const openAnchors: { id: string; bidProjectId: string | null; gcName: string | null }[] = [];
+    for (const invitation of [job.wonFromBid, ...(job.bidProject?.invitations ?? [])]) {
+      if (!invitation || byId.has(invitation.id)) continue;
+      const gcName = invitation.contact?.name ?? null;
+      byId.set(invitation.id, {
+        id: invitation.id,
+        projectName: invitation.projectName,
+        status: invitation.status as GuideInvitationStatus,
+        dueDate: day(invitation.dueDate),
+        dueMinute: invitation.dueMinute,
+        gcName,
+        walkDate: day(invitation.walkDate),
+        walkMinute: invitation.walkMinute,
+        rfiCutoffDate: day(invitation.rfiCutoffDate),
+        proposalSentOn: sentOnByInvitation.get(invitation.id) ?? null,
+        priceAdjust: {
+          amount: invitation.priceAdjustAmount != null ? Number(invitation.priceAdjustAmount) : null,
+          percent: invitation.priceAdjustPercent != null ? Number(invitation.priceAdjustPercent) : null,
+        },
+      });
+      if (invitation.status === "INVITED") openAnchors.push({ id: invitation.id, bidProjectId: invitation.bidProjectId, gcName });
+    }
+
+    // ── addenda not acknowledged on a still-open GC's form ──
+    const unacknowledgedAddenda: GuideAddendumFact[] = [];
+    for (const anchor of openAnchors) {
+      for (const addendum of papersFor(anchor, addenda)) {
+        if (acknowledgedOnFor(addendum, anchor.id) !== null) continue;
+        unacknowledgedAddenda.push({
+          addendumId: addendum.id,
+          reference: addendum.reference,
+          issuedOn: day(addendum.issuedOn),
+          invitationId: anchor.id,
+          gcName: anchor.gcName,
+        });
+      }
+    }
+
+    // ── measured by hand (not a wall run) ──
+    const handMeasurements = { count: 0, lengthFt: 0 };
+    for (const row of handRows) {
+      if (!jobPlanIds.has(row.page.planId)) continue;
+      const primitive = measurementPrimitive({
+        kind: row.kind,
+        xs: row.xs,
+        ys: row.ys,
+        label: row.label,
+        // Null for a count, which needs no scale (#883): still counted, no length.
+        calibration: row.calibration === null ? null : { ...row.calibration, declaredDistanceFeet: Number(row.calibration.declaredDistanceFeet) },
+      });
+      handMeasurements.count += 1;
+      if (primitive?.kind === "linear") handMeasurements.lengthFt += primitive.feet;
+    }
+
+    const recapLines = jobLines;
+    const recapState = recapStateFor(job.bidRecap, recapLines);
+
+    return {
+      jobId: job.id,
+      name: job.name,
+      gcName: job.contact?.name ?? null,
+      jobBidDueDate: day(job.bidDueDate),
+      project: job.bidProject
+        ? { id: job.bidProject.id, name: job.bidProject.name, bidDueDate: day(job.bidProject.bidDueDate) }
+        : null,
+      invitations: [...byId.values()],
+      hasTakeoffPlan: jobPlanIds.size > 0,
+      planCount: jobPlanIds.size,
+      sheetCount,
+      sheetsRead,
+      sheetsMissingScale,
+      wallTypes: wallTypeFacts,
+      wallRunCount: jobRuns.length,
+      measuredFootageFt: wallTypeFacts.reduce((sum, type) => sum + type.lengthFt, 0),
+      openingsCount: wallTypeFacts.reduce((sum, type) => sum + type.openingsCount, 0),
+      wallLineCount: wallLines.length,
+      lineCount: jobLines.length,
+      linesWithoutPrice: jobLines.filter((line) => priceless(line) && line.indirectKind === null).length,
+      linesWithoutCost: jobLines.filter((line) => line.budgetedUnitCost === null).length,
+      bidTotal: bidTotalOf(jobLines),
+      recap: recapState
+        ? {
+            appliedAt: day(recapState.appliedAt),
+            addedTotal: recapState.addedTotal,
+            landsAt: recapLandsAt(job.bidRecap, recapLines),
+          }
+        : null,
+      handMeasurements,
+      unacknowledgedAddenda,
+    };
+  });
+}
+
+/**
+ * One estimate-stage job's facts, or null when the job is not this company's
+ * (or does not exist, or has left the estimate stage) — the caller 404s.
+ */
+export async function loadJobGuideFacts(
+  companyId: string,
+  jobId: string,
+  /** The viewer's IANA zone, for the one fact that is an instant (`proposalSentOn`). */
+  timeZone = "UTC",
+): Promise<JobGuideFacts | null> {
+  const jobs = await loadJobRows(companyId, { id: jobId });
+  const job = jobs[0];
+  if (!job || job.status !== "ESTIMATE") return null;
+  return (await factsForJobs(companyId, [job], timeZone))[0] ?? null;
+}
+
+/**
+ * Every open estimate-stage job of the company, for the home list — a fixed
+ * number of queries however many jobs there are (see `factsForJobs`).
+ */
+export async function loadOpenJobGuideFacts(companyId: string, timeZone = "UTC"): Promise<JobGuideFacts[]> {
+  const jobs = await loadJobRows(companyId, { status: "ESTIMATE" }, OPEN_JOB_LIMIT);
+  const facts = await factsForJobs(companyId, jobs, timeZone);
+  return facts.filter(isOpenForGuide);
+}

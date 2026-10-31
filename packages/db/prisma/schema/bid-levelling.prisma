@@ -51,6 +51,27 @@ model BidQuote {
   bidInvitationId String
   bidInvitation   BidInvitation @relation(fields: [bidInvitationId], references: [id], onDelete: Cascade)
 
+  /// THE PROJECT THIS PAPER BELONGS TO — a supplier quote is for the BUILDING, so every GC invitation on the project sees it and levels against it. Added with the project-level
+  /// papers change: four GCs inviting us to the same building are four
+  /// invitations on ONE project, and a paper about the building is the project's,
+  /// not the one invitation it happened to be filed under.
+  ///
+  /// `bidInvitationId` above STAYS and now means "filed under": which GC's
+  /// invitation this came in with. It is what the row says on screen, what the
+  /// row cascades from, and — for an addendum — where the legacy single
+  /// `acknowledgedOn` is read from. Readers gather by THIS column
+  /// (lib/estimating/bid-papers.ts), falling back to the filing invitation only
+  /// where it is null.
+  ///
+  /// NULLABLE AND SET NULL, the same expand-then-contract shape as
+  /// `BidInvitation.bidProjectId`: the migration backfills it, but a build that
+  /// predates it can still write rows without one while a deploy is in flight, and
+  /// those rows must stay visible (through the filing invitation) rather than
+  /// fail. INVARIANT every write path keeps: when set, it equals the filing
+  /// invitation's own `bidProjectId`.
+  bidProjectId String?
+  bidProject   BidProject? @relation(fields: [bidProjectId], references: [id], onDelete: SetNull)
+
   /// WHAT IS BEING BOUGHT OUT — "Metal stud framing", "EIFS", "Hang and
   /// finish". Quotes are compared only within one package, because two prices
   /// for different scopes are two prices for different things.
@@ -183,5 +204,6 @@ model BidQuote {
   updatedAt DateTime @updatedAt
 
   @@index([bidInvitationId, packageLabel])
+  @@index([bidProjectId, packageLabel])
   @@index([companyId])
 }

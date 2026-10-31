@@ -38,6 +38,7 @@ import type { PlanMeasurementRow, PlanSheet, PrintedScaleByPage, ScalePrefillByP
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import type { WallGroup } from "@/lib/takeoff/wallGroups";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
+import { surfaceHrefs, type Surface, type SurfaceHrefs } from "@/lib/bid/surfaceHrefs";
 
 /**
  * ── THIS ROUTE NEEDS LONGER THAN A PAGE DOES, AND IT IS THE SAVE THAT NEEDS IT ──
@@ -112,10 +113,20 @@ export const maxDuration = 300;
  * derived on each render from the traced geometry and the sheet's calibration,
  * by the same pure module the Server Action re-runs before it writes anything.
  */
-export default async function JobTakeoffPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobTakeoffPage({
+  params,
+  surface = "crm",
+}: {
+  params: Promise<{ id: string }>;
+  /** Which product is rendering this tab. Next passes only `params`, so a
+   * CRM request is always "crm"; C Stream Bid renders this same page with
+   * `surface="bid"` and gets its own links (`lib/bid/surfaceHrefs.ts`). */
+  surface?: Surface;
+}) {
   const { id } = await params;
+  const hrefs = surfaceHrefs(surface, id);
   const { context, allowed } = await requireCapability("VIEW_JOB_COSTS");
-  if (!allowed) return <NoAccess capability="VIEW_JOB_COSTS" />;
+  if (!allowed) return <NoAccess capability="VIEW_JOB_COSTS" homeHref={hrefs.home} homeLabel={hrefs.homeLabel} />;
   const { company, job } = await requireJobGivenContext(id, context);
 
   // Whether what was measured came off current drawings. Loaded beside the
@@ -148,8 +159,8 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   if (loaded === null) {
     return (
       <section className="flex flex-col gap-4">
-        <Header jobId={job.id} />
-        <TakeoffCurrencyBanner jobId={job.id} currency={currency} />
+        <Header hrefs={hrefs} />
+        <TakeoffCurrencyBanner jobId={job.id} currency={currency} bidsHref={hrefs.bids} />
         <div className="rounded-lg border border-line-card bg-surface-card p-4">
           <h3 className="text-sm font-semibold text-ink-label">No drawing on this job yet</h3>
           <p className="mt-1 max-w-prose text-sm text-ink-body">
@@ -208,11 +219,11 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
 
   return (
     <section className="flex flex-col gap-4">
-      <Header jobId={job.id} hasPlan />
+      <Header hrefs={hrefs} hasPlan />
       {/* ABOVE the measurements, for the reason the levelling caution sits
           above the quotes: it decides whether the numbers below mean
           anything. */}
-      <TakeoffCurrencyBanner jobId={job.id} currency={currency} />
+      <TakeoffCurrencyBanner jobId={job.id} currency={currency} bidsHref={hrefs.bids} />
 
       {/* ── THE DRAWING FIRST, 2026-10-16 ──
           It used to be LAST, under the revision form, the ingest panel, the
@@ -317,7 +328,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           scheduleSheetCount={scheduleSheetCount}
           legend={{
             on: (await aiGate(company.id, "PLAN_TEXT_READ")).ok,
-            reviewHref: `/jobs/${job.id}/takeoff/legend`,
+            reviewHref: hrefs.legend,
             typeCount: await legendTypeCountFor(plan.id),
           }}
         />
@@ -426,7 +437,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
   );
 }
 
-function Header({ jobId, hasPlan = false }: { jobId: string; hasPlan?: boolean }) {
+function Header({ hrefs, hasPlan = false }: { hrefs: SurfaceHrefs; hasPlan?: boolean }) {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -440,7 +451,7 @@ function Header({ jobId, hasPlan = false }: { jobId: string; hasPlan?: boolean }
             own; an estimator comparing a bid against a drawing wants both. */}
         {hasPlan && (
           <Link
-            href={`/takeoff/${jobId}`}
+            href={hrefs.workspace}
             className="rounded-md border border-line-card px-3 py-1.5 text-sm text-link hover:text-link-hover"
             data-takeoff="open-workspace"
           >
@@ -451,7 +462,7 @@ function Header({ jobId, hasPlan = false }: { jobId: string; hasPlan?: boolean }
       <p className="max-w-prose text-sm text-ink-body">
         Measure a drawing on screen. Set the scale on each sheet against a dimension printed on it, trace what
         you&rsquo;re taking off, and add it to the estimate.{" "}
-        <Link href={`/jobs/${jobId}/estimate`} className="text-link hover:text-link-hover">
+        <Link href={hrefs.estimate} className="text-link hover:text-link-hover">
           Ceilings and anything you already have dimensions for
         </Link>{" "}
         are typed on the estimate page instead — a traced outline has an area, not a length and a width.

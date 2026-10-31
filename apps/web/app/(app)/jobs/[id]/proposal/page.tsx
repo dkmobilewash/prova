@@ -15,9 +15,21 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { groupProposalClauses, PROPOSAL_CLAUSE_HEADINGS } from "@/lib/proposal-clauses";
 import { ProposalDrafts, type ProposalDraftView } from "@/components/ProposalDrafts";
 import { loadProposalFacts } from "@/lib/estimating/proposal-facts-query";
-import { recapLines, recapStateFor } from "@/lib/estimating/recap-state";
+import { bidTotalOf, recapLines, recapStateFor } from "@/lib/estimating/recap-state";
 import { proposalPriceState, proposalPriceWarning } from "@/lib/estimating/proposal-recap-currency";
 import { bidMargin, underCostWarning } from "@/lib/estimating/bid-margin";
+import {
+  bidFormSections,
+  parseProposalMode,
+  PROPOSAL_MODE_LABELS,
+  PROPOSAL_MODES,
+  proposalPresentation,
+  type ProposalLineInput,
+} from "@/lib/estimating/proposal-presentation";
+import { surfaceHrefs, type Surface } from "@/lib/bid/surfaceHrefs";
+import { adjustmentLabel, gcPrice } from "@/lib/estimating/gc-price";
+import { loadProposalSend } from "@/lib/estimating/proposal-send-query";
+import { ProposalSendComposer } from "@/components/bid/ProposalSendComposer";
 
 /**
  * A job's bid proposal — the scope + price + exclusions document a sub sends
@@ -32,17 +44,42 @@ import { bidMargin, underCostWarning } from "@/lib/estimating/bid-margin";
  * MANAGE_ESTIMATING, the gate /catalog and /bids use: a proposal is a bid,
  * and its clause actions assert the same capability themselves.
  */
-export default async function JobProposalPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobProposalPage({
+  params,
+  searchParams,
+  surface = "crm",
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ mode?: string | string[]; invitation?: string | string[] }>;
+  /** Which product renders this page; C Stream Bid passes "bid" (`lib/bid/surfaceHrefs.ts`). */
+  surface?: Surface;
+}) {
   const { id } = await params;
+  // HOW THE PRICE IS PRESENTED. Not stored: a new proposal is a LUMP SUM, and
+  // the choice rides on `?mode=` so the screen and the printed page are one
+  // URL. See `lib/estimating/proposal-presentation.ts` for what each mode may
+  // print — the lump and scope rows have no unit-price field at all.
+  const query = await searchParams;
+  const mode = parseProposalMode(query.mode);
+  // `?invitation=<id>` opens this proposal FOR ONE GC: addressed to the name
+  // that GC wrote on its invitation and priced at that GC's price. Absent, the
+  // page is exactly what it was before invitations carried a price.
+  const invitationParam = Array.isArray(query.invitation) ? query.invitation[0] : query.invitation;
+  const invitationId = invitationParam?.trim() ? invitationParam.trim() : null;
+  const hrefs = surfaceHrefs(surface, id);
   const { context, allowed } = await requireCapability("MANAGE_ESTIMATING");
-  if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
+  if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" homeHref={hrefs.home} homeLabel={hrefs.homeLabel} />;
   const { company } = context;
 
   const job = await prisma.job.findFirst({
     where: { id, companyId: company.id },
     include: {
       contact: { select: { name: true } },
-      lineItems: { where: { isDeleted: false }, orderBy: { createdAt: "asc" } },
+      lineItems: {
+        where: { isDeleted: false },
+        orderBy: { createdAt: "asc" },
+        include: { wallTypeComponent: { select: { wallType: { select: { code: true, name: true } } } } },
+      },
       proposalClauses: {
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         select: { id: true, kind: true, text: true },
@@ -108,13 +145,22 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
 
   // A null unit price is a cost-only line (general conditions, overhead):
   // it prints with no price and counts $0 toward the bid total, the same
-  // rule the contract value uses everywhere else.
-  const lines = job.lineItems.map((line) => {
-    const quantity = Number(line.quantity);
-    const unitPrice = line.unitPrice != null ? Number(line.unitPrice) : null;
-    return { id: line.id, description: line.description, unit: line.unit, quantity, unitPrice, total: unitPrice != null ? quantity * unitPrice : null };
-  });
-  const bidTotal = lines.reduce((sum, line) => sum + (line.total ?? 0), 0);
+  // rule the contract value uses everywhere else. The total itself is
+  // `bidTotalOf` inside `proposalPresentation` — one sum for every mode.
+  const proposalLines: ProposalLineInput[] = job.lineItems.map((item) => ({
+    id: item.id,
+    description: item.description,
+    unit: item.unit,
+    quantity: Number(item.quantity),
+    unitPrice: item.unitPrice != null ? Number(item.unitPrice) : null,
+    wallType: item.wallTypeComponent?.wallType ?? null,
+    tradeScope: item.tradeScope,
+  }));
+  // THE ESTIMATE'S OWN TOTAL, which the recap warnings below compare against —
+  // they ask whether the recap's rates reached these LINE prices, and a GC's
+  // adjustment is not a line price. The figure the document prints is
+  // `presentation`, built once the invitation (if any) is loaded.
+  const bidTotal = proposalPresentation(proposalLines, mode).total;
   const groups = groupProposalClauses(job.proposalClauses);
   const timeZone = await viewerTimeZone();
 
@@ -164,9 +210,107 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
    * they have built a package can go and fix them.
    */
   const linkedBid = await prisma.bidInvitation.findFirst({
-    where: { wonJobId: job.id, companyId: company.id },
-    include: { contact: { include: { people: true } } },
+    where: invitationId
+      ? {
+          id: invitationId,
+          companyId: company.id,
+          // Only an invitation priced by THIS estimate: on the project whose
+          // estimate this is, or the bid linked to this job. Any other id is a
+          // stale link, and a proposal addressed to the wrong GC is worse than
+          // none.
+          OR: [{ bidProject: { estimateJobId: job.id } }, { wonJobId: job.id }],
+        }
+      : { wonJobId: job.id, companyId: company.id },
+    include: {
+      contact: { include: { people: true } },
+      // The GC's bid form: alternates and unit prices, typed on the bid.
+      lines: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
+    },
   });
+  const bidForm = linkedBid
+    ? bidFormSections(
+        linkedBid.lines.map((bidLine) => ({
+          kind: bidLine.kind,
+          label: bidLine.label,
+          description: bidLine.description,
+          amount: bidLine.amount != null ? Number(bidLine.amount) : null,
+          unit: bidLine.unit,
+          unitPrice: bidLine.unitPrice != null ? Number(bidLine.unitPrice) : null,
+        })),
+        money,
+      )
+    : null;
+
+  // ── OPENED FOR ONE GC ──
+  //
+  // A link for an invitation this estimate does not price is a stale or wrong
+  // link, and falling back to the generic letter would hand a GC a document
+  // that looks addressed to them and is not. Refuse with a 404 instead.
+  if (invitationId && !linkedBid) notFound();
+  const forInvitation = invitationId ? linkedBid : null;
+  const gc = forInvitation
+    ? gcPrice(bidTotalOf(proposalLines), {
+        amount: forInvitation.priceAdjustAmount != null ? Number(forInvitation.priceAdjustAmount) : null,
+        percent: forInvitation.priceAdjustPercent != null ? Number(forInvitation.priceAdjustPercent) : null,
+      })
+    : null;
+  // The price the page prints. A GC whose stored adjustment no longer makes
+  // sense (the estimate shrank under a fixed deduct) gets no document at all,
+  // only the sentence saying so, rather than a price nobody chose.
+  const presentation = proposalPresentation(proposalLines, mode, gc?.ok ? gc.priceCents : undefined);
+  const gcAdjustmentWords = forInvitation
+    ? adjustmentLabel(
+        {
+          amount: forInvitation.priceAdjustAmount != null ? Number(forInvitation.priceAdjustAmount) : null,
+          percent: forInvitation.priceAdjustPercent != null ? Number(forInvitation.priceAdjustPercent) : null,
+        },
+        money,
+      )
+    : null;
+  // The other GCs on this estimate, for the switcher above the document.
+  const projectInvitations = await prisma.bidInvitation.findMany({
+    where: { companyId: company.id, bidProject: { estimateJobId: job.id } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, projectName: true, contact: { select: { name: true } } },
+  });
+  const proposalHref = (nextMode: string, nextInvitation: string | null) =>
+    `${hrefs.proposal}?mode=${nextMode}${nextInvitation ? `&invitation=${encodeURIComponent(nextInvitation)}` : ""}`;
+  const addressedTo = forInvitation ? forInvitation.contact.name : job.contact.name;
+  const proposalTitle = forInvitation ? forInvitation.projectName : job.name;
+  if (gc && !gc.ok) {
+    return (
+      <PageShell width="reading" className="print:p-0">
+        <div className="mb-6 print:hidden">
+          <Link href={hrefs.estimate} className="text-sm text-link hover:underline">
+            ← Back to the estimate
+          </Link>
+        </div>
+        <p className="rounded-md bg-tag-rose px-3 py-2 text-sm text-tag-rose-ink" data-proposal="gc-price-problem">
+          The proposal for {addressedTo} can&apos;t be printed: {gc.error} Fix the adjustment on that GC&apos;s bid and
+          open the proposal again.
+        </p>
+      </PageShell>
+    );
+  }
+
+  // ── C STREAM BID: SEND THE PROPOSAL TO THIS GC ──
+  //
+  // Bid's own send (`ProposalSendComposer`), drawn only on the Bid surface and
+  // only for one GC at a time. Everything it shows — the price, the addresses,
+  // the text under the note and why it may not be sendable — comes from
+  // `loadProposalSend`, the same function the action re-reads with at the
+  // moment it sends, so the screen and the email cannot disagree.
+  const sendLoad =
+    surface === "bid" && forInvitation
+      ? await loadProposalSend({
+          companyId: company.id,
+          companyName: company.name,
+          jobId: job.id,
+          invitationId: forInvitation.id,
+          mode,
+          timeZone,
+        })
+      : null;
 
   let submitTarget: SubmitTarget | undefined;
   if (linkedBid) {
@@ -197,7 +341,9 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
       findings: findings.map((finding) => ({
         id: finding.id,
         title: finding.title,
-        href: finding.fixHref,
+        // A finding's fix link is built in the agents' lib and names a CRM
+        // screen; a product that is not the CRM draws the finding without it.
+        href: surface === "crm" ? finding.fixHref : null,
       })),
     };
   }
@@ -207,7 +353,7 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
     // the browser's own margins, the way the G702/G703 does.
     <PageShell width="reading" className="print:p-0">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <Link href={`/jobs/${job.id}/estimate`} className="text-sm text-link hover:underline">
+        <Link href={hrefs.estimate} className="text-sm text-link hover:underline">
           ← Back to the estimate
         </Link>
         <PrintButton />
@@ -237,9 +383,50 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
         </p>
       )}
 
-      <h1 className="text-xl font-semibold text-ink">Proposal — {job.name}</h1>
+      {/* PRINT:HIDDEN — which GC this copy is for, and how its price differs
+          from the estimate. The reason is the sender's own note and never
+          prints: a GC must not read why it is paying more than another. */}
+      {projectInvitations.length > 1 && (
+        <nav aria-label="Proposal for" className="mb-4 flex flex-wrap items-center gap-2 print:hidden" data-proposal="gc-switcher">
+          <span className="text-xs text-ink-muted">Proposal for</span>
+          {[{ id: null as string | null, label: "No GC chosen" }, ...projectInvitations.map((row) => ({ id: row.id as string | null, label: row.contact.name }))].map(
+            (option) => (
+              <Link
+                key={option.id ?? "none"}
+                href={proposalHref(mode, option.id)}
+                aria-current={option.id === invitationId ? "page" : undefined}
+                className={
+                  option.id === invitationId
+                    ? "rounded-md bg-surface px-3 py-2 text-sm font-semibold text-ink ring-1 ring-line-card"
+                    : "rounded-md px-3 py-2 text-sm text-link hover:underline"
+                }
+              >
+                {option.label}
+              </Link>
+            ),
+          )}
+        </nav>
+      )}
+      {forInvitation && gc?.ok && (
+        <p className="mb-6 rounded-md bg-surface px-3 py-2 text-sm text-ink-body ring-1 ring-line-card print:hidden" data-proposal="gc-price-note">
+          Priced for {forInvitation.contact.name}: estimate {money(gc.estimateCents / 100)}
+          {gc.kind === "none" ? (
+            <> with no adjustment.</>
+          ) : (
+            <>
+              , adjusted {gcAdjustmentWords} ({gc.adjustmentCents < 0 ? "−" : "+"}
+              {money(Math.abs(gc.adjustmentCents) / 100)}
+              {forInvitation.priceAdjustReason ? <> — {forInvitation.priceAdjustReason}</> : null}) ={" "}
+              <span className="font-semibold text-ink">{money(gc.priceCents / 100)}</span>.
+            </>
+          )}{" "}
+          The reason does not print.
+        </p>
+      )}
+
+      <h1 className="text-xl font-semibold text-ink">Proposal — {proposalTitle}</h1>
       <p className="mt-1 text-sm text-ink-muted">
-        {company.name} to {job.contact.name} · {formatInstant(new Date(), timeZone, "numeric")}
+        {company.name} to {addressedTo} · {formatInstant(new Date(), timeZone, "numeric")}
       </p>
       {job.projectLocation && <p className="text-sm text-ink-muted">{job.projectLocation}</p>}
 
@@ -250,17 +437,45 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
         </section>
       )}
 
+      {/* PRINT:HIDDEN — the sender's choice of how the price reads. Lump sum is
+          the default and shows the GC one number; By scope shows a subtotal per
+          wall type; Itemized is the schedule of values with unit prices. */}
+      <nav aria-label="Price presentation" className="mt-6 flex flex-wrap items-center gap-2 print:hidden">
+        <span className="text-xs text-ink-muted">Show the price as</span>
+        {PROPOSAL_MODES.map((option) => (
+          <Link
+            key={option}
+            href={proposalHref(option, invitationId)}
+            aria-current={option === mode ? "page" : undefined}
+            className={
+              option === mode
+                ? "rounded-md bg-surface px-3 py-2 text-sm font-semibold text-ink ring-1 ring-line-card"
+                : "rounded-md px-3 py-2 text-sm text-link hover:underline"
+            }
+          >
+            {PROPOSAL_MODE_LABELS[option]}
+          </Link>
+        ))}
+      </nav>
+      {mode === "itemized" && (
+        <p className="mt-2 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink print:hidden">
+          Itemized prints your unit prices for every line to the GC. Most subs send a lump sum or a price by scope.
+        </p>
+      )}
+
       <section className="mt-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-label">Schedule of values</h2>
-        {lines.length === 0 ? (
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-label">
+          {presentation.mode === "itemized" ? "Schedule of values" : "Price"}
+        </h2>
+        {proposalLines.length === 0 ? (
           <p className="mt-1 text-sm text-ink-body print:hidden">
             This job has no line items yet.{" "}
-            <Link href={`/jobs/${job.id}/estimate`} className="text-link hover:underline">
+            <Link href={hrefs.estimate} className="text-link hover:underline">
               Price it on the estimate page
             </Link>{" "}
-            and the schedule of values fills in here.
+            and the price fills in here.
           </p>
-        ) : (
+        ) : presentation.mode === "itemized" ? (
           <table className="mt-2 w-full text-sm">
             <thead>
               <tr className="border-b border-line-row text-left text-xs text-ink-muted">
@@ -272,25 +487,108 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
               </tr>
             </thead>
             <tbody>
-              {lines.map((line) => (
-                <tr key={line.id} className="border-b border-line-row">
-                  <td className="py-1 pr-2 text-ink">{line.description}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-ink">{line.quantity}</td>
-                  <td className="px-2 py-1 text-ink">{line.unit ?? ""}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-ink">{line.unitPrice != null ? money(line.unitPrice) : "—"}</td>
-                  <td className="py-1 pl-2 text-right tabular-nums text-ink">{line.total != null ? money(line.total) : "—"}</td>
+              {presentation.rows.map((row) => (
+                <tr key={row.id} className="border-b border-line-row">
+                  <td className="py-1 pr-2 text-ink">{row.description}</td>
+                  <td className="px-2 py-1 text-right tabular-nums text-ink">{row.quantity}</td>
+                  <td className="px-2 py-1 text-ink">{row.unit ?? ""}</td>
+                  <td className="px-2 py-1 text-right tabular-nums text-ink">{row.unitPrice != null ? money(row.unitPrice) : "—"}</td>
+                  <td className="py-1 pl-2 text-right tabular-nums text-ink">{row.total != null ? money(row.total) : "—"}</td>
                 </tr>
               ))}
+              {presentation.adjustmentCents !== null && (
+                <tr className="border-b border-line-row" data-proposal="gc-adjustment-row">
+                  <td colSpan={4} className="py-1 pr-2 text-right text-ink">
+                    Price adjustment
+                  </td>
+                  <td className="py-1 pl-2 text-right tabular-nums text-ink">
+                    {presentation.adjustmentCents < 0 ? "−" : ""}
+                    {money(Math.abs(presentation.adjustmentCents) / 100)}
+                  </td>
+                </tr>
+              )}
               <tr>
                 <td colSpan={4} className="py-2 pr-2 text-right font-medium text-ink">
                   Total bid
                 </td>
-                <td className="py-2 pl-2 text-right font-semibold tabular-nums text-ink">{money(bidTotal)}</td>
+                <td className="py-2 pl-2 text-right font-semibold tabular-nums text-ink">{money(presentation.total)}</td>
               </tr>
+            </tbody>
+          </table>
+        ) : (
+          <table className="mt-2 w-full text-sm">
+            <tbody>
+              {presentation.rows.map((row) => (
+                <tr key={row.key} className="border-b border-line-row">
+                  <td className="py-1 pr-2 text-ink">
+                    {presentation.mode === "lump" ? "Lump sum for the work described in this proposal" : row.label}
+                  </td>
+                  <td className="py-1 pl-2 text-right tabular-nums text-ink">{money(row.amountCents / 100)}</td>
+                </tr>
+              ))}
+              {presentation.mode === "scope" && (
+                <tr>
+                  <td className="py-2 pr-2 text-right font-medium text-ink">Total bid</td>
+                  <td className="py-2 pl-2 text-right font-semibold tabular-nums text-ink">{money(presentation.total)}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         )}
       </section>
+
+      {/* THE GC'S OWN BID-FORM LINES, in their own section and only when the
+          job is linked to the bid that holds them. A blank prints as "No bid" —
+          never $0 and never filled from the estimate — and the sender is told
+          above the document, where the GC cannot see it. */}
+      {bidForm === null && (
+        <p className="mt-6 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink print:hidden">
+          This job is not linked to a bid, so the bid form&apos;s alternates and unit prices cannot print here. Link it
+          from the bid, and anything entered there appears on this page.
+        </p>
+      )}
+      {bidForm && bidForm.blankCount > 0 && (
+        <p className="mt-6 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink print:hidden">
+          {bidForm.blankCount} alternate or unit price on the bid form has no figure and prints as &ldquo;No bid&rdquo;.
+          Enter it on the bid before you send.
+        </p>
+      )}
+      {bidForm && bidForm.alternates.length > 0 && (
+        <section className="mt-6">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-label">Alternates</h2>
+          <table className="mt-2 w-full text-sm">
+            <tbody>
+              {bidForm.alternates.map((row) => (
+                <tr key={row.label} className="border-b border-line-row">
+                  <td className="py-1 pr-2 text-ink">
+                    {row.label}
+                    {row.description ? <span className="text-ink-body"> — {row.description}</span> : null}
+                  </td>
+                  <td className="py-1 pl-2 text-right tabular-nums text-ink">{row.price}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+      {bidForm && bidForm.unitPrices.length > 0 && (
+        <section className="mt-6">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-label">Unit prices</h2>
+          <table className="mt-2 w-full text-sm">
+            <tbody>
+              {bidForm.unitPrices.map((row) => (
+                <tr key={row.label} className="border-b border-line-row">
+                  <td className="py-1 pr-2 text-ink">
+                    {row.label}
+                    {row.description ? <span className="text-ink-body"> — {row.description}</span> : null}
+                  </td>
+                  <td className="py-1 pl-2 text-right tabular-nums text-ink">{row.price}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {groups.map((group) => (
         <section key={group.kind} className="mt-6">
@@ -313,7 +611,7 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
           What is in your number, what is not, what it assumes, and what the GC can add. A clause added
           here is a copy — editing your library later does not change this proposal.
         </p>
-        <JobProposalClauseBuilder jobId={job.id} library={library} />
+        <JobProposalClauseBuilder jobId={job.id} library={library} libraryHref={hrefs.clauseLibrary} />
 
       {/* BELOW the clause builder, and `print:hidden` on the section itself:
           this is a working surface, not part of the document a GC receives. */}
@@ -325,11 +623,57 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
       />
       </section>
 
+      {sendLoad && !sendLoad.ok && (
+        <p className="mt-8 rounded-md bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink print:hidden" data-proposal="send-blocked">
+          {sendLoad.problem}
+        </p>
+      )}
+      {sendLoad?.ok && (
+        <ProposalSendComposer
+          jobId={job.id}
+          invitationId={sendLoad.view.invitationId}
+          mode={sendLoad.view.mode}
+          priceCents={sendLoad.view.totalCents}
+          totalLabel={money(sendLoad.view.totalCents / 100)}
+          gcName={sendLoad.view.gcName}
+          recipients={sendLoad.view.recipients}
+          subject={sendLoad.view.subject}
+          coverNote={sendLoad.view.coverNote}
+          documentText={sendLoad.view.documentText}
+          documentFingerprint={sendLoad.view.documentFingerprint}
+          blocker={sendLoad.view.blocker}
+          history={sendLoad.view.history.map((one) => ({
+            id: one.id,
+            when: formatInstant(one.at, timeZone),
+            toAddress: one.toAddress,
+            reached: one.reached,
+            detail: one.detail,
+          }))}
+        />
+      )}
+      {/* NO GC CHOSEN YET, ON BID: one way in per GC. The composer belongs to a
+          single invitation, because the price and the addressee are that GC's. */}
+      {surface === "bid" && !forInvitation && projectInvitations.length > 0 && (
+        <section className="mt-8 rounded-lg border border-line-card bg-surface p-4 print:hidden" data-proposal="send-pick">
+          <h2 className="text-base font-semibold text-ink">Send the proposal</h2>
+          <p className="mt-1 text-sm text-ink-body">Pick the GC. Each one gets the proposal at their own price.</p>
+          <ul className="mt-2 flex flex-col gap-1">
+            {projectInvitations.map((row) => (
+              <li key={row.id}>
+                <Link href={proposalHref(mode, row.id)} className="inline-flex min-h-11 items-center text-sm text-link hover:underline">
+                  Send to {row.contact.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* LAST ON THE PAGE, because it is the last thing done to a bid: the
           proposal has to exist and be printed before there is a package to
           assemble. `print:hidden` on the section itself — it is a working
           surface, not part of the document the GC receives. */}
-      <BidPackageBuilder projectName={job.name} submit={submitTarget} />
+      <BidPackageBuilder projectName={job.name} submit={submitTarget} messageLogHref={hrefs.messageLog} />
     </PageShell>
   );
 }

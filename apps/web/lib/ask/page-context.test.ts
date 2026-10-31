@@ -69,6 +69,48 @@ describe("parsePageContext", () => {
   });
 });
 
+/** C Stream Bid's job screens carry the same Job id under /bid. The Bid job
+ * box sends one of these, so "what's the bid so far" needs no job name. */
+describe("parsePageContext — C Stream Bid's job routes", () => {
+  it("reads the job id off the estimate and every tab under it", () => {
+    for (const suffix of ["", "/takeoff", "/takeoff/legend", "/estimate", "/recap", "/proposal", "/estimate?x=1", "/"]) {
+      expect(parsePageContext(`/bid/estimates/${ID}${suffix}`), suffix).toEqual({ kind: "job", id: ID });
+    }
+  });
+
+  it("reads it off the full-screen takeoff workspace", () => {
+    expect(parsePageContext(`/bid/workspace/${ID}`)).toEqual({ kind: "job", id: ID });
+    expect(parsePageContext(`/bid/workspace/${ID}?page=2`)).toEqual({ kind: "job", id: ID });
+  });
+
+  it("is NOT a hint on Bid's lists, forms, or a bid invitation's page (not a job id)", () => {
+    for (const path of [
+      "/bid",
+      "/bid/home",
+      "/bid/estimates",
+      "/bid/estimates/new",
+      `/bid/bids/${ID}`,
+      `/bid/bids/${ID}/regret`,
+      "/bid/workspace",
+      "/bid/price-book",
+      `/bid/wall-types/${ID}`,
+      `/estimates/${ID}`, // the Bid host's browser path is not what the box sends
+    ]) {
+      expect(parsePageContext(path), path).toBeNull();
+    }
+  });
+
+  it("refuses a malformed id under /bid exactly as under /jobs", () => {
+    for (const bad of ["/bid/estimates/../../etc/passwd", "/bid/estimates/short", "/bid/workspace/ABC123DEF456GHI789JK", "/bid/estimates/' OR 1=1--"]) {
+      expect(parsePageContext(bad), bad).toBeNull();
+    }
+  });
+
+  it("passes a well-formed id through — the company scope one layer up decides whose it is", () => {
+    expect(parsePageContext("/bid/estimates/aaaaaaaaaaaaaaaaaaaa")).toEqual({ kind: "job", id: "aaaaaaaaaaaaaaaaaaaa" });
+  });
+});
+
 describe("pageContextSentence", () => {
   it("says nothing when there is no job", () => {
     expect(pageContextSentence(null)).toBeNull();

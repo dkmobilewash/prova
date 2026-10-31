@@ -2,7 +2,13 @@
 
 import { useMemo, useRef, useState } from "react";
 import { importCatalogEntries } from "@/lib/actions";
-import { MAX_IMPORT_ROWS, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
+import {
+  MAX_IMPORT_ROWS,
+  parseCatalogImport,
+  planImport,
+  type ExistingEntry,
+  type FigureChange,
+} from "@/lib/catalog-import";
 import {
   NOMINAL_QUANTITY,
   type LaborReading,
@@ -72,11 +78,27 @@ const SAMPLE = `Description,Unit,Unit Price,Cost,Hours,Trade
 Corner bead,LF,1.20,0.60,0.03,drywall
 Level 5 finish,SF,1.75,0.95,0.02,drywall`;
 
+function FigureCell({ change }: { change: FigureChange | null }) {
+  if (!change) return <span className="text-ink-muted">—</span>;
+  return (
+    <span className="tabular-nums">
+      {change.old != null ? money(change.old) : "none"} → <span className="font-semibold text-ink">{money(change.next)}</span>
+      {change.percent != null && (
+        <span className={change.percent > 0 ? " text-tag-amber-ink" : " text-tag-green-ink"}>
+          {" "}
+          ({change.percent > 0 ? "+" : ""}
+          {change.percent}%)
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function CatalogImport({
-  existingDescriptions,
+  existingEntries,
   canImport,
 }: {
-  existingDescriptions: string[];
+  existingEntries: ExistingEntry[];
   canImport: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -86,9 +108,14 @@ export function CatalogImport({
 
   const parsed = useMemo(() => (text.trim() ? parseCatalogImport(text) : null), [text]);
   const split = useMemo(
-    () => (parsed ? splitAgainstExisting(parsed.rows, existingDescriptions) : null),
-    [parsed, existingDescriptions],
+    () => (parsed ? planImport(parsed.rows, existingEntries) : null),
+    [parsed, existingEntries],
   );
+  /* Price updates are ON by default once the preview has shown old -> new for
+     each one: the whole reason to re-import a supplier's list is to take its
+     new prices. Unticking is how a person says "add the new items, leave my
+     prices". The server re-derives the plan and refuses if the count differs. */
+  const [updatePrices, setUpdatePrices] = useState(true);
 
   /* The Hours-column question, derived from THE SAME function the server uses
      over the same text. The server re-derives it and refuses an unanswered
@@ -115,7 +142,10 @@ export function CatalogImport({
     setReading(labor?.kind === "ask" ? labor.lean.suggested : null);
   }
 
-  const needsReading = labor?.kind === "ask" && reading === null;
+  /* The Hours question only matters when new rows are being written. */
+  const needsReading = labor?.kind === "ask" && reading === null && (split?.fresh.length ?? 0) > 0;
+  const changeCount = updatePrices ? (split?.changes.length ?? 0) : 0;
+  const nothingToDo = !split || (split.fresh.length === 0 && changeCount === 0);
 
   async function onFile(file: File | undefined) {
     setFileError(null);
@@ -221,9 +251,19 @@ export function CatalogImport({
             <span className="rounded-full border border-emerald-700 bg-tag-green px-2 py-0.5 text-tag-green-ink">
               {split.fresh.length} to add
             </span>
-            {split.duplicatesOfExisting.length > 0 && (
+            {split.changes.length > 0 && (
+              <span className="rounded-full border border-amber-700 bg-tag-amber px-2 py-0.5 text-tag-amber-ink">
+                {split.changes.length} price change{split.changes.length === 1 ? "" : "s"}
+              </span>
+            )}
+            {split.unchanged.length > 0 && (
               <span className="rounded-full border border-neutral-400 bg-rail-hover px-2 py-0.5 text-ink-label">
-                {split.duplicatesOfExisting.length} already in the catalog — skipped
+                {split.unchanged.length} unchanged
+              </span>
+            )}
+            {split.unitMismatch.length > 0 && (
+              <span className="rounded-full border border-neutral-400 bg-rail-hover px-2 py-0.5 text-ink-label">
+                {split.unitMismatch.length} in a different unit — skipped
               </span>
             )}
             {split.duplicatesWithinFile.length > 0 && (
@@ -272,7 +312,51 @@ export function CatalogImport({
               under 1, or all over 10). Inside that band nothing is selected
               and the submit stays disabled — a default there would be a guess
               about a labor figure wearing the appearance of a default. */}
-          {labor?.kind === "ask" && (
+          {split.changes.length > 0 && (
+            <div className="mt-3 rounded-md border border-line-card p-3" data-testid="price-changes">
+              <label className="flex cursor-pointer items-baseline gap-2 text-xs font-semibold text-ink-label">
+                <input
+                  type="checkbox"
+                  checked={updatePrices}
+                  onChange={(event) => setUpdatePrices(event.target.checked)}
+                  className="h-4 w-4"
+                />
+                Update the {split.changes.length} price{split.changes.length === 1 ? "" : "s"} below
+              </label>
+              <p className="mt-1 text-xs text-ink-body">
+                These items are already in your catalog at a different price. Only the price and cost
+                change — unit, trade and hours stay as you set them. Estimates already priced from them
+                keep their numbers until you press &ldquo;Update prices on this estimate&rdquo; on each one.
+              </p>
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full min-w-[520px] text-left text-xs">
+                  <thead className="text-ink-muted">
+                    <tr>
+                      <th className="px-2 py-1 font-medium">Item</th>
+                      <th className="px-2 py-1 font-medium">Price</th>
+                      <th className="px-2 py-1 font-medium">Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line-row">
+                    {split.changes.slice(0, 25).map((change) => (
+                      <tr key={change.entryId} className="text-ink-label">
+                        <td className="px-2 py-1">{change.row.description}</td>
+                        <td className="px-2 py-1"><FigureCell change={change.price} /></td>
+                        <td className="px-2 py-1"><FigureCell change={change.cost} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {split.changes.length > 25 && (
+                  <p className="px-2 py-1 text-xs text-ink-muted">
+                    Showing the first 25 of {split.changes.length}. All of them will be updated.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {labor?.kind === "ask" && split.fresh.length > 0 && (
             <fieldset className="mt-3 rounded-md border border-line-card p-3">
               <legend className="px-1 text-xs font-semibold text-ink-label">
                 What does your Hours column mean?
@@ -403,12 +487,23 @@ export function CatalogImport({
           >
             <input type="hidden" name="csv" value={text} />
             {reading && <input type="hidden" name="laborColumn" value={reading} />}
+            {updatePrices && split.changes.length > 0 && (
+              <>
+                <input type="hidden" name="updatePrices" value="on" />
+                <input type="hidden" name="expectedChanges" value={split.changes.length} />
+              </>
+            )}
             <SubmitButton
               type="submit"
-              disabled={split.fresh.length === 0 || needsReading}
+              disabled={nothingToDo || needsReading}
               className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
             >
-              {split.fresh.length === 1 ? "Add 1 entry" : `Add ${split.fresh.length} entries`}
+              {[
+                split.fresh.length > 0 ? `Add ${split.fresh.length} ${split.fresh.length === 1 ? "entry" : "entries"}` : null,
+                changeCount > 0 ? `${split.fresh.length > 0 ? "update" : "Update"} ${changeCount} price${changeCount === 1 ? "" : "s"}` : null,
+              ]
+                .filter(Boolean)
+                .join(" and ") || "Nothing to add"}
             </SubmitButton>
             {/* DISABLED, not hidden, and this is the one place in this
                 component where that is the right way round. The button being
@@ -423,7 +518,10 @@ export function CatalogImport({
               </span>
             )}
             <span className="text-xs text-ink-muted">
-              Nothing already in the catalog is changed. Up to {MAX_IMPORT_ROWS} rows at a time.
+              {split.changes.length > 0 && updatePrices
+                ? "Existing items change in price and cost only."
+                : "Nothing already in the catalog is changed."}{" "}
+              Up to {MAX_IMPORT_ROWS} rows at a time.
             </span>
           </ActionForm>
         </div>

@@ -2020,10 +2020,17 @@ async function main() {
     [gc3, "Pell Eastside Warehouse", "FIREPROOFING", "INVITED", -3, null],
   ];
   for (const [contact, projectName, tradeScope, status, due, bidAmount] of bids) {
+    // Every invitation sits on a project (bid-projects.prisma); one each here,
+    // since the demo set has no two GCs bidding the same job.
+    const bidProject = await prisma.bidProject.create({
+      data: { companyId: company.id, name: `${projectName} ${MARK}`, bidDueDate: day(due), tradeScope },
+      select: { id: true },
+    });
     await prisma.bidInvitation.create({
       data: {
         companyId: company.id,
         contactId: contact.id,
+        bidProjectId: bidProject.id,
         // Tagged so undo() can find it again without touching a row a
         // person entered — same rule as every other row this script writes.
         projectName: `${projectName} ${MARK}`,
@@ -2950,8 +2957,24 @@ async function undo(companyId) {
     prisma.lineItemCatalogEntry.deleteMany({ where: { companyId, description: { contains: MARK } } }),
   );
   // Both reference Contact, so both go before it.
+  // The projects these invitations sit on, read before the invitations go and
+  // deleted after, only once empty (BidProject's links to Job and Contact are
+  // SET NULL, so they block nothing — this is so none is left behind).
+  const bidProjectIds = [
+    ...new Set(
+      (
+        await prisma.bidInvitation.findMany({
+          where: { contactId: { in: contactIds }, bidProjectId: { not: null } },
+          select: { bidProjectId: true },
+        })
+      ).map((i) => i.bidProjectId),
+    ),
+  ];
   await del("bidInvitation", () =>
     prisma.bidInvitation.deleteMany({ where: { contactId: { in: contactIds } } }),
+  );
+  await del("bidProject", () =>
+    prisma.bidProject.deleteMany({ where: { id: { in: bidProjectIds }, invitations: { none: {} } } }),
   );
   await del("contactInteraction", () =>
     prisma.contactInteraction.deleteMany({ where: { contactId: { in: contactIds } } }),

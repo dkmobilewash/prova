@@ -67,6 +67,8 @@ export async function researchBid(ctx: AgentContext): Promise<{ summary: string 
       contact: { select: { name: true } },
       pursuit: { select: { id: true, owner: true, architect: true } },
       wonJob: { select: { projectLocation: true } },
+      // The other GCs' invitations for this same job: never a "past bid" of it.
+      bidProject: { select: { invitations: { select: { id: true } } } },
     },
   });
   if (!bid) throw new Error("That bid is not on this account.");
@@ -85,8 +87,11 @@ export async function researchBid(ctx: AgentContext): Promise<{ summary: string 
       ...base,
       kind: "gc_history",
       severity: "info",
-      title: `No bid history with ${bid.contact.name} yet`,
-      body: `This is the first bid logged from ${bid.contact.name}, so there is no win rate to go on.`,
+      // SAYS WHAT IT COUNTED: bid invitations, by GC. A company can have jobs
+      // or estimates with this GC on its Home screen and still have logged no
+      // invitation from them, and "no history" read as a contradiction of that.
+      title: `No other bid invitations logged from ${bid.contact.name}`,
+      body: `This is the first bid invitation logged from ${bid.contact.name}, so there is no win rate to go on. Only logged bid invitations are counted here, not jobs or estimates.`,
       sources: [contactSource],
       dedupeKey: key("gc_history", "none"),
     });
@@ -154,6 +159,9 @@ export async function researchBid(ctx: AgentContext): Promise<{ summary: string 
     tradeScope: bid.tradeScope,
     bidAmount: bid.bidAmount != null ? Number(bid.bidAmount) : null,
   });
+  // The same job from another GC is this bid, not a past one like it.
+  const sameJob = new Set(bid.bidProject?.invitations.map((i) => i.id) ?? []);
+  similar.rows = similar.rows.filter((r) => !sameJob.has(r.bidInvitationId));
   if (similar.rows.length > 0) {
     const won = similar.rows.filter((r) => r.status === "WON").length;
     const lost = similar.rows.filter((r) => r.status === "LOST").length;

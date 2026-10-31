@@ -182,8 +182,9 @@ describe("the screens' own use of it", () => {
       .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
       .replace(/^\s*\/\/.*$/gm, "");
   const read = (rel: string) => strip(readFileSync(resolve(__dirname, rel), "utf8"));
-  const letterPage = read("../app/(app)/bids/[id]/regret/page.tsx");
-  const bidsPage = read("../app/(app)/bids/page.tsx");
+  const letterPage = read("../app/(app)/bids/[id]/regret/RegretLetter.tsx");
+  const bidsPage = read("../components/BidLog.tsx");
+  const bidsHrefs = read("./bid/bidLogHrefs.ts");
 
   it("PARSED SOMETHING — so a broken strip fails loudly rather than passing everything", () => {
     expect(letterPage.length).toBeGreaterThan(1_500);
@@ -215,7 +216,7 @@ describe("the screens' own use of it", () => {
   });
 
   it("/bids LINKS TO IT, or the page is one nobody finds", () => {
-    expect(bidsPage).toMatch(/\/regret/);
-    expect(bidsPage).toMatch(/bid\.status === "DECLINED" && \(/);
+    expect(bidsHrefs).toMatch(/\/regret/);
+    expect(bidsPage).toMatch(/bid\.status === "DECLINED" && regretHref && \(/);
   });
 });

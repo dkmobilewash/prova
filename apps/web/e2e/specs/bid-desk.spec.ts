@@ -372,6 +372,53 @@ test.describe("the bid desk", () => {
     await expect(row.getByText(/than it was bid at/)).toHaveCount(0);
   });
 
+  // UNEXECUTED: written without a browser (the agent container cannot reach
+  // Clerk), so CI's `e2e` job is where this step is first proved or not.
+  test("7b. a price for this GC off the estimate, and the proposal opened FOR that GC", async () => {
+    await page.goto("/bids?view=all");
+    await expectHealthy(page, "/bids before pricing the GC", { monitor });
+
+    // The price sits under "Project", one click down like every list-page edit.
+    const controls = bidRow().locator('details[data-bids="project-controls"]');
+    await controls.locator("summary").click();
+    const priceForm = controls.locator("form").filter({ has: page.getByRole("button", { name: "Save price" }) });
+    await priceForm.locator('select[name="kind"]').selectOption("amount");
+    await priceForm.locator('input[name="value"]').fill("5,000");
+    await priceForm.locator('input[name="reason"]').fill("ZZ-E2E pays net 60");
+    await settleAction(page, () => priceForm.getByRole("button", { name: "Save price" }).click());
+
+    // The job has no lines, so the estimate is $0.00 and this GC is quoted
+    // exactly the adjustment: the side-by-side table says so on /bids.
+    await page.reload();
+    await expectHealthy(page, "/bids after pricing the GC", { monitor });
+    await expect(bidRow().locator('[data-bids="estimate-total"]')).toHaveText("$0.00");
+    await expect(bidRow().locator('[data-bids="gc-price"]').first()).toHaveText("$5,000.00");
+
+    // "Proposal" on that GC's line opens the page FOR the invitation.
+    await bidRow().getByRole("link", { name: "Proposal", exact: true }).click();
+    await page.waitForURL(/\/jobs\/[^/]+\/proposal\?invitation=/);
+    await expectHealthy(page, "the proposal for one GC", { monitor });
+    // Addressed by the name ON THE INVITATION, to the GC on it.
+    await expect(page.getByRole("heading", { name: `Proposal — ${PROJECT}` })).toBeVisible();
+    await expect(page.getByText(`to ${GC_NAME}`).first()).toBeVisible();
+    // The sender's note (print:hidden) carries the arithmetic and the reason.
+    const note = page.locator('[data-proposal="gc-price-note"]');
+    await expect(note).toContainText("estimate $0.00");
+    await expect(note).toContainText("+$5,000.00");
+    await expect(note).toContainText("ZZ-E2E pays net 60");
+    await expect(note).toContainText("= $5,000.00");
+
+    // The mode choice keeps the invitation.
+    await page.getByRole("link", { name: "Itemized" }).click();
+    await page.waitForURL(/proposal\?mode=itemized&invitation=/);
+    await expectHealthy(page, "the itemized proposal for one GC", { monitor });
+    await expect(page.locator('[data-proposal="gc-price-note"]')).toContainText("= $5,000.00");
+
+    // A made-up invitation id is a 404, never the generic letter.
+    const bogus = await page.goto(page.url().replace(/invitation=[^&]+/, "invitation=not-a-real-bid"));
+    expect(bogus?.status()).toBe(404);
+  });
+
   test("8. every panel survives a reload together, and nothing crashed the browser", async () => {
     // One row, four features, one query. This is the check that a null in any
     // of them has not taken the page — and /pipeline reads the same bid.
@@ -411,5 +458,60 @@ test.describe("the bid desk", () => {
       });
     }
     expect(monitor.crashes, "an uncaught exception reached the browser").toEqual([]);
+  });
+
+  // UNEXECUTED: written without a browser (the agent container cannot sign in
+  // through Clerk), so CI's `e2e` job is where this step is first proved or not.
+  //
+  // LAST ON PURPOSE. A second GC's row on the same project would also match
+  // `bidRow()`'s `hasText: PROJECT` in steps 3-8, so it is added only after they
+  // have run. Its project NAME deliberately does not contain `PROJECT` either.
+  test("9. a second GC on the same job shows the quotes and addendum filed under the first, and acknowledges the addendum on its own form", async () => {
+    const GC_TWO = "ZZ-E2E Bid Desk GC Two";
+    const PROJECT_TWO = "ZZ-E2E Northside MOB (second GC's name for it)";
+
+    await page.goto("/contacts");
+    await expectHealthy(page, "/contacts before adding the second GC", { monitor });
+    await page.getByRole("button", { name: "Add a contact" }).first().click();
+    const contactForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Save contact" }) });
+    await contactForm.locator('input[name="name"]').fill(GC_TWO);
+    await contactForm.getByRole("button", { name: "Save contact" }).click();
+    await expect(page.getByRole("link", { name: new RegExp(GC_TWO) }).first()).toBeVisible();
+
+    // "Same job as…" joins the first GC's project rather than starting a new one.
+    await page.goto("/bids?view=all");
+    await expectHealthy(page, "/bids before logging the second GC", { monitor });
+    await page.getByRole("button", { name: "+ Log a bid" }).click();
+    const logForm = page.locator("form").filter({ has: page.getByRole("button", { name: "Log invitation" }) });
+    await logForm.locator('select[name="contactId"]').selectOption({ label: GC_TWO });
+    await logForm.locator('input[name="projectName"]').fill(PROJECT_TWO);
+    const joinValue = await logForm.locator('select[name="bidProjectId"] option').filter({ hasText: PROJECT }).first().getAttribute("value");
+    expect(joinValue, "the first GC's project is offered under 'Same job as…'").toBeTruthy();
+    await logForm.locator('select[name="bidProjectId"]').selectOption(joinValue!);
+    await settleAction(page, () => logForm.getByRole("button", { name: "Log invitation" }).click());
+
+    await page.goto("/bids?view=all");
+    await expectHealthy(page, "/bids with two GCs on one job", { monitor });
+    // The second GC's own row: the one under its own name that has the panels.
+    const rowTwo = page.locator("li[id]").filter({ hasText: GC_TWO }).filter({ has: page.locator('details[name="bid"]') }).first();
+    await openDisclosure(rowTwo.locator('details[name="bid"]'));
+
+    // THE QUOTES FILED UNDER THE FIRST GC (step 6) ARE ON THIS ROW, and it says
+    // whose invite they came in with.
+    await expect(rowTwo.getByText(CHEAPEST, { exact: true })).toBeVisible();
+    await expect(rowTwo.getByText(DEAREST, { exact: true })).toBeVisible();
+    await expect(rowTwo.locator('[data-bid="filed-under"]').first()).toContainText(`came in with ${GC_NAME}'s invite`);
+    // The caution about exclusions is computed over the same two quotes.
+    await expect(rowTwo).toContainText("These are not the same bid.");
+
+    // THE ADDENDUM (step 4) IS ON THIS ROW TOO, and the acknowledgement is THIS
+    // GC's: the first GC's row has acknowledged it, this row must not say so.
+    await expect(rowTwo.locator('[data-bid="filed-under"]').filter({ hasText: GC_NAME }).first()).toBeVisible();
+    await expect(rowTwo.getByText("not acknowledged").first()).toBeVisible();
+    await settleAction(page, () => rowTwo.getByRole("button", { name: "Acknowledge" }).first().click());
+    await page.reload();
+    await expectHealthy(page, "/bids after the second GC acknowledged the addendum", { monitor });
+    await openDisclosure(rowTwo.locator('details[name="bid"]'));
+    await expect(rowTwo.getByText(/acknowledged \d{4}-\d{2}-\d{2}/).first()).toBeVisible();
   });
 });

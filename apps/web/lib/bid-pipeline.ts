@@ -19,6 +19,17 @@ export interface PipelineBid {
   bidAmount: number | null;
   /** ISO date at UTC midnight, or null when the GC gave no deadline. */
   dueDate: string | null;
+  /**
+   * The project this invitation is on was awarded (the PRIME contract) to a
+   * DIFFERENT GC. Derived by the caller with `primeWentElsewhere`
+   * (lib/bid-projects.ts), never stored. Absent means "no project / no award
+   * recorded", which is NOT the same as true.
+   *
+   * Such a bid is neither a win nor a GC turning our price down, so it is out
+   * of the win-rate denominator and out of "outstanding" / "overdue": nobody
+   * owes us an answer on a job that went to someone else.
+   */
+  primeWentElsewhere?: boolean;
 }
 
 export interface GcRecord {
@@ -30,6 +41,11 @@ export interface GcRecord {
   lost: number;
   /** We chose not to bid. Deliberately NOT counted as a loss. */
   declined: number;
+  /**
+   * Bids on a project whose prime contract went to a different GC. Counted so
+   * the number is visible, and deliberately NOT in `lost` or `winRate`.
+   */
+  primeElsewhere: number;
   /** Still live: INVITED or SUBMITTED. */
   outstanding: number;
   /** Outstanding AND past the date the GC asked for. */
@@ -56,8 +72,8 @@ export interface GcRecord {
 const LIVE: BidStatus[] = ["INVITED", "SUBMITTED"];
 
 /** Whether a bid is still waiting on somebody. */
-export function isLive(bid: { status: BidStatus }): boolean {
-  return LIVE.includes(bid.status);
+export function isLive(bid: { status: BidStatus; primeWentElsewhere?: boolean }): boolean {
+  return LIVE.includes(bid.status) && bid.primeWentElsewhere !== true;
 }
 
 /** Live, and the date the GC asked for has passed. Dates are compared as
@@ -98,15 +114,19 @@ export function summariseGc(bids: PipelineBid[], today: string): GcRecord {
   const count = (s: BidStatus) => bids.filter((b) => b.status === s).length;
 
   const won = count("WON");
-  const lost = count("LOST");
+  // A LOST bid on a project the prime went elsewhere on is not this GC saying
+  // no to our price — it is a job neither of us got.
+  const lost = bids.filter((b) => b.status === "LOST" && b.primeWentElsewhere !== true).length;
+  const lostElsewhere = bids.filter((b) => b.status === "LOST").length - lost;
   const decided = won + lost;
 
   return {
     invited: bids.length,
-    bid: count("SUBMITTED") + won + lost,
+    bid: count("SUBMITTED") + won + lost + lostElsewhere,
     won,
     lost,
     declined: count("DECLINED"),
+    primeElsewhere: bids.filter((b) => b.primeWentElsewhere === true && b.status !== "DECLINED" && b.status !== "WON").length,
     outstanding: bids.filter(isLive).length,
     overdue: bids.filter((b) => isOverdue(b, today)).length,
     winRate: decided === 0 ? null : won / decided,
@@ -140,4 +160,152 @@ export function rankGcs<T extends { record: GcRecord }>(rows: T[]): T[] {
 export function winRateLabel(record: GcRecord): string {
   if (record.winRate === null) return "no decided bids yet";
   return `${Math.round(record.winRate * 100)}%`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// THE BID LOG — the numbers a sub keeps by hand, worked out from the rows.
+//
+// A thirty-year sub who logs every bid tracks five figures: bids per month,
+// average bid, contracts won, average contract, and win rate. All five are
+// already in `BidInvitation` once you say what each one MEANS, and the
+// meanings are the whole of this section. Nothing is stored; correcting a bid
+// on /bids moves every figure here with it.
+//
+//   - A BID is an invitation we put a number in front of: SUBMITTED, WON or
+//     LOST — `GcRecord.bid`'s definition, not a second one. INVITED is not a
+//     bid yet and DECLINED never will be.
+//   - A bid's MONTH is its DUE DATE's month: the day the price went in, as
+//     entered. There is no stored "sent on" date (an in-app send is logged, an
+//     emailed or hand-delivered one is not), and `createdAt` is when somebody
+//     typed the row, which is a different question. A bid with no due date is
+//     counted in the all-time figures only, and the count says how many.
+//   - AVERAGE BID is the mean `bidAmount` over bids with one. Unpriced bids are
+//     counted beside it, never averaged in as zero.
+//   - WIN RATE is `summariseGc`'s: won / (won + lost), null when nothing is
+//     decided. SUBMITTED bids are waiting, not lost.
+//   - A CONTRACT is a WON bid, and its VALUE is the contract value of the job
+//     the bid is linked to — quantity × unit price per line, the figure the
+//     WIP schedule uses (`calculateLineItemWip`, applied in the query). A won
+//     bid with no linked job, or whose job has no priced lines, has no
+//     contract value on file: it is counted, and left out of the average
+//     rather than averaged in as $0.
+//
+// WHAT IS NOT HERE: "lands at N% of average contract". Two definitions fit it
+// — average contract ÷ average bid, or each won job's contract ÷ its own bid,
+// averaged — and they give different numbers on the same rows. Which one the
+// customer means is a question for him, not something to guess in code.
+// ─────────────────────────────────────────────────────────────────────────
+
+export interface BidLogBid {
+  status: BidStatus;
+  bidAmount: number | null;
+  /** ISO day at UTC midnight, or null. */
+  dueDate: string | null;
+  /** The linked job's contract value, or null when there is no linked job.
+   *  Read only for WON bids. */
+  contractValue: number | null;
+}
+
+export interface BidLogRecord {
+  /** SUBMITTED + WON + LOST. */
+  bids: number;
+  won: number;
+  lost: number;
+  /** won / (won + lost), or null when nothing is decided. */
+  winRate: number | null;
+  /** Mean bid amount over priced bids, or null when none is priced. */
+  averageBid: number | null;
+  /** Bids with no amount, left out of `averageBid`. */
+  unpricedBids: number;
+  /** Mean contract value over won bids that have one, or null. */
+  averageContract: number | null;
+  /** Won bids with no contract value on file, left out of `averageContract`. */
+  wonWithoutContract: number;
+}
+
+export interface BidLogMonth {
+  /** `YYYY-MM`. */
+  month: string;
+  record: BidLogRecord;
+}
+
+export interface BidLog {
+  allTime: BidLogRecord;
+  /** The calendar year `today` is in, by due date. */
+  thisYear: BidLogRecord;
+  /** The twelve calendar months ending with `today`'s month, by due date. */
+  last12Months: BidLogRecord;
+  /** `last12Months.bids / 12`. */
+  bidsPerMonth: number;
+  /** Those twelve months, newest first, every month present even when empty. */
+  byMonth: BidLogMonth[];
+  /** Bids with no due date: counted in `allTime` only. */
+  noDueDate: number;
+}
+
+const isBid = (bid: { status: BidStatus }) =>
+  bid.status === "SUBMITTED" || bid.status === "WON" || bid.status === "LOST";
+
+const mean = (values: number[]): number | null =>
+  values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0) / values.length;
+
+/** One period's figures. The counts and the win rate are `summariseGc`'s own. */
+export function summariseBidLogPeriod(bids: BidLogBid[], today: string): BidLogRecord {
+  const counted = bids.filter(isBid);
+  const record = summariseGc(counted, today);
+  const priced = counted.flatMap((bid) => (bid.bidAmount === null ? [] : [bid.bidAmount]));
+  const won = counted.filter((bid) => bid.status === "WON");
+  const contracts = won.flatMap((bid) => (bid.contractValue !== null && bid.contractValue > 0 ? [bid.contractValue] : []));
+  return {
+    bids: record.bid,
+    won: record.won,
+    lost: record.lost,
+    winRate: record.winRate,
+    averageBid: mean(priced),
+    unpricedBids: counted.length - priced.length,
+    averageContract: mean(contracts),
+    wonWithoutContract: won.length - contracts.length,
+  };
+}
+
+/** `YYYY-MM` of the month `offset` months before `today`'s. */
+function monthBefore(today: string, offset: number): string {
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7)) - 1 - offset;
+  return new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 7);
+}
+
+export function summariseBidLog(bids: BidLogBid[], today: string): BidLog {
+  const counted = bids.filter(isBid);
+  const months = Array.from({ length: 12 }, (_, offset) => monthBefore(today, offset));
+  const newest = months[0];
+  const oldest = months[months.length - 1];
+  const monthOf = (bid: BidLogBid) => (bid.dueDate === null ? null : bid.dueDate.slice(0, 7));
+  const last12 = counted.filter((bid) => {
+    const month = monthOf(bid);
+    return month !== null && month >= oldest && month <= newest;
+  });
+  const last12Months = summariseBidLogPeriod(last12, today);
+  return {
+    allTime: summariseBidLogPeriod(counted, today),
+    thisYear: summariseBidLogPeriod(
+      counted.filter((bid) => bid.dueDate !== null && bid.dueDate.slice(0, 4) === today.slice(0, 4)),
+      today,
+    ),
+    last12Months,
+    bidsPerMonth: last12Months.bids / 12,
+    byMonth: months.map((month) => ({
+      month,
+      record: summariseBidLogPeriod(
+        counted.filter((bid) => monthOf(bid) === month),
+        today,
+      ),
+    })),
+    noDueDate: counted.filter((bid) => bid.dueDate === null).length,
+  };
+}
+
+/** "44%", or "—" when nothing is decided. A percentage of nothing is not 0%. */
+export function percentLabel(rate: number | null): string {
+  return rate === null ? "—" : `${Math.round(rate * 100)}%`;
 }

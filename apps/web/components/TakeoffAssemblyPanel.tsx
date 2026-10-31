@@ -39,6 +39,8 @@ type Assembly = {
   defaultHeightFt: number | null;
   sides: number;
   studSpacingIn: number;
+  /** Layers of board each side, or null when unanswered — `layerMultiplier`. */
+  boardLayers: number | null;
   components: {
     id: string;
     description: string;
@@ -47,6 +49,7 @@ type Assembly = {
     factor: number;
     wastePercent: number;
     roundUp: boolean;
+    perLayer: boolean;
     unitPrice: number | null;
   }[];
 };
@@ -58,12 +61,15 @@ type Props = {
   /** ISO date when this job froze its library, or null. */
   pinnedAt: string | null;
   readOnly?: boolean;
+  /** Where the wall-type library is — the CRM's page by default, C Stream Bid's
+   * own when the workspace is rendered there (`lib/bid/surfaceHrefs.ts`). */
+  wallTypesHref?: string;
 };
 
 const money = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
-export function TakeoffAssemblyPanel({ jobId, assemblies, item, pinnedAt, readOnly = false }: Props) {
+export function TakeoffAssemblyPanel({ jobId, assemblies, item, pinnedAt, readOnly = false, wallTypesHref = "/wall-types" }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -100,9 +106,11 @@ export function TakeoffAssemblyPanel({ jobId, assemblies, item, pinnedAt, readOn
           factor: component.factor,
           wastePercent: component.wastePercent,
           roundUp: component.roundUp,
+          perLayer: component.perLayer,
           productionRate: null,
         },
         geometry,
+        assembly,
       );
       const quantity = component.roundUp ? Math.ceil(raw) : Math.round(raw * 100) / 100;
       return {
@@ -188,7 +196,7 @@ export function TakeoffAssemblyPanel({ jobId, assemblies, item, pinnedAt, readOn
           <p className="px-1 py-4 text-xs text-ink-muted" data-takeoff="no-assemblies">
             Your library has no assemblies yet. Add one — or start from the
             trade defaults — on{" "}
-            <Link href="/wall-types" className="text-link hover:text-link-hover">
+            <Link href={wallTypesHref} className="text-link hover:text-link-hover">
               Wall types
             </Link>
             .
@@ -200,7 +208,7 @@ export function TakeoffAssemblyPanel({ jobId, assemblies, item, pinnedAt, readOn
         ) : parts.length === 0 ? (
           <p className="px-1 py-4 text-xs text-ink-muted" data-takeoff="assembly-empty">
             {assembly.code} has no parts, so it can produce no lines. Add parts to it on{" "}
-            <Link href="/wall-types" className="text-link hover:text-link-hover">
+            <Link href={wallTypesHref} className="text-link hover:text-link-hover">
               Wall types
             </Link>
             .

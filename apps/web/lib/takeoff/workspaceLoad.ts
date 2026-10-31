@@ -89,6 +89,7 @@ export async function loadTakeoffWorkspace(
       sides: true,
       thicknessIn: true,
       studSpacingIn: true,
+      boardLayers: true,
       notes: true,
       _count: { select: { components: true } },
       /**
@@ -110,6 +111,7 @@ export async function loadTakeoffWorkspace(
           unit: true,
           basis: true,
           factor: true,
+          perLayer: true,
           wastePercent: true,
           roundUp: true,
           catalogEntry: { select: { defaultUnitPrice: true } },
@@ -669,6 +671,7 @@ export async function loadTakeoffWorkspace(
       defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt),
       sides: type.sides,
       studSpacingIn: Number(type.studSpacingIn),
+      boardLayers: type.boardLayers,
       components: type.components.map((component) => ({
         id: component.id,
         description: component.description,
@@ -677,6 +680,7 @@ export async function loadTakeoffWorkspace(
         factor: Number(component.factor),
         wastePercent: Number(component.wastePercent),
         roundUp: component.roundUp,
+        perLayer: component.perLayer,
         unitPrice:
           component.catalogEntry?.defaultUnitPrice == null
             ? null

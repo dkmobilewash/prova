@@ -179,6 +179,70 @@ TAKEOFF_BENCH=1 pnpm takeoff:bench
 Overlays are **not committed** — they are an output, they are large, and a
 stale one is worse than none. Regenerate before looking.
 
+## Openings read off the drawing, and no wall-finder change — 2026-10-25
+
+`openingProposals.ts` proposes the doors and windows DRAWN in each run the
+finder returns: a door where both faces stop and ONE swing is hinged at a jamb
+(radius = the gap ±, a contiguous sweep of at least 60° that closes on the far
+jamb, curved pieces only, on one side of the wall); a window where a line
+inside the wall's body that the wall itself does not carry elsewhere sits
+between two jamb lines, with sills across it and plain wall either side.
+Width is measured jamb to jamb; **height is never produced** — nothing in this
+codebase carries a default door height, and a plan does not print one.
+Unmarked gaps (cased openings, storefronts, columns) are not proposed.
+
+It runs after every wall decision and changes none: the bench before/after
+is **byte-identical** (`walls.csv` identical, all 95 cases' wall grades equal,
+main set missing 4,485 ft of 55,187 = 8.13%, 111 walls over 10 ft missed).
+
+    TAKEOFF_OPENINGS=1 pnpm --filter @prova/web exec vitest run \
+      --config vitest.eval.config.mts lib/takeoff/bench/openings.eval.ts
+
+| set | key openings that draw something | proposed | matched (kind, ±1 ft, ±0.5 ft width) | false |
+| --- | --- | --- | --- | --- |
+| main, 54 plan cases | 1,029 | 943 (18 on clip-hidden walls) | **925 — 90%** | 0 |
+| holdout, 20 seeded plans | 466 | 372 (8 clip-hidden) | **363 — 78%** | 1 |
+
+Per kind on main: doors 614/643, pairs 37/40, windows 274/312, sidelites and
+relites 0/17 each (not modelled). Clean variants read 96–100%; Revit, AutoCAD
+and Skia variants 71–81%, because there the FINDER's run is off — thickness
+12.4 in on an 8.9 in exterior wall, a centreline sitting on one face — and the
+detector reads faces relative to the run. That is the ceiling, not the rule.
+
+**The holdout is not pristine**: it was scored once before two fixes (raw
+strokes, wall-own lanes) and once after; both fixes were found on A-101 alone.
+64% → 78%.
+
+Two things the measuring found, both kept as tests:
+
+- **The finder's own filters destroy door evidence.** A door TAG circle reads
+  as a grid bubble to `gridBubbles`, and `linesIntoBubbles` drops every swing
+  piece with an end inside it. So proposals read `input.segments`, not
+  `inUnits`. `findWallsOnSheet.test.ts` reds if that changes.
+- **A unit-green mutation that the bench killed.** The "which side of the
+  wall" test in `swingAt` survived every unit case and was deleted as
+  redundant; the bench then lost 15 doors, because a swing on the wall's other
+  side sorts first and spoils the sweep. Restored, with the case that proves it.
+
+**Wired:** proposals travel on `WallCandidate.proposedOpenings`, are stored in
+the existing `TakeoffWallProposal.runs` JSON (no migration), and each found
+group shows "N doors and M windows drawn in these walls — add them". Rows carry
+the measured width and a blank height; on a PRICED accept the rows with a
+height post as `openingWidth`/`openingHeight` — the same fields and the same
+`wallOpeningsFromForm` the typed rows use — so the shop's never / big only /
+all answer applies in `boardedArea` unchanged. **Not wired:** an unpriced
+accept (bare measurements have nowhere to keep an opening, and the row says
+so); markers on the canvas; heights from a door schedule (`PLAN_TEXT_READ`
+reads schedules but nothing joins them to these yet).
+
+**No wall-footage change shipped, and the reason is the instrument.** The
+6.5–8.3% missing on real buildings is the BIM set, which is not in this
+container. The bench does not reproduce it: its exterior walls are found
+(X-S 188.7 of 208.7 ft, the 20 ft gap being the storefront), because its
+windows draw glazing ON the face lines and pair as wall. Window bridging was
+already built and reverted on 2026-10-18 for failing this bench; a rule that
+cannot be measured where it matters was not written.
+
 ## The one-face-one-use loss: a scored pairing, built and measured and NOT taken — 2026-10-17
 
 55% of the bench's missed footage is attributed to "a neighbouring line

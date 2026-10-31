@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createJob } from "@/lib/actions";
 import { ActionForm } from "@/components/ActionForm";
 import { SubmitButton } from "@/components/SubmitButton";
+import type { JobStartReturn } from "@/lib/bid/jobStartDestination";
 
 export interface GcOption {
   id: string;
@@ -37,7 +38,19 @@ const field =
  * bid-creation stepper (`/jobs/new/[jobId]/items`), not straight to the
  * job's own page. See `BidWizardSteps` for why.
  */
-export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
+export function NewJobForm({
+  contacts,
+  returnTo,
+  submitLabel = "Start the job — add the work next →",
+}: {
+  contacts: GcOption[];
+  /** Which product this form is in, sent to `createJob` as a WORD (never a
+   * URL) so the action knows where to land (`lib/bid/jobStartDestination.ts`).
+   * Absent = the CRM's own stepper, as before. */
+  returnTo?: JobStartReturn;
+  /** The button's words. The default names the CRM's next screen. */
+  submitLabel?: string;
+}) {
   const [isNewContact, setIsNewContact] = useState(contacts.length === 0);
 
   return (
@@ -55,6 +68,7 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
       }}
       className="flex flex-col gap-4"
     >
+      {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
       <label className="flex flex-col gap-1 text-sm text-ink-label" data-tour="new-job-name">
         Job name
         <input name="jobName" required className={field} placeholder="Building C — level 3 drywall" />
@@ -155,7 +169,7 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
             moves to the screen for putting work on it. A label that names
             the destination is the difference between a button somebody
             presses and one somebody hesitates over. */}
-        Start the job — add the work next →
+        {submitLabel}
       </SubmitButton>
     </ActionForm>
   );

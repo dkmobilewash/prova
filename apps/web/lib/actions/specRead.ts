@@ -17,6 +17,7 @@ import {
   type DocumentUploadContentType,
 } from "@/lib/document-uploads";
 import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "@/lib/actions/shared";
+import { paperFiling } from "@/lib/estimating/bid-papers";
 
 /**
  * Reading a spec section for what it demands that costs money.
@@ -95,7 +96,7 @@ export async function saveBidSpecSection(
 
   const bid = await prisma.bidInvitation.findFirst({
     where: { id: bidInvitationId, companyId: company.id },
-    select: { id: true },
+    select: { id: true, bidProjectId: true },
   });
   if (!bid) return actionFail("That bid is no longer on your list.");
 
@@ -108,7 +109,7 @@ export async function saveBidSpecSection(
 
   await prisma.bidSpecSection.create({
     data: {
-      bidInvitationId: bid.id,
+      ...paperFiling(bid),
       sectionNumber,
       title: title || null,
       notes: notes || null,

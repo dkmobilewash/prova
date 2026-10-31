@@ -1,4 +1,4 @@
-import { bidRecap, RECAP_RATE_KEYS, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
+import { applyOutcome, bidRecap, RECAP_RATE_KEYS, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
 import type { RecapState } from "@/lib/estimating/proposal-recap-currency";
 
 /**
@@ -61,18 +61,33 @@ export function recapLines(lines: readonly RecapLine[]) {
   }));
 }
 
+/** The row's rates as `bidRecap` reads them. */
+function ratesOf(recapRow: RecapRow): RecapRates {
+  return Object.fromEntries(RECAP_RATE_KEYS.map((key: string) => [key, num(recapRow[key])])) as RecapRates;
+}
+
 export function recapStateFor(recapRow: RecapRow | null, lines: readonly RecapLine[]): RecapState | null {
   if (!recapRow) return null;
   return {
-    addedTotal: bidRecap(
-      recapLines(lines),
-      Object.fromEntries(
-        RECAP_RATE_KEYS.map((key: string) => [key, num(recapRow[key])]),
-      ) as RecapRates,
-    ).addedTotal,
+    addedTotal: bidRecap(recapLines(lines), ratesOf(recapRow)).addedTotal,
     appliedAt: recapRow.appliedAt,
     appliedTotal: num(recapRow.appliedTotal),
   };
+}
+
+/**
+ * What the lines will total once Apply is pressed — `applyOutcome`, the
+ * function the recap panel previews and `applyBidRecap` writes with — or null
+ * when there is no recap row or Apply would write nothing.
+ *
+ * NOT `addedTotal`. That is the markup over DIRECT COST, and the contractor walk
+ * (2026-10-27) showed what quoting it costs: the guide said "Applying it adds
+ * $7,385.00 to the bid" on a job where Apply LOWERED the line prices from
+ * $34,915.00 to $31,990.50, because the sub had typed prices above the recap.
+ */
+export function recapLandsAt(recapRow: RecapRow | null, lines: readonly RecapLine[]): number | null {
+  if (!recapRow) return null;
+  return applyOutcome(recapLines(lines), ratesOf(recapRow)).landsAt;
 }
 
 /**
@@ -83,8 +98,16 @@ export function recapStateFor(recapRow: RecapRow | null, lines: readonly RecapLi
  * prints with no price and counts $0 toward the bid total, which is the rule
  * the contract value uses everywhere else. Treating it as zero cost rather than
  * zero price would be a different number.
+ *
+ * THE ONE SUM OF QUANTITY × PRICE FOR "THE BID", and since 2026-10-19 (bug C)
+ * that is literally true: the job header (`loadJobSummary`) and the bid recap's
+ * "Bid on the job now" row read it too. The header used to add the lines up
+ * itself, so the screen carried one figure called BID in the header and another
+ * called Bid total in the recap with nothing tying either to the proposal's.
+ * Typed on the two fields it reads, so a caller holding numbers (the recap's
+ * lines) and one holding Prisma decimals (the header's) both pass.
  */
-export function bidTotalOf(lines: readonly RecapLine[]): number {
+export function bidTotalOf(lines: readonly Pick<RecapLine, "quantity" | "unitPrice">[]): number {
   return lines.reduce((sum, line) => {
     const unitPrice = num(line.unitPrice);
     return sum + (unitPrice === null ? 0 : Number(line.quantity) * unitPrice);

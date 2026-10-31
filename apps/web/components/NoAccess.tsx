@@ -27,7 +27,17 @@ const AREA: Record<Capability, string> = {
   VERIFY_PUNCH_ITEMS: "punch list sign-off",
 };
 
-export function NoAccess({ capability }: { capability: Capability }) {
+export function NoAccess({
+  capability,
+  homeHref = "/dashboard",
+  homeLabel = "Back to jobs",
+}: {
+  capability: Capability;
+  /** Where the one button goes. The CRM's dashboard by default; C Stream Bid
+   * passes its own (`lib/bid/surfaceHrefs.ts`) — a CRM link is not allowed there. */
+  homeHref?: string;
+  homeLabel?: string;
+}) {
   return (
     <div className="mx-auto max-w-2xl px-6 py-16">
       {/* "Not part of your access" / "isn't included in your job function" —
@@ -43,10 +53,10 @@ export function NoAccess({ capability }: { capability: Capability }) {
         decides who sees what, on the Team page.
       </p>
       <Link
-        href="/dashboard"
+        href={homeHref}
         className="inline-block rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
       >
-        Back to jobs
+        {homeLabel}
       </Link>
     </div>
   );

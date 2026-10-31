@@ -26,7 +26,6 @@ import {
   type BidResearcher,
   canRunCommand,
   commandNamed,
-  commandsFor,
   isCommandName,
   schemaInput,
   toToolDefinition,
@@ -46,6 +45,8 @@ import type { AskAttachmentRef } from "./attachment";
 import { loadAskAttachment } from "./attachmentLoad";
 import type { WebSuggestion } from "./webSuggestions";
 import { resolvePageJob } from "./page-context-query";
+import { BID_SURFACE_RULE, commandAllowedOn, commandsForSurface, type AskSurface } from "./surface";
+import { isBidPath } from "@/lib/bid/surface";
 import { PRIOR_TURNS_RULE, type AskTurn } from "./turns";
 import { runTool } from "./handlers";
 import {
@@ -427,7 +428,7 @@ export const PROVENANCE_REFUSAL =
 /** Turns a failure from the conversation into something worth reading on a
  * phone. The underlying reasons are deliberately not shown verbatim — they
  * describe the API, and the person asking cares what to do next. */
-function messageFor(reason: "refusal" | "no_text" | "exhausted" | "api"): string {
+function messageFor(reason: "refusal" | "no_text" | "exhausted" | "api", apiCode?: string | null): string {
   switch (reason) {
     case "refusal":
       return "I can't answer that one. Try asking it a different way.";
@@ -436,7 +437,17 @@ function messageFor(reason: "refusal" | "no_text" | "exhausted" | "api"): string
     case "exhausted":
       return "That took more steps than I can do at once. Try asking for one thing at a time.";
     case "api":
-      return "The assistant is unavailable right now. Try again shortly.";
+      // The API's short code goes on screen: without it this sentence was
+      // identical for an empty credit balance and a passing outage, and the
+      // only place the difference lived was a log the owner cannot open.
+      // Waiting does not refill a credit balance, so that one case says who
+      // has to act instead of "try again shortly".
+      if (apiCode && /credit balance/.test(apiCode)) {
+        return `The assistant is unavailable (Anthropic said: ${apiCode}). It comes back once credit is added to the Anthropic account this server uses.`;
+      }
+      return apiCode
+        ? `The assistant is unavailable right now (Anthropic said: ${apiCode}). Try again shortly.`
+        : "The assistant is unavailable right now. Try again shortly.";
   }
 }
 
@@ -519,6 +530,11 @@ export type AskRequest = {
     partialInput: Record<string, string>;
     answers: Record<string, string>;
   };
+  /** Where the box that asked is mounted. Absent everywhere in the CRM; `"bid"`
+   * from the C Stream Bid job box. It only ever NARROWS the commands offered
+   * and the links returned — lib/ask/surface.ts says why that is what makes it
+   * safe to read from a body. */
+  surface?: AskSurface;
 };
 
 function invalid(question: string): string | null {
@@ -559,6 +575,7 @@ async function runCommand(
   question: string,
   meta: AskToolCallMeta,
   alsoRequested: string[],
+  surface?: AskSurface,
 ): Promise<AskToolOutcome<AskHalt>> {
   const resolution = await command.resolve(ctx, input);
 
@@ -602,9 +619,12 @@ async function runCommand(
       });
       return {
         content: JSON.stringify({
-          unavailable: resolution.href
-            ? `${resolution.reason} The page for this is ${resolution.href}.`
-            : resolution.reason,
+          // Not on Bid: every refusal's page is a CRM route (/dashboard,
+          // /catalog, /jobs/<id>), and the model would hand it on.
+          unavailable:
+            resolution.href && !surface
+              ? `${resolution.reason} The page for this is ${resolution.href}.`
+              : resolution.reason,
         }),
       };
     }
@@ -652,6 +672,18 @@ async function runCommand(
   }
 }
 
+/** The refusal for a command this surface does not offer. Plain words, no
+ * page named: on Bid there is no page to name. */
+const NOT_FROM_HERE = "That isn't something I can do from here. Ask about this job, or ask me to add to its estimate.";
+
+/** The "go straight to" buttons, as this surface may draw them. Bid draws no
+ * link out of Bid, and every record link a read tool builds is a CRM page —
+ * so on Bid only a /bid path survives (today, none do). The CRM is unchanged. */
+export function linksFor(surface: AskSurface | undefined, links: ItemLink[]): ItemLink[] {
+  if (surface !== "bid") return links;
+  return links.filter((link) => isBidPath(link.href.split(/[?#]/)[0] ?? ""));
+}
+
 function refusedContent(reason: string): AskToolOutcome<AskHalt> {
   return { content: JSON.stringify({ unavailable: reason }) };
 }
@@ -671,10 +703,11 @@ function refusedContent(reason: string): AskToolOutcome<AskHalt> {
  * list against both registries and asserts every entry carries only the
  * three API fields.
  */
-export function offeredTools(principal: Principal): AskToolDefinition[] {
+export function offeredTools(principal: Principal, surface?: AskSurface): AskToolDefinition[] {
   return [
     ...toolsFor(principal).map(toAskToolDefinition),
-    ...commandsFor(principal).map(toToolDefinition),
+    // Narrowed by where the box is mounted, never widened: lib/ask/surface.ts.
+    ...commandsForSurface(principal, surface).map(toToolDefinition),
     // Offered to everyone, and deliberately without a capability: it reads
     // nothing. It can only combine figures this person has already been
     // handed in this same turn, which the capability filter above has
@@ -732,6 +765,12 @@ export async function* streamAnswer(
       yield { type: "error", error: refusalFor(command.capability) };
       return;
     }
+    // A chip carries the command's name back from the browser, so the
+    // surface's narrowing is applied here as well as to the offered list.
+    if (!commandAllowedOn(request.surface, command.name)) {
+      yield { type: "error", error: NOT_FROM_HERE };
+      return;
+    }
     const input = schemaInput(command, { ...partialInput, ...answers }, "continuation");
     const outcome = await runCommand(
       ctx,
@@ -740,6 +779,7 @@ export async function* streamAnswer(
       question,
       { toolUseId: "continuation", toolUseIdsInContext: [] },
       [],
+      request.surface,
     );
     if (outcome.halt) {
       yield outcome.halt;
@@ -885,7 +925,8 @@ export async function* streamAnswer(
   let commandSeen = false;
   const alsoRequested: string[] = [];
 
-  const offered = offeredTools(ctx.principal);
+  const surface = request.surface;
+  const offered = offeredTools(ctx.principal, surface);
 
   // Where they are standing, if it is a job of theirs. Resolved through the
   // company scope, so a forged path is indistinguishable from no path.
@@ -907,6 +948,7 @@ export async function* streamAnswer(
       // Company row the session had already loaded.
       businessScopeContext(ctx.businessScope ?? UNANSWERED_SCOPE),
       pageContextSentence(pageJob),
+      surface === "bid" ? BID_SURFACE_RULE : null,
       priorTurns.length > 0 ? PRIOR_TURNS_RULE : null,
       attachment ? ATTACHMENT_RULE : null,
     ]
@@ -969,6 +1011,12 @@ export async function* streamAnswer(
     {
       if (isCommandName(name)) {
         const command = commandNamed(name);
+        // Not offered on this surface, so only reachable if the model invents
+        // the name. Refused BEFORE it takes the one-command slot, so the
+        // refusal cannot crowd out a command that is allowed here.
+        if (!commandAllowedOn(surface, command.name)) {
+          return refusedContent(NOT_FROM_HERE);
+        }
         if (commandSeen) {
           alsoRequested.push(name);
           return refusedContent(
@@ -995,7 +1043,22 @@ export async function* streamAnswer(
           return refusedContent(refusalFor(command.capability));
         }
         const input = schemaInput(command, rawInput, "model");
-        return runCommand(loopCtx, command, input, question, meta, alsoRequested);
+        // On the Bid job box the job is the page's. When the model named no
+        // job, the card is for the one on screen — resolved through this
+        // session's company above, and re-checked by the command's own
+        // resolve (company AND estimate stage). A job the person DID name
+        // still wins, as the page sentence promises. Bid only: the CRM's
+        // behaviour is unchanged.
+        if (
+          surface === "bid" &&
+          pageJob &&
+          !input.jobName &&
+          !input.jobId &&
+          (command.continuationKeys ?? []).includes("jobId")
+        ) {
+          input.jobId = pageJob.id;
+        }
+        return runCommand(loopCtx, command, input, question, meta, alsoRequested, surface);
       }
 
       if (!toolNames.has(name)) {
@@ -1101,7 +1164,7 @@ export async function* streamAnswer(
         case "error":
           await record(`error:${event.reason}`);
           await markFailed();
-          yield { type: "error", error: messageFor(event.reason) };
+          yield { type: "error", error: messageFor(event.reason, event.apiCode) };
           return;
         case "done": {
           /* THE NUMBER-PROVENANCE GUARD. Every figure the answer says out
@@ -1191,7 +1254,7 @@ export async function* streamAnswer(
             // or a clarifying question ran no tool, so it has no record to
             // send anyone to, and a button under one would be pointing at
             // something the answer never looked at.
-            links: toolsUsed.length ? links.slice(0, MAX_ITEM_LINKS) : [],
+            links: toolsUsed.length ? linksFor(surface, links).slice(0, MAX_ITEM_LINKS) : [],
             toolsUsed,
           };
           return;

@@ -262,7 +262,7 @@ export function JobDetailsForm({
             // CLAUDE.md's "the check is the SHA" gap arriving from the
             // other direction: CI answered about two commits that never
             // existed together.
-            describe="Removes the estimate and its line items for good. It can only happen while nothing has been filed against the job — no invoice, no hours, no RFI — so there is no history to lose."
+            describe="Removes the estimate, its line items, takeoff and bid recap for good. It can only happen while nothing has been filed against the job — no invoice, no hours, no RFI — so there is no history to lose."
             hint={name}
             action={async () => {
               const result = await deleteEstimateJob(jobId);

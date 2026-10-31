@@ -10,6 +10,7 @@ export * from "./research";
 export * from "./agentPass";
 export * from "./leads";
 export * from "./quotes";
+export * from "./bidInvites";
 export * from "./addenda";
 export * from "./specs";
 export * from "./proposalClauses";

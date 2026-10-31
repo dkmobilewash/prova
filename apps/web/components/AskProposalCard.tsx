@@ -3,6 +3,8 @@
 import Link from "next/link";
 import type { ProposalView } from "@/lib/ask/answer";
 import { Spinner } from "@/components/Spinner";
+import { askHref, askWebHref } from "@/lib/bid/askHrefs";
+import type { Surface } from "@/lib/bid/surfaceHrefs";
 
 /** What a confirmed card shows in place of its buttons. */
 export type ProposalOutcome = { message: string; created?: { label: string; href: string } };
@@ -32,6 +34,15 @@ const PRIMARY =
  * with the card id in the URL and nothing else. There is nothing to
  * confirm here and nothing in flight, so it is never disabled; `onOpen`
  * lets the panel forget the card as the person leaves.
+ *
+ * `surface` says which product draws the card. Every href on it was built on
+ * the server and almost all are CRM routes, so in C Stream Bid each one goes
+ * through `askHref` (lib/bid/askHrefs.ts) and a link that would leave Bid is
+ * drawn as PLAIN TEXT — the record is still named, there is no door. A
+ * HANDOFF card whose form is outside Bid offers no primary at all and says
+ * so; the Bid box is never offered one (lib/ask/surface.ts), so that branch is
+ * the floor, not the plan. In the CRM (`"crm"`, the default) every href is
+ * returned untouched and the card is exactly what it was.
  */
 export function AskProposalCard({
   proposal,
@@ -43,8 +54,11 @@ export function AskProposalCard({
   onOpen,
   dropped = [],
   onToggleSuggestion,
+  surface = "crm",
 }: {
   proposal: ProposalView;
+  /** Which product draws the card. See the header. */
+  surface?: Surface;
   /** Keys of the web suggestions the person has unticked. */
   dropped?: string[];
   onToggleSuggestion?: (key: string) => void;
@@ -57,7 +71,14 @@ export function AskProposalCard({
 }) {
   const settled = outcome !== null;
   const offersButton = !settled && !proposal.existing;
-  const handoff = proposal.handoffHref;
+  // A HANDOFF card is one whose primary is a link. In the CRM that is exactly
+  // "has a handoffHref", so nothing changes there; in Bid a handoff whose
+  // form is outside Bid keeps its kind and loses its link, rather than
+  // falling through to a confirm button the server would refuse.
+  const isHandoff = Boolean(proposal.handoffHref) || proposal.mode === "HANDOFF";
+  const handoff = askHref(surface, proposal.handoffHref);
+  const existingHref = askHref(surface, proposal.existing?.href);
+  const createdHref = askHref(surface, outcome?.created?.href);
 
   return (
     <div
@@ -111,17 +132,24 @@ export function AskProposalCard({
                     </span>
                   </label>
                   <span className="ml-6 flex flex-wrap gap-x-2 text-xs text-ink-body">
-                    {suggestion.sources.map((source) => (
-                      <a
-                        key={source.url}
-                        href={source.url}
-                        target="_blank"
-                        rel="noopener noreferrer nofollow"
-                        className="max-w-full truncate underline hover:text-link"
-                      >
-                        {source.title}
-                      </a>
-                    ))}
+                    {suggestion.sources.map((source) => {
+                      const sourceHref = askWebHref(surface, source.url);
+                      return sourceHref ? (
+                        <a
+                          key={source.url}
+                          href={sourceHref}
+                          target="_blank"
+                          rel="noopener noreferrer nofollow"
+                          className="max-w-full truncate underline hover:text-link"
+                        >
+                          {source.title}
+                        </a>
+                      ) : (
+                        <span key={source.url} className="max-w-full truncate">
+                          {source.title}
+                        </span>
+                      );
+                    })}
                   </span>
                 </li>
               );
@@ -140,9 +168,13 @@ export function AskProposalCard({
 
       {proposal.existing && !settled && (
         <p className="mt-2 text-sm text-ink">
-          <Link href={proposal.existing.href} className="underline hover:text-link">
-            {proposal.existing.label}
-          </Link>
+          {existingHref ? (
+            <Link href={existingHref} className="underline hover:text-link">
+              {proposal.existing.label}
+            </Link>
+          ) : (
+            <span className="font-medium">{proposal.existing.label}</span>
+          )}
           . Nothing was created.
         </p>
       )}
@@ -158,12 +190,17 @@ export function AskProposalCard({
           Opens the form with these filled in. Nothing is saved until you save it there.
         </p>
       )}
+      {isHandoff && !handoff && offersButton && (
+        <p className="mt-2 text-xs text-ink-body" data-ask="handoff-note">
+          This one is finished on a form that isn&rsquo;t part of C Stream Bid, so there is nothing to do here.
+        </p>
+      )}
 
       {outcome && (
         <p className="mt-2 text-sm text-ink" data-ask="outcome">
-          {outcome.created && (
+          {outcome.created && createdHref && (
             <>
-              <Link href={outcome.created.href} className="font-medium underline hover:text-link">
+              <Link href={createdHref} className="font-medium underline hover:text-link">
                 {outcome.created.label}
               </Link>{" "}
             </>
@@ -193,7 +230,7 @@ export function AskProposalCard({
               {proposal.button}
             </Link>
           )}
-          {offersButton && !handoff && (
+          {offersButton && !isHandoff && (
             <button
               type="button"
               onClick={onConfirm}

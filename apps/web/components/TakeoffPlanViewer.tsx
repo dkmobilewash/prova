@@ -73,6 +73,8 @@ import { addSheetExclusion, clearSheetExclusions } from "@/lib/actions/takeoffEx
 import { runAt, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
 import { loadPlanText, type PlanTextView } from "@/lib/actions/planTextRead";
 import { PlanTextPanel } from "@/components/PlanTextPanel";
+import { ProposedOpenings } from "@/components/ProposedOpenings";
+import { appendOpeningPairs, initialPicks, openingsSentence, type OpeningPick } from "@/lib/takeoff/openingPicks";
 import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
 import { doorsByGroup, doorText, feetInches, openingsFromDoors } from "@/lib/takeoff/planTextView";
 import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
@@ -115,8 +117,10 @@ import {
 } from "@/lib/takeoff/wallGroups";
 import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections";
 import { calibrationForView, type ViewScale } from "@/lib/takeoff/sheetScale";
+import { PICKABLE_SCALES, isArchitecturalScale, pickedScaleLine, suggestedScalePick } from "@/lib/takeoff-scale-picker";
 import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
+import { noWallsMessage } from "@/lib/takeoff/noWallsMessage";
 import { takeoffSheetVerdict, type TakeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import {
   candidatesFromSheet,
@@ -289,6 +293,7 @@ export function TakeoffPlanViewer({
   roomFinder = false,
   symbolCount = false,
   demotedWalls = false,
+  wallTypesHref = "/wall-types",
   doorsWindows = false,
   doorScheduleRows = [],
   wallModel = null,
@@ -393,6 +398,10 @@ export function TakeoffPlanViewer({
    * labelling mode. See `lib/takeoff/demotedRuns.ts`.
    */
   demotedWalls?: boolean;
+  /** Where "Create a wall type from this group" goes. The CRM's library by
+   *  default; C Stream Bid passes `/bid/wall-types` so the takeoff draws no
+   *  way out of Bid (`lib/bid/surfaceHrefs.ts`). */
+  wallTypesHref?: string;
   /**
    * The trained wall classifier and its cut, read from the file
    * `TAKEOFF_WALL_MODEL` names (`lib/takeoff/wallModelFile.ts`). With the
@@ -664,6 +673,18 @@ export function TakeoffPlanViewer({
   // somebody opening a drawing wants to see first; they zoom IN to measure.
   const [zoom, setZoom] = useState<Zoom>(FIT);
   const [tool, setTool] = useState<ToolId>("pan");
+  /**
+   * ── THE SHEET'S OWN SCALE, ASKED FOR FROM THE TOOLBAR ──
+   *
+   * Set by the toolbar's "Use … scale" shortcut and read in two places: the
+   * tool-change effect below seeds the draft line from it, and `CalibrationForm`
+   * starts its distance and note from it. Held as STATE rather than consumed
+   * from a ref because React runs effects twice in development, and a seed the
+   * first run used up would be cleared by the second.
+   */
+  const [calibrationSeed, setCalibrationSeed] = useState<
+    (PrefillSeed & { page: number; xs: [number, number]; ys: [number, number] }) | null
+  >(null);
 
   /**
    * ── THE HOST'S KEYBOARD REACHES THE CANVAS HERE ──
@@ -850,6 +871,23 @@ export function TakeoffPlanViewer({
    * state, which is why the name it kept is the one they were already using.
    */
   const found = wallsOnThisSheet(foundRaw, foundOnPage, pageNumber);
+  /**
+   * HOW MANY GROUPS FROM THE LAST FIND ON EACH SHEET WERE ADDED TO THE
+   * MEASUREMENTS. Accepting a group takes it off the panel, so without this an
+   * emptied panel cannot tell "nothing paired" from "you added all of it" —
+   * and said the first, under walls it had just found (user walk 2026-10-19).
+   * Per page for the reason everything else a find produces is.
+   */
+  const [groupsAddedByPage, setGroupsAddedByPage] = useState<Record<number, number>>({});
+  const groupsAdded = onThisSheet(groupsAddedByPage, pageNumber) ?? 0;
+  const setGroupsAdded = useCallback(
+    (next: number | ((current: number) => number)) =>
+      setGroupsAddedByPage((prev) => {
+        const value = typeof next === "function" ? next(onThisSheet(prev, pageNumber) ?? 0) : next;
+        return setOnThisSheet(prev, pageNumber, value > 0 ? value : null);
+      }),
+    [pageNumber],
+  );
   // ONE SLOT, and `cautionToShow` owns which of the three fills it.
   //
   // THE MEASURED SENTENCE BEATS THE WARNING, and it is the same slot. Before
@@ -894,6 +932,14 @@ export function TakeoffPlanViewer({
   const [thicknessBusy, setThicknessBusy] = useState<string | null>(null);
   const [thicknessNote, setThicknessNote] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Record<number, string>>({});
+  /**
+   * The drawn openings a person is confirming, per group. Keyed by the GROUP
+   * OBJECT rather than its index: accepting a group filters it out of `found`,
+   * which renumbers every group after it, and a height typed against "group 4"
+   * must not slide onto the group that becomes group 4. A fresh detection
+   * makes fresh objects, so its groups start with nothing typed.
+   */
+  const [openingPicks, setOpeningPicks] = useState<Map<WallGroup, OpeningPick[]>>(() => new Map());
   /** A height typed for a group whose type has no default — the posting refuses without one. */
   const [groupHeight, setGroupHeight] = useState<Record<number, string>>({});
   /** Whether the groups below the fold are showing. See `SHOWN_AT_FIRST`. */
@@ -1411,9 +1457,18 @@ export function TakeoffPlanViewer({
 
   // Changing page or tool abandons a half-drawn shape rather than carrying
   // points from one sheet onto another.
+  //
+  // EXCEPT the one shape somebody asked for: the toolbar's "Use … scale" press
+  // switches to the scale tool AND seeds its line, and this effect runs after
+  // that press — so the seed is applied here rather than wiped by it.
   useEffect(() => {
+    if (tool === "calibrate" && calibrationSeed !== null && calibrationSeed.page === pageNumber) {
+      setDraft({ xs: [...calibrationSeed.xs], ys: [...calibrationSeed.ys] });
+      return;
+    }
     setDraft(EMPTY);
-  }, [pageNumber, tool]);
+    if (calibrationSeed !== null) setCalibrationSeed(null);
+  }, [pageNumber, tool, calibrationSeed]);
 
 
   const aspect = pageSize ? pageSize.heightPt / pageSize.widthPt : 1.294;
@@ -2691,6 +2746,7 @@ export function TakeoffPlanViewer({
     setFinding(true);
     setFindError(null);
     setFound(null);
+    setGroupsAdded(0);
     setRooms(null);
     setChosen({});
     setPostedDoorMarks([]);
@@ -3068,7 +3124,7 @@ export function TakeoffPlanViewer({
     // thickness filled in; nothing is written here. Plain measurements are
     // written only when that was the answer chosen, never as the default.
     if (chosen[index] === "create") {
-      window.location.assign(`/wall-types?thicknessIn=${group.inches.toFixed(3)}`);
+      window.location.assign(`${wallTypesHref}?thicknessIn=${group.inches.toFixed(3)}`);
       return;
     }
     const priced = pricedTypeFor(group, chosen[index]);
@@ -3121,6 +3177,20 @@ export function TakeoffPlanViewer({
     // quantities. Null for every unresolved state: this component must not
     // overrule a refusal, and must not price an ASK group nobody answered.
     if (priced) body.set("wallTypeId", priced.id);
+    // ── AND THE DRAWN OPENINGS SOMEBODY GAVE A HEIGHT ──
+    //
+    // Only on a priced accept: that is the path that writes a wall run, and a
+    // wall run is the only thing with openings. The pairs are the measurement
+    // list's own `openingWidth`/`openingHeight` fields, read by the same
+    // `wallOpeningsFromForm`, so the company's deduction rule treats them
+    // exactly like typed ones. A row with a problem stops the accept rather
+    // than being dropped: the estimator typed it and expects it to count.
+    // Never both: when the schedule named doors on this group they were added
+    // above, and the drawn proposals are not offered (see the panel).
+    if (priced && (planTextDoors.get(index) ?? []).length === 0) {
+      const problems = appendOpeningPairs(body, openingPicks.get(group) ?? []);
+      if (problems.length > 0) return setFindError(problems.join(" "));
+    }
     for (const run of group.runs) {
       body.append("shape", JSON.stringify({ xs: [run.x1, run.x2], ys: [run.y1, run.y2] }));
     }
@@ -3131,6 +3201,11 @@ export function TakeoffPlanViewer({
     // to get back to where they were would be a punishment for accepting one.
     setPostedDoorMarks((current) => [...current, ...(planTextDoors.get(index) ?? []).map((d) => d.mark)]);
     setFound((current) => (current ?? []).filter((_, i) => i !== index));
+    // Counted so the panel, once emptied this way, says it is DONE rather than
+    // that nothing was found. See `noWallsMessage`.
+    // An updater, because two groups accepted in quick succession are two
+    // saves in flight reading the same render.
+    setGroupsAdded((current) => current + 1);
   }
 
   /**
@@ -3625,6 +3700,38 @@ export function TakeoffPlanViewer({
             <span className="text-tag-amber-ink">Set the scale on this sheet before measuring.</span>
           )}
         </span>
+        {/* ── THE SCALE THIS SHEET ALREADY READ, WHERE THE SENTENCE ABOVE IS ──
+
+            A user walk on 2026-10-19: fixture S03 prints 1/8" = 1'-0", its
+            reading matched five printed dimensions at that scale, and the
+            toolbar still said only "Set the scale" — because the offer lived
+            inside the Set scale tool and nothing out here said one was waiting.
+
+            A CONFIRMATION, NOT AN APPLY. The press does what the offer's own
+            button does — draws the proposed line on the sheet and fills the
+            distance and the provenance note — and the person still presses
+            "Set the scale". Hidden while the scale tool is open, because the
+            offer itself is on screen then. */}
+        {!calibration && tool !== "calibrate" && scalePrefillByPage[pageNumber] && (
+          <button
+            type="button"
+            data-takeoff="use-sheet-scale"
+            title={
+              scalePrefillByPage[pageNumber].unconfirmed
+                ? "Read off the title block — nothing measurable on the sheet confirms it. Opens the scale for you to check and save."
+                : "Read off the dimensions printed on this sheet. Opens the scale for you to check and save."
+            }
+            onClick={() => {
+              const prefill = scalePrefillByPage[pageNumber];
+              setCalibrationSeed({ page: pageNumber, xs: prefill.xs, ys: prefill.ys, ...prefillSeed(prefill) });
+              setTool("calibrate");
+            }}
+            className="rounded-md border border-line-card px-2 py-1 text-xs font-medium text-ink-label hover:bg-rail-hover"
+          >
+            {scalePrefillByPage[pageNumber].unconfirmed ? "Use printed scale" : "Use scale"}{" "}
+            {scalePrefillByPage[pageNumber].scaleName}
+          </button>
+        )}
       </div>
       )}
 
@@ -3756,9 +3863,9 @@ export function TakeoffPlanViewer({
                thousand has lines that did not pair, which is a different fact
                and a different thing for an estimator to do about it. */
             <p className="text-sm text-ink-body" data-takeoff="no-walls">
-              {strokesSeen === 0
-                ? "No walls found: this sheet has no line work at all, so it is an image or a scan. There is nothing here to read. Trace them by hand as usual."
-                : `No walls found. This sheet does have line work — ${strokesSeen.toLocaleString()} lines — but none of it paired up as a wall. That happens when walls are drawn as a single line or as solid fill rather than two faces. Trace them by hand as usual.`}
+              {/* AND A THIRD: every group was added, which empties the panel
+                  too. `noWallsMessage` owns all three sentences. */}
+              {noWallsMessage({ strokesSeen, groupsAdded })}
             </p>
           ) : (
             <>
@@ -4043,6 +4150,31 @@ export function TakeoffPlanViewer({
                     {groupSentence(group, verdict) !== null && (
                       <p className="w-full text-xs text-ink-muted">{groupSentence(group, verdict)}</p>
                     )}
+
+                    {/* ── THE DOORS AND WINDOWS DRAWN IN THESE WALLS ──
+                        Proposed off the drawing (`openingProposals.ts`), width
+                        measured, height left to the person. They go on with
+                        this group's own Add button when it is priced, and
+                        nowhere otherwise — see `ProposedOpenings`.
+                        NOT OFFERED WHEN THE SCHEDULE ALREADY NAMES DOORS ON THIS
+                        GROUP: those ride along with the schedule's own heights
+                        (onAcceptCluster), and offering the drawn gaps as well
+                        would deduct the same door twice. */}
+                    {(() => {
+                      if ((planTextDoors.get(index) ?? []).length > 0) return null;
+                      const sentence = openingsSentence(group.runs);
+                      if (sentence === null) return null;
+                      return (
+                        <ProposedOpenings
+                          sentence={sentence}
+                          picks={openingPicks.get(group) ?? initialPicks(group.runs)}
+                          onChange={(next) =>
+                            setOpeningPicks((current) => new Map(current).set(group, next))
+                          }
+                          carried={priced !== null}
+                        />
+                      );
+                    })()}
                     {/* ── THE LIBRARY'S FIGURE, MOVED TO WHAT IS DRAWN, IN ONE PRESS ──
                         Offered only where the drawing's tag and the library's
                         thickness disagree. Pricing does not wait on it; it is
@@ -5000,9 +5132,11 @@ export function TakeoffPlanViewer({
               planId={planId}
               pageNumber={pageNumber}
               pageWidthPt={pageSize?.widthPt ?? null}
+              pageHeightPt={pageSize?.heightPt ?? null}
               viewScales={viewScalesByPage?.[pageNumber] ?? []}
               printedScale={printedScaleByPage[pageNumber] ?? null}
               prefill={scalePrefillByPage[pageNumber] ?? null}
+              seed={calibrationSeed?.page === pageNumber ? calibrationSeed : null}
               declineReason={scaleDeclineByPage?.[pageNumber] ?? null}
               onUsePrefill={(xs, ys) => {
                 // Seeds the draft so the proposed line DRAWS ON THE SHEET over
@@ -5716,16 +5850,113 @@ const STROKE_PX = 2;
  */
 export const CALIBRATION_DASH = `${STROKE_PX * 7} ${STROKE_PX * 3} ${STROKE_PX} ${STROKE_PX * 3}`;
 
-function CalibrationForm({
+/**
+ * ── A STANDARD SCALE, PICKED RATHER THAN CALCULATED ──
+ *
+ * For the sheet whose scale the estimator already knows — "architect using
+ * 3/16, the measure tools we're using are 1/8 or quarter, so you need to
+ * calculate." Picking one draws the line it stands for across the sheet and
+ * fills the distance, exactly as the reading offers above do; the person still
+ * presses "Set the scale", and the readback under the form names the scale
+ * back through `readScale` before anything is saved. See
+ * `takeoff-scale-picker.ts` for why no second scale computation exists.
+ *
+ * Pre-selected from what the sheet itself says, when it says one scale on the
+ * list. Never applied by that pre-selection — the press is the decision.
+ */
+export function StandardScalePicker({
+  suggested,
+  onPick,
+}: {
+  suggested: string | null;
+  onPick: (name: string) => void;
+}) {
+  const [chosen, setChosen] = useState(suggested ?? "");
+  const architectural = PICKABLE_SCALES.filter((scale) => isArchitecturalScale(scale.name));
+  const engineering = PICKABLE_SCALES.filter((scale) => !isArchitecturalScale(scale.name));
+  const option = (name: string) => (
+    <option key={name} value={name}>
+      {name}
+      {name === suggested ? " (read off this sheet)" : ""}
+    </option>
+  );
+  return (
+    <div className="rounded-md border border-line-card bg-surface p-2" data-takeoff="scale-picker">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1 text-xs text-ink-label">
+          Or pick the drawing&apos;s scale
+          <select
+            data-takeoff="pick-scale"
+            value={chosen}
+            onChange={(event) => setChosen(event.target.value)}
+            className="rounded-md border border-line-card bg-surface px-2 py-1 text-sm text-ink-body"
+          >
+            <option value="">Choose a scale…</option>
+            <optgroup label="Architectural">{architectural.map((scale) => option(scale.name))}</optgroup>
+            <optgroup label="Engineering">{engineering.map((scale) => option(scale.name))}</optgroup>
+          </select>
+        </label>
+        <button
+          type="button"
+          data-takeoff="use-picked-scale"
+          disabled={chosen === ""}
+          onClick={() => onPick(chosen)}
+          className="rounded-md border border-line-card px-2 py-1 text-xs font-medium text-ink-label hover:bg-rail-hover disabled:opacity-50"
+        >
+          {chosen === "" ? "Use this scale" : `Use ${chosen}`}
+        </button>
+      </div>
+      <p className="mt-1 text-[11px] text-ink-muted">
+        Exact only if this PDF is printed at 100% — check one printed dimension against it before you measure.
+      </p>
+    </div>
+  );
+}
+
+/** What the scale form starts from when a sheet's own reading is used. */
+type PrefillSeed = { typed: string; note: string };
+
+/**
+ * The distance and the provenance note a reading fills in — ONE function for
+ * the offer inside the scale tool and the toolbar's shortcut to it.
+ */
+function prefillSeed(prefill: ScalePrefill): PrefillSeed {
+  return {
+    // The provenance, in words, so it survives the save — see `note` in
+    // `CalibrationForm` for why that is not cosmetic.
+    note: prefill.unconfirmed
+      ? `From the ${prefill.scaleName} printed on this sheet. Nothing measurable on the sheet confirmed it.`
+      : `Matched ${prefill.agreed.length} printed dimension${prefill.agreed.length === 1 ? "" : "s"}` +
+        ` on this sheet (${prefill.agreed.slice(0, 3).join(", ")}), within ` +
+        `${(prefill.inheritedError * 100).toFixed(2)}%.`,
+    // A PRINTED scale's `declaredText` is the scale NAME, not a distance, so
+    // typing it into the distance box would be nonsense. The figure there is
+    // what the printed scale says the sheet's own width is — see
+    // `scaleFromPrinted`.
+    typed: prefill.unconfirmed
+      ? formatFeetInches(prefill.declaredFeet)
+      : prefill.declaredText || formatFeetInches(prefill.declaredFeet),
+  };
+}
+
+/**
+ * EXPORTED FOR A RENDER TEST (`takeoffScalePicker.test.tsx`), for the reason
+ * `ScaleOffer` is: the whole viewer never learns its page size in happy-dom —
+ * pdf.js does not render there — so the picker, which needs that size, cannot
+ * be reached by mounting the viewer.
+ */
+export function CalibrationForm({
   jobId,
   planId,
   pageNumber,
   pageWidthPt,
+  pageHeightPt = null,
   printedScale,
   existingLabel,
   existingNote,
   draft,
   prefill,
+  seed = null,
   viewScales,
   declineReason,
   onUsePrefill,
@@ -5735,11 +5966,17 @@ function CalibrationForm({
   planId: string;
   pageNumber: number;
   pageWidthPt: number | null;
+  /** The page's height in points, from the same pdf.js read as its width —
+   *  only used to place a picked scale's line mid-sheet. */
+  pageHeightPt?: number | null;
   printedScale: string | null;
   existingLabel: string;
   existingNote: string;
   draft: StoredCalibration | null;
   prefill: ScalePrefill | null;
+  /** The distance and note to start from, when the toolbar's shortcut opened
+   *  this form with the sheet's own scale already chosen. */
+  seed?: PrefillSeed | null;
   /** The drawings on a multi-scale sheet, each with its own captioned scale.
    *  Empty on every ordinary sheet. */
   viewScales: readonly ViewScale[];
@@ -5747,7 +5984,7 @@ function CalibrationForm({
   onUsePrefill: (xs: readonly [number, number], ys: readonly [number, number]) => void;
   onSaved: () => void;
 }) {
-  const [typed, setTyped] = useState("");
+  const [typed, setTyped] = useState(seed?.typed ?? "");
   /**
    * WHY THIS SCALE IS THE RIGHT ONE, and it has to survive the save.
    *
@@ -5766,7 +6003,7 @@ function CalibrationForm({
    * Still editable, because it is the estimator's own note and they may know
    * more than the app does.
    */
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(seed?.note ?? "");
 
   const preview = useMemo(() => {
     if (!draft) return null;
@@ -5855,29 +6092,44 @@ function CalibrationForm({
             prefill={prefill}
             onUse={() => {
               onUsePrefill(prefill.xs, prefill.ys);
-              // The provenance, in words, so it survives the save — see `note`
-              // above for why that is not cosmetic.
-              setNote(
-                prefill.unconfirmed
-                  ? `From the ${prefill.scaleName} printed on this sheet. Nothing measurable on the sheet ` +
-                    `confirmed it.`
-                  : `Matched ${prefill.agreed.length} printed dimension${prefill.agreed.length === 1 ? "" : "s"}` +
-                    ` on this sheet (${prefill.agreed.slice(0, 3).join(", ")}), within ` +
-                    `${(prefill.inheritedError * 100).toFixed(2)}%.`,
-              );
-              // A PRINTED scale's `declaredText` is the scale NAME, not a
-              // distance, so typing it into the distance box would be nonsense.
-              // The figure there is what the printed scale says the sheet's own
-              // width is — see `scaleFromPrinted`.
-              setTyped(
-                prefill.unconfirmed
-                  ? formatFeetInches(prefill.declaredFeet)
-                  : prefill.declaredText || formatFeetInches(prefill.declaredFeet),
-              );
+              // One helper for this button and the toolbar's shortcut, so the
+              // two cannot seed different figures. See `prefillSeed`.
+              const filled = prefillSeed(prefill);
+              setNote(filled.note);
+              setTyped(filled.typed);
             }}
           />
         )}
-        <p className="text-xs text-ink-muted">Click once at each end of a dimension printed on the drawing.</p>
+        {/* THE VERIFIED PATH STAYS FIRST AND IN BODY INK. A dimension the
+            estimator clicked is checked by looking at it; a picked scale is a
+            ratio taken on trust. The picker below is the shortcut for a sheet
+            somebody already knows the scale of, not the recommended route. */}
+        <p className="text-xs text-ink-body">Click once at each end of a dimension printed on the drawing.</p>
+        {pageWidthPt !== null && pageHeightPt !== null && (
+          <StandardScalePicker
+            // A different sheet, or a reading that arrived, is a different
+            // suggestion — the picker's own choice must not survive it.
+            key={`${pageNumber}:${prefill?.scaleName ?? ""}:${printedScale ?? ""}`}
+            suggested={suggestedScalePick({
+              prefillScale: prefill?.scaleName ?? null,
+              printedScale,
+              viewScales: viewScales.map((view) => view.scaleName),
+            })}
+            onPick={(name) => {
+              const line = pickedScaleLine(name, pageWidthPt, pageHeightPt);
+              if (line === null) return;
+              onUsePrefill(line.xs, line.ys);
+              setNote(
+                `Picked ${name} from the standard scales. Exact only if this PDF is printed at 100%; ` +
+                  `not checked against a printed dimension.`,
+              );
+              // DECIMAL FEET, not `formatFeetInches`: that rounds to the whole
+              // inch, which on a small sheet at 3" = 1'-0" moves the scale by a
+              // third of a percent. Four places is under a thousandth of one.
+              setTyped(String(Number(line.declaredDistanceFeet.toFixed(4))));
+            }}
+          />
+        )}
       </div>
     );
   }

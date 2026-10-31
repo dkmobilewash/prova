@@ -210,6 +210,114 @@ describe("applying the recap to the line prices", () => {
     expect(priceOf("board")).toBe(2);
   });
 
+  /**
+   * Bug B, 2026-10-19: an estimate built entirely from cost, no line priced.
+   * Applying must not invent prices on cost-only lines (`spreadToLines`), and it
+   * must not leave the estimator with "nothing to spread" and no next step: the
+   * refusal is the same sentence the panel shows, and it says what to do.
+   */
+  const unprice = () => {
+    for (const line of db.jobLineItem) if (line.jobId === "job_1") line.unitPrice = null;
+  };
+  const jobPrices = () => db.jobLineItem.filter((l) => l.jobId === "job_1").map((l) => l.unitPrice);
+
+  it("on an estimate with no priced line, writes nothing UNLESS the second step of the confirmation is sent", async () => {
+    const { saveBidRecap, applyBidRecap } = await actions();
+    unprice();
+    await saveBidRecap("job_1", form(RATES));
+
+    const result = await applyBidRecap("job_1");
+    expect(result.ok).toBe(false);
+    expect((result as { error: string }).error).toMatch(/No line on this estimate has a price/);
+    expect((result as { error: string }).error).toMatch(/confirm/);
+    expect(jobPrices()).toEqual([null, null]);
+    expect(db.jobBidRecap[0].appliedAt ?? null).toBeNull();
+  });
+
+  it("with the confirmation, prices the cost-only lines by cost share — the same prices the worked example gives", async () => {
+    const { saveBidRecap, applyBidRecap } = await actions();
+    unprice();
+    await saveBidRecap("job_1", form(RATES));
+
+    const result = await applyBidRecap("job_1", { priceUnpriced: true });
+    expect(result.ok).toBe(true);
+    expect(priceOf("board")).toBe(2.66);
+    expect(priceOf("hang")).toBe(13.32);
+    expect((result as { value: { lineCount: number; appliedTotal: number } }).value).toMatchObject({
+      lineCount: 2,
+      appliedTotal: 3992,
+    });
+    expect(db.jobBidRecap[0].appliedTotal).toBe("3992.00");
+    // The other company's line is untouched.
+    expect(db.jobLineItem.find((l) => l.id === "theirs")!.unitPrice).toBe("5");
+  });
+
+  it("after pricing, the figure the job header reads (bidTotalOf over the stored lines) is what the recap said it would be", async () => {
+    const { bidTotalOf } = await import("@/lib/estimating/recap-state");
+    const { saveBidRecap, applyBidRecap } = await actions();
+    unprice();
+    await saveBidRecap("job_1", form(RATES));
+    const result = await applyBidRecap("job_1", { priceUnpriced: true });
+    const lines = db.jobLineItem.filter((l) => l.jobId === "job_1");
+    const header = bidTotalOf(lines.map((l) => ({ quantity: l.quantity as string, unitPrice: l.unitPrice as string | null })));
+    expect(Math.round(header * 100) / 100).toBe((result as { value: { appliedTotal: number } }).value.appliedTotal);
+  });
+
+  it("recomputes on the server: a client that saw one set of lines cannot price another", async () => {
+    const { saveBidRecap, applyBidRecap } = await actions();
+    unprice();
+    // Somebody prices a line by hand between the preview and the confirm.
+    db.jobLineItem.find((l) => l.id === "hang")!.unitPrice = "11";
+    await saveBidRecap("job_1", form(RATES));
+    const result = await applyBidRecap("job_1", { priceUnpriced: true });
+    expect(result.ok).toBe(false);
+    expect((result as { error: string }).error).toMatch(/has been priced since/);
+    expect(db.jobLineItem.find((l) => l.id === "board")!.unitPrice).toBeNull();
+    expect(priceOf("hang")).toBe(11);
+  });
+
+  it("leaves a zero-cost cost-only line unpriced when pricing the rest", async () => {
+    const { saveBidRecap, applyBidRecap } = await actions();
+    unprice();
+    db.jobLineItem.push({ id: "gc", jobId: "job_1", quantity: "1", budgetedUnitCost: "0", unitPrice: null, costCategory: null, isDeleted: false });
+    await saveBidRecap("job_1", form(RATES));
+    const result = await applyBidRecap("job_1", { priceUnpriced: true });
+    expect(result.ok).toBe(true);
+    expect((result as { value: { lineCount: number } }).value.lineCount).toBe(2);
+    expect(db.jobLineItem.find((l) => l.id === "gc")!.unitPrice).toBeNull();
+  });
+
+  it("refuses with a sentence when no line has a cost to share the bid by, even when confirmed", async () => {
+    const { saveBidRecap, applyBidRecap } = await actions();
+    unprice();
+    for (const line of db.jobLineItem) if (line.jobId === "job_1") line.budgetedUnitCost = null;
+    await saveBidRecap("job_1", form({ ...RATES, overheadPercent: "10" }));
+    const result = await applyBidRecap("job_1", { priceUnpriced: true });
+    expect(result.ok).toBe(false);
+    expect(jobPrices()).toEqual([null, null]);
+  });
+
+  it("mixed: priced lines take the spread, the cost-only line stays unpriced", async () => {
+    const { saveBidRecap, applyBidRecap } = await actions();
+    db.jobLineItem.push({ id: "gc", jobId: "job_1", quantity: "1", budgetedUnitCost: "500", unitPrice: null, costCategory: "OTHER", isDeleted: false });
+    await saveBidRecap("job_1", form(RATES));
+    const result = await applyBidRecap("job_1");
+    expect(result.ok).toBe(true);
+    expect(db.jobLineItem.find((l) => l.id === "gc")!.unitPrice).toBeNull();
+    expect((result as { value: { lineCount: number } }).value.lineCount).toBe(2);
+  });
+
+  it("a placeholder price is enough — it is replaced by the cost share, not marked up", async () => {
+    const { saveBidRecap, applyBidRecap } = await actions();
+    for (const line of db.jobLineItem) if (line.jobId === "job_1") line.unitPrice = "0";
+    await saveBidRecap("job_1", form(RATES));
+    const result = await applyBidRecap("job_1");
+    expect(result.ok).toBe(true);
+    // The same prices as the worked example above, from a price of 0.
+    expect(priceOf("board")).toBe(2.66);
+    expect(priceOf("hang")).toBe(13.32);
+  });
+
   it("is refused after award, with the prices left alone", async () => {
     const { applyBidRecap } = await actions();
     db.jobBidRecap.push({ id: "r_done", jobId: "job_done", companyId: "co_1", overheadPercent: "10" });

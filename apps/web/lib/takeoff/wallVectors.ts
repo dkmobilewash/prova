@@ -39,6 +39,7 @@
  */
 
 import { featuresFor, normaliseAcrossSheet, penPercentileFor } from "./wallFeatures";
+import type { ProposedOpening } from "./openingProposals";
 
 /** One stroked segment, in page points as the PDF drew it. */
 export type StrokeSegment = {
@@ -173,6 +174,15 @@ export type WallCandidate = {
    * the opening as a header anyway.
    */
   openings?: { widthFt: number }[];
+  /**
+   * The doors and windows DRAWN in this run, each with the evidence that made
+   * it one — a swing hinged at a jamb, or glazing inside the wall — and its
+   * measured width. PROPOSED, for a person to confirm and give a height; see
+   * `openingProposals.ts`. Separate from `openings` on purpose: that is every
+   * gap `mergeWalls` joined across, evidence or not, and is what "includes N
+   * openings, not deducted" counts. Absent when none was found.
+   */
+  proposedOpenings?: ProposedOpening[];
   /**
    * Whether the two faces this came from were a BALANCED pair — see
    * `BALANCED_FACE_RATIO`, which is the test that tells a wall's second face

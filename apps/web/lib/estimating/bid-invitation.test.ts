@@ -9,12 +9,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * the read itself, and that the duplicate check runs only when asked for
  * — so the form keeps its behaviour.
  */
-const fake = vi.hoisted(() => ({
-  prisma: {
+const fake = vi.hoisted(() => {
+  const prisma = {
     contact: { findFirst: vi.fn() },
     bidInvitation: { findFirst: vi.fn(), create: vi.fn() },
-  },
-}));
+    // A new invitation is created ON a project, in one transaction
+    // (lib/estimating/bid-project.ts). The transaction is the same fake.
+    bidProject: { findFirst: vi.fn(), create: vi.fn() },
+    $transaction: (fn: (tx: unknown) => unknown): unknown => fn(prisma),
+  };
+  return { prisma };
+});
 vi.mock("@prova/db", () => ({ prisma: fake.prisma }));
 
 const { CONTACT_NOT_FOUND, PROJECT_NAME_REQUIRED, createBidInvitationRecord } = await import("./bid-invitation");
@@ -26,6 +31,9 @@ beforeEach(() => {
   fake.prisma.contact.findFirst.mockReset();
   fake.prisma.bidInvitation.findFirst.mockReset();
   fake.prisma.bidInvitation.create.mockReset();
+  fake.prisma.bidProject.findFirst.mockReset();
+  fake.prisma.bidProject.create.mockReset();
+  fake.prisma.bidProject.create.mockResolvedValue({ id: "proj-1" });
 });
 
 describe("createBidInvitationRecord", () => {
@@ -65,9 +73,25 @@ describe("createBidInvitationRecord", () => {
         contactId: "c-1",
         projectName: "Riverside",
         dueDate: utc("2026-10-03"),
+        dueMinute: null,
+        walkDate: null,
+        walkMinute: null,
+        rfiCutoffDate: null,
         notes: "walk-through Tuesday",
         tradeScope: "METAL_FRAMING_DRYWALL",
         bidAmount: null,
+        bidProjectId: "proj-1",
+      },
+      select: { id: true },
+    });
+    // No project named, so one is made from the invitation's own name, date
+    // and trade — a new row never exists without a project.
+    expect(fake.prisma.bidProject.create).toHaveBeenCalledWith({
+      data: {
+        companyId: "co-1",
+        name: "Riverside",
+        bidDueDate: utc("2026-10-03"),
+        tradeScope: "METAL_FRAMING_DRYWALL",
       },
       select: { id: true },
     });

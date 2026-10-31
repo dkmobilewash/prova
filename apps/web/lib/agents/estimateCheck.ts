@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
 import { normaliseReference } from "@/lib/addenda-overlap";
+import { paperWhere } from "@/lib/estimating/bid-papers";
 import { addFinding, type FindingSource, type NewFinding } from "./core";
 import { AGENT_RUNNERS, type AgentContext } from "./run";
 import { similarJobs } from "./bidHistory";
@@ -187,18 +188,22 @@ export async function checkEstimate(ctx: AgentContext): Promise<{ summary: strin
       tradeScope: true,
       bidAmount: true,
       wonJobId: true,
+      bidProjectId: true,
       lines: { select: { id: true, kind: true, label: true, amount: true, unitPrice: true } },
-      addenda: {
-        select: {
-          id: true,
-          reference: true,
-          readings: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, items: true } },
-          decisions: { select: { normalisedReference: true } },
-        },
-      },
     },
   });
   if (!bid) throw new Error("That bid is not on this account.");
+  // The PROJECT's addenda, whichever GC's invitation each was filed under: an
+  // addendum about the building is open on every GC's bid for it.
+  const addenda = await prisma.bidAddendum.findMany({
+    where: { companyId: ctx.companyId, ...paperWhere({ id: bid.id, bidProjectId: bid.bidProjectId }) },
+    select: {
+      id: true,
+      reference: true,
+      readings: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, items: true } },
+      decisions: { select: { normalisedReference: true } },
+    },
+  });
 
   const bidHref = `/ai/bids/${bid.id}`;
   const estimateHref = bid.wonJobId ? `/jobs/${bid.wonJobId}/estimate` : bidHref;
@@ -301,7 +306,7 @@ export async function checkEstimate(ctx: AgentContext): Promise<{ summary: strin
   }
 
   // (c) addenda not reflected: never read, or items still undecided
-  for (const addendum of bid.addenda) {
+  for (const addendum of addenda) {
     const reading = addendum.readings[0];
     const { open, total } = openAddendumItems(reading?.items, addendum.decisions);
     if (reading && open === 0) continue;

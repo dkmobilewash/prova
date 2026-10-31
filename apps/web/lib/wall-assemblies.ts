@@ -78,6 +78,14 @@ export type WallTypeInput = {
   defaultHeightFt: number | null;
   sides: number;
   studSpacingIn: number;
+  /**
+   * Layers of board on each boarded side, or null when nobody has answered.
+   * Reaches ONLY a component marked `perLayer` — see `layerMultiplier`.
+   * Required rather than optional so every place that builds a type has to
+   * say it: a builder that silently left it out would price the preview one
+   * way and the estimate another.
+   */
+  boardLayers: number | null;
   components: WallComponentInput[];
 };
 
@@ -89,6 +97,8 @@ export type WallComponentInput = {
   factor: number;
   wastePercent: number;
   roundUp: boolean;
+  /** The factor is for ONE layer of board; the type's `boardLayers` multiplies it. */
+  perLayer: boolean;
   /** Units per hour; null means the component carries no labor. */
   productionRate: number | null;
 };
@@ -136,6 +146,62 @@ export type RunGeometry = {
   /** Area × depth ÷ 27. Zero without a depth. */
   volumeCy?: number;
 };
+
+type Numeric = { toString(): string } | number;
+
+/** A `WallType` row with its components, as Prisma returns it (Decimals and all). */
+export type WallTypeRow = {
+  id: string;
+  code: string;
+  defaultHeightFt: Numeric | null;
+  sides: number;
+  studSpacingIn: Numeric;
+  boardLayers: number | null;
+  components: {
+    id: string;
+    description: string;
+    unit: string | null;
+    basis: string;
+    factor: Numeric;
+    wastePercent: Numeric;
+    roundUp: boolean;
+    perLayer: boolean;
+    productionRate: Numeric | null;
+  }[];
+};
+
+/**
+ * A stored wall type → the input this file prices from.
+ *
+ * ONE MAPPER, because there were three: the wall schedule's write, the
+ * Estimate tab's preview and Ask's `wall_schedule` each spelled this mapping
+ * out by hand, and each would have needed `boardLayers` and `perLayer` added
+ * separately — the second-list shape CLAUDE.md records the cost of. A field
+ * left out of one copy would have priced the preview one way and the estimate
+ * another, with every test green.
+ */
+export function wallTypeInputFromRow(type: WallTypeRow): WallTypeInput {
+  const num = (value: Numeric | null): number | null => (value == null ? null : Number(value));
+  return {
+    id: type.id,
+    code: type.code,
+    defaultHeightFt: num(type.defaultHeightFt),
+    sides: type.sides,
+    studSpacingIn: Number(type.studSpacingIn),
+    boardLayers: type.boardLayers ?? null,
+    components: type.components.map((component) => ({
+      id: component.id,
+      description: component.description,
+      unit: component.unit,
+      basis: component.basis as WallComponentBasis,
+      factor: Number(component.factor),
+      wastePercent: Number(component.wastePercent),
+      roundUp: component.roundUp,
+      perLayer: component.perLayer === true,
+      productionRate: num(component.productionRate),
+    })),
+  };
+}
 
 /** The height a run is priced at: its own, else its type's default, else none. */
 export function runHeight(run: Pick<WallRunInput, "heightFt">, type: Pick<WallTypeInput, "defaultHeightFt">): number | null {
@@ -191,9 +257,50 @@ function basisAmount(basis: WallComponentBasis, geometry: RunGeometry): number {
   }
 }
 
-/** The un-rounded quantity of one component on one run: basis × factor × (1 + waste). */
-export function componentRunQuantity(component: WallComponentInput, geometry: RunGeometry): number {
-  return basisAmount(component.basis, geometry) * component.factor * (1 + component.wastePercent / 100);
+/** The most board layers a side can be given — a shaft wall's three, with room for a fourth. */
+export const MAX_BOARD_LAYERS = 4;
+
+/**
+ * How many times a component's factor is counted for the type's board layers.
+ *
+ * ── ONE, UNLESS BOTH HALVES SAY OTHERWISE ──
+ *
+ * The component has to be marked `perLayer` (its factor is for one layer) AND
+ * the type has to have an answer. Either missing, the factor stands as
+ * written — which is how every type priced before `boardLayers` existed, so an
+ * unanswered type, and a component that never opted in, are byte-identical to
+ * before. A legend-made type writes its layer count INTO the factor and is not
+ * marked, so an answer cannot double it a second time.
+ *
+ * An answer outside 1..MAX_BOARD_LAYERS (the action refuses those, so it can
+ * only arrive from a hand-edited row) is treated as no answer rather than
+ * trusted: 0 layers would silently price no board at all.
+ */
+export function layerMultiplier(
+  component: Pick<WallComponentInput, "perLayer">,
+  type: Pick<WallTypeInput, "boardLayers">,
+): number {
+  const layers = type.boardLayers;
+  if (!component.perLayer || layers == null) return 1;
+  return Number.isInteger(layers) && layers >= 1 && layers <= MAX_BOARD_LAYERS ? layers : 1;
+}
+
+/**
+ * The un-rounded quantity of one component on one run:
+ * basis × factor × layers × (1 + waste). `type` is the component's own wall
+ * type — required, so no caller can price a part without its type's answer.
+ */
+export function componentRunQuantity(
+  component: WallComponentInput,
+  geometry: RunGeometry,
+  type: Pick<WallTypeInput, "boardLayers">,
+): number {
+  return (
+    basisAmount(component.basis, geometry) *
+    component.factor *
+    layerMultiplier(component, type) *
+    (1 + component.wastePercent / 100)
+  );
 }
 
 function round2(value: number): number {
@@ -253,7 +360,7 @@ export function scheduleLines(
       continue;
     }
     for (const component of type.components) {
-      totals.set(component.id, (totals.get(component.id) ?? 0) + componentRunQuantity(component, geometry));
+      totals.set(component.id, (totals.get(component.id) ?? 0) + componentRunQuantity(component, geometry, type));
     }
   }
 

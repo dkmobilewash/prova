@@ -7,7 +7,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@prova/db";
 import { asCostCategory } from "@/lib/cost-category";
-import { catalogKey, parseCatalogImport, splitAgainstExisting } from "@/lib/catalog-import";
+import { catalogKey, parseCatalogImport, planImport } from "@/lib/catalog-import";
 import {
   PRODUCTION_RATE_MAX,
   PRODUCTION_RATE_MIN,
@@ -34,6 +34,10 @@ import { addCatalogLine } from "@/lib/estimating/catalog-line";
 import { addIndirectLine } from "@/lib/estimating/add-indirect";
 import { isIndirectCostKind } from "@/lib/estimating/indirect-costs";
 import { createBidInvitationRecord } from "@/lib/estimating/bid-invitation";
+import { awardProjectToInvitation, claimProjectEstimate } from "@/lib/estimating/bid-project";
+import { paperFiling, paperWhere, refilePapers, setAddendumAcknowledgement } from "@/lib/estimating/bid-papers";
+import { updateBidInvitationDetailsRecord } from "@/lib/estimating/bid-invitation-edit";
+import { bidDatesFromForm } from "@/lib/bid-dates";
 import { runAgentAfterResponse } from "@/lib/agents/onEvent";
 import { issueEstimateVersionNumber } from "@/lib/estimating/estimate-version";
 
@@ -48,7 +52,8 @@ export async function createBidInvitation(contactId: string, formData: FormData)
   const { company } = await requireCompanyContext();
   return runAction(async () => {
     const projectName = String(formData.get("projectName") ?? "").trim();
-    const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
+    const dates = bidDatesFromForm(formData);
+    if (!dates.ok) return actionFail(dates.error);
     const notes = String(formData.get("notes") ?? "").trim();
     const tradeScope = tradeScopeFromForm(formData);
     const bidAmount = nullableDecimalFromForm(formData, "bidAmount");
@@ -56,15 +61,53 @@ export async function createBidInvitation(contactId: string, formData: FormData)
     const result = await createBidInvitationRecord(company.id, {
       contactId,
       projectName,
-      dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+      ...dates.value,
       notes: notes || null,
       tradeScope,
       bidAmount,
+      // "Same job as…" (another GC's invitation) and "we reached out".
+      bidProjectId: String(formData.get("bidProjectId") ?? "").trim() || null,
+      origin: formData.get("weReachedOut") ? "WE_REACHED_OUT" : "INVITED",
     });
     if (!result.ok) return actionFail(result.error);
 
     revalidatePath(`/contacts/${contactId}`);
     revalidatePath("/bids");
+    return actionOk;
+  });
+}
+
+/** Edits a logged bid: project name, trade, amount, notes and the dates
+ * (due day and time, job walk, RFI cutoff). Addenda move these constantly, and
+ * the Due-soon list and the missed / gone-cold flags are derived from them at
+ * read time, so this one write corrects all of them. The GC and the status are
+ * NOT editable here — see lib/estimating/bid-invitation-edit.ts. */
+export async function updateBidInvitationDetails(
+  bidInvitationId: string,
+  formData: FormData,
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  // The capability /bids itself withholds — a page guard does not cover the
+  // endpoint behind it (`action-capability-guards.test.ts`).
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return actionFail("Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.");
+  }
+  const { company } = context;
+  return runAction(async () => {
+    const dates = bidDatesFromForm(formData);
+    if (!dates.ok) return actionFail(dates.error);
+    const result = await updateBidInvitationDetailsRecord(company.id, bidInvitationId, {
+      ...dates.value,
+      projectName: String(formData.get("projectName") ?? ""),
+      tradeScope: tradeScopeFromForm(formData),
+      bidAmount: nullableDecimalFromForm(formData, "bidAmount"),
+      notes: String(formData.get("notes") ?? ""),
+    });
+    if (!result.ok) return actionFail(result.error);
+
+    revalidatePath(`/contacts/${result.value.contactId}`);
+    revalidatePath("/bids");
+    revalidatePath("/pipeline");
     return actionOk;
   });
 }
@@ -113,6 +156,11 @@ export async function updateBidInvitationStatus(
         where: { id: bidInvitationId },
         data: { status, bidAmount, ...declineFields },
       });
+      // WON makes this GC the prime on its project, and hands the project's
+      // estimate to them while it is still an ESTIMATE (bid-project.ts).
+      if (status === "WON" && bid.status !== "WON") {
+        await prisma.$transaction((tx) => awardProjectToInvitation(tx, bidInvitationId));
+      }
       // AI agents: check the estimate when the bid is marked submitted (lib/agents/onEvent.ts).
       if (status === "SUBMITTED" && bid.status !== "SUBMITTED") runAgentAfterResponse({ companyId: company.id, agent: "ESTIMATE_CHECK", bidInvitationId });
 
@@ -130,7 +178,16 @@ export async function deleteBidInvitation(bidInvitationId: string) {
     throw new Error("Bid invitation not found");
   }
 
-  await prisma.bidInvitation.delete({ where: { id: bidInvitationId } });
+  // THE PAPERS ARE THE PROJECT'S, NOT THIS INVITATION'S. A supplier quote filed
+  // under this GC is on every sibling's row, so deleting the invitation must
+  // not take it with it: whatever was filed under it moves to the project's
+  // oldest other invitation first, in the same transaction. When this was the
+  // project's only invitation there is no sibling and the papers cascade away
+  // with it, exactly as before. (lib/estimating/bid-papers.ts)
+  await prisma.$transaction(async (tx) => {
+    await refilePapers(tx, bidInvitationId, { keepLeaverAcknowledgements: false });
+    await tx.bidInvitation.delete({ where: { id: bidInvitationId } });
+  });
 
   revalidatePath(`/contacts/${bid.contactId}`);
   revalidatePath("/bids");
@@ -646,11 +703,13 @@ export async function priceCatalogEntryFromQuotes(entryId: string, formData: For
  * the raw text on the server, so a tampered or stale payload can't put
  * numbers into the catalog that nobody saw.
  *
- * Existing entries are never overwritten and never silently duplicated.
- * Re-importing an updated price list is the normal case, and a catalog with
- * two "5/8in Type X board" rows at different prices is worse than one that
- * refused the second. Updating a price stays where it already lives: the
- * entry's own controls, and the actuals loop.
+ * Existing entries are never silently duplicated, and never silently
+ * overwritten. A catalog with two "5/8in Type X board" rows at different
+ * prices is worse than one that refused the second, so a matching description
+ * is the SAME item. Since 2026-10-25 the price (and cost) of a matching entry
+ * can be updated from the file — only when the person ticked "Update prices"
+ * after the preview listed old -> new for each (`updatePrices`), and only
+ * those two figures. Owner-only, as the rest of the import is.
  *
  * RETURNS ITS REFUSALS RATHER THAN THROWING THEM, as of 2026-09-21, and on
  * this action that is the difference between a sentence and a lost
@@ -697,29 +756,83 @@ export async function importCatalogEntries(formData: FormData): Promise<ActionRe
   // line, rounded to 0.01 on the way in), and inverting it blindly is worse
   // in the other direction (600 / 0.012 = 50,000 hours). A refusal costs one
   // click; both fallbacks cost a bid.
-  const labor = laborQuestion(rows);
-  const reading = labor.kind === "ask" ? readingFromForm(formData.get("laborColumn")) : null;
-  if (labor.kind === "ask" && reading === null) {
+  //
+  // ONLY WHEN THERE ARE NEW ROWS: a price-only update writes no labor figure,
+  // so asking what the Hours column means would be a question with no stakes.
+  const existing = await prisma.lineItemCatalogEntry.findMany({
+    where: { companyId: company.id },
+    select: { id: true, description: true, unit: true, defaultUnitPrice: true, defaultBudgetedUnitCost: true },
+  });
+  const plan = planImport(
+    rows,
+    existing.map((entry) => ({
+      id: entry.id,
+      description: entry.description,
+      unit: entry.unit,
+      unitPrice: entry.defaultUnitPrice != null ? Number(entry.defaultUnitPrice) : null,
+      budgetedUnitCost: entry.defaultBudgetedUnitCost != null ? Number(entry.defaultBudgetedUnitCost) : null,
+    })),
+  );
+  const { fresh } = plan;
+
+  // ── WHAT THE FILE DOES TO ENTRIES ALREADY IN THE CATALOG ──
+  //
+  // Re-importing a supplier's updated list is the normal case, and until
+  // 2026-10-25 it could only ADD: a new price for an item already in the
+  // catalog was skipped, so "board went up 8%" meant editing entries one at a
+  // time. Now the same file also reprices them — but only when the person
+  // ticked "update prices" in the preview, having seen old -> new for each, and
+  // only price and cost (see `planImport`). The plan is re-derived here from
+  // the raw text; `expectedChanges` is the count the preview showed, and a
+  // mismatch means the catalog moved under the preview and nothing is written.
+  const updatePrices = String(formData.get("updatePrices") ?? "") === "on";
+  const changes = updatePrices ? plan.changes : [];
+  if (updatePrices) {
+    // Compared as text on purpose: it is a count the browser echoes back, not a
+    // figure a person typed, so there is nothing for a number parser to read.
+    const expected = String(formData.get("expectedChanges") ?? "").trim();
+    if (expected !== String(plan.changes.length)) {
+      return actionFail(
+        `The catalog has changed since you previewed this list: it now reprices ${plan.changes.length} item${plan.changes.length === 1 ? "" : "s"}, not ${expected || "the number you saw"}. Reload the page and preview it again.`,
+      );
+    }
+  }
+
+  if (fresh.length === 0 && changes.length === 0) {
+    return actionFail(
+      plan.changes.length > 0
+        ? `That list changes the price of ${plan.changes.length} item${plan.changes.length === 1 ? "" : "s"} already in the catalog — tick "Update prices" in the preview to apply them.`
+        : "Every item in that list is already in the catalog at these prices — nothing to add or change.",
+    );
+  }
+
+  const labor = fresh.length > 0 ? laborQuestion(rows) : null;
+  const reading = labor?.kind === "ask" ? readingFromForm(formData.get("laborColumn")) : null;
+  if (labor?.kind === "ask" && reading === null) {
     return actionFail(
       "Say what the Hours column means before importing — the same figure can be hours per unit, units per hour, or flat hours for the line, and they are not interchangeable. Pick one in the preview.",
     );
   }
 
-  const existing = await prisma.lineItemCatalogEntry.findMany({
-    where: { companyId: company.id },
-    select: { description: true },
+  // Only price and cost, only where the file carries a figure. The entry's
+  // unit, trade, labor and description are the estimator's, and every
+  // estimate line already priced from it keeps its numbers — the next
+  // button ("Update prices on this estimate") is the deliberate door.
+  const priceUpdates = changes.map((change) => {
+    const data: { defaultUnitPrice?: string; defaultBudgetedUnitCost?: string } = {};
+    if (change.price) data.defaultUnitPrice = change.price.next.toString();
+    if (change.cost) data.defaultBudgetedUnitCost = change.cost.next.toString();
+    return prisma.lineItemCatalogEntry.updateMany({
+      where: { id: change.entryId, companyId: company.id },
+      data,
+    });
   });
-  const { fresh } = splitAgainstExisting(
-    rows,
-    existing.map((entry) => entry.description),
-  );
-
-  if (fresh.length === 0) {
-    return actionFail("Every item in that list is already in the catalog — nothing to add.");
-  }
-
-  await prisma.lineItemCatalogEntry.createMany({
-    data: fresh.map((row) => ({
+  const additions =
+    fresh.length === 0
+      ? []
+      : [
+          prisma.lineItemCatalogEntry.createMany({
+            data: fresh.map((row) => ({
       companyId: company.id,
       description: row.description,
       unit: row.unit,
@@ -733,8 +846,14 @@ export async function importCatalogEntries(formData: FormData): Promise<ActionRe
       // `estimatedHours` takes the flat hours as the override.
       ...(reading ? laborFieldsFor(row, reading) : { defaultLaborHours: null, productionRate: null }),
       tradeScope: row.tradeScope,
-    })),
-  });
+            })),
+          }),
+        ];
+  // ONE transaction when there is more than one write: a price list that
+  // half-applies is two lists in one catalog.
+  // (A lone createMany is already atomic, and is what this action always was.)
+  if (priceUpdates.length === 0) await Promise.all(additions);
+  else await prisma.$transaction([...priceUpdates, ...additions]);
 
   revalidatePath("/catalog");
   return actionOk;
@@ -756,7 +875,7 @@ export async function saveBidQuote(bidInvitationId: string, formData: FormData):
 
   const bid = await prisma.bidInvitation.findFirst({
     where: { id: bidInvitationId, companyId: company.id },
-    select: { id: true },
+    select: { id: true, bidProjectId: true },
   });
   if (!bid) return actionFail("That bid is no longer on this company. Reload the page.");
 
@@ -836,7 +955,10 @@ export async function saveBidQuote(bidInvitationId: string, formData: FormData):
     const bidQuoteId = String(formData.get("bidQuoteId") ?? "").trim();
     if (bidQuoteId) {
       const updated = await prisma.bidQuote.updateMany({
-        where: { id: bidQuoteId, companyId: company.id, bidInvitationId },
+        // Any quote on this bid's PROJECT, including one filed under another
+        // GC's invitation: the quote is about the building, so it is editable
+        // from every row that shows it.
+        where: { id: bidQuoteId, companyId: company.id, ...paperWhere(bid) },
         // An amount arriving clears any decline: they said no and then priced
         // it anyway, which happens, and the row should read as the answer it
         // now is rather than carrying both.
@@ -844,7 +966,7 @@ export async function saveBidQuote(bidInvitationId: string, formData: FormData):
       });
       if (updated.count === 0) return actionFail("That quote is no longer on this bid. Reload the page.");
     } else {
-      await prisma.bidQuote.create({ data: { ...data, companyId: company.id, bidInvitationId } });
+      await prisma.bidQuote.create({ data: { ...data, companyId: company.id, ...paperFiling(bid) } });
     }
 
     revalidatePath("/bids");
@@ -917,6 +1039,7 @@ export async function setBidQuoteCarried(bidQuoteId: string, formData: FormData)
         vendorName: true,
         packageLabel: true,
         bidInvitationId: true,
+        bidProjectId: true,
         amount: true,
         declinedAt: true,
         carriedAt: true,
@@ -946,7 +1069,11 @@ export async function setBidQuoteCarried(bidQuoteId: string, formData: FormData)
       prisma.bidQuote.updateMany({
         where: {
           companyId: company.id,
-          bidInvitationId: quote.bidInvitationId,
+          // ONE PER PACKAGE PER PROJECT. The quotes are the project's now, and
+          // so is the one estimate they are carried into: carrying Alpha for
+          // framing on GC B's row must stop Beta being carried on GC A's, or
+          // the screen shows two answers to one question again.
+          ...paperWhere({ id: quote.bidInvitationId, bidProjectId: quote.bidProjectId }),
           packageLabel: quote.packageLabel,
           carriedAt: { not: null },
         },
@@ -1011,6 +1138,11 @@ export async function addCarriedQuoteToEstimate(bidQuoteId: string): Promise<Act
         declinedAt: true,
         carriedAt: true,
         bidInvitation: { select: { wonJobId: true, wonJob: { select: { id: true, status: true } } } },
+        // THE PROJECT'S ESTIMATE, which is the one the quote is carried into. A
+        // quote filed under GC A is on GC B's row too, and B's row must be able
+        // to put it on the estimate; the filing invitation's own link is only
+        // the fallback for a project with no estimate of its own yet.
+        bidProject: { select: { estimateJob: { select: { id: true, status: true } } } },
       },
     });
     if (!quote) return actionFail("That quote is no longer on this bid. Reload the page.");
@@ -1027,7 +1159,7 @@ export async function addCarriedQuoteToEstimate(bidQuoteId: string): Promise<Act
     });
     if (!plan.ok) return actionFail(plan.error);
 
-    const job = quote.bidInvitation.wonJob;
+    const job = quote.bidProject?.estimateJob ?? quote.bidInvitation.wonJob;
     if (!job) {
       return actionFail(
         "This bid isn't linked to a job yet, so there is no estimate to put the price on. Link it to the job you are building the number on, below.",
@@ -1287,6 +1419,9 @@ export async function linkBidToJob(bidInvitationId: string, formData: FormData):
   }
 
   await prisma.bidInvitation.update({ where: { id: bidInvitationId }, data: { wonJobId: jobId } });
+  // The project's estimate is the same fact one level up: if this bid's project
+  // has none yet, this job becomes it, so the project's other GCs see it too.
+  await claimProjectEstimate(bidInvitationId, jobId);
   revalidatePath("/bids");
   revalidatePath(`/jobs/${jobId}`);
   return actionOk;
@@ -1325,7 +1460,7 @@ export async function saveBidAddendum(bidInvitationId: string, formData: FormDat
 
   const bid = await prisma.bidInvitation.findFirst({
     where: { id: bidInvitationId, companyId: company.id },
-    select: { id: true },
+    select: { id: true, bidProjectId: true },
   });
   if (!bid) return actionFail("That bid is no longer on this company. Reload the page.");
 
@@ -1343,10 +1478,11 @@ export async function saveBidAddendum(bidInvitationId: string, formData: FormDat
     const issuedOn = optionalDateFromString(formData.get("issuedOn"));
     const acknowledgedOn = optionalDateFromString(formData.get("acknowledgedOn"));
 
+    // The DOCUMENT's fields. The acknowledgement is NOT one of them: it is this
+    // GC's, on this GC's bid form, and is written on its own below.
     const data = {
       reference,
       issuedOn,
-      acknowledgedOn,
       affectsPricedScope: formData.get("affectsPricedScope") === "on",
       impactNote: impactNote || null,
       notes: notes || null,
@@ -1354,13 +1490,23 @@ export async function saveBidAddendum(bidInvitationId: string, formData: FormDat
 
     const addendumId = String(formData.get("addendumId") ?? "").trim();
     if (addendumId) {
-      const updated = await prisma.bidAddendum.updateMany({
-        where: { id: addendumId, companyId: company.id, bidInvitationId },
-        data,
+      // Any addendum on this bid's PROJECT, including one filed under another
+      // GC's invitation — it is the building's document, editable from every
+      // row that shows it.
+      const found = await prisma.bidAddendum.findFirst({
+        where: { id: addendumId, companyId: company.id, ...paperWhere(bid) },
+        select: { id: true, bidInvitationId: true },
       });
-      if (updated.count === 0) return actionFail("That addendum is no longer on this bid. Reload the page.");
+      if (!found) return actionFail("That addendum is no longer on this bid. Reload the page.");
+      await prisma.$transaction(async (tx) => {
+        await tx.bidAddendum.update({ where: { id: found.id }, data });
+        // THIS invitation's acknowledgement only.
+        await setAddendumAcknowledgement(tx, found, bid.id, acknowledgedOn);
+      });
     } else {
-      await prisma.bidAddendum.create({ data: { ...data, companyId: company.id, bidInvitationId } });
+      await prisma.bidAddendum.create({
+        data: { ...data, acknowledgedOn, companyId: company.id, ...paperFiling(bid) },
+      });
     }
 
     revalidatePath("/bids");
@@ -1385,11 +1531,32 @@ export async function acknowledgeBidAddendum(addendumId: string, formData: FormD
 
   return runAction(async () => {
     const acknowledgedOn = optionalDateFromString(formData.get("acknowledgedOn"));
-    const updated = await prisma.bidAddendum.updateMany({
+
+    // WHOSE FORM. The addendum is the project's; an acknowledgement is one GC's.
+    // The row says which invitation it is being shown on (`bidInvitationId`);
+    // a request that omits it (a page loaded before this shipped) means the
+    // invitation the addendum was filed under, which is what it always meant.
+    const addendum = await prisma.bidAddendum.findFirst({
       where: { id: addendumId, companyId: company.id },
-      data: { acknowledgedOn },
+      select: { id: true, bidInvitationId: true, bidProjectId: true },
     });
-    if (updated.count === 0) return actionFail("That addendum is no longer on this bid. Reload the page.");
+    if (!addendum) return actionFail("That addendum is no longer on this bid. Reload the page.");
+    const named = String(formData.get("bidInvitationId") ?? "").trim() || addendum.bidInvitationId;
+    // The named invitation must be this company's AND on the addendum's project
+    // (or be the one it is filed under). The id in the request is a claim and
+    // this is the check, so one GC's acknowledgement cannot be written onto an
+    // addendum of a project that GC is not on.
+    const invitation = await prisma.bidInvitation.findFirst({
+      where: {
+        id: named,
+        companyId: company.id,
+        OR: [{ id: addendum.bidInvitationId }, ...(addendum.bidProjectId ? [{ bidProjectId: addendum.bidProjectId }] : [])],
+      },
+      select: { id: true },
+    });
+    if (!invitation) return actionFail("That addendum is not on that bid. Reload the page.");
+
+    await prisma.$transaction((tx) => setAddendumAcknowledgement(tx, addendum, invitation.id, acknowledgedOn));
 
     revalidatePath("/bids");
     return actionOk;

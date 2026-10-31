@@ -161,11 +161,18 @@ const drawingSetFindMany = vi.fn(async ({ where }: { where: { jobId: string; com
   return SETS[where.jobId] ?? [];
 });
 
-const bidInvitationFindMany = vi.fn(async ({ where }: { where: { companyId: string; wonJobId: string } }) => {
-  const job = JOBS.find((row) => row.id === where.wonJobId);
+// The addenda are read by the job's PROJECT or the invitation linked to it
+// (lib/estimating/bid-papers.ts `paperWhereForJob`), each branch naming the job.
+type AddendumWhere = {
+  companyId: string;
+  affectsPricedScope: boolean;
+  OR: [{ bidProject: { estimateJobId: string } }, { bidInvitation: { wonJobId: string } }];
+};
+const bidInvitationFindMany = vi.fn(async ({ where }: { where: AddendumWhere }) => {
+  const jobId = where.OR[1].bidInvitation.wonJobId;
+  const job = JOBS.find((row) => row.id === jobId);
   if (!job || job.companyId !== where.companyId) return [];
-  const addenda = ADDENDA[where.wonJobId] ?? [];
-  return addenda.length > 0 ? [{ addenda }] : [];
+  return ADDENDA[jobId] ?? [];
 });
 
 vi.mock("@prova/db", async (importOriginal) => {
@@ -174,7 +181,7 @@ vi.mock("@prova/db", async (importOriginal) => {
     job: { findMany: jobFindMany, count: jobCount, findFirst: jobFindFirst },
     takeoffPlan: { findMany: takeoffPlanFindMany },
     drawingSet: { findMany: drawingSetFindMany },
-    bidInvitation: { findMany: bidInvitationFindMany },
+    bidAddendum: { findMany: bidInvitationFindMany },
   };
   return {
     Prisma: real.Prisma,
@@ -342,11 +349,15 @@ describe("takeoff_currency", () => {
 
   it("reaches the bid side only through the job somebody linked it to", async () => {
     await ask();
+    expect(bidInvitationFindMany).toHaveBeenCalled();
     for (const call of bidInvitationFindMany.mock.calls) {
       // Never a fuzzy name match: one GC sends three invitations per building,
-      // so anything looser would warn about another project's measurements.
-      expect(call[0].where).toMatchObject({ companyId: "company-1" });
-      expect(typeof call[0].where.wonJobId).toBe("string");
+      // so anything looser would warn about another project's measurements. Both
+      // routes name the job: the project that IS its estimate, or the invitation
+      // linked to it.
+      expect(call[0].where).toMatchObject({ companyId: "company-1", affectsPricedScope: true });
+      expect(typeof call[0].where.OR[0].bidProject.estimateJobId).toBe("string");
+      expect(call[0].where.OR[1].bidInvitation.wonJobId).toBe(call[0].where.OR[0].bidProject.estimateJobId);
     }
   });
 

@@ -85,11 +85,23 @@ test.describe("a wall legend read off a set becomes wall types in the library", 
   });
 
   test("1. a job with a stored legend read links to the review screen from the takeoff tab", async () => {
-    // The takeoff persona, not a new one: +1 555 555 0123 is already taken on the
-    // development instance by a persona on another branch, so a LEGEND persona
-    // failed global setup with `form_identifier_exists`. This spec makes its own
-    // job and touches only the fixture's codes, so sharing the persona is safe.
-    await signInAs(page, PERSONAS.takeoff.email);
+    // ── NOT THE TAKEOFF PERSONA ANY MORE: "ONLY THE FIXTURE'S CODES" WAS NOT SAFE ──
+    //
+    // This said sharing TAKEOFF was safe because the spec "touches only the
+    // fixture's codes". It touches the LIBRARY, and the library is
+    // company-wide: step 3 writes P1 into it. `takeoff-workspace.spec.ts`
+    // step 20 seeds the starter assemblies only when the library is EMPTY —
+    // `/wall-types` offers the starter button only in its empty state — so
+    // once this file had run first on the other worker, P1 was the only
+    // assembly, the seeding was skipped, and step 20 failed on every main run
+    // since #809 with "the starter library has no W1".
+    //
+    // ROOMS rather than a new persona: a new one means a new Clerk user on the
+    // shared development instance, and a refused phone number there (0123
+    // already was, for a LEGEND persona) blocks global setup for the WHOLE
+    // signed-in suite. ROOMS exists and nothing on it reads the wall-type
+    // library; see lib/personas.ts.
+    await signInAs(page, PERSONAS.rooms.email);
     await landOnDashboard(page, monitor);
     jobId = await startJob(page, monitor, { name: JOB_NAME, gcName: "ZZ-E2E Legend GC" });
     await finishWizard(page, monitor, jobId);

@@ -250,6 +250,43 @@ describe("the column cannot refuse a bad element, so the writer does", () => {
     expect(storedRunsOrNull([])).toBeNull();
   });
 
+  it("carries the DRAWN openings through the column and back, unchanged", () => {
+    // The panel's "2 doors drawn in these walls" reads them off the stored
+    // row on a revisit, so a writer or reader that dropped them would make the
+    // proposals vanish the second time somebody opened the sheet.
+    const proposed = [
+      { kind: "door" as const, leaves: 2 as const, widthFt: 6, at: 0.25, evidence: "two swings" },
+      { kind: "window" as const, widthFt: 4, at: 0.75, evidence: "glazing" },
+    ];
+    const stored = storedRunsOf({
+      inches: 4.875,
+      runs: [{ ...run(0.1, 0.5, 0.40625), proposedOpenings: proposed }, run(0.6, 0.9, 0.40625)],
+      feet: 70,
+      source: { kind: "REMAINDER" },
+      candidates: [],
+    });
+    expect(stored[0].proposedOpenings).toEqual(proposed);
+    expect("proposedOpenings" in stored[1]).toBe(false);
+    const back = groupsFromProposals(
+      [{ thicknessInches: 4.875, source: "REMAINDER", sourceLabel: null, namedCode: null, runs: JSON.parse(JSON.stringify(stored)) }],
+      TYPES,
+      288,
+    );
+    expect(back?.[0].runs[0].proposedOpenings).toEqual(proposed);
+    expect(back?.[0].runs[1].proposedOpenings).toBeUndefined();
+  });
+
+  it("refuses a malformed drawn opening, as it refuses every other field", () => {
+    const ok = { kind: "door", widthFt: 3, at: 0.5, evidence: "a swing" };
+    expect(storedRunsOrNull([{ ...good[0], proposedOpenings: [ok] }])).not.toBeNull();
+    expect(storedRunsOrNull([{ ...good[0], proposedOpenings: "doors" }])).toBeNull();
+    expect(storedRunsOrNull([{ ...good[0], proposedOpenings: [{ ...ok, kind: "skylight" }] }])).toBeNull();
+    expect(storedRunsOrNull([{ ...good[0], proposedOpenings: [{ ...ok, widthFt: 0 }] }])).toBeNull();
+    expect(storedRunsOrNull([{ ...good[0], proposedOpenings: [{ ...ok, at: 1.5 }] }])).toBeNull();
+    expect(storedRunsOrNull([{ ...good[0], proposedOpenings: [{ ...ok, evidence: 3 }] }])).toBeNull();
+    expect(storedRunsOrNull([{ ...good[0], proposedOpenings: [{ ...ok, leaves: 3 }] }])).toBeNull();
+  });
+
   it("refuses a malformed opening, which is the half a careless parser skips", () => {
     expect(storedRunsOrNull([{ ...good[0], openings: "none" }])).toBeNull();
     expect(storedRunsOrNull([{ ...good[0], openings: [{ widthFt: "3" }] }])).toBeNull();

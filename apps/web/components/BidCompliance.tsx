@@ -9,6 +9,7 @@ import { SpecFindings, type SpecReadingView } from "@/components/SpecFindings";
 import type { AddendumDecision, AddendumItem } from "@/lib/addenda-overlap";
 import { addendaProblem, addendaStanding } from "@/lib/addenda-acknowledgement";
 import { SubmitButton } from "@/components/SubmitButton";
+import { FiledUnder } from "@/components/FiledUnder";
 import {
   acknowledgeBidAddendum,
   deleteBidAddendum,
@@ -46,6 +47,10 @@ export type AddendumRow = AddendumInput & {
   reading: AddendumReadingView | null;
   readCount: number;
   decisions: { normalisedReference: string; decision: AddendumDecision }[];
+  /** The GC whose invitation this addendum was filed under, when it is NOT this
+   *  row's own — the addendum is the PROJECT's and shows on every GC's row.
+   *  `acknowledgedOn` above is THIS row's GC's acknowledgement either way. */
+  filedUnder?: string | null;
 };
 export type RequirementRow = RequirementInput & { notes: string | null };
 
@@ -60,6 +65,8 @@ export type SpecSectionRow = {
   /** The NEWEST reading only — older ones are superseded and never shown. */
   reading: SpecReadingView | null;
   readCount: number;
+  /** The GC whose invitation this section was filed under, when not this row's own. */
+  filedUnder?: string | null;
 };
 
 const KIND_LABELS: Record<string, string> = {
@@ -138,6 +145,9 @@ export function BidCompliance({
   ) => {
     const formData = new FormData();
     formData.set(field, date);
+    // An acknowledgement is THIS GC's, on this GC's bid form — the addendum
+    // itself is the project's and may be filed under another GC's invitation.
+    if (field === "acknowledgedOn") formData.set("bidInvitationId", bidInvitationId);
     run(() => action(id, formData));
   };
 
@@ -256,6 +266,7 @@ export function BidCompliance({
                     <p className="text-sm text-ink-body">
                       <span className="font-medium text-ink">{row.reference}</span>
                       {row.issuedOn && <span className="ml-2 text-xs text-ink-muted">issued {row.issuedOn}</span>}
+                      <FiledUnder gc={row.filedUnder} />
                       <span
                         className={`ml-2 text-xs ${
                           row.acknowledgedOn ? "text-tag-emerald-ink" : "text-tag-rose-ink"
@@ -296,7 +307,7 @@ export function BidCompliance({
                     destructive={
                       <ConfirmDelete
                         label="Delete"
-                        describe={`Removes ${row.reference} from this bid. The GC still issued it.`}
+                        describe={`Removes ${row.reference} from this bid. The GC still issued it. It belongs to the whole job, so it comes off every GC's bid for it.`}
                         confirmLabel="Confirm delete"
                         pendingLabel="Deleting…"
                         pending={isPending}
@@ -344,6 +355,7 @@ export function BidCompliance({
                   <p className="text-sm text-ink-body">
                     <span className="font-medium text-ink">{row.sectionNumber}</span>
                     {row.title && <span className="ml-2 text-xs text-ink-muted">{row.title}</span>}
+                    <FiledUnder gc={row.filedUnder} />
                   </p>
                   {row.notes && <p className="mt-1 text-xs text-ink-muted">{row.notes}</p>}
                   <SpecFindings
@@ -362,7 +374,7 @@ export function BidCompliance({
                   destructive={
                     <ConfirmDelete
                       label="Delete"
-                      describe={`Removes section ${row.sectionNumber} from this bid, along with the PDF and anything read off it. The spec itself is unaffected and nobody outside your company is told.`}
+                      describe={`Removes section ${row.sectionNumber} from this bid, along with the PDF and anything read off it. The spec itself is unaffected and nobody outside your company is told. It belongs to the whole job, so it comes off every GC's bid for it.`}
                       confirmLabel="Confirm delete"
                       pendingLabel="Deleting…"
                       pending={isPending}

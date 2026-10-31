@@ -644,7 +644,9 @@ describe("the negative half: who each guarded route keeps out", () => {
 
     for (const [route, capability] of Object.entries({ ...ROUTE_CAPABILITY, ...PAGE_ONLY_CAPABILITY })) {
       const source = sourceFor(route);
-      if (!source.includes(`<NoAccess capability="${capability}" />`)) {
+      // Not a literal `... />`: a page that C Stream Bid also renders passes the
+      // refusal's one button its product's home (`homeHref`), after the capability.
+      if (!new RegExp(`<NoAccess capability="${capability}"[\\s/>]`).test(source)) {
         const rendered = source.match(/<NoAccess capability="([A-Z_]+)"/);
         mismatched.push(`${route} enforces ${capability} and explains ${rendered?.[1] ?? "nothing"}`);
       }

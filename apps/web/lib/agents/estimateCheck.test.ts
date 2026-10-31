@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
   bidInvitation: { findFirst: vi.fn(), findMany: vi.fn() },
+  bidAddendum: { findMany: vi.fn() },
   jobLineItem: { findMany: vi.fn() },
   agentFinding: { create: vi.fn(), findUnique: vi.fn() },
 }));
@@ -108,6 +109,7 @@ describe("the ESTIMATE_CHECK runner", () => {
       return { id: `f${created.length}` };
     });
     db.bidInvitation.findMany.mockResolvedValue([]);
+    db.bidAddendum.findMany.mockResolvedValue([]);
   });
 
   it("with no linked estimate and nothing else, writes one cited 'no estimate' finding and no numbers", async () => {
@@ -117,8 +119,8 @@ describe("the ESTIMATE_CHECK runner", () => {
       tradeScope: null,
       bidAmount: null,
       wonJobId: null,
+      bidProjectId: "p1",
       lines: [],
-      addenda: [],
     });
     const out = await checkEstimate(ctx);
     expect(created.map((f) => f.kind)).toEqual(["no_estimate"]);
@@ -133,13 +135,15 @@ describe("the ESTIMATE_CHECK runner", () => {
       tradeScope: "METAL_FRAMING_DRYWALL",
       bidAmount: null,
       wonJobId: "job1",
+      bidProjectId: "p1",
       lines: [{ id: "bl1", kind: "UNIT_PRICE", label: "Extra board", amount: null, unitPrice: 0 }],
-      addenda: [
-        { id: "ad1", reference: "1", readings: [], decisions: [] },
-        { id: "ad2", reference: "2", readings: [{ id: "r1", items: [{ reference: "A-201" }] }], decisions: [] },
-        { id: "ad3", reference: "3", readings: [{ id: "r2", items: [{ reference: "A-301" }] }], decisions: [{ normalisedReference: "a301" }] },
-      ],
     });
+    // The PROJECT's addenda, read in their own query (lib/estimating/bid-papers.ts).
+    db.bidAddendum.findMany.mockResolvedValue([
+      { id: "ad1", reference: "1", readings: [], decisions: [] },
+      { id: "ad2", reference: "2", readings: [{ id: "r1", items: [{ reference: "A-201" }] }], decisions: [] },
+      { id: "ad3", reference: "3", readings: [{ id: "r2", items: [{ reference: "A-301" }] }], decisions: [{ normalisedReference: "a301" }] },
+    ]);
     db.jobLineItem.findMany
       // the estimate
       .mockResolvedValueOnce([

@@ -39,6 +39,18 @@ test.describe("the full-screen takeoff workspace", () => {
   const JOB_TWO = "ZZ-E2E Workspace — S15";
 
   let servedPdf: Buffer = readFileSync(path.join(FIXTURES, "S02.pdf"));
+  /**
+   * ── EACH JOB'S OWN SHEET, SERVED WHENEVER ITS WORKSPACE OPENS ──
+   *
+   * `servedPdf` is one variable behind a route that answers EVERY plan fetch,
+   * and `jobWithSheet` overwrote it on each upload. After step 6 uploaded S15
+   * it stayed S15, so every later `onWorkspace(jobOne)` (steps 20-22) drew
+   * S15's lines at S02's scale while the spec called them S02. Detection on
+   * that mismatch is data-dependent and no assertion names it: step 21 went
+   * from passing to "S02 detected no walls" (panel up, zero groups) to "no
+   * quantities panel on S02". `onWorkspace` now sets the bytes from this map.
+   */
+  const pdfByJob = new Map<string, Buffer>();
   let page: Page;
   let monitor: HealthMonitor;
   let jobOne = "";
@@ -119,6 +131,9 @@ test.describe("the full-screen takeoff workspace", () => {
    * say WHICH layout it is asserting.
    */
   async function onWorkspace(jobId: string): Promise<void> {
+    const own = pdfByJob.get(jobId);
+    if (own === undefined) throw new Error(`no sheet was recorded for job ${jobId}`);
+    servedPdf = own;
     await page.goto(`/takeoff/${jobId}`);
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
     await expect
@@ -138,9 +153,24 @@ test.describe("the full-screen takeoff workspace", () => {
   async function findTheWalls(label: string): Promise<void> {
     const find = page.locator('[data-takeoff="find-walls"]');
     await expect(find, `Find the walls never became available on ${label}`).toBeEnabled({ timeout: 60_000 });
-    await find.click();
-    await expect(find).toHaveText("Find the walls", { timeout: 180_000 });
-    await page.waitForTimeout(800);
+    // ── A PRESS THAT LANDS BEFORE THE SHEET HAS LOADED DOES NOTHING, AND SAYS SO ──
+    //
+    // `onFindWalls` returns early with "The sheet is still loading" while the
+    // pdf.js document, page size or scale is not ready — the button is enabled
+    // the whole time. "Find the walls" is also the button's RESTING label, so
+    // waiting for it alone passed on a find that never ran, `found` stayed null,
+    // and step 21 failed on "no quantities panel" on some runs and not others.
+    // The app's own sentence is the one signal that cannot be true of a find
+    // that started (it is cleared when one does), so press again while it shows.
+    const stillLoading = page.getByText("The sheet is still loading. Try that again in a moment.");
+    for (let attempt = 1; ; attempt += 1) {
+      await find.click();
+      await expect(find).toHaveText("Find the walls", { timeout: 180_000 });
+      await page.waitForTimeout(800);
+      if (!(await stillLoading.isVisible())) break;
+      expect(attempt, `the sheet never finished loading on ${label}`).toBeLessThan(20);
+      await page.waitForTimeout(1_000);
+    }
   }
 
   /** A job with one sheet uploaded and its scale set, on the takeoff TAB. */
@@ -156,6 +186,7 @@ test.describe("the full-screen takeoff workspace", () => {
     await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
     await setScaleByClicking(halfSheetFeet);
+    pdfByJob.set(id, servedPdf);
     return id;
   }
 
@@ -956,11 +987,41 @@ test.describe("the full-screen takeoff workspace", () => {
     // an estimate line. The missing screenshot is what gave it away.
     //
     // So the library is created through the real button on the real page.
+    //
+    // ── GATED ON W1, NOT ON "THE PICKER IS EMPTY" ──
+    //
+    // This used to seed only when the picker held nothing but its placeholder,
+    // which read "any assembly at all" as "the starter library". On every main
+    // run after #809 the only assembly was the P1 that
+    // `wall-legend-library.spec.ts` had written into this same company from the
+    // other worker, so the seeding was skipped and the assertion below failed
+    // naming W1. That file is on its own company now (lib/personas.ts, ROOMS);
+    // this gate asks the question the step actually depends on, so a neighbour
+    // that writes some other type cannot turn it into a skip again.
     const picker = assemblyPanel.locator('[data-takeoff="pick-assembly"]');
-    if ((await picker.locator("option").count()) <= 1) {
+    const optionTexts = () => picker.locator("option").evaluateAll((nodes) => nodes.map((n) => n.textContent?.trim() ?? ""));
+    // Visible first: reading the options of a picker that has not rendered yet
+    // returns an empty list, which would look exactly like "no W1".
+    await expect(picker).toBeVisible();
+    const offered = await optionTexts();
+    if (!offered.some((text) => text.startsWith("W1"))) {
       await page.goto("/wall-types");
-      await page.getByRole("button", { name: /Start from the common trade assemblies/ }).click();
-      await expect(page.getByText(/^Added /)).toBeVisible({ timeout: 60_000 });
+      // The starter button is offered while ANY starter is missing (#818) —
+      // it used to be offered only on an EMPTY library, which is why this gate
+      // once had to explain a neighbour's wall type. W1 is missing here, so the
+      // button must be up, and it must say it adds at least one. Anchored on
+      // both ends, so a lookalike label cannot match it.
+      const starter = page.getByRole("button", { name: /^Start from the common trade assemblies \(adds [1-9]\d*\)$/ });
+      await expect(
+        starter,
+        `no W1 and no starter button: the library already holds ${offered.slice(1).join(" | ")}`,
+      ).toBeVisible();
+      await starter.click();
+      // Stricter than the `^Added ` this used to wait for: the sentence must
+      // name W1, the one type this step goes on to need.
+      await expect(page.getByText(/^Added (?:[A-Z0-9]+, )*W1(?:, [A-Z0-9]+)*\. Link each part/)).toBeVisible({
+        timeout: 60_000,
+      });
       await onWorkspace(jobOne);
       await setRail("toggle-items", true);
       await page.locator('[data-takeoff="item-row"]').first().locator('[data-takeoff="pick-item"]').click();

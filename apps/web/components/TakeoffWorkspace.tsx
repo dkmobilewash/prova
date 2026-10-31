@@ -85,6 +85,13 @@ type Props = {
   labellingAvailable?: boolean;
   /** The build that drew the candidates — the draft key's third part. */
   finderVersion?: string;
+  /** Where "back" and the wall-type library are, and what the way back is
+   *  called. Defaults are the CRM's own; C Stream Bid passes its own so the
+   *  workspace draws no link out of the product it is rendered in
+   *  (`lib/bid/surfaceHrefs.ts`). */
+  backHref?: string;
+  backLabel?: string;
+  wallTypesHref?: string;
 };
 
 const KEYS: { keys: string; does: string }[] = [
@@ -167,6 +174,9 @@ export function TakeoffWorkspace({
   openAnswerKey,
   labellingAvailable = false,
   finderVersion = "unknown",
+  backHref = `/jobs/${jobId}/estimate`,
+  backLabel = "Back to C\u00a0Stream",
+  wallTypesHref = "/wall-types",
 }: Props) {
   // Width is STATE, not only a media query: a drawer needs to know it is a
   // drawer, and a backdrop that exists only in CSS cannot be closed by Escape.
@@ -1047,6 +1057,7 @@ export function TakeoffWorkspace({
             item={activeItem}
             pinnedAt={data.assemblyLibraryPinnedAt}
             readOnly={phone}
+            wallTypesHref={wallTypesHref}
           />
         </div>
       )}
@@ -1244,11 +1255,11 @@ export function TakeoffWorkspace({
             </>
           )}
           <Link
-            href={`/jobs/${jobId}/estimate`}
+            href={backHref}
             className="rounded-md border border-line-card px-2 py-1 text-xs text-link hover:text-link-hover"
             data-takeoff="back-to-estimate"
           >
-            Back to C&nbsp;Stream
+            {backLabel}
           </Link>
         </div>
       </header>
@@ -1348,6 +1359,7 @@ export function TakeoffWorkspace({
             )}
             <TakeoffPlanViewer
               jobId={jobId}
+              wallTypesHref={wallTypesHref}
               planId={data.plan.id}
               onSheetNumber={onSheetNumber}
               // ── ONE CURRENT SHEET ──

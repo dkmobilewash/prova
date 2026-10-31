@@ -117,4 +117,91 @@ describe("the conversions the caller must not do", () => {
       expect(run(sheetOf(undefined).map((g) => ({ ...g, layer: undefined }))).layerDropped).toEqual([]);
     });
   });
+
+  describe("the doors drawn in the walls it found", () => {
+    // The same building, with one wall broken for a 3 ft doorway (27pt at
+    // 136 ft across 1224pt), its door drawn, and NO layers — the way most
+    // exported sheets arrive, and the way the bench's corridor doors are.
+    const walls = (withDoor: boolean): StrokeSegment[] =>
+      Array.from({ length: 12 }, (_, i) => {
+        const y = 200 + i * 20;
+        if (i !== 5 || !withDoor) {
+          return [
+            { x1: 100, y1: y, x2: 460, y2: y, width: 0.7, layer: "A-WALL" },
+            { x1: 100, y1: y + 3.656, x2: 460, y2: y + 3.656, width: 0.7, layer: "A-WALL" },
+          ];
+        }
+        return [
+          { x1: 100, y1: y, x2: 280, y2: y, width: 0.7, layer: "A-WALL" },
+          { x1: 307, y1: y, x2: 460, y2: y, width: 0.7, layer: "A-WALL" },
+          { x1: 100, y1: y + 3.656, x2: 280, y2: y + 3.656, width: 0.7, layer: "A-WALL" },
+          { x1: 307, y1: y + 3.656, x2: 460, y2: y + 3.656, width: 0.7, layer: "A-WALL" },
+        ];
+      }).flat();
+    // The leaf, standing open as a thin rectangle from the hinge, and the swing
+    // from its tip back to the far jamb — the way the bench and most CAD
+    // libraries draw a door.
+    const leaf: StrokeSegment[] = [
+      { x1: 280, y1: 300, x2: 280, y2: 273, width: 0.35, layer: "A-DOOR" },
+      { x1: 280, y1: 273, x2: 281.3, y2: 273, width: 0.35, layer: "A-DOOR" },
+      { x1: 281.3, y1: 273, x2: 281.3, y2: 300, width: 0.35, layer: "A-DOOR" },
+      { x1: 281.3, y1: 300, x2: 280, y2: 300, width: 0.35, layer: "A-DOOR" },
+    ];
+    // AND THE DOOR'S TAG, a small circle in front of the opening. This is the
+    // part that matters: `gridBubbles` reads a tag circle as a column-grid
+    // bubble, and `linesIntoBubbles` then drops every stroke with an END
+    // inside it — which, on the bench, was three of the five pieces of every
+    // corridor door's swing. The finder is right to drop them for PAIRING;
+    // the proposal must read the strokes as drawn.
+    const tag: StrokeSegment[] = Array.from({ length: 16 }, (_, k) => {
+      const s = (k * 2 * Math.PI) / 16;
+      const e = ((k + 1) * 2 * Math.PI) / 16;
+      return { x1: 293.5 + 5 * Math.cos(s), y1: 280.2 + 5 * Math.sin(s), x2: 293.5 + 5 * Math.cos(e), y2: 280.2 + 5 * Math.sin(e), width: 0.3, curved: true, layer: "A-ANNO-SYMB" };
+    });
+    const swing: StrokeSegment[] = [...leaf, ...tag, ...Array.from({ length: 8 }, (_, k) => {
+      const s = (-k * 90 * Math.PI) / 180 / 8;
+      const e = (-(k + 1) * 90 * Math.PI) / 180 / 8;
+      return {
+        x1: 280 + 27 * Math.cos(s),
+        y1: 300 + 27 * Math.sin(s),
+        x2: 280 + 27 * Math.cos(e),
+        y2: 300 + 27 * Math.sin(e),
+        width: 0.35,
+        curved: true,
+        layer: "A-DOOR",
+      };
+    })];
+    const find = (segments: StrokeSegment[]) =>
+      findWallsOnSheet({
+        segments: segments.map((s) => ({ ...s, layer: undefined })),
+        textItems: [],
+        pageSize: { widthPt: 1224, heightPt: 792 },
+        feetPerUnit: 136,
+        wallTypes: [],
+        sampledSheets: null,
+      });
+
+    it("attaches the door to the run it is in, measured jamb to jamb", () => {
+      const found = find([...walls(true), ...swing]);
+      const withDoors = found.walls.filter((w) => (w.proposedOpenings ?? []).length > 0);
+      expect(withDoors).toHaveLength(1);
+      const [door] = withDoors[0].proposedOpenings!;
+      expect(door.kind).toBe("door");
+      expect(door.widthFt).toBeCloseTo(3, 2);
+      // And the group the panel shows carries it too — that is what it reads.
+      const inGroups = found.groups.flatMap((g) => g.runs).filter((r) => (r.proposedOpenings ?? []).length > 0);
+      expect(inGroups).toHaveLength(1);
+    });
+
+    it("changes no wall: the runs are the same with the swing drawn as without it", () => {
+      // The control for the whole module's promise. A swing is evidence about
+      // an opening, and the finder's walls must not move because one is there.
+      const strip = (ws: ReturnType<typeof find>["walls"]) =>
+        ws.map((w) => ({ ...w, proposedOpenings: undefined }));
+      const plain = find(walls(true));
+      const swung = find([...walls(true), ...swing]);
+      expect(plain.walls.every((w) => w.proposedOpenings === undefined)).toBe(true);
+      expect(strip(swung.walls)).toEqual(strip(plain.walls));
+    });
+  });
 });

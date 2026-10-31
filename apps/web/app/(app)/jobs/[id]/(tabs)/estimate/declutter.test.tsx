@@ -16,7 +16,32 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-const page = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "page.tsx"), "utf8");
+const here = dirname(fileURLToPath(import.meta.url));
+const pageSource = readFileSync(join(here, "page.tsx"), "utf8");
+const stageSource = readFileSync(join(here, "../../../../../../components/job/EstimateStage.tsx"), "utf8");
+
+/**
+ * The page as it renders: the line items, the recap, the wall schedule and the
+ * versions moved, unchanged, into `components/job/EstimateStage.tsx` (shared
+ * with C Stream Bid), so the source this file reads is the page with each
+ * section put back where the page uses it. The consts the sections share come
+ * along too (the page imports them).
+ */
+function expand(): string {
+  const body = (name: string) => {
+    const chunk = stageSource.split(`export function ${name}(`)[1];
+    const text = chunk.slice(chunk.indexOf("  return (\n") + "  return (\n".length, chunk.indexOf("\n  );\n}"));
+    // The move dedented these by four columns; put them back so the needles below, which match indentation, still read the page as it was.
+    return text.split("\n").map((l) => (l ? "    " + l : l)).join("\n");
+  };
+  let out = pageSource;
+  for (const name of ["EstimateLineItems", "EstimateRecap", "EstimateWallSchedule", "EstimateVersions"]) {
+    // The page may pass the section extra props (`canManageEstimating`), so match the tag, not one spelling of it.
+    out = out.replace(new RegExp(`<${name} data=\\{d\\}[^>]*/>`), () => body(name));
+  }
+  return out + "\n" + stageSource.slice(stageSource.indexOf("export const estimateLineGrid"), stageSource.indexOf("/** The estimate's line items"));
+}
+const page = expand();
 const at = (needle: string, from = 0) => {
   const i = page.indexOf(needle, from);
   expect(i, `missing: ${needle}`).toBeGreaterThan(-1);
@@ -105,6 +130,24 @@ describe("Estimate tab — contracted", () => {
 
   it("gives the row's Save button the 44px target like every other control", () => {
     expect(page).toMatch(/title="Save"\s+className="min-h-11 [^"]*mouse:min-h-9"/);
+  });
+
+  // Walk of 2026-10-30, 390px: an open line's "No craft tag" select was 635px
+  // wide and the page scrolled sideways to 696px. Every select in the row edit
+  // is capped to the row (happy-dom does no layout, so this pins the classes).
+  it("caps every select in a line's edit row to the row's width", () => {
+    const row = page.slice(at("<ActionForm action={updateLineItemWithId(item.id)}"), at("</ActionForm>", at("<ActionForm action={updateLineItemWithId(item.id)}")));
+    const selects = row.match(/<select[\s\S]*?className="[^"]*"/g) ?? [];
+    expect(selects.map((tag) => tag.match(/name="(\w+)"/)?.[1])).toEqual(["tradeScope", "craftClassificationId"]);
+    for (const tag of selects) expect(tag).toMatch(/className="min-w-0 max-w-full /);
+    expect(row).toMatch(/<PhaseCodeField[\s\S]*?className="min-w-0 max-w-full /);
+  });
+
+  // Walk of 2026-10-30: every typed line defaulted to "No trade tag", so the
+  // proposal's By scope view was one "Other work" row.
+  it("starts a new line on the bid's own trade", () => {
+    // The rule itself is lib/estimating/lineTrade.test.ts; this pins the wiring.
+    expect(page).toMatch(/name="tradeScope"\s+defaultValue=\{newLineTrade\(job\.bidProject\)\}/);
   });
 });
 

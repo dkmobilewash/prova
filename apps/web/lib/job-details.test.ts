@@ -105,7 +105,12 @@ describe("describeJobHistory", () => {
     // length: a list that silently shrank would otherwise satisfy every
     // property above while checking nothing. If a relation is added to Job,
     // this fails and somebody decides whether it counts as history.
-    expect(JOB_HISTORY_RELATIONS).toHaveLength(19);
+    // 19 until 2026-10-25, when sixteen RESTRICT children of Job this list
+    // had never named were found the expensive way (see jobRemoval.test.ts,
+    // which now derives the set from the migrations), plus sent messages and
+    // the costs recorded against the estimate's own line items. 38 from
+    // 2026-10-30: #881's purchase orders, decided as history on the merge.
+    expect(JOB_HISTORY_RELATIONS).toHaveLength(38);
     const keys = JOB_HISTORY_RELATIONS.map((r) => r.key);
     expect(new Set(keys).size, "duplicate relation key").toBe(keys.length);
     // lineItems is deliberately NOT here: an estimate always has them and

@@ -83,6 +83,24 @@ model BidInvitation {
 
   projectName String
   dueDate     DateTime?
+
+  /// The TIME the bid is due on `dueDate`, as minutes after midnight (0-1439)
+  /// on the WALL CLOCK of wherever the invitation says — the GC's "2:00 PM".
+  /// Same representation as `DelayEvent.startMinute`. Deliberately NOT a
+  /// timestamp: the invitation names a local time and no zone, so converting it
+  /// into the reader's zone would be inventing a fact. Rendered as written.
+  /// Null = nobody recorded one; the day alone is then the deadline.
+  dueMinute Int?
+
+  /// The job walk / pre-bid meeting: a calendar day at UTC midnight like every
+  /// date here, plus an optional wall-clock minute. A time with no day is
+  /// refused by the action, not by a constraint.
+  walkDate   DateTime?
+  walkMinute Int?
+
+  /// Last day questions (RFIs) are accepted. A calendar day at UTC midnight.
+  rfiCutoffDate DateTime?
+
   status      BidInvitationStatus @default(INVITED)
 
   /// WHY, when the status is DECLINED. Null means nobody recorded it, which is
@@ -123,6 +141,11 @@ model BidInvitation {
   /// The quotes this company collected from its own suppliers and subs for
   /// this bid, for levelling — see bid-levelling.prisma. Distinct from
   /// VendorPriceQuote, which is price history and carries no bid.
+  ///
+  /// THESE ARE THE ONES FILED UNDER THIS INVITATION, not the ones this bid shows:
+  /// quotes, addenda and spec sections belong to the PROJECT, so a reader asks
+  /// `lib/estimating/bid-papers.ts` (`paperWhere`) rather than reading this
+  /// relation. It stays for provenance and the cascade.
   quotes BidQuote[]
 
   /// The pre-bid pursuit this invitation came out of, if one was being
@@ -139,6 +162,11 @@ model BidInvitation {
   /// misses one of these is rejected unread, however good the price was.
   addenda      BidAddendum[]
   requirements BidRequirement[]
+
+  /// THIS GC's acknowledgements of addenda filed under ANOTHER GC's invitation on
+  /// the same project. The ones filed under this invitation are the addendum's own
+  /// `acknowledgedOn` — see `BidAddendumAcknowledgement`.
+  addendumAcknowledgements BidAddendumAcknowledgement[]
 
   /// Readings of the addenda on this bid — see bid-addenda.prisma. Reached from
   /// here rather than only through each addendum because the overlap report asks
@@ -205,11 +233,37 @@ model BidInvitation {
   wonJobId String? @unique
   wonJob   Job?    @relation("BidInvitationWonJob", fields: [wonJobId], references: [id], onDelete: SetNull)
 
+  /// THE PIECE OF WORK THIS INVITATION IS FOR — see bid-projects.prisma. Several
+  /// GCs inviting us to price the same building are several invitations on ONE
+  /// project, which holds the single estimate. Nullable and SET NULL so the
+  /// column can be added without a rewrite (expand, then contract: it becomes
+  /// required in a later PR once every write path sets it). `projectName` above
+  /// stays: it is what THIS GC called the job, and it is evidence.
+  bidProjectId String?
+  bidProject   BidProject? @relation(fields: [bidProjectId], references: [id], onDelete: SetNull)
+
+  /// WHAT THIS GC IS QUOTED, as a DIFFERENCE from the project's one estimate:
+  /// a signed dollar amount OR a signed percent (never both — the action
+  /// refuses it), plus a short reason. The price itself is NOT a column: it is
+  /// `estimate total + this`, recomputed by `lib/estimating/gc-price.ts` every
+  /// time, so editing a line on the estimate moves every GC's price and nothing
+  /// stored can disagree with the lines. `bidAmount` above is a different fact —
+  /// the number that was actually SENT, entered by a person.
+  /// All null = this GC is quoted the estimate total as it stands.
+  priceAdjustAmount  Decimal? @db.Decimal(12, 2)
+  priceAdjustPercent Decimal? @db.Decimal(7, 3)
+  priceAdjustReason  String?
+
+  /// Who started this conversation. Win rate is a different question for work
+  /// we were asked to price and work we went and asked for.
+  origin BidInvitationOrigin @default(INVITED)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([companyId])
   @@index([contactId])
+  @@index([bidProjectId])
 }
 
 /// A manual checkpoint of a job's line items while it's still an

@@ -55,6 +55,8 @@ export type CommandName =
   | "create_estimate_job"
   | "draft_estimate_lines"
   | "add_catalog_line"
+  | "adjust_estimate"
+  | "add_estimate_line"
   | "log_daily_field_report"
   | "record_material_delivery"
   | "send_equipment_to_job"
@@ -307,6 +309,11 @@ export const EXCLUSIONS: Exclusion[] = [
   ...laborExclusions,
   ...messageExclusions,
   ...contactExclusions,
+  {
+    action: "bidGuide.*",
+    reason:
+      "The buttons on a job's guide card (`runGuideAction`): a dispatcher that takes an action ID the SCREEN offered, and runs it. It is the on-screen half of the guide, not a thing a person says — each id it knows (applyRecap, usePastPrice) is the same write as an action that is already reachable on its own terms, and the screen puts a two-step confirm in front of every one. A command here would let Ask run a button nobody has been shown.",
+  },
   {
     action: "takeoffItems.*",
     reason:

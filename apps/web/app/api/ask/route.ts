@@ -4,6 +4,7 @@ import { streamAnswer, type AskRequest } from "@/lib/ask/answer";
 import { boundTurns } from "@/lib/ask/turns";
 import { attachmentRefOf } from "@/lib/ask/attachment";
 import type { CommandContext } from "@/lib/ask/commands";
+import { askSurfaceOf } from "@/lib/ask/surface";
 import { appendMessage, createThread, loadThread, persistStream, priorTurnsFrom } from "@/lib/ask/threads";
 
 /** Ask, streamed.
@@ -39,6 +40,13 @@ import { appendMessage, createThread, loadThread, persistStream, priorTurnsFrom 
  * byte-identical to sending no path. The worst a hostile payload achieves
  * is a wrong default among jobs the caller can already see.
  *
+ * `surface` was added the same way, and is safe for a stronger reason than
+ * either: it can only NARROW. It is one known word (`"bid"`) or nothing, and
+ * what it does is filter the commands this person was already allowed down
+ * to the few the C Stream Bid job box offers (lib/ask/surface.ts). A forged
+ * or missing value is the CRM's full list, which is what the caller already
+ * had.
+ *
  * `threadId` and `subject` were added the same way (conversation memory,
  * lib/ask/threads.ts). A threadId is looked up through this session's
  * company AND person, so a forged one reads as no thread and starts a new
@@ -61,6 +69,7 @@ type Body = {
   continuation?: unknown;
   threadId?: unknown;
   subject?: unknown;
+  surface?: unknown;
 };
 
 /** An id is a short token. Anything else is not one of ours. */
@@ -110,14 +119,19 @@ function parseRequest(body: Body): AskRequest {
   // is fetched. Like pagePath it cannot widen access: another company's
   // URL is refused, not read. Never on a chip answer, which has no model.
   const attachment = attachmentRefOf(body.attachment);
+  // Where the box is mounted: one known word or nothing, and it can only
+  // NARROW what is offered (lib/ask/surface.ts). Read on every path below,
+  // the chip path included, because a chip names a command.
+  const surface = askSurfaceOf(body.surface);
   const raw = body.continuation;
-  if (typeof raw !== "object" || raw === null) return { question, pagePath, priorTurns, attachment };
+  if (typeof raw !== "object" || raw === null) return { question, pagePath, priorTurns, attachment, surface };
   const c = raw as { command?: unknown; partialInput?: unknown; answers?: unknown };
-  if (typeof c.command !== "string") return { question };
+  if (typeof c.command !== "string") return { question, surface };
   return {
     question,
     pagePath,
     priorTurns,
+    surface,
     continuation: {
       command: c.command,
       partialInput: stringRecord(c.partialInput),

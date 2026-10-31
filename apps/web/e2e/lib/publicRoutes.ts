@@ -93,6 +93,23 @@ export const PUBLIC_ROUTES: readonly PublicRoute[] = [
   // the shared PublicDocument chrome links to both pages by name from every
   // page, so "Privacy" and "Terms" are on screen whether or not the document
   // itself rendered.
+  // C Stream Bid's two public pages. Walked at `/bid…` because the suite runs
+  // on localhost, an OPEN host where middleware serves `/bid/*` directly
+  // (lib/bid/surface.ts); on bid.cstream.ai the same pages are `/` and
+  // `/wall-takeoff`. The signed-in Bid pages sit in `app/bid/(signed-in)`,
+  // which the census in publicRoutes.test.ts skips with every other group.
+  {
+    path: "/bid",
+    label: "C Stream Bid landing page",
+    pattern: "/bid",
+    mustShow: "The AI reads. It never does the maths.",
+  },
+  {
+    path: "/bid/wall-takeoff",
+    label: "C Stream Bid free drawing-set read",
+    pattern: "/bid/wall-takeoff",
+    mustShow: "What you get back",
+  },
   { path: "/privacy", label: "privacy policy", pattern: "/privacy", mustShow: "What we keep" },
   { path: "/terms", label: "terms of service", pattern: "/terms", mustShow: "Your account" },
   {
@@ -148,6 +165,10 @@ export const PUBLIC_ROUTE_EXCLUSIONS: Readonly<Record<string, string>> = {
   // check CLAUDE.md's "watcher whose needle is already on the page" entry
   // is about: it would pass forever and mean nothing. They belong to the
   // Clerk-backed suite, where the widget actually renders.
+  // Bid's full-screen takeoff workspace: it authenticates itself, like the CRM's
+  // /takeoff/[id] (which is in the Clerk-backed suite), and middleware requires a
+  // session for everything under /bid but the landing page and the free read.
+  "/bid/workspace/[id]": "needs a signed-in session and a job id; walked by specs/bid-estimates.spec.ts",
   "/sign-in/[[...sign-in]]": "renders 0 characters without a real Clerk instance; asserting width on it would be vacuous",
   "/sign-up/[[...sign-up]]": "renders 0 characters without a real Clerk instance; asserting width on it would be vacuous",
 };

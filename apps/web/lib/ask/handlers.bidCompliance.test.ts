@@ -38,6 +38,7 @@ vi.mock("@/lib/viewerToday", () => ({
 const day = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
 type Bid = {
+  id: string;
   companyId: string;
   projectName: string;
   status: string;
@@ -49,6 +50,7 @@ type Bid = {
 };
 
 const HARBOR: Bid = {
+  id: "bid-harbor",
   companyId: "company-1",
   projectName: "Harbor lofts",
   status: "INVITED",
@@ -78,6 +80,7 @@ const HARBOR: Bid = {
 
 /** Nothing outstanding — which is the case where the wording matters most. */
 const CLEAN: Bid = {
+  id: "bid-clean",
   companyId: "company-1",
   projectName: "Clean Street School",
   status: "SUBMITTED",
@@ -89,6 +92,7 @@ const CLEAN: Bid = {
 };
 
 const OTHERS: Bid = {
+  id: "bid-others",
   companyId: "company-2",
   projectName: "SOMEONE ELSE'S BID",
   status: "INVITED",
@@ -106,7 +110,19 @@ const matches = (bid: Bid, where: { companyId: string; projectName?: { contains:
   (!where.projectName || bid.projectName.toLowerCase().includes(where.projectName.contains.toLowerCase()));
 
 const bidFindMany = vi.fn(async ({ where }: { where: { companyId: string; projectName?: { contains: string } } }) =>
-  BIDS.filter((bid) => matches(bid, where)),
+  BIDS.filter((bid) => matches(bid, where)).map((bid) => ({ ...bid, bidProjectId: null })),
+);
+
+// The project's addenda are their own query now (lib/estimating/bid-papers.ts):
+// each one is filed under the invitation it sits on in the fixture, and none has
+// a project, so each reaches only that invitation's row.
+const addendumFindMany = vi.fn(
+  async ({ where }: { where: { companyId: string; OR: { bidInvitationId?: { in: string[] } }[] } }) => {
+    const asked = new Set(where.OR.flatMap((branch) => branch.bidInvitationId?.in ?? []));
+    return BIDS.filter((bid) => bid.companyId === where.companyId && asked.has(bid.id)).flatMap((bid) =>
+      bid.addenda.map((addendum) => ({ ...addendum, bidInvitationId: bid.id, bidProjectId: null, acknowledgements: [] })),
+    );
+  },
 );
 
 const bidFindFirst = vi.fn(async ({ where }: { where: { companyId: string; projectName?: { contains: string } } }) => {
@@ -118,6 +134,7 @@ vi.mock("@prova/db", async (importOriginal) => {
   const real = await importOriginal<typeof import("@prova/db")>();
   const models: Record<string, unknown> = {
     bidInvitation: { findMany: bidFindMany, findFirst: bidFindFirst },
+    bidAddendum: { findMany: addendumFindMany },
   };
   return {
     Prisma: real.Prisma,

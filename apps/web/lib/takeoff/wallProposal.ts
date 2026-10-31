@@ -31,6 +31,23 @@ export type StoredRun = {
   y2: number;
   thicknessFeet: number;
   openings?: { widthFt: number }[];
+  /**
+   * The doors and windows DRAWN in the run — see `openingProposals.ts`.
+   *
+   * The same `Json` column, not a new one: an additive key in an element the
+   * writer below already owns, read back through the same refusal. No
+   * migration, and a row written before this existed simply has none.
+   */
+  proposedOpenings?: StoredProposedOpening[];
+};
+
+/** A drawn opening as stored: what it is, how wide, where on the run. */
+export type StoredProposedOpening = {
+  kind: "door" | "window";
+  leaves?: 1 | 2;
+  widthFt: number;
+  at: number;
+  evidence: string;
 };
 
 /**
@@ -56,6 +73,15 @@ export function storedRunsOf(group: WallGroup): StoredRun[] {
     // somebody measured and found none.
     if (run.openings !== undefined && run.openings.length > 0) {
       stored.openings = run.openings.map((opening) => ({ widthFt: opening.widthFt }));
+    }
+    if (run.proposedOpenings !== undefined && run.proposedOpenings.length > 0) {
+      stored.proposedOpenings = run.proposedOpenings.map((opening) => ({
+        kind: opening.kind,
+        ...(opening.leaves === undefined ? {} : { leaves: opening.leaves }),
+        widthFt: opening.widthFt,
+        at: opening.at,
+        evidence: opening.evidence,
+      }));
     }
     return stored;
   });
@@ -153,6 +179,31 @@ export function storedRunsOrNull(value: unknown): StoredRun[] | null {
         openings.push({ widthFt: width });
       }
       if (openings.length > 0) stored.openings = openings;
+    }
+
+    // Refused like every other field: a door with no width, or a position off
+    // the run, is a proposal nobody could place, and offering it would put an
+    // unreadable row in front of somebody confirming openings for a bid.
+    if (run.proposedOpenings !== undefined) {
+      if (!Array.isArray(run.proposedOpenings)) return null;
+      const proposed: StoredProposedOpening[] = [];
+      for (const raw of run.proposedOpenings) {
+        if (raw === null || typeof raw !== "object") return null;
+        const opening = raw as Record<string, unknown>;
+        if (opening.kind !== "door" && opening.kind !== "window") return null;
+        if (!isFinite(opening.widthFt) || opening.widthFt <= 0) return null;
+        if (!isFinite(opening.at) || opening.at < 0 || opening.at > 1) return null;
+        if (typeof opening.evidence !== "string") return null;
+        if (opening.leaves !== undefined && opening.leaves !== 1 && opening.leaves !== 2) return null;
+        proposed.push({
+          kind: opening.kind,
+          ...(opening.leaves === undefined ? {} : { leaves: opening.leaves }),
+          widthFt: opening.widthFt,
+          at: opening.at,
+          evidence: opening.evidence,
+        });
+      }
+      if (proposed.length > 0) stored.proposedOpenings = proposed;
     }
 
     out.push(stored);
@@ -268,6 +319,7 @@ export function groupsFromProposals(
       // column — see `storedRunsOf`.
       lengthFeet: Math.hypot(run.x2 - run.x1, run.y2 - run.y1) * feetPerUnit,
       ...(run.openings === undefined ? {} : { openings: run.openings }),
+      ...(run.proposedOpenings === undefined ? {} : { proposedOpenings: run.proposedOpenings }),
     }));
 
     const feet = candidates.reduce((sum, run) => sum + run.lengthFeet, 0);

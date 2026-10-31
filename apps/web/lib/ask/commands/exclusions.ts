@@ -103,6 +103,11 @@ export const notYetRegistered: Exclusion[] = [
       "Reading a sub's quote. It spends the company's paid document allowance on a file, and what it returns is a SUGGESTION a person corrects in the form before saving — so a command would either spend money on a prompt's say-so or hand the model's own reading straight to `saveBidQuote`, which is the one thing this feature is built not to do. The estimator uploads the quote where they log it. Never a command.",
   },
   {
+    action: "bidInviteRead.*",
+    reason:
+      "Reading a pasted bid invitation into the Log a bid form, and the deterministic same-job-from-another-GC check beside it. The read spends one assistant question and returns a SUGGESTION a person corrects before saving, for `quoteRead.*`'s reason above; and the Ask box can already log an invitation directly as `log_bid_invitation` from a sentence, so a command that read a pasted email into a card would be a second route to the same write with the model's reading in the middle. The check writes nothing and spends nothing; it is the form's own warning. Never a command.",
+  },
+  {
     action: "specRead.*",
     reason:
       "Reading a spec section for what it demands that costs money. Excluded for `quoteRead.*`'s reason above and one of its own. It spends the company's paid spec allowance on a thirty-to-sixty-page file, so a command would spend real money on a prompt's say-so — and a section is the biggest single charge of any document this app reads, which makes it the worst candidate for a path where the decision to spend is a sentence a model composed. The attach and the read are also deliberately two actions, so that uploading the wrong section costs nothing; a command collapsing them is exactly the shape that mistake needs to stay cheap. And what it returns is a list to CHECK AGAINST A NUMBER THE MODEL HAS NEVER SEEN: an Ask card saying 'this section demands Level 5' beside a bid the assistant cannot read would invite the one conclusion the whole feature refuses to draw. The estimator attaches the section where they log it, on /bids. Never a command.",

@@ -3,7 +3,7 @@ import type { Prisma } from "@prova/db";
 import {
   openingsFromJson,
   scheduleLines,
-  type WallComponentBasis,
+  wallTypeInputFromRow,
   type WallRunInput,
   type WallSchedule,
   type WallTypeInput,
@@ -76,23 +76,7 @@ export async function loadWallSchedule(tx: Tx, companyId: string, jobId: string)
     heightFt: num(run.heightFt),
     openings: openingsFromJson(run.openings),
   }));
-  const typeInputs: WallTypeInput[] = types.map((type) => ({
-    id: type.id,
-    code: type.code,
-    defaultHeightFt: num(type.defaultHeightFt),
-    sides: type.sides,
-    studSpacingIn: Number(type.studSpacingIn),
-    components: type.components.map((component) => ({
-      id: component.id,
-      description: component.description,
-      unit: component.unit,
-      basis: component.basis as WallComponentBasis,
-      factor: Number(component.factor),
-      wastePercent: Number(component.wastePercent),
-      roundUp: component.roundUp,
-      productionRate: num(component.productionRate),
-    })),
-  }));
+  const typeInputs: WallTypeInput[] = types.map(wallTypeInputFromRow);
   const componentById = new Map(types.flatMap((type) => type.components).map((c) => [c.id, c]));
 
   // ── THE SHOP'S OWN ANSWER ABOUT OPENINGS ──
@@ -112,6 +96,64 @@ export async function loadWallSchedule(tx: Tx, companyId: string, jobId: string)
   );
 
   return { runs, runInputs, typeInputs, componentById, openingThresholdSqFt };
+}
+
+/**
+ * PUTS BACK THE WALL LINES A PERSON DELETED, repriced from the price book.
+ *
+ * `syncWallScheduleLines` deliberately never recreates a line somebody removed
+ * (their decision outlives a re-sync), and the comment inside it names the way
+ * back as "add it by hand". That left "delete a line to reprice it" as a
+ * one-way door: the line's price is never rewritten by a re-sync, so deleting
+ * it was the only way to ask for today's price, and then it never returned.
+ *
+ * This is the deliberate return. It finds deleted lines that are STILL linked
+ * to a component the schedule still produces (a link a person's delete keeps
+ * and the sync's own retirement releases — the distinction the sync documents),
+ * un-deletes ONE per component, resets its price and cost to the component's
+ * catalog entry as they stand now, and then lets the ordinary sync set its
+ * quantity and hours. A component with no catalog entry comes back with the
+ * numbers it had. Takeoff-item lines are not touched (`takeoffItemId` null
+ * only), nor is a component that already has a live line.
+ *
+ * Callers guarantee an ESTIMATE-stage job of this company, as the sync does.
+ */
+export async function restoreRemovedWallLines(tx: Tx, companyId: string, jobId: string) {
+  const { runInputs, typeInputs, componentById, openingThresholdSqFt } = await loadWallSchedule(tx, companyId, jobId);
+  const schedule = scheduleLines(runInputs, typeInputs, { openingThresholdSqFt });
+  const wanted = [...new Set(schedule.lines.map((line) => line.componentId))];
+  if (wanted.length === 0) return { restored: 0, summary: await syncWallScheduleLines(tx, companyId, jobId) };
+
+  const lines = await tx.jobLineItem.findMany({
+    where: { jobId, takeoffItemId: null, wallTypeComponentId: { in: wanted } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, wallTypeComponentId: true, isDeleted: true },
+  });
+  const hasLive = new Set(lines.filter((line) => !line.isDeleted).map((line) => line.wallTypeComponentId as string));
+  const restoredComponents = new Set<string>();
+  let restored = 0;
+  for (const line of lines) {
+    const componentId = line.wallTypeComponentId as string;
+    if (!line.isDeleted || hasLive.has(componentId) || restoredComponents.has(componentId)) continue;
+    restoredComponents.add(componentId);
+    const entry = componentById.get(componentId)?.catalogEntry ?? null;
+    await tx.jobLineItem.update({
+      where: { id: line.id },
+      data: {
+        isDeleted: false,
+        ...(entry
+          ? {
+              unitPrice: entry.defaultUnitPrice,
+              budgetedUnitCost: entry.defaultBudgetedUnitCost,
+              currentEstimatedUnitCost: entry.defaultBudgetedUnitCost,
+            }
+          : {}),
+      },
+    });
+    restored += 1;
+  }
+  // Quantity and hours are the schedule's to own, exactly as on any re-sync.
+  return { restored, summary: await syncWallScheduleLines(tx, companyId, jobId) };
 }
 
 export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: string): Promise<WallSyncSummary> {

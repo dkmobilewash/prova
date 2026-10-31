@@ -794,6 +794,26 @@ const STRICTER_THAN_ITS_PAGE: Record<
     reason:
       "Pressed on /jobs/[id]/takeoff/legend, which withholds VIEW_JOB_COSTS, and writes a WallType and its components — the company library, MANAGE_ESTIMATING, which outlives the job whose legend was read. Same shape as addWallTypesFromSchedule above: WallLegendReview renders the Add button only for `canAdd`, which the page computes as can(context, \"MANAGE_ESTIMATING\").",
   },
+  "priceRefresh.previewEstimatePriceUpdate": {
+    capability: "MANAGE_ESTIMATING",
+    pageCapability: "VIEW_JOB_COSTS",
+    hiddenBy: "lib/estimating/priceUpdatesGating.test.ts",
+    reason:
+      "Pressed on /jobs/[id]/estimate (VIEW_JOB_COSTS) but it reads and rewrites prices that come from the company price book, which is MANAGE_ESTIMATING's. The estimate page renders the panel only for `capabilitiesFor(principal).has(...)`.",
+  },
+  "priceRefresh.applyEstimatePriceUpdate": {
+    capability: "MANAGE_ESTIMATING",
+    pageCapability: "VIEW_JOB_COSTS",
+    hiddenBy: "lib/estimating/priceUpdatesGating.test.ts",
+    reason: "The write half of the same panel; same gate, same reason.",
+  },
+  "wallTypes.restoreWallLines": {
+    capability: "MANAGE_ESTIMATING",
+    pageCapability: "VIEW_JOB_COSTS",
+    hiddenBy: "lib/estimating/priceUpdatesGating.test.ts",
+    reason:
+      "Un-deletes lines and resets them to price book prices. WallSchedule renders the button only when the page passes `canRestore`, computed from MANAGE_ESTIMATING.",
+  },
   "wallTypes.addWallTypesFromSchedule": {
     capability: "MANAGE_ESTIMATING",
     pageCapability: "VIEW_JOB_COSTS",
@@ -865,6 +885,15 @@ const MIXED_DOORS: Record<string, { capability: Capability | null; reason: strin
     capability: "MANAGE_ESTIMATING",
     reason:
       "Reached from /settings/assistant only through the Ask command registry (record_bid_outcome, MANAGE_ESTIMATING); its real form is on the /ai bid workspace, MANAGE_ESTIMATING like /bids. Gated on MANAGE_ESTIMATING so the command, the page and the action agree.",
+  },
+  // Same shape again: /settings/assistant reaches addLineItem only by
+  // importing the command registry (adjust_estimate and add_estimate_line,
+  // which each write one line through this action). The real door is the job's estimate,
+  // which withholds on VIEW_JOB_COSTS, and the command declares the same.
+  "jobs.addLineItem": {
+    capability: "VIEW_JOB_COSTS",
+    reason:
+      "Reached from the job's estimate (VIEW_JOB_COSTS) and from /settings/assistant, which demands MANAGE_COMPLIANCE only because it imports the Ask command registry to list proposals — the adjust_estimate and add_estimate_line commands both call this action, and there is no line form on that page. VIEW_JOB_COSTS is what the action already asserts and what both commands declare, so the page, the commands and the action agree.",
   },
   "billing.logPayment": {
     capability: "MANAGE_BILLING",
@@ -2078,6 +2107,10 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // MUST_ASSERT on the day they were added — and each is executed below as
   // a principal without it.
   bidPursuits: () => import("./actions/bidPursuits"),
+  // Bid projects: one piece of work, many GC invitations, one estimate. All
+  // five actions are reachable only from /bids (MANAGE_ESTIMATING) and each
+  // checks that capability first, so the walk puts all five in MUST_ASSERT.
+  bidProjects: () => import("./actions/bidProjects"),
   // Bid proposals. The clause library is reachable only from /proposals
   // and a job's proposal only from /jobs/[id]/proposal — both demand
   // MANAGE_ESTIMATING — so the walk puts all five in MUST_ASSERT and each
@@ -2106,6 +2139,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // beside a mechanism, and it drifted while every assertion around it stayed
   // true. Read the action, not this line.
   bidRecap: () => import("./actions/bidRecap"),
+  // "Update prices on this estimate": VIEW_JOB_COSTS, the estimate tab's own.
+  priceRefresh: () => import("./actions/priceRefresh"),
   // The per-company AI switch, reachable from /settings/assistant alone, which
   // demands MANAGE_COMPLIANCE. `saveCompanyAiSettings` asserts that AND owner:
   // turning AI off stops work for every member of the company, and turning it
@@ -2134,6 +2169,9 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // rather than chosen from the feature's name. Worth the two lines: "what does
   // this door take" beats "what does this feature sound like", twice over now.
   quoteRead: () => import("./actions/quoteRead"),
+  // Reading a pasted invitation and the same-job check, reachable from /bids
+  // alone (the Log a bid form), so MANAGE_ESTIMATING — the door's capability.
+  bidInviteRead: () => import("./actions/bidInviteRead"),
   addendumRead: () => import("./actions/addendumRead"),
   specRead: () => import("./actions/specRead"),
   // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it

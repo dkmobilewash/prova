@@ -439,19 +439,147 @@ export type SpreadLine = {
  * Lines with no price stay unpriced: a cost-only line is not a share of the
  * bid, and giving it one would make a general-conditions line look sold.
  */
-export function spreadToLines(lines: readonly RecapLine[], bidTotal: number): SpreadLine[] {
-  // A recipient must be BILLABLE (it carries a price, so raising that price is
-  // meaningful) and must carry COST (so it has a share of the bid to receive).
-  //
-  // Both halves matter and they exclude different lines. A cost-only general
-  // conditions line has cost and no price: it belongs in the cost base and gets
-  // no share back, because general conditions are recovered through the billable
-  // lines. A price-with-no-cost line is the reverse, and excluding it is what
-  // stops the destructive case — with no cost share it would receive $0, and
-  // writing that back as its unit price would WIPE a price somebody set.
-  const priced = lines.filter(
-    (line) => line.unitPrice != null && line.quantity > 0 && extendedCost(line) > 0,
+/**
+ * The lines `spreadToLines` may write a price to.
+ *
+ * A recipient must be BILLABLE (it carries a price, so raising that price is
+ * meaningful) and must carry COST (so it has a share of the bid to receive).
+ *
+ * Both halves matter and they exclude different lines. A cost-only general
+ * conditions line has cost and no price: it belongs in the cost base and gets
+ * no share back, because general conditions are recovered through the billable
+ * lines. A price-with-no-cost line is the reverse, and excluding it is what
+ * stops the destructive case — with no cost share it would receive $0, and
+ * writing that back as its unit price would WIPE a price somebody set.
+ *
+ * Its own function — lifted verbatim out of `spreadToLines` — so that
+ * `nothingToSpread` below explains an empty spread from THE SAME filter rather
+ * than from a second copy of it that could drift.
+ */
+export function spreadRecipients(lines: readonly RecapLine[]): RecapLine[] {
+  return lines.filter((line) => line.unitPrice != null && line.quantity > 0 && extendedCost(line) > 0);
+}
+
+/**
+ * WHY APPLYING WOULD WRITE NOTHING, IN A SENTENCE THAT SAYS WHAT TO DO — or null
+ * when there is a line to write to. Bug B from the 2026-10-19 walk.
+ *
+ * The walk built a whole bid from cost on lines with no unit price (the line
+ * list prints them "cost-only"), pressed Apply, and read it as doing nothing.
+ * Correct by this module's own rule — a cost-only line is not a share of the bid
+ * — and a dead end: the old refusal said there was "nothing to spread the bid
+ * across" and stopped, which names the problem and hides the way out.
+ *
+ * The way out is real and cheap, and the sentence names it: give the lines you
+ * sell a unit price. ANY figure works, because the spread divides the bid by
+ * each recipient's COST share and overwrites the price — so a placeholder is
+ * replaced, not marked up.
+ *
+ * Read by BOTH the panel (before anybody presses) and `applyBidRecap` (if they
+ * press anyway), so the screen and the refusal are one sentence.
+ */
+export function nothingToSpread(lines: readonly RecapLine[]): string | null {
+  if (spreadRecipients(lines).length > 0) return null;
+  // No line carries a price but some have a cost: Apply OFFERS to price them
+  // (`applyPlan`, PRICE_UNPRICED) — that is not "nothing to spread".
+  if (unpricedRecipients(lines).length > 0) return null;
+  const priced = lines.filter((line) => line.unitPrice != null && line.quantity > 0);
+  if (priced.length === 0) {
+    return (
+      "Apply has no line to put the bid on: no line has both a quantity and a cost to share the bid by. " +
+      "Set a cost on the lines you sell in the list below, then apply."
+    );
+  }
+  return (
+    "Apply has no line to put the bid on: the lines that carry a unit price have no budgeted cost, " +
+    "so they have no share of it. Set a cost on each priced line below, then apply."
   );
+}
+
+/**
+ * When NO line on the estimate carries a unit price, the lines Apply may offer
+ * to price: a quantity and a cost.
+ *
+ * It is `spreadRecipients` — the one filter — run as though each unpriced line
+ * held a placeholder price, so "who gets a share" has one definition. Empty
+ * whenever ANY line is priced: that is the mixed case, where cost-only lines
+ * (general conditions) stay unpriced exactly as before.
+ */
+export function unpricedRecipients(lines: readonly RecapLine[]): RecapLine[] {
+  if (lines.some((line) => line.unitPrice != null)) return [];
+  return spreadRecipients(lines.map((line) => ({ ...line, unitPrice: 0 })));
+}
+
+/**
+ * WHAT APPLY WILL DO, decided once — by the panel for its preview and by
+ * `applyBidRecap` for the write, so the two cannot disagree.
+ *
+ *  - `PRICED`: some line carries a price. Today's behaviour, unchanged: the bid
+ *    is spread across the priced lines; `costOnlyLeftAlone` counts the
+ *    cost-only lines that receive nothing.
+ *  - `PRICE_UNPRICED`: no line carries a price (a new wall sub's estimate comes
+ *    in this way). The bid is spread across the lines that have a cost by the
+ *    SAME `spreadToLines` — cost-proportional, largest-remainder cents. A line
+ *    with no cost (or no quantity) cannot take a share and stays unpriced,
+ *    listed in `leftUnpriced`. Whether to write is the caller's to confirm.
+ *  - `NOTHING`: no line can receive a price; `reason` says why and what to do.
+ */
+export type ApplyPlan =
+  | { kind: "PRICED"; spread: SpreadLine[]; costOnlyLeftAlone: number }
+  | { kind: "PRICE_UNPRICED"; spread: SpreadLine[]; leftUnpriced: RecapLine[] }
+  | { kind: "NOTHING"; reason: string };
+
+export function applyPlan(lines: readonly RecapLine[], bidTotal: number): ApplyPlan {
+  const nothing = nothingToSpread(lines);
+  if (nothing) return { kind: "NOTHING", reason: nothing };
+  if (spreadRecipients(lines).length > 0) {
+    return {
+      kind: "PRICED",
+      spread: spreadToLines(lines, bidTotal),
+      costOnlyLeftAlone: lines.filter((line) => line.unitPrice == null).length,
+    };
+  }
+  const recipients = new Set(unpricedRecipients(lines).map((line) => line.id));
+  return {
+    kind: "PRICE_UNPRICED",
+    spread: spreadToLines(
+      lines.map((line) => ({ ...line, unitPrice: 0 })),
+      bidTotal,
+    ),
+    leftUnpriced: lines.filter((line) => !recipients.has(line.id)),
+  };
+}
+
+/**
+ * WHAT PRESSING APPLY PRODUCES, from the rates — the recap, the plan, and the
+ * figure the lines will total afterwards. One function, read by the recap
+ * panel ("Apply to line prices to make it $X"), by `applyBidRecap` for what it
+ * records as `appliedTotal`, and by the job guide's apply-recap ask.
+ *
+ * WHY IT EXISTS (contractor walk, 2026-10-27). The guide's ask said "Applying
+ * it adds $7,385.00 to the bid" — `addedTotal`, the markup over DIRECT COST —
+ * while Apply actually took the typed line prices from $34,915.00 DOWN to
+ * $31,990.50. Two surfaces answering "what does Apply do" from two different
+ * numbers. Now there is one, and it is the one the write uses.
+ *
+ * `landsAt` is `spreadTotal` over the plan's spread — the lines' total AFTER
+ * the unit prices are rounded to the cent, which is not always `bidTotal`
+ * (see `spreadToLines`: on 9,600 SF one cent of unit price is $96). Null when
+ * Apply would write nothing (`plan.kind === "NOTHING"`), so no caller can
+ * promise a figure Apply refuses to produce.
+ */
+export type ApplyOutcome = { recap: BidRecap; plan: ApplyPlan; landsAt: number | null };
+
+export function applyOutcome(lines: readonly RecapLine[], rates: RecapRates): ApplyOutcome {
+  const recap = bidRecap(lines, rates);
+  const plan = applyPlan(lines, recap.bidTotal);
+  const spread = plan.kind === "NOTHING" ? [] : plan.spread;
+  return { recap, plan, landsAt: spread.length > 0 ? spreadTotal(lines, spread) : null };
+}
+
+export function spreadToLines(lines: readonly RecapLine[], bidTotal: number): SpreadLine[] {
+  // Who may receive a share: see `spreadRecipients`.
+  const priced = spreadRecipients(lines);
   const directTotal = priced.reduce((sum, line) => sum + extendedCost(line), 0);
   if (priced.length === 0 || directTotal <= 0) return [];
 

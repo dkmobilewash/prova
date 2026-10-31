@@ -122,7 +122,7 @@ describe("the call site", () => {
     // The component took four props for its whole life. Forgetting the fifth
     // leaves the warning working but permanently unable to say how long is
     // left — which is the half that makes somebody pick up the phone.
-    const source = readFileSync(resolve(process.cwd(), "app/(app)/bids/page.tsx"), "utf8");
+    const source = readFileSync(resolve(process.cwd(), "components/BidLog.tsx"), "utf8");
     expect(source).toContain("bidDueDate={day(bid.dueDate)}");
   });
 });

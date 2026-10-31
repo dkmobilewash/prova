@@ -281,7 +281,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "wallType",
     label: "Wall types",
     note: "Your partition schedule — each wall type by its tag from the drawings.",
-    columns: ["id", "code", "name", "thicknessIn", "defaultHeightFt", "sides", "studSpacingIn", "notes", "sortOrder", "createdAt", "updatedAt"],
+    columns: ["id", "code", "name", "thicknessIn", "defaultHeightFt", "sides", "studSpacingIn", "boardLayers", "notes", "sortOrder", "createdAt", "updatedAt"],
     scope: byCompany,
   },
   {
@@ -316,7 +316,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     label: "Wall type parts",
     note: "What each wall type is built from, and how each part is counted.",
     columns: [
-      "id", "wallTypeId", "description", "unit", "basis", "factor", "wastePercent", "roundUp",
+      "id", "wallTypeId", "description", "unit", "basis", "factor", "wastePercent", "roundUp", "perLayer",
       "catalogEntryId", "productionRate", "costCategory", "craftClassificationId", "sortOrder", "createdAt", "updatedAt",
     ],
     scope: (companyId: string) => ({ wallType: { companyId } }),
@@ -342,7 +342,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "column before comparing the amounts: a quote that leaves work out is cheaper and is not " +
       "the same bid.",
     columns: [
-      "id", "bidInvitationId", "packageLabel", "vendorId", "vendorName", "amount", "quotedOn",
+      "id", "bidInvitationId", "bidProjectId", "packageLabel", "vendorId", "vendorName", "amount", "quotedOn",
       "requestedOn", "dueBy", "declinedAt", "carriedAt", "validUntil", "exclusions", "notes", "createdAt", "updatedAt",
     ],
     scope: byCompany,
@@ -354,14 +354,28 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     note:
       "What the GC issued during the bid period and whether it was acknowledged. An empty " +
       "acknowledgedOn means NOT acknowledged -- on a public bid that is the most common reason a " +
-      "low bid is rejected unread. affectsPricedScope is somebody's judgement that the addendum " +
+      "low bid is rejected unread -- and acknowledgedOn is the acknowledgement on the bid form of the " +
+      "GC the addendum was filed under (bidInvitationId) ONLY; the addendum itself belongs to the job " +
+      "(bidProjectId), and other GCs' acknowledgements are in their own file. affectsPricedScope is somebody's judgement that the addendum " +
       "changed work already priced; it is not derived from anything and nothing re-prices " +
       "automatically -- reading the addendum document does not set it, and is not allowed to. reference is whatever the GC called it and is never parsed. fileName is the document attached to the row when somebody had it; the file itself is not in this export and its stored address is deliberately withheld.",
     columns: [
-      "id", "bidInvitationId", "reference", "fileName", "issuedOn", "acknowledgedOn", "affectsPricedScope",
+      "id", "bidInvitationId", "bidProjectId", "reference", "fileName", "issuedOn", "acknowledgedOn", "affectsPricedScope",
       "impactNote", "notes", "createdAt", "updatedAt",
     ],
     scope: byCompany,
+  },
+  {
+    key: "bidAddendumAcknowledgements",
+    model: "bidAddendumAcknowledgement",
+    label: "Addendum acknowledgements on the other GCs' bid forms",
+    note:
+      "An addendum belongs to the whole job (bidProjectId on the addenda file) but each GC's bid form " +
+      "has to acknowledge it separately. The addenda file's acknowledgedOn is the acknowledgement on " +
+      "the form of the GC the addendum was filed under (its bidInvitationId); each row here is the " +
+      "acknowledgement on ANOTHER GC's form. No row means not acknowledged on that GC's form.",
+    columns: ["id", "bidAddendumId", "bidInvitationId", "acknowledgedOn", "createdAt", "updatedAt"],
+    scope: (companyId: string) => ({ bidAddendum: { companyId } }),
   },
   {
     key: "bidRequirements",
@@ -931,13 +945,18 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
     key: "pipeline",
     title: "The sales pipeline and bidding",
     detail:
-      "Leads, opportunities, bid invitations, the pre-bid chase list on the bid pipeline " +
+      "Leads, opportunities, bid invitations (and the projects that group several GCs' " +
+      "invitations to price the same job), the pre-bid chase list on the bid pipeline " +
       "page (projects being pursued before any GC invited you), vendor price quotes, the " +
       "researched signals behind a prospect and their sources, and the named people and " +
       "call history behind a contact. The contact record itself is exported; the work of " +
       "winning it is not.",
     models: [
       "BidPursuit",
+      // The piece of work behind one or more invitations (which GC invited
+      // you to price the same job, the one estimate, who won the prime). Lives
+      // with the bidding it groups; the estimate itself is in the jobs.
+      "BidProject",
       "SalesLead",
       "SalesOpportunity",
       "SalesActivity",

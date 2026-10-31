@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
   bidInvitation: { findFirst: vi.fn() },
+  bidAddendum: { findMany: vi.fn() },
   agentFinding: { findMany: vi.fn() },
   aiRecommendation: { findFirst: vi.fn(), findMany: vi.fn() },
   agentRun: { findMany: vi.fn() },
@@ -18,6 +19,7 @@ const at = (iso: string) => new Date(iso);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  db.bidAddendum.findMany.mockResolvedValue([]);
   db.agentFinding.findMany.mockResolvedValue([]);
   db.aiRecommendation.findFirst.mockResolvedValue(null);
   db.agentRun.findMany.mockResolvedValue([]);
@@ -41,11 +43,13 @@ describe("loadBidWorkspace", () => {
       tradeScope: "EIFS",
       contact: { name: "Turner" },
       outcome: null,
-      addenda: [
-        { id: "a1", reference: "1", issuedOn: null, readings: [], decisions: [] },
-        { id: "a2", reference: "2", issuedOn: null, readings: [{ items: [{ reference: "A-201" }, { reference: "A-202" }] }], decisions: [{ normalisedReference: "a201" }] },
-      ],
+      bidProjectId: "p1",
     });
+    // The PROJECT's addenda, whichever GC's invitation each was filed under.
+    db.bidAddendum.findMany.mockResolvedValue([
+      { id: "a1", reference: "1", issuedOn: null, readings: [], decisions: [] },
+      { id: "a2", reference: "2", issuedOn: null, readings: [{ items: [{ reference: "A-201" }, { reference: "A-202" }] }], decisions: [{ normalisedReference: "a201" }] },
+    ]);
     const finding = (id: string, agent: string) => ({ id, agent, kind: "k", severity: "info", title: "t", body: "b", sources: [{ label: "x", recordId: "y" }], fixHref: null, bidInvitationId: "bid1", createdAt: at("2026-10-10"), dismissedAt: null, runId: "r" });
     db.agentFinding.findMany.mockResolvedValue([finding("f1", "BID_RESEARCH"), finding("f2", "ESTIMATE_CHECK")]);
     db.agentRun.findMany.mockResolvedValue([
@@ -60,6 +64,11 @@ describe("loadBidWorkspace", () => {
     expect(ws.addenda.map((a) => [a.read, a.openDecisions])).toEqual([[false, 0], [true, 1]]);
     expect(ws.lastRuns).toEqual([{ agent: "BID_RESEARCH", finishedAt: at("2026-10-10T02:00:00Z"), status: "DONE" }]);
     expect(ws.subject).toEqual({ type: "BidInvitation", id: "bid1" });
+    // Asked by PROJECT, inside the company, never by the invitation alone.
+    expect(db.bidAddendum.findMany.mock.calls[0][0].where).toEqual({
+      companyId: "c1",
+      OR: [{ bidProjectId: { in: ["p1"] } }, { bidProjectId: null, bidInvitationId: { in: ["bid1"] } }],
+    });
   });
 });
 

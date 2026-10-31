@@ -1,0 +1,72 @@
+/// Whether the GC asked us to price the job, or we went and asked the GC.
+/// Doron sends his price to GCs that did NOT invite him (found through the
+/// owner or a bid-results service). That is a real and different fact.
+enum BidInvitationOrigin {
+  INVITED
+  WE_REACHED_OUT
+}
+
+/// ONE PIECE OF WORK that one or more GCs have invited this company to price.
+///
+/// `BidInvitation` is the GC relationship (who asked, when it is due, what we
+/// sent them, how it came out). This is the JOB: four GCs inviting a sub to bid
+/// the same hospital are four invitations on one project, priced by ONE
+/// estimate. Before this existed the unique `BidInvitation.wonJobId` allowed one
+/// invitation per estimate, so the other three sat unlinked or the estimate was
+/// rebuilt.
+///
+/// NOTHING DERIVED IS STORED. Whether an invitation "didn't get the job" is
+/// `primeAwarded*` against the invitation's contact (lib/bid-projects.ts); the
+/// number of GCs is a count; the project's status is read off its invitations.
+///
+/// THE MIGRATION NEVER GUESSES which invitations are the same job: it creates
+/// one project per existing invitation. People merge them (mergeIntoProject).
+model BidProject {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  /// What WE call the job. Starts as the first invitation's name; each
+  /// invitation keeps the name ITS GC used.
+  name        String
+  siteAddress String?
+  siteCity    String?
+  owner       String?
+  architect   String?
+  /// The project's date. Each invitation keeps its own GC's date.
+  bidDueDate  DateTime?
+  /// A rough value for our scope, entered. Null is "nobody said", never zero.
+  estimatedValue Decimal? @db.Decimal(12, 2)
+  tradeScope  TradeScope?
+
+  /// THE ESTIMATE. One per project, and UNIQUE so "which estimate prices this
+  /// project" has one answer. SET NULL: removing an estimate must not take the
+  /// bid history with it.
+  estimateJobId String? @unique
+  estimateJob   Job?    @relation("BidProjectEstimate", fields: [estimateJobId], references: [id], onDelete: SetNull)
+
+  /// WHO WON THE PRIME CONTRACT — an ENTERED fact (a phone call, a results
+  /// sheet), never inferred. Null means not known yet. A contact when the
+  /// winner is a GC we have on file, otherwise the name as typed.
+  primeAwardedContactId String?
+  primeAwardedContact   Contact? @relation("BidProjectPrimeAward", fields: [primeAwardedContactId], references: [id], onDelete: SetNull)
+  primeAwardedName      String?
+  primeAwardedOn        DateTime?
+
+  invitations BidInvitation[]
+
+  /// THE PAPERS ABOUT THE BUILDING: supplier quotes, addenda and spec sections.
+  /// Each also carries the invitation it was filed under (`bidInvitationId`),
+  /// which is provenance and the cascade, not scope. What stays per-GC instead
+  /// is listed in changelog.d/feat-project-level-bid-papers.md.
+  quotes       BidQuote[]
+  addenda      BidAddendum[]
+  specSections BidSpecSection[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, bidDueDate])
+  @@index([primeAwardedContactId])
+}

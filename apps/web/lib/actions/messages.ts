@@ -16,6 +16,7 @@ import { RFQ_SOURCE_PURPOSE, attachmentsFit, rfqRecipient, type RfqSourceKind } 
 import { can } from "@/lib/permissions";
 import { readSupportAddress } from "@/lib/help-config";
 import { outboundEmailAllowance } from "@/lib/outbound-email-limit";
+import { paperWhere } from "@/lib/estimating/bid-papers";
 import {
   InputError,
   actionFail as fail,
@@ -25,6 +26,21 @@ import {
   type ActionResult,
 } from "./shared";
 import { failureEventType, reachedProvider } from "@/components/messageLabels";
+import { runAgentAfterResponse } from "@/lib/agents/onEvent";
+import { isReservedRelatedType } from "@/lib/outbound-related";
+import { viewerTimeZone } from "@/lib/viewerToday";
+import { parseProposalMode } from "@/lib/estimating/proposal-presentation";
+import { loadProposalSend } from "@/lib/estimating/proposal-send-query";
+import {
+  BID_INVITATION_RELATED_TYPE,
+  DOCUMENT_CHANGED,
+  FOLLOW_UP_FAILED,
+  deploymentSendRefusal,
+  documentStillMatches,
+  priceStillMatches,
+  proposalEmailBody,
+  type ProposalSendResult,
+} from "@/lib/estimating/proposal-send";
 
 /** Actions here RETURN their failures. Production redacts thrown Server
  * Action messages to an opaque digest, and "your email didn't send" is
@@ -89,13 +105,14 @@ function required(formData: FormData, key: string, label: string) {
  * `messages.test.ts`'s #111 ordering tests exercise it exactly as before,
  * through the new entry point.
  *
- * UNEXPORTED ON PURPOSE. There are exactly FOUR ways into this function —
+ * UNEXPORTED ON PURPOSE. There are exactly FIVE ways into this function —
  * `sendOutboundEmail`, gated on a capability and a rate cap;
  * `sendHelpRequestEmail`, which accepts no recipient argument at all;
  * `submitBidPackage`, gated on a capability and the same rate cap, whose
- * recipient is READ OFF THE BID'S OWN CONTACT; and `sendQuoteRequest`, the
- * same again with the recipient read off the VENDOR row the quote names —
- * and that is deliberately the complete set. A caller that could hand this
+ * recipient is READ OFF THE BID'S OWN CONTACT; `sendQuoteRequest`, the
+ * same again with the recipient read off the VENDOR row the quote names;
+ * and `sendBidProposal`, C Stream Bid's proposal send, on the same terms as
+ * `submitBidPackage` — and that is deliberately the complete set. A caller that could hand this
  * an arbitrary recipient with neither check is the exact hole this split
  * exists to close.
  *
@@ -284,6 +301,15 @@ export async function sendOutboundEmail(formData: FormData): Promise<ActionResul
     const subject = required(formData, "subject", "Subject");
     const body = required(formData, "body", "Message");
 
+    // A RESERVED TYPE IS A CLAIM SOMETHING ELSE READS AS A FACT — "this bid
+    // was sent" for BID_INVITATION — so the generic composer may not write one.
+    // Refused rather than silently dropped: a caller sending it is either a
+    // bug or a forgery, and both should hear about it (`lib/outbound-related.ts`).
+    const relatedType = text(formData, "relatedType") || null;
+    if (isReservedRelatedType(relatedType)) {
+      return fail("That kind of message can only be sent from its own screen, not from the general composer.");
+    }
+
     const jobIdRaw = text(formData, "jobId");
     let jobId: string | null = null;
     if (jobIdRaw) {
@@ -302,7 +328,7 @@ export async function sendOutboundEmail(formData: FormData): Promise<ActionResul
       toName: text(formData, "toName") || null,
       subject,
       body,
-      relatedType: text(formData, "relatedType") || null,
+      relatedType,
       relatedId: text(formData, "relatedId") || null,
       sentByUserId: user.id,
     });
@@ -616,17 +642,24 @@ export async function sendQuoteRequest(
 
     const quote = await prisma.bidQuote.findFirst({
       where: { id: bidQuoteId, companyId: company.id },
-      include: {
-        vendor: true,
-        bidInvitation: {
-          include: {
-            specSections: { select: { id: true, sectionNumber: true, fileUrl: true, fileName: true } },
-            addenda: { select: { id: true, reference: true, fileUrl: true, fileName: true } },
-          },
-        },
-      },
+      include: { vendor: true },
     });
     if (!quote) return fail("That quote request wasn't found");
+
+    // THE DOCUMENTS ARE THE PROJECT'S: a spec section or addendum filed under
+    // another GC's invitation on the same job is on this bid too, and a supplier
+    // pricing the job needs all of them (lib/estimating/bid-papers.ts).
+    const anchor = { id: quote.bidInvitationId, bidProjectId: quote.bidProjectId };
+    const [specSections, addenda] = await Promise.all([
+      prisma.bidSpecSection.findMany({
+        where: { bidInvitation: { companyId: company.id }, ...paperWhere(anchor) },
+        select: { id: true, sectionNumber: true, fileUrl: true, fileName: true },
+      }),
+      prisma.bidAddendum.findMany({
+        where: { companyId: company.id, ...paperWhere(anchor) },
+        select: { id: true, reference: true, fileUrl: true, fileName: true },
+      }),
+    ]);
 
     const to = rfqRecipient({
       quotedVendorName: quote.vendorName,
@@ -643,14 +676,14 @@ export async function sendQuoteRequest(
     // this bid and this company.
     const wanted = new Set(formData.getAll("documentId").map((one) => String(one)));
     const onThisBid: { id: string; kind: RfqSourceKind; label: string; fileUrl: string | null; fileName: string | null }[] = [
-      ...quote.bidInvitation.specSections.map((one) => ({
+      ...specSections.map((one) => ({
         id: one.id,
         kind: "SPEC_SECTION" as RfqSourceKind,
         label: one.sectionNumber,
         fileUrl: one.fileUrl,
         fileName: one.fileName,
       })),
-      ...quote.bidInvitation.addenda.map((one) => ({
+      ...addenda.map((one) => ({
         id: one.id,
         kind: "ADDENDUM" as RfqSourceKind,
         label: one.reference,
@@ -731,4 +764,188 @@ export async function sendQuoteRequest(
     revalidatePath("/bids");
     return ok;
   });
+}
+
+
+/**
+ * SENDING THE PROPOSAL TO ONE GC, FROM C STREAM BID.
+ *
+ * The fifth way into `deliverEmail`, on the terms that function's comment sets:
+ * a capability, the same rate cap, and a recipient this action reads for itself
+ * — chosen from the addresses already on the GC's contact, exactly as
+ * `submitBidPackage` does, never typed.
+ *
+ * ── WHAT GOES OUT ──
+ *
+ * The person's cover note, then the proposal itself as text, BUILT HERE from
+ * the rows by `loadProposalSend` — the form cannot supply or alter the
+ * document, only the note above it. No PDF and no link: this app has neither a
+ * server-side PDF nor a public proposal link (`lib/estimating/proposal-send.ts`
+ * says why). The whole body is what `OutboundMessage.body` records, so the
+ * record is the copy the GC received.
+ *
+ * ── REFUSED BEFORE ANYTHING IS WRITTEN ──
+ *
+ *   - not MANAGE_ESTIMATING — before any read;
+ *   - not the production deployment (`deploymentSendRefusal`) — a preview must
+ *     never email a real GC, and the email pipeline itself has no such guard;
+ *   - sending not set up; the bid closed; no price; no address on file;
+ *   - the price moved since the page was drawn (`priceStillMatches`), or ANY
+ *     of the document did (`documentStillMatches`: the fingerprint of the text
+ *     the composer showed against the text rebuilt here) — an alternate, a
+ *     line or a clause can change with the total untouched;
+ *   - the two-step confirm not pressed (`confirmSend=yes`);
+ *   - the company's outbound cap reached.
+ *
+ * ── ON A SEND THAT WENT ──
+ *
+ * The invitation moves INVITED → SUBMITTED — CONDITIONALLY, an `updateMany`
+ * on `status: "INVITED"`, so a WON or DECLINED set by somebody else in the
+ * meantime is never overwritten, and a SUBMITTED one stays as it is (a re-send
+ * changes nothing but the log). `bidAmount` is filled with the price
+ * sent when nobody had entered one, and the estimate check runs as it does when
+ * the status is changed by hand (`updateBidInvitationStatus`). THE DATE IS NOT
+ * A COLUMN: there is none on `BidInvitation`, and the message's own handover is
+ * the date it was submitted — the guide reads it from there (`facts.ts`). A
+ * failed send moves nothing.
+ *
+ * ── ONCE THE EMAIL HAS GONE, THE ANSWER IS "SENT" ──
+ *
+ * Those writes happen AFTER delivery. If one throws, the GC already has the
+ * email: reporting a failure would invite a second press and a second copy in
+ * their inbox. So a follow-up failure returns `{ ok: true, note }` with the
+ * sentence telling the person to mark it Submitted by hand
+ * (`FOLLOW_UP_FAILED`), and nothing after delivery can turn it into an error.
+ *
+ * NEVER DELETABLE: once it reached the provider, `deleteOutboundMessage`
+ * refuses it, and C Stream Bid draws no delete for a message at all.
+ */
+export async function sendBidProposal(
+  jobId: string,
+  bidInvitationId: string,
+  formData: FormData,
+): Promise<ProposalSendResult> {
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
+  if (!can(context, "MANAGE_ESTIMATING")) {
+    return fail("Estimating isn't part of your job function.");
+  }
+
+  // Set only once `deliverEmail` reports the email went. Everything after that
+  // point runs OUTSIDE `runAction`, so no later failure can masquerade as a
+  // failed send.
+  // A holder rather than a `let`: TypeScript does not see an assignment made
+  // inside the callback, and would narrow a bare `let` to `null` for good.
+  const outcome: {
+    delivered: { invitationId: string; jobId: string; contactId: string; bidAmountIsBlank: boolean; totalCents: number } | null;
+  } = { delivered: null };
+
+  const result = await runAction(async () => {
+    // FIRST, before a single row is read: a test copy of the app sends nothing.
+    const deployment = deploymentSendRefusal(process.env);
+    if (deployment) return fail(deployment);
+
+    const loaded = await loadProposalSend({
+      companyId: company.id,
+      companyName: company.name,
+      jobId,
+      invitationId: bidInvitationId,
+      mode: parseProposalMode(text(formData, "mode") || undefined),
+      timeZone: await viewerTimeZone(),
+    });
+    if (!loaded.ok) return fail(loaded.problem);
+    const view = loaded.view;
+    if (view.blocker) return fail(view.blocker);
+
+    if (!priceStillMatches(text(formData, "priceCents"), view.totalCents)) {
+      return fail(
+        "The price on this proposal changed since the page was opened. Reload it and read the new figure before sending.",
+      );
+    }
+    // The whole document, not only its total.
+    if (!documentStillMatches(text(formData, "documentFingerprint"), view.documentText)) {
+      return fail(DOCUMENT_CHANGED);
+    }
+
+    // CHOSEN FROM THE SET, never supplied.
+    const chosen = text(formData, "toAddress");
+    const recipient = chosen
+      ? view.recipients.find((one) => one.address.toLowerCase() === chosen.toLowerCase())
+      : view.recipients[0];
+    if (!recipient) {
+      return fail(
+        "That address isn't on this GC's contact record. Pick one of the addresses listed, or add it to their contact first.",
+      );
+    }
+
+    // THE SECOND STEP, enforced here and not only drawn.
+    if (text(formData, "confirmSend") !== "yes") {
+      return fail(`Press "Yes, send it" to confirm it is going to ${view.gcName}.`);
+    }
+
+    const subject = required(formData, "subject", "Subject");
+    const note = required(formData, "body", "Message");
+
+    const allowance = await outboundEmailAllowance(company.id);
+    if (!allowance.ok) return fail(allowance.error);
+
+    const sent = await deliverEmail({
+      companyId: company.id,
+      jobId: view.jobId,
+      toAddress: recipient.address,
+      toName: recipient.name,
+      subject,
+      body: proposalEmailBody(note, view.documentText),
+      relatedType: BID_INVITATION_RELATED_TYPE,
+      relatedId: view.invitationId,
+      sentByUserId: user.id,
+    });
+    // A failure moves nothing: "submitted" on a bid the GC never got is the lie.
+    if (!sent.ok) return sent;
+
+    outcome.delivered = {
+      invitationId: view.invitationId,
+      jobId: view.jobId,
+      contactId: view.contactId,
+      bidAmountIsBlank: view.bidAmountIsBlank,
+      totalCents: view.totalCents,
+    };
+    return ok;
+  });
+  const sentFor = outcome.delivered;
+  if (!result.ok || sentFor === null) return result;
+
+  // ── AFTER DELIVERY: the GC has it, so nothing below may report a failure ──
+  let note: string | undefined;
+  try {
+    // CONDITIONAL: only an INVITED bid becomes SUBMITTED. A WON, LOST or
+    // DECLINED set in between is somebody's later decision and stays.
+    const moved = await prisma.bidInvitation.updateMany({
+      where: { id: sentFor.invitationId, companyId: company.id, status: "INVITED" },
+      data: { status: "SUBMITTED" },
+    });
+    if (sentFor.bidAmountIsBlank) {
+      // Conditional too: an amount somebody typed in the meantime stays.
+      await prisma.bidInvitation.updateMany({
+        where: { id: sentFor.invitationId, companyId: company.id, bidAmount: null },
+        data: { bidAmount: (sentFor.totalCents / 100).toFixed(2) },
+      });
+    }
+    if (moved.count > 0) {
+      runAgentAfterResponse({ companyId: company.id, agent: "ESTIMATE_CHECK", bidInvitationId: sentFor.invitationId });
+    }
+  } catch {
+    note = FOLLOW_UP_FAILED;
+  }
+
+  try {
+    revalidatePath(`/bid/estimates/${sentFor.jobId}`, "layout");
+    revalidatePath("/bid/home");
+    revalidatePath("/bid/bids");
+    revalidatePath("/bids");
+    revalidatePath(`/contacts/${sentFor.contactId}`);
+  } catch {
+    // A stale screen is not a failed send.
+  }
+  return note ? { ok: true, note } : ok;
 }

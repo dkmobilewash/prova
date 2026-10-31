@@ -21,9 +21,12 @@ import type { JobTakeoffCurrency } from "@/lib/takeoff-currency-query";
 export function TakeoffCurrencyBanner({
   jobId,
   currency,
+  bidsHref = "/bids",
 }: {
   jobId: string;
   currency: JobTakeoffCurrency;
+  /** The bid log. The CRM's by default; C Stream Bid passes its own. */
+  bidsHref?: string;
 }) {
   const superseded = currency.plans.filter((plan) => plan.state === "SUPERSEDED");
   const unknowable = currency.plans.filter((plan) => plan.state === "UNKNOWABLE");
@@ -81,7 +84,7 @@ export function TakeoffCurrencyBanner({
           changed work already priced but {currency.undated.length === 1 ? "carries" : "carry"} no
           issue date, so {currency.undated.length === 1 ? "it" : "they"} cannot be placed against
           any sheet.{" "}
-          <Link href="/bids" className="text-link hover:text-link-hover">
+          <Link href={bidsHref} className="text-link hover:text-link-hover">
             Add the date on the bid
           </Link>
           .

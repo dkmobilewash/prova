@@ -16,6 +16,7 @@ import {
 } from "@/lib/actions";
 import { QuoteReader, QuoteReadingNotes } from "@/components/QuoteReader";
 import { Spinner } from "@/components/Spinner";
+import { FiledUnder } from "@/components/FiledUnder";
 import { sendQuoteRequest } from "@/lib/actions";
 import { rfqBody, rfqRecipient, rfqSubject } from "@/lib/estimating/rfq";
 import {
@@ -72,6 +73,10 @@ export type BidQuoteRow = LevelQuote & {
   carriedAt: string | null;
   /** What the sub said about how long the price holds. Null when unsaid. */
   validUntil: string | null;
+  /** The GC whose invitation this quote was filed under, when it is NOT this
+   *  row's own. A quote is the PROJECT's, so it shows on every GC's row on the
+   *  project; this is where it first came in. Null for this GC's own. */
+  filedUnder?: string | null;
 };
 
 const money = (value: number) =>
@@ -241,6 +246,7 @@ export function BidLevelling({
                     <div className="min-w-0">
                       <p className="text-sm text-ink-body">
                         <span className="font-medium text-ink">{quote.vendorName}</span> — {money(quote.amount)}
+                        <FiledUnder gc={quote.filedUnder} />
                         {/* "Lowest" is stated only where the caution above is
                             also on screen. Never on its own. */}
                         {index === 0 && group.quotes.length > 1 && (
@@ -278,7 +284,7 @@ export function BidLevelling({
                       destructive={
                         <ConfirmDelete
                           label="Delete"
-                          describe={`Removes ${quote.vendorName}'s quote from this comparison. Nothing is sent to them.`}
+                          describe={`Removes ${quote.vendorName}'s quote from this comparison. Nothing is sent to them. It belongs to the whole job, so it comes off every GC's bid for it.`}
                           confirmLabel="Confirm delete"
                           pendingLabel="Deleting…"
                           pending={isPending}
@@ -362,6 +368,7 @@ export function BidLevelling({
                       <div className="min-w-0">
                         <p className="text-sm text-ink-body">
                           <span className="font-medium text-ink">{row.vendorName}</span>
+                          <FiledUnder gc={row.filedUnder} />
                           <span
                             className={`ml-2 text-xs ${
                               requestState(row, today) === "OVERDUE" ? "text-tag-rose-ink" : "text-ink-muted"
@@ -450,7 +457,7 @@ export function BidLevelling({
                   <li key={row.id} className="flex flex-wrap items-start justify-between gap-2 py-2">
                     <p className="min-w-0 text-sm text-ink-muted">
                       <span className="font-medium">{row.vendorName}</span> declined to bid this
-                      {row.declinedAt ? ` on ${row.declinedAt}` : ""}.
+                      {row.declinedAt ? ` on ${row.declinedAt}` : ""}.<FiledUnder gc={row.filedUnder} />
                     </p>
                     <RowActions
                       className="flex shrink-0 items-center gap-2"

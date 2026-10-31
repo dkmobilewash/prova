@@ -14,8 +14,12 @@ import {
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Spinner } from "@/components/Spinner";
 import { Disclosure } from "@/components/Disclosure";
-import { WALL_BASIS_LABELS, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
+import { MAX_BOARD_LAYERS, WALL_BASIS_LABELS, WALL_COMPONENT_BASES, type WallComponentBasis } from "@/lib/wall-assemblies";
 import { DEFAULT_WASTE_PERCENT } from "@/lib/takeoff";
+import type { StarterSurface } from "@/lib/wall-type-starters";
+
+/** 1 … MAX_BOARD_LAYERS — the answers the action accepts, and no others. */
+const BOARD_LAYER_OPTIONS: readonly number[] = Array.from({ length: MAX_BOARD_LAYERS }, (_, index) => index + 1);
 
 /**
  * The partition schedule on /wall-types: a card per wall type, its parts
@@ -40,6 +44,8 @@ export type WallTypeView = {
   defaultHeightFt: string | null;
   /** Overall thickness in inches — what the wall finder matches a drawn group against. */
   thicknessIn: string | null;
+  /** Layers of board each boarded side, or null when nobody has answered. */
+  boardLayers: number | null;
   notes: string | null;
   runCount: number;
   components: WallComponentView[];
@@ -53,6 +59,8 @@ export type WallComponentView = {
   factor: string;
   wastePercent: string;
   roundUp: boolean;
+  /** The factor is for one layer; the type's board layers multiply it. */
+  perLayer: boolean;
   productionRate: string | null;
   costCategory: string | null;
   catalogEntryId: string | null;
@@ -105,6 +113,21 @@ function WallTypeFields({ type }: { type?: WallTypeView }) {
           <option value="1">One</option>
         </select>
       </label>
+      {/* BOARD LAYERS, which the drawings often leave to a UL detail. It
+          changes only the parts marked "Per layer" below — blank prices every
+          part exactly as its factor says, which is how a type with no answer
+          has always priced. The Bid guide asks this as a tap question. */}
+      <label className={labelClass}>
+        Board layers each side
+        <select name="boardLayers" defaultValue={type?.boardLayers == null ? "" : String(type.boardLayers)} className={field}>
+          <option value="">Not answered</option>
+          {BOARD_LAYER_OPTIONS.map((layers) => (
+            <option key={layers} value={String(layers)}>
+              {layers}
+            </option>
+          ))}
+        </select>
+      </label>
       {/* THE THICKNESS IS WHAT THE WALL FINDER MATCHES ON. A type without one
           can be picked by hand but never offered for a drawn group — which is
           how a library of hand-made types reads "no wall type you have is
@@ -140,34 +163,62 @@ export function NewWallTypeForm({ initial }: { initial?: Partial<WallTypeView> }
   );
 }
 
-export function StarterWallTypesButton() {
+export function StarterWallTypesButton({
+  missing,
+  hasLibrary,
+  surface = "crm",
+}: {
+  /** The starter codes this company does not have — `missingStarterTypes`,
+   *  the same rule `addStarterWallTypes` writes by. */
+  missing: readonly string[];
+  /** Whether the company already has wall types of its own. */
+  hasLibrary: boolean;
+  /** Which starter set to add — Bid offers only its own trades'. Must match
+   *  the `surface` the page passed to `missingStarterTypes`. */
+  surface?: StarterSurface;
+}) {
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
+  // Nothing to add and nothing to report: the whole control goes. A sentence
+  // from a press that just emptied `missing` stays, so it can be read.
+  if (missing.length === 0 && message === null) return null;
   return (
-    <div className="flex flex-col items-start gap-1">
-      <button
-        type="button"
-        disabled={isPending}
-        onClick={() =>
-          startTransition(async () => {
-            const result = await addStarterWallTypes();
-            // `join(", ")`, not `" and "`. The starter set was two entries
-            // when this was written and is ten now — "W1 and W2 and W3 and…"
-            // is what that reads as.
-            setMessage(
-              result.ok
-                ? `Added ${result.value.added.join(", ")}. Link each part to your price book — they arrive unpriced on purpose.`
-                : result.error,
-            );
-          })
-        }
-        className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
-      >
-        {/* NOT "two common wall types" any more. The set covers partitions,
-            exterior wall, drywall finish, ceilings, flooring, painting, slab
-            and footing — the trades the takeoff workspace can measure. */}
-        {isPending ? "Adding…" : "Start from the common trade assemblies"}
-      </button>
+    <div className="mb-6 flex flex-col items-start gap-1" data-wall-types="starters">
+      {missing.length > 0 && (
+        <button
+          type="button"
+          data-wall-types="add-starters"
+          disabled={isPending}
+          onClick={() =>
+            startTransition(async () => {
+              const result = await addStarterWallTypes(surface);
+              // `join(", ")`, not `" and "`. The starter set was two entries
+              // when this was written and is ten now — "W1 and W2 and W3 and…"
+              // is what that reads as.
+              setMessage(
+                result.ok
+                  ? `Added ${result.value.added.join(", ")}. Link each part to your price book — they arrive unpriced on purpose.`
+                  : result.error,
+              );
+            })
+          }
+          className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
+        >
+          {/* NOT "two common wall types" any more. The CRM's set covers
+              partitions, exterior wall, drywall finish, ceilings, flooring,
+              painting, slab and footing; Bid's stops at the ceilings
+              (`startersFor`).
+              And it says HOW MANY it adds (#818), because beside a library
+              that already has some of them "Start from…" alone would read as
+              an offer to replace what is there. */}
+          {isPending ? "Adding…" : `Start from the common trade assemblies (adds ${missing.length})`}
+        </button>
+      )}
+      {missing.length > 0 && hasLibrary && (
+        <p className="text-sm text-ink-muted">
+          Adds the ones you don&apos;t have yet: {missing.join(", ")}. Wall types you already have are left as they are.
+        </p>
+      )}
       {message && <p className="text-sm text-ink-body">{message}</p>}
     </div>
   );
@@ -321,7 +372,7 @@ function ComponentFields({
       </label>
       <label className={labelClass}>
         × factor
-        <input name="factor" defaultValue={component?.factor ?? "1"} inputMode="decimal" title="2 for top-and-bottom track, the layer count for board, 0.03125 to turn sq ft into 4x8 sheets" className={`${field} w-20`} />
+        <input name="factor" defaultValue={component?.factor ?? "1"} inputMode="decimal" title="2 for top-and-bottom track, the layer count for board (or 1 with Per layer ticked), 0.03125 to turn sq ft into 4x8 sheets" className={`${field} w-20`} />
       </label>
       <label className={labelClass}>
         Waste %
@@ -335,6 +386,17 @@ function ComponentFields({
       <label className="flex items-center gap-1 self-end pb-2 text-xs text-ink-label">
         <input type="checkbox" name="roundUp" defaultChecked={component?.roundUp ?? false} />
         Whole units
+      </label>
+      {/* PER LAYER: the factor is for ONE layer of board, and the wall type's
+          "Board layers each side" multiplies it. Tick it on the board, not on
+          tape and finish — only the face layer is finished. Leave it off on a
+          part whose factor already counts the layers, or they count twice. */}
+      <label
+        className="flex items-center gap-1 self-end pb-2 text-xs text-ink-label"
+        title="The factor is for one layer of board; the wall type's board layers multiply it."
+      >
+        <input type="checkbox" name="perLayer" defaultChecked={component?.perLayer ?? false} className="h-4 w-4" />
+        Per layer
       </label>
       <label className={labelClass}>
         Crew rate (units/hr)

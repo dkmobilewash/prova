@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyPlan,
   bidRecap,
   directCostByCategory,
   spreadToLines,
@@ -394,5 +395,80 @@ describe("#512: a job with prices and no costs at all", () => {
 
   it("spreads nothing, so no price on the job is touched", () => {
     expect(spreadToLines(WIZARD_JOB, 0)).toEqual([]);
+  });
+});
+
+/**
+ * WHAT APPLY DOES WHEN NO LINE CARRIES A PRICE. A new wall sub's estimate comes
+ * in cost-only (the price book gives cost, not sell price), so Apply used to
+ * dead-end their first bid. It now offers to price the lines that have a cost —
+ * through the SAME `spreadToLines`, so the allocation basis (cost share,
+ * largest-remainder cents) is not a second copy.
+ */
+describe("applyPlan — pricing an estimate with no priced line", () => {
+  const costOnly = (over: Partial<RecapLine> & Pick<RecapLine, "id">) => line({ unitPrice: null, ...over });
+
+  it("offers to price every costed line, in proportion to cost, summing to the bid to the cent", () => {
+    const lines = [
+      costOnly({ id: "a", quantity: 1, unitCost: 1 }),
+      costOnly({ id: "b", quantity: 1, unitCost: 1 }),
+      costOnly({ id: "c", quantity: 1, unitCost: 1 }),
+    ];
+    const plan = applyPlan(lines, 100);
+    expect(plan.kind).toBe("PRICE_UNPRICED");
+    if (plan.kind !== "PRICE_UNPRICED") return;
+    const cents = plan.spread.map((s) => Math.round(Number(s.unitPrice) * 100));
+    expect(cents.reduce((x, y) => x + y, 0)).toBe(10000);
+    expect([...cents].sort()).toEqual([3333, 3333, 3334]);
+    expect(spreadTotal(lines, plan.spread)).toBe(100);
+    expect(plan.leftUnpriced).toEqual([]);
+  });
+
+  it("gives exactly the prices spreadToLines gives priced lines of the same cost — one allocation, not two", () => {
+    const unpriced = [
+      costOnly({ id: "board", quantity: 1000, unitCost: 2 }),
+      costOnly({ id: "hang", quantity: 100, unitCost: 10 }),
+    ];
+    const plan = applyPlan(unpriced, 3996.6);
+    expect(plan.kind === "PRICE_UNPRICED" && plan.spread).toEqual(spreadToLines(LINES, 3996.6));
+  });
+
+  it("leaves a zero-cost line unpriced and names it, rather than selling it for nothing", () => {
+    const lines = [
+      costOnly({ id: "board", quantity: 1000, unitCost: 2 }),
+      costOnly({ id: "free", quantity: 5, unitCost: 0 }),
+      costOnly({ id: "blank", quantity: 5, unitCost: null }),
+    ];
+    const plan = applyPlan(lines, 2400);
+    expect(plan.kind).toBe("PRICE_UNPRICED");
+    if (plan.kind !== "PRICE_UNPRICED") return;
+    expect(plan.spread.map((s) => s.id)).toEqual(["board"]);
+    expect(plan.leftUnpriced.map((l) => l.id).sort()).toEqual(["blank", "free"]);
+    expect(spreadTotal(lines, plan.spread)).toBe(2400);
+  });
+
+  it("is NOTHING when no line has a cost, with a sentence that says to set one", () => {
+    const plan = applyPlan([costOnly({ id: "x", unitCost: null }), costOnly({ id: "y", unitCost: 0 })], 0);
+    expect(plan.kind).toBe("NOTHING");
+    expect(plan.kind === "NOTHING" && plan.reason).toMatch(/Set a cost/);
+  });
+
+  it("is the unchanged priced spread when ANY line carries a price, and counts the cost-only lines left alone", () => {
+    const lines = [...LINES, costOnly({ id: "gc", quantity: 1, unitCost: 500 }), costOnly({ id: "oh", unitCost: 0 })];
+    const plan = applyPlan(lines, 3996.6);
+    expect(plan.kind).toBe("PRICED");
+    if (plan.kind !== "PRICED") return;
+    expect(plan.spread).toEqual(spreadToLines(lines, 3996.6));
+    expect(plan.spread.map((s) => s.id).sort()).toEqual(["board", "hang"]);
+    expect(plan.costOnlyLeftAlone).toBe(2);
+  });
+
+  it("a placeholder $0 price on one line puts the estimate in the priced case, not the unpriced one", () => {
+    const plan = applyPlan(
+      [line({ id: "p", quantity: 1, unitCost: 10, unitPrice: 0 }), costOnly({ id: "u", unitCost: 5 })],
+      20,
+    );
+    expect(plan.kind).toBe("PRICED");
+    expect(plan.kind === "PRICED" && plan.spread.map((s) => s.id)).toEqual(["p"]);
   });
 });

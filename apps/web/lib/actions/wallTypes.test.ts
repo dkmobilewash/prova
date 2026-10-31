@@ -100,7 +100,9 @@ function model(name: string) {
     },
     updateMany: async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
       const hit = rows().filter((r) => matches(r, where));
-      for (const row of hit) Object.assign(row, data);
+      // `undefined` is Prisma's "leave this column alone", so it is not written.
+      const defined = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+      for (const row of hit) Object.assign(row, defined);
       return { count: hit.length };
     },
     delete: async ({ where }: { where: { id: string } }) => {
@@ -338,5 +340,151 @@ describe("starter wall types", () => {
     expect(db.wallTypeComponent.length).toBeGreaterThan(expected.length);
 
     expect(await addStarterWallTypes()).toMatchObject({ ok: false });
+  });
+
+  it("on a library that already has types, adds ONLY the missing starters and never touches the company's own (#818)", async () => {
+    // A company that built W1 its own way, has a lower-case `w3` that is a
+    // different wall, and a schedule type of its own. The press must add the
+    // other seven starters and leave all three exactly as they were.
+    db.wallType = db.wallType.filter((t) => t.companyId !== "co_1");
+    db.wallTypeComponent = [];
+    db.wallType.push(
+      { id: "own_w1", companyId: "co_1", code: "W1", name: "Our W1 — 6in 18ga, two layers", sortOrder: 0 },
+      { id: "own_w3", companyId: "co_1", code: "w3", name: "Our w3 — shaft wall", sortOrder: 1 },
+      { id: "own_a1", companyId: "co_1", code: "A1", name: "Schedule type A1", sortOrder: 2 },
+    );
+    db.wallTypeComponent.push({ id: "own_part", wallTypeId: "own_w1", description: "6in 18ga studs" });
+    const before = JSON.stringify(db.wallType.filter((t) => t.id.startsWith("own_")));
+    const { addStarterWallTypes } = await actions();
+
+    const expected = ["W2", "EW1", "FIN5", "ACT1", "ACT2", "GYPC1", "FLR1", "PT1", "SLB1", "FTG1"];
+    expect(await addStarterWallTypes()).toEqual({ ok: true, value: { added: expected } });
+
+    const mine = db.wallType.filter((t) => t.companyId === "co_1");
+    // Exactly one of each code, compared the way the action compares them.
+    const codes = mine.map((t) => String(t.code).toUpperCase());
+    expect(new Set(codes).size, `a code was written twice: ${codes.join(", ")}`).toBe(codes.length);
+    expect(mine.map((t) => t.code)).toEqual(["W1", "w3", "A1", ...expected]);
+    // The company's own rows, byte for byte, and their parts.
+    expect(JSON.stringify(db.wallType.filter((t) => t.id.startsWith("own_")))).toBe(before);
+    expect(db.wallTypeComponent.filter((c) => c.wallTypeId === "own_w1").map((c) => c.id)).toEqual(["own_part"]);
+    // After the company's own types in the list, not interleaved with them.
+    const added = mine.filter((t) => !String(t.id).startsWith("own_")).map((t) => t.sortOrder);
+    expect(added).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+
+    // And with nothing left to add, a sentence rather than a second copy.
+    expect(await addStarterWallTypes()).toMatchObject({ ok: false });
+    expect(db.wallType.filter((t) => t.companyId === "co_1")).toHaveLength(13);
+  });
+
+  it("from Bid, adds only Bid's trades' starters — no flooring, paint, slab or footing", async () => {
+    db.wallType = db.wallType.filter((t) => t.companyId !== "co_1");
+    db.wallTypeComponent = [];
+    const { addStarterWallTypes } = await actions();
+    const expected = ["W1", "W2", "W3", "EW1", "FIN5", "ACT1", "ACT2", "GYPC1"];
+    expect(await addStarterWallTypes("bid")).toEqual({ ok: true, value: { added: expected } });
+    expect(db.wallType.filter((t) => t.companyId === "co_1").map((t) => t.code)).toEqual(expected);
+    // Complete for Bid, and the sentence names Bid's set, not the CRM's.
+    const again = await addStarterWallTypes("bid");
+    expect(again).toMatchObject({ ok: false });
+    expect((again as { error: string }).error).not.toContain("FLR1");
+    // Anything else a browser posts is the CRM's set: the other four arrive.
+    expect(await addStarterWallTypes("nonsense")).toEqual({ ok: true, value: { added: ["FLR1", "PT1", "SLB1", "FTG1"] } });
+  });
+});
+
+/**
+ * BOARD LAYERS on the wall-type card: the type's answer and the part's
+ * "per layer" box, written by the library's own actions, reaching the
+ * estimate only through the refresh — and a form that does not send a field
+ * leaving that field alone.
+ */
+describe("board layers", () => {
+  const typeForm = (over: Record<string, string> = {}) =>
+    form({ code: "W1", name: "Studs + ⅝″ both sides", sides: "2", studSpacingIn: "16", defaultHeightFt: "10", thicknessIn: "4.88", ...over });
+  const w1 = () => db.wallType.find((t) => t.id === "w1")!;
+
+  it("saves 1 to 4 layers, and blank as not answered", async () => {
+    const { updateWallType } = await actions();
+    expect(await updateWallType("w1", typeForm({ boardLayers: "2" }))).toEqual({ ok: true });
+    expect(w1().boardLayers).toBe(2);
+    expect(await updateWallType("w1", typeForm({ boardLayers: "4" }))).toEqual({ ok: true });
+    expect(w1().boardLayers).toBe(4);
+    expect(await updateWallType("w1", typeForm({ boardLayers: "" }))).toEqual({ ok: true });
+    expect(w1().boardLayers).toBeNull();
+  });
+
+  it("refuses a count it cannot use, in words, and writes nothing", async () => {
+    const { updateWallType } = await actions();
+    await updateWallType("w1", typeForm({ boardLayers: "2" }));
+    for (const bad of ["0", "5", "1.5", "two", "-1"]) {
+      const result = await updateWallType("w1", typeForm({ boardLayers: bad, name: "renamed" }));
+      expect(result.ok, bad).toBe(false);
+      expect((result as { error: string }).error).toContain("Board layers each side is a whole number from 1 to 4");
+    }
+    expect(w1()).toMatchObject({ boardLayers: 2, name: "Studs + ⅝″ both sides" });
+  });
+
+  it("a form that does not send the thickness or the layers leaves them as they are; blank still clears", async () => {
+    const { updateWallType } = await actions();
+    await updateWallType("w1", typeForm({ boardLayers: "2" }));
+    expect(w1()).toMatchObject({ thicknessIn: "4.88", boardLayers: 2 });
+    const without = form({ code: "W1", name: "Studs + ⅝″ both sides", sides: "2", studSpacingIn: "16", defaultHeightFt: "12" });
+    expect(await updateWallType("w1", without)).toEqual({ ok: true });
+    expect(w1()).toMatchObject({ thicknessIn: "4.88", boardLayers: 2, defaultHeightFt: "12" });
+    await updateWallType("w1", typeForm({ thicknessIn: "", boardLayers: "" }));
+    expect(w1()).toMatchObject({ thicknessIn: null, boardLayers: null });
+  });
+
+  it("the part's 'per layer' box is saved like 'whole units', and an answer moves only that part, at the refresh", async () => {
+    const { addWallRun, updateWallType, updateWallTypeComponent, refreshWallSchedule } = await actions();
+    await addWallRun("job_1", form({ label: "L2", wallTypeId: "w1", lengthFt: "100" }));
+    expect(line("c_board").quantity).toBe("2000");
+
+    // Tick "per layer" on the board, then answer two layers.
+    expect(
+      await updateWallTypeComponent(
+        "c_board",
+        form({ description: "⅝″ Type X", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1", productionRate: "50", catalogEntryId: "cat_board", perLayer: "on" }),
+      ),
+    ).toEqual({ ok: true });
+    expect(db.wallTypeComponent.find((c) => c.id === "c_board")!.perLayer).toBe(true);
+    await updateWallType("w1", typeForm({ boardLayers: "2" }));
+    // The library never reaches into an estimate by itself…
+    expect(line("c_board").quantity).toBe("2000");
+    // …the refresh does: the board doubles, its hours with it, the studs do not move.
+    expect(await refreshWallSchedule("job_1")).toMatchObject({ ok: true });
+    expect(line("c_board")).toMatchObject({ quantity: "4000", laborHours: "80" });
+    expect(line("c_studs").quantity).toBe("76");
+
+    // Unticked, the same answer changes nothing.
+    await updateWallTypeComponent(
+      "c_board",
+      form({ description: "⅝″ Type X", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1", productionRate: "50", catalogEntryId: "cat_board" }),
+    );
+    expect(db.wallTypeComponent.find((c) => c.id === "c_board")!.perLayer).toBe(false);
+    await refreshWallSchedule("job_1");
+    expect(line("c_board").quantity).toBe("2000");
+  });
+
+  it("the starters arrive with ONLY their board and hanging parts per layer, and no answer", async () => {
+    db.wallType = db.wallType.filter((t) => t.companyId !== "co_1");
+    db.wallTypeComponent = [];
+    const { addStarterWallTypes } = await actions();
+    await addStarterWallTypes();
+    const perLayer = db.wallTypeComponent
+      .filter((c) => c.perLayer === true)
+      .map((c) => `${db.wallType.find((t) => t.id === c.wallTypeId)!.code}: ${c.description}`);
+    expect(perLayer).toEqual([
+      "W1: ⅝″ Type X board, 4x8 sheets",
+      "W1: Hang ⅝″ board",
+      "W2: ⅝″ Type X board, 4x8 sheets",
+      "W2: Hang ⅝″ board",
+      "W3: ½″ board, 4x8 sheets",
+      "W3: Hang ½″ board",
+      "EW1: ⅝″ Type X board, inside face only",
+      "EW1: Hang inside face board",
+    ]);
+    expect(db.wallType.filter((t) => t.companyId === "co_1").every((t) => t.boardLayers == null)).toBe(true);
   });
 });

@@ -524,6 +524,16 @@ export const messageExclusions: Exclusion[] = [
       "on the job's proposal page. Never a command.",
   },
   {
+    action: "sendBidProposal",
+    reason:
+      "C Stream Bid's proposal send: emails one GC the proposal at that GC's price and marks the " +
+      "bid SUBMITTED. Excluded on submitBidPackage's ground, not a softer one — it is an outward " +
+      "send of the bid itself, which commands.ts puts at T5 with no member, and its two-step " +
+      "confirm on the proposal page IS the review: the address, the price and the text under the " +
+      "note are read together before the second press. A HANDOFF card could only link to that " +
+      "screen. Sent by a person from the Bid proposal page. Never a command.",
+  },
+  {
     action: "sendHelpRequestEmail",
     reason:
       "#352: the internal sender behind help.ts's requestHelp, the 'Ask us for help' panel. Takes no recipient argument and always addresses the configured support inbox — not a command, and not something a model prompt should be able to trigger toward an arbitrary address even if send_email's own address resolution stays honest.",
