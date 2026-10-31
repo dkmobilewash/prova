@@ -20,6 +20,7 @@ export const FIXTURE_JOB = "ZZ Click Billing Test";
 const VENDOR_PREFIX = "ZZ Click ";
 const LOCAL_NUMBER = "ZZ-CLICK";
 const BURDEN_NOTE = "ZZ Click billing test";
+const CREW_LAST_NAME = "Fixture Worker";
 
 const day = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 
@@ -53,6 +54,8 @@ export async function removeBillingClickFixture(prisma: PrismaClient, companyId:
     await prisma.jobBidRecap.deleteMany({ where: { jobId } });
     await prisma.job.delete({ where: { id: jobId } });
   }
+  // After the job loop: its time entries hold this row in place.
+  await prisma.crewMember.deleteMany({ where: { companyId, legalLastName: CREW_LAST_NAME } });
   await prisma.vendor.deleteMany({ where: { companyId, name: { startsWith: VENDOR_PREFIX } } });
   await prisma.lineItemCatalogEntry.deleteMany({ where: { companyId, description: { startsWith: VENDOR_PREFIX } } });
   await prisma.contact.deleteMany({ where: { companyId, name: { startsWith: VENDOR_PREFIX } } });
@@ -290,12 +293,14 @@ export async function seedBillingClickFixture(prisma: PrismaClient, companyId: s
 
   // Hours on the framing line, for the suggested amount on a new application.
   // The last row falls after October, so it shows the period-to cutoff.
-  const worker = await prisma.user.findFirstOrThrow({ where: { companyId }, select: { id: true } });
+  const worker = await prisma.crewMember.create({
+    data: { companyId, legalFirstName: "ZZ Click", legalLastName: CREW_LAST_NAME },
+  });
   await prisma.timeEntry.createMany({
     data: [
-      { jobId, lineItemId: framing.id, employeeUserId: worker.id, date: day("2026-09-30"), hours: "100" },
-      { jobId, lineItemId: framing.id, employeeUserId: worker.id, date: day("2026-10-20"), hours: "40" },
-      { jobId, lineItemId: framing.id, employeeUserId: worker.id, date: day("2026-11-05"), hours: "60" },
+      { jobId, lineItemId: framing.id, crewMemberId: worker.id, date: day("2026-09-30"), hours: "100" },
+      { jobId, lineItemId: framing.id, crewMemberId: worker.id, date: day("2026-10-20"), hours: "40" },
+      { jobId, lineItemId: framing.id, crewMemberId: worker.id, date: day("2026-11-05"), hours: "60" },
     ],
   });
 
