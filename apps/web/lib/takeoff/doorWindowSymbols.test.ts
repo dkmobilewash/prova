@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
-import { doorArcCandidates, doorSymbols, exteriorWalls, windowSymbols, WIDEST_WINDOW_FEET } from "./doorWindowSymbols";
+import { doorArcCandidates, doorSymbols, exteriorWalls, tagsNameEveryWindow, windowSymbols, WIDEST_WINDOW_FEET } from "./doorWindowSymbols";
 
 /** One foot = 0.01 page-width units here, so feetPerUnit is 100. */
 const FPU = 100;
@@ -85,6 +85,21 @@ describe("window symbols", () => {
     expect(ext).toEqual([true, true, true, true, false]);
   });
 
+  it("where the sheet tags its windows, an untagged candidate is not one", () => {
+    const tag = { x: 0.52, y: 0.4 + ft(1) };
+    expect(windowSymbols(triple(0.4), [...box, partition], FPU, [], true)).toHaveLength(0);
+    expect(windowSymbols(triple(0.4), [...box, partition], FPU, [tag], true)).toHaveLength(1);
+  });
+
+  it("an interior window counts only on a tagged sheet, with its tag right beside it", () => {
+    const interior: StrokeSegment[] = [-0.15, 0, 0.15].map((o) => ({ x1: 0.6 + ft(o), y1: 0.5, x2: 0.6 + ft(o), y2: 0.54 }));
+    const beside = { x: 0.6 + ft(1.5), y: 0.52 };
+    const far = { x: 0.6 + ft(5), y: 0.52 };
+    expect(windowSymbols(interior, [...box, partition], FPU, [beside], false)).toHaveLength(0);
+    expect(windowSymbols(interior, [...box, partition], FPU, [beside], true)).toHaveLength(1);
+    expect(windowSymbols(interior, [...box, partition], FPU, [far], true)).toHaveLength(0);
+  });
+
   it("finds a window in an exterior wall and measures it", () => {
     const windows = windowSymbols(triple(0.4), [...box, partition], FPU);
     expect(windows).toHaveLength(1);
@@ -164,5 +179,12 @@ describe("window symbols", () => {
       { x1: 0.54, y1: 0.4 + ft(0.33), x2: 0.58, y2: 0.4 + ft(0.33) },
     ];
     expect(windowSymbols(staggered, box, FPU)).toHaveLength(0);
+  });
+});
+
+describe("a sheet that tags its windows", () => {
+  it("counts W tags, and not bare marks or a stray pair", () => {
+    expect(tagsNameEveryWindow(["W1", "W2", "W-3", "S8B"])).toBe(true);
+    expect(tagsNameEveryWindow(["W1", "W2", "A", "7"])).toBe(false);
   });
 });

@@ -50,6 +50,21 @@ describe("pairDemoWithNewPlan", () => {
     expect(pairDemoWithNewPlan(set).map((p) => [p.demoPage, p.newPage, p.basis])).toEqual([[1, 2, "title"]]);
     expect(pairDemoWithNewPlan([sheet(1, "A001", "KEYNOTE LEGEND"), sheet(2, "A101", "FLOOR PLAN")])).toEqual([]);
   });
+  it("gives every plan that truly aligns its own row, so either sheet can ask for its demolition plan", () => {
+    const many = [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5].map((y, i) => ({ x1: 0.1, y1: y, x2: 0.2 + 0.03 * i, y2: y }));
+    const moved = (dx: number) => many.map((l) => ({ ...l, x1: l.x1 + dx, x2: l.x2 + dx }));
+    const set = [sheet(1, "AD101", "FIRST FLOOR - DEMOLITION"), sheet(2, "A101", "FIRST FLOOR PLAN"), sheet(3, "A100", "FIRST FLOOR PLAN"), sheet(4, "A102", "SECOND FLOOR PLAN")];
+    const lines = new Map([[1, many], [2, moved(0.1)], [3, moved(0.2)], [4, moved(0.3)]]);
+    const pairs = pairDemoWithNewPlan(set, { lines, feetPerUnit: FPU });
+    expect(pairs.map((p) => [p.newPage, p.basis, p.primary])).toEqual([[2, "sheet-number", true], [3, "grid", false]]);
+    expect(pairs[1].shift?.dx).toBeCloseTo(0.2);
+    expect(pairs.filter((p) => p.primary)).toHaveLength(1);
+  });
+  it("a plan that barely agrees gets no row of its own", () => {
+    const lines = new Map([[1, walls(0)], [2, walls(0.1)], [3, walls(0.2)]]);
+    const pairs = pairDemoWithNewPlan([sheet(1, "AD101", "FIRST FLOOR - DEMOLITION"), sheet(2, "A101", "FIRST FLOOR PLAN"), sheet(3, "A100", "FIRST FLOOR PLAN")], { lines, feetPerUnit: FPU });
+    expect(pairs.map((p) => p.newPage)).toEqual([2]);
+  });
 });
 
 describe("demoEvidence", () => {
