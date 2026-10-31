@@ -69,6 +69,8 @@ import {
   toEighth,
 } from "@/lib/takeoff/wallVectors";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
+import { addSheetExclusion, clearSheetExclusions } from "@/lib/actions/takeoffExclusions";
+import { runAt, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
 import { loadPlanText, type PlanTextView } from "@/lib/actions/planTextRead";
 import { PlanTextPanel } from "@/components/PlanTextPanel";
 import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
@@ -968,6 +970,18 @@ export function TakeoffPlanViewer({
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
 
   const sheet = sheets.find((s) => s.pageNumber === pageNumber) ?? null;
+  // ── WHAT THE USER EXCLUDED, THIS SHEET ONLY ──
+  //
+  // Refs, because a change finds again in the same tick, before any re-render
+  // or server refresh could hand the new rows down.
+  const exclusionRowsRef = useRef<NonNullable<PlanSheet["exclusions"]>>([]);
+  const exclusionsRef = useRef<ReturnType<typeof userExclusionsFromRows>>(null);
+  const [userAside, setUserAside] = useState<{ kind: string; why: string; n: number }[]>([]);
+  useEffect(() => {
+    exclusionRowsRef.current = sheet?.exclusions ?? [];
+    exclusionsRef.current = userExclusionsFromRows(exclusionRowsRef.current);
+    setUserAside([]);
+  }, [sheet?.id, sheet?.exclusions]);
   const calibration = sheet?.calibration ?? null;
   /**
    * What the last detection on this page was computed FROM.
@@ -1629,7 +1643,7 @@ export function TakeoffPlanViewer({
   const kindOf = (id: ToolId): MeasurementKind | null =>
     id === "linear"
       ? "LINEAR"
-      : id === "area" || id === "rect"
+      : id === "area" || id === "rect" || id === "workarea"
         ? "AREA"
         : id === "count"
           ? "COUNT"
@@ -1727,6 +1741,12 @@ export function TakeoffPlanViewer({
     if (!drawing) return;
     const raw = pointAt(event);
     if (!raw) return;
+    // ── "EXCLUDE WALLS LIKE THIS" PICKS A RUN, IT DRAWS NOTHING ──
+    if (tool === "exclude") {
+      event.preventDefault();
+      void onExcludeAt(raw);
+      return;
+    }
     event.preventDefault();
 
     // ── EDIT MODE SELECTS RATHER THAN DRAWS ──
@@ -1804,7 +1824,7 @@ export function TakeoffPlanViewer({
       // Closing is a no-op on the geometry — `ringArea` already treats the
       // list as closed — so this just stops the click adding a duplicate of
       // the first vertex, which would read as a zero-length final edge.
-      if ((tool === "area" || tool === "cutout") && closesRing(point, current.xs, current.ys, SNAP_RADIUS / Math.max(1, zoomFactor))) {
+      if ((tool === "area" || tool === "cutout" || tool === "workarea") && closesRing(point, current.xs, current.ys, SNAP_RADIUS / Math.max(1, zoomFactor))) {
         return current;
       }
 
@@ -2577,6 +2597,51 @@ export function TakeoffPlanViewer({
       }),
   );
 
+  /** Add or clear one kind of exclusion, then find again so the list answers at once. */
+  async function afterExclusionChange(result: { ok: boolean; error?: string }, next: NonNullable<PlanSheet["exclusions"]>) {
+    if (!result.ok) {
+      setFindError(result.error ?? "That did not save. Try again.");
+      return;
+    }
+    exclusionRowsRef.current = next;
+    exclusionsRef.current = userExclusionsFromRows(next);
+    await onFindWalls();
+  }
+
+  async function onExcludeAt(at: { x: number; y: number }) {
+    const feet = feetAcrossRef.current;
+    if (!sheet || feet === null || runsRef.current.length === 0) {
+      setFindError("Find the walls on this sheet first, then click one to exclude.");
+      return;
+    }
+    // `runAt` takes a line, so a click is a short nudge along each axis.
+    const reach = 0.5 / feet;
+    const hit =
+      runAt({ x1: at.x - reach, y1: at.y, x2: at.x + reach, y2: at.y }, runsRef.current, feet) ??
+      runAt({ x1: at.x, y1: at.y - reach, x2: at.x, y2: at.y + reach }, runsRef.current, feet);
+    if (hit === null) {
+      setFindError("No wall there. Click on one of the found walls.");
+      return;
+    }
+    const xs = [hit.x1, hit.x2];
+    const ys = [hit.y1, hit.y2];
+    await afterExclusionChange(await addSheetExclusion(jobId, sheet.id, "EXCLUDE_LIKE", xs, ys), [...exclusionRowsRef.current, { kind: "EXCLUDE_LIKE", xs, ys }]);
+  }
+
+  async function onSaveWorkArea() {
+    if (!sheet) return;
+    const xs = [...draft.xs];
+    const ys = [...draft.ys];
+    await afterExclusionChange(await addSheetExclusion(jobId, sheet.id, "WORK_AREA", xs, ys), [...exclusionRowsRef.current, { kind: "WORK_AREA", xs, ys }]);
+    setDraft(EMPTY);
+    setTool("pan");
+  }
+
+  async function onUndoExclusion(kind: "EXCLUDE_LIKE" | "WORK_AREA") {
+    if (!sheet) return;
+    await afterExclusionChange(await clearSheetExclusions(jobId, sheet.id, kind), exclusionRowsRef.current.filter((r) => r.kind !== kind));
+  }
+
   async function onFindWalls() {
     const doc = docRef.current;
     // ── A CLICK IS NEVER DROPPED IN SILENCE ──
@@ -2838,7 +2903,27 @@ export function TakeoffPlanViewer({
       setOtherViewsByPage((prev) => ({ ...prev, [pageNumber]: otherViews }));
       setExcludedByPage((prev) => ({ ...prev, [pageNumber]: leftOut }));
       setPrimaryViewShown(primaryShown);
-      const walls = found.walls;
+      // ── THE CUSTOMER'S LIST IS THE ESTIMATE'S LIST ──
+      //
+      // The same call the WALLS stage makes, with what the user excluded on
+      // this sheet, so the screen and the estimate cannot disagree. Labelling
+      // mode keeps the finder's own runs: a key grades them.
+      const W = pageSize.widthPt;
+      const offered =
+        answerKey !== undefined
+          ? null
+          : offeredCandidates({
+              walls: found.walls,
+              segments: found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })),
+              pageSegments: segments,
+              widthPt: W,
+              feetPerUnit,
+              planBoxes: detected.planBoxes,
+              textItems,
+              ...(exclusionsRef.current === null ? {} : { user: exclusionsRef.current }),
+            });
+      setUserAside((offered?.setAside ?? []).filter((a) => a.kind === "excluded-like" || a.kind === "outside-work-area"));
+      const walls = offered?.offeredRuns ?? found.walls;
       const regroup = found.regroup;
       setTemplateStrokes(found.templateDropped);
       setLayerDropped(found.layerDropped);
@@ -2900,7 +2985,7 @@ export function TakeoffPlanViewer({
       setFound(
         doubted !== null
           ? regroup(runs.filter((_, at) => !doubted.has(at)))
-          : runs === walls
+          : runs === found.walls
             ? found.groups
             : regroup(runs),
       );
@@ -3616,6 +3701,20 @@ export function TakeoffPlanViewer({
               and a person may have corrected; the one below is read off the
               title block here and only fills a silence. One slot, never two
               cautions saying the same thing in different words. */}
+          {userAside.map((one) => (
+            <p key={one.kind} className="mb-2 flex flex-wrap items-center gap-2 text-xs text-ink-muted" data-takeoff={one.kind}>
+              <span>
+                {one.n} wall{one.n === 1 ? "" : "s"} {one.why}.
+              </span>
+              <button
+                type="button"
+                className="underline"
+                onClick={() => void onUndoExclusion(one.kind === "excluded-like" ? "EXCLUDE_LIKE" : "WORK_AREA")}
+              >
+                Undo
+              </button>
+            </p>
+          ))}
           {sheetCaution && found.length > 0 && (
             <p
               className="mb-3 rounded-md bg-tag-amber p-2 text-xs text-tag-amber-ink"
@@ -4904,7 +5003,18 @@ export function TakeoffPlanViewer({
             />
           )}
 
-          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && (sheet || tool === "count") && draft.xs.length > 0 && (
+          {tool === "workarea" && sheet && draft.xs.length >= 3 && (
+            <button
+              type="button"
+              data-takeoff="save-work-area"
+              onClick={() => void onSaveWorkArea()}
+              className="mt-3 rounded-md bg-brand px-3 py-1 text-sm font-semibold text-neutral-900 hover:bg-yellow-500"
+            >
+              Save work area
+            </button>
+          )}
+
+          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && tool !== "exclude" && tool !== "workarea" && (sheet || tool === "count") && draft.xs.length > 0 && (
             <MeasurementForm
               jobId={jobId}
               pageId={sheet?.id ?? null}

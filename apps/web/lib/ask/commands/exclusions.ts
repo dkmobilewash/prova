@@ -67,6 +67,7 @@ export const notYetRegistered: Exclusion[] = [
   // `isProvaOperator`, never from input, and the rows land in Prova's own
   // internal CRM. A tenant has nothing here for the assistant to offer, and an
   // owner mailing a prospect is not something a model should propose.
+  { action: "takeoffExclusions.*", reason: "Excluding walls and drawing a work area are a click and a shape on the sheet itself; there is nothing to say in words that the drawing does not show better. Never a command." },
   { action: "takeoffOffer.*", reason: "Prova's own customer acquisition — the public /wall-takeoff intake, which has no signed-in principal at all, and the owner-gated action that mails the finished read back. The target company is resolved from isProvaOperator server-side, never from input, and the rows land in Prova's internal CRM. Nothing here for the assistant to offer a tenant. Never a command." },
 
   // Diego's lane, later phases.

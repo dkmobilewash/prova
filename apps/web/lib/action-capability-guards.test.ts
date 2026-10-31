@@ -1983,6 +1983,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   doorsWindows: () => import("./actions/doorsWindows"),
   takeoffItems: () => import("./actions/takeoffItems"),
   takeoffClassify: () => import("./actions/takeoffClassify"),
+  takeoffExclusions: () => import("./actions/takeoffExclusions"),
   takeoffReadSheet: () => import("./actions/takeoffReadSheet"),
   // Crew & time. Five of the seven actions here are decided per SECTION
   // rather than per page (SECTION_DECIDED) — `/jobs/[id]/crew` withholds
