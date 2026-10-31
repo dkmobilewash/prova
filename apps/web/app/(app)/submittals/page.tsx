@@ -8,6 +8,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { SubmittalForm } from "@/components/SubmittalForm";
 import { EmptyState } from "@/components/EmptyState";
 import { SubmittalRow } from "@/components/SubmittalRow";
+import { loadSends } from "@/lib/sent-documents-query";
 import { SubmittalProposals } from "@/components/SubmittalProposals";
 import { readPackageContents } from "@/lib/submittal-package";
 import { daysBetween, isOverdue, latestRevision, submittalState } from "@/components/submittalLabels";
@@ -64,17 +65,21 @@ export default async function SubmittalsPage({
     },
     orderBy: [{ jobId: "asc" }, { number: "desc" }],
     include: {
-      job: { select: { name: true, contact: { select: { name: true } } } },
+      job: { select: { name: true, contact: { select: { name: true, email: true } } } },
       submittedBy: { select: { name: true } },
       revisions: { orderBy: { revisionNumber: "asc" } },
     },
   });
+
+  const sends = await loadSends(company.id, "SUBMITTAL_PACKAGE", submittals.map((submittal) => submittal.id));
 
   const allRows = submittals.map((submittal) => ({
     id: submittal.id,
     number: submittal.number,
     jobName: submittal.job.name,
     gcName: submittal.job.contact.name,
+    gcEmail: submittal.job.contact.email,
+    sends: sends.get(submittal.id) ?? [],
     title: submittal.title,
     description: submittal.description,
     specSection: submittal.specSection,
@@ -252,7 +257,8 @@ export default async function SubmittalsPage({
               today={today}
               showJob={!activeJob}
               canDelete={currentUser.role === "OWNER"}
-              companyName={company.name}
+              companyName={company.dbaName ?? company.name}
+              companyId={company.id}
             />
           ))}
         </ul>

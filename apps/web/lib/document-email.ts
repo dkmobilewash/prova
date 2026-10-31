@@ -48,6 +48,33 @@ export function payApplicationEmail(input: {
   };
 }
 
+/** Above this a package goes by link. The provider takes more, but plenty of
+ * receiving mail servers refuse past about this size. */
+export const EMAIL_ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
+export const PACKAGE_LINK_DAYS = 30;
+
+export function submittalPackageEmail(input: {
+  company: string;
+  jobName: string;
+  submittalNumber: number;
+  revisionNumber: number;
+  title: string;
+  contactName: string;
+  contactEmail: string | null;
+}): DocumentEmailDraft {
+  return {
+    toAddress: input.contactEmail ?? "",
+    toName: input.contactName,
+    subject: `Submittal ${input.submittalNumber} rev ${input.revisionNumber} from ${input.company}: ${input.jobName}`,
+    body: `Submittal ${input.submittalNumber}, revision ${input.revisionNumber}: ${input.title}, for ${input.jobName}.\n\nReply to this email with any questions.\n\n${input.company}`,
+  };
+}
+
+/** The line added under the person's own words when the file goes by link. */
+export function packageLinkLine(url: string, expires: Date): string {
+  return `\n\nThis package is too large to attach. Download it here until ${expires.toISOString().slice(0, 10)}:\n${url}`;
+}
+
 /** Accepts only a real calendar day. It is required, because the form always
  * carries one. */
 export function sentOnFromForm(raw: unknown): Date | null {
@@ -63,12 +90,20 @@ export type SendRow = {
   sentOn: string;
   /** Delivered, Bounced and so on, always derived from the provider's events. */
   status: string;
+  /** The file went by link, not attached, and the link works until this day. */
+  linkUntil: string | null;
   /** Bounced, failed or marked as spam: somebody has to act. */
   needsAction: boolean;
   detail: string | null;
 };
 
-export function sendRow(row: { id: string; sentOn: string; toAddress: string; events: MessageEventData[] }): SendRow {
+export function sendRow(row: {
+  id: string;
+  sentOn: string;
+  toAddress: string;
+  linkUntil?: string | null;
+  events: MessageEventData[];
+}): SendRow {
   const state = messageState(row.events);
   const needsAction = state === "BOUNCED" || state === "FAILED" || state === "COMPLAINED";
   const failure = row.events.find((event) => event.detail && ["BOUNCED", "FAILED", "COMPLAINED"].includes(event.type));
@@ -76,6 +111,7 @@ export function sendRow(row: { id: string; sentOn: string; toAddress: string; ev
     id: row.id,
     toAddress: row.toAddress,
     sentOn: row.sentOn,
+    linkUntil: row.linkUntil ?? null,
     status: stateLabel(state),
     needsAction,
     detail: needsAction ? (failure?.detail ?? null) : null,

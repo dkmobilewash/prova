@@ -558,7 +558,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     model: "sentDocument",
     label: "Documents emailed",
     note: "Each purchase order and pay application emailed from the app: which document, the message that carried it, the file name and the date sent. The files themselves download from the document's own page.",
-    columns: ["id", "jobId", "messageId", "kind", "documentId", "fileName", "sentOn", "createdAt"],
+    columns: ["id", "jobId", "messageId", "kind", "documentId", "fileName", "sentOn", "linkExpiresAt", "createdAt"],
     scope: byCompany,
   },
   {
@@ -1115,6 +1115,8 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
 export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
   content:
     "the PDF itself, which does not fit in a spreadsheet cell. Each one downloads from the document's page.",
+  blobPathname: "where the same PDF sits in storage, which means nothing outside this app.",
+  linkToken: "the secret part of a download link, which is a credential and is never exported.",
   assemblyLibraryPinnedAt:
     "when this job stopped following the company assembly library, or null for most jobs. " +
     "Plumbing for the expander that turns a takeoff into estimate lines: it decides whether a " +

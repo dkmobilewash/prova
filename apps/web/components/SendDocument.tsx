@@ -22,7 +22,8 @@ export function SendHistory({ sends }: { sends: SendRow[] }) {
       {sends.map((send) => (
         <li key={send.id} className={send.needsAction ? "text-danger" : "text-ink-body"}>
           Emailed {send.sentOn} to {send.toAddress} · {send.status}
-          {send.detail ? ` · ${send.detail}` : ""} ·{" "}
+          {send.detail ? ` · ${send.detail}` : ""}
+          {send.linkUntil ? ` · sent as a link, works until ${send.linkUntil}` : ""} ·{" "}
           <a href={`/api/sent-documents/${send.id}`} className="text-link hover:underline">
             Download what was sent
           </a>
