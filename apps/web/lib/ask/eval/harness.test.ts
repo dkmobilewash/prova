@@ -96,6 +96,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: plays the user from the labels on every labelled sheet — one click on the longest junk run for 'exclude walls like this', a work-area box from the real key — and reports junk removed and real lost, per training sheet and as a held-out total. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts sheets were read",
     "zzRealisticUser.eval.ts":
       "calls no model: scores the offered list after a simulated user's work-area box and up to three exclude-like clicks with undo, new-build against renovation, held-out as totals. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts sheets were read",
+    "zzPlanPairs.eval.ts":
+      "calls no model: reads every page of every labelled set for headings naming an existing or demolition plan; training listed, held-out as a count. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts sets were read",
     "zzExisting.eval.ts":
       "calls no model: tallies the runs the `existing` set-aside takes on every labelled sheet, by route (tag / area / legend), against the labels as real / junk / unverdicted; training per sheet, held-out as one unnamed total. Skips without REAL_PLAN_DIR and TAKEOFF_LABEL_DIR and asserts sheets were read",
     "zzLegendBox.eval.ts":

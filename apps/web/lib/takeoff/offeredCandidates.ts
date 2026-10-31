@@ -1,6 +1,7 @@
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { bothFacesDashedInPoints } from "./dashedFaces";
 import { existingSentence, existingWalls, type ExistingWall } from "./existingWalls";
+import { onPriorPlan, type PriorLine } from "./planCompare";
 import { clipToWorkArea, describeStyle, wallsLikeThese, type Line, type Polygon } from "./userExclusions";
 import { isTableRows, isUnderline } from "./textRows";
 import { legendBoxes } from "./legendBoxes";
@@ -87,6 +88,8 @@ export type DetectedSheet = {
    * passes the page's own.
    */
   user?: { excludeLike?: readonly Line[]; workArea?: readonly Polygon[] };
+  /** The prior plan's walls, already aligned onto this sheet, page-width units — see `planCompare.ts`. */
+  priorPlan?: readonly PriorLine[];
 };
 
 export type OfferedResult = {
@@ -302,7 +305,12 @@ export function offeredCandidates(
     if (ex !== undefined && !framed.sides.has(w) && !framed.inside.has(w)) existingRuns.push(ex);
   }
   const isExisting = new Set(existingRuns.map((e) => e.wall));
-  const survivors = onPlan.filter((w) => !framed.sides.has(w) && !framed.inside.has(w) && !isExisting.has(w));
+  const notFramed = onPlan.filter((w) => !framed.sides.has(w) && !framed.inside.has(w) && !isExisting.has(w));
+  // ── ON THE PRIOR PLAN TOO: EXISTING TO REMAIN — see `planCompare.ts` ──
+  const prior = sheet.priorPlan ?? [];
+  const onPrior = prior.length === 0 ? [] : notFramed.filter((w) => onPriorPlan(w, prior, sheet.feetPerUnit));
+  const survivors = onPrior.length === 0 ? notFramed : notFramed.filter((w) => !onPrior.includes(w));
+  if (onPrior.length > 0) aside.set("on-prior-plan", { kind: "on-prior-plan", why: "also drawn on this level's existing or demolition plan — existing to remain", n: onPrior.length });
   // ── WHAT THE USER EXCLUDED — see `userExclusions.ts` ──
   //
   // After every rule, on what would otherwise be offered: the walls drawn
@@ -398,6 +406,7 @@ export function offeredCandidates(
     setAside: [...aside.values()].sort((a, b) => b.n - a.n),
     setAsideLines: [
       ...equipment.map((e) => ({ kind: "site-equipment", why: `'${e.word}' is written ${e.feet.toFixed(0)} ft away`, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
+      ...onPrior.map((w) => ({ kind: "on-prior-plan", why: "also drawn on this level's existing or demolition plan", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...existingRuns.map((e) => ({ kind: "existing", why: e.why, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
       ...[...like.excluded].map((w) => ({ kind: "excluded-like", why: "drawn like a wall you clicked — excluded by you", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...area.outside.map((w) => ({ kind: "outside-work-area", why: "outside the work area you drew", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),

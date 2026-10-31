@@ -3,14 +3,20 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
+import { sheetNumberFrom } from "../../plan-ingest/sheetNumber";
 import { textRows } from "../existingWalls";
+import { demoRuns } from "../demoWalls";
+import { existingWallSet } from "../existingWallSet";
+import { FEW_WALLS_SHARE, MIN_VOTES, onPriorPlan, SAME_PLAN_INK_SHARE, type PriorLine } from "../planCompare";
+import { alignViews } from "../viewAlign";
 import { keyFromLabels, scoreSheet, type SheetScore } from "../heldOutScore";
 import { excludedSheetReason, heldOutReason } from "../heldOutSets";
+import { findWallsOnSheet } from "../findWallsOnSheet";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { sheetStrokes } from "../sheetStrokes";
 import type { Line, Polygon } from "../userExclusions";
 import { wallsLikeThese } from "../userExclusions";
-import type { WallCandidate } from "../wallVectors";
+import { oneFacePerLine, type StrokeSegment, type WallCandidate } from "../wallVectors";
 
 /**
  * ── THE SCORECARD WITH A REALISTIC USER ON IT ──
@@ -34,6 +40,7 @@ import type { WallCandidate } from "../wallVectors";
 const DIR = process.env.REAL_PLAN_DIR ?? "";
 const DIR2 = process.env.REAL_PLAN_DIR2 ?? "";
 const LABELS = process.env.TAKEOFF_LABEL_DIR ?? "";
+const ONLY = (process.env.RU_ONLY ?? "").toLowerCase();
 const KEPT_CLICKS = 3;
 const TRIES = 6;
 const flat = (s: string) => s.replace(/[^a-z0-9]+/gi, "").toUpperCase();
@@ -44,9 +51,11 @@ function findPdf(dir: string): string | null {
 type Verdict = { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet?: number; verdict: string };
 type Saved = { page: number; feetPerUnit: number; verdicts: Verdict[] };
 const count = (re: RegExp, text: string) => (text.match(re) ?? []).length;
-const ARMS = ["as offered", "box 2 ft", "box 2 ft + clicks", "box 10 ft + clicks"] as const;
+const ARMS = ["as offered", "box 2 ft", "box 2 ft + clicks", "box 10 ft + clicks", "compare", "compare + box", "compare + box + clicks"] as const;
+const OLD_PLAN = /^(?:\S+\s+){0,5}(?:DEMO(?:LITION)?|EXISTING|EX\.|AS[- ]BUILT)\b.{0,40}\b(?:PLAN|LAYOUT)S?\b/i;
+const NOT_FLOOR = /\b(?:ROOF|REFLECTED|RCP|CEILING|SITE|ELECTRICAL|LIGHTING|POWER|PLUMBING|MECHANICAL|HVAC|DUCT|FOUNDATION|FRAMING|GRADING|UTILITY|LANDSCAPE)\b/i;
 type Arm = (typeof ARMS)[number];
-type Row = { name: string; held: boolean; renovation: boolean; strict: boolean; arms: Record<Arm, SheetScore>; clicks: number; tries: number };
+type Row = { priorPage: number | null; priorHow: string; name: string; held: boolean; renovation: boolean; strict: boolean; arms: Record<Arm, SheetScore>; clicks: number; tries: number };
 
 describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic user", () => {
   it("scores a box and three clicks per sheet, new-build against renovation", { timeout: 7_200_000 }, async () => {
@@ -61,6 +70,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic use
         if (excludedSheetReason(dir, sheet) !== null) continue;
         const pdf = findPdf(dir);
         if (pdf === null) continue;
+        if (ONLY !== "" && !`${dir}/${sheet}`.toLowerCase().includes(ONLY)) continue;
         const saved = JSON.parse(readFileSync(join(LABELS, dir, name), "utf8")) as Saved;
         const strokes = await sheetStrokes(Buffer.from(readFileSync(pdf)), saved.page);
         if (strokes === null) continue;
@@ -82,7 +92,55 @@ describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic use
         const d = detectForSheet({ segments: strokes.segments, textItems, pageSize: { widthPt: W, heightPt: strokes.heightPt }, feetPerUnit: fpu });
         const units = d.found.inUnits;
         const pts = units.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W }));
-        const offer = (user?: { excludeLike?: Line[]; workArea?: Polygon[] }) => offeredCandidates({ walls: d.found.walls, segments: pts, pageSegments: strokes.segments, widthPt: W, feetPerUnit: fpu, planBoxes: d.planBoxes, textItems, ...(user === undefined ? {} : { user }) });
+        const offer = (user?: { excludeLike?: Line[]; workArea?: Polygon[] }, priorPlan?: PriorLine[]) => offeredCandidates({ walls: d.found.walls, segments: pts, pageSegments: strokes.segments, widthPt: W, feetPerUnit: fpu, planBoxes: d.planBoxes, textItems, ...(user === undefined ? {} : { user }), ...(priorPlan === undefined ? {} : { priorPlan }) });
+        // ── THE PRIOR PLAN: THE CANDIDATE PAGE THAT COVERS MOST OF THIS SHEET ──
+        let priorPlan: PriorLine[] | undefined;
+        let priorPage: number | null = null;
+        let priorHow = "";
+        const liveRuns = offer().offeredRuns;
+        const liveFeet = liveRuns.reduce((n, w) => n + w.lengthFeet, 0);
+        const doc2 = await openPlanPdf(Buffer.from(readFileSync(pdf)));
+        let bestFeet = 0;
+        const longFaces = (segs: readonly StrokeSegment[], w: number, fp: number): Line[] =>
+          oneFacePerLine([...segs], fp / w).map((f) => ({ x1: f.x1 / w, y1: f.y1 / w, x2: f.x2 / w, y2: f.y2 / w })).filter((f) => Math.hypot(f.x2 - f.x1, f.y2 - f.y1) * fp >= 3);
+        const inkFeet = (ls: readonly Line[]) => ls.reduce((n, f) => n + Math.hypot(f.x2 - f.x1, f.y2 - f.y1) * fpu, 0);
+        const myFaces = longFaces(strokes.segments, W, fpu);
+        for (let page = 1; page <= doc2.pageCount; page += 1) {
+          if (page === saved.page) continue;
+          const t = await doc2.pageText(page);
+          const its = t.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
+          if (!textRows(its).some((r) => r.str.trim().length <= 60 && OLD_PLAN.test(r.str.trim()) && !NOT_FLOOR.test(r.str))) continue;
+          // Architectural sheets only: another discipline's demolition plan is not the walls.
+          const number = sheetNumberFrom(t).sheetNumber;
+          if (number !== null && !/^(?:A|AD|D)[-.\d]/i.test(number)) continue;
+          const st = await doc2.pageStrokes(page);
+          if (st.segments.length < 100) continue;
+          try {
+            const fpOther = (fpu * st.widthPt) / W;
+            const faces = longFaces(st.segments, st.widthPt, fpOther);
+            if (inkFeet(faces) < SAME_PLAN_INK_SHARE * inkFeet(myFaces)) continue; // an index or cover page
+            const paired = findWallsOnSheet({ segments: st.segments, textItems: its, pageSize: { widthPt: st.widthPt, heightPt: st.heightPt }, feetPerUnit: fpOther, wallTypes: [], sampledSheets: null }).walls;
+            const remove = demoRuns(st.segments, st.widthPt, fpOther, its);
+            // A wall to be demolished does not remain, so it is not "on the prior plan".
+            const onRemoved = (l: Line) => remove.some((r) => onPriorPlan({ ...r, thicknessFeet: 0.5 }, [{ ...l, thicknessFeet: 0.5 }], fpu) || onPriorPlan({ x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2, thicknessFeet: r.thicknessIn / 12 }, [{ ...r, thicknessFeet: r.thicknessIn / 12 }], fpu));
+            const remain = paired.filter((w) => !onRemoved(w));
+            const few = remain.reduce((n, w) => n + w.lengthFeet, 0) < FEW_WALLS_SHARE * liveFeet;
+            const set = existingWallSet({ level: null, remove, remain, newPlan: liveRuns, feetPerUnit: fpu });
+            const shift = !few && set.shift !== null ? set.shift : alignViews(myFaces, faces, fpu);
+            if (shift === null || shift.votes < MIN_VOTES) continue;
+            const lines: PriorLine[] = few ? faces.filter((f) => !onRemoved(f)) : remain.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, thicknessFeet: w.thicknessFeet }));
+            const aligned = lines.map((p) => ({ ...p, x1: p.x1 + shift.dx, y1: p.y1 + shift.dy, x2: p.x2 + shift.dx, y2: p.y2 + shift.dy }));
+            const feet = liveRuns.filter((w) => onPriorPlan(w, aligned, fpu)).reduce((n, w) => n + w.lengthFeet, 0);
+            if (process.env.RU_DEBUG === "1") console.log(`    PRIOR ${sheet} p${page} ${number ?? "-"}: ${few ? "faces" : "walls"} ${shift.votes} votes, ${feet.toFixed(0)} of ${liveFeet.toFixed(0)} ft`);
+            if (feet > bestFeet) {
+              bestFeet = feet;
+              priorPlan = aligned;
+              priorPage = page;
+              priorHow = `${few ? "faces" : "walls"}, ${shift.votes} votes, "${(textRows(its).find((r) => OLD_PLAN.test(r.str.trim()) && !NOT_FLOOR.test(r.str))?.str ?? "").trim().slice(0, 36)}"`;
+            }
+          } catch { /* a page too dense to detect is not a prior plan */ }
+        }
+        await doc2.close();
         const { key } = keyFromLabels(saved, fpu);
         const judged = saved.verdicts.filter((v) => v.verdict === "not-wall");
         const score = (o: ReturnType<typeof offer>) =>
@@ -104,8 +162,8 @@ describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic use
           verdictOf.set(w, v);
           return v;
         };
-        const clicked = (workArea: Polygon[]) => {
-          const runs = offer({ workArea }).offeredRuns;
+        const clicked = (workArea: Polygon[], prior?: PriorLine[]) => {
+          const runs = offer({ workArea }, prior).offeredRuns;
           const feet = (list: Iterable<WallCandidate>, v: string) => [...list].filter((w) => verdict(w) === v).reduce((n, w) => n + w.lengthFeet, 0);
           const kept: Line[] = [];
           const tried = new Set<WallCandidate>();
@@ -125,14 +183,17 @@ describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic use
           // The scored arm replays these through the real path, where the style bands see the whole sheet.
           return { kept, tries: tried.size };
         };
-        const tight = clicked(box(2)), loose = clicked(box(10));
+        const tight = clicked(box(2)), loose = clicked(box(10)), both = clicked(box(2), priorPlan);
         rows.push({
-          name: `${dir.slice(0, 22)}/${sheet}`, held, renovation, strict, clicks: tight.kept.length, tries: tight.tries,
+          priorPage, priorHow, name: `${dir.slice(0, 22)}/${sheet}`, held, renovation, strict, clicks: tight.kept.length, tries: tight.tries,
           arms: {
             "as offered": score(offer()),
             "box 2 ft": score(offer({ workArea: box(2) })),
             "box 2 ft + clicks": score(offer({ workArea: box(2), excludeLike: tight.kept })),
             "box 10 ft + clicks": score(offer({ workArea: box(10), excludeLike: loose.kept })),
+            compare: score(offer(undefined, priorPlan)),
+            "compare + box": score(offer({ workArea: box(2) }, priorPlan)),
+            "compare + box + clicks": score(offer({ workArea: box(2), excludeLike: both.kept }, priorPlan)),
           },
         });
       }
@@ -153,6 +214,13 @@ describe.skipIf(DIR === "" || LABELS === "")("the scorecard with a realistic use
       show(`${label} — RENOVATION`, set.filter((r) => r.renovation));
       show(`${label} — RENOVATION, strict words`, set.filter((r) => r.strict));
     }
+    console.log(`\n  compare, per training sheet where a prior plan aligned: junk removed / real lost`);
+    for (const r of rows.filter((x) => !x.held && x.priorPage !== null)) {
+      const a = r.arms["as offered"], b = r.arms.compare;
+      console.log(`    ${r.name.padEnd(30)} prior p${r.priorPage} ${r.priorHow} · junk ${(a.confirmedJunkFeet - b.confirmedJunkFeet).toFixed(0).padStart(5)} · real ${(b.missingFeet - a.missingFeet).toFixed(0).padStart(5)} · key ${a.keyFeet.toFixed(0)}`);
+    }
+    const ho = rows.filter((x) => x.held && x.priorPage !== null);
+    console.log(`    HELD-OUT, ${ho.length} sheets aligned of ${rows.filter((x) => x.held).length}: junk ${ho.reduce((n, r) => n + r.arms["as offered"].confirmedJunkFeet - r.arms.compare.confirmedJunkFeet, 0).toFixed(0)} · real ${ho.reduce((n, r) => n + r.arms.compare.missingFeet - r.arms["as offered"].missingFeet, 0).toFixed(0)}`);
     console.log(`\n  scans skipped: ${skippedScans}`);
     console.log(`  training renovation sheets: ${rows.filter((r) => !r.held && r.renovation).map((r) => r.name).join(", ")}`);
     console.log(`  training new-build sheets: ${rows.filter((r) => !r.held && !r.renovation).map((r) => r.name).join(", ")}`);

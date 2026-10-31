@@ -4438,3 +4438,47 @@ real". Padding the box to 10 ft moves little (86 → 98 per 100 key).
 **Correction to the table above:** its "held-out, 17 sheets" included Evergreen's
 two scanned sheets, which this path cannot read. They offer nothing, so its
 junk and real feet stand; the sheet count is 15 readable plus 2 scans.
+
+## Plan comparison for renovations — measured, not shipped (2026-10-30, `diego/plan-compare`)
+
+A wall on the new plan that the demolition plan also draws as remaining is
+existing to remain. `planCompare.ts`: same place within 0.5 ft and the same
+thickness band; against raw faces both faces must be drawn. Alignment is
+`existingWallSet`'s shift (third session, af43df2e). Walls on demolition runs do
+not count as remaining. Raw faces are used when the finder pairs under 25% of the
+new sheet's feet. Prior page: architectural sheets only, at least half this
+sheet's line work, best coverage wins. Same scale assumed.
+
+**Census.** Ten of eleven training renovation sets carry a heading naming an
+existing or demolition plan. Only five sheets paired and aligned: Baker A100,
+Bunkie A100, Crosslines A100, E Street A2.1, Murray A101. Green Bay, McAllen,
+Supreme Court, Fairgrounds, Camp Bow Wow and ELEVEN03 did not get through the gates.
+
+| training sheet | prior | junk removed | real lost |
+| --- | --- | --- | --- |
+| Bunkie A100 | p29 | 261 | 0 |
+| Murray A101 | p15 | 108 | 0 |
+| E Street A2.1 | p24 A1.1 | 39 | 199 |
+| Crosslines A100 | p8 D100 | 34 | 1,731 |
+| Baker A100 | p11 | 0 | 0 |
+| **training** | | **442** | **1,930** |
+
+Held-out, 6 sheets aligned of 15, totals: junk 5,368, real 519.
+
+**Fails the shipping rule as measured.** But Crosslines' loss looks like a stale
+key: D100's legend says solid lines are existing to remain, and its demising and
+corridor walls are solid in the same places as A100, while the key calls them
+real. That needs a Chrome re-judge before this verdict is final. E Street's 199
+ft has not been looked at. Do not read the Crosslines explanation as covering it.
+
+| held-out renovation, 11 sheets | recall | junk per 100 offered |
+| --- | --- | --- |
+| as offered | 89.4% | 63 |
+| box | 89.5% | 59 |
+| box + clicks | 80.0% | 51 |
+| compare + box | 82.2% | 53 |
+| compare + box + clicks | 74.4% | 41 |
+
+Two earlier forms failed worse: any raw face within reach took recall on training
+renovations to 29.7%, because one face claimed a whole wall and index pages paired.
+`priorPlan` is an input to `offeredCandidates` that nothing in the product sets.
