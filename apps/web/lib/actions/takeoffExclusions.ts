@@ -70,6 +70,7 @@ export async function addSheetExclusion(jobId: string, pageId: string, kind: Kin
   const row = await prisma.takeoffSheetExclusion.create({ data: { pageId, kind, xs, ys, createdByUserId: found.userId }, select: { id: true } });
   refreshAfter(jobId, found);
   revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { ids: [row.id] } };
 }
 
@@ -82,6 +83,7 @@ export async function removeSheetExclusion(jobId: string, pageId: string, id: st
   await prisma.takeoffSheetExclusion.deleteMany({ where: { id, pageId } });
   refreshAfter(jobId, found);
   revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { ids: [] } };
 }
 
@@ -94,5 +96,6 @@ export async function clearSheetExclusions(jobId: string, pageId: string, kind: 
   await prisma.takeoffSheetExclusion.deleteMany({ where: { pageId, kind } });
   refreshAfter(jobId, found);
   revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { ids: [] } };
 }
