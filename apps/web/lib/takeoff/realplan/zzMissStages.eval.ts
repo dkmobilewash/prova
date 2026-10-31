@@ -38,6 +38,7 @@ const DIR = process.env.REAL_PLAN_DIR ?? "";
 const DIR2 = process.env.REAL_PLAN_DIR2 ?? "";
 const LABELS = process.env.TAKEOFF_LABEL_DIR ?? "";
 const OUT = process.env.PROBE_OUT ?? "";
+const NOT_A_SCAN_STROKES = 50;
 /**
  * ── HELD-OUT, AS TOTALS AND NOTHING FINER ──
  *
@@ -105,6 +106,9 @@ describe.skipIf(DIR === "" || LABELS === "")("where the missed real wall goes, o
       const saved = JSON.parse(readFileSync(join(LABELS, file.dir, `${file.sheet}.json`), "utf8")) as Saved;
       const strokes = await sheetStrokes(Buffer.from(readFileSync(pdf)), saved.page);
       if (strokes === null) continue;
+      // A scan has no strokes for this vector path, so it is not measured here, not a
+      // miss: Evergreen once read as 3,836 ft "nothing drawn". `rasterStage.eval.ts` is the scan path.
+      if (strokes.segments.length < NOT_A_SCAN_STROKES) continue;
       const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
       const text = await doc.pageText(saved.page);
       await doc.close();
