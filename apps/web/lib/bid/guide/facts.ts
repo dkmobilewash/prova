@@ -667,7 +667,8 @@ async function factsForJobs(companyId: string, jobs: LoadedJob[], timeZone: stri
         xs: row.xs,
         ys: row.ys,
         label: row.label,
-        calibration: { ...row.calibration, declaredDistanceFeet: Number(row.calibration.declaredDistanceFeet) },
+        // Null for a count, which needs no scale (#883): still counted, no length.
+        calibration: row.calibration === null ? null : { ...row.calibration, declaredDistanceFeet: Number(row.calibration.declaredDistanceFeet) },
       });
       handMeasurements.count += 1;
       if (primitive?.kind === "linear") handMeasurements.lengthFt += primitive.feet;

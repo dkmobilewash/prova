@@ -206,6 +206,8 @@ model TakeoffPlanPage {
   wallProposals TakeoffWallProposal[]
 
   createdAt DateTime @default(now())
+  exclusions TakeoffSheetExclusion[]
+
 
   @@unique([planId, pageNumber])
 }
@@ -278,6 +280,34 @@ enum TakeoffMeasurementKind {
 }
 
 /// One thing somebody traced.
+enum TakeoffExclusionKind {
+  /// The line of a wall the user clicked: every offered wall on the sheet
+  /// drawn the same way is set aside.
+  EXCLUDE_LIKE
+  /// A polygon of the area of work: walls outside it are set aside, walls
+  /// across its edge are cut at it.
+  WORK_AREA
+}
+
+/// What the user said about one sheet's walls — `lib/takeoff/userExclusions.ts`.
+/// A table of its own rather than measurement rows, because every reader of
+/// TakeoffMeasurement treats a row as a quantity; this can never reach a total.
+/// Geometry in page-width units. Sheet-relative: never read for another page.
+model TakeoffSheetExclusion {
+  id     String          @id @default(cuid())
+  pageId String
+  page   TakeoffPlanPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  kind TakeoffExclusionKind
+  xs   Float[]
+  ys   Float[]
+
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  @@index([pageId])
+}
+
 model TakeoffMeasurement {
   id     String          @id @default(cuid())
   pageId String
@@ -303,8 +333,13 @@ model TakeoffMeasurement {
   /// Nothing is lost by cascading: this table is append-only, so the only way
   /// a calibration is ever deleted is with the page it belongs to, and the
   /// measurements on that page are going with it regardless.
-  calibrationId String
-  calibration   TakeoffScaleCalibration @relation(fields: [calibrationId], references: [id], onDelete: Cascade)
+  ///
+  /// NULL ONLY FOR A COUNT. A count is a number of things and no scale changes
+  /// it, so electrical and plumbing sheets can be counted without one. The
+  /// migration's CHECK `TakeoffMeasurement_scale_unless_count` keeps the guard
+  /// above structural for lines and areas; Prisma cannot express it here.
+  calibrationId String?
+  calibration   TakeoffScaleCalibration? @relation(fields: [calibrationId], references: [id], onDelete: Cascade)
 
   kind TakeoffMeasurementKind
 

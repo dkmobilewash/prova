@@ -5,7 +5,6 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { actionFail, actionOk, ownerRefusal, type ActionResult, type ActionResultWith } from "./shared";
-import { applyPrintedScales } from "./takeoff";
 
 const SETTINGS_ONLY =
   "The company's settings aren't part of your job function. The account owner sets who sees what, on the Team page.";
@@ -32,12 +31,10 @@ export async function saveSymbolCountSwitch(formData: FormData): Promise<ActionR
  * ── ONE COUNT ACROSS THE SET: a measurement per sheet, one item ──
  *
  * The viewer walks the set in the browser (`searchAcrossSheets`) and sends
- * the kept points per sheet here in page-width units. A COUNT measurement
- * needs a page row and a calibration to point at, and a sheet nobody has
- * opened has neither — so the sheets that lack one get the scale they PRINT,
- * through `applyPrintedScales`, exactly as the whole-set takeoff does; a
- * sheet that prints none is counted on screen and reported as not saved,
- * never given a scale this code made up. Every measurement carries the
+ * the kept points per sheet here in page-width units. A count needs no scale,
+ * so every sheet saves, whatever its discipline and whether or not anybody
+ * has opened it; a sheet with no page row gets one. A sheet with a scale
+ * records it, and one without records none. Every measurement carries the
  * same label and the same item, so the job sees one count with a per-sheet
  * breakdown rather than a count per sheet.
  */
@@ -49,7 +46,6 @@ export type AcrossSheetsInput = {
 
 export type AcrossSheetsResult = {
   saved: { pageNumber: number; count: number; measurementId: string }[];
-  skipped: { pageNumber: number; count: number; why: string }[];
   total: number;
 };
 
@@ -78,38 +74,21 @@ export async function saveSymbolCountAcrossSheets(jobId: string, planId: string,
     if (!item) return actionFail("That takeoff item is no longer on this job. Reload the page.");
   }
 
-  // Sheets without a calibration get the scale they print, where they print one.
-  const have = new Set(
-    (await prisma.takeoffPlanPage.findMany({ where: { planId: plan.id, pageNumber: { in: sheets.map((s) => s.pageNumber) }, calibrations: { some: {} } }, select: { pageNumber: true } })).map((p) => p.pageNumber),
-  );
-  const missing = sheets.map((s) => s.pageNumber).filter((n) => !have.has(n));
-  const skippedWhy = new Map<number, string>();
-  if (missing.length > 0) {
-    const applied = await applyPrintedScales(jobId, plan.id, missing);
-    if (!applied.ok) return actionFail(applied.error);
-    for (const s of applied.value.skipped) skippedWhy.set(s.pageNumber, s.why);
-  }
-
-  const pages = await prisma.takeoffPlanPage.findMany({
-    where: { planId: plan.id, pageNumber: { in: sheets.map((s) => s.pageNumber) } },
-    include: { calibrations: { orderBy: { createdAt: "desc" }, take: 1 } },
-  });
   const saved: AcrossSheetsResult["saved"] = [];
-  const skipped: AcrossSheetsResult["skipped"] = [];
   for (const s of sheets) {
-    const page = pages.find((p) => p.pageNumber === s.pageNumber);
-    const calibration = page?.calibrations[0];
-    if (!page || !calibration) {
-      skipped.push({ pageNumber: s.pageNumber, count: s.xs.length, why: skippedWhy.get(s.pageNumber) ?? "this sheet has no scale — set one on it and count again" });
-      continue;
-    }
+    const page = await prisma.takeoffPlanPage.upsert({
+      where: { planId_pageNumber: { planId: plan.id, pageNumber: s.pageNumber } },
+      create: { planId: plan.id, pageNumber: s.pageNumber },
+      update: {},
+      select: { id: true, calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } } },
+    });
     const created = await prisma.takeoffMeasurement.create({
       select: { id: true },
-      data: { itemId: itemId === "" ? null : itemId, pageId: page.id, calibrationId: calibration.id, kind: "COUNT", xs: s.xs, ys: s.ys, label, createdByUserId: userId },
+      data: { itemId: itemId === "" ? null : itemId, pageId: page.id, calibrationId: page.calibrations[0]?.id ?? null, kind: "COUNT", xs: s.xs, ys: s.ys, label, createdByUserId: userId },
     });
     saved.push({ pageNumber: s.pageNumber, count: s.xs.length, measurementId: created.id });
   }
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
-  return { ok: true, value: { saved, skipped, total: saved.reduce((t, s) => t + s.count, 0) } };
+  return { ok: true, value: { saved, total: saved.reduce((t, s) => t + s.count, 0) } };
 }

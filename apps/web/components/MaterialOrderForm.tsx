@@ -8,6 +8,7 @@ import { inputClass, labelClass, type JobOption } from "@/components/RfiFields";
 import {
   MaterialOrderFields,
   type LineItemOption,
+  type PoLineOption,
   type VendorOption,
 } from "@/components/MaterialOrderFields";
 import { useLocalToday } from "@/components/localToday";
@@ -35,12 +36,14 @@ export function MaterialOrderForm({
   jobs,
   vendors,
   lineItems,
+  poLines,
   defaultJobId,
   startOpen = false,
 }: {
   jobs: JobOption[];
   vendors: VendorOption[];
   lineItems: LineItemOption[];
+  poLines?: PoLineOption[];
   defaultJobId?: string;
   /** Open on arrival — the page was reached by a create shortcut (`?new=1`). */
   startOpen?: boolean;
@@ -117,6 +120,7 @@ export function MaterialOrderForm({
         jobs={jobs}
         vendors={vendors}
         lineItems={lineItems}
+        poLines={poLines}
         defaultJobId={defaultJobId}
         defaults={{
           description: "",

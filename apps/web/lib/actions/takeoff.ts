@@ -670,6 +670,18 @@ export async function saveTakeoffCalibration(jobId: string, formData: FormData):
  * satisfies every existing caller's `ActionResult`, so nothing that ignores
  * the value had to change. A caller that WANTS the id types it.
  */
+/** A page row for a count on a sheet that has none, checked against the job. Not exported: a "use server" file's exports are actions. */
+async function countPage(jobId: string, companyId: string, planId: string, pageNumber: number) {
+  const plan = await prisma.takeoffPlan.findFirst({ where: { id: planId, jobId, companyId }, select: { id: true } });
+  if (!plan) return null;
+  return prisma.takeoffPlanPage.upsert({
+    where: { planId_pageNumber: { planId: plan.id, pageNumber } },
+    create: { planId: plan.id, pageNumber },
+    update: {},
+    select: { id: true },
+  });
+}
+
 export async function saveTakeoffMeasurement(
   jobId: string,
   formData: FormData,
@@ -678,22 +690,33 @@ export async function saveTakeoffMeasurement(
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company, id: userId } = context;
 
-  const pageId = String(formData.get("pageId") ?? "");
-  const page = await prisma.takeoffPlanPage.findFirst({
-    where: { id: pageId, plan: { jobId, companyId: company.id } },
-    include: { calibrations: { orderBy: { createdAt: "desc" }, take: 1 } },
-  });
-  if (!page) return actionFail("That sheet is no longer on this job. Reload the page.");
-
-  // THE STRUCTURAL GUARD, restated in words a person can act on: no
-  // calibration, no row to point at, no measurement.
-  const calibration = page.calibrations[0];
-  if (!calibration) return actionFail("Set the scale on this sheet before measuring it.");
-
   const kind = String(formData.get("kind") ?? "");
   if (kind !== "LINEAR" && kind !== "AREA" && kind !== "COUNT") {
     return actionFail("Pick a measuring tool first.");
   }
+
+  // A sheet nobody has scaled may have no page row yet. A count can make one;
+  // a line or an area still cannot, because it has no scale to be drawn to.
+  const pageId = String(formData.get("pageId") ?? "");
+  const pageNumber = optionalNumberFromForm(formData, "pageNumber", { integer: true, min: 1 })?.n ?? 0;
+  const planId = String(formData.get("planId") ?? "");
+  const found = pageId !== ""
+    ? await prisma.takeoffPlanPage.findFirst({ where: { id: pageId, plan: { jobId, companyId: company.id } }, select: { id: true } })
+    : kind === "COUNT" && Number.isInteger(pageNumber) && pageNumber >= 1
+      ? await countPage(jobId, company.id, planId, pageNumber)
+      : null;
+  if (!found) {
+    return actionFail(kind === "COUNT" || pageId !== "" ? "That sheet is no longer on this job. Reload the page." : "Set the scale on this sheet before measuring it.");
+  }
+  const page = await prisma.takeoffPlanPage.findUniqueOrThrow({
+    where: { id: found.id },
+    include: { calibrations: { orderBy: { createdAt: "desc" }, take: 1 } },
+  });
+
+  // THE STRUCTURAL GUARD, restated in words a person can act on: no
+  // calibration, no row to point at, no line or area. A count needs neither.
+  const calibration = page.calibrations[0] ?? null;
+  if (!calibration && kind !== "COUNT") return actionFail("Set the scale on this sheet before measuring it.");
 
   const points = pointsFromForm(formData);
   if (!points) return actionFail("That shape didn't come through. Draw it again.");
@@ -739,7 +762,7 @@ export async function saveTakeoffMeasurement(
     data: {
       itemId: itemId === "" ? null : itemId,
       pageId: page.id,
-      calibrationId: calibration.id,
+      calibrationId: calibration?.id ?? null,
       kind,
       xs: points.xs,
       ys: points.ys,
@@ -1176,7 +1199,7 @@ export async function postTakeoffMeasurements(jobId: string, formData: FormData)
       xs: row.xs,
       ys: row.ys,
       label: row.label,
-      calibration: {
+      calibration: row.calibration === null ? null : {
         x1: row.calibration.x1,
         y1: row.calibration.y1,
         x2: row.calibration.x2,

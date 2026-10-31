@@ -35,8 +35,12 @@ type Tx = Prisma.TransactionClient;
 
 export type PaperAnchor = { id: string; bidProjectId: string | null };
 
-/** What every paper row carries for this purpose. */
-export type FiledPaper = { bidInvitationId: string; bidProjectId: string | null };
+/**
+ * What every paper row carries for this purpose. `bidInvitationId` is null only
+ * for a spec section filed under a JOB that never had a bid (#886); such a row
+ * has no project either, so `papersFor` never shows it on a bid.
+ */
+export type FiledPaper = { bidInvitationId: string | null; bidProjectId: string | null };
 
 /** The `where` for the papers ONE invitation shows. Spread into any of the three models' queries. */
 export function paperWhere(anchor: PaperAnchor) {
@@ -253,10 +257,10 @@ export async function carryPapersToProject(
 
 /** What `/bids` says a paper "came in under", or null when it is this GC's own. */
 export function filedUnderLabel(
-  paper: { bidInvitationId: string },
+  paper: { bidInvitationId: string | null },
   thisInvitationId: string,
   gcNameByInvitation: ReadonlyMap<string, string>,
 ): string | null {
-  if (paper.bidInvitationId === thisInvitationId) return null;
+  if (paper.bidInvitationId === null || paper.bidInvitationId === thisInvitationId) return null;
   return gcNameByInvitation.get(paper.bidInvitationId) ?? null;
 }

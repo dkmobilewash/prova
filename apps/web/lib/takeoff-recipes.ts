@@ -28,7 +28,7 @@ export type SquareFeet = number;
 
 /** The three primitives a takeoff measures, whatever the scope. */
 export type Primitive =
-  | { kind: "linear"; feet: Feet }
+  | { kind: "linear"; feet: Feet; /** The measurement's own name, where a recipe groups by it. */ item?: string }
   | { kind: "area"; squareFeet: SquareFeet }
   | { kind: "count"; count: number; item: string };
 
@@ -173,6 +173,26 @@ export const RECIPES: Recipe[] = [
         .filter((i): i is Extract<Primitive, { kind: "count" }> => i.kind === "count")
         .filter((i) => i.item.trim() !== "" && i.count > 0)
         .map((i) => ({ label: i.item.trim(), quantity: i.count, unit: "ea" })),
+  },
+  {
+    // LABOR, unlike the rest: demolition produces no stuff, only work.
+    id: "demolition",
+    costCategory: "LABOR",
+    trade: "general",
+    label: "Demolition",
+    lines: (inputs) => {
+      const feet = new Map<string, number>();
+      for (const input of inputs) {
+        if (input.kind !== "linear") continue;
+        const name = input.item?.trim() || "Demo wall";
+        feet.set(name, (feet.get(name) ?? 0) + input.feet);
+      }
+      const walls = [...feet].map(([label, quantity]) => ({ label, quantity: Math.round(quantity * 100) / 100, unit: "lf" }));
+      const counts = inputs
+        .filter((i): i is Extract<Primitive, { kind: "count" }> => i.kind === "count" && i.count > 0)
+        .map((i) => ({ label: i.item.trim(), quantity: i.count, unit: "ea" }));
+      return [...walls, ...counts];
+    },
   },
 ];
 

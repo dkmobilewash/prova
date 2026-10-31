@@ -307,7 +307,7 @@ export async function BidLog({
   }
   const bids = invitations.map((one) => {
     const anchor = { id: one.id, bidProjectId: one.bidProjectId };
-    const filedUnder = (paper: { bidInvitationId: string }) => filedUnderLabel(paper, one.id, gcNameByInvitation);
+    const filedUnder = (paper: { bidInvitationId: string | null }) => filedUnderLabel(paper, one.id, gcNameByInvitation);
     return {
       ...one,
       quotes: papersFor(anchor, quoteRows).map((paper) => ({ ...paper, filedUnder: filedUnder(paper) })),

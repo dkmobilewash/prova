@@ -19,6 +19,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const readPlanBytes = vi.fn();
 const openPlanPdf = vi.fn();
 const createMany = vi.fn(async (_args: unknown) => ({ count: 0 }));
+/** The page's user exclusions; none unless a test says so. */
+const exclusionRows = vi.fn(async (_args: unknown): Promise<{ kind: string; xs: number[]; ys: number[] }[]> => []);
 
 vi.mock("@/lib/plan-ingest/planBytes", () => ({
   readPlanBytes: (planId: string, companyId: string) => readPlanBytes(planId, companyId),
@@ -32,6 +34,7 @@ vi.mock("@prova/db", () => ({
     // The job's items, for matching groups into conditions: none here.
     takeoffPlan: { findUnique: async () => null },
     takeoffItem: { findMany: async () => [] },
+    takeoffSheetExclusion: { findMany: (args: unknown) => exclusionRows(args) },
   },
 }));
 // `after()` throws outside a request scope, which is the documented behaviour
@@ -228,6 +231,17 @@ describe("THE STAGE POSTS THE VIEWER'S LIST, NOT THE FINDER'S", () => {
     const runs = postedRuns();
     expect(runs).toHaveLength(5);
     expect(runs.some(onTaggedWall)).toBe(true);
+  });
+
+  it("THE USER'S WORK AREA REACHES THE ESTIMATE: a WORK_AREA row round the room leaves the wall outside it unposted", async () => {
+    // The room spans x 200..740 pt; the box covers x 150..780, y 100..560 in page-width units (1224 pt wide).
+    exclusionRows.mockResolvedValueOnce([{ kind: "WORK_AREA", xs: [150 / 1224, 780 / 1224, 780 / 1224, 150 / 1224], ys: [100 / 1224, 100 / 1224, 560 / 1224, 560 / 1224] }]);
+    openPlanPdf.mockResolvedValue(sheet([]));
+    expect(await detectWallsForCalibration(target, { now: tickingClock(0), budgetMs: 45_000 })).toBe("written");
+    const runs = postedRuns();
+    expect(runs).toHaveLength(4);
+    expect(runs.some(onTaggedWall)).toBe(false);
+    expect(exclusionRows).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ pageId: "page-1" }) }));
   });
 
   it("A SET-ASIDE LINE NEVER REACHES THE ESTIMATE: tagged (E) WALL, the wall is left out of what is posted and the room's four stay", async () => {

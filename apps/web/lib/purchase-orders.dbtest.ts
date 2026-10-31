@@ -9,7 +9,8 @@ const context = { company: { id: "" }, id: "", role: "OWNER" as string, jobFunct
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
-const { draftPurchaseOrderLine, removePurchaseOrderLine } = await import("./actions/purchaseOrders");
+const { draftPurchaseOrderLine, removePurchaseOrderLine, issuePurchaseOrder, closePurchaseOrder } = await import("./actions/purchaseOrders");
+const { createMaterialOrder } = await import("./actions/materialOrders");
 const { loadLineCommitments } = await import("./purchase-orders-query");
 const { deleteVendor } = await import("./actions/vendors");
 
@@ -47,6 +48,8 @@ describe("drafting a purchase order", () => {
   });
 
   afterAll(async () => {
+    await prisma.materialOrder.deleteMany({ where: { jobId } });
+    await prisma.materialOrderCounter.deleteMany({ where: { jobId } });
     await prisma.purchaseOrderLine.deleteMany({ where: { purchaseOrder: { jobId } } });
     await prisma.purchaseOrder.deleteMany({ where: { jobId } });
     await prisma.purchaseOrderCounter.deleteMany({ where: { jobId } });
@@ -104,10 +107,50 @@ describe("drafting a purchase order", () => {
     expect((await prisma.purchaseOrder.findFirstOrThrow({ where: { jobId, vendorId: secondVendorId } })).number).toBe(3);
   });
 
+  it("issues with an entered date, counts as committed from then, and cannot be issued twice", async () => {
+    const po = await prisma.purchaseOrder.findFirstOrThrow({ where: { jobId, vendorId: secondVendorId } });
+    const fd = new FormData();
+    fd.set("issuedOn", "2026-10-20");
+    expect(await issuePurchaseOrder(po.id, new FormData())).toMatchObject({ ok: false });
+    expect(await issuePurchaseOrder(po.id, fd)).toEqual({ ok: true });
+    const row = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: po.id } });
+    expect(row.status).toBe("ISSUED");
+    expect(row.issuedOn?.toISOString()).toBe("2026-10-20T00:00:00.000Z");
+    expect((await loadLineCommitments(jobId)).get(otherLineId)).toMatchObject({ committed: 1, drafted: 0 });
+    expect(await issuePurchaseOrder(po.id, fd)).toMatchObject({ ok: false });
+  });
+
+  it("closes only an issued order, not before its issue date, and closed still counts as committed", async () => {
+    const po = await prisma.purchaseOrder.findFirstOrThrow({ where: { jobId, vendorId: secondVendorId } });
+    const early = new FormData();
+    early.set("closedOn", "2026-10-19");
+    expect(await closePurchaseOrder(po.id, early)).toMatchObject({ ok: false });
+    const fd = new FormData();
+    fd.set("closedOn", "2026-10-25");
+    expect(await closePurchaseOrder(po.id, fd)).toEqual({ ok: true });
+    expect((await loadLineCommitments(jobId)).get(otherLineId)).toMatchObject({ committed: 1 });
+    expect(await closePurchaseOrder(po.id, fd)).toMatchObject({ ok: false });
+  });
+
+  it("links a delivery only to an issued line, same job, same vendor, and carries no money", async () => {
+    const draft = await draftPurchaseOrderLine(jobId, form({ lineItemId: lineId, quantity: "1", quoteId }));
+    expect(draft).toEqual({ ok: true });
+    const draftPo = await prisma.purchaseOrder.findFirstOrThrow({ where: { jobId, vendorId, status: "DRAFT" }, include: { lines: true } });
+    const sub = await prisma.purchaseOrder.findFirstOrThrow({ where: { jobId, vendorId: secondVendorId }, include: { lines: true } });
+    const base = { jobId, vendorId: secondVendorId, description: "Drop", orderedOn: "2026-10-26" };
+    expect(await createMaterialOrder(form({ ...base, purchaseOrderLineId: draftPo.lines[0].id }))).toMatchObject({ ok: false });
+    expect(await createMaterialOrder(form({ ...base, vendorId, purchaseOrderLineId: sub.lines[0].id }))).toMatchObject({ ok: false });
+    expect(await createMaterialOrder(form({ ...base, purchaseOrderLineId: sub.lines[0].id }))).toEqual({ ok: true });
+    const order = await prisma.materialOrder.findFirstOrThrow({ where: { jobId } });
+    expect(order.purchaseOrderLineId).toBe(sub.lines[0].id);
+    expect(Object.keys(order)).not.toEqual(expect.arrayContaining(["quantity"]));
+    expect(Object.keys(order)).not.toEqual(expect.arrayContaining(["unitPrice"]));
+  });
+
   it("refuses to change a line once its PO is past DRAFT", async () => {
     const po = await prisma.purchaseOrder.findFirstOrThrow({ where: { jobId, vendorId }, include: { lines: true } });
     await prisma.purchaseOrder.update({ where: { id: po.id }, data: { status: "ISSUED" } });
     expect(await removePurchaseOrderLine(po.lines[0].id)).toMatchObject({ ok: false });
-    expect((await loadLineCommitments(jobId)).get(lineId)).toEqual({ drafted: 0, committed: 375, quantityBought: 500 });
+    expect((await loadLineCommitments(jobId)).get(lineId)).toEqual({ drafted: 0, committed: 375.75, quantityBought: 501 });
   });
 });

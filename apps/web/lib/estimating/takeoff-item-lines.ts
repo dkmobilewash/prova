@@ -242,7 +242,7 @@ export async function syncTakeoffItemLines(
     if (item.wallTypeId === null) {
       if (measured && isCheckFigureItem(item.name)) {
         const area = itemQuantity(
-          item.measurements.map((m) => ({ id: m.id, pageNumber: m.page.pageNumber, kind: m.kind, xs: m.xs, ys: m.ys, cutouts: [], feetPerPageWidth: feetAcross(m.calibration) })),
+          item.measurements.map((m) => ({ id: m.id, pageNumber: m.page.pageNumber, kind: m.kind, xs: m.xs, ys: m.ys, cutouts: [], feetPerPageWidth: m.calibration === null ? null : feetAcross(m.calibration) })),
           { type: item.type, heightFt: null, sides: null, wastePercent: 0, depthIn: null },
         ).areaSqFt;
         checkFigures.push({ id: item.id, name: item.name, squareFeet: Math.round(area) });
@@ -400,7 +400,8 @@ export type ItemMeasurementRow = {
   ys: number[];
   cutouts: unknown;
   page: { pageNumber: number };
-  calibration: { x1: number; y1: number; x2: number; y2: number; declaredDistanceFeet: { toString(): string } };
+  /** Null for a measurement with no scale: a count needs none (#883). */
+  calibration: { x1: number; y1: number; x2: number; y2: number; declaredDistanceFeet: { toString(): string } } | null;
 };
 
 /** One stored measurement → what `itemGeometry` reads. The sync's own mapping. */
@@ -412,7 +413,7 @@ function itemMeasurementOf(m: ItemMeasurementRow): ItemMeasurement {
     xs: m.xs,
     ys: m.ys,
     cutouts: Array.isArray(m.cutouts) ? (m.cutouts as { xs: number[]; ys: number[] }[]) : [],
-    feetPerPageWidth: feetAcross(m.calibration),
+    feetPerPageWidth: m.calibration === null ? null : feetAcross(m.calibration),
   };
 }
 

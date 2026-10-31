@@ -153,6 +153,46 @@ export async function deleteBidSpecSection(bidSpecSectionId: string): Promise<Ac
 }
 
 /**
+ * Log a spec section directly on a job, for a job with no bid in Prova. A won
+ * bid's sections already reach the job and are not copied here. Same gate as
+ * the bid side and as the upload token that attaches the file.
+ */
+export async function saveJobSpecSection(jobId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NOT_YOURS);
+  const job = await prisma.job.findFirst({ where: { id: jobId, companyId: context.company.id }, select: { id: true } });
+  if (!job) return actionFail("That job is not on your account.");
+
+  const sectionNumber = String(formData.get("sectionNumber") ?? "").trim();
+  if (!sectionNumber) {
+    return actionFail("Give the section a number as the spec prints it — “09 21 16”.");
+  }
+  const title = String(formData.get("title") ?? "").trim();
+  await prisma.bidSpecSection.create({ data: { jobId: job.id, sectionNumber, title: title || null } });
+
+  revalidatePath(`/jobs/${job.id}/specs`);
+  return actionOk;
+}
+
+/** Remove a job's own section and its file. A won bid's section is managed on
+ * the bid, so the where clause cannot reach one: it has no `jobId`. */
+export async function deleteJobSpecSection(bidSpecSectionId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NOT_YOURS);
+  const section = await prisma.bidSpecSection.findFirst({
+    where: { id: bidSpecSectionId, job: { companyId: context.company.id } },
+    select: { id: true, fileUrl: true, jobId: true },
+  });
+  if (!section) return actionFail("That spec section is no longer on this job.");
+
+  if (section.fileUrl) await deleteDocument(section.fileUrl);
+  await prisma.bidSpecSection.delete({ where: { id: section.id } });
+
+  revalidatePath(`/jobs/${section.jobId}/specs`);
+  return actionOk;
+}
+
+/**
  * Attach the PDF to a spec section, separately from reading it.
  *
  * TWO ACTIONS AND NOT ONE, for `attachAddendumDocument`'s reason: having the
@@ -170,9 +210,13 @@ export async function attachSpecSectionDocument(
   const { company } = context;
 
   const existing = await prisma.bidSpecSection.findFirst({
-    // The id in the argument is a claim; this join is the check.
-    where: { id: bidSpecSectionId, bidInvitation: { companyId: company.id } },
-    select: { id: true, fileUrl: true },
+    // The id in the argument is a claim; this join is the check. A job's own
+    // section has no invitation, so the company comes through the job.
+    where: {
+      id: bidSpecSectionId,
+      OR: [{ bidInvitation: { companyId: company.id } }, { job: { companyId: company.id } }],
+    },
+    select: { id: true, fileUrl: true, jobId: true },
   });
   if (!existing) return actionFail("That spec section is no longer on this bid.");
 
@@ -195,7 +239,7 @@ export async function attachSpecSectionDocument(
     data: { fileUrl, fileName: documentDisplayFileName(fileNameRaw) },
   });
 
-  revalidatePath("/bids");
+  revalidatePath(existing.jobId ? `/jobs/${existing.jobId}/specs` : "/bids");
   return actionOk;
 }
 
@@ -226,7 +270,10 @@ export async function readSpecSection(
     where: { id: bidSpecSectionId, bidInvitation: { companyId: company.id } },
     select: { id: true, bidInvitationId: true, fileUrl: true, fileName: true, sectionNumber: true },
   });
-  if (!section) {
+  // The cost reader is bid-only. The join above cannot match a job's own
+  // section; the null test keeps the reading's required column honest.
+  const bidInvitationId = section?.bidInvitationId;
+  if (!section || !bidInvitationId) {
     return actionFail("That spec section is no longer on this bid.") as ActionResultWith<SpecReadResult>;
   }
   if (!section.fileUrl) {
@@ -311,7 +358,7 @@ export async function readSpecSection(
     await prisma.bidSpecReading.create({
       data: {
         bidSpecSectionId: section.id,
-        bidInvitationId: section.bidInvitationId,
+        bidInvitationId,
         findings: extraction.findings,
         readingReason: extraction.readingReason,
         pagesCharged: spend.charge.pages,

@@ -334,6 +334,11 @@ export const billingExclusions: Exclusion[] = [
     reason: "Choosing a vendor's price against a line's budget is done on the Buyout page, in front of the comparison; page only.",
   },
   { action: "removePurchaseOrderLine", reason: "T5: deletes are never commands." },
+  {
+    action: "issuePurchaseOrder",
+    reason: "Issuing commits money to a vendor; done on the Buyout page in front of the order's lines and total, page only.",
+  },
+  { action: "closePurchaseOrder", reason: "Closes an evidence record on a date a person enters, in front of the order; page only." },
   { action: "createSignatureRequest", reason: "Mints a bearer link that legally signs a contract (T4 outward); a page action with its own link handling." },
   { action: "signRequest", reason: "The CLIENT signs, on an unauthenticated page, with a token — nothing an assistant inside the app should touch." },
   { action: "revokeSignatureRequest", reason: "Voids a live e-sign link the client may be holding (T5); one deliberate tap on the job page, never a command." },
