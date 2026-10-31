@@ -995,3 +995,27 @@ change the groups.
 A tag is placed by its printed NUMBER, with the stack's centre as the fallback. A name can run over a wall while the number stays in its room: glen-hazel's "Elevators" spans two shafts, and Joplin's 149 shared a region with 150 only because of where the stack's centre fell. Detail callouts (`A1/ A-621`) and drafting words (`ALIGN`, `TYP.`, `SIM`) are dropped before stacks are read, so they neither enter a name nor form a tag that knocks a real one out of its room.
 
 What remains in `mergedTags` on Joplin is real leaks and in `unplacedTags` is rooms that never closed. Neither is a naming problem.
+## Finish takeoff by room (2026-10-30)
+
+`finishSchedule.ts` reads a room finish schedule by column, `finishTakeoff.ts` joins it to the found rooms. Two shapes: one row per room number with four wall sides (Baker A631, Joplin A-611), and one row per finish type, joined through a `T#` tag inside the room (glen-hazel A-105, the table repeats on A-106 and A-107).
+
+Measured on the training sets:
+
+| sheet | rooms joined | schedule rows with no room |
+| --- | --- | --- |
+| Baker A101 | 10 of 11 | 3 of 13: 100, 106, 112 |
+| Joplin A-101 | 44 of 64 | 34 of 78 |
+| glen A-102 | 6 of 60 | type table, not applicable |
+| glen A-101 | 14 of 25 | type table, not applicable |
+
+The join is limited by room finding, not by the schedule. Every row read matched the printed table on the rows checked by eye. On Baker the missing rows include 106 MAIN OPERATIONS, the largest room. On glen A-102 a unit carries one tag but finds as several regions, so only the region holding the tag is priced.
+
+Things that look like bugs and are decisions:
+
+- Cells line up on left edges and headers are centred, so columns come from recurring left edges in the rows. Columns nobody named, like Joplin's casework, are edges too, which stops them bleeding into a wall finish.
+- Baker prints CEILIING, so the header word is matched loosely.
+- A room with two different type tags joins to neither, because it is two rooms merged. A room with two number tags already has a null `tag`.
+- A room with no height gets no wall area, never a guess. The panel takes a typed height for those.
+- `EX`, `EX CT` and `EXPOSED` are not priced. `EX ACT/PT-2` is, because the paint is new.
+
+Known limits: north is assumed to be up the page, and the panel says so. Door height 7 ft and window height 4 ft are assumed, also on screen. Baker row 100 prints `STOREFRONT P-1` as one text item across two columns, so its south reads that whole string and its west is empty; that room is not joined today. Composite finishes such as `PT-1, PT-4` stay one line as printed, because the schedule does not say the split.

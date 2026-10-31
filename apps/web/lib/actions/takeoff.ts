@@ -776,6 +776,33 @@ export async function saveTakeoffMeasurement(
   return { ok: true, value: { id: created.id } };
 }
 
+const MAX_FINISH_LINES = 300;
+
+/**
+ * Finish takeoff quantities as estimate lines, one per finish and kind. Each is
+ * checked here, because a form can send anything, and they arrive as materials
+ * with no price, like every recipe's lines.
+ */
+export async function addFinishLinesToEstimate(
+  jobId: string,
+  label: string,
+  lines: { label: string; quantity: number; unit: string }[],
+): Promise<ActionResultWith<{ added: number }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const job = await prisma.job.findFirst({ where: { id: jobId, companyId: context.company.id } });
+  if (!job) return actionFail("That job is no longer here. Reload the page.");
+  assertEditableDirectly(job);
+  if (lines.length === 0) return actionFail("There are no finish quantities to add.");
+  if (lines.length > MAX_FINISH_LINES) return actionFail(`That is more than ${MAX_FINISH_LINES} lines at once.`);
+  const clean = lines.filter((l) => l.label.trim() !== "" && l.label.length <= 120 && Number.isFinite(l.quantity) && l.quantity > 0 && (l.unit === "sq ft" || l.unit === "lin ft"));
+  if (clean.length !== lines.length) return actionFail("Some of those quantities did not come through. Read the schedule again.");
+  await prisma.$transaction(createLineItemRows(jobId, label.trim().slice(0, 80), clean, "MATERIAL"));
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/jobs/${jobId}`);
+  return { ok: true, value: { added: clean.length } };
+}
+
 /**
  * SAVING A WHOLE GROUP OF FOUND WALLS AT ONCE.
  *
