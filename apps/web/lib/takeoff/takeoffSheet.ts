@@ -56,6 +56,24 @@ export type TakeoffSheetVerdict = {
  * is not something else, and when the drawings on it are plans or are at least
  * not named as something else.
  */
+const FLOOR_PLAN = /\bFLOOR\s+PLANS?\b/i;
+/** A trade or purpose right before the words: this is that trade's plan of the floor. */
+const SOMEONE_ELSES_FLOOR_PLAN = /\b(?:STRUCTURAL|FRAMING|MECHANICAL|HVAC|PLUMBING|ELECTRICAL|LIGHTING|POWER|FIRE|SPRINKLER|DEMO(?:LITION)?|EXISTING|FINISH(?:ES)?|FURNITURE|FF&E|CODE|LIFE\s+SAFETY|EGRESS|EVACUATION|SIGNAGE)\s*[-–—:]?\s*FLOOR\s+PLANS?\b/i;
+const OTHER_DRAWING = /\b(?:REFLECTED|CEILING|ELEVATIONS?|SECTIONS?|SCHEDULES?|ENLARGED)\b/i;
+/** A sheet number in the A series, and not a demolition AD sheet. */
+const ARCHITECTURAL = /^A(?!D)[-.\d]/i;
+
+/** The sheet's own title says it holds the floor plan. Pure; the words are the title's, never the notes'. */
+export function ownsFloorPlan(sheetNumber: string | null | undefined, title: string | null | undefined): boolean {
+  const text = title ?? "";
+  const plan = text.search(FLOOR_PLAN);
+  if (!ARCHITECTURAL.test(sheetNumber ?? "") || plan < 0 || SOMEONE_ELSES_FLOOR_PLAN.test(text)) return false;
+  // A title names its main drawing first: "REFLECTED CEILING PLAN … FLOOR PLAN"
+  // is a ceiling sheet, and "Enlarged Plans and Elevations" repeats a floor.
+  const other = text.search(OTHER_DRAWING);
+  return other < 0 || plan < other;
+}
+
 export function takeoffSheetVerdict(input: {
   sheetNumber: string | null | undefined;
   title: string | null | undefined;
@@ -75,6 +93,16 @@ export function takeoffSheetVerdict(input: {
   // question: a sheet called DETAILS that carries a captioned ENLARGED PLAN
   // has a plan on it, and the plan is the thing somebody opened it for.
   if (anyPlan) {
+    return { worthMeasuring: true, why: null, skipAutomatically: false };
+  }
+
+  // ── AN ARCHITECTURAL SHEET THAT SAYS FLOOR PLAN IS ONE ──
+  //
+  // Measured on the whole-set sweep, 2026-10-31: titles join several drawings
+  // ("FLOOR PLAN & DETAILS", "Floor Plans and Roof Plan", "FLOOR PLAN KEY
+  // PLAN"), one other word refused the sheet, and Fairgrounds, Alden and
+  // Crosslines lost their only plan: a whole building at zero with no error.
+  if (ownsFloorPlan(input.sheetNumber, input.title)) {
     return { worthMeasuring: true, why: null, skipAutomatically: false };
   }
 

@@ -99,3 +99,28 @@ describe("the sheet-only words — the pilot of 2026-10-29", () => {
     expect(takeoffSheetVerdict({ sheetNumber: "A-102", title: "FFE PLAN", viewNames: ["ENLARGED PLAN"] }).skipAutomatically).toBe(false);
   });
 });
+
+describe("an architectural sheet that says FLOOR PLAN is one, whatever else its title joins", () => {
+  const skip = (sheetNumber: string | null, title: string) => takeoffSheetVerdict({ sheetNumber, title }).skipAutomatically;
+  it("measures a plan whose title also names details, a key plan or a roof plan", () => {
+    expect(skip("A-101", "FLOOR PLAN & DETAILS")).toBe(false);
+    expect(skip("A103", "FLOOR PLAN KEY PLAN")).toBe(false);
+    expect(skip("A100", "NORTH architectural Floor Plans and Roof Plan")).toBe(false);
+  });
+  it("still refuses another trade's floor plan, a demolition or finish plan, and any non-A sheet", () => {
+    for (const title of ["DEMOLITION - FLOOR PLAN", "FINISH FLOOR PLAN", "CODE FLOOR PLAN", "LIFE SAFETY FLOOR PLAN"]) expect(skip("A1.1", title), title).toBe(true);
+    expect(skip("S220", "STRUCTURAL FLOOR PLAN")).toBe(true);
+    expect(skip("AD101", "DEMOLITION FLOOR PLAN")).toBe(true);
+    expect(skip("M1.01", "MECHANICAL FLOOR PLAN")).toBe(true);
+  });
+  it("a title that names another drawing first is that drawing", () => {
+    expect(skip("A130", "REFLECTED CEILING PLAN KEY FLOOR PLAN")).toBe(true);
+    expect(skip("A200", "EXTERIOR ELEVATIONS KEY FLOOR PLAN")).toBe(true);
+    expect(skip("A-401", "Enlarged Plans and Elevations Key Floor Plan")).toBe(true);
+    expect(skip("A101", "Floor Plan Legend, 1st Floor Reflected Ceiling Plan")).toBe(false);
+  });
+  it("leaves alone what never said floor plan", () => {
+    expect(skip("A2.2", "ROOF PLAN")).toBe(true);
+    expect(skip("A-110", "ROOF PLAN & DETAILS")).toBe(true);
+  });
+});
