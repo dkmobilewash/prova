@@ -6,6 +6,7 @@ import {
   DOCUMENT_UPLOAD_PURPOSES,
   DOCUMENT_UPLOAD_TARGETS,
   PLAN_SET_UPLOAD_MAX_BYTES,
+  uploadsInParts,
   SPEC_SECTION_UPLOAD_MAX_BYTES,
   uploadMaxBytesFor,
   documentDisplayFileName,
@@ -172,7 +173,12 @@ group("what may be uploaded, and how much of it", () => {
     // saying "every OTHER purpose" read as a rule about the product when it was
     // a description of the rows that happened to exist, so a second legitimate
     // exemption looked like a violation.
-    expect(PLAN_SET_UPLOAD_MAX_BYTES).toBe(250 * 1024 * 1024);
+    expect(PLAN_SET_UPLOAD_MAX_BYTES).toBe(500 * 1024 * 1024);
+    // A 327 MiB permit set must clear it, and go up in parts; a small file must not.
+    expect(327 * 1024 * 1024).toBeLessThan(PLAN_SET_UPLOAD_MAX_BYTES);
+    expect(uploadsInParts(327 * 1024 * 1024)).toBe(true);
+    expect(uploadsInParts(100 * 1024 * 1024)).toBe(false);
+    expect(uploadsInParts(15 * 1024 * 1024)).toBe(false);
     expect(uploadMaxBytesFor("plan-takeoff")).toBe(PLAN_SET_UPLOAD_MAX_BYTES);
     expect(SPEC_SECTION_UPLOAD_MAX_BYTES).toBe(50 * 1024 * 1024);
     expect(uploadMaxBytesFor("bid-spec-section")).toBe(SPEC_SECTION_UPLOAD_MAX_BYTES);
@@ -207,7 +213,7 @@ group("what may be uploaded, and how much of it", () => {
     // And the ceiling still bites for a plan set, one byte over.
     expect(
       documentFileProblem({ type: "application/pdf", size: PLAN_SET_UPLOAD_MAX_BYTES + 1 }, "plan-takeoff"),
-    ).toContain("250.0 MB");
+    ).toContain("500.0 MB");
   });
 
   it("makes the TOKEN ROUTE resolve the ceiling per purpose, not from the default", async () => {

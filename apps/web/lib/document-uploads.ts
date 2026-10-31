@@ -115,8 +115,25 @@ export const DOCUMENT_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
  * pdfjs over HTTP with `disableAutoFetch` issued Range requests and then fetched the
  * whole document anyway (203 requests, 25.8MB served for a 12.9MB file), so ranging
  * bounds nothing here.
+ *
+ * RAISED FROM 250 TO 500 BY DIEGO, 2026-10-31, after a 327 MiB permit set was the
+ * first real set refused. The 119MB measurement above is the only one taken on a
+ * laptop, so the function's real ceiling at this size comes from a made-up file on
+ * a preview, recorded in this change's PR.
  */
-export const PLAN_SET_UPLOAD_MAX_BYTES = 250 * 1024 * 1024;
+export const PLAN_SET_UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
+
+/**
+ * Over this a browser upload goes up in parts. Vercel recommends multipart above
+ * 100MB, and a part that fails on a jobsite connection retries by itself rather
+ * than restarting the whole set. Every part is a billed Blob operation, so small
+ * files stay a single request.
+ */
+export const MULTIPART_UPLOAD_ABOVE_BYTES = 100 * 1024 * 1024;
+
+export function uploadsInParts(sizeBytes: number): boolean {
+  return sizeBytes > MULTIPART_UPLOAD_ABOVE_BYTES;
+}
 
 /**
  * A SPEC SECTION — 50MB, and a third ceiling rather than either of the two
@@ -133,7 +150,7 @@ export const PLAN_SET_UPLOAD_MAX_BYTES = 250 * 1024 * 1024;
  * nowhere else to go — there is one surface that reads it, and a refusal here is
  * a feature a contractor cannot use rather than a redirect.
  *
- * NOT the plan-set ceiling either, and that is the half worth stating: 250MB
+ * NOT the plan-set ceiling either, and that is the half worth stating: 500MB
  * would let an entire drawing set through the spec door, where it would be read
  * as ONE document and charge a month's spec allowance to a single call. The
  * ceiling is what stops that, not a check on content.
