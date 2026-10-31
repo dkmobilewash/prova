@@ -47,6 +47,8 @@ const VARIANTS = (process.env.SCAN_EVAL_VARIANTS ?? "clean,scan").split(",") as 
 const THRESHOLD = process.env.SCAN_EVAL_THRESHOLD ? Number(process.env.SCAN_EVAL_THRESHOLD) : undefined;
 /** "mac": PDFKit + Vision through scanTool.swift. "node": pdf.js + tesseract.js, what a Linux server runs. */
 const STACK = (process.env.SCAN_EVAL_STACK ?? "mac") as "mac" | "node";
+/** A loaded laptop (load 65 during one run) trips the 75 s worker timeout on a sheet that takes 10 s idle. */
+const WORKER_MS = Number(process.env.SCAN_EVAL_WORKER_MS ?? "") || 0;
 /** "stage": the node arm runs the RASTER stage's own per-sheet step (`rasterizeSheet`: region-first OCR, deskew) instead of the bench's full-page OCR — the product's path, scored. Clean variant only. */
 const PIPELINE = process.env.SCAN_EVAL_PIPELINE ?? "bench";
 /** How fills become faces: "contour" (default) or "runs". */
@@ -158,6 +160,13 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
           widthPt: read.widthPt,
           feetPerUnit: saved.feetPerUnit,
           planBoxes: detected.planBoxes,
+          // The product passes the sheet's words and every stroke (the viewer
+          // and `detectWallsForCalibration` both do); without them none of the
+          // text set-asides — legend box, table rows, underline, existing,
+          // site equipment, OCR words — ran here, and every arm was scored on
+          // a list the app never shows.
+          pageSegments: read.segments,
+          textItems: text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height })),
         });
         arms.push({
           arm: "vector",
@@ -179,7 +188,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
           execFileSync(bin, ["render", pdf, String(saved.page), String(dpi), pgmPath], { stdio: "pipe" });
           clean = readPgm(new Uint8Array(readFileSync(pgmPath)));
         } else {
-          sheetWorker = SheetWorker.start();
+          sheetWorker = SheetWorker.start(WORKER_MS ? { timeoutMs: WORKER_MS } : {});
           clean = await sheetWorker.render(new Uint8Array(readFileSync(pdf)), saved.page, dpi);
           writeFileSync(pgmPath, writePgm(clean));
         }
@@ -194,9 +203,10 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
             writeFileSync(inputPath, writePgm(gray));
           }
           const t1 = Date.now();
-          if (STACK === "node" && PIPELINE === "stage" && variant === "clean") {
-            // The product's own step, end to end, on the file.
-            const read = await rasterizeSheet(new Uint8Array(readFileSync(pdf)), saved.page, { dpi });
+          if (STACK === "node" && PIPELINE === "stage") {
+            // The product's own step, end to end, on the file — and, for the
+            // scan variant, on the file made to look like a scan first.
+            const read = await rasterizeSheet(new Uint8Array(readFileSync(pdf)), saved.page, { dpi, ...(variant === "scan" ? { degrade: SCAN_LIKE } : {}), ...(WORKER_MS ? { workerTimeoutMs: WORKER_MS } : {}) });
             const pageSizeS = { widthPt: read.widthPt, heightPt: read.heightPt };
             const detectedS = detectForSheet({ segments: read.lines, textItems: read.text, pageSize: pageSizeS, feetPerUnit: saved.feetPerUnit, scanned: true });
             const offeredS = offeredCandidates({
@@ -205,10 +215,28 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
               widthPt: pageSizeS.widthPt,
               feetPerUnit: saved.feetPerUnit,
               planBoxes: detectedS.planBoxes,
+              pageSegments: read.lines,
+              textItems: read.text,
             });
             notes.push(`${tag} ${dpi}dpi-stage: sheet ${read.sheetNumber ?? "—"}${read.ocrStoppedEarly ? " (OCR stopped early)" : ""}, views ${detectedS.views}, kept [${detectedS.kept.map((k) => k.name).join(", ")}]${detectedS.wholeSheet ? " → WHOLE SHEET" : ""}`);
+            if (OUT) {
+              // Everything a junk census needs, per sheet and variant: the key, what was offered, the raster lines and the OCR words.
+              mkdirSync(OUT, { recursive: true });
+              // The file's own text layer: where the words truly are, which OCR's line boxes are not.
+              const textDoc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
+              const vectorText = (await textDoc.pageText(saved.page)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
+              await textDoc.close();
+              writeFileSync(
+                join(OUT, `${flat(file.dir)}-${file.sheet}-${dpi}-${variant}-stage.json`),
+                JSON.stringify({
+                  set: file.dir, sheet: file.sheet, page: saved.page, variant, dpi, widthPt: pageSizeS.widthPt, heightPt: pageSizeS.heightPt, feetPerUnit: saved.feetPerUnit,
+                  key, offered: offeredS.candidates.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, lengthFeet: Math.hypot(w.x2 - w.x1, w.y2 - w.y1) * saved.feetPerUnit, thicknessFeet: w.thicknessIn === null ? undefined : w.thicknessIn / 12 })),
+                  setAside: offeredS.setAside, setAsideLines: offeredS.setAsideLines, lines: read.lines, text: read.text, vectorText,
+                }),
+              );
+            }
             arms.push({
-              arm: `${dpi}dpi-stage-node`,
+              arm: `${dpi}dpi-${variant}-stage-node`,
               scale: read.printedScale ? "ocr" : "key",
               score: score(`${dpi}-stage`, offeredS.candidates.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, lengthFeet: Math.hypot(w.x2 - w.x1, w.y2 - w.y1) * saved.feetPerUnit })), saved.feetPerUnit),
               ms: { render: read.ms.render, lines: read.ms.lines, ocr: read.ms.ocr, detect: 0 },
@@ -264,6 +292,8 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
             widthPt: pageSize.widthPt,
             feetPerUnit,
             planBoxes: detected.planBoxes,
+            pageSegments: segments,
+            textItems,
           });
           if (OUT) {
             // For `scanTool overlay`: raster lines (blue), what the finder offered

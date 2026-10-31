@@ -121,7 +121,7 @@ const submittalRows = [
   {
     id: "sub-1",
     number: 1,
-    job: { name: job.name },
+    job: { name: job.name, contact: { name: "GC" } },
     title: "Track and stud data",
     description: null,
     specSection: "09 22 16",
@@ -141,7 +141,7 @@ const submittalRows = [
   {
     id: "sub-2",
     number: 2,
-    job: { name: job.name },
+    job: { name: job.name, contact: { name: "GC" } },
     title: "Shaft wall assembly",
     description: null,
     specSection: "09 22 16",

@@ -622,3 +622,46 @@ Tesseract, no model, seconds a page) and writes it to the row and to an
 unlabelled page row; a page a person labelled is kept. Rows that still read
 nothing stay null and are listed. Same local-only refusal as the rest of the
 script. Not run against Evergreen here; for the original session.
+
+## Training scans, and what the one real scan said about them (2026-10-30, `diego/scan-finder`)
+
+Six labelled vector training sheets went through the product's own raster
+step, clean and with `SCAN_LIKE` (skew, speckle, blur): Baker A101, Bunkie
+A100, Camp Bow Wow A102, Crosslines A100, Murray A101, Joplin A-101. Key 8,122 ft.
+
+| arm | main recall | main junk /100 | this branch recall | this branch junk /100 |
+| --- | --- | --- | --- | --- |
+| clean raster | 77.7% | 81 | 75.5% | 72 |
+| scan-like | 46.6% | 89 | 45.1% | 70 |
+| Evergreen, held out, totals | 94.1% | 18 | 94.1% | 16 |
+
+**Raster-line changes were built, measured and left out.** Bridging small
+gaps, a faint-ink pass, and dropping a thick line's contour edges took the
+scan-like arm to 64.5% recall and 45 junk. On Evergreen, the only real scan,
+the same changes fell to 80.2% recall and 23 junk, with footage that has no
+line under it going from 24 to 242 ft. They are on `diego/scan-lines`, no PR.
+`SCAN_LIKE` thins and greys a clean render; it does not reproduce what a real
+scanner does to ink. A synthetic gain is not evidence until a real scan agrees.
+
+Other corrections from the same work:
+
+- **OCR line boxes are not words.** The median Tesseract box on a drawing was
+  six inches wide, reading wall fragments as glyphs. A rule sized from the box
+  took 2,888 ft of real wall with 2,271 ft of junk. Bounded by glyph height it
+  takes none of either on these sheets, and against the true text layers only
+  72 ft of scan junk sits on words.
+- **A grid-bubble rule is not worth building.** A run ending at a short tag
+  covers 19 ft, because OCR rarely reads the bubbles.
+- **The eval was scoring a list the app never shows.** It called
+  `offeredCandidates` without the sheet's words, so no text set-aside ran.
+- **A misread number threw sheets away.** Crosslines read as "A00" and stopped
+  OCR; two independent reads are now required.
+
+**The blank tab, measured 2026-10-31.** Canvas size was already capped and the
+candidate overlay is not quadratic. Two causes were found. The page payload
+(31 MB) is removed above. pdf.js also kept every decoded page, because nothing
+called `page.cleanup()`: JS heap after walking the sheets was 361 MB against 82
+on Evergreen, and 704 against 80 on Joplin. The whole browser stayed near 3 GB in
+both arms, on a vector set too, and the blank was never reproduced. Heap alone
+misled twice here: a first run read 2 MB on a scan, and process totals need the
+whole tree.

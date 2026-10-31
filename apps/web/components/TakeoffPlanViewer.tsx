@@ -134,6 +134,8 @@ import { TakeoffSymbolPanel, type AcrossRow, type AcrossState } from "./TakeoffS
 import { findSymbolsFrom, scaleSymbolTemplate, symbolTemplate, type Box as SymbolBox, type SymbolMatch, type SymbolTemplate } from "@/lib/takeoff/symbolSignature";
 import { sheetInScope, type SheetScope } from "@/lib/takeoff/symbolScope";
 import { scaleFromPrinted } from "@/lib/takeoff/scaleFromPrinted";
+/** One scanned page's stored read, as the raster route and `rasterByPage` both give it. */
+type RasterRead = { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[]; widthPt?: number; heightPt?: number; printedScale?: string | null };
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
 import { roomsFromWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
@@ -264,6 +266,8 @@ export function TakeoffPlanViewer({
   // which is the failure this prop exists to fix.
   scannedPages = [],
   rasterByPage = {},
+  rasterPages = [],
+  rasterUrl = null,
   storedWallsByPage,
   takeoffItems = [],
   levelByPage,
@@ -443,8 +447,17 @@ export function TakeoffPlanViewer({
    * WHAT THE RASTER STAGE READ OFF A SCANNED SHEET, keyed by page: the lines
    * and the words in points, for Find the walls to use instead of the file's
    * strokes (a scan has none). Absent for every sheet the stage has not read.
+   *
+   * A host that already holds a page's read passes it here; the workspace
+   * passes `rasterPages` and `rasterUrl` instead and the viewer fetches a
+   * page's read when it is opened — every page's read in one payload is 31 MB
+   * on Evergreen and blanked the tab.
    */
   rasterByPage?: Record<number, { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[] }>;
+  /** The pages that have a raster read to fetch from `rasterUrl`. */
+  rasterPages?: number[];
+  /** Base of the per-page raster route: `${rasterUrl}/${page}` returns one page's read. */
+  rasterUrl?: string | null;
   /**
    * THE WALLS ALREADY FOUND ON EACH SHEET, from `TakeoffWallProposal`, keyed by
    * page number.
@@ -1317,6 +1330,7 @@ export function TakeoffPlanViewer({
         const page = (await doc.getPage(pageNumber)) as {
           getViewport: (o: { scale: number }) => { width: number; height: number };
           render: (o: unknown) => { promise: Promise<void>; cancel: () => void };
+          cleanup: () => void;
         };
         if (cancelled) return;
 
@@ -1358,6 +1372,13 @@ export function TakeoffPlanViewer({
         await task.promise;
         const words = await pageTextItems(page as never, (await import("pdfjs-dist/legacy/build/pdf.mjs")) as never).catch(() => []);
         if (!cancelled && demoEvidence(words) !== null) setDemoOnPage(pageNumber);
+        // ── RELEASE THE PAGE ──
+        // pdf.js keeps every decoded page until told otherwise, and nothing
+        // here told it. In real Chromium the JS heap after walking Evergreen
+        // was 361 MB without this and 82 MB with it; Joplin, 704 MB and 80 MB.
+        // The whole browser stayed near 3 GB either way, so this reduces one
+        // cause of a blank tab. The blank itself was never reproduced.
+        page.cleanup();
       } catch (error) {
         // A cancelled render is the normal result of changing page or zoom
         // quickly, not a failure worth telling anybody about.
@@ -1398,6 +1419,31 @@ export function TakeoffPlanViewer({
   );
 
   const drawing = tool !== "pan";
+
+  /**
+   * ── ONE PAGE'S RASTER READ, FETCHED WHEN IT IS WANTED ──
+   * The host's `rasterByPage` first (a page it already holds), then the
+   * per-page route for a page `rasterPages` names, cached for the session.
+   * A page with neither is a vector page and reads its own strokes.
+   */
+  const rasterCache = useRef<Map<number, RasterRead | null>>(new Map());
+  const rasterFor = async (n: number): Promise<RasterRead | undefined> => {
+    const held = rasterByPage[n];
+    if (held) return held;
+    if (rasterUrl === null || !rasterPages.includes(n)) return undefined;
+    const cached = rasterCache.current.get(n);
+    if (cached !== undefined) return cached ?? undefined;
+    try {
+      const response = await fetch(`${rasterUrl}/${n}`, { credentials: "same-origin" });
+      if (!response.ok) { rasterCache.current.set(n, null); return undefined; }
+      const read = (await response.json()) as RasterRead;
+      rasterCache.current.set(n, read);
+      return read;
+    } catch {
+      rasterCache.current.set(n, null);
+      return undefined;
+    }
+  };
 
   /**
    * ── "FIND ON ALL SHEETS": THE SAME TEMPLATE OVER THE REST OF THE SET ──
@@ -1457,6 +1503,7 @@ export function TakeoffPlanViewer({
           page: n, number, count: best.matches.length, ms: performance.now() - t0, scaling: best.scaling,
           xs: best.matches.map((m) => (m.box.x1 + m.box.x2) / 2), ys: best.matches.map((m) => (m.box.y1 + m.box.y2) / 2),
         };
+        (page as { cleanup: () => void }).cleanup();
         state = { ...state, rows: [...state.rows, row].sort((a, b) => a.page - b.page) };
         setAcross(state);
         // Let the row paint before the next sheet is read.
@@ -2595,7 +2642,7 @@ export function TakeoffPlanViewer({
       // ── A SCANNED SHEET: the lines and words the raster stage stored ──
       // The file has no strokes for it; the stage read them off the bitmap
       // in the same points. The finder below is the same finder.
-      const raster = rasterByPage[pageNumber];
+      const raster = await rasterFor(pageNumber);
       const { segments } = raster ? { segments: raster.segments } : await segmentsFromOpenPage(page, pdfjs, pageNumber, layers);
       setStrokesSeen(segments.length);
 
@@ -3307,7 +3354,7 @@ export function TakeoffPlanViewer({
             had by reading the picture, and this is the thing that reads it —
             so gating on it made the feature unreachable on every sheet it was
             built for. See `scannedPages`. */}
-        {rasterByPage[pageNumber] !== undefined && (
+        {(rasterByPage[pageNumber] !== undefined || rasterPages.includes(pageNumber)) && (
           <p data-takeoff="scanned-caution" className="w-full text-xs text-ink-muted">
             Scanned sheet: the lines were read from an image, not from the drawing. Check each group against the sheet
             more carefully than usual.

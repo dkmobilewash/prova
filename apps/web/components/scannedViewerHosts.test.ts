@@ -68,7 +68,7 @@ describe("the viewer's hosts and a scanned sheet", () => {
     for (const host of hosts) {
       for (const render of renders(host.code)) {
         if (!/\bscannedPages=/.test(render)) continue;
-        expect(/\brasterByPage=/.test(render), `${host.file.replace(process.cwd(), "")} renders the viewer with scannedPages and without rasterByPage — Find the walls will read the PDF, which a scan has no strokes in`).toBe(true);
+        expect(/\brasterByPage=/.test(render) || (/\brasterUrl=/.test(render) && /\brasterPages=/.test(render)), `${host.file.replace(process.cwd(), "")} renders the viewer with scannedPages and without rasterByPage — Find the walls will read the PDF, which a scan has no strokes in`).toBe(true);
       }
     }
     // And at least one does, or the rule is about nobody.
@@ -79,5 +79,7 @@ describe("the viewer's hosts and a scanned sheet", () => {
     const viewer = stripComments(readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8"));
     expect(viewer).toMatch(/\bscannedPages:\s*number\[\]/);
     expect(viewer).toMatch(/\brasterByPage\?:\s*Record<number/);
+    expect(viewer).toMatch(/\brasterPages\?:\s*number\[\]/);
+    expect(viewer).toMatch(/\brasterUrl\?:\s*string \| null/);
   });
 });

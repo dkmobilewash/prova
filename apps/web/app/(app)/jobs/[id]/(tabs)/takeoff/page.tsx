@@ -170,7 +170,8 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
     postableWallTypes,
     printedScaleByPage,
     scannedPages,
-    rasterByPage,
+    rasterPages,
+    rasterUrl,
     scannedPlansOn,
     storedWallsByPage,
     levelByPage,
@@ -230,7 +231,8 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         sheets={sheets}
         printedScaleByPage={printedScaleByPage}
         scannedPages={scannedPages}
-        rasterByPage={rasterByPage}
+        rasterPages={rasterPages}
+        rasterUrl={rasterUrl}
         storedWallsByPage={storedWallsByPage}
         scalePrefillByPage={scalePrefillByPage}
         viewScalesByPage={viewScalesByPage}
@@ -328,7 +330,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         <ScannedSheetsPanel
           planId={plan.id}
           scanned={scannedPages.length}
-          unread={scannedPages.filter((page) => rasterByPage[page] === undefined).length}
+          unread={scannedPages.filter((page) => !rasterPages.includes(page)).length}
           existing={await latestIngestFor(plan.id, "RASTER")}
         />
       )}

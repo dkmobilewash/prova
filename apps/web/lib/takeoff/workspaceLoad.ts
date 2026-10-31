@@ -6,7 +6,6 @@ import { wallTypeSummary } from "@/lib/takeoff/wallTypeMatch";
 
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { isScannedSheet } from "@/lib/plan-ingest/scannedSheet";
-import { storedRasterFrom, type StoredRaster } from "@/lib/plan-ingest/raster";
 import { cutoutsFromJson, type ItemMeasurement, type TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
 import { scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
 import { effectiveSheetNumber, effectiveTitle, sheetPickerLabel } from "@/lib/plan-ingest/sheetIndex";
@@ -383,16 +382,21 @@ export async function loadTakeoffWorkspace(
   // printed scale OCR read, as a prefill where the inventory has none — so a
   // scan whose caption was read gets the one-press scale, and one whose
   // caption was not gets the ordinary set-the-scale prompt, nothing new.
-  const rasterByPage: Record<number, StoredRaster> = {};
+  // THE LINES AND WORDS THEMSELVES ARE NOT LOADED HERE. On Evergreen the 106
+  // rows hold 416,923 segments — 31 MB of lines and 2.7 MB of words — and
+  // handing all of it to the browser in this page's payload is what made the
+  // tab go blank (Chrome's round, twice). The viewer fetches ONE page's read
+  // when that page is on screen, from `api/takeoff/raster/[planId]/[page]`;
+  // this list says which pages have one.
+  const rasterPages: number[] = [];
   const scannedNumberByPage: Record<number, string> = {};
   for (const row of await prisma.planSheetRaster.findMany({
     where: { planId: plan.id },
-    select: { pageNumber: true, widthPt: true, heightPt: true, lines: true, text: true, printedScale: true, sheetNumber: true },
+    select: { pageNumber: true, printedScale: true, sheetNumber: true },
+    orderBy: { pageNumber: "asc" },
   })) {
-    const stored = storedRasterFrom(row);
-    if (stored === null) continue;
-    rasterByPage[row.pageNumber] = stored;
-    if (stored.printedScale !== null && printedScaleByPage[row.pageNumber] === undefined) printedScaleByPage[row.pageNumber] = stored.printedScale;
+    rasterPages.push(row.pageNumber);
+    if (row.printedScale !== null && printedScaleByPage[row.pageNumber] === undefined) printedScaleByPage[row.pageNumber] = row.printedScale;
     // ── WHAT A SCANNED SHEET IS CALLED ──
     // The inventory has no text to name a scan by, so its number is the one
     // OCR read off the title-block corner (`rasterizeSheet`, the sparse
@@ -625,7 +629,8 @@ export async function loadTakeoffWorkspace(
     postableWallTypes,
     printedScaleByPage,
     scannedPages,
-    rasterByPage,
+    rasterPages,
+    rasterUrl: `/api/takeoff/raster/${plan.id}`,
     storedWallsByPage,
     matchableItems,
     levelByPage,
