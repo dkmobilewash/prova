@@ -1,5 +1,6 @@
 "use server";
 
+import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
 import { countItemFor } from "@/lib/takeoff/countItem";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
@@ -781,25 +782,36 @@ export async function saveTakeoffMeasurement(
 const MAX_FINISH_LINES = 300;
 
 /**
- * Finish takeoff quantities as estimate lines, one per finish and kind. Each is
- * checked here, because a form can send anything, and they arrive as materials
- * with no price, like every recipe's lines.
+ * A sheet's finish takeoff onto the estimate, through the same record the
+ * whole-set run writes: Send to estimate owns the lines, so pressing this twice
+ * replaces rather than repeats, and `ceilingRooms` stay off the ceiling items.
  */
 export async function addFinishLinesToEstimate(
   jobId: string,
+  pageId: string,
   label: string,
   lines: { label: string; quantity: number; unit: string }[],
+  ceilingRooms: string[] = [],
 ): Promise<ActionResultWith<{ added: number }>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const job = await prisma.job.findFirst({ where: { id: jobId, companyId: context.company.id } });
   if (!job) return actionFail("That job is no longer here. Reload the page.");
   assertEditableDirectly(job);
+  const page = await prisma.takeoffPlanPage.findFirst({ where: { id: pageId, plan: { jobId, companyId: context.company.id } }, select: { id: true } });
+  if (!page) return actionFail("That sheet is no longer on this job. Reload the page.");
   if (lines.length === 0) return actionFail("There are no finish quantities to add.");
   if (lines.length > MAX_FINISH_LINES) return actionFail(`That is more than ${MAX_FINISH_LINES} lines at once.`);
   const clean = lines.filter((l) => l.label.trim() !== "" && l.label.length <= 120 && Number.isFinite(l.quantity) && l.quantity > 0 && (l.unit === "sq ft" || l.unit === "lin ft"));
   if (clean.length !== lines.length) return actionFail("Some of those quantities did not come through. Read the schedule again.");
-  await prisma.$transaction(createLineItemRows(jobId, label.trim().slice(0, 80), clean, "MATERIAL"));
+  const sheet = label.trim().slice(0, 80);
+  await prisma.$transaction(async (tx) => {
+    await tx.takeoffPlanPage.update({
+      where: { id: page.id },
+      data: { finishTakeoff: { lines: clean.map((l) => ({ description: `${sheet} — ${l.label}`, quantity: l.quantity, unit: l.unit })), ceilingRooms: ceilingRooms.map(String).slice(0, 2000) } },
+    });
+    await syncTakeoffItemLines(tx, context.company.id, jobId);
+  });
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/jobs/${jobId}`);
   return { ok: true, value: { added: clean.length } };

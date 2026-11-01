@@ -24,7 +24,8 @@ import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
  * unpriced rather than priced as a guess. Never twice: a page already
  * carrying DETECTED wall measurements is left alone.
  */
-export const UNTYPED_ITEM = "Walls — untyped";
+export { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
+import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 
 export type WallItemsOutcome =
   | { kind: "written"; typedFeet: number; untypedFeet: number; byType: { code: string; feet: number }[] }

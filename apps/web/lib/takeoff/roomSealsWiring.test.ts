@@ -8,18 +8,17 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 const viewer = read("../../components/TakeoffPlanViewer.tsx");
 const rooms = read("../plan-ingest/rooms.ts");
 const walls = read("../plan-ingest/walls.ts");
+const sheet = read("./sheetRooms.ts");
 
 describe("both room paths use the doors", () => {
-  it("the viewer seals with roomSeals", () => {
-    expect(viewer).toMatch(/roomSeals\(walls, detected\.segments\.map\(inPageWidthUnits\(detected\.widthPt\)\), feetPerUnit\)/);
-    expect(viewer).toContain("const roomInput = { walls, feetPerUnit, text: wordsRef.current, widthPt: W, doorSeals };");
-    expect(viewer).toMatch(/roomsClosedAtDrawnLines\(roomsSplitAtDrawnWalls\(roomInput, /);
+  it("the viewer and the whole-set stage both find rooms through sheetRooms", () => {
+    expect(viewer).toMatch(/sheetRooms\(\{\s+pairings: pairingsRef\.current,/);
+    expect(rooms).toMatch(/sheetRooms\(\{\s+pairings: input\.boundary\?\.pairings \?\? \[\],/);
+    expect(sheet).toMatch(/roomSeals\(walls, segments, feetPerUnit\)/);
+    expect(sheet).toMatch(/roomsClosedAtDrawnLines\(roomsSplitAtDrawnWalls\(base, lines\), base, lines\)/);
   });
-  it("the whole-set stage uses the pairings and seals the detection just read", () => {
+  it("the whole-set stage keeps what the detection just read", () => {
     expect(walls).toMatch(/onBoundary: \(seen\) => \{\s+boundary = seen;/);
     expect(walls).toMatch(/findRooms\(\{[^}]*boundary,/);
-    expect(rooms).toContain("roomBoundary({ pairings: input.boundary?.pairings ?? [], runs, drawn: [] })");
-    expect(rooms).toContain("const roomInput = { walls, feetPerUnit, text: text.items, widthPt: text.widthPt, doorSeals };");
-    expect(rooms).toMatch(/roomsClosedAtDrawnLines\(roomsFromWalls\(roomInput\), roomInput, /);
   });
 });

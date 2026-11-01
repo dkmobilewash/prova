@@ -2,12 +2,15 @@ import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { ceilingsForRooms, type CeilingPageText } from "@/lib/takeoff/roomCeilings";
 import type { DetectedBoundary } from "@/lib/takeoff/detectWallsForCalibration";
-import { roomBoundary } from "@/lib/takeoff/roomBoundary";
-import { roomSeals } from "@/lib/takeoff/roomSeals";
-import { roomsClosedAtDrawnLines, roomsFromWalls } from "@/lib/takeoff/roomsFromWalls";
+import { doorsAndWindowsForSheet } from "@/lib/takeoff/doorsWindows";
+import { DOOR_HEIGHT_FEET, finishLineLabel, finishTakeoff, typesFromNeighbours, typeTagsInRooms, WINDOW_HEIGHT_FEET } from "@/lib/takeoff/finishTakeoff";
+import { readFinishSchedule, type FinishSchedule } from "@/lib/takeoff/finishSchedule";
+import { sheetRooms } from "@/lib/takeoff/sheetRooms";
+import type { WallCandidate } from "@/lib/takeoff/wallVectors";
 import { roomRows, writeRoomRows, type RoomToSave } from "@/lib/takeoff/roomRows";
 import { openPlanPdf, type PlanPdf } from "./planPdf";
 import { readPlanBytes } from "./planBytes";
+import { sheetNumberFrom } from "./sheetNumber";
 import { tableRowsFromPage } from "./scheduleTable";
 
 /**
@@ -52,10 +55,47 @@ async function ceilingPageText(doc: PlanPdf, pageNumber: number): Promise<Ceilin
   }
 }
 
+/**
+ * Doors and windows onto the wall they sit in, for Send to estimate.
+ * ponytail: heights are the finish panel's stated defaults, because a plan has
+ * none. A door schedule's height would be better when one has been read.
+ */
+async function writeWallOpenings(pageId: string, runs: readonly { x1: number; y1: number; x2: number; y2: number }[], doors: readonly { wall: number | null; widthFeet: number }[], windows: readonly { wall: number; widthFeet: number }[]) {
+  const byRun = new Map<number, { widthFt: number; heightFt: number }[]>();
+  const add = (at: number | null, widthFt: number, heightFt: number) => {
+    if (at === null || at < 0) return;
+    byRun.set(at, [...(byRun.get(at) ?? []), { widthFt, heightFt }]);
+  };
+  for (const d of doors) add(d.wall, d.widthFeet, DOOR_HEIGHT_FEET);
+  for (const w of windows) add(w.wall, w.widthFeet, WINDOW_HEIGHT_FEET);
+  if (byRun.size === 0) return;
+  const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId, source: "DETECTED", kind: "LINEAR" }, select: { id: true, xs: true, ys: true } });
+  const at = (x: number, y: number) => `${x.toFixed(6)},${y.toFixed(6)}`;
+  const idOf = new Map(rows.map((r) => [at((r.xs as number[])[0]!, (r.ys as number[])[0]!) + at((r.xs as number[])[1]!, (r.ys as number[])[1]!), r.id]));
+  for (const [index, openings] of byRun) {
+    const run = runs[index]!;
+    const id = idOf.get(at(run.x1, run.y1) + at(run.x2, run.y2));
+    if (id) await prisma.takeoffMeasurement.update({ where: { id }, data: { openings } });
+  }
+}
+
+/** The fullest finish schedule in the set. Read once per run: every counted sheet asks. */
+const schedules = new Map<string, FinishSchedule | null>();
+async function setFinishSchedule(doc: PlanPdf, planId: string, pageCount: number): Promise<FinishSchedule | null> {
+  if (schedules.has(planId)) return schedules.get(planId)!;
+  let best: FinishSchedule | null = null;
+  for (let n = 1; n <= pageCount; n += 1) {
+    const read = readFinishSchedule((await doc.pageText(n)).items as never);
+    if (read !== null && (best === null || read.rows.length > best.rows.length)) best = read;
+  }
+  schedules.set(planId, best);
+  return best;
+}
+
 export type RoomsOutcome = { kind: "written"; rooms: number; ceilingSqFt: number } | { kind: "skipped"; why: string } | { kind: "failed"; error: string };
 
 export async function roomsForSheet(input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null; boundary?: DetectedBoundary }): Promise<RoomsOutcome> {
-  const company = await prisma.company.findUnique({ where: { id: input.companyId }, select: { roomFinderOn: true } });
+  const company = await prisma.company.findUnique({ where: { id: input.companyId }, select: { roomFinderOn: true, doorsWindowsOn: true } });
   if (!company?.roomFinderOn) return { kind: "skipped", why: "room finding is off" };
   const page = await prisma.takeoffPlanPage.findUnique({
     where: { planId_pageNumber: { planId: input.planId, pageNumber: input.pageNumber } },
@@ -64,6 +104,7 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
       calibrations: { orderBy: { createdAt: "desc" }, take: 1 },
       wallProposals: { orderBy: { createdAt: "desc" }, select: { calibrationId: true, runs: true, createdAt: true } },
       measurements: { where: { source: "ROOM_FINDER" }, select: { id: true }, take: 1 },
+      plan: { select: { _count: { select: { sheetTexts: true } } } },
     },
   });
   const calibration = page?.calibrations[0];
@@ -80,12 +121,27 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
   const doc = await openPlanPdf(read.bytes);
   try {
     const text = await doc.pageText(input.pageNumber);
-    // The pairings and the doors, when the walls were found in this same step:
-    // the viewer's boundary, so a whole-set room closes as it does on screen.
-    const walls = roomBoundary({ pairings: input.boundary?.pairings ?? [], runs, drawn: [] });
-    const doorSeals = input.boundary === undefined ? [] : roomSeals(walls, input.boundary.segments, feetPerUnit);
-    const roomInput = { walls, feetPerUnit, text: text.items, widthPt: text.widthPt, doorSeals };
-    const found = roomsClosedAtDrawnLines(roomsFromWalls(roomInput), roomInput, input.boundary?.segments ?? []);
+    // What this step's own detection read, so a whole-set room is the viewer's.
+    // A retry has only the stored runs, and the page's strokes for its doors.
+    const strokes = input.boundary ? null : await doc.pageStrokes(input.pageNumber);
+    const W = text.widthPt;
+    const inUnits = input.boundary?.segments ?? strokes!.segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W }));
+    const candidates = runs.map((r) => ({ ...r, lengthFeet: Math.hypot(r.x2 - r.x1, r.y2 - r.y1) * feetPerUnit })) as unknown as WallCandidate[];
+    const inPoints = inUnits.map((s) => ({ ...s, x1: s.x1 * W, y1: s.y1 * W, x2: s.x2 * W, y2: s.y2 * W }));
+    const openings = company.doorsWindowsOn
+      ? doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: inPoints as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: [] })
+      : { doors: [], windows: [] };
+    await writeWallOpenings(page.id, runs, openings.doors, openings.windows);
+    const found = sheetRooms({
+      pairings: input.boundary?.pairings ?? [],
+      runs,
+      drawn: [],
+      segments: inUnits,
+      doorLeaves: openings.doors.map((d) => ({ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y })),
+      feetPerUnit,
+      text: text.items,
+      widthPt: W,
+    });
     if (found.rooms.length === 0) return { kind: "skipped", why: "no rooms closed" };
     const current: CeilingPageText = { pageNumber: input.pageNumber, items: text.items, widthPt: text.widthPt, tableRows: tableRowsFromPage(text) };
     const others: CeilingPageText[] = [];
@@ -96,7 +152,8 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
     const ceilings = ceilingsForRooms({ rooms: found.rooms, current, feetPerUnit, others });
     const rooms: RoomToSave[] = found.rooms.map((room) => {
       const c = ceilings.get(room.id) ?? null;
-      const label = [room.tag?.name, room.tag?.number].filter(Boolean).join(" ").trim();
+      const shared = room.sharedTags?.map((t) => [t.name, t.number].filter(Boolean).join(" ")).join(" + ");
+      const label = shared ?? [room.tag?.name, room.tag?.number].filter(Boolean).join(" ").trim();
       return {
         xs: room.xs,
         ys: room.ys,
@@ -111,6 +168,24 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
     await prisma.$transaction(async (tx) => {
       await writeRoomRows(tx, input.companyId, input.jobId, built.rows);
     });
+    // ── THE FINISH TAKEOFF, THE VIEWER'S SAME STEPS ──
+    const schedule = await setFinishSchedule(doc, input.planId, page.plan._count.sheetTexts);
+    if (schedule !== null) {
+      const tagged = schedule.byType ? typeTagsInRooms(found.rooms, text.items as never, W, new Set(schedule.rows.map((r) => r.key))) : undefined;
+      const typeOfRoom = tagged ? new Map([...tagged, ...typesFromNeighbours(found.rooms, tagged, feetPerUnit)]) : undefined;
+      const result = finishTakeoff({ rooms: found.rooms, schedule, typeOfRoom, doors: openings.doors, windows: openings.windows, feetPerUnit, heightOf: (room) => ceilings.get(room.id)?.heightFeet ?? null });
+      const sheet = sheetNumberFrom(text).sheetNumber ?? `Sheet ${input.pageNumber}`;
+      await prisma.takeoffPlanPage.update({
+        where: { id: page.id },
+        data: {
+          finishTakeoff: {
+            lines: result.lines.map((l) => ({ description: `${sheet} — ${finishLineLabel(l)}`, quantity: l.quantity, unit: l.unit })),
+            // By number, or by label for a merged region, which has no one number.
+            ceilingRooms: result.joined.filter((j) => j.row.ceiling !== null).map((j) => j.room.tag?.number ?? rooms[found.rooms.indexOf(j.room)]!.label),
+          },
+        },
+      });
+    }
     const ceilingSqFt = found.rooms.reduce((n, room) => n + ((ceilings.get(room.id)?.family ?? null) !== null ? room.squareFeet : 0), 0);
     return { kind: "written", rooms: found.rooms.length, ceilingSqFt: Math.round(ceilingSqFt) };
   } finally {
