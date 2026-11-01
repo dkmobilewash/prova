@@ -8,7 +8,7 @@ import { excludedSheetReason, heldOutReason } from "../heldOutSets";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { roomBoundary } from "../roomBoundary";
 import { roomSeals } from "../roomSeals";
-import { roomsFromWalls, type FoundWall, type RoomsFromWallsResult } from "../roomsFromWalls";
+import { roomsClosedAtDrawnLines, roomsFromWalls, roomsSplitAtDrawnWalls, type FoundWall, type RoomsFromWallsResult } from "../roomsFromWalls";
 import { sheetStrokes } from "../sheetStrokes";
 import type { WallCandidate } from "../wallVectors";
 
@@ -77,22 +77,12 @@ describe.skipIf(DIR === "" || LABELS === "")("what leaves a room open", () => {
         const key = saved.verdicts.filter((v) => v.verdict === "wall" || v.verdict === "traced").map((v) => ({ x1: v.x1, y1: v.y1, x2: v.x2, y2: v.y2, thicknessFeet: v.thicknessFeet || undefined }));
         const doors = doorSymbols(d.found.inUnits, [], fpu).map((o) => ({ x1: o.hinge.x, y1: o.hinge.y, x2: o.strike.x, y2: o.strike.y }));
         const units = d.found.inUnits.map((u) => ({ x1: u.x1, y1: u.y1, x2: u.x2, y2: u.y2 }));
-        const arms: Record<string, ReturnType<typeof summary>> = {
-          stage: run(stage),
-          viewer: run(viewer),
-          "viewer + door swings": run(viewer, { doorSeals: doors }),
-          "viewer + sidelights": run(viewer, { strokes: units, bridgeSidelights: true }),
-          "viewer + corner doors": run(viewer, { sealCornerDoors: true }),
-          "stage + door swings": run(stage, { doorSeals: doors }),
-          "viewer + roomSeals": run(viewer, { doorSeals: roomSeals(viewer, d.found.inUnits, fpu) }),
-          "viewer + swings + corner": run(viewer, { doorSeals: doors, sealCornerDoors: true }),
-          "viewer + swings + sidelights": run(viewer, { doorSeals: doors, strokes: units, bridgeSidelights: true }),
-          key: run(key),
-          "key + door swings": run(key, { doorSeals: doors }),
-        };
-        for (const kind of [...new Set(got.setAsideLines.map((l) => l.kind))]) {
-          arms[`aside: ${kind}`] = run([...viewer, ...got.setAsideLines.filter((l) => l.kind === kind).map(line)]);
-        }
+        const seals = roomSeals(viewer, d.found.inUnits, fpu);
+        const input = { walls: viewer, feetPerUnit: fpu, text: text.items, widthPt: W, doorSeals: seals };
+        const lines = [...units, ...doors];
+        const product = roomsSplitAtDrawnWalls(input, lines);
+        const arms: Record<string, ReturnType<typeof summary>> = { product: summary(product), key: run(key) };
+        arms.closed = summary(roomsClosedAtDrawnLines(product, input, lines));
         rows.push({ set: dir, sheet, page: saved.page, doors: doors.length, pairings: pairings.length, runs: runs.length, arms });
       }
     }

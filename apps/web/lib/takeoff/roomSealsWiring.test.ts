@@ -15,6 +15,7 @@ describe("both room paths use the doors", () => {
     expect(viewer).toMatch(/sheetRooms\(\{\s+pairings: pairingsRef\.current,/);
     expect(rooms).toMatch(/sheetRooms\(\{\s+pairings: input\.boundary\?\.pairings \?\? \[\],/);
     expect(sheet).toMatch(/roomSeals\(walls, segments, feetPerUnit\)/);
+    expect(sheet).toMatch(/roomsClosedAtDrawnLines\(roomsSplitAtDrawnWalls\(base, lines\), base, lines\)/);
   });
   it("the whole-set stage keeps what the detection just read", () => {
     expect(walls).toMatch(/onBoundary: \(seen\) => \{\s+boundary = seen;/);
