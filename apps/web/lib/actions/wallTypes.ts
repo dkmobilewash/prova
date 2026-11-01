@@ -89,6 +89,20 @@ export async function createWallType(formData: FormData): Promise<ActionResult> 
   });
 }
 
+/** The type "Walls — untyped" is priced as. One per company; pressing the current one clears it. */
+export async function setDefaultPartition(wallTypeId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NO_ESTIMATING);
+  const type = await prisma.wallType.findFirst({ where: { id: wallTypeId, companyId: context.company.id }, select: { isDefaultPartition: true } });
+  if (!type) return actionFail("That wall type is no longer here. Reload the page.");
+  await prisma.$transaction([
+    prisma.wallType.updateMany({ where: { companyId: context.company.id, isDefaultPartition: true }, data: { isDefaultPartition: false } }),
+    prisma.wallType.update({ where: { id: wallTypeId }, data: { isDefaultPartition: !type.isDefaultPartition } }),
+  ]);
+  revalidateLibrary();
+  return actionOk;
+}
+
 export async function updateWallType(wallTypeId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NO_ESTIMATING);

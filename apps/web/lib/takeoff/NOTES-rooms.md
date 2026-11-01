@@ -1050,3 +1050,16 @@ A corridor no longer has a say in a neighbour's finish type: once split out, gle
 The end-to-end check found "Send to estimate" wrote lines only for items with an assembly. A count and Demo walls have none, so they were named as unpriced and no line appeared, though the panel says the name becomes the line item. `syncTakeoffItemLines` now writes a plain line for them: a quantity, a unit, no price. Measurements already posted from the list are left out, so a count is never on the estimate twice.
 
 Demolition sheets that are not about walls no longer offer Find demolition. E Street's site, ceiling, roof, electrical and mechanical sheets took Demo walls from 226 ft to 1,706 ft.
+
+## Diego's estimate decisions (2026-10-31)
+
+- **No footage is dropped.** "Walls — untyped" takes the company's default partition (`WallType.isDefaultPartition`, set on the Wall types page), labelled "assumed type: check". With no default it arrives as a footage line, "no type: check". Ceiling items with no assembly arrive the same way.
+- **One ceiling source.** Where a finish schedule covers a room, its ceiling line is the source and that room's ceiling item row stays off. A merged region has no one number, so it matches by label.
+- **Openings come off board** on Send to estimate, from `TakeoffMeasurement.openings`, unless the company has its own rule. Unanswered means everything comes off here, not the usual 32 sf, because a door is 21 sf. Heights are the stated 7 and 4 ft defaults.
+- **The whole-set run does what the viewer does**: split rooms and finish takeoff, stored on `TakeoffPlanPage.finishTakeoff`. The viewer's button writes the same record, so Send owns the lines and a second press replaces.
+
+The stage finds rooms from stored runs only, because raw pairings are not kept, so it closes fewer than the viewer: Joplin 64 against 70, Baker 9 against 11.
+
+## One path for a sheet's rooms (2026-11-01)
+
+`sheetRooms` is the only way to a sheet's rooms: the boundary, the doors that seal it, and the split. The viewer and the whole-set stage both call it, because each had grown its own copy and they disagreed on what they sealed and split. Compared directly: Joplin 70 rooms on both with the same 58 numbers, Baker 12 with the same 11, floor within 3 sf.

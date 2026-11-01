@@ -173,6 +173,10 @@ model TakeoffPlan {
 /// One sheet of that PDF, created the first time somebody calibrates it. A
 /// forty-page set where two sheets were measured has two rows.
 model TakeoffPlanPage {
+  /// The finish takeoff for this sheet: `{ lines: [{ description, quantity, unit }], ceilingRooms: [number] }`.
+  /// Send to estimate writes the lines, and leaves off the ceiling items of those rooms.
+  finishTakeoff Json?
+
   id     String      @id @default(cuid())
   planId String
   plan   TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
@@ -447,6 +451,10 @@ model TakeoffMeasurement {
   /// updates one in place, and they are saved and discarded with the shape
   /// they belong to.
   cutouts Json @default("[]")
+
+  /// Door and window openings on this wall, `[{ widthFt, heightFt }]`, taken off
+  /// its board on Send to estimate.
+  openings Json @default("[]")
 
   /// WHEN THIS WAS TURNED INTO LINE ITEMS, or null. An event, not derived
   /// state — there is nothing to derive it from. Without it, posting the same
