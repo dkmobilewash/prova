@@ -156,7 +156,7 @@ import { scaleFromPrinted } from "@/lib/takeoff/scaleFromPrinted";
 type RasterRead = { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[]; widthPt?: number; heightPt?: number; printedScale?: string | null };
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
 import { roomSeals } from "@/lib/takeoff/roomSeals";
-import { roomsFromWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
+import { roomsSplitAtDrawnWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -1003,9 +1003,10 @@ export function TakeoffPlanViewer({
   //
   // Refs, because a change finds again in the same tick, before any re-render
   // or server refresh could hand the new rows down.
-  const exclusionRowsRef = useRef<ExclusionRow[]>([]);
-  const exclusionsRef = useRef<ReturnType<typeof userExclusionsFromRows>>(null);
-  const [exclusionRows, setExclusionRows] = useState<ExclusionRow[]>([]);
+  const exclusionRowsRef = useRef<ExclusionRow[]>(sheet?.exclusions ?? []);
+  const exclusionsRef = useRef(userExclusionsFromRows(sheet?.exclusions ?? []));
+  // From the sheet at first paint: a saved work area has its control on open.
+  const [exclusionRows, setExclusionRows] = useState<ExclusionRow[]>(sheet?.exclusions ?? []);
   const [userAside, setUserAside] = useState<{ kind: string; why: string; n: number }[]>([]);
   const putExclusionRows = useCallback((rows: ExclusionRow[]) => {
     exclusionRowsRef.current = rows;
@@ -1017,6 +1018,8 @@ export function TakeoffPlanViewer({
   // array, and clearing on that wiped the sentence the save had just written.
   useEffect(() => setUserAside([]), [sheet?.id]);
   const findRef = useRef<() => Promise<void>>(async () => {});
+  const findQueue = useRef<Promise<void>>(Promise.resolve());
+  const quietFind = useRef(false);
   const sheetIdRef = useRef<string | undefined>(undefined);
   sheetIdRef.current = sheet?.id;
   const calibration = sheet?.calibration ?? null;
@@ -2647,7 +2650,11 @@ export function TakeoffPlanViewer({
       detected !== null && detected.page === pageNumber && detected.widthPt > 0
         ? roomSeals(walls, detected.segments.map(inPageWidthUnits(detected.widthPt)), feetPerUnit)
         : [];
-    const result = roomsFromWalls({ walls, feetPerUnit, text: wordsRef.current, widthPt: pageSize.widthPt, doorSeals });
+    // Leaked regions may be split along the sheet's own lines and door leaves.
+    const W = pageSize.widthPt;
+    const drawn = lastDetect.current?.page === pageNumber ? lastDetect.current.segments.map((s) => ({ x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W })) : [];
+    const leaves = openings?.page === pageNumber ? openings.result.doors.map((d) => ({ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y })) : [];
+    const result = roomsSplitAtDrawnWalls({ walls, feetPerUnit, text: wordsRef.current, widthPt: W, doorSeals }, [...drawn, ...leaves]);
     setRooms(result);
     setRoomsOnPage(pageNumber);
     onResults?.();
@@ -2731,14 +2738,28 @@ export function TakeoffPlanViewer({
       }),
   );
 
-  /** Save the change's rows, then find again so the list answers at once. */
+  /**
+   * Save the change's rows, then find again so the list answers at once.
+   *
+   * One Find at a time and in order, so the last change is the one on screen.
+   * Quiet, because only a Find somebody pressed opens the results rail: below
+   * 1280 px that rail is a drawer, and opening it here took the next click.
+   */
   async function afterExclusionChange(result: { ok: boolean; error?: string }, next: ExclusionRow[]) {
     if (!result.ok) {
       setFindError(result.error ?? "That did not save. Try again.");
       return;
     }
     putExclusionRows(next);
-    await findRef.current();
+    findQueue.current = findQueue.current.then(async () => {
+      quietFind.current = true;
+      try {
+        await findRef.current();
+      } finally {
+        quietFind.current = false;
+      }
+    });
+    await findQueue.current;
   }
 
   async function addExclusion(kind: ExclusionRow["kind"], xs: number[], ys: number[]) {
@@ -2746,23 +2767,26 @@ export function TakeoffPlanViewer({
     const pageId = sheet.id;
     const saved = await addSheetExclusion(jobId, pageId, kind, xs, ys);
     const row: ExclusionRow = { id: saved.ok ? saved.value.ids[0] : "", kind, xs, ys };
-    await afterExclusionChange(saved, [...exclusionRowsRef.current, row]);
-    if (!saved.ok) return;
     // The stack outlives this sheet: on another one the action still runs, and
     // the screen is left alone, because the rows here are not that sheet's.
     const here = () => sheetIdRef.current === pageId;
-    onUndoable?.(
-      exclusionUndoEntry(row, {
-        remove: (id) => removeSheetExclusion(jobId, pageId, id),
-        add: (r) => addSheetExclusion(jobId, pageId, r.kind, r.xs, r.ys),
-        removed: async (result, id) => {
-          if (here()) await afterExclusionChange(result, exclusionRowsRef.current.filter((r) => r.id !== id));
-        },
-        added: async (result, r) => {
-          if (here()) await afterExclusionChange(result, [...exclusionRowsRef.current, r]);
-        },
-      }),
-    );
+    // Before the Find, and the Find is not waited for: Undo is greyed while its
+    // action runs, and a Find takes seconds, so waiting cost the next click.
+    if (saved.ok) {
+      onUndoable?.(
+        exclusionUndoEntry(row, {
+          remove: (id) => removeSheetExclusion(jobId, pageId, id),
+          add: (r) => addSheetExclusion(jobId, pageId, r.kind, r.xs, r.ys),
+          removed: async (result, id) => {
+            if (here()) void afterExclusionChange(result, exclusionRowsRef.current.filter((r) => r.id !== id));
+          },
+          added: async (result, r) => {
+            if (here()) void afterExclusionChange(result, [...exclusionRowsRef.current, r]);
+          },
+        }),
+      );
+    }
+    await afterExclusionChange(saved, [...exclusionRowsRef.current, row]);
   }
 
   async function onExcludeAt(at: { x: number; y: number }) {
@@ -3152,7 +3176,7 @@ export function TakeoffPlanViewer({
       } else {
         setOpenings(null);
       }
-      onResults?.();
+      if (!quietFind.current) onResults?.();
       setFound(
         doubted !== null
           ? regroup(runs.filter((_, at) => !doubted.has(at)))

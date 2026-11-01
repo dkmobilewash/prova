@@ -1,3 +1,4 @@
+import { isDimensionString } from "./dimensionStrings";
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { bothFacesDashedInPoints } from "./dashedFaces";
 import { existingSentence, existingWalls, type ExistingWall } from "./existingWalls";
@@ -154,6 +155,12 @@ export const SHORTEST_SINGLE_FEET = 12;
  */
 export const SITE_EQUIPMENT_WORDS = /\b(PLAY YARD|RUNS?|CHAIN ?LINK|GATES?|CURBS?|TRENCH DRAINS?|SHELVING)\b/i;
 export const SITE_EQUIPMENT_REACH_FEET = 10;
+/**
+ * A run longer than this is a building's wall, whatever is written near one end
+ * of it. Camp Bow Wow A102 lost two exterior walls, 248 ft of key, to PLAY YARD
+ * written beside them; its other runs on the training sheets are junk or unkeyed.
+ */
+export const SITE_EQUIPMENT_LONGEST_FEET = 100;
 
 /** The nearest equipment word within reach of this wall, or null. */
 export function siteEquipmentWord(
@@ -273,7 +280,10 @@ export function offeredCandidates(
       return false;
     }
     if (!onAPlan(sheet, w.x1, w.y1, w.x2, w.y2)) return false;
-    const hit = sheet.textItems === undefined ? null : siteEquipmentWord(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit);
+    const hit =
+      sheet.textItems === undefined || w.lengthFeet > SITE_EQUIPMENT_LONGEST_FEET
+        ? null
+        : siteEquipmentWord(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit);
     if (hit !== null) {
       equipment.push({ wall: w, word: hit.word, feet: hit.feet });
       return false;
@@ -316,9 +326,19 @@ export function offeredCandidates(
   const isExisting = new Set(existingRuns.map((e) => e.wall));
   const pastFrames = onPlan.filter((w) => !framed.sides.has(w) && !framed.inside.has(w) && !isExisting.has(w));
   const scanned = sheet.textItems?.some((t) => t.confidence !== undefined) ?? false;
-  const { kept: survivors, titleStrip, twins } = scanned ? scanOnlyAsides(pastFrames, sheet.feetPerUnit) : { kept: pastFrames, titleStrip: [], twins: [] };
+  const { kept: pastScans, titleStrip, twins } = scanned ? scanOnlyAsides(pastFrames, sheet.feetPerUnit) : { kept: pastFrames, titleStrip: [], twins: [] };
   if (titleStrip.length > 0) aside.set("title-strip", { kind: "title-strip", why: "in the title-block strip at the sheet's right edge", n: titleStrip.length });
   if (twins.length > 0) aside.set("same-wall-twin", { kind: "same-wall-twin", why: "the same wall as a longer or better-drawn run", n: twins.length });
+  // ── A DIMENSION STRING IS NOT A WALL — see `dimensionStrings.ts` ──
+  //
+  // Judged among the runs still on offer, because "what meets it" is about
+  // the other walls. Vector sheets only: it was priced on those.
+  const words = scanned ? [] : (sheet.textItems ?? []).map((t) => ({ str: t.str.trim(), x: (t.x + t.width / 2) / sheet.widthPt, y: (t.y - t.height / 2) / sheet.widthPt }));
+  const dimensionRuns = pastScans.filter((w) => isDimensionString(w, pastScans, words, sheet.feetPerUnit));
+  const survivors = dimensionRuns.length === 0 ? pastScans : pastScans.filter((w) => !dimensionRuns.includes(w));
+  if (dimensionRuns.length > 0) {
+    aside.set("dimension-string", { kind: "dimension-string", why: "several dimensions written between the two lines and little meeting them", n: dimensionRuns.length });
+  }
   // ── WHAT THE USER EXCLUDED — see `userExclusions.ts` ──
   //
   // After every rule, on what would otherwise be offered: the walls drawn
@@ -424,6 +444,7 @@ export function offeredCandidates(
       ...[...like.excluded].map((w) => ({ kind: "excluded-like", why: "drawn like a wall you clicked — excluded by you", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...area.outside.map((w) => ({ kind: "outside-work-area", why: "outside the work area you drew", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...dashed.map((w) => ({ kind: "dashed-faces", why: "both faces are dashed lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...dimensionRuns.map((w) => ({ kind: "dimension-string", why: "several dimensions written between the two lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...tables.map((w) => ({ kind: "table-rows", why: "rows of text between the lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...underlines.map((w) => ({ kind: "underlines", why: "ruled under a word, as long as the word", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...framedRuns.map((w) => ({ kind: "legend-box", why: framed.boxes[0]?.why ?? "inside a framed legend, schedule or notes block", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),

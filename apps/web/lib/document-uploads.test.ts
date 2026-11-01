@@ -115,6 +115,7 @@ group("every purpose and where each one lands", () => {
       "bid-quote",
       "bid-spec-section",
       "compliance-document",
+      "submittal-package",
     ]);
   });
 
@@ -185,7 +186,7 @@ group("what may be uploaded, and how much of it", () => {
     // than a list of names, so adding a purpose is covered the moment it exists
     // — a hand-written list is the "second list nobody imports" shape, and this
     // file is the registry's own test.
-    const OWN_CEILING = new Set<DocumentUploadPurpose>(["plan-takeoff", "bid-spec-section"]);
+    const OWN_CEILING = new Set<DocumentUploadPurpose>(["plan-takeoff", "bid-spec-section", "submittal-package"]);
     for (const purpose of Object.keys(DOCUMENT_UPLOAD_TARGETS) as DocumentUploadPurpose[]) {
       if (OWN_CEILING.has(purpose)) continue;
       expect(uploadMaxBytesFor(purpose), `${purpose} should be at the 15MB default`).toBe(DOCUMENT_UPLOAD_MAX_BYTES);

@@ -13,6 +13,7 @@ import {
   optionalLinkOrThrow,
 } from "./shared";
 import { can } from "@/lib/permissions";
+import { recordRevision } from "@/lib/submittal-revision";
 import { mergedSubmittal, submittalFromProposal } from "@/lib/submittal-proposals";
 import { parsePackageContents } from "@/lib/submittal-package";
 
@@ -275,43 +276,7 @@ export async function sendSubmittalRevision(submittalId: string, formData: FormD
       return fail("The list of what went into that package could not be read. Build it again.");
     }
 
-    // The guards read the latest revision INSIDE the transaction. Checked
-    // outside, two people resubmitting at the same moment both pass and
-    // one of them strands a revision that is never the latest — which no
-    // form can ever record a response against.
-    await prisma.$transaction(async (tx) => {
-      const latest = await tx.submittalRevision.findFirst({
-        where: { submittalId: submittal.id },
-        orderBy: { revisionNumber: "desc" },
-      });
-      if (latest && !latest.returnedOn) {
-        throw new InputError(
-          `The GC still has revision ${latest.revisionNumber} — record what came back before sending another`,
-        );
-      }
-      // History has to stay tellable in order: a resubmission can't
-      // predate the response that caused it.
-      if (latest?.returnedOn && sentOn < latest.returnedOn) {
-        throw new InputError(
-          `Revision ${latest.revisionNumber} came back ${latest.returnedOn.toISOString().slice(0, 10)} — the next one can't have been sent before that`,
-          "sentOn",
-        );
-      }
-      const bumped = await tx.submittal.update({
-        where: { id: submittal.id },
-        data: { lastRevision: { increment: 1 } },
-        select: { lastRevision: true },
-      });
-      await tx.submittalRevision.create({
-        data: {
-          submittalId: submittal.id,
-          revisionNumber: bumped.lastRevision,
-          sentOn,
-          dueBack,
-          ...(packageContents ? { packageContents } : {}),
-        },
-      });
-    });
+    await recordRevision(submittal.id, sentOn, dueBack, packageContents ?? null);
 
     revalidatePath("/submittals");
     return ok;

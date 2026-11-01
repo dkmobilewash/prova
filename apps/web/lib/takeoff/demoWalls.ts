@@ -243,9 +243,18 @@ export function demoDoors(textItems: readonly { str: string; x: number; y: numbe
   return { doors, typical };
 }
 
-/** Whether a sheet's title or number says it is a demolition plan. */
+/**
+ * A demolition sheet that is not about walls. Its dashes are pavement, ceiling
+ * grid or conduit, and every one read adds to Demo walls: E Street's site, roof,
+ * ceiling, electrical and mechanical sheets took 226 ft to 1,706.
+ */
+const NOT_WALL_DEMO = /\b(SITE|ROOF|CEILING|ELECTRICAL|LIGHTING|POWER|MECHANICAL|PLUMBING|HVAC|FIRE PROTECTION)\b|^[EMPF][A-Z]?-?\d/i;
+
+/** Whether a sheet's title or number says it is a demolition plan of the walls. */
 export function demoSheetTitle(text: string | null | undefined): boolean {
-  return /\bDEMO(LITION)?\b/i.test(text ?? "") || /^(A|AD)?D[-\d]/i.test((text ?? "").trim());
+  const title = (text ?? "").trim();
+  if (NOT_WALL_DEMO.test(title)) return false;
+  return /\bDEMO(LITION)?\b/i.test(title) || /^(A|AD)?D[-\d]/i.test(title);
 }
 
 const NOT_A_PLAN = /\b(SECTIONS?|ELEVATIONS?|DETAILS?|LEGEND|SCHEDULE)\b/i;

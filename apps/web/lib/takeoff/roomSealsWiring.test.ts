@@ -12,7 +12,7 @@ const walls = read("../plan-ingest/walls.ts");
 describe("both room paths use the doors", () => {
   it("the viewer seals with roomSeals", () => {
     expect(viewer).toMatch(/roomSeals\(walls, detected\.segments\.map\(inPageWidthUnits\(detected\.widthPt\)\), feetPerUnit\)/);
-    expect(viewer).toMatch(/roomsFromWalls\(\{ walls, feetPerUnit, text: wordsRef\.current, widthPt: pageSize\.widthPt, doorSeals \}\)/);
+    expect(viewer).toMatch(/roomsSplitAtDrawnWalls\(\{ walls, feetPerUnit, text: wordsRef\.current, widthPt: W, doorSeals \}, /);
   });
   it("the whole-set stage uses the pairings and seals the detection just read", () => {
     expect(walls).toMatch(/onBoundary: \(seen\) => \{\s+boundary = seen;/);

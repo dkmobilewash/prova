@@ -1,9 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { sendSubmittalPackage } from "@/lib/actions";
+import { uploadDocumentFile } from "@/lib/document-upload-client";
+import { EMAIL_ATTACHMENT_MAX_BYTES, PACKAGE_LINK_DAYS, type DocumentEmailDraft } from "@/lib/document-email";
 import { SKIP_SENTENCE, type SkippedPart } from "@/lib/estimating/bid-package";
+import { Spinner } from "@/components/Spinner";
 import type { PackageContents, SubmittalCover } from "@/lib/submittal-package";
 
+const fieldClass =
+  "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink focus:border-link focus:outline-none";
 const btn =
   "rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50";
 
@@ -16,15 +22,43 @@ const btn =
 export function SubmittalPackageBuilder({
   cover,
   onContents,
+  email,
 }: {
   cover: Omit<SubmittalCover, "sentOn">;
   onContents: (contents: PackageContents | null) => void;
+  /** Offers to email the built package. Absent, it only downloads. */
+  email?: { submittalId: string; companyId: string; draft: DocumentEmailDraft; onSent: () => void };
 }) {
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<SkippedPart[]>([]);
   const [built, setBuilt] = useState<PackageContents | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [sending, setSending] = useState(false);
+
+  /** The whole form goes, so the dates above reach the server. It reads the form
+   * before the first await, because the event's data is gone once an upload
+   * resolves. */
+  async function send(form: HTMLFormElement | null) {
+    if (!form || !file || !built || !email) return;
+    const data = new FormData(form);
+    data.set("fileName", file.name);
+    data.set("packageContents", JSON.stringify(built));
+    setSending(true);
+    setError(null);
+    try {
+      const uploaded = await uploadDocumentFile("submittal-package", email.companyId, file);
+      if (!uploaded.ok) return setError(uploaded.error);
+      const result = await sendSubmittalPackage(email.submittalId, uploaded.fileUrl, data);
+      if (result.ok) email.onSent();
+      else setError(result.error);
+    } catch {
+      setError("That may not have gone. Reload the page and check before sending again.");
+    } finally {
+      setSending(false);
+    }
+  }
 
   async function build(form: HTMLFormElement | null) {
     setBusy(true);
@@ -39,6 +73,7 @@ export function SubmittalPackageBuilder({
       setBuilt(result.contents);
       onContents(result.contents);
       if (result.bytes === null) return;
+      setFile(new File([result.bytes as BlobPart], submittalPackageFileName(cover), { type: "application/pdf" }));
       const url = URL.createObjectURL(new Blob([result.bytes as BlobPart], { type: "application/pdf" }));
       const link = document.createElement("a");
       link.href = url;
@@ -71,6 +106,7 @@ export function SubmittalPackageBuilder({
           // A new pick means the last build no longer describes what is
           // being sent, so its list must not be recorded.
           setBuilt(null);
+          setFile(null);
           setSkipped([]);
           onContents(null);
         }}
@@ -95,6 +131,42 @@ export function SubmittalPackageBuilder({
           Left out {part.name}: {SKIP_SENTENCE[part.reason]}.
         </p>
       ))}
+      {email && file && built && (
+        <div className="flex flex-col gap-2 border-t border-line-row pt-2">
+          <p className="text-sm text-ink-label">Email it</p>
+          <input type="hidden" name="toName" value={email.draft.toName} />
+          <label className="flex flex-col gap-1 text-xs text-ink-muted">
+            To
+            <input name="toAddress" type="email" defaultValue={email.draft.toAddress} className={fieldClass} />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-ink-muted">
+            Subject
+            <input name="subject" defaultValue={email.draft.subject} className={fieldClass} />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-ink-muted">
+            Message
+            <textarea name="body" rows={4} defaultValue={email.draft.body} className={fieldClass} />
+          </label>
+          {file.size > EMAIL_ATTACHMENT_MAX_BYTES && (
+            <p className="text-xs text-ink-body">
+              This is too large to attach, so the email carries a download link instead. Anyone with the link can open
+              the file for {PACKAGE_LINK_DAYS} days.
+            </p>
+          )}
+          <div>
+            <button type="button" disabled={sending} onClick={(event) => void send(event.currentTarget.form)} className={btn}>
+              {sending ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Spinner />
+                  Sending…
+                </span>
+              ) : (
+                "Email the package and record it as sent"
+              )}
+            </button>
+          </div>
+        </div>
+      )}
       {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   );

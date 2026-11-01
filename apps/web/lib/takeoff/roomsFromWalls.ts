@@ -537,3 +537,85 @@ export function cornerSeals(walls: readonly FoundWall[], feetPerUnit: number): {
   }
   return out;
 }
+
+/** A line this long, feet, can be the wall a leaked region is missing. At 3 and 5, casework shredded rooms (Joplin 108 came out at 61 sf). */
+export const SPLIT_LINE_FEET = 8;
+/** The parts of a split must keep this share of the region's area, or the lines shredded it. */
+const SPLIT_KEEPS_AREA = 0.7;
+/** An unnamed piece of a split smaller than this is casework between the walls, not a room. */
+const SPLIT_LEFTOVER_SQFT = 100;
+/** An unnamed region smaller than this is a chase. It has no schedule row and only adds a blank row to the list. */
+const SMALLEST_UNNAMED_SQFT = 20;
+/** An open room's tag names an unnamed room this close, feet. */
+export const ADJACENT_TAG_FEET = 4;
+
+function insidePolygon(x: number, y: number, xs: readonly number[], ys: readonly number[]): boolean {
+  let hit = false;
+  for (let i = 0, j = xs.length - 1; i < xs.length; j = i, i += 1) {
+    if (ys[i]! > y !== ys[j]! > y && x < ((xs[j]! - xs[i]!) * (y - ys[i]!)) / (ys[j]! - ys[i]!) + xs[i]!) hit = !hit;
+  }
+  return hit;
+}
+
+function distanceToRing(x: number, y: number, xs: readonly number[], ys: readonly number[]): number {
+  let best = Infinity;
+  for (let i = 0, j = xs.length - 1; i < xs.length; j = i, i += 1) {
+    const dx = xs[i]! - xs[j]!, dy = ys[i]! - ys[j]!, q = dx * dx + dy * dy || 1e-12;
+    const t = Math.max(0, Math.min(1, ((x - xs[j]!) * dx + (y - ys[j]!) * dy) / q));
+    best = Math.min(best, Math.hypot(x - xs[j]! - t * dx, y - ys[j]! - t * dy));
+  }
+  return best;
+}
+
+/**
+ * ── A LEAKED REGION, SPLIT WHERE THE SHEET DRAWS THE WALL ──
+ *
+ * A region holding two room tags is two rooms the walls did not close. Baker's
+ * and Joplin's found walls miss a run here and there, and the sheet's own lines
+ * are usually there. Adding every long line everywhere is no answer: Joplin
+ * grew a 17,153 sf "room" outside the building. So the lines and the door leaves
+ * are only believed inside a region that already proves it is several rooms,
+ * and a split stands only if it puts the tags in different parts and keeps most
+ * of the area. Anything else stays one region, and says so.
+ */
+export function roomsSplitAtDrawnWalls(
+  input: Parameters<typeof roomsFromWalls>[0],
+  lines: readonly { x1: number; y1: number; x2: number; y2: number }[],
+): RoomsFromWallsResult {
+  const first = roomsFromWalls(input);
+  const leaked = first.rooms.filter((r) => r.sharedTags);
+  let rooms = first.rooms;
+  if (leaked.length > 0) {
+    const reach = SPLIT_LINE_FEET / input.feetPerUnit;
+    const extra = lines.filter((s) => Math.hypot(s.x2 - s.x1, s.y2 - s.y1) >= reach).map((s) => ({ x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, thicknessFeet: 2 / 12 }));
+    const second = roomsFromWalls({ ...input, walls: [...input.walls, ...extra], sealCornerDoors: true });
+    const slack = 1 / input.feetPerUnit;
+    for (const region of leaked) {
+      // Wholly inside: the outside of a building can have its middle in a room.
+      const parts = second.rooms.filter((r) => r.xs.every((x, i) => insidePolygon(x, r.ys[i]!, region.xs, region.ys) || distanceToRing(x, r.ys[i]!, region.xs, region.ys) <= slack));
+      const named = parts.filter((p) => p.tag !== null || p.sharedTags);
+      const kept = parts.reduce((a, p) => a + p.squareFeet, 0);
+      if (named.length < 2 || kept < SPLIT_KEEPS_AREA * region.squareFeet) continue;
+      rooms = [...rooms.filter((r) => r !== region), ...parts.filter((p) => p.tag !== null || p.sharedTags || p.squareFeet >= SPLIT_LEFTOVER_SQFT)];
+    }
+  }
+  const out = rooms.filter((r) => r.tag !== null || r.sharedTags || r.squareFeet >= SMALLEST_UNNAMED_SQFT).map((r, id) => ({ ...r, id }));
+  // A tag in no closed region, beside a room nothing names, is that room's.
+  const unplacedTags: RoomTag[] = [];
+  const claimed = new Map<RoomFromWalls, RoomTag | null>();
+  for (const tag of first.unplacedTags) {
+    const at = tag.numberAt ?? tag;
+    const near = out.filter((r) => r.tag === null && !r.sharedTags).map((r) => ({ r, d: distanceToRing(at.x, at.y, r.xs, r.ys) * input.feetPerUnit })).filter((c) => c.d <= ADJACENT_TAG_FEET).sort((a, b) => a.d - b.d)[0];
+    if (!near || claimed.has(near.r)) {
+      if (near) claimed.set(near.r, null);
+      unplacedTags.push(tag);
+      continue;
+    }
+    claimed.set(near.r, tag);
+  }
+  for (const [room, tag] of claimed) {
+    if (tag) room.tag = tag;
+  }
+  const mergedTags = out.flatMap((r) => r.sharedTags ?? []);
+  return { ...first, rooms: out, unplacedTags, mergedTags };
+}
