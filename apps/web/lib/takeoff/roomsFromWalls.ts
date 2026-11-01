@@ -619,3 +619,65 @@ export function roomsSplitAtDrawnWalls(
   const mergedTags = out.flatMap((r) => r.sharedTags ?? []);
   return { ...first, rooms: out, unplacedTags, mergedTags };
 }
+
+/** Drawn lines this long may close a room. Shorter and thin is a stall partition to the engine anyway. */
+export const CLOSE_LINE_FEET = STALL_LENGTH_FEET;
+export const CLOSE_LARGEST_SQFT = 3000;
+/** Measured: 0.6 kept every clear room and dropped all but one stamp and notes box. */
+export const CLOSE_WALL_SHARE = 0.6;
+/** Letters in a room's name: drops `REF.`, the one that got past the share. */
+export const CLOSE_NAME_LETTERS = 4;
+const ON_WALL_FEET = 1;
+const RING_STEP_FEET = 1;
+
+/** How much of a room's outline runs along found walls, 0 to 1. */
+export function shareOnWalls(room: Pick<RoomFromWalls, "xs" | "ys">, walls: readonly FoundWall[], feetPerUnit: number): number {
+  let on = 0;
+  let all = 0;
+  const n = room.xs.length;
+  for (let i = 0; i < n; i += 1) {
+    const x1 = room.xs[i]!, y1 = room.ys[i]!, x2 = room.xs[(i + 1) % n]!, y2 = room.ys[(i + 1) % n]!;
+    const steps = Math.ceil((Math.hypot(x2 - x1, y2 - y1) * feetPerUnit) / RING_STEP_FEET);
+    for (let k = 0; k < steps; k += 1) {
+      const x = x1 + ((x2 - x1) * (k + 0.5)) / steps, y = y1 + ((y2 - y1) * (k + 0.5)) / steps;
+      all += 1;
+      const near = walls.some((w) => {
+        const dx = w.x2 - w.x1, dy = w.y2 - w.y1, q = dx * dx + dy * dy || 1e-12;
+        const t = Math.max(0, Math.min(1, ((x - w.x1) * dx + (y - w.y1) * dy) / q));
+        return Math.hypot(x - w.x1 - t * dx, y - w.y1 - t * dy) * feetPerUnit <= ON_WALL_FEET + (w.thicknessFeet ?? DEFAULT_THICKNESS_FEET) / 2;
+      });
+      if (near) on += 1;
+    }
+  }
+  return all === 0 ? 0 : on / all;
+}
+
+/**
+ * ── AN OPEN ROOM, CLOSED AGAINST WHAT THE SHEET DRAWS ──
+ *
+ * A new room often closes against an existing wall, drawn in grey. That wall
+ * is rightly not in the takeoff, so the found walls leave the room open. Only
+ * a tag still open may use the drawn lines, and only if it lands alone in a
+ * region of room size whose outline runs mostly along found walls: a stamp or a
+ * notes box is enclosed by rules too, and printed tags read as room names. Added
+ * lines can only divide open space, so a closed room cannot change.
+ */
+export function roomsClosedAtDrawnLines(
+  result: RoomsFromWallsResult,
+  input: Parameters<typeof roomsFromWalls>[0],
+  lines: readonly { x1: number; y1: number; x2: number; y2: number }[],
+): RoomsFromWallsResult {
+  const named = result.unplacedTags.filter((t) => t.name.replace(/[^A-Za-z]/g, "").length >= CLOSE_NAME_LETTERS);
+  if (named.length === 0) return result;
+  const reach = CLOSE_LINE_FEET / input.feetPerUnit;
+  const extra = lines.filter((s) => Math.hypot(s.x2 - s.x1, s.y2 - s.y1) >= reach).map((s) => ({ x1: s.x1, y1: s.y1, x2: s.x2, y2: s.y2, thicknessFeet: 0.1 }));
+  const second = roomsFromWalls({ ...input, walls: [...input.walls, ...extra] });
+  const closed = named.flatMap((tag) => {
+    const room = second.rooms.find((r) => r.tag !== null && r.tag.x === tag.x && r.tag.y === tag.y);
+    if (room === undefined || room.squareFeet > CLOSE_LARGEST_SQFT) return [];
+    return shareOnWalls(room, input.walls, input.feetPerUnit) < CLOSE_WALL_SHARE ? [] : [room];
+  });
+  const now = new Set(closed.map((r) => r.tag));
+  const rooms = [...result.rooms, ...closed].map((r, id) => ({ ...r, id }));
+  return { ...result, rooms, unplacedTags: result.unplacedTags.filter((t) => ![...now].some((c) => c !== null && c.x === t.x && c.y === t.y)) };
+}

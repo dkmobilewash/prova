@@ -1,6 +1,6 @@
 import { roomBoundary } from "./roomBoundary";
 import { roomSeals } from "./roomSeals";
-import { roomsSplitAtDrawnWalls, type RoomsFromWallsResult } from "./roomsFromWalls";
+import { roomsClosedAtDrawnLines, roomsSplitAtDrawnWalls, type RoomsFromWallsResult } from "./roomsFromWalls";
 import type { PositionedText } from "./roomTags";
 import type { StrokeSegment } from "./wallVectors";
 
@@ -9,7 +9,7 @@ type Line = { x1: number; y1: number; x2: number; y2: number };
 /**
  * A sheet's rooms from what a Find left behind. The one path, so the viewer and
  * the whole-set run cannot disagree about a sheet: the boundary, the doors that
- * seal it, and the sheet's own lines for a region that leaked. `segments` and
+ * seal it, and the sheet's own lines for a region that leaked or a room left open. `segments` and
  * `doorLeaves` are in page-width units, and empty when no Find has read them.
  */
 export function sheetRooms(input: {
@@ -25,5 +25,7 @@ export function sheetRooms(input: {
   const { feetPerUnit, segments } = input;
   const walls = roomBoundary({ pairings: input.pairings, runs: input.runs, drawn: input.drawn });
   const doorSeals = segments.length > 0 ? roomSeals(walls, segments, feetPerUnit) : [];
-  return roomsSplitAtDrawnWalls({ walls, feetPerUnit, text: input.text, widthPt: input.widthPt, doorSeals }, [...segments, ...input.doorLeaves]);
+  const lines = [...segments, ...input.doorLeaves];
+  const base = { walls, feetPerUnit, text: input.text, widthPt: input.widthPt, doorSeals };
+  return roomsClosedAtDrawnLines(roomsSplitAtDrawnWalls(base, lines), base, lines);
 }
