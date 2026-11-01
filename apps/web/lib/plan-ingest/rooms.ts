@@ -4,7 +4,7 @@ import { ceilingsForRooms, type CeilingPageText } from "@/lib/takeoff/roomCeilin
 import type { DetectedBoundary } from "@/lib/takeoff/detectWallsForCalibration";
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
 import { roomSeals } from "@/lib/takeoff/roomSeals";
-import { roomsFromWalls } from "@/lib/takeoff/roomsFromWalls";
+import { roomsClosedAtDrawnLines, roomsFromWalls } from "@/lib/takeoff/roomsFromWalls";
 import { roomRows, writeRoomRows, type RoomToSave } from "@/lib/takeoff/roomRows";
 import { openPlanPdf, type PlanPdf } from "./planPdf";
 import { readPlanBytes } from "./planBytes";
@@ -84,7 +84,8 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
     // the viewer's boundary, so a whole-set room closes as it does on screen.
     const walls = roomBoundary({ pairings: input.boundary?.pairings ?? [], runs, drawn: [] });
     const doorSeals = input.boundary === undefined ? [] : roomSeals(walls, input.boundary.segments, feetPerUnit);
-    const found = roomsFromWalls({ walls, feetPerUnit, text: text.items, widthPt: text.widthPt, doorSeals });
+    const roomInput = { walls, feetPerUnit, text: text.items, widthPt: text.widthPt, doorSeals };
+    const found = roomsClosedAtDrawnLines(roomsFromWalls(roomInput), roomInput, input.boundary?.segments ?? []);
     if (found.rooms.length === 0) return { kind: "skipped", why: "no rooms closed" };
     const current: CeilingPageText = { pageNumber: input.pageNumber, items: text.items, widthPt: text.widthPt, tableRows: tableRowsFromPage(text) };
     const others: CeilingPageText[] = [];

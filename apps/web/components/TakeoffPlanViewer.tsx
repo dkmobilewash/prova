@@ -156,7 +156,7 @@ import { scaleFromPrinted } from "@/lib/takeoff/scaleFromPrinted";
 type RasterRead = { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[]; widthPt?: number; heightPt?: number; printedScale?: string | null };
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
 import { roomSeals } from "@/lib/takeoff/roomSeals";
-import { roomsSplitAtDrawnWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
+import { roomsClosedAtDrawnLines, roomsSplitAtDrawnWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -2654,7 +2654,8 @@ export function TakeoffPlanViewer({
     const W = pageSize.widthPt;
     const drawn = lastDetect.current?.page === pageNumber ? lastDetect.current.segments.map((s) => ({ x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W })) : [];
     const leaves = openings?.page === pageNumber ? openings.result.doors.map((d) => ({ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y })) : [];
-    const result = roomsSplitAtDrawnWalls({ walls, feetPerUnit, text: wordsRef.current, widthPt: W, doorSeals }, [...drawn, ...leaves]);
+    const roomInput = { walls, feetPerUnit, text: wordsRef.current, widthPt: W, doorSeals };
+    const result = roomsClosedAtDrawnLines(roomsSplitAtDrawnWalls(roomInput, [...drawn, ...leaves]), roomInput, [...drawn, ...leaves]);
     setRooms(result);
     setRoomsOnPage(pageNumber);
     onResults?.();

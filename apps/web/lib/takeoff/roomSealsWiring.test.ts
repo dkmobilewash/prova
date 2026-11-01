@@ -12,12 +12,14 @@ const walls = read("../plan-ingest/walls.ts");
 describe("both room paths use the doors", () => {
   it("the viewer seals with roomSeals", () => {
     expect(viewer).toMatch(/roomSeals\(walls, detected\.segments\.map\(inPageWidthUnits\(detected\.widthPt\)\), feetPerUnit\)/);
-    expect(viewer).toMatch(/roomsSplitAtDrawnWalls\(\{ walls, feetPerUnit, text: wordsRef\.current, widthPt: W, doorSeals \}, /);
+    expect(viewer).toContain("const roomInput = { walls, feetPerUnit, text: wordsRef.current, widthPt: W, doorSeals };");
+    expect(viewer).toMatch(/roomsClosedAtDrawnLines\(roomsSplitAtDrawnWalls\(roomInput, /);
   });
   it("the whole-set stage uses the pairings and seals the detection just read", () => {
     expect(walls).toMatch(/onBoundary: \(seen\) => \{\s+boundary = seen;/);
     expect(walls).toMatch(/findRooms\(\{[^}]*boundary,/);
     expect(rooms).toContain("roomBoundary({ pairings: input.boundary?.pairings ?? [], runs, drawn: [] })");
-    expect(rooms).toMatch(/roomsFromWalls\(\{ walls, feetPerUnit, text: text\.items, widthPt: text\.widthPt, doorSeals \}\)/);
+    expect(rooms).toContain("const roomInput = { walls, feetPerUnit, text: text.items, widthPt: text.widthPt, doorSeals };");
+    expect(rooms).toMatch(/roomsClosedAtDrawnLines\(roomsFromWalls\(roomInput\), roomInput, /);
   });
 });
