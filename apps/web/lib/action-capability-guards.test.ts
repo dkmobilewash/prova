@@ -2009,6 +2009,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   certifications: () => import("./actions/certifications"),
   punchLists: () => import("./actions/punchLists"),
   equipment: () => import("./actions/equipment"),
+  equipmentRates: () => import("./actions/equipmentRates"),
   equipmentAssignments: () => import("./actions/equipmentAssignments"),
   fieldReports: () => import("./actions/fieldReports"),
   // Site photos. Only the two TAG-VOCABULARY actions land in MUST_ASSERT:

@@ -32,7 +32,9 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { DocuSignPanel, type DocuSignEnvelopeView } from "@/components/DocuSignPanel";
 import Image from "next/image";
 import { COST_CATEGORY_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
+import { EquipmentRatePicker } from "@/components/EquipmentRatePicker";
 import { Spinner } from "@/components/Spinner";
+import type { EquipmentRateRow } from "@/lib/equipment-rates";
 import { reportFieldErrors } from "@/components/formFieldErrors";
 import type { DocuSignCardState } from "@/lib/docusign/setup";
 
@@ -106,6 +108,9 @@ export type ChangeOrderView = {
   decisionNotes: string | null;
   /** Signed contract-value delta, formatted. */
   valueDelta: string;
+  /** The work date of the T&M ticket behind this, so equipment is priced at the
+   * rate in force when the work happened. Null means today. */
+  rateDay?: string | null;
   /** Empty when this change order can be reopened; otherwise the reasons it
    * can't, ready to show without the user having to click and get an error. */
   reopenBlockers: string[];
@@ -181,7 +186,7 @@ function formatEditValue(field: string, value: string) {
  * hydration raises no warning anywhere. */
 type TodayProp = { today: string };
 
-function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderView; lineItems: LineItemChoice[] }) {
+function ProposalForms({ changeOrder, lineItems, equipmentRates, today }: { changeOrder: ChangeOrderView; equipmentRates: EquipmentRateRow[]; today: string; lineItems: LineItemChoice[] }) {
   const [kind, setKind] = useState<"ADD" | "EDIT" | "REMOVE">("ADD");
   const { isPending, error, run } = useActionRunner();
 
@@ -219,6 +224,7 @@ function ProposalForms({ changeOrder, lineItems }: { changeOrder: ChangeOrderVie
           onSubmit={(event) => submit(event, (formData) => proposeAddedScope(changeOrder.id, formData))}
           className="flex flex-wrap items-end gap-3"
         >
+          <EquipmentRatePicker rates={equipmentRates} day={changeOrder.rateDay ?? today} />
           <label className={labelClass}>
             Description
             <input name="itemDescription" required className={`${inputClass} w-56`} placeholder="2-hr rated deflection track" />
@@ -622,11 +628,13 @@ function DraftActions({ changeOrder, today }: { changeOrder: ChangeOrderView } &
 function ChangeOrderCard({
   co,
   lineItems,
+  equipmentRates,
   docuSign,
   today,
 }: {
   co: ChangeOrderView;
   lineItems: LineItemChoice[];
+  equipmentRates: EquipmentRateRow[];
   docuSign?: ChangeOrderDocuSign;
 } & TodayProp) {
   const envelopes = docuSign?.byChangeOrder[co.id] ?? [];
@@ -716,7 +724,7 @@ function ChangeOrderCard({
 
       {co.status === "DRAFT" && (
         <>
-          <ProposalForms changeOrder={co} lineItems={lineItems} />
+          <ProposalForms changeOrder={co} lineItems={lineItems} equipmentRates={equipmentRates} today={today} />
           <DraftActions changeOrder={co} today={today} />
         </>
       )}
@@ -751,7 +759,10 @@ export function ChangeOrders({
   pendingUnbookable,
   docuSign,
   today,
+  equipmentRates = [],
 }: {
+  /** Empty for anyone without job cost access. */
+  equipmentRates?: EquipmentRateRow[];
   jobId: string;
   changeOrders: ChangeOrderView[];
   lineItems: LineItemChoice[];
@@ -847,7 +858,7 @@ export function ChangeOrders({
               </header>
               <ul className="flex flex-col gap-3">
                 {items.map((co) => (
-                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} today={today} />
+                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} equipmentRates={equipmentRates} docuSign={docuSign} today={today} />
                 ))}
               </ul>
             </section>
@@ -869,7 +880,7 @@ export function ChangeOrders({
               </header>
               <ul className="flex flex-col gap-3">
                 {unbanded.map((co) => (
-                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} docuSign={docuSign} today={today} />
+                  <ChangeOrderCard key={co.id} co={co} lineItems={lineItems} equipmentRates={equipmentRates} docuSign={docuSign} today={today} />
                 ))}
               </ul>
             </section>

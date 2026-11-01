@@ -30,6 +30,8 @@ import { formatInstant } from "@/lib/render-date";
 import { loadJobDocuSign } from "@/lib/docusign/views";
 import { contractExecutionFor, contractIsExecuted } from "@/lib/contract-execution";
 import { money } from "@/lib/money";
+import { loadEquipmentRates } from "@/lib/equipment-rates-query";
+import { can } from "@/lib/permissions";
 import { commitmentNote } from "@/lib/purchase-orders";
 import {
   calculateLineItemWip,
@@ -165,6 +167,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
           // Through the ticket, not copied, so a photo added later still shows.
           tmTickets: {
             select: {
+              workDate: true,
               media: {
                 where: { contentType: { startsWith: "image/" } },
                 orderBy: { capturedAt: "asc" },
@@ -542,6 +545,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
     })),
     edits: co.edits.map((edit) => ({ id: edit.id, field: edit.field, oldValue: edit.oldValue, newValue: edit.newValue })),
     ticketPhotos: co.tmTickets.flatMap((ticket) => ticket.media),
+    rateDay: co.tmTickets[0]?.workDate.toISOString().slice(0, 10) ?? null,
   }));
 
   const pendingExposure = Number(pendingChangeOrderExposure(job.changeOrders, changeOrderTargetsById));
@@ -1407,6 +1411,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
           // date defaults are server-rendered markup — see the note above
           // `TodayProp` in components/ChangeOrders.tsx.
           today={todayInZone(timeZone)}
+          equipmentRates={can(principal, "VIEW_JOB_COSTS") ? await loadEquipmentRates(company.id) : []}
           changeOrders={changeOrderViews}
           lineItems={changeOrderTargets}
           pendingExposure={money(pendingExposure)}
