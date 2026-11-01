@@ -156,7 +156,6 @@ export const AREAS: Area[] = [
       { href: "/material-orders", name: "Material orders", description: "What is on order, who owes it, and what is late" },
       { href: "/vendors", name: "Vendors", description: "Suppliers and rental houses you buy from" },
       { href: "/vendors/pricing", name: "Vendor pricing", description: "Quoted prices to check the next order against" },
-      { href: "/equipment/rates", name: "Equipment rates", description: "What each machine costs per hour, day or week." },
       { href: "/equipment", name: "Equipment", description: "Your machines and tools, and where each one is" },
     ],
   },
