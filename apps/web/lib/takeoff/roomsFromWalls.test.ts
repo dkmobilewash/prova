@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { roomsFromWalls, roomsSplitAtDrawnWalls, type FoundWall } from "./roomsFromWalls";
+import { CLOSE_LARGEST_SQFT, roomsClosedAtDrawnLines, roomsFromWalls, roomsSplitAtDrawnWalls, shareOnWalls, type FoundWall } from "./roomsFromWalls";
 
 /**
  * Two 10x10 ft rooms side by side, 6-inch walls, a 3-ft doorway in the wall
@@ -189,3 +189,56 @@ describe("door seals from the swing symbols", () => {
   });
 
 });
+
+describe("an open room closed against the sheet's drawn lines", () => {
+  const FPU = 100;
+  const ft = (n: number) => n / FPU;
+  const wall = (x1: number, y1: number, x2: number, y2: number): FoundWall => ({ x1: ft(x1), y1: ft(y1), x2: ft(x2), y2: ft(y2), thicknessFeet: 0.4 });
+  // Three found walls; the east side is an existing wall, drawn and not in the takeoff.
+  const three = [wall(10, 10, 40, 10), wall(10, 10, 10, 30), wall(10, 30, 40, 30)];
+  const grey = { x1: ft(40), y1: ft(10), x2: ft(40), y2: ft(30) };
+  const tag = (name: string, number: string) => [
+    { str: number, x: 240, y: 200, width: 20, height: 8 },
+    { str: name, x: 230, y: 190, width: 60, height: 8 },
+  ];
+  const input = (name: string, number: string, walls = three) => ({ walls, feetPerUnit: FPU, text: tag(name, number), widthPt: 1000 });
+  it("closes the room, and it measures", () => {
+    const base = input("OFFICE", "112");
+    const open = roomsFromWalls(base);
+    expect(open.unplacedTags.map((t) => t.name)).toEqual(["OFFICE"]);
+    const closed = roomsClosedAtDrawnLines(open, base, [grey]);
+    expect(closed.unplacedTags).toEqual([]);
+    expect(closed.rooms.find((r) => r.tag?.name === "OFFICE")?.squareFeet).toBeGreaterThan(500);
+  });
+  it("leaves it open when the region is bounded by rules rather than walls: a stamp or a notes box", () => {
+    const box = [wall(10, 10, 40, 10)];
+    const rules = [{ x1: ft(10), y1: ft(10), x2: ft(10), y2: ft(30) }, { x1: ft(10), y1: ft(30), x2: ft(40), y2: ft(30) }, grey];
+    const base = input("OFFICE", "112", box);
+    expect(roomsClosedAtDrawnLines(roomsFromWalls(base), base, rules).unplacedTags).toHaveLength(1);
+  });
+  it("leaves it open when the line is too short to trust", () => {
+    const base = input("OFFICE", "112");
+    const pieces = Array.from({ length: 5 }, (_, i) => ({ x1: ft(40), y1: ft(10 + i * 4), x2: ft(40), y2: ft(14.5 + i * 4) })); // 4.5 ft each, under the 7 ft a drawn line needs
+    expect(roomsClosedAtDrawnLines(roomsFromWalls(base), base, pieces).unplacedTags).toHaveLength(1);
+  });
+  it("leaves a tag that is no room's name, and a region past the size of a room", () => {
+    const base = input("REF.", "112");
+    expect(roomsClosedAtDrawnLines(roomsFromWalls(base), base, [grey]).unplacedTags).toHaveLength(1);
+    const huge = [wall(0, 0, 80, 0), wall(0, 0, 0, 80), wall(0, 80, 80, 80)];
+    const big = { walls: huge, feetPerUnit: FPU, text: tag("OFFICE", "112"), widthPt: 1000 };
+    expect(80 * 80).toBeGreaterThan(CLOSE_LARGEST_SQFT);
+    expect(roomsClosedAtDrawnLines(roomsFromWalls(big), big, [{ x1: ft(80), y1: 0, x2: ft(80), y2: ft(80) }]).unplacedTags).toHaveLength(1);
+  });
+  it("does not touch a room already closed", () => {
+    const base = input("OFFICE", "112", [...three, wall(40, 10, 40, 30)]);
+    const closed = roomsFromWalls(base);
+    expect(roomsClosedAtDrawnLines(closed, base, [grey])).toBe(closed);
+  });
+  it("measures how much of an outline runs on found walls", () => {
+    const ring = { xs: [ft(10), ft(40), ft(40), ft(10)], ys: [ft(10), ft(10), ft(30), ft(30)] };
+    expect(shareOnWalls(ring, three, FPU)).toBeGreaterThan(0.7);
+    expect(shareOnWalls(ring, three, FPU)).toBeLessThan(1);
+    expect(shareOnWalls(ring, [], FPU)).toBe(0);
+  });
+});
+
