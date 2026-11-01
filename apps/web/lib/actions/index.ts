@@ -30,6 +30,7 @@ export * from "./employerBurden";
 export * from "./company";
 export * from "./vendors";
 export * from "./equipment";
+export * from "./equipmentRates";
 export * from "./punchLists";
 export * from "./quickbooks";
 export * from "./fieldReports";
