@@ -1,7 +1,6 @@
 import { prisma } from "@prova/db";
 import { PageShell } from "@prova/ui";
 import { PageHeader } from "@/components/PageHeader";
-import { EmptyState } from "@/components/EmptyState";
 import { EquipmentRateForm, EquipmentRateRowView } from "@/components/EquipmentRates";
 import { NoAccess } from "@/components/NoAccess";
 import { requireCapability } from "@/lib/authz";
@@ -32,12 +31,10 @@ export default async function EquipmentRatesPage() {
         <EquipmentRateForm />
       </div>
       {rows.length === 0 ? (
-        <div className="mt-6">
-          <EmptyState
-            title="No equipment rates yet"
-            purpose="Add what a lift or a scaffold costs you, and change orders can fill it in instead of it being typed each time."
-          />
-        </div>
+        <p className="mt-6 text-sm text-ink-muted">
+          No rates yet. Add what a lift or a scaffold costs you, and change orders can fill it in instead of it being
+          typed each time.
+        </p>
       ) : (
         <ul className="mt-6 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
           {rows.map((row) => (

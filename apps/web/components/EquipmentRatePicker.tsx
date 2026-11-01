@@ -23,7 +23,12 @@ export function EquipmentRatePicker({ rates, day }: { rates: EquipmentRateRow[];
   }
   return (
     <label className="flex flex-col gap-1 text-sm text-ink-label">
-      Equipment rate on {day}
+      <span>
+        Equipment rate on {day} ·{" "}
+        <Link href="/equipment/rates" className="text-xs text-link hover:underline">
+          rates
+        </Link>
+      </span>
       <select
         aria-label="Fill from an equipment rate"
         defaultValue=""
