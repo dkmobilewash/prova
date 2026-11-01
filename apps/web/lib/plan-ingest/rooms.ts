@@ -1,3 +1,4 @@
+import { splitLinesFrom } from "@/lib/takeoff/userExclusions";
 import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { ceilingsForRooms, type CeilingPageText } from "@/lib/takeoff/roomCeilings";
@@ -104,6 +105,7 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
       calibrations: { orderBy: { createdAt: "desc" }, take: 1 },
       wallProposals: { orderBy: { createdAt: "desc" }, select: { calibrationId: true, runs: true, createdAt: true } },
       measurements: { where: { source: "ROOM_FINDER" }, select: { id: true }, take: 1 },
+      exclusions: { where: { kind: "ROOM_SPLIT" }, select: { kind: true, xs: true, ys: true } },
       plan: { select: { _count: { select: { sheetTexts: true } } } },
     },
   });
@@ -137,6 +139,7 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
       runs,
       drawn: [],
       segments: inUnits,
+      splits: splitLinesFrom(page.exclusions),
       doorLeaves: openings.doors.map((d) => ({ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y })),
       feetPerUnit,
       text: text.items,

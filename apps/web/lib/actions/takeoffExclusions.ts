@@ -14,7 +14,7 @@ import { refreshSheetWalls } from "@/lib/takeoff/refreshSheetWalls";
  * Each change detects the sheet again after the response, so the stored
  * proposals and any unposted walls on the job follow it.
  */
-type Kind = "EXCLUDE_LIKE" | "WORK_AREA";
+type Kind = "EXCLUDE_LIKE" | "WORK_AREA" | "ROOM_SPLIT";
 type Result = ActionResultWith<{ ids: string[] }>;
 
 const JOB_COSTS_ONLY = "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
@@ -64,11 +64,12 @@ export async function addSheetExclusion(jobId: string, pageId: string, kind: Kin
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const found = await pageFor(jobId, pageId, context);
   if (found.kind === "refused") return actionFail(found.error);
-  if (kind !== "EXCLUDE_LIKE" && kind !== "WORK_AREA") return actionFail("That is not something a sheet can exclude.");
-  const enough = kind === "EXCLUDE_LIKE" ? xs.length === 2 : xs.length >= 3;
+  if (kind !== "EXCLUDE_LIKE" && kind !== "WORK_AREA" && kind !== "ROOM_SPLIT") return actionFail("That is not something a sheet can exclude.");
+  const enough = kind === "WORK_AREA" ? xs.length >= 3 : xs.length === 2;
   if (!enough || xs.length !== ys.length || !finite(xs) || !finite(ys)) return actionFail("That shape did not come through. Draw it again.");
   const row = await prisma.takeoffSheetExclusion.create({ data: { pageId, kind, xs, ys, createdByUserId: found.userId }, select: { id: true } });
-  refreshAfter(jobId, found);
+  // A split moves no wall.
+  if (kind !== "ROOM_SPLIT") refreshAfter(jobId, found);
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { ids: [row.id] } };
@@ -80,8 +81,9 @@ export async function removeSheetExclusion(jobId: string, pageId: string, id: st
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const found = await pageFor(jobId, pageId, context);
   if (found.kind === "refused") return actionFail(found.error);
+  const wasSplit = (await prisma.takeoffSheetExclusion.count({ where: { id, pageId, kind: "ROOM_SPLIT" } })) > 0;
   await prisma.takeoffSheetExclusion.deleteMany({ where: { id, pageId } });
-  refreshAfter(jobId, found);
+  if (!wasSplit) refreshAfter(jobId, found);
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { ids: [] } };
@@ -94,7 +96,7 @@ export async function clearSheetExclusions(jobId: string, pageId: string, kind: 
   const found = await pageFor(jobId, pageId, context);
   if (found.kind === "refused") return actionFail(found.error);
   await prisma.takeoffSheetExclusion.deleteMany({ where: { pageId, kind } });
-  refreshAfter(jobId, found);
+  if (kind !== "ROOM_SPLIT") refreshAfter(jobId, found);
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { ids: [] } };
