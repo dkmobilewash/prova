@@ -85,6 +85,18 @@ describe("offeredCandidates: what the user excluded", () => {
   const sheet = (user?: { excludeLike?: { x1: number; y1: number; x2: number; y2: number }[]; workArea?: { xs: number[]; ys: number[] }[] }) =>
     ({ walls: ws, segments, widthPt: 1000, feetPerUnit: FPU, planBoxes: null, textItems: [], user });
 
+  it("a run with four dimensions between its faces is set aside as a dimension string, and says so", () => {
+    // Text in points, centred on the run at y = 10 ft, spread along it.
+    const textItems = [14, 20, 26, 32].map((feet) => ({ str: "12'-6\"", x: ft(feet) * 1000, y: ft(10) * 1000, width: 0, height: 0 }));
+    const got = offeredCandidates({ ...sheet(), textItems });
+    expect(got.setAside.filter((a) => a.kind === "dimension-string").map((a) => a.n)).toEqual([1]);
+    expect(got.setAsideLines.filter((l) => l.kind === "dimension-string")).toHaveLength(1);
+    expect(got.candidates).toHaveLength(4);
+  });
+  it("leaves a scan's text alone: the rule was priced on vector sheets", () => {
+    const textItems = [14, 20, 26, 32].map((feet) => ({ str: "12'-6\"", x: ft(feet) * 1000, y: ft(10) * 1000, width: 0, height: 0, confidence: 90 }));
+    expect(offeredCandidates({ ...sheet(), textItems }).setAside.some((a) => a.kind === "dimension-string")).toBe(false);
+  });
   it("one click on a grey wall sets both grey walls aside under `excluded-like`, with the count and the pattern in words", () => {
     const got = offeredCandidates(sheet({ excludeLike: [{ x1: ft(20), y1: ft(40), x2: ft(30), y2: ft(40) }] }));
     expect(got.candidates).toHaveLength(3);

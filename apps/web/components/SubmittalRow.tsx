@@ -10,6 +10,8 @@ import {
 import type { ActionResult } from "@/lib/actions/shared";
 import { inputClass, labelClass } from "@/components/RfiFields";
 import { FormDraftNotice, useFormDraft } from "@/components/useFormDraft";
+import { SendHistory } from "@/components/SendDocument";
+import { submittalPackageEmail, type SendRow } from "@/lib/document-email";
 import { SubmittalFields, type SubmittalDefaults } from "@/components/SubmittalFields";
 import {
   OUTCOMES,
@@ -35,6 +37,9 @@ export type SubmittalRowData = SubmittalDefaults & {
   jobName: string;
   /** Who the package goes to: the job's contact. Printed on the cover. */
   gcName: string;
+  gcEmail?: string | null;
+  /** Each emailed package and whether it arrived. */
+  sends?: SendRow[];
   submittedByName: string | null;
   revisions: RevisionData[];
 };
@@ -50,12 +55,15 @@ export function SubmittalRow({
   canDelete,
   showJob,
   companyName,
+  companyId,
 }: {
   submittal: SubmittalRowData;
   today: string;
   canDelete: boolean;
   showJob: boolean;
   companyName: string;
+  /** Without it the send form only downloads. */
+  companyId?: string;
 }) {
   const [mode, setMode] = useState<"view" | "edit" | "send" | "respond">("view");
   const [isPending, startTransition] = useTransition();
@@ -187,6 +195,24 @@ export function SubmittalRow({
               drawingReference: submittal.drawingReference ?? null,
             }}
             onContents={setPackageContents}
+            email={!companyId ? undefined : {
+              submittalId: submittal.id,
+              companyId,
+              draft: submittalPackageEmail({
+                company: companyName,
+                jobName: submittal.jobName,
+                submittalNumber: submittal.number,
+                revisionNumber: nextRevisionNumber,
+                title: submittal.title,
+                contactName: submittal.gcName,
+                contactEmail: submittal.gcEmail ?? null,
+              }),
+              onSent: () => {
+                sendDraft.clear();
+                setPackageContents(null);
+                setMode("view");
+              },
+            }}
           />
 
           {error && <p className="text-sm text-danger">{error}</p>}
@@ -398,6 +424,7 @@ export function SubmittalRow({
                   );
                 })}
             </ul>
+            <SendHistory sends={submittal.sends ?? []} />
           </Disclosure>
         )}
 

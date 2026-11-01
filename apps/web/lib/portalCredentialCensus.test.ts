@@ -271,6 +271,12 @@ const switchesPortal = (fn: Fn) =>
 
 const CREDENTIAL_ACTIONS = ACTIONS.filter((fn) => mints(fn) || switchesPortal(fn));
 
+/** Called from a button rather than a form, so `controlSites` cannot see it. Each
+ * names the page that withholds it, and a test below holds that page to it. */
+const REACHED_BY_A_BUTTON_ON_A_GATED_PAGE: Record<string, { page: string; capability: Capability }> = {
+  sendSubmittalPackage: { page: "app/(app)/submittals/page.tsx", capability: "MANAGE_JOBS" },
+};
+
 /* ------------------------------------------------------------------ *
  * 6. What a gate looks like, and where it sits
  * ------------------------------------------------------------------ */
@@ -568,6 +574,12 @@ describe("a bearer credential is minted only by somebody a capability admits", (
 });
 
 describe("the control is hidden from whoever the action refuses", () => {
+  it("holds each button-reached action's page to its capability", () => {
+    for (const { page, capability } of Object.values(REACHED_BY_A_BUTTON_ON_A_GATED_PAGE)) {
+      expect(readFileSync(join(__dirname, "..", page), "utf8")).toContain(`requireCapability("${capability}")`);
+    }
+  });
+
   it("withholds every form that posts to a gated credential action", () => {
     const problems: string[] = [];
     let sitesChecked = 0;
@@ -611,7 +623,7 @@ describe("the control is hidden from whoever the action refuses", () => {
       // A gated action nothing renders makes the loop above vacuous for it.
       // That is not a pass — it is either dead code or a control this
       // census cannot see, and both want saying out loud.
-      if (rendered === 0) {
+      if (rendered === 0 && !(fn.name in REACHED_BY_A_BUTTON_ON_A_GATED_PAGE)) {
         problems.push(
           `${fn.name} asserts ${asserted.capability} and this census found no form posting to ` +
             `it. Either nothing renders it (delete it) or the control is reached in a shape ` +

@@ -178,6 +178,7 @@ model Job {
   timesheetSignoffs              TimesheetSignoff[]
   delayEvents                    DelayEvent[]
   dailyFieldReports              DailyFieldReport[]
+  sentDocuments                  SentDocument[]
   media                          JobMedia[]
   takeoffPlans                   TakeoffPlan[]
   takeoffItems                   TakeoffItem[]

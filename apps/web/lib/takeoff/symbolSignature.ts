@@ -69,6 +69,8 @@ export const ANCHOR_TOLERANCE = 0.1;
 export const ANCHORS = 3;
 /** An anchor length shared by more strokes than this is skipped while a rarer one exists: a hatch pitch tells nothing about where the symbol is. */
 export const MOST_COMMON_ANCHOR = 2000;
+/** Coverage at which a placement is settled, so strokes inside it are not tried again. */
+const SETTLED_COVERAGE = 0.9;
 /**
  * A grey level at or above this is a grey pen; below it, black. A covering
  * stroke must be the same class as the template stroke it covers: on Baker's
@@ -368,6 +370,21 @@ export function chainChords(strokes: readonly StrokeSegment[], minLen: number): 
  * (one of four ways), and how much of its weighted ink lands along a stroke
  * of comparable length. Stops as soon as the floor is out of reach.
  */
+/**
+ * Heaviest strokes first, so a wrong placement fails in two or three tests
+ * rather than forty — what makes a 260,000-stroke sheet answer in seconds. Kept
+ * per weights array, because a template of 236 pieces was re-sorted for every
+ * one of 22,000 placements.
+ */
+const visitOrders = new WeakMap<readonly number[], { total: number; order: number[] }>();
+function visitOrder(weights: readonly number[]): { total: number; order: number[] } {
+  const held = visitOrders.get(weights);
+  if (held) return held;
+  const made = { total: weights.reduce((a, b) => a + b, 0), order: weights.map((_, i) => i).sort((a, b) => weights[b]! - weights[a]!) };
+  visitOrders.set(weights, made);
+  return made;
+}
+
 export function coverageAt(
   template: readonly StrokeSegment[],
   weights: readonly number[],
@@ -392,13 +409,10 @@ export function coverageAt(
     const u = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - k.x1) * dx + (p.y - k.y1) * dy) / l2));
     return Math.hypot(p.x - (k.x1 + u * dx), p.y - (k.y1 + u * dy));
   };
-  const total = weights.reduce((a, b) => a + b, 0);
+  const { total, order } = visitOrder(weights);
   let covered = 0;
   let missed = 0;
   const hit = template.map(() => false);
-  // Heaviest strokes first, so a wrong placement fails in two or three tests
-  // rather than forty — what makes a 260,000-stroke sheet answer in seconds.
-  const order = template.map((_, i) => i).sort((a, b) => weights[b]! - weights[a]!);
   for (const i of order) {
     if (missed > (1 - floor) * total) break;
     const s = template[i]!;
@@ -492,6 +506,10 @@ function placements(
     const aLen = len(anchor);
     for (const onto of candidates) {
       if (Math.abs(len(onto) - aLen) > aLen * ANCHOR_TOLERANCE) continue;
+      // A spot already matched almost whole has nothing left to prove, and its
+      // own pieces would each re-test it: Baker's OS circle is 236 of them, 12 s.
+      const mx = (onto.x1 + onto.x2) / 2, my = (onto.y1 + onto.y2) / 2;
+      if (found.some((f) => f.detail.coverage >= SETTLED_COVERAGE && mx >= f.box.x1 && mx <= f.box.x2 && my >= f.box.y1 && my <= f.box.y2)) continue;
       let best: ReturnType<typeof coverageAt> | null = null;
       for (const flip of [false, true]) for (const mirror of [false, true]) {
         const d = coverageAt(template, weights, anchor, onto, flip, mirror, grid, radius, floor);

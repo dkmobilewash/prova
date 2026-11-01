@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveRoomMeasurements, type RoomToSave } from "@/lib/actions";
 import { Spinner } from "@/components/Spinner";
@@ -65,6 +65,11 @@ export function TakeoffRoomsPanel({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const section = useRef<HTMLDivElement | null>(null);
+  // The drawer opens at its top, on the walls, and the rooms are what was just asked for.
+  useEffect(() => {
+    section.current?.scrollIntoView?.({ block: "start" });
+  }, [result]);
   const [names, setNames] = useState<Record<number, { name: string; number: string }>>({});
   const [saved, setSaved] = useState(false);
   /** The estimator's edits to a ceiling, over what was read. */
@@ -115,7 +120,7 @@ export function TakeoffRoomsPanel({
 
   void feetPerUnit;
   return (
-    <div className="mt-3 border-t border-line-card pt-3" data-takeoff="rooms-panel">
+    <div ref={section} className="mt-3 scroll-mt-2 border-t border-line-card pt-3" data-takeoff="rooms-panel">
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-semibold text-ink">
           {result.rooms.length} {result.rooms.length === 1 ? "room" : "rooms"}

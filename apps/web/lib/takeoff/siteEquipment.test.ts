@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { offeredCandidates, SITE_EQUIPMENT_REACH_FEET, siteEquipmentWord } from "./offeredCandidates";
+import { offeredCandidates, SITE_EQUIPMENT_LONGEST_FEET, SITE_EQUIPMENT_REACH_FEET, siteEquipmentWord } from "./offeredCandidates";
 import type { WallCandidate } from "./wallVectors";
 
 // 100 ft per page-width unit, 1000 pt wide: 1 ft = 0.01 units = 10 pt.
@@ -13,6 +13,14 @@ const sheet = (walls: WallCandidate[], textItems?: ReturnType<typeof word>[]) =>
 describe("site equipment: a word within reach sets a wall aside", () => {
   const run = wall(0.1, 0.5, 0.4, 0.5); // 30 ft along y = 50 ft
 
+  it("KEEPS a building's long wall with a word beside one end: Camp Bow Wow's 128 ft exterior wall and PLAY YARD", () => {
+    const long = wall(0.1, 0.5, 0.1 + (SITE_EQUIPMENT_LONGEST_FEET + 1) / FPU, 0.5);
+    expect(offeredCandidates(sheet([long], [word("PLAY YARD", 15, 55)])).setAsideLines.some((l) => l.kind === "site-equipment")).toBe(false);
+  });
+  it("still sets aside a run right at the limit", () => {
+    const atLimit = wall(0.1, 0.5, 0.1 + SITE_EQUIPMENT_LONGEST_FEET / FPU - 0.001, 0.5);
+    expect(offeredCandidates(sheet([atLimit], [word("PLAY YARD", 15, 55)])).setAsideLines.some((l) => l.kind === "site-equipment")).toBe(true);
+  });
   it("SETS ASIDE a wall with OUTDOOR RUN written 5 ft from it, and says which word", () => {
     const got = offeredCandidates(sheet([run], [word("OUTDOOR RUN", 25, 55)]));
     expect(got.candidates).toEqual([]);

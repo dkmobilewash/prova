@@ -1,11 +1,11 @@
 import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { ceilingsForRooms, type CeilingPageText } from "@/lib/takeoff/roomCeilings";
-import { roomBoundary } from "@/lib/takeoff/roomBoundary";
+import type { DetectedBoundary } from "@/lib/takeoff/detectWallsForCalibration";
 import { doorsAndWindowsForSheet } from "@/lib/takeoff/doorsWindows";
 import { DOOR_HEIGHT_FEET, finishLineLabel, finishTakeoff, typesFromNeighbours, typeTagsInRooms, WINDOW_HEIGHT_FEET } from "@/lib/takeoff/finishTakeoff";
 import { readFinishSchedule, type FinishSchedule } from "@/lib/takeoff/finishSchedule";
-import { roomsSplitAtDrawnWalls } from "@/lib/takeoff/roomsFromWalls";
+import { sheetRooms } from "@/lib/takeoff/sheetRooms";
 import type { WallCandidate } from "@/lib/takeoff/wallVectors";
 import { roomRows, writeRoomRows, type RoomToSave } from "@/lib/takeoff/roomRows";
 import { openPlanPdf, type PlanPdf } from "./planPdf";
@@ -94,7 +94,7 @@ async function setFinishSchedule(doc: PlanPdf, planId: string, pageCount: number
 
 export type RoomsOutcome = { kind: "written"; rooms: number; ceilingSqFt: number } | { kind: "skipped"; why: string } | { kind: "failed"; error: string };
 
-export async function roomsForSheet(input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null }): Promise<RoomsOutcome> {
+export async function roomsForSheet(input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null; boundary?: DetectedBoundary }): Promise<RoomsOutcome> {
   const company = await prisma.company.findUnique({ where: { id: input.companyId }, select: { roomFinderOn: true, doorsWindowsOn: true } });
   if (!company?.roomFinderOn) return { kind: "skipped", why: "room finding is off" };
   const page = await prisma.takeoffPlanPage.findUnique({
@@ -121,18 +121,27 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
   const doc = await openPlanPdf(read.bytes);
   try {
     const text = await doc.pageText(input.pageNumber);
-    const walls = roomBoundary({ pairings: [], runs, drawn: [] });
-    // The same sheet lines and doors the viewer hands its room finder.
-    const strokes = await doc.pageStrokes(input.pageNumber);
+    // What this step's own detection read, so a whole-set room is the viewer's.
+    // A retry has only the stored runs, and the page's strokes for its doors.
+    const strokes = input.boundary ? null : await doc.pageStrokes(input.pageNumber);
     const W = text.widthPt;
-    const inUnits = strokes.segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W }));
+    const inUnits = input.boundary?.segments ?? strokes!.segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W }));
     const candidates = runs.map((r) => ({ ...r, lengthFeet: Math.hypot(r.x2 - r.x1, r.y2 - r.y1) * feetPerUnit })) as unknown as WallCandidate[];
+    const inPoints = inUnits.map((s) => ({ ...s, x1: s.x1 * W, y1: s.y1 * W, x2: s.x2 * W, y2: s.y2 * W }));
     const openings = company.doorsWindowsOn
-      ? doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: strokes.segments as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: [] })
+      ? doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: inPoints as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: [] })
       : { doors: [], windows: [] };
     await writeWallOpenings(page.id, runs, openings.doors, openings.windows);
-    const leaves = openings.doors.map((d) => ({ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y }));
-    const found = roomsSplitAtDrawnWalls({ walls, feetPerUnit, text: text.items, widthPt: W }, [...inUnits, ...leaves]);
+    const found = sheetRooms({
+      pairings: input.boundary?.pairings ?? [],
+      runs,
+      drawn: [],
+      segments: inUnits,
+      doorLeaves: openings.doors.map((d) => ({ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y })),
+      feetPerUnit,
+      text: text.items,
+      widthPt: W,
+    });
     if (found.rooms.length === 0) return { kind: "skipped", why: "no rooms closed" };
     const current: CeilingPageText = { pageNumber: input.pageNumber, items: text.items, widthPt: text.widthPt, tableRows: tableRowsFromPage(text) };
     const others: CeilingPageText[] = [];
