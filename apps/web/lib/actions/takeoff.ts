@@ -1,6 +1,8 @@
 "use server";
 
 import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
+import { untypedItem } from "@/lib/plan-ingest/wallItems";
+import { HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import { countItemFor } from "@/lib/takeoff/countItem";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
@@ -430,6 +432,31 @@ export async function applyPrintedScales(
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { applied, skipped } };
+}
+
+/**
+ * "It is a wall", on a run the wall model kept off the estimate: it joins the
+ * untyped walls and the estimate takes it from there.
+ */
+export async function confirmHeldWall(jobId: string, measurementId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const job = await prisma.job.findFirst({ where: { id: jobId, companyId: context.company.id } });
+  if (!job) return actionFail("That job is no longer here. Reload the page.");
+  assertEditableDirectly(job);
+  const measurement = await prisma.takeoffMeasurement.findFirst({
+    where: { id: measurementId, label: HELD_LABEL, page: { plan: { jobId, companyId: context.company.id } } },
+    select: { id: true },
+  });
+  if (!measurement) return actionFail("That wall is no longer waiting. Reload the page.");
+  await prisma.$transaction(async (tx) => {
+    const itemId = await untypedItem(tx, context.company.id, jobId);
+    await tx.takeoffMeasurement.update({ where: { id: measurement.id }, data: { itemId, label: "wall, untyped" } });
+    await syncTakeoffItemLines(tx, context.company.id, jobId);
+  });
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
+  return { ok: true };
 }
 
 export async function recordTakeoffPlan(jobId: string, formData: FormData): Promise<ActionResult> {

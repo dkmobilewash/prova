@@ -110,6 +110,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: attributes each missed foot of key wall to a stage on the product path, with held-out as totals only under MISS_HELD_OUT. Skips without its env and asserts sheets were read",
     "zzAsideRuns.eval.ts":
       "calls no model: lists every run a named set-aside rule removed on the training sheets, with its key coverage. Skips without its env and asserts sheets were read",
+    "zzDemotePost.eval.ts":
+      "calls no model: scores what the estimate would carry with doubted runs held back, per cut, with held-out as totals. Skips without its env and asserts sheets were read",
     "scaleAudit.eval.ts":
       "calls no model: deterministic geometry over real drawings, guarded by a skip plus a non-zero input assertion",
     "doorWindows.eval.ts":

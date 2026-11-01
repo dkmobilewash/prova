@@ -1,5 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@prova/db";
+import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
+import { HELD_ITEM, HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import { UNTYPED_ITEM, wallItemsForSheet } from "./wallItems";
 /**
  * The whole-set run's walls onto the job by type, on a scratch database: a
@@ -59,5 +61,25 @@ describe("walls on the job by type", () => {
   it("never writes twice", async () => {
     expect(await ask()).toEqual({ kind: "skipped", why: "walls already on the job" });
     expect(await prisma.takeoffMeasurement.count({ where: { pageId, source: "DETECTED" } })).toBe(3);
+  });
+  it("HOLDS A DOUBTED RUN OFF THE ESTIMATE: drawn on its own item, and the sync writes no line for it", async () => {
+    await prisma.takeoffMeasurement.deleteMany({ where: { pageId } });
+    await prisma.takeoffWallProposal.deleteMany({ where: { pageId } });
+    const good = { x1: 0.2, y1: 0.6, x2: 0.5, y2: 0.6, thicknessFeet: 0.33 };
+    const doubted = { x1: 0.2, y1: 0.7, x2: 0.4, y2: 0.7, thicknessFeet: 0.33 };
+    await prisma.takeoffWallProposal.create({ data: { pageId, calibrationId, thicknessInches: 4, source: "REMAINDER", runs: [good, doubted] } });
+    const outcome = await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 1, userId: null, held: [doubted] });
+    expect(outcome.kind).toBe("written");
+    if (outcome.kind !== "written") return;
+    expect(outcome.heldFeet).toBeGreaterThan(0);
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId }, select: { label: true, item: { select: { name: true } } } });
+    expect(rows.map((r) => [r.label, r.item?.name]).sort()).toEqual([[HELD_LABEL, HELD_ITEM], ["wall, untyped", UNTYPED_ITEM]]);
+    const summary = await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, jobId));
+    // Not a line, and not an "unpriced" warning either: nothing is wrong with it yet.
+    expect(summary.unpriced.map((u) => u.name)).not.toContain(HELD_ITEM);
+    const held = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, name: HELD_ITEM } });
+    const untyped = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, name: UNTYPED_ITEM } });
+    expect(await prisma.jobLineItem.count({ where: { jobId, takeoffItemId: held.id } })).toBe(0);
+    expect(await prisma.jobLineItem.count({ where: { jobId, takeoffItemId: untyped.id } })).toBeGreaterThan(0);
   });
 });

@@ -7,6 +7,9 @@ import { pagesToSample } from "./sheetTemplate";
 import { inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
 import { detectForSheet, offeredCandidates } from "./offeredCandidates";
 import { userExclusionsFromRows } from "./userExclusions";
+import type { ScoredPairing } from "./demotedRuns";
+import { runsHeldOffEstimate } from "./estimateHold";
+import { loadWallModel } from "./wallModelFile";
 import { SheetTooDenseError, type StrokeSegment, type WallCandidate } from "./wallVectors";
 import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
@@ -80,7 +83,7 @@ export type DetectOutcome =
   | "failed";
 
 /** What the room step needs from a detection, so it need not detect again. */
-export type DetectedBoundary = { pairings: WallCandidate[]; segments: readonly StrokeSegment[] };
+export type DetectedBoundary = { pairings: WallCandidate[]; segments: readonly StrokeSegment[]; held: WallCandidate[] };
 
 export type DetectTarget = {
   /** Handed every pairing and the sheet's strokes in page-width units, when a caller wants the rooms too. */
@@ -247,10 +250,16 @@ export async function detectWallsForCalibration(
     // takeoff, and every row they wrote. One pipeline, one answer.
     const pairWithThicknesses = target.pairWithThicknesses !== false;
     const pairings: WallCandidate[] = [];
+    const scored: ScoredPairing[] = [];
     const detected = detectForSheet({
       segments: strokes.segments,
       textItems,
-      ...(target.onBoundary === undefined ? {} : { onCandidate: (_features: unknown, wall: WallCandidate) => void pairings.push(wall) }),
+      ...(target.onBoundary === undefined ? {} : {
+            onCandidate: (features: readonly number[], wall: WallCandidate) => {
+              pairings.push(wall);
+              scored.push({ x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2, thicknessFeet: wall.thicknessFeet, features: [...features] });
+            },
+          }),
       pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt },
       feetPerUnit: target.feetPerUnit,
       wallTypes: pairWithThicknesses ? wallTypes : wallTypes.map((type) => ({ ...type, thicknessIn: null })),
@@ -258,7 +267,6 @@ export async function detectWallsForCalibration(
       sampledSheets: sampleFailed ? null : sampledSheets,
       ...(planText === undefined ? {} : { planText }),
     });
-    target.onBoundary?.({ pairings, segments: detected.found.inUnits });
     // ── AND THE SAME SET-ASIDES THE VIEWER APPLIES, NOT THE FINDER'S RAW RUNS ──
     //
     // `detectForSheet` is only half of what the viewer shows. The other half
@@ -289,6 +297,12 @@ export async function detectWallsForCalibration(
       textItems,
       ...(user === null ? {} : { user }),
     });
+    if (target.onBoundary !== undefined) {
+      const company = await prisma.company.findUnique({ where: { id: target.companyId }, select: { demotedWallsOff: true } });
+      const config = company?.demotedWallsOff === false ? loadWallModel(process.env) : null;
+      const held = config === null ? [] : runsHeldOffEstimate(config.model, offered.offeredRuns, scored, target.feetPerUnit, raster !== null);
+      target.onBoundary({ pairings, segments: detected.found.inUnits, held });
+    }
     const found = { ...detected.found, walls: offered.offeredRuns, groups: detected.found.regroup(offered.offeredRuns) };
     // The groups: the finder's own when it paired with the thicknesses, else
     // rebuilt here with them — same runs, same feet, named with the types.

@@ -39,6 +39,7 @@ import {
 import {
   addMeasurementCutout,
   deleteTakeoffMeasurement,
+  confirmHeldWall,
   saveTakeoffCalibration,
   saveTakeoffMeasurement,
   saveTakeoffMeasurements,
@@ -74,6 +75,8 @@ import { insideWorkArea, openingsInWorkArea, runAt, userExclusionsFromRows } fro
 import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUndo";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
+import { HELD_LABEL } from "@/lib/takeoff/estimateHold";
+import { TakeoffHeldWalls } from "./TakeoffHeldWalls";
 import {
   GRID_REFERENCE_SHEETS,
   feetPerInchOf,
@@ -3869,6 +3872,17 @@ export function TakeoffPlanViewer({
           suggestion={scaleSuggestion}
           onConfirm={onConfirmSuggestion}
           onDismiss={() => setScaleSuggestions((was) => ({ ...was, [pageNumber]: null }))}
+        />
+      )}
+      {answerKey === undefined && !readOnly && feetPerUnit !== null && (
+        <TakeoffHeldWalls
+          walls={(sheet?.measurements ?? [])
+            .filter((m) => m.label === HELD_LABEL)
+            .map((m) => ({ id: m.id, feet: Math.hypot(m.xs[1]! - m.xs[0]!, m.ys[1]! - m.ys[0]!) * feetPerUnit }))}
+          onConfirm={async (id) => {
+            const saved = await confirmHeldWall(jobId, id);
+            return saved.ok ? null : saved.error;
+          }}
         />
       )}
       {answerKey === undefined && (
