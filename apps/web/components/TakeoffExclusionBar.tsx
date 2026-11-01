@@ -1,6 +1,6 @@
 "use client";
 
-type Kind = "EXCLUDE_LIKE" | "WORK_AREA";
+type Kind = "EXCLUDE_LIKE" | "WORK_AREA" | "ROOM_SPLIT";
 
 /**
  * The sheet's wall total and what the estimator took out of it. On the page and
@@ -11,6 +11,7 @@ export function TakeoffExclusionBar({
   feet,
   aside,
   excludes,
+  splits = 0,
   workAreas,
   readOnly,
   onUndo,
@@ -20,12 +21,14 @@ export function TakeoffExclusionBar({
   feet: number | null;
   aside: readonly { kind: string; why: string; n: number }[];
   excludes: number;
+  /** Lines dragged across rooms on this sheet. */
+  splits?: number;
   workAreas: number;
   readOnly: boolean;
   onUndo: (kind: Kind) => void;
   onClear: (kind: Kind) => void;
 }) {
-  if (feet === null && excludes === 0 && workAreas === 0) return null;
+  if (feet === null && excludes === 0 && workAreas === 0 && splits === 0) return null;
   const control = "underline hover:text-ink-body";
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted" data-takeoff="exclusion-bar">
@@ -49,6 +52,11 @@ export function TakeoffExclusionBar({
       {!readOnly && excludes > 0 && (
         <button type="button" className={control} data-takeoff="clear-exclusions" onClick={() => onClear("EXCLUDE_LIKE")}>
           Clear exclusions
+        </button>
+      )}
+      {!readOnly && splits > 0 && (
+        <button type="button" className={control} data-takeoff="remove-splits" onClick={() => onClear("ROOM_SPLIT")}>
+          Remove {splits === 1 ? "split" : `${splits} splits`}
         </button>
       )}
       {!readOnly && workAreas > 0 && (

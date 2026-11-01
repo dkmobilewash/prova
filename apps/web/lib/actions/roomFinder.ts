@@ -77,6 +77,9 @@ export async function saveRoomMeasurements(jobId: string, formData: FormData): P
   const built = roomRows({ rooms, pageId: page.id, calibrationId: calibration.id, userId });
   if (!built.ok) return actionFail(built.error);
   await prisma.$transaction(async (tx) => {
+    // The sheet's rooms as they now stand: a split saved on top of the old rows
+    // would count the room and its parts. A room already posted stays.
+    await tx.takeoffMeasurement.deleteMany({ where: { pageId: page.id, source: "ROOM_FINDER", postedAt: null } });
     await writeRoomRows(tx, company.id, jobId, built.rows);
   });
   revalidatePath(`/jobs/${jobId}/takeoff`);
