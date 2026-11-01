@@ -134,7 +134,7 @@ type Reached =
 const REACHED_FROM: Record<string, Reached> = {
   "/equipment/rates": {
     reason: "The rates behind a change order's equipment line, linked from Add scope on a draft.",
-    file: "apps/web/components/EquipmentRatePicker.tsx",
+    parents: ["apps/web/components/EquipmentRatePicker.tsx"],
     needle: 'href="/equipment/rates"',
   },
   "/sales/public-works": {
