@@ -7,7 +7,7 @@ import { pagesToSample } from "./sheetTemplate";
 import { inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
 import { detectForSheet, offeredCandidates } from "./offeredCandidates";
 import { userExclusionsFromRows } from "./userExclusions";
-import { SheetTooDenseError, type StrokeSegment } from "./wallVectors";
+import { SheetTooDenseError, type StrokeSegment, type WallCandidate } from "./wallVectors";
 import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
 import { matchGroups } from "./proposalMatch";
@@ -79,7 +79,12 @@ export type DetectOutcome =
   | "too-dense"
   | "failed";
 
+/** What the room step needs from a detection, so it need not detect again. */
+export type DetectedBoundary = { pairings: WallCandidate[]; segments: readonly StrokeSegment[] };
+
 export type DetectTarget = {
+  /** Handed every pairing and the sheet's strokes in page-width units, when a caller wants the rooms too. */
+  onBoundary?: (boundary: DetectedBoundary) => void;
   pageId: string;
   calibrationId: string;
   planId: string;
@@ -241,9 +246,11 @@ export async function detectWallsForCalibration(
     // Everything downstream inherited it — the calibration save, the whole-set
     // takeoff, and every row they wrote. One pipeline, one answer.
     const pairWithThicknesses = target.pairWithThicknesses !== false;
+    const pairings: WallCandidate[] = [];
     const detected = detectForSheet({
       segments: strokes.segments,
       textItems,
+      ...(target.onBoundary === undefined ? {} : { onCandidate: (_features: unknown, wall: WallCandidate) => void pairings.push(wall) }),
       pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt },
       feetPerUnit: target.feetPerUnit,
       wallTypes: pairWithThicknesses ? wallTypes : wallTypes.map((type) => ({ ...type, thicknessIn: null })),
@@ -251,6 +258,7 @@ export async function detectWallsForCalibration(
       sampledSheets: sampleFailed ? null : sampledSheets,
       ...(planText === undefined ? {} : { planText }),
     });
+    target.onBoundary?.({ pairings, segments: detected.found.inUnits });
     // ── AND THE SAME SET-ASIDES THE VIEWER APPLIES, NOT THE FINDER'S RAW RUNS ──
     //
     // `detectForSheet` is only half of what the viewer shows. The other half

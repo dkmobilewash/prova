@@ -155,6 +155,7 @@ import { scaleFromPrinted } from "@/lib/takeoff/scaleFromPrinted";
 /** One scanned page's stored read, as the raster route and `rasterByPage` both give it. */
 type RasterRead = { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[]; widthPt?: number; heightPt?: number; printedScale?: string | null };
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
+import { roomSeals } from "@/lib/takeoff/roomSeals";
 import { roomsSplitAtDrawnWalls, type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 
 /**
@@ -2643,11 +2644,17 @@ export function TakeoffPlanViewer({
       runs: runsRef.current,
       drawn: sheet?.measurements ?? [],
     });
+    // The doors on the sheet close the rooms, once a Find has read its strokes.
+    const detected = lastDetect.current;
+    const doorSeals =
+      detected !== null && detected.page === pageNumber && detected.widthPt > 0
+        ? roomSeals(walls, detected.segments.map(inPageWidthUnits(detected.widthPt)), feetPerUnit)
+        : [];
     // Leaked regions may be split along the sheet's own lines and door leaves.
     const W = pageSize.widthPt;
     const drawn = lastDetect.current?.page === pageNumber ? lastDetect.current.segments.map((s) => ({ x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W })) : [];
     const leaves = openings?.page === pageNumber ? openings.result.doors.map((d) => ({ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y })) : [];
-    const result = roomsSplitAtDrawnWalls({ walls, feetPerUnit, text: wordsRef.current, widthPt: W }, [...drawn, ...leaves]);
+    const result = roomsSplitAtDrawnWalls({ walls, feetPerUnit, text: wordsRef.current, widthPt: W, doorSeals }, [...drawn, ...leaves]);
     setRooms(result);
     setRoomsOnPage(pageNumber);
     onResults?.();

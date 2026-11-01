@@ -95,6 +95,8 @@ is on. Nothing is saved: this round counts and shows.
 
 ## 5. Doors as room seals (2026-10-29) — built, measured, no effect on these sets
 
+**CORRECTED 2026-10-31: this section's verdict no longer holds, and the seals are now wired in.** It was measured against older wall sets, and it called `doorSymbols` with the walls, so it saw fewer doors. On current walls, over 32 training sheets, the seals plus a corner gap confirmed by a swing close 19 more named rooms and merge 9 fewer, at the same 1.7% keyed error. Baker A101 goes from 1,735 to 3,048 sf. See `roomSeals.ts` and `realplan/zzRoomsOpen.eval.ts`. The table below is the record of that older run.
+
 `roomsFromWalls` takes `doorSeals`: each detected door's leaf line, hinge to
 strike, drawn as ink so the doorway closes where the door is with the door's
 own width. `roomsFromWalls.test.ts` proves the input: a 14 ft opening, wider

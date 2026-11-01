@@ -1,6 +1,6 @@
 import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
-import { detectWallsForCalibration, type DetectOutcome, type DetectTarget } from "@/lib/takeoff/detectWallsForCalibration";
+import { detectWallsForCalibration, type DetectedBoundary, type DetectOutcome, type DetectTarget } from "@/lib/takeoff/detectWallsForCalibration";
 import { takeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
 import { wallItemsForSheet, wallItemsNoteFor, type WallItemsOutcome } from "./wallItems";
@@ -271,7 +271,7 @@ export function wallsNoteFor(outcome: DetectOutcome): { ok: true; note: string }
 export type WallsDeps = {
   detect: (target: DetectTarget) => Promise<DetectOutcome>;
   /** Rooms and ceilings for a sheet whose walls were just written; `roomsForSheet` unless a test says otherwise. */
-  findRooms?: (input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null }) => Promise<RoomsOutcome>;
+  findRooms?: (input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null; boundary?: DetectedBoundary }) => Promise<RoomsOutcome>;
   /** The sheet's walls onto the job, an item per wall type; `wallItemsForSheet` unless a test says otherwise. */
   writeWallItems?: (input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null }) => Promise<WallItemsOutcome>;
 };
@@ -345,7 +345,11 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       return { ok: true };
     }
     const types = await loadWallTypes();
+    let boundary: DetectedBoundary | undefined;
     const outcome = await deps.detect({
+      onBoundary: (seen) => {
+        boundary = seen;
+      },
       pageId: page.id,
       calibrationId: calibration.id,
       planId: ctx.planId,
@@ -391,7 +395,7 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       }
       const findRooms = deps.findRooms ?? realDeps.findRooms!;
       try {
-        const rooms = await findRooms({ planId: ctx.planId, companyId: ctx.companyId, jobId: ctx.jobId, pageNumber: task.pageNumber, userId: ctx.startedByUserId });
+        const rooms = await findRooms({ planId: ctx.planId, companyId: ctx.companyId, jobId: ctx.jobId, pageNumber: task.pageNumber, boundary, userId: ctx.startedByUserId });
         // A company without the room finder sees the note it always saw.
         if (!(rooms.kind === "skipped" && rooms.why === "room finding is off")) text = `${said.note}; ${roomsNoteFor(rooms)}`;
       } catch (error) {

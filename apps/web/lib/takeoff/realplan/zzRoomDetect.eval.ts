@@ -12,7 +12,7 @@ import { findWallsOnSheet } from "../findWallsOnSheet";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { roomsFromWalls, type FoundWall, type RoomFromWalls } from "../roomsFromWalls";
 import { sheetStrokes } from "../sheetStrokes";
-import { doorSymbols } from "../doorWindowSymbols";
+import { roomSeals } from "../roomSeals";
 
 /**
  * ── DOOR SEALS FROM THE SWING SYMBOLS (ROOM_DOOR_SEALS=1) ──
@@ -29,9 +29,7 @@ async function doorSealsFor(pdf: string, page: number, feetPerUnit: number, wall
   const read = await sheetStrokes(Buffer.from(readFileSync(pdf)), page);
   const w = read.widthPt;
   const segs = read.segments.map((seg) => ({ ...seg, x1: seg.x1 / w, y1: seg.y1 / w, x2: seg.x2 / w, y2: seg.y2 / w }));
-  const runs = walls.map((one) => ({ ...one, thicknessFeet: one.thicknessFeet ?? 0.4, lengthFeet: Math.hypot(one.x2 - one.x1, one.y2 - one.y1) * feetPerUnit }));
-  const doors = doorSymbols(segs, runs, feetPerUnit);
-  return doors.map((d) => ({ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y }));
+  return roomSeals(walls, segs, feetPerUnit);
 }
 
 /**
@@ -438,7 +436,7 @@ describe.skipIf(KEYS === "" || (LABELS === "" && BIM === "" && REAL === ""))("ro
         const doc = await openPlanPdf(Buffer.from(readFileSync(join(BIM, model.name, k.file))));
         const text = await doc.pageText(1);
         await doc.close();
-        const result = roomsFromWalls({ walls, feetPerUnit: 1 / key.unitsPerFoot, text: text.items, widthPt: text.widthPt, strokes: await strokesInUnits(join(BIM, model.name, k.file), 1), bridgeSidelights: process.env.ROOM_BRIDGE === "1" });
+        const result = roomsFromWalls({ walls, feetPerUnit: 1 / key.unitsPerFoot, text: text.items, widthPt: text.widthPt, sealCornerDoors: process.env.ROOM_CORNER === "1", strokes: await strokesInUnits(join(BIM, model.name, k.file), 1), bridgeSidelights: process.env.ROOM_BRIDGE === "1" });
         dump(`bim__${k.id}`, result, { pdf: join(BIM, model.name, k.file), set: k.id, page: 1, widthPt: text.widthPt, heightPt: text.heightPt, feetPerUnit: 1 / key.unitsPerFoot, walls });
         all.push(...score(`${k.id} (${walls.length} wall pieces)`, result.rooms, result.unplacedTags, result.mergedTags, key, "number", walls));
         if (DOOR_SEALS) {

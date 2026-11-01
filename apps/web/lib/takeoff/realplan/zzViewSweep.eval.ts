@@ -30,6 +30,7 @@ function findPdf(dir: string): string | null {
   for (const root of [DIR, DIR2].filter((r) => r !== "")) for (const name of readdirSync(root)) if (name.toLowerCase().endsWith(".pdf") && flat(name) === flat(dir)) return join(root, name);
   return null;
 }
+const NOT_A_SCAN_STROKES = 50;
 type Saved = Parameters<typeof keyFromLabels>[0] & { page: number; feetPerUnit: number };
 
 describe.skipIf(DIR === "" || LABELS === "")("every labelled sheet, rules only", () => {
@@ -47,6 +48,9 @@ describe.skipIf(DIR === "" || LABELS === "")("every labelled sheet, rules only",
       const saved = JSON.parse(readFileSync(join(LABELS, file.dir, `${file.sheet}.json`), "utf8")) as Saved;
       const strokes = await sheetStrokes(Buffer.from(readFileSync(pdf)), saved.page);
       if (strokes === null) continue;
+      // A scan has no strokes, so this vector path cannot read it. That is "not
+      // measured", never 0% recall: `rasterStage.eval.ts` is what measures a scan.
+      if (strokes.segments.length < NOT_A_SCAN_STROKES) { console.log(`  ${file.dir}/${file.sheet}: scanned, not measured here`); continue; }
       const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
       const text = await doc.pageText(saved.page);
       await doc.close();
