@@ -1,3 +1,4 @@
+import { isCheckFigureItem } from "@/lib/takeoff/roomItems";
 import { prisma } from "@prova/db";
 import { carriedLinePlan } from "@/lib/estimating/carried-quote";
 import type { CrossCheckCarriedQuote, CrossCheckMeasurement } from "@/lib/estimating/estimate-crosschecks";
@@ -35,7 +36,7 @@ export async function loadCrossCheckInputs(jobId: string, companyId: string): Pr
           select: {
             measurements: {
               orderBy: { createdAt: "asc" },
-              select: { id: true, kind: true, label: true, postedAt: true },
+              select: { id: true, kind: true, label: true, postedAt: true, item: { select: { name: true, _count: { select: { lineItems: true } } } } },
             },
           },
         },
@@ -63,7 +64,10 @@ export async function loadCrossCheckInputs(jobId: string, companyId: string): Pr
   ]);
 
   const measurements: CrossCheckMeasurement[] = (plan?.pages ?? []).flatMap((page) =>
-    page.measurements.map((row) => ({
+    // An item's lines come from Send to estimate, which sets no `postedAt`. A
+    // line removed by hand keeps its link, so it counts too: that was a decision.
+    // "Rooms" is a check figure, never a line.
+    page.measurements.filter((row) => row.item === null || (row.item._count.lineItems === 0 && !isCheckFigureItem(row.item.name))).map((row) => ({
       id: row.id,
       kind: row.kind,
       label: row.label,

@@ -147,7 +147,7 @@ import { readFinishSchedule, type FinishSchedule } from "@/lib/takeoff/finishSch
 import { TakeoffDoorsPanel } from "./TakeoffDoorsPanel";
 import { doorsAndWindowsForSheet, type DoorsWindowsResult, type StoredScheduleRow } from "@/lib/takeoff/doorsWindows";
 import { TakeoffDemoPanel } from "./TakeoffDemoPanel";
-import { demoEvidence, demoForSheet, demoSheetTitle, type DemoSheet } from "@/lib/takeoff/demoWalls";
+import { demoEvidence, demoForSheet, demoSheetTitle, notWallDemoSheet, type DemoSheet } from "@/lib/takeoff/demoWalls";
 import { TakeoffSymbolPanel, type AcrossRow, type AcrossState } from "./TakeoffSymbolPanel";
 import { findSymbolsFrom, scaleSymbolTemplate, symbolTemplate, type Box as SymbolBox, type SymbolMatch, type SymbolTemplate } from "@/lib/takeoff/symbolSignature";
 import { sheetInScope, type SheetScope } from "@/lib/takeoff/symbolScope";
@@ -3571,7 +3571,7 @@ export function TakeoffPlanViewer({
           {finding ? "Reading the lines…" : "Find the walls"}
         </button>
         {/* Only on a sheet that says it is demolition, and it stays on the toolbar with no scale, with the title saying why it waits. */}
-        {(demoOnPage === pageNumber || demoSheetTitle(sheetLabelByPage[pageNumber] ?? sheet?.label) || /demolition/i.test(takeoffVerdict?.why ?? "")) && (
+        {!notWallDemoSheet(sheetLabelByPage[pageNumber] ?? sheet?.label) && (demoOnPage === pageNumber || demoSheetTitle(sheetLabelByPage[pageNumber] ?? sheet?.label) || /demolition/i.test(takeoffVerdict?.why ?? "")) && (
           <button
             type="button"
             onClick={onFindDemolition}
