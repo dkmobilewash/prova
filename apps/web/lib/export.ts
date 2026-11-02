@@ -562,6 +562,14 @@ export const EXPORT_DATASETS: ExportDataset[] = [
     scope: byCompany,
   },
   {
+    key: "equipment-rates",
+    model: "equipmentRate",
+    label: "Equipment rates",
+    note: "What each kind of equipment costs per hour, day or week, and the dates each rate applies.",
+    columns: ["id", "name", "unit", "rate", "effectiveFrom", "effectiveTo", "notes", "createdAt", "updatedAt"],
+    scope: byCompany,
+  },
+  {
     key: "delays",
     model: "delayEvent",
     label: "Delays",

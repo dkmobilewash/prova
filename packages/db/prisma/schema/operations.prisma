@@ -1499,3 +1499,35 @@ model DailyReportInstalledQuantity {
   @@unique([reportId, lineItemId])
   @@index([lineItemId])
 }
+
+enum EquipmentRateUnit {
+  HOUR
+  DAY
+  WEEK
+}
+
+/// What a kind of equipment costs this company per hour, day or week, from a date.
+/// By NAME and not tied to an `Equipment` row, because a rented lift has no row and
+/// a rate is about the kind of machine, not one asset tag. It is a COST: a change
+/// order marks it up through the bid recap. A change order copies the figure, so
+/// editing a rate here never changes one already written.
+model EquipmentRate {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  name String
+  unit EquipmentRateUnit
+  rate Decimal           @db.Decimal(12, 2)
+
+  /// Calendar days at UTC midnight. No end date means it runs on.
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId, name])
+}

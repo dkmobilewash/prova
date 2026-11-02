@@ -194,6 +194,7 @@ model Company {
   deviceTokens              DeviceToken[]
   dailyFieldReports         DailyFieldReport[]
   sentDocuments SentDocument[]
+  equipmentRates EquipmentRate[]
   jobMedia                  JobMedia[]
   takeoffPlans              TakeoffPlan[]
   takeoffItems              TakeoffItem[]

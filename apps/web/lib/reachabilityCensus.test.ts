@@ -132,6 +132,11 @@ type Reached =
  * every listed parent is checked.
  */
 const REACHED_FROM: Record<string, Reached> = {
+  "/equipment/rates": {
+    reason: "The rates behind a change order's equipment line, linked from Add scope on a draft.",
+    parents: ["apps/web/components/EquipmentRatePicker.tsx"],
+    needle: 'href="/equipment/rates"',
+  },
   "/sales/public-works": {
     reason: "The public-works market list, linked from the sales CRM's header strip.",
     parents: ["apps/web/app/(app)/sales/page.tsx"],
