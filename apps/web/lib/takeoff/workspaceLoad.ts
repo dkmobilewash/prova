@@ -805,7 +805,7 @@ export async function takeoffSavedSignature(companyId: string, jobId: string): P
 }
 
 /** Every row of the newest DOOR schedule read on each page of the plan, flattened. */
-async function doorScheduleRowsOf(planId: string): Promise<StoredScheduleRow[]> {
+export async function doorScheduleRowsOf(planId: string): Promise<StoredScheduleRow[]> {
   const proposals = await prisma.planScheduleProposal.findMany({
     where: { planId, kind: "DOOR" },
     orderBy: { createdAt: "desc" },

@@ -1,5 +1,6 @@
 "use client";
 
+import { TakeoffExportButtons } from "./TakeoffExportButtons";
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 
@@ -274,6 +275,8 @@ export function TakeoffAssemblyPanel({ jobId, assemblies, item, pinnedAt, readOn
             )}
           </button>
         )}
+
+        <TakeoffExportButtons jobId={jobId} />
 
         {/* ── IT SAYS IT CAN BE PRESSED AGAIN, because it can ──
             Every other "add to the estimate" in this app refuses a second

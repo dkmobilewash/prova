@@ -393,3 +393,11 @@ pair rather than guess. A demolition plan drawn on a sheet titled something else
 legend or keynote heading, or a remove row. An existing-wall legend alone does not
 count, because new plans have one. Over 1,537 training pages it adds 13 sheets to
 the 44 titles find, about 9 of them real.
+
+## The takeoff download (2026-11-03)
+
+"Download Excel" and "Download CSV" beside Send to estimate. The server reads (`loadTakeoffExport`), the browser builds the file, and nothing is stored. One row per item, sheet and source; rooms one by one; doors and windows by schedule mark where the stage matched one, or by width to the inch; finish lines; and a Sheets tab with every sheet, counted or skipped and why, and the words that say it shows existing work.
+
+On training sets, through the whole-set flow: Baker 51 rows, walls 698 lin ft, 12 doors by mark, 9 windows; Joplin 154 rows, 3,047 lin ft, rooms 11,768 sf, finish floor 8,346 sf, 41 doors by width (no door schedule read). Both workbooks open and read back.
+
+Door marks are stored by the whole-set stage from this change on (`openings` now carries kind and mark). A plan run before has openings with no kind, which read as doors with no mark.
