@@ -251,7 +251,11 @@ export async function updateTakeoffItem(
 }
 
 /**
- * ── DELETING AN ITEM KEEPS ITS MEASUREMENTS ──
+ * ── DELETING AN ITEM KEEPS ITS MEASUREMENTS, UNLESS ASKED NOT TO ──
+ *
+ * The screen asks, ticked by default (Chrome round 4: a deleted count left its
+ * marks in Unassigned, where nobody wanted them). `withMeasurements` deletes
+ * them in the same transaction; without it they survive as below.
  *
  * `TakeoffMeasurement.itemId` is `SetNull`, so the geometry survives and falls
  * into "Unassigned". Losing a morning's tracing because a condition was named
@@ -261,7 +265,7 @@ export async function updateTakeoffItem(
  * The message SAYS SO, with the number, because a delete that silently kept
  * something is as surprising as one that silently destroyed it.
  */
-export async function deleteTakeoffItem(jobId: string, itemId: string): Promise<ActionResult> {
+export async function deleteTakeoffItem(jobId: string, itemId: string, withMeasurements = false): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const refusal = ownerRefusal(context, "Only an owner can delete a takeoff item.");
@@ -273,7 +277,10 @@ export async function deleteTakeoffItem(jobId: string, itemId: string): Promise<
   const item = await itemInJob(itemId, jobId, company.id);
   if (!item) return actionFail(GONE);
 
-  await prisma.takeoffItem.delete({ where: { id: itemId } });
+  await prisma.$transaction([
+    ...(withMeasurements ? [prisma.takeoffMeasurement.deleteMany({ where: { itemId } })] : []),
+    prisma.takeoffItem.delete({ where: { id: itemId } }),
+  ]);
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
   return actionOk;

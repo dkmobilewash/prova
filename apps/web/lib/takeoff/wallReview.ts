@@ -93,3 +93,68 @@ export function viewOfRun(
   const cy = ((run.y1 + run.y2) / 2) * scale;
   return { zoom, left: Math.max(0, cx - frame.width / 2), top: Math.max(0, cy - frame.height / 2) };
 }
+
+// ── THE SET: one queue across every counted sheet ──
+
+export type SetReviewItem = {
+  pageNumber: number;
+  measurementId: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  lengthFeet: number;
+  score: number | null;
+  held: boolean;
+};
+
+/** Every sheet's runs in one order, the same rule as a sheet's: likely junk feet, held last. */
+export function setReviewOrder(items: readonly SetReviewItem[]): SetReviewItem[] {
+  const order = reviewOrder(items.map((item, at) => ({ at, held: item.held, score: item.score, lengthFeet: item.lengthFeet })));
+  return order.map((at) => items[at]!);
+}
+
+/**
+ * What the set review says it has done: facts only. An estimate of "runs left to
+ * reach ~10%" from the model's scores was measured and is not shipped: the scores
+ * are not calibrated, so it said "review 90 more" on a set 2% over its key and
+ * "within ~10%" on one still 37% over. See the PR body.
+ */
+export function setReviewProgress(queue: readonly SetReviewItem[], decided: ReadonlyMap<string, "keep" | "drop">): string {
+  const dropped = queue.filter((item) => decided.get(item.measurementId) === "drop").reduce((n, item) => n + item.lengthFeet, 0);
+  return `${decided.size} of ${queue.length} looked at · ${Math.round(dropped).toLocaleString("en-US")} ft dropped`;
+}
+
+/**
+ * One sheet's posted walls as review items: each wall measurement a whole-set
+ * run wrote, with the score its stored run carried. Dropped ones are already
+ * decided and are left out; a measurement whose run has no score is unscored.
+ */
+export function setReviewItems(input: {
+  pageNumber: number;
+  feetPerUnit: number;
+  measurements: readonly { id: string; kind: string; source: string; label: string | null; xs: readonly number[]; ys: readonly number[] }[];
+  storedRuns: readonly { x1: number; y1: number; x2: number; y2: number; modelScore?: number }[];
+  heldLabel: string;
+  droppedLabel: string;
+}): SetReviewItem[] {
+  const same = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+  return input.measurements
+    .filter((m) => m.kind === "LINEAR" && m.source === "DETECTED" && m.label !== input.droppedLabel && m.xs.length === 2 && m.ys.length === 2)
+    .map((m) => {
+      const [x1, x2] = [m.xs[0]!, m.xs[1]!];
+      const [y1, y2] = [m.ys[0]!, m.ys[1]!];
+      const run = input.storedRuns.find((r) => same(r.x1, x1) && same(r.y1, y1) && same(r.x2, x2) && same(r.y2, y2));
+      return {
+        pageNumber: input.pageNumber,
+        measurementId: m.id,
+        x1,
+        y1,
+        x2,
+        y2,
+        lengthFeet: Math.hypot(x2 - x1, y2 - y1) * input.feetPerUnit,
+        score: run?.modelScore ?? null,
+        held: m.label === input.heldLabel,
+      };
+    });
+}

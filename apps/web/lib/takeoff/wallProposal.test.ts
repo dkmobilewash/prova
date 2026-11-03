@@ -293,3 +293,18 @@ describe("the column cannot refuse a bad element, so the writer does", () => {
     expect(groupsFromProposals([{ ...base, thicknessInches: Number.NaN }], TYPES, 100)).toBeNull();
   });
 });
+
+describe("the model's score rides with a stored run", () => {
+  it("is written from the group's runs", async () => {
+    const { storedRunsOf } = await import("./wallProposal");
+    const group = { runs: [{ x1: 0, y1: 0, x2: 1, y2: 0, thicknessFeet: 0.4, lengthFeet: 10, modelScore: 0.25 }] } as unknown as Parameters<typeof storedRunsOf>[0];
+    expect(storedRunsOf(group)[0]?.modelScore).toBe(0.25);
+  });
+  it("is written and read back, and a value that is not a probability is dropped, not refused", async () => {
+    const { storedRunsOrNull } = await import("./wallProposal");
+    const run = { x1: 0, y1: 0, x2: 1, y2: 0, thicknessFeet: 0.4 };
+    expect(storedRunsOrNull([{ ...run, modelScore: 0.25 }])?.[0]?.modelScore).toBe(0.25);
+    expect(storedRunsOrNull([{ ...run, modelScore: 7 }])?.[0]?.modelScore).toBeUndefined();
+    expect(storedRunsOrNull([run])?.[0]?.modelScore).toBeUndefined();
+  });
+});

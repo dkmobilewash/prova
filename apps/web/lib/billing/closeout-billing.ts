@@ -70,15 +70,17 @@ export function closeoutStatus(input: CloseoutInput): CloseoutItem[] {
     },
     {
       label: "Retainage billed",
-      done: retainage.withheld > HALF_CENT && heldNow < HALF_CENT,
+      // The release application's own negative retainage nets the job's withheld
+      // total to zero, so a release application is the evidence, not `withheld`.
+      done: heldNow < HALF_CENT && (retainage.withheld > HALF_CENT || !!releaseApplication),
       detail:
-        retainage.withheld <= HALF_CENT
-          ? "No retainage withheld on this job's invoices."
-          : heldNow < HALF_CENT
-            ? releaseApplication
-              ? `Billed on application #${releaseApplication.number}.`
-              : "Nothing held on the ledger."
-            : `${money(heldNow)} still held.`,
+        heldNow >= HALF_CENT
+          ? `${money(heldNow)} still held.`
+          : releaseApplication
+            ? `Billed on application #${releaseApplication.number}.`
+            : retainage.withheld <= HALF_CENT
+              ? "No retainage withheld on this job's invoices."
+              : "Nothing held on the ledger.",
     },
     {
       label: "Retainage paid",

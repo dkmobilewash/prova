@@ -7,6 +7,9 @@
  *   pnpm test:e2e              (from the repo root)
  *   pnpm test:e2e -- --skip-build          reuse the last `next build`
  *   pnpm test:e2e -- specs/journey.spec.ts any other Playwright args
+ *   pnpm test:e2e -- --billing-click       LOCAL ONLY: the billing click list
+ *                              (e2e/playwright.billing.config.ts). No CI job
+ *                              runs it.
  *   pnpm test:e2e -- --takeoff-click       LOCAL ONLY: the takeoff click list
  *                              over training sheets named by TAKEOFF_CLICK_PLANS
  *                              (e2e/playwright.takeoff.config.ts). No CI job
@@ -99,10 +102,11 @@ const skipBuild = argv.includes("--skip-build") || process.env.E2E_SKIP_BUILD ==
  * this is the mode CI runs with no secrets at all.
  */
 const publicOnly = argv.includes("--public") || process.env.E2E_PUBLIC_ONLY === "1";
-/** `--takeoff-click` runs e2e/local/takeoff-click.local.spec.ts and nothing else.
- * Local only: it lives outside `specs/`, so the `e2e` CI job never reaches it. */
+/** `--billing-click` and `--takeoff-click` each run their one spec in e2e/local/ and nothing else.
+ * Local only: they live outside `specs/`, so the `e2e` CI job never reaches them. */
+const billingClick = argv.includes("--billing-click");
 const takeoffClick = argv.includes("--takeoff-click");
-const playwrightArgs = argv.filter((arg) => arg !== "--skip-build" && arg !== "--public" && arg !== "--takeoff-click");
+const playwrightArgs = argv.filter((arg) => arg !== "--skip-build" && arg !== "--public" && arg !== "--billing-click" && arg !== "--takeoff-click");
 
 // ------------------------------------------------------------- Clerk keys
 /** Minimal .env reader: KEY=value, optional quotes, comments ignored. */
@@ -307,9 +311,11 @@ try {
 
   const config = publicOnly
     ? "e2e/playwright.public.config.ts"
-    : takeoffClick
-      ? "e2e/playwright.takeoff.config.ts"
-      : "e2e/playwright.config.ts";
+    : billingClick
+      ? "e2e/playwright.billing.config.ts"
+      : takeoffClick
+        ? "e2e/playwright.takeoff.config.ts"
+        : "e2e/playwright.config.ts";
   log(`playwright: driving the browser (${config})…`);
   exitCode = await run("pnpm", ["exec", "playwright", "test", "--config", config, ...playwrightArgs], {
     cwd: webRoot,
