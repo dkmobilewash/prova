@@ -89,6 +89,8 @@ export function TakeoffItemsPanel({
 }: Props) {
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
+  /** Items whose delete keeps the measurements (unticked "Also delete"). Ticked is the default. */
+  const [keepMeasurements, setKeepMeasurements] = useState<ReadonlySet<string>>(new Set());
   const [name, setName] = useState("");
   const [type, setType] = useState<string>("LINEAR");
   const [error, setError] = useState<string | null>(null);
@@ -320,13 +322,20 @@ export function TakeoffItemsPanel({
                           <ConfirmDelete
                             label="Delete"
                             describe={`Delete the item ${item.name}`}
-                            onConfirm={() => run(() => deleteTakeoffItem(jobId, item.id))}
+                            onConfirm={() => run(() => deleteTakeoffItem(jobId, item.id, item.measurements.length > 0 && !keepMeasurements.has(item.id)))}
                             hint={
-                              item.measurements.length > 0
-                                ? `${item.measurements.length} measurement${
-                                    item.measurements.length === 1 ? "" : "s"
-                                  } will move to Unassigned, not be deleted.`
-                                : undefined
+                              item.measurements.length > 0 ? (
+                                <label className="inline-flex items-center gap-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={!keepMeasurements.has(item.id)}
+                                    onChange={(e) => setKeepMeasurements((was) => { const next = new Set(was); if (e.target.checked) next.delete(item.id); else next.add(item.id); return next; })}
+                                    data-takeoff="delete-item-measurements"
+                                  />
+                                  Also delete its {item.measurements.length} measurement{item.measurements.length === 1 ? "" : "s"}
+                                  {keepMeasurements.has(item.id) ? " (they move to Unassigned)" : ""}
+                                </label>
+                              ) : undefined
                             }
                           />
                         }

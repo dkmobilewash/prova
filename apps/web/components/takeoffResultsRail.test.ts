@@ -26,6 +26,7 @@ describe("one click always works", () => {
   it("the quantities drawer lays no backdrop over the page, and leaves the top bar clear", () => {
     expect(workspace).toMatch(/\{\(sheetsOpen \|\| itemsOpen\) && \(\s+<button\s+type="button"\s+aria-label="Close the panels"/);
     expect(workspace).toContain("[&_[data-takeoff=found-walls]]:top-11");
+    expect(workspace).toContain("[&_[data-takeoff=quantities-empty]]:top-11");
   });
   it("Undo is available before the re-find, and a Find does not hold it greyed", () => {
     expect(viewer.indexOf("exclusionUndoEntry(row, {")).toBeLessThan(viewer.indexOf("await afterExclusionChange(saved,"));
