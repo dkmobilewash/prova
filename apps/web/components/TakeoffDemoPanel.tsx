@@ -25,8 +25,8 @@ export function TakeoffDemoPanel({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  if (state.busy) return <p className="mb-2 flex items-center gap-2 rounded-lg border border-line-card bg-surface p-3 text-xs text-ink-body"><Spinner /> Reading the sheet for demolition…</p>;
-  if (state.error || state.read === null) return <p className="mb-2 rounded-lg border border-line-card bg-surface p-3 text-xs text-tag-rose-ink">{state.error ?? "The sheet could not be read."}</p>;
+  if (state.busy) return <p className="mb-2 xl:w-[23rem] xl:shrink-0 flex items-center gap-2 rounded-lg border border-line-card bg-surface p-3 text-xs text-ink-body"><Spinner /> Reading the sheet for demolition…</p>;
+  if (state.error || state.read === null) return <p className="mb-2 xl:w-[23rem] xl:shrink-0 rounded-lg border border-line-card bg-surface p-3 text-xs text-tag-rose-ink">{state.error ?? "The sheet could not be read."}</p>;
   const { runs, doors, doorsTypical } = state.read;
   const kept = runs.filter((_, i) => !dropped.has(i));
   const feet = kept.reduce((n, r) => n + r.lengthFeet, 0);
@@ -37,7 +37,7 @@ export function TakeoffDemoPanel({
       onSaved();
     });
   return (
-    <div data-takeoff="demo-panel" className="mb-2 rounded-lg border border-line-card bg-surface p-3 text-xs">
+    <div data-takeoff="demo-panel" className="mb-2 xl:w-[23rem] xl:shrink-0 rounded-lg border border-line-card bg-surface p-3 text-xs">
       <p className="text-sm font-medium text-ink" data-takeoff="demo-total">
         {kept.length} {kept.length === 1 ? "wall" : "walls"} to remove, {Math.round(feet)} ft · {doors.length} {doors.length === 1 ? "door" : "doors"}
       </p>

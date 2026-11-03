@@ -15,6 +15,8 @@ import baseConfig from "./playwright.config";
 export default {
   ...baseConfig,
   testDir: "./local",
+  // `local/` holds the takeoff click list too, which has its own config and flag.
+  testMatch: "billing-click.local.spec.ts",
   workers: 1,
   retries: 0,
   projects: [{ name: "chromium", use: { browserName: "chromium" as const, viewport: { width: 1280, height: 900 } } }],
