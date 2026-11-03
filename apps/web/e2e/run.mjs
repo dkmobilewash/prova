@@ -7,6 +7,9 @@
  *   pnpm test:e2e              (from the repo root)
  *   pnpm test:e2e -- --skip-build          reuse the last `next build`
  *   pnpm test:e2e -- specs/journey.spec.ts any other Playwright args
+ *   pnpm test:e2e -- --billing-click       LOCAL ONLY: the billing click list
+ *                              (e2e/playwright.billing.config.ts). No CI job
+ *                              runs it.
  *
  *   pnpm test:e2e:public       NO CLERK INSTANCE NEEDED — every page
  *                              reachable without signing in, at 320, 375
@@ -95,7 +98,10 @@ const skipBuild = argv.includes("--skip-build") || process.env.E2E_SKIP_BUILD ==
  * this is the mode CI runs with no secrets at all.
  */
 const publicOnly = argv.includes("--public") || process.env.E2E_PUBLIC_ONLY === "1";
-const playwrightArgs = argv.filter((arg) => arg !== "--skip-build" && arg !== "--public");
+/** `--billing-click` runs e2e/local/billing-click.local.spec.ts and nothing else.
+ * Local only: it lives outside `specs/`, so the `e2e` CI job never reaches it. */
+const billingClick = argv.includes("--billing-click");
+const playwrightArgs = argv.filter((arg) => arg !== "--skip-build" && arg !== "--public" && arg !== "--billing-click");
 
 // ------------------------------------------------------------- Clerk keys
 /** Minimal .env reader: KEY=value, optional quotes, comments ignored. */
@@ -298,7 +304,11 @@ try {
     if (exitCode !== 0) throw new Error(`next build exited ${exitCode}`);
   }
 
-  const config = publicOnly ? "e2e/playwright.public.config.ts" : "e2e/playwright.config.ts";
+  const config = publicOnly
+    ? "e2e/playwright.public.config.ts"
+    : billingClick
+      ? "e2e/playwright.billing.config.ts"
+      : "e2e/playwright.config.ts";
   log(`playwright: driving the browser (${config})…`);
   exitCode = await run("pnpm", ["exec", "playwright", "test", "--config", config, ...playwrightArgs], {
     cwd: webRoot,

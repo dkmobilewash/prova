@@ -1,3 +1,6 @@
+import { setReviewItems, setReviewOrder, type SetReviewItem } from "@/lib/takeoff/wallReview";
+import { storedRunsOrNull } from "@/lib/takeoff/wallProposal";
+import { DROPPED_LABEL, HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import { loadWallModel } from "@/lib/takeoff/wallModelFile";
 import type { StoredScheduleRow } from "./doorsWindows";
 import { prisma } from "@prova/db";
@@ -558,6 +561,7 @@ export async function loadTakeoffWorkspace(
     assemblyCode: item.wallTypeId === null ? null : (codeByWallTypeId.get(item.wallTypeId) ?? null),
   }));
   const storedWallsByPage: Record<number, WallGroup[]> = {};
+  const wallReviewItems: SetReviewItem[] = [];
   for (const page of plan.pages) {
     const current = page.calibrations[0] ?? null;
     if (!current) continue;
@@ -598,6 +602,17 @@ export async function loadTakeoffWorkspace(
       feetPerUnit,
     );
     if (groups !== null && groups.length > 0) storedWallsByPage[page.pageNumber] = groups;
+    // The whole set's review queue: this sheet's posted walls, with their stored scores.
+    wallReviewItems.push(
+      ...setReviewItems({
+        pageNumber: page.pageNumber,
+        feetPerUnit,
+        measurements: page.measurements,
+        storedRuns: mine.filter((row) => row.createdAt.getTime() === newest).flatMap((row) => storedRunsOrNull(row.runs) ?? []),
+        heldLabel: HELD_LABEL,
+        droppedLabel: DROPPED_LABEL,
+      }),
+    );
   }
 
   // "Find the rooms" is off until the owner turns it on (Settings). Read here
@@ -639,6 +654,7 @@ export async function loadTakeoffWorkspace(
     rasterPages,
     rasterUrl: `/api/takeoff/raster/${plan.id}`,
     storedWallsByPage,
+    wallReviewQueue: setReviewOrder(wallReviewItems),
     matchableItems,
     levelByPage,
     scalePrefillByPage,
@@ -811,7 +827,7 @@ export async function takeoffSavedSignature(companyId: string, jobId: string): P
 }
 
 /** Every row of the newest DOOR schedule read on each page of the plan, flattened. */
-async function doorScheduleRowsOf(planId: string): Promise<StoredScheduleRow[]> {
+export async function doorScheduleRowsOf(planId: string): Promise<StoredScheduleRow[]> {
   const proposals = await prisma.planScheduleProposal.findMany({
     where: { planId, kind: "DOOR" },
     orderBy: { createdAt: "desc" },

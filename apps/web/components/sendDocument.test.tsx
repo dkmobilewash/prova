@@ -24,7 +24,7 @@ describe("what was sent", () => {
     const html = renderToStaticMarkup(<SendHistory sends={history} />);
     expect(html).toContain("Bounced · Mailbox full");
     expect(html).toContain("Delivered");
-    expect(html).toContain('href="/api/sent-documents/a"');
+    expect(html).toContain("Download what was sent");
     expect(html).toContain("sent as a link, works until Nov 30, 2026");
   });
 
