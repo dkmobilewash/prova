@@ -4139,8 +4139,10 @@ export function TakeoffPlanViewer({
         }`}
       >
       {/* Opening Quantities before anything is found showed nothing, and in the
-          narrow-screen drawer only its Close button. Say what fills it. */}
-      {found === null && panelOpen && (
+          narrow-screen drawer only its Close button. Say what fills it — unless a
+          count or demolition panel already has the side column, where at 1600 px
+          the two together left the sheet no width at all (the takeoff click spec, A5). */}
+      {found === null && panelOpen && symbols?.page !== pageNumber && demo?.page !== pageNumber && (
         <p className="rounded-md border border-line-card bg-surface p-3 text-xs text-ink-muted xl:w-[23rem] xl:shrink-0" data-takeoff="quantities-empty">
           No quantities on this sheet yet. Press Find the walls, or measure by hand, and they show here.
         </p>
