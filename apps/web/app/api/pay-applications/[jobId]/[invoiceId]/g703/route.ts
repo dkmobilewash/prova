@@ -1,3 +1,4 @@
+import { contentDisposition } from "@/lib/content-disposition";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
 import { g703Csv, g703FileName, g703Workbook } from "@/lib/billing/g703-export";
@@ -31,7 +32,7 @@ export async function GET(
         format === "xlsx"
           ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           : "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${g703FileName(doc, format).replace(/["\r\n]/g, "")}"`,
+      "Content-Disposition": contentDisposition("attachment", g703FileName(doc, format)),
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
     },
