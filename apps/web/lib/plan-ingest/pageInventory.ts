@@ -459,7 +459,7 @@ async function readScaleFromSheet(
 }
 
 /** The real ports. Kept at the bottom so the stage above reads as logic. */
-const realDeps: PageInventoryDeps = {
+export const realDeps: PageInventoryDeps = {
   // Shared with `startPlanIngest`, which counts the set's pages from the same
   // bytes — see `planBytes.ts` for why neither goes through the viewer's route.
   readPlanBytes,
