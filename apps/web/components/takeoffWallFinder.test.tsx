@@ -134,6 +134,11 @@ describe("the wall finder's control", () => {
     expect(paint([sheet()]).querySelector('[data-takeoff="found-walls"]')).toBeNull();
   });
 
+  it("says what fills the quantities panel before anything is found", () => {
+    // At 789px the drawer opened as a bare Close button (Chrome round 4).
+    expect(paint([sheet()]).querySelector('[data-takeoff="quantities-empty"]')?.textContent).toContain("Find the walls");
+  });
+
   it("KEEPS THE CHECK BUTTON AWAY UNTIL THERE IS SOMETHING TO CHECK", () => {
     // "Check these are walls" asks a model what the found runs actually are —
     // countertops and bathtubs measure like walls and a real permit set

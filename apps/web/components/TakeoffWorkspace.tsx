@@ -1334,7 +1334,10 @@ export function TakeoffWorkspace({
               ? " [&_[data-takeoff=found-walls]]:fixed [&_[data-takeoff=found-walls]]:top-11 [&_[data-takeoff=found-walls]]:bottom-0" +
                 " [&_[data-takeoff=found-walls]]:right-0 [&_[data-takeoff=found-walls]]:z-40" +
                 " [&_[data-takeoff=found-walls]]:w-80 [&_[data-takeoff=found-walls]]:overflow-y-auto" +
-                " [&_[data-takeoff=found-walls]]:rounded-none"
+                " [&_[data-takeoff=found-walls]]:rounded-none" +
+                " [&_[data-takeoff=quantities-empty]]:fixed [&_[data-takeoff=quantities-empty]]:top-11 [&_[data-takeoff=quantities-empty]]:bottom-0" +
+                " [&_[data-takeoff=quantities-empty]]:right-0 [&_[data-takeoff=quantities-empty]]:z-40 [&_[data-takeoff=quantities-empty]]:w-80" +
+                " [&_[data-takeoff=quantities-empty]]:rounded-none [&_[data-takeoff=quantities-empty]]:pt-10"
               : ""
           }`}
           data-takeoff="canvas-region"
