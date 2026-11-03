@@ -1,3 +1,4 @@
+import { doorScheduleRowsOf } from "@/lib/takeoff/workspaceLoad";
 import { splitLinesFrom } from "@/lib/takeoff/userExclusions";
 import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
@@ -61,14 +62,22 @@ async function ceilingPageText(doc: PlanPdf, pageNumber: number): Promise<Ceilin
  * ponytail: heights are the finish panel's stated defaults, because a plan has
  * none. A door schedule's height would be better when one has been read.
  */
-async function writeWallOpenings(pageId: string, runs: readonly { x1: number; y1: number; x2: number; y2: number }[], doors: readonly { wall: number | null; widthFeet: number }[], windows: readonly { wall: number; widthFeet: number }[]) {
-  const byRun = new Map<number, { widthFt: number; heightFt: number }[]>();
-  const add = (at: number | null, widthFt: number, heightFt: number) => {
+async function writeWallOpenings(
+  pageId: string,
+  runs: readonly { x1: number; y1: number; x2: number; y2: number }[],
+  doors: readonly { wall: number | null; widthFeet: number }[],
+  windows: readonly { wall: number; widthFeet: number }[],
+  /** The schedule's mark and width for each door, in the doors' order, where one was matched. */
+  doorMarks: readonly ({ mark: string | null; widthFt: number } | undefined)[] = [],
+) {
+  type Stored = { widthFt: number; heightFt: number; kind: "door" | "window"; mark: string | null };
+  const byRun = new Map<number, Stored[]>();
+  const add = (at: number | null, opening: Stored) => {
     if (at === null || at < 0) return;
-    byRun.set(at, [...(byRun.get(at) ?? []), { widthFt, heightFt }]);
+    byRun.set(at, [...(byRun.get(at) ?? []), opening]);
   };
-  for (const d of doors) add(d.wall, d.widthFeet, DOOR_HEIGHT_FEET);
-  for (const w of windows) add(w.wall, w.widthFeet, WINDOW_HEIGHT_FEET);
+  doors.forEach((d, i) => add(d.wall, { widthFt: doorMarks[i]?.widthFt ?? d.widthFeet, heightFt: DOOR_HEIGHT_FEET, kind: "door", mark: doorMarks[i]?.mark ?? null }));
+  for (const w of windows) add(w.wall, { widthFt: w.widthFeet, heightFt: WINDOW_HEIGHT_FEET, kind: "window", mark: null });
   if (byRun.size === 0) return;
   const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId, source: "DETECTED", kind: "LINEAR" }, select: { id: true, xs: true, ys: true } });
   const at = (x: number, y: number) => `${x.toFixed(6)},${y.toFixed(6)}`;
@@ -131,9 +140,9 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
     const candidates = runs.map((r) => ({ ...r, lengthFeet: Math.hypot(r.x2 - r.x1, r.y2 - r.y1) * feetPerUnit })) as unknown as WallCandidate[];
     const inPoints = inUnits.map((s) => ({ ...s, x1: s.x1 * W, y1: s.y1 * W, x2: s.x2 * W, y2: s.y2 * W }));
     const openings = company.doorsWindowsOn
-      ? doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: inPoints as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: [] })
+      ? doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: inPoints as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: await doorScheduleRowsOf(input.planId) })
       : { doors: [], windows: [] };
-    await writeWallOpenings(page.id, runs, openings.doors, openings.windows);
+    await writeWallOpenings(page.id, runs, openings.doors, openings.windows, "join" in openings && openings.join ? openings.join.openings : []);
     const found = sheetRooms({
       pairings: input.boundary?.pairings ?? [],
       runs,
