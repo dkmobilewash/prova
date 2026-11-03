@@ -351,6 +351,10 @@ model PlanSheetText {
   /// layer. What the model is given — never the file, never an image.
   titleBlockText String?
 
+  /// The words on the whole page that say it shows existing work, `renovationMarks`:
+  /// "(E)", "EXISTING", "DEMO" and so on. Empty for a new-build sheet.
+  renovationMarks String[] @default([])
+
   /// Whether those words came from the title-block REGION or from the whole page.
   ///
   /// A sheet whose block sits somewhere the region filter does not expect would
