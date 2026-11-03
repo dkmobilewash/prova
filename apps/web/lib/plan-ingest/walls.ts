@@ -273,7 +273,7 @@ export type WallsDeps = {
   /** Rooms and ceilings for a sheet whose walls were just written; `roomsForSheet` unless a test says otherwise. */
   findRooms?: (input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null; boundary?: DetectedBoundary }) => Promise<RoomsOutcome>;
   /** The sheet's walls onto the job, an item per wall type; `wallItemsForSheet` unless a test says otherwise. */
-  writeWallItems?: (input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null }) => Promise<WallItemsOutcome>;
+  writeWallItems?: (input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null; held?: readonly { x1: number; y1: number; x2: number; y2: number }[] }) => Promise<WallItemsOutcome>;
 };
 
 const realDeps: WallsDeps = {
@@ -382,7 +382,7 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       // ── THE WALLS ONTO THE JOB, BY TYPE (`lib/plan-ingest/wallItems.ts`) ──
       const writeWallItems = deps.writeWallItems ?? realDeps.writeWallItems!;
       try {
-        const items = await writeWallItems({ planId: ctx.planId, companyId: ctx.companyId, jobId: ctx.jobId, pageNumber: task.pageNumber, userId: ctx.startedByUserId });
+        const items = await writeWallItems({ planId: ctx.planId, companyId: ctx.companyId, jobId: ctx.jobId, pageNumber: task.pageNumber, held: boundary?.held ?? [], userId: ctx.startedByUserId });
         // "no walls found" here means the detection stored no rows, which the
         // detector's own note already says — repeating it after "walls found"
         // would read as a contradiction, and the one place it can happen is a

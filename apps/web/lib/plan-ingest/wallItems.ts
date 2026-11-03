@@ -26,14 +26,15 @@ import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
  */
 export { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
+import { HELD_ITEM, HELD_LABEL, isHeldRun } from "@/lib/takeoff/estimateHold";
 
 export type WallItemsOutcome =
-  | { kind: "written"; typedFeet: number; untypedFeet: number; byType: { code: string; feet: number }[] }
+  | { kind: "written"; typedFeet: number; untypedFeet: number; heldFeet: number; byType: { code: string; feet: number }[] }
   | { kind: "skipped"; why: string };
 
 type Run = { x1: number; y1: number; x2: number; y2: number; thicknessFeet: number };
 
-export async function wallItemsForSheet(input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null }): Promise<WallItemsOutcome> {
+export async function wallItemsForSheet(input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null; held?: readonly { x1: number; y1: number; x2: number; y2: number }[] }): Promise<WallItemsOutcome> {
   const page = await prisma.takeoffPlanPage.findUnique({
     where: { planId_pageNumber: { planId: input.planId, pageNumber: input.pageNumber } },
     select: {
@@ -74,7 +75,8 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
 
   const written = await prisma.$transaction(async (tx) => {
     const byType = new Map<string, { code: string; feet: number }>();
-    let typedFeet = 0, untypedFeet = 0;
+    let typedFeet = 0, untypedFeet = 0, heldFeet = 0;
+    const held = input.held ?? [];
     const data: Prisma.TakeoffMeasurementCreateManyInput[] = [];
     for (const group of groups) {
       const type = typeOf(group);
@@ -91,18 +93,22 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
               ? `${type.code} wall (U.N.O.)`
               : `${type.code} wall (by thickness)`;
       for (const run of group.runs as Run[]) {
-        data.push({ pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [run.x1, run.x2], ys: [run.y1, run.y2], label, source: "DETECTED", itemId, createdByUserId: input.userId });
+        // Doubted by the wall model: on the sheet, off the estimate. See `estimateHold.ts`.
+        const isHeld = isHeldRun(run, held);
+        if (isHeld) heldFeet += Math.hypot(run.x2 - run.x1, run.y2 - run.y1) * feetPerUnit;
+        data.push({ pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [run.x1, run.x2], ys: [run.y1, run.y2], label: isHeld ? HELD_LABEL : label, source: "DETECTED", itemId: isHeld ? await namedItem(tx, input.companyId, input.jobId, HELD_ITEM) : itemId, createdByUserId: input.userId });
       }
-      if (type === null) untypedFeet += group.feet;
+      const onEstimate = group.feet - (group.runs as Run[]).filter((run) => isHeldRun(run, held)).reduce((n, run) => n + Math.hypot(run.x2 - run.x1, run.y2 - run.y1) * feetPerUnit, 0);
+      if (type === null) untypedFeet += onEstimate;
       else {
-        typedFeet += group.feet;
+        typedFeet += onEstimate;
         const slot = byType.get(type.code) ?? { code: type.code, feet: 0 };
-        slot.feet += group.feet;
+        slot.feet += onEstimate;
         byType.set(type.code, slot);
       }
     }
     if (data.length > 0) await tx.takeoffMeasurement.createMany({ data });
-    return { typedFeet, untypedFeet, byType: [...byType.values()].sort((a, b) => b.feet - a.feet) };
+    return { typedFeet, untypedFeet, heldFeet, byType: [...byType.values()].sort((a, b) => b.feet - a.feet) };
   });
   return { kind: "written", ...written };
 }
@@ -128,12 +134,16 @@ async function itemForType(tx: Prisma.TransactionClient, companyId: string, jobI
   return item.id;
 }
 
-async function untypedItem(tx: Prisma.TransactionClient, companyId: string, jobId: string): Promise<string> {
-  const found = await tx.takeoffItem.findFirst({ where: { jobId, companyId, name: UNTYPED_ITEM }, select: { id: true } });
+export async function untypedItem(tx: Prisma.TransactionClient, companyId: string, jobId: string): Promise<string> {
+  return namedItem(tx, companyId, jobId, UNTYPED_ITEM);
+}
+
+async function namedItem(tx: Prisma.TransactionClient, companyId: string, jobId: string, name: string): Promise<string> {
+  const found = await tx.takeoffItem.findFirst({ where: { jobId, companyId, name }, select: { id: true } });
   if (found) return found.id;
   const existing = await tx.takeoffItem.findMany({ where: { jobId }, select: { colorHex: true, sortOrder: true }, orderBy: { sortOrder: "desc" } });
   const item = await tx.takeoffItem.create({
-    data: { companyId, jobId, name: UNTYPED_ITEM, type: "LINEAR", colorHex: nextItemColor(existing.map((i) => i.colorHex)), sortOrder: (existing[0]?.sortOrder ?? -1) + 1 },
+    data: { companyId, jobId, name, type: "LINEAR", colorHex: nextItemColor(existing.map((i) => i.colorHex)), sortOrder: (existing[0]?.sortOrder ?? -1) + 1 },
     select: { id: true },
   });
   return item.id;
@@ -143,5 +153,5 @@ async function untypedItem(tx: Prisma.TransactionClient, companyId: string, jobI
 export function wallItemsNoteFor(outcome: WallItemsOutcome): string {
   if (outcome.kind === "skipped") return `walls on job: ${outcome.why}`;
   const by = outcome.byType.map((t) => `${t.code} ${Math.round(t.feet).toLocaleString("en-US")} ft`).join(", ");
-  return `on the job by type: ${by || "none typed"}; untyped ${Math.round(outcome.untypedFeet).toLocaleString("en-US")} ft`;
+  return `on the job by type: ${by || "none typed"}; untyped ${Math.round(outcome.untypedFeet).toLocaleString("en-US")} ft${outcome.heldFeet > 0 ? `; to confirm, off the estimate ${Math.round(outcome.heldFeet).toLocaleString("en-US")} ft` : ""}`;
 }
