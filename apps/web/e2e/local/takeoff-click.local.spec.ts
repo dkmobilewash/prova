@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import * as XLSX from "xlsx";
 import { prisma } from "@prova/db";
+import { pageInventoryWork, realDeps } from "../../lib/plan-ingest/pageInventory";
 import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
@@ -165,13 +166,20 @@ test.beforeAll(async ({ browser }) => {
     await prisma.job.create({ data: { id: set.id, companyId, contactId: contact.id, name: `ZZ Click ${set.file.replace(/\.pdf$/, "")}`, status: "ESTIMATE" } });
     const plan = await prisma.takeoffPlan.create({ data: { companyId, jobId: set.id, fileUrl: `local:${set.file}`, fileName: set.file, uploadedByUserId: user.id } });
     const ingest = await prisma.planIngestJob.create({ data: { planId: plan.id, companyId, stage: "PAGE_INVENTORY", pageCount: Math.max(...Object.keys(PAGES[key]).map(Number)) } });
-    for (const [n, [number, title, fpu]] of Object.entries(PAGES[key])) {
+    // THE INVENTORY ITSELF, on each sheet a step opens: its text row, its scale
+    // reading (which is what the toolbar's printed-scale offer reads) and its name,
+    // through the stage's own storage. Only the file read and the company's
+    // plan-text switch are stood in for. Seeding these rows by hand left out the
+    // scale reading, and Baker A001's "1/8\" = 1'-0\"" offer with it (B8).
+    const bytes = readFileSync(join(PLANS, set.file));
+    const inventory = pageInventoryWork(
+      { planId: plan.id, companyId, ingestJobId: ingest.id, jobId: set.id, startedByUserId: user.id },
+      { ...realDeps, readPlanBytes: async () => ({ ok: true as const, bytes: Buffer.from(bytes) }), planTextReadOn: async () => true },
+    );
+    for (const [n, [, , fpu]] of Object.entries(PAGES[key])) {
       const pageNumber = Number(n);
-      // The sheet index is built from the inventory's text rows; a proposal with no row beside it names nothing.
-      await prisma.planSheetText.create({ data: { planId: plan.id, pageNumber, hasTextLayer: true, widthPt: 2592, heightPt: 1728, rotation: 0 } });
-      await prisma.planSheetProposal.create({
-        data: { ingestJobId: ingest.id, planId: plan.id, pageNumber, proposedSheetNumber: number, proposedTitle: title, proposedReason: "the designation printed in the title block's corner, read without a model", proposedConfidence: "HIGH", model: "keyless", promptVersion: "keyless" },
-      });
+      const read = await inventory({ id: `seed-${set.id}-${pageNumber}`, pageNumber, stage: "PAGE_INVENTORY", attempts: 1 });
+      if (!read.ok) throw new Error(`inventory of ${set.file} p${pageNumber}: ${JSON.stringify(read)}`);
       const row = await prisma.takeoffPlanPage.create({ data: { planId: plan.id, pageNumber } });
       if (fpu !== null) await prisma.takeoffScaleCalibration.create({ data: { pageId: row.id, x1: 0, y1: 0, x2: 1, y2: 0, declaredDistanceFeet: String(fpu) } as never });
     }
@@ -264,23 +272,25 @@ test("A5 an R1 troffer counts 21; a dropped mark comes back", async () => {
   await expect.poll(async () => num(await hook("symbol-count-total").innerText())).toBe(21);
 });
 
-test("A6 Find on all sheets: 26 in all, EL1.01 21, E0.03 5, no E0.02", async () => {
+// 21, not the 26 an older list expected: E0.03's five are the LEGEND's own symbols,
+// not fixtures (Diego, 2026-11-03).
+test("A6 Find on all sheets: 21 in all, EL1.01 21, the E0.03 legend and E0.02 0", async () => {
   await on("baker", 54);
   await acrossSheets();
   const rows = (await hook("symbol-across-rows").innerText()).replace(/\s+/g, " ");
-  expect(num(await hook("symbol-across-total").innerText()), rows).toBe(26);
+  expect(num(await hook("symbol-across-total").innerText()), rows).toBe(21);
   expect(rows).toMatch(/EL1\.01\D+21/);
-  expect(rows).toMatch(/E0\.03\D+5/);
+  expect(rows).toMatch(/E0\.03\s+0\b/);
   // The list shows every sheet of the discipline, zeros included; E0.02 must find nothing.
   expect(rows).toMatch(/E0\.02\s+0\b/);
 });
 
-test("A7 Save: 26 on 2 sheets as one count, nothing left unsaved", async () => {
+test("A7 Save: 21 on 1 sheet as one count, nothing left unsaved", async () => {
   await on("baker", 54);
   await acrossSheets();
   await hook("symbol-label").fill("ZZ Troffers");
   await hook("symbol-across-save").click();
-  await expect(hook("symbol-across-saved")).toContainText("Saved 26 on 2 sheets", { timeout: 30_000 });
+  await expect(hook("symbol-across-saved")).toContainText("Saved 21 on 1 sheet as one count", { timeout: 30_000 });
   await saysNot("Not saved");
   await expect(hook("item-row").filter({ hasText: "ZZ Troffers" })).toHaveCount(1);
   await expect(button("Line")).toBeDisabled();
@@ -326,15 +336,19 @@ test("B1 Find demolition is on the toolbar, grey until a scale", async () => {
   await expect(hook("find-demolition")).toHaveAttribute("title", /set the scale/i);
 });
 
-/** Takes the scale the sheet offers, printed or suggested, after checking it is the one expected. */
+/** "Use the printed scale", as the click list says: the toolbar offer opens Set scale
+ * on the title block's reading, which offers "Use the printed scale"; where the
+ * form still waits, "Set the scale" saves it. */
 async function takeOfferedScale(scale: string) {
-  const offer = page.locator('[data-takeoff="toolbar-scale-offer"], [data-takeoff="scale-suggestion"]').first();
-  await expect(offer).toContainText(scale, { timeout: 30_000 });
-  if ((await hook("confirm-suggested-scale").count()) > 0) await hook("confirm-suggested-scale").click();
-  else await hook("toolbar-scale-offer").getByRole("button").first().click();
+  await expect(hook("toolbar-scale-offer"), "the printed-scale offer").toContainText(scale, { timeout: 30_000 });
+  await hook("toolbar-scale-offer").click();
+  await button("Use the printed scale").click();
+  const save = button("Set the scale");
+  if (await save.isVisible({ timeout: 3000 }).catch(() => false)) await save.click();
+  await expect(hook("find-demolition")).toBeEnabled({ timeout: 20_000 });
 }
 
-test("B2 the scale offered is 1/4\" = 1'-0\"", async () => {
+test("B2 the printed scale is offered: 1/4\" = 1'-0\"", async () => {
   await on("estreet", 24);
   await takeOfferedScale(`1/4" = 1'-0"`);
   await expect(hook("find-demolition")).toBeEnabled({ timeout: 20_000 });
