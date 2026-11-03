@@ -165,6 +165,11 @@ export function describeStyle(s: WallStyle): string {
  * Null when the page has none, so a caller can leave the field out and
  * detect as before.
  */
+/** The estimator's split lines, for the room finder. */
+export function splitLinesFrom(rows: readonly { kind: string; xs: readonly number[]; ys: readonly number[] }[]): Line[] {
+  return rows.filter((r) => r.kind === "ROOM_SPLIT" && r.xs.length === 2 && r.ys.length === 2).map((r) => ({ x1: r.xs[0]!, y1: r.ys[0]!, x2: r.xs[1]!, y2: r.ys[1]! }));
+}
+
 export function userExclusionsFromRows(rows: readonly { kind: string; xs: readonly number[]; ys: readonly number[] }[]): { excludeLike: Line[]; workArea: Polygon[] } | null {
   const excludeLike: Line[] = [];
   const workArea: Polygon[] = [];

@@ -8,6 +8,7 @@ import { useLocalToday } from "@/components/localToday";
 import { NEW_PAY_APP_HASH } from "@/components/job/payAppFigures";
 import { submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
 import { money } from "@/lib/money";
+import { monthEnd } from "@/lib/month-end";
 import { parseNumericInput } from "@/lib/numeric-input";
 import { payAppRowsFromForm, payAppTotal, thisPeriodForPercentComplete } from "@/lib/pay-application";
 import { suggestFromInstalled, suggestThisPeriod, type InstalledProgress, type LineProgress } from "@/lib/pay-app-suggestion";
@@ -115,11 +116,11 @@ export function PayApplications({
   lineItems: PayAppLineItemOption[];
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  // The default PERIOD TO. The user's own calendar day, read in an effect
-  // (components/localToday.ts) so the server-rendered markup never carries a
-  // date that could disagree with the browser's. Overwritten freely: most
-  // applications run to a month end, and the person knows which.
-  const today = useLocalToday();
+  // The default PERIOD TO: the last day of the user's own current month, because
+  // most applications run to a month end. Built on their calendar day, read in an
+  // effect (components/localToday.ts), so the server-rendered markup never carries
+  // a date that could disagree with the browser's. Overwritten freely.
+  const defaultPeriodTo = monthEnd(useLocalToday());
   // Blank until the box is touched, which means the default above.
   const [periodTo, setPeriodTo] = useState<string | null>(null);
   /** Set when the form was opened from the Billing summary's "Start pay app"
@@ -337,7 +338,7 @@ export function PayApplications({
               <input
                 type="date"
                 name="periodTo"
-                defaultValue={today}
+                defaultValue={defaultPeriodTo}
                 onChange={(event) => setPeriodTo(event.target.value)}
                 className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
               />
@@ -430,7 +431,7 @@ export function PayApplications({
                           setPctNote((n) => (n[item.id]?.text ? { ...n, [item.id]: { ok: true, text: "" } } : n));
                         }}
                       />
-                      <SuggestionNote item={item} periodTo={periodTo ?? today ?? ""} />
+                      <SuggestionNote item={item} periodTo={periodTo ?? defaultPeriodTo} />
                     </td>
                     <td className="py-1 text-right">
                       {/* Never had a floor, and the reason is the older

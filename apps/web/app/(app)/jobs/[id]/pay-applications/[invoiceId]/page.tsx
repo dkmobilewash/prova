@@ -5,6 +5,7 @@ import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
 import { G702DownloadButton } from "@/components/G702DownloadButton";
+import { secondaryActionClass } from "@/components/emptyStateStyles";
 import { money } from "@/lib/money";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
@@ -100,6 +101,16 @@ export default async function PayApplicationPage({
           actions={
             <span className="flex flex-wrap items-center gap-2">
               {isPayApplication && <G702DownloadButton document={doc} />}
+              {isPayApplication && (
+                <>
+                  <a href={`/api/pay-applications/${job.id}/${invoice.id}/g703?format=csv`} className={secondaryActionClass}>
+                    G703 as CSV
+                  </a>
+                  <a href={`/api/pay-applications/${job.id}/${invoice.id}/g703?format=xlsx`} className={secondaryActionClass}>
+                    G703 as Excel
+                  </a>
+                </>
+              )}
               <PrintButton />
             </span>
           }

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { demoDoors, demoForSheet, demoRuns, demoSheetTitle } from "./demoWalls";
+import { readFileSync } from "node:fs";
+import { demoDoors, demoForSheet, demoRuns, demoSheetTitle, notWallDemoSheet } from "./demoWalls";
+
+const viewer = readFileSync(`${process.cwd()}/components/TakeoffPlanViewer.tsx`, "utf8");
 import { existingWallSet } from "./existingWallSet";
 import { recipeLines } from "../takeoff-recipes";
 import type { StrokeSegment } from "./wallVectors";
@@ -91,6 +94,9 @@ describe("the rest of the demolition path", () => {
   it("a sheet says it is demolition by title or number", () => {
     expect(["A1.1 · DEMOLITION - FLOOR PLAN", "D100", "AD101", "D-1", "BASEMENT DEMO"].every(demoSheetTitle)).toBe(true);
     expect(["A101 · FLOOR PLAN", "E2.01", null].some(demoSheetTitle)).toBe(false);
+    expect(notWallDemoSheet("E1.2 · ELECTRICAL DEMOLITION - ROOF PLAN")).toBe(true);
+    expect(notWallDemoSheet("A1.1 · DEMOLITION - FLOOR PLAN")).toBe(false);
+    expect(viewer).toMatch(/\{!notWallDemoSheet\(sheetLabelByPage\[pageNumber\] \?\? sheet\?\.label\) && \(demoOnPage === pageNumber/);
     expect(["A0.1 · DEMOLITION SITE PLAN", "A1.3 · DEMOLITION - REFLECTED CEILING PLAN", "A1.4 · DEMOLITION - ROOF PLAN", "M1.1 · MECHANICAL DEMOLITION PLAN", "ED1.01 · ELECTRICAL DEMOLITION LEVEL 1 PLAN"].some(demoSheetTitle)).toBe(false);
   });
   it("a run inside a section view is left out", () => {

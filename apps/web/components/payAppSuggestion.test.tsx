@@ -4,7 +4,9 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/actions", () => ({ submitPayApplication: vi.fn(), updateInvoiceStatus: vi.fn() }));
-vi.mock("@/components/localToday", () => ({ useLocalToday: () => "2026-10-31" }));
+// Mid-month on purpose: every figure below says "through 2026-10-31", which only
+// holds if the form defaults to the month's end rather than to today.
+vi.mock("@/components/localToday", () => ({ useLocalToday: () => "2026-10-12" }));
 const { PayApplications } = await import("./PayApplications");
 
 declare global {
@@ -35,6 +37,12 @@ describe("a suggestion on the pay application form", () => {
     await act(async () => open?.click());
   });
   afterEach(() => host.remove());
+
+  it("defaults Period to to the last day of the month, and it can be changed", () => {
+    const box = host.querySelector<HTMLInputElement>('input[name="periodTo"]');
+    expect(box?.defaultValue).toBe("2026-10-31");
+    expect(box?.readOnly).toBe(false);
+  });
 
   it("shows beside the box and leaves the box empty", () => {
     expect(host.textContent).toContain("Suggested $16,000.00 from hours");

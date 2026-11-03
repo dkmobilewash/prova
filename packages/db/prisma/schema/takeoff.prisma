@@ -291,6 +291,9 @@ enum TakeoffExclusionKind {
   /// A polygon of the area of work: walls outside it are set aside, walls
   /// across its edge are cut at it.
   WORK_AREA
+  /// A line the estimator dragged across a room region: the room finder treats
+  /// it as a wall, so each part takes the tag inside it. Measures nothing.
+  ROOM_SPLIT
 }
 
 /// What the user said about one sheet's walls — `lib/takeoff/userExclusions.ts`.

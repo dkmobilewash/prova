@@ -250,10 +250,15 @@ export function demoDoors(textItems: readonly { str: string; x: number; y: numbe
  */
 const NOT_WALL_DEMO = /\b(SITE|ROOF|CEILING|ELECTRICAL|LIGHTING|POWER|MECHANICAL|PLUMBING|HVAC|FIRE PROTECTION)\b|^[EMPF][A-Z]?-?\d/i;
 
+/** Whether a sheet's title rules out wall demolition, whatever else on the sheet says "demolition". */
+export function notWallDemoSheet(text: string | null | undefined): boolean {
+  return NOT_WALL_DEMO.test((text ?? "").trim());
+}
+
 /** Whether a sheet's title or number says it is a demolition plan of the walls. */
 export function demoSheetTitle(text: string | null | undefined): boolean {
   const title = (text ?? "").trim();
-  if (NOT_WALL_DEMO.test(title)) return false;
+  if (notWallDemoSheet(title)) return false;
   return /\bDEMO(LITION)?\b/i.test(title) || /^(A|AD)?D[-\d]/i.test(title);
 }
 

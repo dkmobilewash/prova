@@ -1,7 +1,7 @@
 import type { ActionResultWith } from "@/lib/actions/shared";
 import type { UndoEntry } from "./undoStack";
 
-export type ExclusionRow = { id: string; kind: "EXCLUDE_LIKE" | "WORK_AREA"; xs: number[]; ys: number[] };
+export type ExclusionRow = { id: string; kind: "EXCLUDE_LIKE" | "WORK_AREA" | "ROOM_SPLIT"; xs: number[]; ys: number[] };
 type Saved = ActionResultWith<{ ids: string[] }>;
 
 /**
@@ -20,7 +20,7 @@ export function exclusionUndoEntry(
 ): UndoEntry {
   let id = row.id;
   return {
-    label: row.kind === "WORK_AREA" ? "Draw work area" : "Exclude walls",
+    label: row.kind === "WORK_AREA" ? "Draw work area" : row.kind === "ROOM_SPLIT" ? "Split area" : "Exclude walls",
     inPlace: true,
     undo: async () => {
       const result = await ports.remove(id);

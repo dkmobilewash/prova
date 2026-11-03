@@ -6,6 +6,7 @@ vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 const { saveSymbolCountAcrossSheets } = await import("./symbolCount");
 const { sendTakeoffItemsToEstimate } = await import("./takeoffItems");
+const { loadCrossCheckInputs } = await import("@/lib/estimating/estimate-crosschecks-query");
 
 let companyId = "", jobId = "", planId = "";
 beforeAll(async () => {
@@ -46,5 +47,15 @@ describe("a count sent to the estimate", () => {
     await prisma.takeoffMeasurement.updateMany({ where: { item: { jobId, name: "ZZ Troffer" } }, data: { postedAt: new Date() } });
     await sendTakeoffItemsToEstimate(jobId);
     expect(await line()).toBeNull();
+  });
+  it("is not called missing once it has a line, even a line removed by hand", async () => {
+    const sheets = [{ pageNumber: 5, xs: [0.1], ys: [0.1] }];
+    await saveSymbolCountAcrossSheets(jobId, planId, { label: "ZZ Exit Sign", sheets });
+    const named = async () => (await loadCrossCheckInputs(jobId, companyId)).measurements.filter((m) => m.label === "ZZ Exit Sign").length;
+    expect(await named()).toBe(1);
+    await sendTakeoffItemsToEstimate(jobId);
+    expect(await named()).toBe(0);
+    await prisma.jobLineItem.updateMany({ where: { jobId, description: "ZZ Exit Sign" }, data: { isDeleted: true } });
+    expect(await named()).toBe(0);
   });
 });

@@ -71,7 +71,7 @@ import {
 } from "@/lib/takeoff/wallVectors";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
 import { addSheetExclusion, clearSheetExclusions, removeSheetExclusion } from "@/lib/actions/takeoffExclusions";
-import { insideWorkArea, openingsInWorkArea, runAt, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
+import { insideWorkArea, openingsInWorkArea, runAt, splitLinesFrom, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
 import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUndo";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
@@ -150,7 +150,7 @@ import { readFinishSchedule, type FinishSchedule } from "@/lib/takeoff/finishSch
 import { TakeoffDoorsPanel } from "./TakeoffDoorsPanel";
 import { doorsAndWindowsForSheet, type DoorsWindowsResult, type StoredScheduleRow } from "@/lib/takeoff/doorsWindows";
 import { TakeoffDemoPanel } from "./TakeoffDemoPanel";
-import { demoEvidence, demoForSheet, demoSheetTitle, type DemoSheet } from "@/lib/takeoff/demoWalls";
+import { demoEvidence, demoForSheet, demoSheetTitle, notWallDemoSheet, type DemoSheet } from "@/lib/takeoff/demoWalls";
 import { TakeoffSymbolPanel, type AcrossRow, type AcrossState } from "./TakeoffSymbolPanel";
 import { findSymbolsFrom, scaleSymbolTemplate, symbolTemplate, type Box as SymbolBox, type SymbolMatch, type SymbolTemplate } from "@/lib/takeoff/symbolSignature";
 import { sheetInScope, type SheetScope } from "@/lib/takeoff/symbolScope";
@@ -788,6 +788,8 @@ export function TakeoffPlanViewer({
   /** "Count like this": the box being dragged, and the matches it found, with the ones the estimator dropped. */
   /** The toolbar's offer was pressed: the form opens with the line already drawn, and Save is still the estimator's. */
   const [scaleOnOpen, setScaleOnOpen] = useState(false);
+  /** The Split area line being dragged, page-width units. */
+  const [splitLine, setSplitLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [symbolBox, setSymbolBox] = useState<SymbolBox | null>(null);
   const [symbols, setSymbols] = useState<{ page: number; matches: SymbolMatch[]; dropped: Set<number>; ms: number; busy: boolean; error: string | null; label?: string | null; tag?: string | null } | null>(null);
   /** The boxed symbol as a template, kept so "Find on all sheets" lays the same one over the rest of the set. */
@@ -1801,6 +1803,18 @@ export function TakeoffPlanViewer({
       setKeyBox({ x1: raw.x, y1: raw.y, x2: raw.x, y2: raw.y });
       return;
     }
+    // ── "SPLIT AREA" DRAGS A LINE ACROSS A ROOM ──
+    if (tool === "split") {
+      if (rooms === null || roomsOnPage !== pageNumber) {
+        setFindError("Find the rooms on this sheet first, then drag a line across one.");
+        return;
+      }
+      const raw = pointAt(event);
+      if (!raw) return;
+      event.preventDefault();
+      setSplitLine({ x1: raw.x, y1: raw.y, x2: raw.x, y2: raw.y });
+      return;
+    }
     // ── "COUNT LIKE THIS" DRAGS A BOX ROUND ONE SYMBOL ──
     if (tool === "symbol") {
       const raw = pointAt(event);
@@ -2650,6 +2664,7 @@ export function TakeoffPlanViewer({
       drawn: sheet?.measurements ?? [],
       segments: detected === null ? [] : detected.segments.map(inPageWidthUnits(detected.widthPt)),
       doorLeaves: openings?.page === pageNumber ? openings.result.doors.map((d) => ({ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y })) : [],
+      splits: splitLinesFrom(exclusionRowsRef.current),
       feetPerUnit,
       text: wordsRef.current,
       widthPt: pageSize.widthPt,
@@ -2744,12 +2759,17 @@ export function TakeoffPlanViewer({
    * Quiet, because only a Find somebody pressed opens the results rail: below
    * 1280 px that rail is a drawer, and opening it here took the next click.
    */
-  async function afterExclusionChange(result: { ok: boolean; error?: string }, next: ExclusionRow[]) {
+  async function afterExclusionChange(result: { ok: boolean; error?: string }, next: ExclusionRow[], kind?: ExclusionRow["kind"]) {
     if (!result.ok) {
       setFindError(result.error ?? "That did not save. Try again.");
       return;
     }
     putExclusionRows(next);
+    // A split moves no wall, so the rooms are found again and the walls left alone.
+    if (kind === "ROOM_SPLIT") {
+      if (rooms !== null && roomsOnPage === pageNumber) await onFindRooms();
+      return;
+    }
     findQueue.current = findQueue.current.then(async () => {
       quietFind.current = true;
       try {
@@ -2777,15 +2797,15 @@ export function TakeoffPlanViewer({
           remove: (id) => removeSheetExclusion(jobId, pageId, id),
           add: (r) => addSheetExclusion(jobId, pageId, r.kind, r.xs, r.ys),
           removed: async (result, id) => {
-            if (here()) void afterExclusionChange(result, exclusionRowsRef.current.filter((r) => r.id !== id));
+            if (here()) void afterExclusionChange(result, exclusionRowsRef.current.filter((r) => r.id !== id), kind);
           },
           added: async (result, r) => {
-            if (here()) void afterExclusionChange(result, [...exclusionRowsRef.current, r]);
+            if (here()) void afterExclusionChange(result, [...exclusionRowsRef.current, r], kind);
           },
         }),
       );
     }
-    await afterExclusionChange(saved, [...exclusionRowsRef.current, row]);
+    await afterExclusionChange(saved, [...exclusionRowsRef.current, row], kind);
   }
 
   async function onExcludeAt(at: { x: number; y: number }) {
@@ -2821,12 +2841,12 @@ export function TakeoffPlanViewer({
   async function onUndoExclusion(kind: ExclusionRow["kind"]) {
     const last = exclusionRowsRef.current.filter((r) => r.kind === kind).at(-1);
     if (!sheet || last === undefined) return;
-    await afterExclusionChange(await removeSheetExclusion(jobId, sheet.id, last.id), exclusionRowsRef.current.filter((r) => r.id !== last.id));
+    await afterExclusionChange(await removeSheetExclusion(jobId, sheet.id, last.id), exclusionRowsRef.current.filter((r) => r.id !== last.id), kind);
   }
 
   async function onClearExclusions(kind: ExclusionRow["kind"]) {
     if (!sheet) return;
-    await afterExclusionChange(await clearSheetExclusions(jobId, sheet.id, kind), exclusionRowsRef.current.filter((r) => r.kind !== kind));
+    await afterExclusionChange(await clearSheetExclusions(jobId, sheet.id, kind), exclusionRowsRef.current.filter((r) => r.kind !== kind), kind);
   }
 
   async function onFindWalls() {
@@ -3574,7 +3594,7 @@ export function TakeoffPlanViewer({
           {finding ? "Reading the lines…" : "Find the walls"}
         </button>
         {/* Only on a sheet that says it is demolition, and it stays on the toolbar with no scale, with the title saying why it waits. */}
-        {(demoOnPage === pageNumber || demoSheetTitle(sheetLabelByPage[pageNumber] ?? sheet?.label) || /demolition/i.test(takeoffVerdict?.why ?? "")) && (
+        {!notWallDemoSheet(sheetLabelByPage[pageNumber] ?? sheet?.label) && (demoOnPage === pageNumber || demoSheetTitle(sheetLabelByPage[pageNumber] ?? sheet?.label) || /demolition/i.test(takeoffVerdict?.why ?? "")) && (
           <button
             type="button"
             onClick={onFindDemolition}
@@ -3890,6 +3910,7 @@ export function TakeoffPlanViewer({
           feet={found === null ? null : found.reduce((sum, group) => sum + group.feet, 0)}
           aside={userAside}
           excludes={exclusionRows.filter((r) => r.kind === "EXCLUDE_LIKE").length}
+          splits={exclusionRows.filter((r) => r.kind === "ROOM_SPLIT").length}
           workAreas={exclusionRows.filter((r) => r.kind === "WORK_AREA").length}
           readOnly={readOnly}
           onUndo={(kind) => void onUndoExclusion(kind)}
@@ -4555,6 +4576,11 @@ export function TakeoffPlanViewer({
                   const raw = pointAt(event);
                   if (raw) setSymbolBox({ ...symbolBox, x2: raw.x, y2: raw.y });
                 }
+                if (splitLine !== null) {
+                  const raw = pointAt(event);
+                  if (raw) setSplitLine({ ...splitLine, x2: raw.x, y2: raw.y });
+                  return;
+                }
                 if (keyBox !== null) {
                   const raw = pointAt(event);
                   if (raw) setKeyBox({ ...keyBox, x2: raw.x, y2: raw.y });
@@ -4574,6 +4600,12 @@ export function TakeoffPlanViewer({
                 setEditDraft(moveVertex(editDraft.xs, editDraft.ys, draggingVertex, point));
               }}
               onPointerUp={() => {
+                if (splitLine !== null) {
+                  const line = splitLine;
+                  setSplitLine(null);
+                  if (Math.hypot(line.x2 - line.x1, line.y2 - line.y1) > 0.002) void addExclusion("ROOM_SPLIT", [line.x1, line.x2], [line.y1, line.y2]);
+                  return;
+                }
                 if (symbolBox !== null) {
                   const box = symbolBox;
                   setSymbolBox(null);
@@ -4920,6 +4952,9 @@ export function TakeoffPlanViewer({
               )}
               {/* "Count like this": the box being dragged, then every match as a
                   footprint. A click on a match drops it from the count. */}
+              {[...splitLinesFrom(exclusionRows), ...(splitLine === null ? [] : [splitLine])].map((line, i) => (
+                <line key={i} data-takeoff="split-line" x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke="#2563eb" strokeWidth={STROKE_PX} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
+              ))}
               {symbolBox !== null && (
                 <rect
                   data-takeoff="symbol-box"

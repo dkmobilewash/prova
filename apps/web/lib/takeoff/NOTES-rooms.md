@@ -1063,3 +1063,9 @@ The stage finds rooms from stored runs only, because raw pairings are not kept, 
 ## One path for a sheet's rooms (2026-11-01)
 
 `sheetRooms` is the only way to a sheet's rooms: the boundary, the doors that seal it, and the split. The viewer and the whole-set stage both call it, because each had grown its own copy and they disagreed on what they sealed and split. Compared directly: Joplin 70 rooms on both with the same 58 numbers, Baker 12 with the same 11, floor within 3 sf.
+
+## Split area (2026-11-01)
+
+Joplin's dining, kitchen and halls are one open area on the drawing, and Diego's call is that the finder keeps them as one. The estimator divides them with the Split area tool: drag a line across the region. It is a `ROOM_SPLIT` row on `TakeoffSheetExclusion`, so it is saved with the sheet, undoable and removable, and it measures nothing. `sheetRooms` draws it as a seal, run 1 ft past each end so a line stopped short still meets a wall. Each part then takes the tag inside it and joins the schedule by itself. A whole-set rerun honours it.
+
+Saving rooms now replaces the sheet's unposted room rows, because the old rows plus the parts would double the area.

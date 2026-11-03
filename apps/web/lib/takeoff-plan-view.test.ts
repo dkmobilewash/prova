@@ -30,7 +30,7 @@ describe("the takeoff viewer's tool list", () => {
     // THREE MORE SINCE THIS WAS WRITTEN, and the order on the row is the
     // order of work: move, scale, then the three that CREATE a measurement,
     // then the two that change one that already exists.
-    const expected: ToolId[] = ["pan", "calibrate", "linear", "area", "rect", "count", "symbol", "edit", "cutout", "exclude", "workarea"];
+    const expected: ToolId[] = ["pan", "calibrate", "linear", "area", "rect", "count", "symbol", "edit", "cutout", "exclude", "split", "workarea"];
     expect(ids).toEqual(expected);
   });
 
@@ -79,8 +79,8 @@ describe("the takeoff viewer's tool list", () => {
     // `symbol` ("Count like this") saves COUNT rows too — from its own panel,
     // one point per kept match, through the same action a clicked count uses —
     // so the capture layer's `kindOf` knows nothing of it and returns null.
-    // `exclude` and `workarea` write a sheet exclusion, never a measurement: not a quantity.
-    const NO_KIND: ToolId[] = ["pan", "calibrate", "edit", "cutout", "symbol", "exclude", "workarea"];
+    // `exclude`, `split` and `workarea` write a sheet exclusion, never a measurement: not a quantity.
+    const NO_KIND: ToolId[] = ["pan", "calibrate", "edit", "cutout", "symbol", "split", "exclude", "workarea"];
     const creating = ids.filter((id) => !NO_KIND.includes(id));
     expect(creating).toEqual(["linear", "area", "rect", "count"]);
 
