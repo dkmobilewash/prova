@@ -62,3 +62,13 @@ export function isHeldRun(run: Line, held: readonly Line[]): boolean {
   const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
   return held.some((h) => near(h.x1, run.x1) && near(h.y1, run.y1) && near(h.x2, run.x2) && near(h.y2, run.y2));
 }
+
+/**
+ * The same run on the screen and on the job, within a millionth of the page
+ * width and either way round: the viewer's find and the stored walls are two
+ * detections, and an exact match let a review D miss the wall it was dropping.
+ */
+export function sameRun(a: Line, b: Line, tolerance = 1e-6): boolean {
+  const near = (p: number, q: number) => Math.abs(p - q) <= tolerance;
+  return (near(a.x1, b.x1) && near(a.y1, b.y1) && near(a.x2, b.x2) && near(a.y2, b.y2)) || (near(a.x1, b.x2) && near(a.y1, b.y2) && near(a.x2, b.x1) && near(a.y2, b.y1));
+}

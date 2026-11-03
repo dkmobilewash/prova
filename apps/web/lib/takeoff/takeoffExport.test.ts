@@ -46,6 +46,10 @@ describe("takeoffExport", () => {
       { sheet: "A501 — DETAILS", status: "skipped", why: "not a floor plan", wallFeet: null, rooms: null, existingWork: "" },
     ]);
   });
+  it("a sheet another of its level counts says so, with its feet", () => {
+    const one = takeoffExport({ ...input(null), summary: [{ pageNumber: 1, label: "A100 — OVERALL FLOOR PLAN", status: { kind: "walls" as const, groups: 3, feet: 640, notCounted: "same level as A101" as const } }] });
+    expect(one.sheets[0]).toMatchObject({ status: "not counted", why: "same level as A101", wallFeet: 640 });
+  });
   it("writes CSV that a spreadsheet reads back, and two tabs", () => {
     const result = takeoffExport(input(null));
     const csv = exportCsv([{ item: 'Wall "A", 2 hr', sheet: "A101", quantity: 5, unit: "lin ft", source: "found", note: "" }]);
