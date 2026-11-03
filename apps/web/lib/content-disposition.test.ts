@@ -14,3 +14,10 @@ describe("a downloaded file's name in a header", () => {
     expect(value.split('filename="')[1].split('"')[0]).toBe("abSet-Cookie: x.pdf");
   });
 });
+
+describe("the shared spreadsheet download", () => {
+  it("serves a job name with an em dash", async () => {
+    const { sheetResponse } = await import("./sheet-export");
+    expect(() => sheetResponse("a", "csv", "Change order log Tower — North 2026-11-03.csv")).not.toThrow();
+  });
+});

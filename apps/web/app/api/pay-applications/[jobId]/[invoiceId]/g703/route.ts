@@ -1,10 +1,10 @@
-import { contentDisposition } from "@/lib/content-disposition";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiContext } from "@/lib/auth";
 import { g703Csv, g703FileName, g703Workbook } from "@/lib/billing/g703-export";
 import { payApplicationDocument } from "@/lib/billing/pay-application-document";
 import { loadPayApplication } from "@/lib/pay-application-query";
 import { can } from "@/lib/permissions";
+import { sheetResponse } from "@/lib/sheet-export";
 import { viewerTimeZone } from "@/lib/viewerToday";
 
 export const dynamic = "force-dynamic";
@@ -25,16 +25,5 @@ export async function GET(
   const doc = payApplicationDocument(view, context.company, await viewerTimeZone());
 
   const format = new URL(request.url).searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
-  const body = format === "xlsx" ? new Uint8Array(g703Workbook(doc)) : g703Csv(doc);
-  return new NextResponse(body, {
-    headers: {
-      "Content-Type":
-        format === "xlsx"
-          ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          : "text/csv; charset=utf-8",
-      "Content-Disposition": contentDisposition("attachment", g703FileName(doc, format)),
-      "Cache-Control": "private, no-store",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+  return sheetResponse(format === "xlsx" ? g703Workbook(doc) : g703Csv(doc), format, g703FileName(doc, format));
 }

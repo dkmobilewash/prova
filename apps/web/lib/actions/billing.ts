@@ -31,7 +31,7 @@ import { issueInvoiceNumber } from "@/lib/billing/invoice-number";
 // writer of this table — issue #280. It was private to this file, which is
 // exactly how that action came to keep its own MAX(versionNumber) + 1.
 import { issueContractDocumentVersion } from "@/lib/billing/contract-document-version";
-import { createRetainageReleaseRecord } from "@/lib/billing/retainage-release";
+import { cents, createRetainageReleaseRecord, isWriteConflict, loadJobRetainage, RELEASE_COLLIDED } from "@/lib/billing/retainage-release";
 import { readPaymentEntry } from "@/lib/billing/payment-entry";
 import { MIN_EARNED_COVERAGE } from "@/lib/company-financials";
 import { payAppEntryError, payAppRowsFromForm, payAppTotal } from "@/lib/pay-application";
@@ -480,6 +480,65 @@ export async function createInvoice(jobId: string, formData: FormData): Promise<
  * production REDACTS thrown Server Action messages, so a refusal that
  * throws shows the user an opaque digest while the $140,000 application
  * they were trying to submit is simply not created, with no explanation. */
+/**
+ * Bills the retainage held: a pay application with no new work and a negative
+ * retainage snapshot giving back what was withheld, so the G702 reads correctly
+ * from the same engine. Retainage to date drops by the amount, and current
+ * payment due is the amount.
+ *
+ * Read and written in one SERIALIZABLE transaction, as a logged release is: two
+ * submits at once cannot both bill the same balance. The amount defaults to all of
+ * it and may be less, for a GC that releases part. It cannot be more, and it
+ * cannot be billed when nothing is held.
+ */
+export async function billRetainage(jobId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);
+  const { company } = context;
+  const job = await assertJobInCompany(jobId, company.id);
+  if (job.status === "ESTIMATE") return actionFail("Contract this job before invoicing it");
+
+  const raw = String(formData.get("amount") ?? "").trim().replace(/[$,]/g, "");
+  if (!/^\d+(\.\d{1,2})?$/.test(raw) || !(Number(raw) > 0)) return actionFail("Enter the retainage to bill, such as 4700.00.");
+  const amountCents = cents(raw);
+  const periodRaw = String(formData.get("periodTo") ?? "").trim();
+  const periodTo = periodRaw ? new Date(`${periodRaw}T00:00:00.000Z`) : null;
+  if (periodTo && Number.isNaN(periodTo.getTime())) return actionFail("Period to has to be a date.");
+  const description = String(formData.get("description") ?? "").trim() || "Retainage release";
+
+  try {
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const held = await loadJobRetainage(tx, jobId);
+        if (held.balanceCents <= 0) return actionFail("No retainage is held on this job, so there is nothing to bill.");
+        if (amountCents > held.balanceCents) {
+          return actionFail(`Only ${formatMoney(held.balanceCents / 100)} is held, so no more than that can be billed.`);
+        }
+        const lines = await tx.jobLineItem.findMany({ where: { jobId, isDeleted: false }, select: { id: true } });
+        if (lines.length === 0) return actionFail("This job has no schedule of values to bill against.");
+        await tx.invoice.create({
+          data: {
+            jobId,
+            number: await issueInvoiceNumber(tx, jobId),
+            description,
+            amount: "0.00",
+            periodTo,
+            retainageWithheld: (-amountCents / 100).toFixed(2),
+            lineItems: { create: lines.map((line) => ({ lineItemId: line.id, thisPeriodBilled: "0.00", materialsStoredValue: "0.00" })) },
+          },
+        });
+        return actionOk;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+    if (result.ok) revalidatePath(`/jobs/${jobId}`);
+    return result;
+  } catch (err) {
+    if (isWriteConflict(err)) return actionFail(RELEASE_COLLIDED);
+    throw err;
+  }
+}
+
 export async function submitPayApplication(jobId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_BILLING")) return actionFail(BILLING_ONLY);

@@ -69,6 +69,8 @@ vi.mock("@prova/db", () => ({
     invoiceCounter: { findUnique: vi.fn(async () => ({ lastNumber: 3 })) },
     timeEntry: { groupBy: vi.fn(async () => []) },
     sentDocument: { findMany: vi.fn(async () => []) },
+    invoice: { findMany: vi.fn(async () => invoices.rows) },
+    retainageRelease: { findMany: vi.fn(async () => []) },
     dailyReportInstalledQuantity: { findMany: vi.fn(async () => []) },
   },
 }));

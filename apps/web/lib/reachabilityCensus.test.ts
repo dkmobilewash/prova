@@ -132,6 +132,11 @@ type Reached =
  * every listed parent is checked.
  */
 const REACHED_FROM: Record<string, Reached> = {
+  "/jobs/[id]/change-order-log": {
+    reason: "The log a sub sends the GC, linked from the change orders card on the Estimate tab.",
+    parents: ["apps/web/components/ChangeOrders.tsx"],
+    needle: "/change-order-log`",
+  },
   "/equipment/rates": {
     reason: "The rates behind a change order's equipment line, linked from Add scope on a draft.",
     parents: ["apps/web/components/EquipmentRatePicker.tsx"],
