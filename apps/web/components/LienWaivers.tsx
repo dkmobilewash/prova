@@ -28,6 +28,8 @@ type IssuePrefill = {
   invoiceId: string;
   amount: number;
   throughDate: string | null;
+  /** Conditional always; final when the application completes the billing. */
+  stage: WaiverStage;
 };
 
 /**
@@ -109,7 +111,7 @@ export function LienWaivers({
           <button
             type="button"
             onClick={() => {
-              setPrefill({ invoiceId: offer.invoiceId, amount: offer.amount, throughDate: offer.throughDate });
+              setPrefill({ invoiceId: offer.invoiceId, amount: offer.amount, throughDate: offer.throughDate , stage: offer.stage });
               setOpen(true);
             }}
             className={`shrink-0 ${secondaryActionClass}`}
@@ -369,7 +371,7 @@ function IssueWaiverForm({
   // form starts where it always did. The excepted amount starts EMPTY in
   // both cases.
   const [condition, setCondition] = useState<WaiverCondition>("CONDITIONAL");
-  const [stage, setStage] = useState<WaiverStage>("PROGRESS");
+  const [stage, setStage] = useState<WaiverStage>(prefill?.stage ?? "PROGRESS");
   const [invoiceId, setInvoiceId] = useState(prefill?.invoiceId ?? "");
   const [excepted, setExcepted] = useState("");
 

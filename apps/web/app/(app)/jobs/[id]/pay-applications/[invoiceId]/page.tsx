@@ -6,6 +6,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { PrintButton } from "@/components/PrintButton";
 import { G702DownloadButton } from "@/components/G702DownloadButton";
 import { secondaryActionClass } from "@/components/emptyStateStyles";
+import { DownloadButton } from "@/components/DownloadButton";
 import { money } from "@/lib/money";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
@@ -103,12 +104,18 @@ export default async function PayApplicationPage({
               {isPayApplication && <G702DownloadButton document={doc} />}
               {isPayApplication && (
                 <>
-                  <a href={`/api/pay-applications/${job.id}/${invoice.id}/g703?format=csv`} className={secondaryActionClass}>
-                    G703 as CSV
-                  </a>
-                  <a href={`/api/pay-applications/${job.id}/${invoice.id}/g703?format=xlsx`} className={secondaryActionClass}>
-                    G703 as Excel
-                  </a>
+                  <DownloadButton
+                    href={`/api/pay-applications/${job.id}/${invoice.id}/g703?format=csv`}
+                    label="G703 as CSV"
+                    fallbackName="G703.csv"
+                    className={secondaryActionClass}
+                  />
+                  <DownloadButton
+                    href={`/api/pay-applications/${job.id}/${invoice.id}/g703?format=xlsx`}
+                    label="G703 as Excel"
+                    fallbackName="G703.xlsx"
+                    className={secondaryActionClass}
+                  />
                 </>
               )}
               <PrintButton />

@@ -4097,6 +4097,13 @@ export function TakeoffPlanViewer({
             : ` flex-col${answerKey === undefined ? " xl:items-start" : ""}`
         }`}
       >
+      {/* Opening Quantities before anything is found showed nothing, and in the
+          narrow-screen drawer only its Close button. Say what fills it. */}
+      {found === null && panelOpen && (
+        <p className="rounded-md border border-line-card bg-surface p-3 text-xs text-ink-muted xl:w-[23rem] xl:shrink-0" data-takeoff="quantities-empty">
+          No quantities on this sheet yet. Press Find the walls, or measure by hand, and they show here.
+        </p>
+      )}
       {found !== null && panelOpen && (
         <div
           className={`rounded-md border border-line-card bg-surface p-3${

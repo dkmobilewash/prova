@@ -348,6 +348,7 @@ export const billingExclusions: Exclusion[] = [
   { action: "updateJobRetainageTerms", reason: "Contract terms that every later invoice snapshots; edited on the job, deliberately not by prompt." },
   { action: "updateInvoiceStatus", reason: "Where a pay application stands with the GC is evidence set from the row, not proposed." },
   { action: "deletePayment", reason: "T5: deletes are never commands." },
+  { action: "billRetainage", reason: "Creates a pay application a GC is sent, from a form showing the balance held; a person enters the amount and period on the Billing tab." },
   // createRetainageRelease left this list in phase 4d: commands/retainage.ts.
   { action: "deleteRetainageRelease", reason: "T5: deletes are never commands." },
   { action: "disconnectQuickBooks", reason: "Owner administration (T5): a connection an assistant could sever is not a connection." },

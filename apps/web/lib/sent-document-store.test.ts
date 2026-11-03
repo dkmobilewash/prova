@@ -39,7 +39,7 @@ describe("the store switch", () => {
 
   it("serves a download that cannot be cached or rendered in place", () => {
     const headers = sentCopyResponse(new Response("x").body!, 'a"b.pdf').headers;
-    expect(headers.get("content-disposition")).toBe('attachment; filename="ab.pdf"');
+    expect(headers.get("content-disposition")).toBe(`attachment; filename="ab.pdf"; filename*=UTF-8''a%22b.pdf`);
     expect(headers.get("cache-control")).toContain("no-store");
     expect(headers.get("x-content-type-options")).toBe("nosniff");
   });

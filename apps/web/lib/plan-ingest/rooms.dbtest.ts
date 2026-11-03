@@ -37,7 +37,10 @@ describe("rooms after walls", () => {
     await prisma.company.update({ where: { id: companyId }, data: { roomFinderOn: true } });
     expect(await ask()).toEqual({ kind: "skipped", why: "no walls found" });
   });
-  it("WRITES THE ROOM once walls close one, and the summary counts it", async () => {
+  // It reads a PDF and runs the room finder: 0.4-0.7 s on main's CI runs, but
+  // once (#930, 2026-11-03) a cold runner took over 5 s, the default timed out,
+  // and the next test then saw this one's write land late. 30 s still fails a hang.
+  it("WRITES THE ROOM once walls close one, and the summary counts it", { timeout: 30_000 }, async () => {
     // A 30 x 20 ft rectangle of walls, page-width units at 100 ft per unit.
     const runs = [
       { x1: 0.2, y1: 0.2, x2: 0.5, y2: 0.2, thicknessFeet: 0.5 },

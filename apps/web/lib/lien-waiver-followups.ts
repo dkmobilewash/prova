@@ -31,6 +31,9 @@ export interface PayAppForWaiverOffer {
   periodTo: Date | null;
   /** True when any lien waiver row already points at this invoice. */
   hasWaiver: boolean;
+  /** This application completes the billing (lib/billing/closeout-billing.ts),
+   * so the waiver offered is a FINAL one. */
+  final?: boolean;
 }
 
 export interface WaiverOffer {
@@ -42,6 +45,9 @@ export interface WaiverOffer {
   throughDate: string | null;
   /** The sentence the button carries. */
   label: string;
+  /** Always CONDITIONAL: paid against, so nothing is given up before the money
+   * arrives. Progress or final follows the application. */
+  stage: "PROGRESS" | "FINAL";
 }
 
 /** The matching conditional progress waiver to offer, or null when one is
@@ -55,7 +61,8 @@ export function waiverOfferFor(payApp: PayAppForWaiverOffer): WaiverOffer | null
     invoiceNumber: payApp.number,
     amount: Math.round(payApp.currentPaymentDue * 100) / 100,
     throughDate,
-    label: `Issue the conditional progress waiver for application #${payApp.number}: ${money(payApp.currentPaymentDue)}${
+    stage: payApp.final ? "FINAL" : "PROGRESS",
+    label: `Issue the conditional ${payApp.final ? "final" : "progress"} waiver for application #${payApp.number}: ${money(payApp.currentPaymentDue)}${
       throughDate ? ` through ${throughDate}` : ""
     }`,
   };

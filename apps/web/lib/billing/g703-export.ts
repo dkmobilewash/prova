@@ -6,12 +6,11 @@
 // layout goes beside this when a real template arrives, and nothing here guesses
 // at one.
 
-import * as XLSX from "xlsx";
-import { csvCell } from "@/lib/export";
+import { sheetCsv, sheetWorkbook, type SheetCell } from "@/lib/sheet-export";
 import { g702FileName } from "./g702-pdf";
 import type { G702Document, G703Totals } from "./g702";
 
-type Cell = string | number | null;
+type Cell = SheetCell;
 
 export const G703_COLUMNS = [
   "A Item no.",
@@ -56,22 +55,12 @@ export function g703Rows(doc: G702Document): Cell[][] {
   ];
 }
 
-/** Figures stay plain numbers, because a downward correction is negative and the
- * shared cell rule would turn `-500` into text. Only words go through it, and that
- * is what keeps a description reading `=1+1` from running in a spreadsheet. */
-function csvValue(cell: Cell): string {
-  return typeof cell === "number" ? String(cell) : csvCell(cell);
-}
-
 export function g703Csv(doc: G702Document): string {
-  return `${g703Rows(doc).map((row) => row.map(csvValue).join(",")).join("\r\n")}\r\n`;
+  return sheetCsv(g703Rows(doc));
 }
 
-/** Text cells stay text here, so a formula in a description is not run. */
 export function g703Workbook(doc: G702Document): Buffer {
-  const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(g703Rows(doc)), "G703");
-  return XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return sheetWorkbook(g703Rows(doc), "G703");
 }
 
 export function g703FileName(doc: G702Document, format: "csv" | "xlsx"): string {

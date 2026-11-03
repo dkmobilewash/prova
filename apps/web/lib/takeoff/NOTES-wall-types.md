@@ -401,3 +401,10 @@ On a renovation sheet the finder offers existing walls with the new ones, about 
 On training floor plans: unmarked Joplin A-101 and A-111, Topeka, MHK, Camp Bow Wow, SW S220; marked Baker A100 and A101, E Street A1.1 and A2.1, Bunkie, Supreme Court A111, NG McAllen, glen-hazel. Camp Bow Wow is unmarked although the earlier scorecard grouped it oddly; nothing in its words says existing.
 
 After Find the walls a marked sheet shows the prompt with Work area and Exclude like this until either is used. Send to estimate still sends, and names the marked sheets measured with neither. The inventory stores the marks (`PlanSheetText.renovationMarks`) so Send and the whole-set summary can see them without reading the PDF again. A plan inventoried before this column has empty marks until it is read again.
+## The takeoff download (2026-11-03)
+
+"Download Excel" and "Download CSV" beside Send to estimate. The server reads (`loadTakeoffExport`), the browser builds the file, and nothing is stored. One row per item, sheet and source; rooms one by one; doors and windows by schedule mark where the stage matched one, or by width to the inch; finish lines; and a Sheets tab with every sheet, counted or skipped and why, and the words that say it shows existing work.
+
+On training sets, through the whole-set flow: Baker 51 rows, walls 698 lin ft, 12 doors by mark, 9 windows; Joplin 154 rows, 3,047 lin ft, rooms 11,768 sf, finish floor 8,346 sf, 41 doors by width (no door schedule read). Both workbooks open and read back.
+
+Door marks are stored by the whole-set stage from this change on (`openings` now carries kind and mark). A plan run before has openings with no kind, which read as doors with no mark.
