@@ -98,6 +98,8 @@ describe.skipIf(DIR === "" || LABELS === "" || process.env.TAKEOFF_WALL_MODEL ==
           longestFirst: simulate(reviewOrder(entries, "longest")),
           likelyJunkFeet: simulate(reviewOrder(entries, "likely junk feet")),
           byCut,
+          // Every run, for merging a set's sheets into one queue afterwards.
+          each: runs.map((r, at) => ({ feet: +r.lengthFeet.toFixed(1), junk: junk[at], held: heldNow.has(r), score: scores[at] ?? null })),
         });
       }
     }

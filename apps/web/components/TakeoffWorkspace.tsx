@@ -39,6 +39,9 @@ import {
   undoOnce,
 } from "@/lib/takeoff/undoStack";
 import type { TakeoffWorkspaceClientData } from "@/lib/takeoff/workspaceLoad";
+import { TakeoffWallReview } from "@/components/TakeoffWallReview";
+import { reviewWall } from "@/lib/actions";
+import { setReviewProgress, type SetReviewItem } from "@/lib/takeoff/wallReview";
 
 /**
  * ── THE PLAN, AS LARGE AS THE SCREEN WILL ALLOW ──
@@ -193,6 +196,58 @@ export function TakeoffWorkspace({
   const [railWidth, setRailWidth] = useState(RAIL_DEFAULT);
   const [bookmarks, setBookmarks] = useState<ReadonlySet<number>>(new Set());
   const [page, setPage] = useState(openPage);
+  // ── REVIEW WALLS ACROSS THE SET: one queue, every counted sheet. See `wallReview.ts`. ──
+  const [setReview, setSetReview] = useState<{ queue: SetReviewItem[]; decided: Map<string, "keep" | "drop">; history: { id: string; was: { itemId: string | null; label: string | null } | null }[] } | null>(null);
+  const [setReviewBusy, setSetReviewBusy] = useState(false);
+  const [setReviewError, setSetReviewError] = useState<string | null>(null);
+  const setCurrent = setReview === null ? null : (setReview.queue.find((item) => !setReview.decided.has(item.measurementId)) ?? null);
+  // Each run's own sheet, so the set review jumps between sheets by itself.
+  useEffect(() => {
+    if (setCurrent !== null) setPage(setCurrent.pageNumber);
+  }, [setCurrent]);
+  const onSetDecide = useCallback(
+    async (kind: "keep" | "drop") => {
+      if (setReview === null || setCurrent === null) return;
+      setSetReviewBusy(true);
+      setSetReviewError(null);
+      try {
+        let was: { itemId: string | null; label: string | null } | null = null;
+        if (kind === "drop" || setCurrent.held) {
+          const saved = await reviewWall(jobId, setCurrent.measurementId, kind);
+          if (!saved.ok) {
+            setSetReviewError(saved.error);
+            return;
+          }
+          was = saved.value;
+        }
+        const decided = new Map(setReview.decided).set(setCurrent.measurementId, kind);
+        setSetReview({ ...setReview, decided, history: [...setReview.history, { id: setCurrent.measurementId, was }] });
+      } finally {
+        setSetReviewBusy(false);
+      }
+    },
+    [jobId, setReview, setCurrent],
+  );
+  const onSetUndo = useCallback(async () => {
+    const last = setReview?.history.at(-1);
+    if (setReview === null || last === undefined) return;
+    setSetReviewBusy(true);
+    setSetReviewError(null);
+    try {
+      if (last.was !== null) {
+        const saved = await reviewWall(jobId, last.id, "restore", last.was);
+        if (!saved.ok) {
+          setSetReviewError(saved.error);
+          return;
+        }
+      }
+      const decided = new Map(setReview.decided);
+      decided.delete(last.id);
+      setSetReview({ ...setReview, decided, history: setReview.history.slice(0, -1) });
+    } finally {
+      setSetReviewBusy(false);
+    }
+  }, [jobId, setReview]);
 
   /**
    * ── WHICH ITEM IS BEING DRAWN WITH ──
@@ -1199,6 +1254,16 @@ export function TakeoffWorkspace({
               >
                 Sheet facts
               </button>
+              {!phone && data.wallReviewQueue.length > 0 && setReview === null && (
+                <button
+                  type="button"
+                  onClick={() => setSetReview({ queue: data.wallReviewQueue, decided: new Map(), history: [] })}
+                  className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail"
+                  data-takeoff="review-set"
+                >
+                  Review walls
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => rememberPanel(!panelOpen)}
@@ -1343,6 +1408,27 @@ export function TakeoffWorkspace({
           data-takeoff="canvas-region"
         >
           <div className="relative flex min-h-0 flex-1 flex-col">
+            {setReview !== null && (
+              <TakeoffWallReview
+                counter={setReviewProgress(setReview.queue, setReview.decided)}
+                current={
+                  setCurrent === null
+                    ? null
+                    : {
+                        feet: setCurrent.lengthFeet,
+                        why: `sheet ${data.sheetLabelByPage[setCurrent.pageNumber]?.split(" · ")[0] ?? `p${setCurrent.pageNumber}`} · ${
+                          setCurrent.held ? "held off the estimate, to confirm" : setCurrent.score === null ? "no model score" : `model score ${(Math.floor(setCurrent.score * 100) / 100).toFixed(2)}`
+                        }`,
+                      }
+                }
+                busy={setReviewBusy}
+                error={setReviewError}
+                onKeep={() => void onSetDecide("keep")}
+                onDrop={() => void onSetDecide("drop")}
+                onUndo={() => void onSetUndo()}
+                onClose={() => setSetReview(null)}
+              />
+            )}
             {summaryOpen && !phone && (
               <TakeoffSheetSummary
                 items={items}
@@ -1496,6 +1582,7 @@ export function TakeoffWorkspace({
               readOnly={phone}
               onMeasurementSaved={onMeasurementSaved}
               onUndoable={onUndoable}
+              focusRun={setCurrent}
               activeItemId={activeItemId}
             />
           </div>

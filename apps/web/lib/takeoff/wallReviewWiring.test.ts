@@ -21,3 +21,20 @@ describe("Review walls in the viewer", () => {
     expect(viewer).toMatch(/viewOfRun\(reviewRun, pageSize/);
   });
 });
+
+describe("Review walls across the set", () => {
+  const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+  it("the stage stores each run's score with the walls, and the store reads it back", () => {
+    expect(read("./detectWallsForCalibration.ts")).toContain("offered.offeredRuns[at]!.modelScore = score");
+    const store = read("./wallProposal.ts");
+    expect(store).toContain("stored.modelScore = run.modelScore");
+  });
+  it("the load builds one queue over every sheet, and the workspace reviews it and jumps to each sheet", () => {
+    expect(read("./workspaceLoad.ts")).toContain("wallReviewQueue: setReviewOrder(wallReviewItems)");
+    const ws = read("../../components/TakeoffWorkspace.tsx");
+    expect(ws).toContain("if (setCurrent !== null) setPage(setCurrent.pageNumber);");
+    expect(ws).toContain("focusRun={setCurrent}");
+    expect(ws).toContain("await reviewWall(jobId, setCurrent.measurementId, kind)");
+    expect(ws).toContain('await reviewWall(jobId, last.id, "restore", last.was)');
+  });
+});

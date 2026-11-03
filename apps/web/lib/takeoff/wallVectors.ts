@@ -120,6 +120,8 @@ export type StrokeSegment = {
 
 /** A wall this module is willing to claim: the centreline, in page points. */
 export type WallCandidate = {
+  /** The wall model's score for this run at detection, 0 to 1; absent with no model. See `wallReview.ts`. */
+  modelScore?: number;
   /** Centreline start and end — what an estimator would have traced. */
   x1: number;
   y1: number;
