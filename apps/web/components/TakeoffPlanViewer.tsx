@@ -320,6 +320,7 @@ export function TakeoffPlanViewer({
   ceilingPages = [],
   onMeasurementSaved,
   onUndoable,
+  focusRun = null,
   activeItemId = null,
 }: {
   jobId: string;
@@ -447,6 +448,8 @@ export function TakeoffPlanViewer({
    */
   /** A change the workspace's top-bar undo can take back. */
   onUndoable?: (entry: UndoEntry) => void;
+  /** A run the workspace's set-wide review is on, shown and zoomed to on its page. */
+  focusRun?: { pageNumber: number; x1: number; y1: number; x2: number; y2: number } | null;
   onMeasurementSaved?: (saved: { id: string; kind: MeasurementKind }) => void;
   /**
    * The takeoff item new measurements belong to, when a host has one selected.
@@ -2403,7 +2406,9 @@ export function TakeoffPlanViewer({
     }
   }
   const reviewAt = review === null ? null : currentRun(review);
-  const reviewRun = reviewAt === null ? null : (runsRef.current[reviewAt] ?? null);
+  const sheetReviewRun = reviewAt === null ? null : (runsRef.current[reviewAt] ?? null);
+  // The sheet's own review first; else the set review's run, on its page.
+  const reviewRun = sheetReviewRun ?? (focusRun !== null && focusRun.pageNumber === pageNumber ? focusRun : null);
   // Each run in turn, zoomed and centred, so the reviewer never has to look for it.
   useEffect(() => {
     const frame = frameRef.current;
@@ -4001,12 +4006,12 @@ export function TakeoffPlanViewer({
         <TakeoffWallReview
           counter={reviewCounter(review)}
           current={
-            reviewRun === null || reviewAt === null
+            sheetReviewRun === null || reviewAt === null
               ? null
               : {
-                  feet: reviewRun.lengthFeet,
+                  feet: sheetReviewRun.lengthFeet,
                   why:
-                    measurementForRun(reviewRun)?.label === HELD_LABEL
+                    measurementForRun(sheetReviewRun)?.label === HELD_LABEL
                       ? "held off the estimate, to confirm"
                       : reviewScores.current[reviewAt] == null
                         ? "no model score"

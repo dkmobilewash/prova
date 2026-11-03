@@ -9,6 +9,7 @@ import { detectForSheet, offeredCandidates } from "./offeredCandidates";
 import { userExclusionsFromRows } from "./userExclusions";
 import type { ScoredPairing } from "./demotedRuns";
 import { runsHeldOffEstimate } from "./estimateHold";
+import { runScores } from "./wallReview";
 import { loadWallModel } from "./wallModelFile";
 import { SheetTooDenseError, type StrokeSegment, type WallCandidate } from "./wallVectors";
 import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
@@ -301,6 +302,12 @@ export async function detectWallsForCalibration(
       const company = await prisma.company.findUnique({ where: { id: target.companyId }, select: { demotedWallsOff: true } });
       const config = company?.demotedWallsOff === false ? loadWallModel(process.env) : null;
       const held = config === null ? [] : runsHeldOffEstimate(config.model, offered.offeredRuns, scored, target.feetPerUnit, raster !== null);
+      // Each run's score rides into the stored walls, so a set-wide review can order every sheet's runs.
+      if (config !== null && raster === null) {
+        runScores(config.model, offered.offeredRuns, scored, target.feetPerUnit).forEach((score, at) => {
+          if (score !== null) offered.offeredRuns[at]!.modelScore = score;
+        });
+      }
       target.onBoundary({ pairings, segments: detected.found.inUnits, held });
     }
     const found = { ...detected.found, walls: offered.offeredRuns, groups: detected.found.regroup(offered.offeredRuns) };
