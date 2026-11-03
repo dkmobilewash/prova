@@ -611,3 +611,29 @@ test("G3 Irving p24: 3/16\" from 18 doors, nothing applied until Confirm", async
   await hook("confirm-suggested-scale").click();
   await expect(button("Line")).toBeEnabled({ timeout: 20_000 });
 });
+
+// ── The takeoff download on the job's Takeoff tab (Chrome round 5, steps 21-22) ──
+const stemOf = (name: string) => `${name.replace(/[^\w-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "job"}-takeoff`;
+
+test("X2 the Takeoff tab downloads Excel and CSV, named after the job", async () => {
+  const job = await prisma.job.findUniqueOrThrow({ where: { id: SETS.baker.id }, select: { name: true } });
+  await page.goto(`/jobs/${SETS.baker.id}/takeoff`);
+  await expectHealthy(page, "baker takeoff tab", { monitor });
+  const [xlsx] = await Promise.all([page.waitForEvent("download"), hook("export-xlsx").click()]);
+  expect(xlsx.suggestedFilename()).toBe(`${stemOf(job.name)}.xlsx`);
+  expect(XLSX.read(readFileSync(await xlsx.path())).SheetNames).toEqual(["Quantities", "Sheets"]);
+  const [csv] = await Promise.all([page.waitForEvent("download"), hook("export-csv").click()]);
+  expect(csv.suggestedFilename()).toBe(`${stemOf(job.name)}.csv`);
+  expect(readFileSync(await csv.path(), "utf8").split("\n")[0]).toBe("Item,Sheet,Quantity,Unit,Source,Note");
+});
+
+test("X3 on a job with nothing measured, either button says so", async () => {
+  const user = await prisma.user.findFirstOrThrow({ where: { email: PERSONAS.main.email } });
+  const contact = await prisma.contact.findFirstOrThrow({ where: { companyId: user.companyId } });
+  const id = "zz-click-empty";
+  if (!(await prisma.job.findUnique({ where: { id } }))) await prisma.job.create({ data: { id, companyId: user.companyId, contactId: contact.id, name: "ZZ Click Empty", status: "ESTIMATE" } });
+  await page.goto(`/jobs/${id}/takeoff`);
+  await expectHealthy(page, "empty takeoff tab", { monitor });
+  await hook("export-xlsx").click();
+  await says("Nothing is measured on this job yet.");
+});

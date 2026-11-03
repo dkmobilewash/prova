@@ -160,6 +160,7 @@ import { demoEvidence, demoForSheet, demoSheetTitle, notWallDemoSheet, type Demo
 import { TakeoffSymbolPanel, type AcrossRow, type AcrossState } from "./TakeoffSymbolPanel";
 import { findSymbolsFrom, scaleSymbolTemplate, symbolTemplate, type Box as SymbolBox, type SymbolMatch, type SymbolTemplate } from "@/lib/takeoff/symbolSignature";
 import { sheetInScope, type SheetScope } from "@/lib/takeoff/symbolScope";
+import { acrossSheet } from "@/lib/takeoff/symbolAcross";
 import { scaleFromPrinted } from "@/lib/takeoff/scaleFromPrinted";
 /** One scanned page's stored read, as the raster route and `rasterByPage` both give it. */
 type RasterRead = { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[]; widthPt?: number; heightPt?: number; printedScale?: string | null };
@@ -1567,19 +1568,9 @@ export function TakeoffPlanViewer({
         const number = sheetNumberFrom({ pageNumber: n, widthPt: W, heightPt: viewport.height, rotation: 0, items: words } as never).sheetNumber;
         if (!sheetInScope(scope, tpl.number, number)) { setAcross(state); continue; }
         const { segments } = await segmentsFromOpenPage(page as never, pdfjs as never, n, layers as never);
-        const segs = segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W }));
-        const text = words.map((w) => ({ x: w.x / W, y: (w.y - w.height) / W, width: w.width / W, height: w.height / W, str: w.str }));
-        const paper = scaleSymbolTemplate(tpl.made, tpl.widthPt / W);
-        let best = { matches: findSymbolsFrom(segs, text, paper).matches, scaling: "paper" };
-        const printed = scaleFromPrinted(printedScalesOnPage(words), W, viewport.height)?.declaredDistanceFeet ?? null;
-        if (tpl.fpu !== null && printed !== null && Math.abs(tpl.fpu / printed - 1) > 0.05) {
-          const model = findSymbolsFrom(segs, text, scaleSymbolTemplate(tpl.made, (tpl.widthPt / W) * (tpl.fpu / printed))).matches;
-          if (model.length > best.matches.length) best = { matches: model, scaling: `at this sheet's scale (x${(tpl.fpu / printed).toFixed(2)})` };
-        }
-        const row: AcrossRow = {
-          page: n, number, count: best.matches.length, ms: performance.now() - t0, scaling: best.scaling,
-          xs: best.matches.map((m) => (m.box.x1 + m.box.x2) / 2), ys: best.matches.map((m) => (m.box.y1 + m.box.y2) / 2),
-        };
+        const sheet = acrossSheet({ tpl, scope, pageNumber: n, words, segments, widthPt: W, heightPt: viewport.height });
+        if (sheet === null) { setAcross(state); continue; }
+        const row: AcrossRow = { page: n, ms: performance.now() - t0, ...sheet };
         (page as { cleanup: () => void }).cleanup();
         state = { ...state, rows: [...state.rows, row].sort((a, b) => a.page - b.page) };
         setAcross(state);

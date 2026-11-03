@@ -1,7 +1,8 @@
 import { roomBoundary } from "./roomBoundary";
 import { roomSeals } from "./roomSeals";
-import { roomsClosedAtDrawnLines, roomsSplitAtDrawnWalls, type RoomsFromWallsResult } from "./roomsFromWalls";
-import type { PositionedText } from "./roomTags";
+import { roomsClosedAtDrawnLines, roomsSplitAtDrawnWalls, type RoomFromWalls, type RoomsFromWallsResult } from "./roomsFromWalls";
+import { SMALLEST_ROOM_SQFT } from "./rooms";
+import type { PositionedText, RoomTag } from "./roomTags";
 import type { StrokeSegment } from "./wallVectors";
 import { pointInRing } from "./drawTools";
 
@@ -43,17 +44,24 @@ export function sheetRooms(input: {
     const base = { walls, feetPerUnit, text: input.text, widthPt: input.widthPt, doorSeals };
     return roomsClosedAtDrawnLines(roomsSplitAtDrawnWalls(base, lines), base, lines);
   };
-  const parts = found([...seals, ...splits]);
-  return splits.length === 0 ? parts : exactParts(parts, found(seals), splits, feetPerUnit);
+  const whole = found(seals);
+  return splits.length === 0 ? whole : splitRooms(whole, splits, feetPerUnit);
 }
 
 type Ring = { xs: number[]; ys: number[] };
+type Point = { x: number; y: number };
 
-/** A ring cut in two by a line crossing it exactly twice, or null. */
-export function cutRing(ring: Ring, line: Line): [Ring, Ring] | null {
+const areaOf = (r: Ring) => Math.abs(r.xs.reduce((sum, x, i) => sum + x * r.ys[(i + 1) % r.xs.length]! - r.xs[(i + 1) % r.xs.length]! * r.ys[i]!, 0)) / 2;
+const perimeterOf = (r: Ring) => r.xs.reduce((sum, x, i) => sum + Math.hypot(r.xs[(i + 1) % r.xs.length]! - x, r.ys[(i + 1) % r.ys.length]! - r.ys[i]!), 0);
+
+/**
+ * The stretches of `line` that lie inside `ring`, each from boundary to boundary.
+ * A concave room can be crossed more than once by one line.
+ */
+export function chordsOf(ring: Ring, line: Line): [Point, Point][] {
   const n = ring.xs.length;
-  const hits: { at: number; edge: number; x: number; y: number }[] = [];
   const dx = line.x2 - line.x1, dy = line.y2 - line.y1;
+  const at: number[] = [];
   for (let i = 0; i < n; i += 1) {
     const j = (i + 1) % n;
     const ex = ring.xs[j]! - ring.xs[i]!, ey = ring.ys[j]! - ring.ys[i]!;
@@ -61,42 +69,99 @@ export function cutRing(ring: Ring, line: Line): [Ring, Ring] | null {
     if (den === 0) continue;
     const t = ((ring.xs[i]! - line.x1) * ey - (ring.ys[i]! - line.y1) * ex) / den;
     const u = ((ring.xs[i]! - line.x1) * dy - (ring.ys[i]! - line.y1) * dx) / den;
-    if (t >= 0 && t <= 1 && u >= 0 && u < 1) hits.push({ at: t, edge: i, x: line.x1 + t * dx, y: line.y1 + t * dy });
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) at.push(t);
   }
-  if (hits.length !== 2) return null;
-  const [a, b] = hits[0]!.edge <= hits[1]!.edge ? [hits[0]!, hits[1]!] : [hits[1]!, hits[0]!];
-  const one: Ring = { xs: [a.x], ys: [a.y] }, two: Ring = { xs: [b.x], ys: [b.y] };
-  for (let i = a.edge + 1; i <= b.edge; i += 1) one.xs.push(ring.xs[i]!), one.ys.push(ring.ys[i]!);
-  one.xs.push(b.x), one.ys.push(b.y);
-  for (let k = b.edge + 1; k <= a.edge + n; k += 1) two.xs.push(ring.xs[k % n]!), two.ys.push(ring.ys[k % n]!);
-  two.xs.push(a.x), two.ys.push(a.y);
+  const ts = [...new Set(at.map((t) => Math.round(t * 1e9) / 1e9))].sort((a, b) => a - b);
+  const point = (t: number) => ({ x: line.x1 + t * dx, y: line.y1 + t * dy });
+  const out: [Point, Point][] = [];
+  for (let k = 0; k + 1 < ts.length; k += 1) {
+    const mid = point((ts[k]! + ts[k + 1]!) / 2);
+    if (pointInRing(mid.x, mid.y, ring.xs, ring.ys)) out.push([point(ts[k]!), point(ts[k + 1]!)]);
+  }
+  return out;
+}
+
+/** Which edge of `ring` a boundary point lies on, or -1. */
+function edgeOf(ring: Ring, p: Point): number {
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < ring.xs.length; i += 1) {
+    const j = (i + 1) % ring.xs.length;
+    const ax = ring.xs[i]!, ay = ring.ys[i]!, bx = ring.xs[j]!, by = ring.ys[j]!;
+    const L = (bx - ax) ** 2 + (by - ay) ** 2;
+    const t = L === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - ax) * (bx - ax) + (p.y - ay) * (by - ay)) / L));
+    const d = Math.hypot(p.x - ax - t * (bx - ax), p.y - ay - t * (by - ay));
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return bestD < 1e-7 ? best : -1;
+}
+
+/** A ring cut along a chord whose ends are on its boundary. */
+export function cutAlong(ring: Ring, a: Point, b: Point): [Ring, Ring] | null {
+  const ea = edgeOf(ring, a), eb = edgeOf(ring, b);
+  if (ea < 0 || eb < 0 || ea === eb) return null;
+  const [p, q, ep, eq] = ea < eb ? [a, b, ea, eb] : [b, a, eb, ea];
+  const n = ring.xs.length;
+  const one: Ring = { xs: [p.x], ys: [p.y] }, two: Ring = { xs: [q.x], ys: [q.y] };
+  for (let i = ep + 1; i <= eq; i += 1) one.xs.push(ring.xs[i]!), one.ys.push(ring.ys[i]!);
+  one.xs.push(q.x), one.ys.push(q.y);
+  for (let k = eq + 1; k <= ep + n; k += 1) two.xs.push(ring.xs[k % n]!), two.ys.push(ring.ys[k % n]!);
+  two.xs.push(p.x), two.ys.push(p.y);
   return [one, two];
 }
 
-const areaOf = (r: Ring) => Math.abs(r.xs.reduce((sum, x, i) => sum + x * r.ys[(i + 1) % r.xs.length]! - r.xs[(i + 1) % r.xs.length]! * r.ys[i]!, 0)) / 2;
-const perimeterOf = (r: Ring) => r.xs.reduce((sum, x, i) => sum + Math.hypot(r.xs[(i + 1) % r.xs.length]! - x, r.ys[(i + 1) % r.ys.length]! - r.ys[i]!), 0);
-const centroidOf = (r: Ring) => ({ x: r.xs.reduce((a, b) => a + b, 0) / r.xs.length, y: r.ys.reduce((a, b) => a + b, 0) / r.ys.length });
-
 /**
- * A split draws its line as ink, so the grid's parts lose the strip under it and
- * no longer add up to the room (Joplin's dining: 1,646 sf became 1,157 + 478).
- * So each split room takes its shape from the unsplit room cut along the lines,
- * and keeps the tags the grid gave it. Where a cut or a match is not one to one,
- * the grid's parts stand.
- * ponytail: matches a piece to a part by the part's vertex mean, which an L-shaped part can sit outside; it then falls back.
+ * ── A SPLIT DIVIDES THE ROOM ITSELF, SO THE PARTS ALWAYS ADD UP ──
+ *
+ * The grid draws a split as ink, and the strip under it belonged to neither part:
+ * Joplin's dining area lost 2.5 sf to a line across it (round 4) and 11 sf to
+ * Chrome's along the kitchen's top wall (round 5), where the line crossed the
+ * room's outline more than twice and the old one-cut version gave up.
+ *
+ * So the rooms come from the sheet WITHOUT the splits, and each room a split
+ * crosses is cut along every stretch of the line inside it. A stretch that would
+ * leave a piece smaller than a room is not cut, so nothing is ever dropped. Each
+ * piece takes the tags whose own position is inside it. Rooms a split does not
+ * cross are untouched, so the floor total cannot move.
+ *
+ * A split no longer closes anything. It used to, as a side effect of being ink,
+ * and the 1 ft it reaches past each end to meet a wall then poked through that
+ * wall and closed a region next door: +33 sf on Joplin from a line drawn wall to
+ * wall inside the dining area. The tool's own words are "drag a line across a
+ * room from wall to wall"; a room left open is closed with the Line tool.
  */
-function exactParts(parts: RoomsFromWallsResult, whole: RoomsFromWallsResult, splits: readonly Line[], feetPerUnit: number): RoomsFromWallsResult {
-  const rooms = [...parts.rooms];
+function splitRooms(whole: RoomsFromWallsResult, splits: readonly Line[], feetPerUnit: number): RoomsFromWallsResult {
+  const smallest = SMALLEST_ROOM_SQFT / (feetPerUnit * feetPerUnit);
+  const rooms: RoomFromWalls[] = [];
   for (const room of whole.rooms) {
-    let pieces: Ring[] = [{ xs: room.xs, ys: room.ys }];
-    for (const line of splits) pieces = pieces.flatMap((p) => cutRing(p, line) ?? [p]);
-    if (pieces.length < 2) continue;
-    const owner = pieces.map((piece) => rooms.filter((r) => { const c = centroidOf(r); return pointInRing(c.x, c.y, piece.xs, piece.ys); }));
-    if (owner.some((o) => o.length !== 1) || new Set(owner.map((o) => o[0])).size !== pieces.length) continue;
-    pieces.forEach((piece, i) => {
-      const part = owner[i]![0]!;
-      rooms[rooms.indexOf(part)] = { ...part, xs: piece.xs, ys: piece.ys, squareFeet: areaOf(piece) * feetPerUnit * feetPerUnit, perimeterFeet: perimeterOf(piece) * feetPerUnit };
-    });
+    const pieces: Ring[] = [{ xs: room.xs, ys: room.ys }];
+    for (const line of splits) {
+      for (const [a, b] of chordsOf({ xs: room.xs, ys: room.ys }, line)) {
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const k = pieces.findIndex((p) => pointInRing(mid.x, mid.y, p.xs, p.ys));
+        if (k < 0) continue;
+        const cut = cutAlong(pieces[k]!, a, b);
+        if (cut === null || cut.some((c) => areaOf(c) < smallest)) continue;
+        pieces.splice(k, 1, ...cut);
+      }
+    }
+    if (pieces.length === 1) {
+      rooms.push(room);
+      continue;
+    }
+    const tags = [room.tag, ...(room.sharedTags ?? [])].filter((t): t is RoomTag => t !== null);
+    for (const piece of pieces) {
+      const inside = tags.filter((t) => { const at = t.numberAt ?? t; return pointInRing(at.x, at.y, piece.xs, piece.ys); });
+      rooms.push({
+        id: 0,
+        squareFeet: areaOf(piece) * feetPerUnit * feetPerUnit,
+        perimeterFeet: perimeterOf(piece) * feetPerUnit,
+        xs: piece.xs,
+        ys: piece.ys,
+        tag: inside.length === 1 ? inside[0]! : null,
+        ...(inside.length > 1 ? { sharedTags: inside } : {}),
+      });
+    }
   }
-  return { ...parts, rooms };
+  const numbered = rooms.map((r, id) => ({ ...r, id }));
+  return { ...whole, rooms: numbered, mergedTags: numbered.flatMap((r) => r.sharedTags ?? []) };
 }

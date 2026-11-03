@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TakeoffExportButtons } from "@/components/TakeoffExportButtons";
 import { prisma } from "@prova/db";
 import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
 
@@ -438,15 +439,22 @@ function Header({ jobId, hasPlan = false }: { jobId: string; hasPlan?: boolean }
             stand here, on a 55-sheet set, scrolling.
             A real link, so Cmd-click and right-click open it in a tab of its
             own; an estimator comparing a bid against a drawing wants both. */}
-        {hasPlan && (
-          <Link
-            href={`/takeoff/${jobId}`}
-            className="rounded-md border border-line-card px-3 py-1.5 text-sm text-link hover:text-link-hover"
-            data-takeoff="open-workspace"
-          >
-            Open full screen
-          </Link>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* The takeoff as a file, here where the job's takeoff is (Chrome round 5
+              looked for it on this tab). It says so itself when nothing is measured. */}
+          <div className="w-64">
+            <TakeoffExportButtons jobId={jobId} />
+          </div>
+          {hasPlan && (
+            <Link
+              href={`/takeoff/${jobId}`}
+              className="rounded-md border border-line-card px-3 py-1.5 text-sm text-link hover:text-link-hover"
+              data-takeoff="open-workspace"
+            >
+              Open full screen
+            </Link>
+          )}
+        </div>
       </div>
       <p className="max-w-prose text-sm text-ink-body">
         Measure a drawing on screen. Set the scale on each sheet against a dimension printed on it, trace what

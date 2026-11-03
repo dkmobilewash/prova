@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sheetRooms } from "./sheetRooms";
 import { splitLinesFrom } from "./userExclusions";
+import { pointInRing } from "./drawTools";
 
 // One 20 x 10 ft room, with no wall between its two tags.
 const W = 100, ft = (n: number) => n / W, T = 0.5;
@@ -46,3 +47,59 @@ describe("Split area", () => {
     expect(splitLinesFrom([{ kind: "ROOM_SPLIT", xs: [0, 1], ys: [0, 1] }, { kind: "EXCLUDE_LIKE", xs: [0, 1], ys: [0, 1] }])).toHaveLength(1);
   });
 });
+
+// ── ANY LINE, NOT JUST THE ONE A TEST THOUGHT OF ──
+// A U-shaped room (the concave case the old one-cut version gave up on) and many
+// random lines between points on its walls: the floor total must not move, and no
+// piece may be smaller than a room. A seeded generator, so a failure repeats.
+describe("Split area, any line", () => {
+  const U = (n: number) => n / W;
+  const uw = (x1: number, y1: number, x2: number, y2: number) => ({ x1: U(x1), y1: U(y1), x2: U(x2), y2: U(y2), thicknessFeet: T, lengthFeet: Math.hypot(x2 - x1, y2 - y1) });
+  // 60 x 40 ft with a 20 x 25 ft notch out of the top middle.
+  const uRuns = [uw(0, 0, 20, 0), uw(20, 0, 20, 25), uw(20, 25, 40, 25), uw(40, 25, 40, 0), uw(40, 0, 60, 0), uw(60, 0, 60, 40), uw(60, 40, 0, 40), uw(0, 40, 0, 0)] as never;
+  const uText = [tag("DINING", 10, 30), tag("137", 10, 31), tag("KITCHEN", 50, 30), tag("135", 50, 31)];
+  const run = (splits: { x1: number; y1: number; x2: number; y2: number }[] = []) => sheetRooms({ pairings: [], runs: uRuns, drawn: [], segments: [], doorLeaves: [], splits, feetPerUnit: W, text: uText, widthPt: 1000 });
+  const floor = (rs: { squareFeet: number }[]) => rs.reduce((n, r) => n + r.squareFeet, 0);
+  let seed = 7;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const onWall = () => {
+    const outline = [[0, 0], [20, 0], [20, 25], [40, 25], [40, 0], [60, 0], [60, 40], [0, 40]] as const;
+    const k = Math.floor(rand() * outline.length), a = outline[k]!, b = outline[(k + 1) % outline.length]!, t = rand();
+    return { x: U(a[0] + (b[0] - a[0]) * t), y: U(a[1] + (b[1] - a[1]) * t) };
+  };
+
+  it("keeps the floor total for 300 random wall-to-wall lines", () => {
+    const before = run().rooms;
+    expect(before).toHaveLength(1);
+    const whole = floor(before);
+    let split = 0;
+    const room = before[0]!;
+    // Wall to wall: the line stays in the room.
+    const staysInside = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      Array.from({ length: 19 }, (_, k) => (k + 1) / 20).every((t) => pointInRing(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, room.xs, room.ys));
+    for (let i = 0; i < 300; i += 1) {
+      let a = onWall(), b = onWall();
+      while (!staysInside(a, b)) (a = onWall()), (b = onWall());
+      const after = run([{ x1: a.x, y1: a.y, x2: b.x, y2: b.y }]).rooms;
+      if (after.length > 1) split += 1;
+      expect(Math.abs(floor(after) - whole), `line ${i}`).toBeLessThan(0.01);
+      for (const r of after) expect(r.squareFeet, `line ${i}`).toBeGreaterThanOrEqual(9);
+    }
+    // The property is only worth something if most lines really divided the room.
+    expect(split).toBeGreaterThan(150);
+  });
+  it("does not cut off a sliver smaller than a room, so nothing is lost to it", () => {
+    // Along the base wall, a twentieth of a foot inside it: the strip would be 3 sf.
+    const rooms = run([{ x1: U(0.5), y1: U(39.7), x2: U(59.5), y2: U(39.7) }]).rooms;
+    expect(rooms).toHaveLength(1);
+    expect(Math.abs(floor(rooms) - floor(run().rooms))).toBeLessThan(0.01);
+  });
+  it("cuts a line that crosses the room twice, both times", () => {
+    // Across both legs of the U, through the notch: two stretches inside the room.
+    // It crosses the notch outside as well, and closes nothing there: a split divides.
+    const parts = run([{ x1: U(-1), y1: U(10), x2: U(61), y2: U(10) }]).rooms;
+    expect(parts).toHaveLength(3);
+    expect(Math.abs(floor(parts) - floor(run().rooms))).toBeLessThan(0.01);
+  });
+});
+

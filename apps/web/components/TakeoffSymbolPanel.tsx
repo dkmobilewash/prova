@@ -9,7 +9,7 @@ import { scopeSentence, type SheetScope } from "@/lib/takeoff/symbolScope";
 const sheetCount = (n: number) => `${n} ${n === 1 ? "sheet" : "sheets"}`;
 
 /** One sheet of an across-the-set count, as the viewer's walk fills it in. */
-export type AcrossRow = { page: number; number: string | null; count: number; ms: number; scaling: string; xs: number[]; ys: number[] };
+export type AcrossRow = { page: number; number: string | null; count: number; ms: number; scaling: string; xs: number[]; ys: number[]; /** A legend sheet, listed and not counted. */ legend?: boolean };
 export type AcrossState = {
   scope: SheetScope;
   fromNumber: string | null;
@@ -180,7 +180,7 @@ export function TakeoffSymbolPanel({
                           <td className="pr-2">p{r.page}</td>
                           <td className="pr-2">{r.number ?? "—"}</td>
                           <td className="pr-2 text-right tabular-nums">{r.count}</td>
-                          <td className="pr-2 text-ink-muted">{(r.ms / 1000).toFixed(1)} s{r.scaling === "paper" ? "" : ` · ${r.scaling}`}</td>
+                          <td className="pr-2 text-ink-muted">{(r.ms / 1000).toFixed(1)} s{r.legend ? " · legend sheet, not counted" : r.scaling === "paper" ? "" : ` · ${r.scaling}`}</td>
                         </tr>
                       ))}
                     </tbody>
