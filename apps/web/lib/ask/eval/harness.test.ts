@@ -114,6 +114,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: scores what the estimate would carry with doubted runs held back, per cut, with held-out as totals. Skips without its env and asserts sheets were read",
     "zzRoomsStill.eval.ts":
       "calls no model: for each named room still open on the training sheets, reports the wall extension that closes it and what is drawn along that gap. Skips without its env and asserts rooms were found",
+    "zzPilotAccuracy.eval.ts":
+      "calls no model: scores walls posted against the key on the training sheets as offered, with a work-area box, and with up to three exclude clicks. Skips without its env and asserts sheets were read",
     "scaleAudit.eval.ts":
       "calls no model: deterministic geometry over real drawings, guarded by a skip plus a non-zero input assertion",
     "doorWindows.eval.ts":
