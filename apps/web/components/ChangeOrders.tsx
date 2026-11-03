@@ -783,6 +783,9 @@ export function ChangeOrders({
     <section id="change-orders" className="mb-10 scroll-mt-24" data-tour="job-change-orders">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-semibold text-ink">Change orders</h2>
+        <a href={`/jobs/${jobId}/change-order-log`} className="inline-flex min-h-11 items-center text-sm text-link hover:underline">
+          Change order log →
+        </a>
         {pendingCount > 0 && (
           <p className="text-sm text-tag-amber-ink">
             {pendingCount} pending with the GC · {pendingExposure} not in the contract value
