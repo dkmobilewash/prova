@@ -4438,3 +4438,32 @@ real". Padding the box to 10 ft moves little (86 → 98 per 100 key).
 **Correction to the table above:** its "held-out, 17 sheets" included Evergreen's
 two scanned sheets, which this path cannot read. They offer nothing, so its
 junk and real feet stand; the sheet count is 15 readable plus 2 scans.
+
+## Junk that POSTS, by kind, and why no rule shipped — 2026-11-03 (second session, `diego/posted-junk`)
+
+`zzJunkKinds` rows now carry `posts` (a paired run the 0.4 hold does not keep off the
+estimate), the model's `score`, and the distance to the nearest kennel, casework and
+fixture word. Single lines never post: the stage posts `offered.offeredRuns`, pairs only.
+
+Baseline at the shipped hold, 26 new-build training sheets: key 36,224 ft, posted
+46,555 ft, **+28.5%**, junk posted 11,965 ft, real left off 3.6%. Held-out total +104%.
+
+Posted junk by kind, new-build training (13,095 ft of paired junk):
+
+| kind | ft | why it is not a rule |
+| --- | --- | --- |
+| plausible wall the key rejected | 5,114 | no feature separates it from real wall on posted runs |
+| "grid line" | 2,111 | 64 of 72 runs are glen-hazel A-101: long 8 in runs by room names, not grids |
+| face-only duplicate | 1,749 | every form priced 2026-10-29, best 1.2× (above) |
+| stacked dimension strings | 1,745 | ≥2 dims between, ≤1 tee: 229 junk for 49 real; #912 saw this loosening fall 11:1 → 1.7:1 held out |
+| repeated unit-plan shape | 888 | twins ≥ n at every n and length: ≤ 0.9× (apartments repeat real walls) |
+| furniture, casework, kennel, hatch | 1,590 | word within d ft, by thickness: clean pockets of 45–80 ft on one building only |
+
+Every single-feature cut on posted runs was priced too (thickness, length, tees, face
+coverage, pen, grey, dashes, curves, score). The only one over 3× with real loss under
+~500 ft is the model score itself (≤ 0.58: 2,291 junk for 465 real), which is the hold
+cut re-picked by rule on 2026-11-03 — 0.5 already fails it on Topeka. Not reopened here.
+
+So what still posts is junk that looks like wall to every feature this file computes.
+The remaining levers are the reviewer (Review walls: median 5 runs to +10%) and the
+work-area box, not another source filter.

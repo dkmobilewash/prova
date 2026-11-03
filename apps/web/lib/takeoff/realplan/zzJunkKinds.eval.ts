@@ -1,3 +1,7 @@
+import type { ScoredPairing } from "../demotedRuns";
+import { isHeldRun, runsHeldOffEstimate } from "../estimateHold";
+import { loadWallModel } from "../wallModelFile";
+import { modelVerdicts } from "../demotedRuns";
 import { Buffer } from "node:buffer";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -104,8 +108,15 @@ describe.skipIf(DIR === "" || LABELS === "")("confirmed junk on the product path
       await doc.close();
       const W = strokes.widthPt; const fpu = saved.feetPerUnit;
       const textItems = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
-      const d = detectForSheet({ segments: strokes.segments, textItems, pageSize: { widthPt: W, heightPt: strokes.heightPt }, feetPerUnit: fpu });
+      const scored: ScoredPairing[] = [];
+      const d = detectForSheet({ segments: strokes.segments, textItems, pageSize: { widthPt: W, heightPt: strokes.heightPt }, feetPerUnit: fpu, onCandidate: (f, w) => { scored.push({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, thicknessFeet: w.thicknessFeet, features: [...f] }); } });
       const offered = offeredCandidates({ walls: d.found.walls, segments: d.found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })), widthPt: W, feetPerUnit: fpu, planBoxes: d.planBoxes, textItems });
+      // What the hold keeps off the estimate, so a row can say whether it posts.
+      const model = loadWallModel();
+      const held = model === null ? [] : runsHeldOffEstimate(model.model, offered.offeredRuns, scored, fpu, false);
+      const verdicts = model === null ? null : modelVerdicts(model.model, Number.POSITIVE_INFINITY, offered.offeredRuns, scored, fpu);
+      const scores = offered.offeredRuns.map((_, at) => verdicts?.get(at)?.score ?? null);
+      const scoreOf = (c: { x1: number; y1: number; x2: number; y2: number }) => { const at = offered.offeredRuns.findIndex((r) => r.x1 === c.x1 && r.y1 === c.y1 && r.x2 === c.x2 && r.y2 === c.y2); return at < 0 ? null : (scores[at] ?? null); };
       const words = textItems.map((i) => ({ str: i.str.trim(), x: (i.x + i.width / 2) / W, y: (i.y - i.height / 2) / W })).filter((w) => w.str !== "");
       const toRun = (v: Verdict) => ({ ...v, th: v.thicknessFeet ?? 0 });
       const real = saved.verdicts.filter((v) => v.verdict === "wall" || v.verdict === "traced").map(toRun);
@@ -184,7 +195,9 @@ describe.skipIf(DIR === "" || LABELS === "")("confirmed junk on the product path
         const isDashed = (f: { n: number; cover: number; longest: number; medPiece: number; medGap: number }) => f.n >= 5 && f.longest <= 2.5 && f.medGap > 0 && f.medGap <= 2.5 && f.cover >= 0.25 && f.cover <= 0.9;
         const dashedA = isDashed(fA), dashedB = isDashed(fB);
         const dashWords = words.filter((w) => Math.hypot(w.x - (c.x1 + c.x2) / 2, w.y - (c.y1 + c.y2) / 2) * fpu <= 10).map((w) => w.str).slice(0, 6);
-        allRows.push({ set: file.dir, sheet: file.sheet, x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, fpu, span: +(span * fpu).toFixed(0), L: +L.toFixed(1), thIn: +((c.thicknessIn ?? 0)).toFixed(1), from: c.from, realC: +realC.toFixed(1), rej: +rej.toFixed(1), uns: +uns.toFixed(1), dimBetween, dimNear, anyBetween, tees, fA, fB, dashedA, dashedB, dashWords, dupDrop: dupDrops.has(c.id), faceGray, facePen, sheetPen, curveNear, wordAbove });
+        const nearWord = (re: RegExp) => { let best = Infinity; for (const w of words) if (re.test(w.str)) best = Math.min(best, Math.hypot(w.x - (c.x1 + c.x2) / 2, w.y - (c.y1 + c.y2) / 2) * fpu); return Number.isFinite(best) ? +best.toFixed(1) : null; };
+        const wordFt = { kennel: nearWord(KENNEL), casework: nearWord(CASEWORK), fixture: nearWord(FIXTURE) };
+        allRows.push({ set: file.dir, sheet: file.sheet, posts: c.from === "pair" && !isHeldRun(c, held), score: scoreOf(c), wordFt, x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, fpu, span: +(span * fpu).toFixed(0), L: +L.toFixed(1), thIn: +((c.thicknessIn ?? 0)).toFixed(1), from: c.from, realC: +realC.toFixed(1), rej: +rej.toFixed(1), uns: +uns.toFixed(1), dimBetween, dimNear, anyBetween, tees, fA, fB, dashedA, dashedB, dashWords, dupDrop: dupDrops.has(c.id), faceGray, facePen, sheetPen, curveNear, wordAbove });
         if (faceGray !== null && faceGray >= 0.35) greyReal += realC;
         if (extra < 0.5) continue;
         unsureExtra += uns; unlabelledExtra += extra - rej - uns;
@@ -236,7 +249,7 @@ describe.skipIf(DIR === "" || LABELS === "")("confirmed junk on the product path
         else what = "unknown";
         addWhat(what, rej); whatBy.set(what, (whatBy.get(what) ?? new Map()).set(file.dir, ((whatBy.get(what) ?? new Map()).get(file.dir) ?? 0) + rej));
         if (grey) greyJunk += rej;
-        rows.push({ set: file.dir, sheet: file.sheet, pdf, page: saved.page, x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, lengthFeet: +L.toFixed(1), thIn: +thIn.toFixed(1), from: c.from, note: c.note, extra: +extra.toFixed(1), rej: +rej.toFixed(1), kind, words: within(8).slice(0, 5).map((w) => w.str), companions, twins, dense, dimBetween, dimNear, tees });
+        rows.push({ set: file.dir, sheet: file.sheet, posts: c.from === "pair" && !isHeldRun(c, held), pdf, page: saved.page, x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, lengthFeet: +L.toFixed(1), thIn: +thIn.toFixed(1), from: c.from, note: c.note, extra: +extra.toFixed(1), rej: +rej.toFixed(1), kind, words: within(8).slice(0, 5).map((w) => w.str), companions, twins, dense, dimBetween, dimNear, tees });
       }
       perSheet.push(`  ${file.dir.slice(0, 24).padEnd(24)}/${file.sheet.padEnd(7)} offered ${offered.candidates.length} · confirmed junk ${sheetJunk.toFixed(0)} ft · ${[...sheetKinds].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${v.toFixed(0)}`).join(", ")}`);
     }
