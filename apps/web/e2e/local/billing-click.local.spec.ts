@@ -617,3 +617,110 @@ test("42-45: spec findings on Buyout, with no verdict", async () => {
   await saysNot("$2,500");
   await saysNot(/\b(meets|complies with|compliant)\b/);
 });
+
+// ───────────────────────────────────────────── OPS FLOWS beyond the click list
+// Nothing here sends. Each email form is opened and read, and the send button is
+// left alone; the last test counts that no sent-document row exists.
+// The change order log download (19a) and equipment rates (17a) are above.
+
+const GC_EMAIL = "gc@zz-click.example";
+const FOUNDATION_EMAIL = "orders@zz-foundation.example";
+const today = () => new Date().toISOString().slice(0, 10);
+const emailForm = (sendLabel: string) => page.locator("form").filter({ has: page.getByRole("button", { name: sendLabel }) });
+
+test("S1: draft register rows read from the spec, reviewed and accepted", async () => {
+  // ponytail: the reading itself needs a model, so its rows are seeded the way a
+  // reading stores them. Reviewing and accepting them is what this clicks.
+  const section = await prisma.bidSpecSection.findFirstOrThrow({ where: { sectionNumber: "09 29 00", bidInvitation: { wonJobId: jobId } } });
+  const reading = await prisma.submittalSpecReading.create({
+    data: { bidSpecSectionId: section.id, jobId, readingReason: "click spec", pagesCharged: 1, model: "fixture", promptVersion: "fixture" },
+  });
+  const proposal = (kind: "PRODUCT_DATA" | "SAMPLES" | "SHOP_DRAWINGS" | "CERTIFICATES", requirement: string, quote: string) => ({
+    readingId: reading.id, jobId, sectionNumber: "09 29 00", kind, requirement, confidence: "HIGH", quote, sourcePageLabel: "p 4",
+  });
+  await prisma.submittalProposal.createMany({
+    data: [
+      proposal("PRODUCT_DATA", "Board product data", "Submit manufacturer's product data for gypsum board."),
+      proposal("SAMPLES", "Board sample", "Submit a 12-inch sample of each board type."),
+      proposal("SHOP_DRAWINGS", "Soffit framing", "Submit shop drawings of soffit framing."),
+      proposal("CERTIFICATES", "Fire test report", "Submit the fire test report."),
+    ],
+  });
+
+  await submittals();
+  await says("Nothing enters the register or takes a number until you accept it");
+  await says("09 29 00 · p 4 · “Submit manufacturer's product data for gypsum board.”");
+  await expect(page.getByRole("button", { name: /^Add\s+to the register$/ }), "nothing ticked, nothing to add").toBeDisabled();
+
+  await page.getByLabel("Select: Board product data").check();
+  await page.getByRole("button", { name: "Add 1 to the register" }).click();
+  await expect(submittal("Product data: Board product data")).toContainText("SUB 3");
+  await expect(page.getByLabel("Select: Board product data")).toHaveCount(0);
+
+  await page.getByLabel("Select: Board sample").check();
+  await page.getByLabel("Select: Soffit framing").check();
+  await page.getByLabel("Merge these into one submittal").check();
+  await page.getByRole("button", { name: "Add 2 to the register" }).click();
+  await expect(submittal("Section 09 29 00: Samples, Shop drawings")).toContainText("SUB 4");
+
+  await page.locator("li").filter({ has: page.getByLabel("Select: Fire test report") }).getByRole("button", { name: "Dismiss" }).click();
+  await expect(page.getByLabel("Select: Fire test report")).toHaveCount(0);
+  await submittals();
+  await saysNot("Check each against its quote");
+  expect(await prisma.submittalProposal.groupBy({ by: ["status"], where: { jobId }, _count: true }).then((rows) => Object.fromEntries(rows.map((r) => [r.status, r._count])))).toEqual({ ACCEPTED: 3, DISMISSED: 1 });
+});
+
+test("S2: the package email form appears after the build and is filled, and nothing is sent", async () => {
+  await prisma.contact.updateMany({ where: { jobs: { some: { id: jobId } } }, data: { email: GC_EMAIL } });
+  await submittals();
+  await submittal("Product data: Board product data").getByRole("button", { name: "Record as sent" }).click();
+  const send = page.locator("form").filter({ hasText: "Send submittal 3" });
+  await expect(send.getByText("Email it", { exact: true }), "the email form must wait for a built package").toHaveCount(0);
+  await send.getByLabel("Files for the package").setInputFiles([join(files, "click-test-board.pdf")]);
+  await download(() => send.getByRole("button", { name: "Build and download package" }).click());
+  await expect(send.getByText("Email it", { exact: true })).toBeVisible();
+  await expect(send.getByLabel("To", { exact: true })).toHaveValue(GC_EMAIL);
+  await expect(send.getByLabel("Subject", { exact: true })).toHaveValue(`Submittal 3 rev 1 from ${companyName}: ${FIXTURE_JOB}`);
+  await expect(send.getByLabel(/^Message/)).toHaveValue(/Submittal 3, revision 1: Product data: Board product data, for ZZ Click Billing Test\./);
+  await expect(send.getByRole("button", { name: "Email the package and record it as sent" })).toBeEnabled();
+  await send.getByRole("button", { name: "Cancel" }).click();
+});
+
+test("41a: the PO email form, filled for the vendor, and nothing is sent", async () => {
+  await prisma.vendor.updateMany({ where: { name: "ZZ Click Foundation Supply" }, data: { email: FOUNDATION_EMAIL } });
+  await buyout();
+  const draft = page.locator("li").filter({ has: page.getByText(/^PO 3 · ZZ Click Spray Sub · draft/) });
+  await expect(draft.getByRole("button", { name: "Email this" }), "a draft PO offers no email").toHaveCount(0);
+  await po1().getByRole("button", { name: "Email this" }).or(page.locator("li").filter({ has: page.getByText(/^PO 1 · /) }).getByRole("button", { name: "Email this" })).first().click();
+  const form = emailForm("Send with the PDF attached");
+  await expect(form.getByLabel("To", { exact: true })).toHaveValue(FOUNDATION_EMAIL);
+  await expect(form.getByLabel("Subject", { exact: true })).toHaveValue(`Purchase order 1 from ${companyName}: ${FIXTURE_JOB}`);
+  await expect(form.getByLabel(/^Message/)).toHaveValue(/Attached is purchase order 1 for ZZ Click Billing Test, total \$7,500\.00\./);
+  await expect(form.getByLabel(/^Message/)).toHaveValue(/Attached file: ZZ-Click-Billing-Test-PO-1\.pdf/);
+  await expect(form.getByLabel("Date sent", { exact: true })).toHaveValue(today());
+});
+
+test("41b: the G702 email form, filled for the GC, under the waiver warning, and absent in print", async () => {
+  await application(2);
+  await page.getByRole("button", { name: "Email this" }).click();
+  const form = emailForm("Send with the PDF attached");
+  await expect(form.getByLabel("To", { exact: true })).toHaveValue(GC_EMAIL);
+  await expect(form.getByLabel("Subject", { exact: true })).toHaveValue(`Application for payment #2 from ${companyName}: ${FIXTURE_JOB}`);
+  await expect(form.getByLabel(/^Message/)).toHaveValue(/for the period to Oct 31, 2026\. Current payment due: \$19,800\.00\./);
+  await expect(form.getByLabel(/^Message/)).toHaveValue(/Attached file: G702-G703 ZZ Click Billing Test application 2\.pdf/);
+  await expect(form.getByLabel("Date sent", { exact: true })).toHaveValue(today());
+
+  // #2's warning cleared at step 13; #3 still lacks waivers through Oct 31.
+  await application(3);
+  const warning = page.getByText(/^Before this goes to the GC: no lower-tier lien waiver/).first();
+  const button = page.getByRole("button", { name: "Email this" });
+  const [warningBox, buttonBox] = [await warning.boundingBox(), await button.boundingBox()];
+  expect(warningBox && buttonBox && warningBox.y < buttonBox.y, "the waiver warning should sit above Email this").toBe(true);
+  await page.emulateMedia({ media: "print" });
+  await expect(button).toBeHidden();
+  await page.emulateMedia({ media: "screen" });
+});
+
+test("nothing was sent", async () => {
+  expect(await prisma.sentDocument.count({ where: { jobId } })).toBe(0);
+});

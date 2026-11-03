@@ -9,6 +9,11 @@ Excel and PDF files are read, not just seen to appear. Local only: it lives in
 `e2e/local/`, which the CI `e2e` job's `testDir: "./specs"` never reaches, under its own
 `e2e/playwright.billing.config.ts`.
 
+It also walks ops flows beyond the click list, sending nothing: the submittal register
+from spec drafts (review, accept one, merge two, dismiss one), and the email forms for
+a submittal package, a PO and a G702, each read up to the send button and left there.
+The last step requires that no sent-document row exists.
+
 It found one bug, fixed here. After the retainage is billed on a release application,
 the closeout list's "Retainage billed" stayed Open and said "No retainage withheld on
 this job's invoices." The release application's negative retainage nets the job's
