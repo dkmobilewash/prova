@@ -1,3 +1,4 @@
+import { showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import type { Prisma } from "@prova/db";
 
 import { componentRunQuantity, openingsFromJson, type RunGeometry, type WallComponentBasis } from "@/lib/wall-assemblies";
@@ -84,6 +85,8 @@ export type ItemLineSummary = {
   checkFigures: { id: string; name: string; squareFeet: number }[];
   /** Items whose assembly has no parts, so it can produce no lines. */
   emptyAssembly: { id: string; name: string }[];
+  /** Sheets whose words show existing work, measured with no work area or exclusion. Sent anyway. */
+  renovationUnchecked?: string[];
 };
 
 /**
@@ -462,7 +465,19 @@ export async function syncTakeoffItemLines(
     removed += 1;
   }
 
-  return { created, updated, removed, unpriced, checkFigures, emptyAssembly };
+  // ── A RENOVATION SHEET SENT AS IT WAS FOUND ──
+  // Existing walls ride along at about twice the new work unless the estimator
+  // drew a work area or excluded them. Allowed, and said.
+  const measuredPages = await tx.takeoffPlanPage.findMany({
+    where: { plan: { jobId, companyId }, measurements: { some: { itemId: { not: null }, kind: "LINEAR" } }, exclusions: { none: { kind: { in: ["WORK_AREA", "EXCLUDE_LIKE"] } } } },
+    select: { pageNumber: true, label: true, planId: true },
+  });
+  const texts = measuredPages.length === 0 ? [] : await tx.planSheetText.findMany({ where: { OR: measuredPages.map((p) => ({ planId: p.planId, pageNumber: p.pageNumber })) }, select: { planId: true, pageNumber: true, renovationMarks: true } });
+  const renovationUnchecked = measuredPages
+    .filter((p) => showsExistingWork(texts.find((t) => t.planId === p.planId && t.pageNumber === p.pageNumber)?.renovationMarks ?? []))
+    .map((p) => p.label ?? `Sheet ${p.pageNumber}`);
+
+  return { created, updated, removed, unpriced, checkFigures, emptyAssembly, renovationUnchecked };
 }
 
 /**

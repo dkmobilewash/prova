@@ -86,6 +86,8 @@ describe("naming the sheet without a model", () => {
     ]);
     expect(d.proposals[0].ingestJobId).toBe(CTX.ingestJobId);
     expect(d.proposals[0].reason).toMatch(/without a model/);
+    // Every page gets its renovation marks, empty for these new-work fixtures and for the scan.
+    expect(d.saved.map((row) => row.renovationMarks)).toEqual([[], [], []]);
   });
 });
 

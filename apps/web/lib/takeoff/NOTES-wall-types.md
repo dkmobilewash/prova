@@ -393,3 +393,11 @@ pair rather than guess. A demolition plan drawn on a sheet titled something else
 legend or keynote heading, or a remove row. An existing-wall legend alone does not
 count, because new plans have one. Over 1,537 training pages it adds 13 sheets to
 the 44 titles find, about 9 of them real.
+
+## The renovation prompt (2026-11-03)
+
+On a renovation sheet the finder offers existing walls with the new ones, about twice the new work, unless the estimator draws a work area or excludes them. `renovationMarks` reads the sheet's words with the scorecard's marker rule: `(E)`, EXISTING three times, RENOVATION, REMODEL, TENANT IMPROVEMENT, DEMO, and LIMIT OF WORK. NIC is shown as a reason but never marks a sheet on its own, because it names items too: Camp Clark's new-build A-101 prints only NIC.
+
+On training floor plans: unmarked Joplin A-101 and A-111, Topeka, MHK, Camp Bow Wow, SW S220; marked Baker A100 and A101, E Street A1.1 and A2.1, Bunkie, Supreme Court A111, NG McAllen, glen-hazel. Camp Bow Wow is unmarked although the earlier scorecard grouped it oddly; nothing in its words says existing.
+
+After Find the walls a marked sheet shows the prompt with Work area and Exclude like this until either is used. Send to estimate still sends, and names the marked sheets measured with neither. The inventory stores the marks (`PlanSheetText.renovationMarks`) so Send and the whole-set summary can see them without reading the PDF again. A plan inventoried before this column has empty marks until it is read again.
