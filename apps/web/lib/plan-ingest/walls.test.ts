@@ -82,6 +82,19 @@ describe("the set-level summary", () => {
   });
 });
 
+describe("a sheet with walls that another sheet of its level counts", () => {
+  it("SAYS IT IS NOT COUNTED and which sheet is (Baker A100 against A101, Chrome round 5)", () => {
+    const rows = wallsSummaryRows({
+      sheets: [sheet({ pageNumber: 1, sheetNumber: "A100", title: "OVERALL FLOOR PLAN" }), sheet({ pageNumber: 2, sheetNumber: "A101", title: "FLOOR PLAN" })],
+      walls: new Map([[1, { groups: 3, feet: 640 }], [2, { groups: 7, feet: 698 }]]),
+      tasks: new Map(),
+      maxAttempts: 3,
+    });
+    expect(rows[0]!.status).toEqual({ kind: "walls", groups: 3, feet: 640, notCounted: "same level as A101" });
+    expect(rows[1]!.status).toEqual({ kind: "walls", groups: 7, feet: 698 });
+  });
+});
+
 describe("one plan per floor — the set-level plan", () => {
   const sheet = (over: Partial<WallsSheet> = {}): WallsSheet => ({ pageNumber: 1, sheetNumber: "A101", title: "FIRST FLOOR PLAN", hasScale: true, hasWalls: false, ...over });
   it("KEEPS THE PLAIN FLOOR PLAN OVER THE OVERALL ONE of the same level", () => {

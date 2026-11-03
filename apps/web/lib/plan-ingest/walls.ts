@@ -421,7 +421,7 @@ export type WallsSummaryRow = {
   /** Present when the sheet's words say it shows existing work. */
   renovation?: string[];
   status:
-    | { kind: "walls"; groups: number; feet: number; typedFeet?: number; rooms?: number; ceilingSqFt?: number }
+    | { kind: "walls"; groups: number; feet: number; typedFeet?: number; rooms?: number; ceilingSqFt?: number; notCounted?: WallsSkip }
     | { kind: "skipped"; why: WallsSkip }
     | { kind: "looked"; note: string }
     | { kind: "failed"; error: string }
@@ -444,7 +444,11 @@ export function wallsSummaryRows(input: {
     const found = input.walls.get(sheet.pageNumber);
     const task = input.tasks.get(sheet.pageNumber);
     let status: WallsSummaryRow["status"];
-    if (found) status = { kind: "walls", ...found, ...(input.rooms?.get(sheet.pageNumber) ?? {}) };
+    // Walls found on a sheet the run leaves to another of the same level are on
+    // the page, not in the count, and the row says which sheet counts instead.
+    const skip = plan.get(sheet.pageNumber) ?? null;
+    const notCounted = skip !== null && skip.startsWith("same level as ") ? { notCounted: skip } : {};
+    if (found) status = { kind: "walls", ...found, ...(input.rooms?.get(sheet.pageNumber) ?? {}), ...notCounted };
     else if (task?.finishedAt && task.note) status = { kind: "looked", note: task.note };
     else if (task && !task.finishedAt && task.error && task.attempts >= input.maxAttempts) status = { kind: "failed", error: task.error };
     else if (task && !task.finishedAt) status = { kind: "pending" };

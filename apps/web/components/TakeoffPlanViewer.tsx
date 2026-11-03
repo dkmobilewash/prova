@@ -77,7 +77,7 @@ import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUn
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { renovationMarks, showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
-import { HELD_LABEL, isHeldRun } from "@/lib/takeoff/estimateHold";
+import { DROPPED_LABEL, HELD_LABEL, sameRun } from "@/lib/takeoff/estimateHold";
 import { TakeoffHeldWalls } from "./TakeoffHeldWalls";
 import { TakeoffWallReview } from "./TakeoffWallReview";
 import { currentRun, decide, droppedRuns, reviewCounter, reviewOrder, runScores, startReview, undoDecision, viewOfRun, type ReviewState as WallReviewState } from "@/lib/takeoff/wallReview";
@@ -2355,14 +2355,25 @@ export function TakeoffPlanViewer({
   /** The wall on the job a found run is, if a whole-set run posted it: the finder's own coordinates. */
   const measurementForRun = (run: { x1: number; y1: number; x2: number; y2: number }) =>
     (sheet?.measurements ?? []).find(
-      (m) => m.kind === "LINEAR" && m.xs.length === 2 && isHeldRun({ x1: m.xs[0]!, y1: m.ys[0]!, x2: m.xs[1]!, y2: m.ys[1]! }, [run]),
+      (m) => m.kind === "LINEAR" && m.xs.length === 2 && sameRun({ x1: m.xs[0]!, y1: m.ys[0]!, x2: m.xs[1]!, y2: m.ys[1]! }, run),
     ) ?? null;
+  /** A run a reviewer dropped, here or in the set review: on the sheet, out of its total. */
+  const droppedOnJob = (run: { x1: number; y1: number; x2: number; y2: number }) => measurementForRun(run)?.label === DROPPED_LABEL;
   /** The found list again from every run, less the demoted and the dropped. */
   const rebuildFound = (dropped: Set<number>) => {
     const regroup = regroupRef.current;
     if (!regroup) return;
-    setFound(regroup(runsRef.current.filter((_, i) => !dropped.has(i) && !(labels?.get(i) && demotes(labels.get(i)!.label)))));
+    setFound(regroup(runsRef.current.filter((r, i) => !dropped.has(i) && !droppedOnJob(r) && !(labels?.get(i) && demotes(labels.get(i)!.label)))));
   };
+  // A drop from the set review lands as a dropped measurement; the sheet's total follows it.
+  const droppedKey = (sheet?.measurements ?? []).filter((m) => m.label === DROPPED_LABEL).map((m) => m.id).sort().join(",");
+  const droppedKeyWas = useRef(droppedKey);
+  useEffect(() => {
+    if (droppedKeyWas.current === droppedKey) return;
+    droppedKeyWas.current = droppedKey;
+    if (found !== null) rebuildFound(review === null ? new Set() : droppedRuns(review));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a change in what is dropped rebuilds
+  }, [droppedKey]);
   const reviewScores = useRef<(number | null)[]>([]);
   function onStartReview() {
     const runs = runsRef.current;
@@ -3310,8 +3321,8 @@ export function TakeoffPlanViewer({
       }
       if (!quietFind.current) onResults?.();
       setFound(
-        doubted !== null
-          ? regroup(runs.filter((_, at) => !doubted.has(at)))
+        doubted !== null || runs.some(droppedOnJob)
+          ? regroup(runs.filter((r, at) => !doubted?.has(at) && !droppedOnJob(r)))
           : runs === found.walls
             ? found.groups
             : regroup(runs),
@@ -3890,7 +3901,8 @@ export function TakeoffPlanViewer({
             <p className="text-xs text-ink-muted">
               Greyed on the drawing. If one is a wall, put it back — it rejoins the list and the total.
             </p>
-            <ul className="mt-2 flex flex-col gap-1">
+            {/* Capped: eleven rows once squeezed the drawing to 2 px on a 721 px window (Chrome round 5). */}
+            <ul data-takeoff="demoted-list" className="mt-2 flex max-h-24 flex-col gap-1 overflow-y-auto">
               {demoted.map((d) => (
                 <li
                   key={d.at}
@@ -4040,7 +4052,9 @@ export function TakeoffPlanViewer({
                   why:
                     measurementForRun(sheetReviewRun)?.label === HELD_LABEL
                       ? "held off the estimate, to confirm"
-                      : reviewScores.current[reviewAt] == null
+                      : measurementForRun(sheetReviewRun) === null
+                        ? "not on the job yet: D only takes it off this list"
+                        : reviewScores.current[reviewAt] == null
                         ? "no model score"
                         : `model score ${(Math.floor(reviewScores.current[reviewAt]! * 100) / 100).toFixed(2)}`,
                 }

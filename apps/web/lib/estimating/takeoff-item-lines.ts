@@ -243,6 +243,8 @@ export async function syncTakeoffItemLines(
   tx: Tx,
   companyId: string,
   jobId: string,
+  /** Only these items' lines are written or retired; the rest of the estimate is left as it is. */
+  only?: ReadonlySet<string>,
 ): Promise<ItemLineSummary> {
   const { items, assemblies, defaultPartitionId, finishPages } = await loadItemsForLines(tx, companyId, jobId);
   const assemblyById = new Map(assemblies.map((assembly) => [assembly.id, assembly]));
@@ -285,6 +287,7 @@ export async function syncTakeoffItemLines(
     });
 
   for (const raw of items) {
+    if (only !== undefined && !only.has(raw.id)) continue;
     // Doubted walls stay on the sheet and off the estimate until confirmed.
     if (OFF_ESTIMATE_ITEMS.includes(raw.name)) continue;
     const item = { ...raw, measurements: raw.measurements.filter((m) => !onFinishLines(m)) };
@@ -388,7 +391,7 @@ export async function syncTakeoffItemLines(
 
   // ── THE FINISH LINES, ONE SOURCE WHETHER THE VIEWER OR THE WHOLE-SET RUN READ THEM ──
   const finishLines = finish.flatMap((f) => f.lines);
-  if (finishLines.length > 0) {
+  if (finishLines.length > 0 && only === undefined) {
     const anchor = items.find((i) => i.name === FINISH_ITEM)?.id ?? (await finishItem(tx, companyId, jobId));
     for (const line of finishLines) plainLine(anchor, line.description, line.unit, line.quantity);
   }
@@ -398,7 +401,7 @@ export async function syncTakeoffItemLines(
   // ONLY lines carrying a `takeoffItemId`. A wall-schedule line is not this
   // function's to read, let alone to retire.
   const existing = await tx.jobLineItem.findMany({
-    where: { jobId, takeoffItemId: { not: null } },
+    where: { jobId, takeoffItemId: only === undefined ? { not: null } : { in: [...only] } },
     select: { id: true, takeoffItemId: true, wallTypeComponentId: true, description: true, isDeleted: true },
   });
   const key = (line: { takeoffItemId: string | null; wallTypeComponentId: string | null; description: string }) =>
@@ -500,4 +503,19 @@ function feetAcross(calibration: {
   const feet = Number(calibration.declaredDistanceFeet);
   if (!Number.isFinite(feet) || feet <= 0) return null;
   return feet / span;
+}
+
+/**
+ * ── A REVIEW MOVES ONE RUN, NOT THE WHOLE TAKEOFF ──
+ *
+ * "It is a wall" and Review walls used to run the whole sync, so confirming one
+ * run on a job nobody had sent yet put every floor, base, finish and ceiling
+ * line on the estimate (Chrome round 5: 0 → 11 lines). Now only the items the
+ * run left and joined are synced, and only once Send to estimate has put
+ * takeoff lines there; before that the estimate is not this decision's to start.
+ */
+export async function syncReviewedItems(tx: Tx, companyId: string, jobId: string, itemIds: readonly (string | null)[]): Promise<void> {
+  const sent = await tx.jobLineItem.count({ where: { jobId, takeoffItemId: { not: null } } });
+  if (sent === 0) return;
+  await syncTakeoffItemLines(tx, companyId, jobId, new Set(itemIds.filter((id): id is string => id !== null)));
 }

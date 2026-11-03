@@ -93,8 +93,9 @@ export function WholeSetTakeoffPanel({
     });
   }
 
-  const found = summary.filter((row) => row.status.kind === "walls");
-  const passed = summary.filter((row) => row.status.kind === "skipped" || row.status.kind === "looked");
+  const counted = (row: WallsSummaryRow) => row.status.kind === "walls" && row.status.notCounted === undefined;
+  const found = summary.filter(counted);
+  const passed = summary.filter((row) => !counted(row) && (row.status.kind === "walls" || row.status.kind === "skipped" || row.status.kind === "looked"));
   const failed = summary.filter((row) => row.status.kind === "failed");
   const inRun = view !== null && !view.complete;
 
@@ -140,7 +141,9 @@ export function WholeSetTakeoffPanel({
               <li key={row.pageNumber} data-takeoff="whole-set-sheet" data-page={row.pageNumber} data-status={row.status.kind}>
                 <span className="text-ink-body">{row.label}</span>
                 {" — "}
-                {row.status.kind === "walls"
+                {row.status.kind === "walls" && row.status.notCounted !== undefined
+                  ? `found ${formatFeetInches(row.status.feet)}, not counted: ${row.status.notCounted}`
+                  : row.status.kind === "walls"
                   ? `${row.status.groups} wall ${row.status.groups === 1 ? "group" : "groups"}, ${formatFeetInches(row.status.feet)}`
                   : row.status.kind === "skipped"
                     ? `passed over: ${row.status.why}`
