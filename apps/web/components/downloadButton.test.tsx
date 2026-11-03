@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DownloadButton, fileNameFrom } from "./DownloadButton";
+import { DownloadButton } from "./DownloadButton";
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean | undefined;
@@ -47,17 +47,16 @@ describe("the download button's request", () => {
     expect(clicked).toEqual([{ href: "blob:file", download: "G703 Tower application 2.csv" }]);
   });
 
+  it("falls back to its own name when the server gives none", async () => {
+    fetchMock.mockResolvedValue(new Response("x", { status: 200 }));
+    await act(async () => host.querySelector("button")?.click());
+    expect(clicked).toEqual([{ href: "blob:file", download: "G703.csv" }]);
+  });
+
   it("says the download failed, with the status, and saves nothing", async () => {
     fetchMock.mockResolvedValue(new Response("down", { status: 503 }));
     await act(async () => host.querySelector("button")?.click());
     expect(host.textContent).toContain("HTTP 503");
     expect(clicked).toEqual([]);
-  });
-});
-
-describe("the file name", () => {
-  it("reads the server's name, and falls back", () => {
-    expect(fileNameFrom('attachment; filename="a b.csv"', "x")).toBe("a b.csv");
-    expect(fileNameFrom(null, "x.csv")).toBe("x.csv");
   });
 });

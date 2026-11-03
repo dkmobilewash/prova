@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Spinner } from "@/components/Spinner";
 
 /** The file name the server gave, or the fallback. */
-export function fileNameFrom(disposition: string | null, fallback: string): string {
+function fileNameFrom(disposition: string | null, fallback: string): string {
   const match = disposition?.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
   return match ? decodeURIComponent(match[1]) : fallback;
 }
