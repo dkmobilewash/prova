@@ -1,3 +1,4 @@
+import { showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { detectWallsForCalibration, type DetectedBoundary, type DetectOutcome, type DetectTarget } from "@/lib/takeoff/detectWallsForCalibration";
@@ -49,6 +50,8 @@ export type WallsSheet = {
   title: string | null;
   hasScale: boolean;
   hasWalls: boolean;
+  /** What on the sheet says it shows existing work; empty when nothing does. */
+  renovation?: string[];
 };
 
 export type WallsSkip = "no scale" | "not a floor plan" | "already found" | `same level as ${string}`;
@@ -218,7 +221,7 @@ function preferWholeFloor(a: WallsSheet, b: WallsSheet): number {
 /** Every sheet of the set as the planner sees it: the inventory's rows joined
  *  to the pages that have a scale and the walls stored against it. */
 export async function wallsSheetsFor(planId: string, companyId: string): Promise<WallsSheet[]> {
-  const [rows, pages] = await Promise.all([
+  const [rows, pages, texts] = await Promise.all([
     sheetIndexFor(planId, companyId),
     prisma.takeoffPlanPage.findMany({
       where: { planId },
@@ -228,7 +231,9 @@ export async function wallsSheetsFor(planId: string, companyId: string): Promise
         wallProposals: { select: { calibrationId: true } },
       },
     }),
+    prisma.planSheetText.findMany({ where: { planId }, select: { pageNumber: true, renovationMarks: true } }),
   ]);
+  const marksByPage = new Map(texts.map((t) => [t.pageNumber, t.renovationMarks]));
   const byPage = new Map(pages.map((page) => [page.pageNumber, page]));
   const numbers = new Set<number>([...rows.map((row) => row.pageNumber), ...pages.map((page) => page.pageNumber)]);
   const rowByPage = new Map<number, SheetRow>(rows.map((row) => [row.pageNumber, row]));
@@ -244,6 +249,7 @@ export async function wallsSheetsFor(planId: string, companyId: string): Promise
         title: row ? effectiveTitle(row) : null,
         hasScale: calibration !== null,
         hasWalls: calibration !== null && (page?.wallProposals ?? []).some((p) => p.calibrationId === calibration.id),
+        renovation: marksByPage.get(pageNumber) ?? [],
       };
     });
 }
@@ -412,6 +418,8 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
 export type WallsSummaryRow = {
   pageNumber: number;
   label: string;
+  /** Present when the sheet's words say it shows existing work. */
+  renovation?: string[];
   status:
     | { kind: "walls"; groups: number; feet: number; typedFeet?: number; rooms?: number; ceilingSqFt?: number }
     | { kind: "skipped"; why: WallsSkip }
@@ -444,7 +452,8 @@ export function wallsSummaryRows(input: {
       const why = plan.get(sheet.pageNumber) ?? null;
       status = why === null ? { kind: "pending" } : { kind: "skipped", why };
     }
-    return { pageNumber: sheet.pageNumber, label, status };
+    const marks = sheet.renovation ?? [];
+    return { pageNumber: sheet.pageNumber, label, status, ...(showsExistingWork(marks) ? { renovation: marks } : {}) };
   });
 }
 

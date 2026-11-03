@@ -137,7 +137,7 @@ export function TakeoffAssemblyPanel({ jobId, assemblies, item, pinnedAt, readOn
         setError(result.error);
         return;
       }
-      const { created, updated, removed, unpriced: noAssembly, checkFigures } = result.value;
+      const { created, updated, removed, unpriced: noAssembly, checkFigures, renovationUnchecked = [] } = result.value;
       setSent(
         `${created} added, ${updated} updated${removed > 0 ? `, ${removed} removed` : ""}` +
           (noAssembly.length > 0
@@ -145,7 +145,10 @@ export function TakeoffAssemblyPanel({ jobId, assemblies, item, pinnedAt, readOn
             : "") +
           // The floor is a check figure for this trade, not a line: said as
           // square feet rather than counted as "not priced" on every Send.
-          checkFigures.map((c) => ` · ${c.name}: ${c.squareFeet.toLocaleString()} sf of floor, a check figure, not priced`).join(""),
+          checkFigures.map((c) => ` · ${c.name}: ${c.squareFeet.toLocaleString()} sf of floor, a check figure, not priced`).join("") +
+          (renovationUnchecked.length > 0
+            ? ` · Check: ${renovationUnchecked.join(", ")} ${renovationUnchecked.length === 1 ? "shows" : "show"} existing work and went with no work area or exclusion, so existing walls may be counted.`
+            : ""),
       );
     });
   }

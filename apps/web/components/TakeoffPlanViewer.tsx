@@ -73,6 +73,7 @@ import { addSheetExclusion, clearSheetExclusions, removeSheetExclusion } from "@
 import { insideWorkArea, openingsInWorkArea, runAt, splitLinesFrom, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
 import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUndo";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
+import { renovationMarks, showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
 import {
   GRID_REFERENCE_SHEETS,
@@ -785,6 +786,8 @@ export function TakeoffPlanViewer({
   /** "Count like this": the box being dragged, and the matches it found, with the ones the estimator dropped. */
   /** The toolbar's offer was pressed: the form opens with the line already drawn, and Save is still the estimator's. */
   const [scaleOnOpen, setScaleOnOpen] = useState(false);
+  /** What on this sheet says it shows existing work, read at Find the walls. */
+  const [renovationOnPage, setRenovationOnPage] = useState<{ page: number; marks: string[] } | null>(null);
   /** The Split area line being dragged, page-width units. */
   const [splitLine, setSplitLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [symbolBox, setSymbolBox] = useState<SymbolBox | null>(null);
@@ -2921,6 +2924,7 @@ export function TakeoffPlanViewer({
       // baseline and this used to subtract before passing anything on.
       const vectorWords = raster ? raster.textItems : await pageTextItems(page, pdfjs);
       wordsRef.current = vectorWords;
+      setRenovationOnPage({ page: pageNumber, marks: renovationMarks(vectorWords.map((w) => w.str).join("\n")) });
       // ── A SCAN'S WORDS ENTER EXACTLY HERE ──
       //
       // A scanned sheet has no text layer, so `pageTextItems` returns nothing
@@ -3896,6 +3900,12 @@ export function TakeoffPlanViewer({
           feet={found === null ? null : found.reduce((sum, group) => sum + group.feet, 0)}
           aside={userAside}
           excludes={exclusionRows.filter((r) => r.kind === "EXCLUDE_LIKE").length}
+          renovation={
+            found !== null && renovationOnPage?.page === pageNumber && showsExistingWork(renovationOnPage.marks) && !exclusionRows.some((r) => r.kind === "EXCLUDE_LIKE" || r.kind === "WORK_AREA")
+              ? renovationOnPage.marks
+              : null
+          }
+          onPickTool={(next) => setTool(next)}
           splits={exclusionRows.filter((r) => r.kind === "ROOM_SPLIT").length}
           workAreas={exclusionRows.filter((r) => r.kind === "WORK_AREA").length}
           readOnly={readOnly}
