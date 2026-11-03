@@ -41,3 +41,19 @@ export function scopeSentence(scope: SheetScope, fromNumber: string | null, inSc
   if (d === null) return `This sheet has no readable number, so every sheet is searched (${total}).`;
   return `Sheets numbered ${d}… like this one (${inScope} of ${total}).`;
 }
+
+/**
+ * ── A LEGEND SHEET'S SYMBOLS ARE THE KEY, NOT THE WORK ──
+ *
+ * Baker's E0.03 is ELECTRICAL LEGEND: five R1 troffers drawn beside their
+ * descriptions. They were left out of Find on all sheets only when the boxed
+ * troffer happened to carry its "R1" tag into the template, which depends on a
+ * few pixels of the drag: 2 tries in 16 counted them (26 against the right 21).
+ * So a sheet whose own title names it a legend, or a sheet of symbols, is listed
+ * and not counted, whatever the tag. A title that is also a PLAN ("LEGEND AND
+ * FIRST FLOOR PLAN") is a plan and is counted.
+ */
+export function isLegendSheet(title: string | null | undefined): boolean {
+  if (!title) return false;
+  return /\b(LEGENDS?|SYMBOLS?)\b/i.test(title) && !/\bPLANS?\b/i.test(title);
+}

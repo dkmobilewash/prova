@@ -316,6 +316,10 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: reports how many wall candidates survive each filter of findWallsOnSheet on a committed fixture, so 'this sheet found nothing' can be attributed to a stage rather than guessed at, guarded by a skip when the fixtures are absent plus a non-zero row assertion",
     "overlay.eval.ts":
       "calls no model: renders the detections over each fixture as a PNG so a failure can be looked at rather than reasoned about, guarded by the same skip plus an assertion that one image was written per fixture",
+    "splitAnyLine.eval.ts":
+      "calls no model: Split area over many wall-to-wall lines on a REAL training sheet, guarded by a skip on REAL_PLAN_DIR plus an assertion that the sheet read to walls before any line is tried",
+    "legendAcross.eval.ts":
+      "calls no model: Find on all sheets against a REAL legend sheet with 20 boxes, guarded by a skip on REAL_PLAN_DIR plus an assertion that both sheets read to strokes",
     "sheetTemplate.eval.ts":
       "calls no model: the template filter's recurrence histogram over a REAL set, guarded by a skip on REAL_PLAN_PDF plus a non-zero segment assertion — a sheet that parsed to nothing must not read as a sheet with no furniture on it",
   };

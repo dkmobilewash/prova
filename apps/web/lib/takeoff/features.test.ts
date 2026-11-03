@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NEEDS_AI_ON, NEEDS_MODEL_KEY, statusText, takeoffFeatureRows, wallTypesStatus } from "./features";
 
@@ -43,4 +45,23 @@ describe("the takeoff features list", () => {
     expect(statusText({ kind: "needs", needs: [NEEDS_AI_ON, NEEDS_MODEL_KEY] })).toMatch(/2 things needed/);
     expect(statusText({ kind: "not-yet" })).toBe("Not on this build yet");
   });
+});
+
+describe("each feature's settings link", () => {
+  // The links are anchors on the settings page's estimating tab. An anchor with no
+  // element sent "Find walls on every floor plan" to the top of the page it was on
+  // (Chrome round 5), so every one must name an id the estimating tab renders.
+  const page = readFileSync(join(process.cwd(), "app/(app)/settings/page.tsx"), "utf8");
+  const estimating = page.slice(page.indexOf('tab === "estimating"'));
+  const rows = takeoffFeatureRows({ roomFinderOn: true, demotedWallsOn: true, ai: { aiEnabled: true, planTextReadOptedIn: true }, anthropicConfigured: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOn: true });
+  const onSettings = rows.filter((r) => r.where.href.startsWith("/settings?tab=estimating#"));
+  it("covers the switches on the estimating tab", () => {
+    expect(onSettings.map((r) => r.key).sort()).toEqual(["doorsWindows", "greyOut", "roomsAndCeilings", "scannedPlans", "symbolCount", "wholeSet"]);
+  });
+  for (const row of onSettings) {
+    const id = row.where.href.split("#")[1]!;
+    it(`${row.key} lands on #${id}`, () => {
+      expect(estimating, `no element with id="${id}" on the estimating tab`).toContain(`id="${id}"`);
+    });
+  }
 });

@@ -644,17 +644,24 @@ export default async function SettingsPage({
                 owner only. See `lib/takeoff/NOTES-rooms.md`. */}
             <div id="room-finder" className="mt-4 scroll-mt-20">
               <RoomFinderSwitch on={roomFinderOn} isOwner={currentUser.role === "OWNER"} />
+            </div>
+            {/* Each switch has its own anchor: the takeoff features list links to
+                them by id, and a missing id sent "Find walls on every floor plan"
+                to the top of this same page (Chrome round 5). */}
+            <div id="whole-set-takeoff" className="scroll-mt-20">
               <WholeSetTakeoffSwitch on={wholeSetTakeoffOn} isOwner={currentUser.role === "OWNER"} />
             </div>
             <div id="demoted-walls" className="mt-4 scroll-mt-20">
               <DemotedWallsSwitch on={demotedWallsOn} isOwner={currentUser.role === "OWNER"} />
             </div>
             {/* Scanned sheets, same posture: off until chosen. */}
-            <div className="mt-4">
+            <div id="scanned-plans" className="mt-4 scroll-mt-20">
               <ScannedPlansSwitch on={scannedPlansOn} isOwner={currentUser.role === "OWNER"} />
             </div>
-            <div className="mt-4">
+            <div id="doors-windows" className="mt-4 scroll-mt-20">
               <DoorsWindowsSwitch on={doorsWindowsOn} isOwner={currentUser.role === "OWNER"} />
+            </div>
+            <div id="symbol-count" className="scroll-mt-20">
               <SymbolCountSwitch on={symbolCountOn} isOwner={currentUser.role === "OWNER"} />
             </div>
           </section>

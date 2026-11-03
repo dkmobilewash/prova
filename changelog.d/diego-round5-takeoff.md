@@ -1,0 +1,3 @@
+### Round 5: a split never loses area, the takeoff download is on the Takeoff tab, the settings links land, and Find on all sheets leaves a legend out every time
+
+Split area now cuts the room itself along every stretch of the line inside it, so the parts add up for any wall-to-wall line (it lost 11 sf on Joplin). Download Excel and Download CSV are on the job's Takeoff tab. The takeoff features list's links land on their switches. Find on all sheets lists a legend sheet without counting it, whatever the box. Check: split the Joplin dining area along the kitchen's top wall and the floor total does not move.
