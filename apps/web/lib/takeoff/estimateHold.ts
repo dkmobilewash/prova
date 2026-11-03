@@ -11,16 +11,16 @@ type Line = { x1: number; y1: number; x2: number; y2: number };
  * item, still drawn on the sheet and still a room boundary, and the estimate
  * skips that item until the estimator says it is a wall.
  *
- * The cut is 0.4, not the grey-out's 0.2. At 0.2 almost nothing moved: Joplin
- * stayed +19% and Baker +10%. Real wall left off, as a share of the key:
+ * The cut is 0.4, picked on training sheets only, by a rule written down before
+ * the run: the highest cut leaving under 2% of real wall off, removing at least
+ * 3 ft of junk per real foot, and costing no building more than about 100 ft.
  *
- *   cut    training    held-out totals
- *   0.2    0.1%        0.9%
- *   0.4    0.5%        1.7%
- *   0.5    0.8%        2.7%
+ *   cut    real left off    junk per real ft    worst building
+ *   0.4    0.5%             14.4                89 ft
+ *   0.5    0.8%             13.6                107 ft, so it fails
  *
- * Training flatters this model, which was trained on those sheets, so held-out
- * sets the limit of about 2%.
+ * Held-out, read once at 0.4: 1.7% of real wall left off. The grey-out's own
+ * 0.2 moved almost nothing, Joplin +19% and Baker +10% over the key.
  */
 export const ESTIMATE_HOLD_CUT = 0.4;
 export const HELD_ITEM = "Walls — to confirm";

@@ -22,7 +22,9 @@ import { loadWallModel } from "../wallModelFile";
 const DIR = process.env.REAL_PLAN_DIR ?? "";
 const DIR2 = process.env.REAL_PLAN_DIR2 ?? "";
 const LABELS = process.env.TAKEOFF_LABEL_DIR ?? "";
-const CUTS = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5];
+const CUTS = (process.env.DEMOTE_CUTS ?? "0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9").split(",").map(Number);
+/** HELD_OUT=skip reads no held-out sheet at all, for picking a cut. */
+const SKIP_HELD = process.env.HELD_OUT === "skip";
 const flat = (s: string) => s.replace(/[^a-z0-9]+/gi, "").toUpperCase();
 const findPdf = (dir: string) => {
   for (const root of [DIR, DIR2].filter((r) => r !== "")) for (const n of readdirSync(root)) if (n.toLowerCase().endsWith(".pdf") && flat(n) === flat(dir)) return join(root, n);
@@ -40,6 +42,7 @@ describe.skipIf(DIR === "" || LABELS === "" || process.env.TAKEOFF_WALL_MODEL ==
     for (const dir of readdirSync(LABELS)) {
       if (!existsSync(join(LABELS, dir))) continue;
       const isHeld = heldOutReason(dir) !== null;
+      if (isHeld && SKIP_HELD) continue;
       for (const name of readdirSync(join(LABELS, dir))) {
         const sheet = name.slice(0, -5);
         if (!name.endsWith(".json") || (!isHeld && excludedSheetReason(dir, sheet) !== null)) continue;
