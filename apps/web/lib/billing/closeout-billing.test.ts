@@ -70,6 +70,13 @@ describe("the closeout list", () => {
     expect(items.map((item) => item.detail).join(" ")).not.toMatch(/safe|closed out|nothing owed|covered|guarantee/i);
   });
 
+  it("marks retainage billed after a release application, whose negative retainage nets the job's withheld to zero", () => {
+    // The shape the Billing tab passes: loadJobRetainage sums the release
+    // application's negative snapshot, so withheld reads 0 once it is billed.
+    const items = closeoutStatus({ ...base, retainage: { withheld: 0, balance: 0 }, releaseApplication: { number: 3, unpaid: 4700 } });
+    expect(items[1]).toMatchObject({ done: true, detail: "Billed on application #3." });
+  });
+
   it("does not mark retainage billed on a job that never withheld any", () => {
     expect(closeoutStatus({ ...base, retainage: { withheld: 0, balance: 0 }, releaseApplication: null })[1]).toMatchObject({ done: false, detail: "No retainage withheld on this job's invoices." });
   });
