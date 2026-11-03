@@ -1,15 +1,24 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
-import { createRoot } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TakeoffRevisionPanel } from "./TakeoffRevisionPanel";
+
+// Every root is unmounted after its test, so nothing React scheduled outlives the
+// test environment (#936: "window is not defined" in the scheduler after teardown).
+const roots: Root[] = [];
+const mount = (host: Element) => { const root = createRoot(host); roots.push(root); return root; };
+afterEach(() => {
+  act(() => roots.splice(0).forEach((root) => root.unmount()));
+  document.body.innerHTML = "";
+});
 
 const seg = { x1: 0, y1: 0, x2: 0.1, y2: 0 };
 const paint = (result: Parameters<typeof TakeoffRevisionPanel>[0]["state"]["result"], extra: Partial<Parameters<typeof TakeoffRevisionPanel>[0]> = {}) => {
   const host = document.createElement("div");
   document.body.append(host);
   const props = { state: { earlier: "bid set.pdf", busy: false, error: null, result }, onFindWalls: vi.fn(), findDisabled: false, onClear: vi.fn(), ...extra };
-  act(() => createRoot(host).render(createElement(TakeoffRevisionPanel, props)));
+  act(() => mount(host).render(createElement(TakeoffRevisionPanel, props)));
   return { host, props };
 };
 

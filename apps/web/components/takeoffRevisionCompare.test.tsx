@@ -1,8 +1,17 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
-import { createRoot } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PlanSheet } from "@/lib/takeoff-plan-view";
+
+// Every root is unmounted after its test, so nothing React scheduled outlives the
+// test environment (#936: "window is not defined" in the scheduler after teardown).
+const roots: Root[] = [];
+const mount = (host: Element) => { const root = createRoot(host); roots.push(root); return root; };
+afterEach(() => {
+  act(() => roots.splice(0).forEach((root) => root.unmount()));
+  document.body.innerHTML = "";
+});
 
 const compare = vi.fn(async () => ({
   ok: true as const,
@@ -16,7 +25,7 @@ const sheet = { id: "page_1", pageNumber: 1, label: "", pageWidthPt: 3024, calib
 function paint(earlierVersionByPage?: Record<number, string>) {
   const host = document.createElement("div");
   document.body.append(host);
-  act(() => createRoot(host).render(createElement(TakeoffPlanViewer, { jobId: "job_1", planId: "plan_1", sheets: [sheet], printedScaleByPage: {}, scannedPages: [], scalePrefillByPage: {}, earlierVersionByPage } as never)));
+  act(() => mount(host).render(createElement(TakeoffPlanViewer, { jobId: "job_1", planId: "plan_1", sheets: [sheet], printedScaleByPage: {}, scannedPages: [], scalePrefillByPage: {}, earlierVersionByPage } as never)));
   return host;
 }
 
@@ -28,7 +37,7 @@ describe("Compare with earlier version", () => {
   // The viewer draws its SVG only once a PDF has loaded, which happy-dom cannot do, so the overlay is rendered on its own.
   it("draws removed lines dashed and added lines solid", () => {
     const host = document.createElement("div");
-    act(() => createRoot(host).render(createElement("svg", null, createElement(RevisionOverlay, { result: { added: [{ x1: 0, y1: 0, x2: 1, y2: 0 }], removed: [{ x1: 0, y1: 1, x2: 1, y2: 1 }, { x1: 0, y1: 2, x2: 1, y2: 2 }] }, strokePx: 2 }))));
+    act(() => mount(host).render(createElement("svg", null, createElement(RevisionOverlay, { result: { added: [{ x1: 0, y1: 0, x2: 1, y2: 0 }], removed: [{ x1: 0, y1: 1, x2: 1, y2: 1 }, { x1: 0, y1: 2, x2: 1, y2: 2 }] }, strokePx: 2 }))));
     expect([...host.querySelectorAll("line")].map((l) => [l.getAttribute("data-change"), l.getAttribute("stroke-dasharray")])).toEqual([["removed", "4 3"], ["removed", "4 3"], ["added", null]]);
   });
   it("opens the panel with what changed", async () => {
