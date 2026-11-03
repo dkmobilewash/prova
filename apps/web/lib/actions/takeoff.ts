@@ -1,6 +1,6 @@
 "use server";
 
-import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
+import { syncReviewedItems, syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
 import { namedItem, untypedItem } from "@/lib/plan-ingest/wallItems";
 import { DROPPED_ITEM, DROPPED_LABEL, HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import { countItemFor } from "@/lib/takeoff/countItem";
@@ -446,13 +446,13 @@ export async function confirmHeldWall(jobId: string, measurementId: string): Pro
   assertEditableDirectly(job);
   const measurement = await prisma.takeoffMeasurement.findFirst({
     where: { id: measurementId, label: HELD_LABEL, page: { plan: { jobId, companyId: context.company.id } } },
-    select: { id: true },
+    select: { id: true, itemId: true },
   });
   if (!measurement) return actionFail("That wall is no longer waiting. Reload the page.");
   await prisma.$transaction(async (tx) => {
     const itemId = await untypedItem(tx, context.company.id, jobId);
     await tx.takeoffMeasurement.update({ where: { id: measurement.id }, data: { itemId, label: "wall, untyped" } });
-    await syncTakeoffItemLines(tx, context.company.id, jobId);
+    await syncReviewedItems(tx, context.company.id, jobId, [measurement.itemId, itemId]);
   });
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
@@ -495,7 +495,7 @@ export async function reviewWall(
     else if (decision === "restore") next = restore!;
     if (next === null) return;
     await tx.takeoffMeasurement.update({ where: { id: measurement.id }, data: next });
-    await syncTakeoffItemLines(tx, context.company.id, jobId);
+    await syncReviewedItems(tx, context.company.id, jobId, [measurement.itemId, next.itemId]);
   });
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);

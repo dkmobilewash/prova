@@ -97,8 +97,8 @@ export function takeoffExport(input: ExportInput): { rows: ExportRow[]; sheets: 
 
   const sheets: ExportSheetRow[] = input.summary.map((r) => ({
     sheet: r.label,
-    status: r.status.kind === "walls" ? "counted" : r.status.kind === "skipped" ? "skipped" : r.status.kind === "looked" ? "looked, nothing kept" : r.status.kind,
-    why: r.status.kind === "skipped" ? r.status.why : r.status.kind === "looked" ? r.status.note : r.status.kind === "failed" ? r.status.error : "",
+    status: r.status.kind === "walls" ? (r.status.notCounted === undefined ? "counted" : "not counted") : r.status.kind === "skipped" ? "skipped" : r.status.kind === "looked" ? "looked, nothing kept" : r.status.kind,
+    why: r.status.kind === "skipped" ? r.status.why : r.status.kind === "walls" ? (r.status.notCounted ?? "") : r.status.kind === "looked" ? r.status.note : r.status.kind === "failed" ? r.status.error : "",
     wallFeet: r.status.kind === "walls" ? Math.round(r.status.feet) : null,
     rooms: r.status.kind === "walls" ? (r.status.rooms ?? null) : null,
     existingWork: r.renovation?.join(", ") ?? "",
