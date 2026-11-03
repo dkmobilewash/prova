@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { sendPayApplication, sendPurchaseOrder } from "@/lib/actions";
 import { localToday } from "@/components/localToday";
+import { DownloadButton } from "@/components/DownloadButton";
 import { Spinner } from "@/components/Spinner";
 import type { DocumentEmailDraft, SendRow } from "@/lib/document-email";
 
@@ -24,9 +25,12 @@ export function SendHistory({ sends }: { sends: SendRow[] }) {
           Emailed {send.sentOn} to {send.toAddress} · {send.status}
           {send.detail ? ` · ${send.detail}` : ""}
           {send.linkUntil ? ` · sent as a link, works until ${send.linkUntil}` : ""} ·{" "}
-          <a href={`/api/sent-documents/${send.id}`} className="text-link hover:underline">
-            Download what was sent
-          </a>
+          <DownloadButton
+            href={`/api/sent-documents/${send.id}`}
+            label="Download what was sent"
+            fallbackName="sent.pdf"
+            className="min-h-11 text-link hover:underline"
+          />
         </li>
       ))}
     </ul>

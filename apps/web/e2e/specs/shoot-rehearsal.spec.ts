@@ -703,6 +703,41 @@ test.describe("the launch-video run sheet, beat by beat", () => {
     await expect(page.getByText(/^Expected release:/)).toHaveCount(0);
   });
 
+  // ─────────────────────────────────────────── beat 5b, the G703 files
+  // CHROME ROUND 4: these two buttons returned 503 on every press. Pressing them
+  // here, on this job, found a different failure first: the job's name has an em
+  // dash, it went into the Content-Disposition header, and the route threw
+  // "Cannot convert argument to a ByteString". So this presses the real buttons in
+  // a real signed-in browser and requires a real file on disk. It does NOT
+  // reproduce Chrome's 503: with the old plain links put back, it passes too.
+  test("beat 5b: the G703 buttons download the files, by pressing them", async () => {
+    await page.goto(`/jobs/${jobId}/billing`);
+    await page.getByRole("link", { name: "View pay application →" }).click();
+    await page.waitForURL(new RegExp(`/jobs/${jobId}/pay-applications/[^/]+$`));
+    await expectHealthy(page, "the pay application document, for the G703 files", { monitor });
+
+    for (const [label, extension] of [
+      ["G703 as CSV", ".csv"],
+      ["G703 as Excel", ".xlsx"],
+    ] as const) {
+      const button = page.getByRole("button", { name: label });
+      await expect(button, `"${label}" should be a button that fetches, not a link that navigates`).toBeVisible();
+      const [download] = await Promise.all([page.waitForEvent("download"), button.click()]);
+      expect(download.suggestedFilename(), `"${label}" saved under the wrong name`).toMatch(new RegExp(`^G703 .*\\${extension}$`));
+      const saved = await download.path();
+      const bytes = (await import("node:fs")).readFileSync(saved);
+      expect(bytes.byteLength, `"${label}" saved an empty file`).toBeGreaterThan(0);
+      if (extension === ".csv") {
+        const text = bytes.toString("utf8");
+        expect(text, "the CSV is not the continuation sheet").toContain("A Item no.");
+        expect(text, "the CSV is a sign-in page saved as a file").not.toContain("<html");
+      } else {
+        expect(bytes.subarray(0, 2).toString("latin1"), "the Excel file is not a workbook").toBe("PK");
+      }
+      await expect(page.getByText(/That download did not work/), `"${label}" reported a failed download`).toHaveCount(0);
+    }
+  });
+
   // ────────────────────────────────────────────── union add-on, beat A
   test("beat A: the WH-347 refuses to look finished, and it can never stop refusing", async () => {
     await page.goto(`/jobs/${jobId}/crew`);

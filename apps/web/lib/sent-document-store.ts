@@ -1,3 +1,4 @@
+import { contentDisposition } from "@/lib/content-disposition";
 import { get, put } from "@vercel/blob";
 
 /**
@@ -54,7 +55,7 @@ export function sentCopyResponse(body: ReadableStream<Uint8Array>, fileName: str
   return new Response(body, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${fileName.replace(/["\r\n]/g, "")}"`,
+      "Content-Disposition": contentDisposition("attachment", fileName),
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
     },
