@@ -1,8 +1,8 @@
 "use server";
 
 import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
-import { untypedItem } from "@/lib/plan-ingest/wallItems";
-import { HELD_LABEL } from "@/lib/takeoff/estimateHold";
+import { namedItem, untypedItem } from "@/lib/plan-ingest/wallItems";
+import { DROPPED_ITEM, DROPPED_LABEL, HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import { countItemFor } from "@/lib/takeoff/countItem";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
@@ -457,6 +457,49 @@ export async function confirmHeldWall(jobId: string, measurementId: string): Pro
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
   return { ok: true };
+}
+
+/**
+ * A reviewer's decision on one wall on the job, from "Review walls". Drop moves
+ * it to "Walls — dropped", off the estimate. Keep puts a held one on as untyped
+ * and leaves any other as it is. Restore puts it back where it was, for undo.
+ * Returns where it was, so the screen can undo it.
+ */
+export async function reviewWall(
+  jobId: string,
+  measurementId: string,
+  decision: "drop" | "keep" | "restore",
+  restore?: { itemId: string | null; label: string | null },
+): Promise<ActionResultWith<{ itemId: string | null; label: string | null }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY) as ActionResultWith<never>;
+  const job = await prisma.job.findFirst({ where: { id: jobId, companyId: context.company.id } });
+  if (!job) return actionFail("That job is no longer here. Reload the page.") as ActionResultWith<never>;
+  assertEditableDirectly(job);
+  const measurement = await prisma.takeoffMeasurement.findFirst({
+    where: { id: measurementId, kind: "LINEAR", source: "DETECTED", page: { plan: { jobId, companyId: context.company.id } } },
+    select: { id: true, itemId: true, label: true },
+  });
+  if (!measurement) return actionFail("That wall is no longer on this job. Reload the page.") as ActionResultWith<never>;
+  if (decision === "restore") {
+    if (restore === undefined) return actionFail("There is nothing to put back.") as ActionResultWith<never>;
+    if (restore.itemId !== null && (await prisma.takeoffItem.count({ where: { id: restore.itemId, jobId, companyId: context.company.id } })) === 0) {
+      return actionFail("That item is no longer on this job. Reload the page.") as ActionResultWith<never>;
+    }
+  }
+  const was = { itemId: measurement.itemId, label: measurement.label };
+  await prisma.$transaction(async (tx) => {
+    let next: { itemId: string | null; label: string | null } | null = null;
+    if (decision === "drop") next = { itemId: await namedItem(tx, context.company.id, jobId, DROPPED_ITEM), label: DROPPED_LABEL };
+    else if (decision === "keep" && measurement.label === HELD_LABEL) next = { itemId: await untypedItem(tx, context.company.id, jobId), label: "wall, untyped" };
+    else if (decision === "restore") next = restore!;
+    if (next === null) return;
+    await tx.takeoffMeasurement.update({ where: { id: measurement.id }, data: next });
+    await syncTakeoffItemLines(tx, context.company.id, jobId);
+  });
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
+  return { ok: true, value: was };
 }
 
 export async function recordTakeoffPlan(jobId: string, formData: FormData): Promise<ActionResult> {

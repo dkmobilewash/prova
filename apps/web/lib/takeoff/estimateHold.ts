@@ -25,6 +25,11 @@ type Line = { x1: number; y1: number; x2: number; y2: number };
 export const ESTIMATE_HOLD_CUT = 0.4;
 export const HELD_ITEM = "Walls — to confirm";
 export const HELD_LABEL = "wall, to confirm";
+/** Where a run a reviewer dropped goes: on the sheet, off the estimate, one undo from back. */
+export const DROPPED_ITEM = "Walls — dropped";
+export const DROPPED_LABEL = "wall, dropped";
+/** Items the estimate leaves out: nothing on them is a wall anybody has accepted. */
+export const OFF_ESTIMATE_ITEMS: readonly string[] = [HELD_ITEM, DROPPED_ITEM];
 
 /** The runs the model doubts. None on a scan: it was not trained on one. */
 export function runsHeldOffEstimate<T extends Line & { thicknessFeet: number }>(

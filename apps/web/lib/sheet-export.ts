@@ -2,6 +2,7 @@
 // change order log, so both follow the same two rules.
 
 import * as XLSX from "xlsx";
+import { contentDisposition } from "@/lib/content-disposition";
 import { csvCell } from "@/lib/export";
 
 export type SheetCell = string | number | null;
@@ -31,7 +32,7 @@ export function sheetResponse(body: string | Buffer, format: "csv" | "xlsx", fil
   return new Response(typeof body === "string" ? body : new Uint8Array(body), {
     headers: {
       "Content-Type": format === "xlsx" ? XLSX_TYPE : "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${fileName.replace(/["\r\n]/g, "")}"`,
+      "Content-Disposition": contentDisposition("attachment", fileName),
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
     },
