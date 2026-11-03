@@ -270,6 +270,7 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   "/jobs/[id]/pay-applications/[invoiceId]": "MANAGE_BILLING",
   // Budgets and vendor prices, reached from the Estimate tab behind the same gate.
   "/jobs/[id]/buyout": "VIEW_JOB_COSTS",
+  "/jobs/[id]/change-order-log": "VIEW_JOB_COSTS",
   // "certified payroll" is named in MANAGE_COMPLIANCE's own doc comment,
   // and the page prints wage rates per employee per day.
   "/jobs/[id]/certified-payroll": "MANAGE_COMPLIANCE",
