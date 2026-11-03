@@ -111,6 +111,7 @@ export * from "./scannedSheets";
 export * from "./takeoffFeatures";
 export * from "./doorsWindows";
 export * from "./takeoffItems";
+export * from "./takeoffRevisions";
 export * from "./outboundPush";
 export * from "./outboundOptOut";
 export * from "./replies";

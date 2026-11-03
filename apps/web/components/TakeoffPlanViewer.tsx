@@ -94,6 +94,8 @@ import { PlanTextPanel } from "@/components/PlanTextPanel";
 import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
 import { doorsByGroup, doorText, feetInches, openingsFromDoors } from "@/lib/takeoff/planTextView";
 import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
+import { compareSheetRevision, type RevisionCompare } from "@/lib/actions/takeoffRevisions";
+import { RevisionOverlay, TakeoffRevisionPanel } from "@/components/TakeoffRevisionPanel";
 import { BLANK_TILE_INK, TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
 import { demotedRuns, demotedSentence, demotedWord, demotes, modelVerdicts, type RunVerdict } from "@/lib/takeoff/demotedRuns";
 import type { WallModel } from "@/lib/takeoff/wallClassifier";
@@ -318,10 +320,13 @@ export function TakeoffPlanViewer({
   onMeasurementSaved,
   onUndoable,
   activeItemId = null,
+  earlierVersionByPage = {},
 }: {
   jobId: string;
   planId: string;
   sheets: PlanSheet[];
+  /** Per page, the earlier issue of the same sheet on this job, by the name its file goes by. */
+  earlierVersionByPage?: Record<number, string>;
   /** The company's wall types that have layers, so they produce line items.
    *  Used only to MATCH the drawing's own tags against — the viewer never
    *  chooses a type, it reports which one the drawing named. */
@@ -1586,6 +1591,16 @@ export function TakeoffPlanViewer({
   const [demoDropped, setDemoDropped] = useState<ReadonlySet<number>>(new Set());
   /** A demolition plan on a sheet titled otherwise, read off the page's own words. */
   const [demoOnPage, setDemoOnPage] = useState<number | null>(null);
+  const [revision, setRevision] = useState<{ page: number; earlier: string; busy: boolean; error: string | null; result: RevisionCompare | null } | null>(null);
+  const onCompareRevision = async () => {
+    const earlier = earlierVersionByPage[pageNumber];
+    if (!earlier) return;
+    const page = pageNumber;
+    setRevision({ page, earlier, busy: true, error: null, result: null });
+    const r = await compareSheetRevision(jobId, planId, page).catch(() => ({ ok: false as const, error: "The two versions could not be compared. Try again in a moment." }));
+    setRevision(r.ok ? { page, earlier, busy: false, error: null, result: r.value } : { page, earlier, busy: false, error: r.error, result: null });
+  };
+
   const onFindDemolition = async () => {
     const doc = docRef.current;
     if (!doc || !pageSize || feetPerUnit === null) return;
@@ -3610,6 +3625,18 @@ export function TakeoffPlanViewer({
             Find demolition
           </button>
         )}
+        {earlierVersionByPage[pageNumber] && (
+          <button
+            type="button"
+            onClick={() => void onCompareRevision()}
+            disabled={revision?.busy === true}
+            data-takeoff="compare-revision"
+            title={`Lay this sheet over ${earlierVersionByPage[pageNumber]} and show what changed`}
+            className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
+          >
+            Compare with earlier version
+          </button>
+        )}
         {/* ── FIND THE ROOMS, ONLY WITH THE COMPANY SWITCH ON ──
             Absent, not disabled, when the switch is off: the feature was
             measured and switched off once (`takeoffRoomFinder.test.tsx`) and
@@ -4442,6 +4469,16 @@ export function TakeoffPlanViewer({
           onSaved={() => setDemo(null)}
         />
       )}
+      {revision !== null && revision.page === pageNumber && (
+        <TakeoffRevisionPanel
+          state={revision}
+          onFindWalls={() => void onFindWalls()}
+          findDisabled={finding || !calibration || !pageSize}
+          onFindRooms={roomFinder ? () => void onFindRooms() : undefined}
+          roomsDisabled={finding || found === null || found.length === 0 || foundOnPage !== pageNumber}
+          onClear={() => setRevision(null)}
+        />
+      )}
       {symbols !== null && symbols.page === pageNumber && (
         <TakeoffSymbolPanel
           jobId={jobId}
@@ -4978,6 +5015,9 @@ export function TakeoffPlanViewer({
                   strokeWidth={STROKE_PX}
                   vectorEffect="non-scaling-stroke"
                 />
+              )}
+              {revision?.page === pageNumber && revision.result !== null && (
+                <RevisionOverlay result={revision.result} strokePx={STROKE_PX + 1} />
               )}
               {demo?.page === pageNumber && demo.read !== null && (
                 <g data-takeoff="demo-overlay">

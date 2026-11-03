@@ -5,6 +5,7 @@ import { aiGate } from "@/lib/ai/settings";
 import { wallTypeSummary } from "@/lib/takeoff/wallTypeMatch";
 
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
+import { earlierVersionsFor } from "@/lib/takeoff/sheetRevisions";
 import { isScannedSheet } from "@/lib/plan-ingest/scannedSheet";
 import { cutoutsFromJson, type ItemMeasurement, type TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
 import { scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
@@ -443,6 +444,10 @@ export async function loadTakeoffWorkspace(
     if (label !== null) sheetLabelByPage[row.pageNumber] = label;
   }
 
+  const earlierVersionByPage = Object.fromEntries(
+    Object.entries(await earlierVersionsFor(job.id, company.id, plan.id)).map(([page, v]) => [Number(page), v.label]),
+  );
+
   const scheduleSheetCount = await scheduleSheetCountFor(plan.id);
 
   const sheets: PlanSheet[] = plan.pages.map((page) => {
@@ -641,6 +646,7 @@ export async function loadTakeoffWorkspace(
     scaleDeclineByPage,
     duplicateWallsByPage,
     sheetLabelByPage,
+    earlierVersionByPage,
     sheetRows,
     items,
     isEstimateStage,
