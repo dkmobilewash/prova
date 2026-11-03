@@ -138,7 +138,7 @@ export async function untypedItem(tx: Prisma.TransactionClient, companyId: strin
   return namedItem(tx, companyId, jobId, UNTYPED_ITEM);
 }
 
-async function namedItem(tx: Prisma.TransactionClient, companyId: string, jobId: string, name: string): Promise<string> {
+export async function namedItem(tx: Prisma.TransactionClient, companyId: string, jobId: string, name: string): Promise<string> {
   const found = await tx.takeoffItem.findFirst({ where: { jobId, companyId, name }, select: { id: true } });
   if (found) return found.id;
   const existing = await tx.takeoffItem.findMany({ where: { jobId }, select: { colorHex: true, sortOrder: true }, orderBy: { sortOrder: "desc" } });

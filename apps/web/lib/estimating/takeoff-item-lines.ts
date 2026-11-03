@@ -7,7 +7,7 @@ import { studsRequired } from "@/lib/takeoff";
 import { isCheckFigureItem } from "@/lib/takeoff/roomItems";
 import { nextItemColor } from "@/lib/takeoff/itemColors";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
-import { HELD_ITEM } from "@/lib/takeoff/estimateHold";
+import { OFF_ESTIMATE_ITEMS } from "@/lib/takeoff/estimateHold";
 import { boardedArea } from "@/lib/takeoff";
 
 /**
@@ -283,7 +283,7 @@ export async function syncTakeoffItemLines(
 
   for (const raw of items) {
     // Doubted walls stay on the sheet and off the estimate until confirmed.
-    if (raw.name === HELD_ITEM) continue;
+    if (OFF_ESTIMATE_ITEMS.includes(raw.name)) continue;
     const item = { ...raw, measurements: raw.measurements.filter((m) => !onFinishLines(m)) };
     const measured = item.measurements.length > 0;
     const untyped = item.name === UNTYPED_ITEM;
