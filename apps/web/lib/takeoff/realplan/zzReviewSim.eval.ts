@@ -33,6 +33,9 @@ const findPdf = (dir: string) => {
 };
 type Saved = Parameters<typeof keyFromLabels>[0] & { page: number; feetPerUnit: number };
 
+/** Hold cuts to simulate the review at, for a sweep. */
+const CUTS = (process.env.REVIEW_HOLD_CUTS ?? "0.4").split(",").map(Number);
+
 describe.skipIf(DIR === "" || LABELS === "" || process.env.TAKEOFF_WALL_MODEL === undefined)("runs a reviewer looks at", () => {
   it("simulates the review on each sheet", { timeout: 7_200_000 }, async () => {
     const config = loadWallModel();
@@ -62,9 +65,9 @@ describe.skipIf(DIR === "" || LABELS === "" || process.env.TAKEOFF_WALL_MODEL ==
         const one = (r: WallCandidate) => scoreSheet({ set: dir, sheet, key, proposed: [{ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFeet: r.lengthFeet, thicknessFeet: r.thicknessFeet } as ScoredRun], feetPerUnit: fpu });
         const keyFeet = one(runs[0] ?? (key[0] as unknown as WallCandidate)).keyFeet;
         const junk = runs.map((r) => one(r).extraFeet >= 0.5 * r.lengthFeet);
-        const held = new Set(runsHeldOffEstimate(config.model, runs, scored, fpu, false));
+        const heldNow = new Set(runsHeldOffEstimate(config.model, runs, scored, fpu, false));
         const scores = runScores(config.model, runs, scored, fpu);
-        const simulate = (order: number[]) => {
+        const simulate = (order: number[], held: ReadonlySet<WallCandidate> = heldNow) => {
           let posted = runs.reduce((n, r) => n + (held.has(r) ? 0 : r.lengthFeet), 0);
           if (posted <= TARGET * keyFeet) return { looked: 0, reached: true, posted };
           let looked = 0;
@@ -77,7 +80,15 @@ describe.skipIf(DIR === "" || LABELS === "" || process.env.TAKEOFF_WALL_MODEL ==
           }
           return { looked, reached: false, posted };
         };
-        const entries = runs.map((r, at) => ({ at, held: held.has(r), score: scores[at] ?? null, lengthFeet: r.lengthFeet }));
+        const entries = runs.map((r, at) => ({ at, held: heldNow.has(r), score: scores[at] ?? null, lengthFeet: r.lengthFeet }));
+        // Each hold cut a sweep asks about: held is a score below the cut, as `modelVerdicts` decides it.
+        const byCut = Object.fromEntries(
+          CUTS.map((cut) => {
+            const held = new Set(runs.filter((_, at) => scores[at] != null && scores[at]! < cut));
+            const at = runs.map((r, i) => ({ at: i, held: held.has(r), score: scores[i] ?? null, lengthFeet: r.lengthFeet }));
+            return [String(cut), simulate(reviewOrder(at, "likely junk feet"), held)];
+          }),
+        );
         rows.push({
           set: dir,
           sheet,
@@ -86,6 +97,7 @@ describe.skipIf(DIR === "" || LABELS === "" || process.env.TAKEOFF_WALL_MODEL ==
           byDoubt: simulate(reviewOrder(entries, "doubt")),
           longestFirst: simulate(reviewOrder(entries, "longest")),
           likelyJunkFeet: simulate(reviewOrder(entries, "likely junk feet")),
+          byCut,
         });
       }
     }
