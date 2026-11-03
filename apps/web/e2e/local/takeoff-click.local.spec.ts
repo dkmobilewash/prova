@@ -195,9 +195,23 @@ async function boxSymbol(p: { x: number; y: number }, want: number, hw = 0.006, 
   await expect.poll(async () => num(await hook("symbol-count-total").innerText().catch(() => "")), { timeout: 60_000, message: "the boxed symbol's count" }).toBe(want);
 }
 /** A mark, clicked where it is drawn: the overlay takes the click, not the mark element. */
+/** A mark that A2's hand counts do not sit on: a saved count's dot takes the click
+ * on the troffers it marks, so a mark under one cannot be clicked from the sheet. */
+async function freeMark(): Promise<number> {
+  const dots = await Promise.all([...TROFFERS, OS].map((p) => at(p.x, p.y)));
+  const marks = await hook("symbol-match").all();
+  for (let n = 0; n < marks.length; n += 1) {
+    const b = (await marks[n]!.boundingBox())!;
+    const c = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    if (dots.every((d) => Math.hypot(d.x - c.x, d.y - c.y) > 20)) return n;
+  }
+  throw new Error("every mark sits under a saved count");
+}
 async function clickMark(n: number) {
   const box = (await hook("symbol-match").nth(n).boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  // A hand rests on the mark before pressing; without the pause the press can land mid-render.
+  await page.waitForTimeout(300);
   await page.mouse.down();
   await page.mouse.up();
 }
@@ -243,9 +257,10 @@ test("A5 an R1 troffer counts 21; a dropped mark comes back", async () => {
   // sheet and squeezes it, so first say how wide the sheet is left.
   const width = (await overlay().boundingBox())?.width ?? 0;
   expect(width, `with the count panel open the sheet is ${Math.round(width)} px wide at a 1600 px window`).toBeGreaterThan(400);
-  await clickMark(0);
+  const mark = await freeMark();
+  await clickMark(mark);
   await expect.poll(async () => num(await hook("symbol-count-total").innerText())).toBe(20);
-  await clickMark(0);
+  await clickMark(mark);
   await expect.poll(async () => num(await hook("symbol-count-total").innerText())).toBe(21);
 });
 
@@ -285,16 +300,21 @@ test("S1 Send to estimate puts ZZ Troffers on the estimate, with no stale warnin
 });
 
 // ── The takeoff download ──────────────────────────────────────────────────
-test("X1 Download Excel: Quantities and Sheets tabs, ZZ Troffers 26 ea", async () => {
-  await sheet("baker", 54);
+test("X1 Download Excel: Quantities and Sheets tabs, ZZ Troffers as saved", async () => {
+  await on("baker", 54);
+  // The download buttons are on the picked item's panel, beside Send to estimate.
+  const row = hook("item-row").filter({ hasText: "ZZ Troffers" }).first();
+  if ((await hook("send-to-estimate").count()) === 0) await row.locator('[data-takeoff="pick-item"]').click();
   const excel = hook("export-xlsx");
   test.skip((await excel.count()) === 0, "the takeoff download is not on main yet (diego/takeoff-export-xlsx)");
   const [file] = await Promise.all([page.waitForEvent("download"), excel.click()]);
   const book = XLSX.read(readFileSync(await file.path()));
   expect(book.SheetNames).toEqual(["Quantities", "Sheets"]);
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(book.Sheets.Quantities!);
+  // The file must agree with the item it was saved as (A7 says whether that was 26).
+  const saved = num((await row.innerText()).match(/([\d,]+) ea/)?.[1] ?? "");
   const troffers = rows.filter((r) => r.Item === "ZZ Troffers");
-  expect(troffers.reduce((n, r) => n + Number(r.Quantity), 0)).toBe(26);
+  expect(troffers.reduce((n, r) => n + Number(r.Quantity), 0), `the item reads ${saved} ea`).toBe(saved);
   expect(troffers.every((r) => r.Unit === "ea" && r.Source === "count")).toBe(true);
 });
 

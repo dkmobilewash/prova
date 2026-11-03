@@ -93,7 +93,7 @@ export function TakeoffSymbolPanel({
     });
   };
   return (
-    <div data-takeoff="symbol-count" className="mb-2 rounded-lg border border-line-card bg-surface p-3 text-xs">
+    <div data-takeoff="symbol-count" className="mb-2 xl:w-[23rem] xl:shrink-0 rounded-lg border border-line-card bg-surface p-3 text-xs">
       {state.busy ? (
         <p className="flex items-center gap-2 text-ink-body">
           <Spinner /> Reading the sheet for matches…

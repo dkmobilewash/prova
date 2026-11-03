@@ -1,0 +1,3 @@
+### The takeoff click list as a local Playwright spec
+
+`TAKEOFF_CLICK_PLANS=<folder> pnpm test:e2e -- --takeoff-click` walks the takeoff features the Chrome rounds clicked (Count like this with no scale and across sheets, demolition, rooms and Split area, doors and windows, Work area, Exclude like this and undo, the renovation prompt, Review walls, suggested scale, Send to estimate, the takeoff download) over the same training sheets, one test per step, local only. It found that the count and demolition panels took the drawing's width at 1600 px; they are now a side column. Check: the command above, and look for the per-step list.
