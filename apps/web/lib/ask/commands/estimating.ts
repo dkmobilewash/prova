@@ -636,6 +636,7 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "addFinishLinesToEstimate", reason: "The quantities come from rooms and a schedule a person has checked on the sheet; only the viewer has them." },
   { action: "saveDemoTakeoff", reason: "What is demolished is decided by looking at the runs drawn on the sheet and unticking the wrong ones; only the viewer shows them." },
   { action: "setDefaultPartition", reason: "It reprices every untyped wall on every open bid, so it is a choice made on the Wall types page." },
+  { action: "compareSheetRevision", reason: "It returns line work for the viewer to draw over a sheet; Ask has no sheet to draw on." },
   { action: "loadTakeoffExport", reason: "It returns rows for a file the browser builds; Ask has no file to hand anyone." },
   { action: "saveTakeoffMeasurement", reason: "The measurement IS the traced geometry, which only the viewer produces." },
   { action: "saveTakeoffMeasurements", reason: "Adding a group of found walls is a decision made by LOOKING at them drawn on the sheet — the whole safety of the wall finder is that a wrong line is visible on a drawing somebody is reading. A model has not seen the drawing, so it cannot make the only check that matters." },

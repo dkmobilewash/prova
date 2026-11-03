@@ -1567,6 +1567,7 @@ export function TakeoffWorkspace({
               scaleDeclineByPage={data.scaleDeclineByPage}
               duplicateWallsByPage={data.duplicateWallsByPage}
               sheetLabelByPage={data.sheetLabelByPage}
+              earlierVersionByPage={data.earlierVersionByPage}
               wallTypes={data.viewerWallTypes}
               roomFinder={data.roomFinderOn}
               doorsWindows={data.doorsWindowsOn}
