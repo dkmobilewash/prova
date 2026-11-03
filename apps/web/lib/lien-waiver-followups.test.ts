@@ -17,6 +17,7 @@ describe("the waiver offer after a pay application", () => {
       invoiceNumber: 3,
       amount: 12_345.68,
       throughDate: "2026-10-31",
+      stage: "PROGRESS",
       label: "Issue the conditional progress waiver for application #3: $12,345.68 through 2026-10-31",
     });
   });

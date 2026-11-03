@@ -238,7 +238,7 @@ export default async function JobBillingPage({
           number: latestInvoice.number,
           currentPaymentDue: latestCertificate.summary.currentPaymentDue,
           periodTo: latestInvoice.periodTo,
-          final: isFinalBilling(latestCertificate.summary),
+          final: !!latestCertificate.summary && isFinalBilling(latestCertificate.summary),
           hasWaiver: lienWaiverSection.waivers.some((w) => w.invoiceId === latestInvoice.id && w.revokedAt === null),
         })
       : null;
@@ -255,10 +255,10 @@ export default async function JobBillingPage({
       })),
     }),
   );
-  const finalPeriod = releaseInvoice?.periodTo ?? (latestCertificate && isFinalBilling(latestCertificate.summary) ? latestInvoice?.periodTo : null) ?? null;
+  const finalPeriod = releaseInvoice?.periodTo ?? (latestCertificate?.summary && isFinalBilling(latestCertificate.summary) ? latestInvoice?.periodTo : null) ?? null;
   const closeoutItems = closeoutStatus({
     latest:
-      latestInvoice && latestCertificate
+      latestInvoice && latestCertificate?.summary
         ? {
             number: latestInvoice.number,
             contractSumToDate: latestCertificate.summary.contractSumToDate,

@@ -45,6 +45,10 @@ export function BillRetainage({ jobId, held }: { jobId: string; held: number }) 
         A pay application that bills the retainage held and no new work. Its G702 shows retainage to date going down by
         this amount, and this amount as the payment due.
       </p>
+      <p className="text-sm text-ink-body">
+        When the GC pays it, log that as a payment on this application, not as a retainage release on the Retainage
+        tab. Doing both counts it twice.
+      </p>
       <div className="flex flex-wrap gap-3">
         <label className="flex flex-col gap-1 text-sm text-ink-label">
           Amount to bill

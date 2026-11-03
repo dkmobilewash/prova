@@ -124,6 +124,8 @@ describe("the company-wide retainage population", () => {
  * balance can be net of it). Naming it in a sentence is not.
  */
 const RETAINAGE_COLUMN_FILES: Record<string, string> = {
+  "lib/billing/closeout-billing.test.ts": "Pins which invoices count as a retainage release, from their snapshots.",
+  "lib/billing/closeout-billing.ts": "Recognises a retainage release application by its negative snapshot, as an input field.",
   // -------------------------------------------------- the one source ---
   "lib/retainage-query.ts": "THE company-wide figure. Two aggregates, no status filter.",
 
