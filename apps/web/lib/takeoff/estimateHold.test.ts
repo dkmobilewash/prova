@@ -23,3 +23,10 @@ describe("runs held off the estimate", () => {
     expect(isHeldRun(run, [])).toBe(false);
   });
 });
+
+describe("the hold cut is a decision, not a tuning knob", () => {
+  it("is 0.55, Diego's choice once Review walls made a held run one keypress from the estimate", () => {
+    // Changing it needs a new sweep and a new decision; see the table above the constant.
+    expect(ESTIMATE_HOLD_CUT).toBe(0.55);
+  });
+});
