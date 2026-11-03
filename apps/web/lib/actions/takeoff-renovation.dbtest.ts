@@ -42,6 +42,12 @@ describe("Send to estimate on a renovation sheet", () => {
     expect(sent.ok && sent.value.renovationUnchecked).toEqual(["A101"]);
     expect(sent.ok && sent.value.created).toBeGreaterThan(0);
   });
+  it("is quiet for a sheet whose only mark is NIC", async () => {
+    await prisma.planSheetText.update({ where: { planId_pageNumber: { planId, pageNumber: 1 } }, data: { renovationMarks: ["NIC"] } });
+    const sent = await sendTakeoffItemsToEstimate(jobId);
+    expect(sent.ok && sent.value.renovationUnchecked).toEqual([]);
+    await prisma.planSheetText.update({ where: { planId_pageNumber: { planId, pageNumber: 1 } }, data: { renovationMarks: ["(E)", "DEMO"] } });
+  });
   it("is quiet once a work area is drawn", async () => {
     await prisma.takeoffSheetExclusion.create({ data: { pageId, kind: "WORK_AREA", xs: [0, 1, 1], ys: [0, 0, 1] } });
     const sent = await sendTakeoffItemsToEstimate(jobId);
