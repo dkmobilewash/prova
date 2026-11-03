@@ -21,6 +21,7 @@ import {
   getPayment,
 } from "@prova/integrations";
 import { requireCompanyContext } from "@/lib/auth";
+import { isRetainageReleaseApplication } from "@/lib/billing/closeout-billing";
 import { can } from "@/lib/permissions";
 // Lifted into its own module when the QuickBooks import became a second
 // caller: a "use server" file may only export Server Actions, and a token
@@ -416,6 +417,19 @@ export async function pushInvoiceToQuickBooks(invoiceId: string): Promise<Action
   });
   if (!invoice || invoice.job.companyId !== company.id) {
     return actionFail("That invoice no longer exists.");
+  }
+  // Invoices go to QuickBooks in full, retainage included (lib/quickbooks-sync.ts),
+  // so the retainage is already owed there. Pushing this would add a $0 invoice
+  // and nothing to collect against.
+  if (
+    isRetainageReleaseApplication({
+      retainageWithheld: invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
+      lines: invoice.lineItems.map((line) => ({ thisPeriodBilled: Number(line.thisPeriodBilled), materialsStoredValue: Number(line.materialsStoredValue) })),
+    })
+  ) {
+    return actionFail(
+      "This application bills retainage, which is already in QuickBooks: every invoice went there in full. Record the GC's payment of it there against the original invoices.",
+    );
   }
 
   const customerLink = invoice.job.contactId
