@@ -40,6 +40,7 @@ import {
   addMeasurementCutout,
   deleteTakeoffMeasurement,
   confirmHeldWall,
+  reviewWall,
   saveTakeoffCalibration,
   saveTakeoffMeasurement,
   saveTakeoffMeasurements,
@@ -76,8 +77,10 @@ import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUn
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { renovationMarks, showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
-import { HELD_LABEL } from "@/lib/takeoff/estimateHold";
+import { HELD_LABEL, isHeldRun } from "@/lib/takeoff/estimateHold";
 import { TakeoffHeldWalls } from "./TakeoffHeldWalls";
+import { TakeoffWallReview } from "./TakeoffWallReview";
+import { currentRun, decide, droppedRuns, reviewCounter, reviewOrder, runScores, startReview, undoDecision, viewOfRun, type ReviewState as WallReviewState } from "@/lib/takeoff/wallReview";
 import {
   GRID_REFERENCE_SHEETS,
   feetPerInchOf,
@@ -97,7 +100,7 @@ import { readScannedSheetTile } from "@/lib/actions/takeoffReadSheet";
 import { compareSheetRevision, type RevisionCompare } from "@/lib/actions/takeoffRevisions";
 import { RevisionOverlay, TakeoffRevisionPanel } from "@/components/TakeoffRevisionPanel";
 import { BLANK_TILE_INK, TILE_PT, TILE_PX } from "@/lib/takeoff/rasterText";
-import { demotedRuns, demotedSentence, demotedWord, demotes, modelVerdicts, type RunVerdict } from "@/lib/takeoff/demotedRuns";
+import { demotedRuns, demotedSentence, demotedWord, demotes, modelVerdicts, type RunVerdict, type ScoredPairing } from "@/lib/takeoff/demotedRuns";
 import type { WallModel } from "@/lib/takeoff/wallClassifier";
 import type { WallClassifyLabel } from "@prova/integrations";
 import { ceilingsForRooms, type CeilingPageText, type RoomCeiling } from "@/lib/takeoff/roomCeilings";
@@ -2340,6 +2343,92 @@ export function TakeoffPlanViewer({
   const wallModelRef = useRef<{ model: WallModel; cut: number } | null>(null);
   wallModelRef.current = demote ? wallModel : null;
   const [hoveredDemoted, setHoveredDemoted] = useState<number | null>(null);
+  // ── REVIEW WALLS: one run at a time, most doubted first. See `wallReview.ts`. ──
+  const [review, setReview] = useState<WallReviewState | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  /** What the server had for a run before a decision moved it, so undo can put it back. */
+  const reviewWas = useRef(new Map<number, { measurementId: string; was: { itemId: string | null; label: string | null } }>());
+  /** The wall on the job a found run is, if a whole-set run posted it: the finder's own coordinates. */
+  const measurementForRun = (run: { x1: number; y1: number; x2: number; y2: number }) =>
+    (sheet?.measurements ?? []).find(
+      (m) => m.kind === "LINEAR" && m.xs.length === 2 && isHeldRun({ x1: m.xs[0]!, y1: m.ys[0]!, x2: m.xs[1]!, y2: m.ys[1]! }, [run]),
+    ) ?? null;
+  /** The found list again from every run, less the demoted and the dropped. */
+  const rebuildFound = (dropped: Set<number>) => {
+    const regroup = regroupRef.current;
+    if (!regroup) return;
+    setFound(regroup(runsRef.current.filter((_, i) => !dropped.has(i) && !(labels?.get(i) && demotes(labels.get(i)!.label)))));
+  };
+  const reviewScores = useRef<(number | null)[]>([]);
+  function onStartReview() {
+    const runs = runsRef.current;
+    reviewScores.current =
+      wallModel !== null && feetPerUnit !== null
+        ? runScores(wallModel.model, runs, pairingsRef.current as unknown as ScoredPairing[], feetPerUnit)
+        : runs.map(() => null);
+    reviewWas.current = new Map();
+    setReviewError(null);
+    setReview(startReview(reviewOrder(runs.map((r, at) => ({ at, held: measurementForRun(r)?.label === HELD_LABEL, score: reviewScores.current[at] ?? null, lengthFeet: r.lengthFeet })))));
+  }
+  async function onReviewDecide(kind: "keep" | "drop") {
+    if (review === null || jobId === undefined) return;
+    const at = currentRun(review);
+    if (at === null) return;
+    const run = runsRef.current[at];
+    const posted = run === undefined ? null : measurementForRun(run);
+    setReviewBusy(true);
+    setReviewError(null);
+    try {
+      if (posted !== null && (kind === "drop" || posted.label === HELD_LABEL)) {
+        const saved = await reviewWall(jobId, posted.id, kind);
+        if (!saved.ok) {
+          setReviewError(saved.error);
+          return;
+        }
+        reviewWas.current.set(at, { measurementId: posted.id, was: saved.value });
+      }
+      const next = decide(review, kind);
+      setReview(next);
+      rebuildFound(droppedRuns(next));
+    } finally {
+      setReviewBusy(false);
+    }
+  }
+  async function onReviewUndo() {
+    if (review === null) return;
+    const { state, undone } = undoDecision(review);
+    if (undone === null) return;
+    const server = reviewWas.current.get(undone.at);
+    setReviewBusy(true);
+    setReviewError(null);
+    try {
+      if (server !== undefined) {
+        const saved = await reviewWall(jobId, server.measurementId, "restore", server.was);
+        if (!saved.ok) {
+          setReviewError(saved.error);
+          return;
+        }
+        reviewWas.current.delete(undone.at);
+      }
+      setReview(state);
+      rebuildFound(droppedRuns(state));
+    } finally {
+      setReviewBusy(false);
+    }
+  }
+  const reviewAt = review === null ? null : currentRun(review);
+  const reviewRun = reviewAt === null ? null : (runsRef.current[reviewAt] ?? null);
+  // Each run in turn, zoomed and centred, so the reviewer never has to look for it.
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (reviewRun === null || frame === null || pageSize === null || feetPerUnit === null) return;
+    const view = viewOfRun(reviewRun, pageSize, { width: frame.clientWidth, height: frame.clientHeight }, feetPerUnit, BASE_SCALE);
+    setZoom(view.zoom);
+    const id = requestAnimationFrame(() => frame.scrollTo({ left: view.left, top: view.top }));
+    return () => cancelAnimationFrame(id);
+  }, [reviewRun, pageSize, feetPerUnit]);
+
   /**
    * Taking a run back is its verdict becoming WALL, then the list rebuilt from
    * every run the way the check builds it. Same rule as the check: a run the
@@ -3612,6 +3701,16 @@ export function TakeoffPlanViewer({
         >
           {finding ? "Reading the lines…" : "Find the walls"}
         </button>
+        {found !== null && runsRef.current.length > 0 && !readOnly && answerKey === undefined && review === null && (
+          <button
+            type="button"
+            onClick={onStartReview}
+            data-takeoff="review-walls"
+            className="rounded-md border border-line-card px-3 py-1 text-sm text-ink-body hover:bg-rail"
+          >
+            Review walls
+          </button>
+        )}
         {/* Only on a sheet that says it is demolition, and it stays on the toolbar with no scale, with the title saying why it waits. */}
         {!notWallDemoSheet(sheetLabelByPage[pageNumber] ?? sheet?.label) && (demoOnPage === pageNumber || demoSheetTitle(sheetLabelByPage[pageNumber] ?? sheet?.label) || /demolition/i.test(takeoffVerdict?.why ?? "")) && (
           <button
@@ -3923,6 +4022,30 @@ export function TakeoffPlanViewer({
           suggestion={scaleSuggestion}
           onConfirm={onConfirmSuggestion}
           onDismiss={() => setScaleSuggestions((was) => ({ ...was, [pageNumber]: null }))}
+        />
+      )}
+      {review !== null && (
+        <TakeoffWallReview
+          counter={reviewCounter(review)}
+          current={
+            reviewRun === null || reviewAt === null
+              ? null
+              : {
+                  feet: reviewRun.lengthFeet,
+                  why:
+                    measurementForRun(reviewRun)?.label === HELD_LABEL
+                      ? "held off the estimate, to confirm"
+                      : reviewScores.current[reviewAt] == null
+                        ? "no model score"
+                        : `model score ${(Math.floor(reviewScores.current[reviewAt]! * 100) / 100).toFixed(2)}`,
+                }
+          }
+          busy={reviewBusy}
+          error={reviewError}
+          onKeep={() => void onReviewDecide("keep")}
+          onDrop={() => void onReviewDecide("drop")}
+          onUndo={() => void onReviewUndo()}
+          onClose={() => setReview(null)}
         />
       )}
       {answerKey === undefined && !readOnly && feetPerUnit !== null && (
@@ -5180,6 +5303,19 @@ export function TakeoffPlanViewer({
                   only visible. */}
               <FoundWalls clusters={shownGroups} hovered={hovered} />
               {/* The demoted runs: grey and dashed so nobody reads one as found. */}
+              {reviewRun !== null && (
+                <line
+                  data-takeoff="review-run"
+                  x1={reviewRun.x1}
+                  y1={reviewRun.y1}
+                  x2={reviewRun.x2}
+                  y2={reviewRun.y2}
+                  stroke={VERDICT_COLOURS.wall}
+                  strokeWidth={STROKE_PX * 4}
+                  strokeOpacity={0.6}
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
               {demoted.map((d) => {
                 const run = runsRef.current[d.at];
                 return run === undefined ? null : (

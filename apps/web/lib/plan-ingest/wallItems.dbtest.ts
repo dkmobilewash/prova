@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@prova/db";
 import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
-import { HELD_ITEM, HELD_LABEL } from "@/lib/takeoff/estimateHold";
+import { DROPPED_ITEM, DROPPED_LABEL, HELD_ITEM, HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import { UNTYPED_ITEM, wallItemsForSheet } from "./wallItems";
 /**
  * The whole-set run's walls onto the job by type, on a scratch database: a
@@ -81,5 +81,14 @@ describe("walls on the job by type", () => {
     const untyped = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, name: UNTYPED_ITEM } });
     expect(await prisma.jobLineItem.count({ where: { jobId, takeoffItemId: held.id } })).toBe(0);
     expect(await prisma.jobLineItem.count({ where: { jobId, takeoffItemId: untyped.id } })).toBeGreaterThan(0);
+  });
+  it("A DROPPED WALL LEAVES THE ESTIMATE too, and is not reported unpriced", async () => {
+    const untyped = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, name: UNTYPED_ITEM } });
+    const one = await prisma.takeoffMeasurement.findFirstOrThrow({ where: { pageId, itemId: untyped.id } });
+    const dropped = await prisma.takeoffItem.create({ data: { companyId, jobId, name: DROPPED_ITEM, type: "LINEAR", colorHex: "#999999" } });
+    await prisma.takeoffMeasurement.update({ where: { id: one.id }, data: { itemId: dropped.id, label: DROPPED_LABEL } });
+    const summary = await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, jobId));
+    expect(summary.unpriced.map((u) => u.name)).not.toContain(DROPPED_ITEM);
+    expect(await prisma.jobLineItem.count({ where: { jobId, takeoffItemId: dropped.id } })).toBe(0);
   });
 });
