@@ -157,7 +157,7 @@ export type CreateRetainageReleaseResult = {
 /** Prisma's P2034: the transaction could not be serialized. Checked by
  * `code`, not `instanceof`, for the reason `isUniqueConstraintError` in
  * lib/actions/shared.ts gives — the instanceof is false at runtime here. */
-function isWriteConflict(err: unknown): boolean {
+export function isWriteConflict(err: unknown): boolean {
   return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2034";
 }
 

@@ -25,6 +25,11 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { createInvoice, deletePayment } from "@/lib/actions";
 import { LienWaivers } from "@/components/LienWaivers";
 import { loadLienWaiverSection, loadLowerTierWaiverInputs } from "@/lib/lien-waiver-query";
+import { BillRetainage } from "@/components/BillRetainage";
+import { CloseoutStatus } from "@/components/CloseoutStatus";
+import { closeoutStatus, isFinalBilling, isRetainageReleaseApplication } from "@/lib/billing/closeout-billing";
+import { loadJobRetainage } from "@/lib/billing/retainage-release";
+import { arBalanceFor } from "@/lib/cash-flow";
 import { missingLowerTierWaivers, waiverOfferFor } from "@/lib/lien-waiver-followups";
 import { ActionForm } from "@/components/ActionForm";
 import { PayAppSummary } from "@/components/job/PayAppSummary";
@@ -233,9 +238,52 @@ export default async function JobBillingPage({
           number: latestInvoice.number,
           currentPaymentDue: latestCertificate.summary.currentPaymentDue,
           periodTo: latestInvoice.periodTo,
+          final: isFinalBilling(latestCertificate.summary),
           hasWaiver: lienWaiverSection.waivers.some((w) => w.invoiceId === latestInvoice.id && w.revokedAt === null),
         })
       : null;
+
+  // CLOSEOUT, from records already read on this page. The release application is
+  // the newest one that bills retainage and no work.
+  const retainageHeld = await loadJobRetainage(prisma, job.id);
+  const releaseInvoice = [...job.invoices].reverse().find((invoice) =>
+    isRetainageReleaseApplication({
+      retainageWithheld: invoice.retainageWithheld != null ? Number(invoice.retainageWithheld) : null,
+      lines: invoice.lineItems.map((line) => ({
+        thisPeriodBilled: Number(line.thisPeriodBilled),
+        materialsStoredValue: Number(line.materialsStoredValue),
+      })),
+    }),
+  );
+  const finalPeriod = releaseInvoice?.periodTo ?? (latestCertificate && isFinalBilling(latestCertificate.summary) ? latestInvoice?.periodTo : null) ?? null;
+  const closeoutItems = closeoutStatus({
+    latest:
+      latestInvoice && latestCertificate
+        ? {
+            number: latestInvoice.number,
+            contractSumToDate: latestCertificate.summary.contractSumToDate,
+            totalCompletedAndStoredToDate: latestCertificate.summary.totalCompletedAndStoredToDate,
+          }
+        : null,
+    retainage: { withheld: retainageHeld.summary.totalWithheld, balance: retainageHeld.summary.balance },
+    releaseApplication: releaseInvoice
+      ? {
+          number: releaseInvoice.number,
+          unpaid: Math.max(
+            0,
+            arBalanceFor({
+              amount: Number(releaseInvoice.amount),
+              paidAmount: releaseInvoice.payments.reduce((sum, payment) => sum + Number(payment.amount), 0),
+              retainageWithheld: Number(releaseInvoice.retainageWithheld),
+            }),
+          ),
+        }
+      : null,
+    finalWaivers: lienWaiverSection.waivers.filter((waiver) => waiver.stage === "FINAL" && waiver.revokedAt === null),
+    lowerTierMissing: finalPeriod
+      ? missingLowerTierWaivers({ previousPeriodTo: finalPeriod, parties: lowerTierInputs.parties, inbound: lowerTierInputs.inbound }).missing
+      : null,
+  });
 
   // THE LOWER-TIER WARNING per application: the period the previous
   // application ran through (its period-to, or its issue day when it has
@@ -550,6 +598,15 @@ export default async function JobBillingPage({
           </CollapsedForm>
         </div>
       </section>
+
+      {showsBilling && retainageHeld.balanceCents > 0 && (
+        <div className="mt-6">
+          <BillRetainage jobId={job.id} held={retainageHeld.balanceCents / 100} />
+        </div>
+      )}
+      <div className="mt-6">
+        <CloseoutStatus items={closeoutItems} />
+      </div>
 
       <LienWaivers jobId={job.id} section={lienWaiverSection} canManage={showsBilling} offer={waiverOffer} />
     </div>
