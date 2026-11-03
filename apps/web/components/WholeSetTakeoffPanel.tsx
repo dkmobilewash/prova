@@ -129,6 +129,12 @@ export function WholeSetTakeoffPanel({
             {passed.length > 0 ? `, ${passed.length} passed over` : ""}
             {failed.length > 0 ? `, ${failed.length} failed` : ""}.
           </span>
+          {summary.some((row) => row.renovation && row.status.kind === "walls") && (
+            <p className="mt-2 font-medium text-tag-amber-ink" data-takeoff="whole-set-renovation">
+              Shows existing work, so draw the work area or exclude existing walls before sending:{" "}
+              {summary.filter((row) => row.renovation && row.status.kind === "walls").map((row) => `${row.label} (${row.renovation!.join(", ")})`).join("; ")}.
+            </p>
+          )}
           <ul className="mt-2 grid gap-1 sm:grid-cols-2">
             {summary.map((row) => (
               <li key={row.pageNumber} data-takeoff="whole-set-sheet" data-page={row.pageNumber} data-status={row.status.kind}>

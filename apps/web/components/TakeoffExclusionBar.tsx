@@ -1,5 +1,7 @@
 "use client";
 
+import { RENOVATION_PROMPT } from "@/lib/takeoff/renovationMarks";
+
 type Kind = "EXCLUDE_LIKE" | "WORK_AREA" | "ROOM_SPLIT";
 
 /**
@@ -14,6 +16,8 @@ export function TakeoffExclusionBar({
   splits = 0,
   workAreas,
   readOnly,
+  renovation = null,
+  onPickTool,
   onUndo,
   onClear,
 }: {
@@ -25,13 +29,31 @@ export function TakeoffExclusionBar({
   splits?: number;
   workAreas: number;
   readOnly: boolean;
+  /** The marks that say this sheet shows existing work, when walls are found and nothing excludes them yet. */
+  renovation?: string[] | null;
+  onPickTool?: (tool: "workarea" | "exclude") => void;
   onUndo: (kind: Kind) => void;
   onClear: (kind: Kind) => void;
 }) {
-  if (feet === null && excludes === 0 && workAreas === 0 && splits === 0) return null;
+  if (feet === null && excludes === 0 && workAreas === 0 && splits === 0 && !renovation) return null;
   const control = "underline hover:text-ink-body";
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted" data-takeoff="exclusion-bar">
+      {renovation && !readOnly && (
+        <span className="flex w-full flex-wrap items-center gap-2 rounded-md bg-tag-amber px-2 py-1 font-medium text-tag-amber-ink" data-takeoff="renovation-prompt" title={`Marked by: ${renovation.join(", ")}`}>
+          {RENOVATION_PROMPT}
+          {onPickTool && (
+            <>
+              <button type="button" className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body" data-takeoff="renovation-work-area" onClick={() => onPickTool("workarea")}>
+                Work area
+              </button>
+              <button type="button" className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body" data-takeoff="renovation-exclude" onClick={() => onPickTool("exclude")}>
+                Exclude like this
+              </button>
+            </>
+          )}
+        </span>
+      )}
       {feet !== null && (
         <span className="font-semibold text-ink-body" data-takeoff="wall-total">
           Walls on this sheet: {Math.round(feet).toLocaleString()} ft

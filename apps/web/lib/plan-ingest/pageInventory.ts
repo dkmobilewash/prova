@@ -1,3 +1,4 @@
+import { renovationMarks } from "@/lib/takeoff/renovationMarks";
 import { prisma } from "@prova/db";
 import { sheetNumberFrom } from "./sheetNumber";
 import { aiGate } from "../ai/settings";
@@ -139,6 +140,8 @@ export type SheetTextRow = {
   /** Counted only for a page with no text layer; see `scannedSheet.ts`. */
   pathOperators: number | null;
   imageOperators: number | null;
+  /** What the whole page's words say about existing work; see `renovationMarks`. */
+  renovationMarks?: string[];
 };
 
 /**
@@ -232,6 +235,7 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
       // Null rather than an empty string when there is nothing to read, so
       // "scanned" and "read but blank" stay distinguishable downstream.
       titleBlockText: block?.text.trim() ? block.text : null,
+      renovationMarks: readable ? renovationMarks(page.items.map((i) => i.str).join("\n")) : [],
       wholePageFallback: block?.source === "whole-page",
       widthPt: page.widthPt,
       heightPt: page.heightPt,
