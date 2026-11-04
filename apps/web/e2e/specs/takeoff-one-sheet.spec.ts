@@ -218,7 +218,11 @@ test.describe("a find belongs to the sheet it was run on", () => {
     await goToSheet(1);
     const back = await overlayCounts();
     expect(back.runs, "paging away and back lost sheet 1's result").toBe(onOne.runs);
-    await expectHealthy(page, "after paging across three sheets", { monitor });
+    // `signedIn: false` for the reason the first test gives: `/takeoff/[id]`
+    // has no top bar by design. This line and the one in the next test never
+    // ran in CI until sheet 1 was scaled, so the omission was never seen; the
+    // first local run reached it and failed on exactly that main navigation.
+    await expectHealthy(page, "after paging across three sheets", { monitor, signedIn: false });
   });
 
   test("THE QUANTITIES PANEL IS EMPTY ON A SHEET NOBODY HAS RUN", async () => {
@@ -262,6 +266,6 @@ test.describe("a find belongs to the sheet it was run on", () => {
       await page.locator('[data-takeoff="check-missing"]').count(),
       "sheet 1's missed-wall list is shown on sheet 2",
     ).toBe(0);
-    await expectHealthy(page, "quantities on an unrun sheet", { monitor });
+    await expectHealthy(page, "quantities on an unrun sheet", { monitor, signedIn: false });
   });
 });

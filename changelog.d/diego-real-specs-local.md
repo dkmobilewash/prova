@@ -21,10 +21,25 @@ moved; the real config lists those 25 in 9 files; the billing and takeoff click
 configs still list 42 and 71. CI's `E2E_COLLECTED` is derived by `collected.mjs`
 from that listing, so it follows on its own.
 
-**Not fixed here, and still skipping in CI: three tests that do not need real
-drawings.** `takeoff-one-sheet.spec.ts`'s two skip because sheet 1 of its
-committed, stitched fixture has no scale, so Find the walls is disabled.
-`takeoff-workspace.spec.ts` step 22 skips because answer-key mode is refused on a
-customer-shaped server by design (`answer-key-gate.spec.ts`), and is covered by
-`e2e/smoke-labeling.mjs`. Until those are dealt with, the verdict step still sees
-three skips.
+**And the three CI skips that did not need real drawings, dealt with the other
+two ways.** `takeoff-one-sheet.spec.ts`'s two tests skipped on "sheet 1 has no
+scale": the spec stitches committed fixtures into a three-sheet set and never set
+a scale, so Find the walls was disabled on every CI run and neither test ever ran
+there. Its first step now scales sheet 1 (S02, half the sheet is 48 ft) through
+the app's own two-click flow, copied from `takeoff-workspace.spec.ts`, and both
+tests ASSERT Find is enabled where they used to skip. `takeoff-workspace.spec.ts`
+step 22 (answer-key mode) needs a server that allows labelling, which CI's refuses
+by design (`answer-key-gate.spec.ts`), so it moved whole — byte-identical — into
+`e2e/local/answer-key-mode.local.spec.ts` with its own S02 setup, collected by the
+real config. The rest of the workspace spec stays in CI.
+
+Running one-sheet for the first time found one more thing its skip had hidden:
+its two later health checks omitted `signedIn: false` on `/takeoff/[id]`, a route
+built with no top bar — the same omission its first test's comment records
+fixing. Every leak assertion passed on that run; the test failed only on the
+missing main navigation. Both calls now pass the exemption the rest of the suite
+passes on that route, and all three tests pass locally.
+
+With `main`'s three new workspace steps merged in, the CI config collects 164
+(190 on `main` less the 26 that moved), and no test left in it can skip for want
+of a drawing, a scale or a labelling server.
