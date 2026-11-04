@@ -306,6 +306,7 @@ export function TakeoffPlanViewer({
   answerKey,
   scaleDeclineByPage,
   duplicateWallsByPage = {},
+  notCountedByPage = {},
   onSheetNumber,
   sheetLabelByPage = {},
   initialPage = 1,
@@ -672,6 +673,8 @@ export function TakeoffPlanViewer({
    * here" from "the app decided for me".
    */
   duplicateWallsByPage?: Record<number, string>;
+  /** The sheet that counts instead, for a sheet the whole set leaves to another of its level (Baker A100 → "A101"). */
+  notCountedByPage?: Record<number, string>;
   /**
    * What each sheet is called, so the pager can be jumped rather than walked.
    *
@@ -2349,6 +2352,8 @@ export function TakeoffPlanViewer({
       (m) => m.kind === "LINEAR" && m.xs.length === 2 && sameRun({ x1: m.xs[0]!, y1: m.ys[0]!, x2: m.xs[1]!, y2: m.ys[1]! }, run),
     ) ?? null;
   /** A run a reviewer dropped, here or in the set review: on the sheet, out of its total. */
+  /** On a sheet the set does not count, keeping a wall saves nothing, and the line says so (Chrome round 6). */
+  const notCounted = notCountedByPage[pageNumber] === undefined ? null : `This sheet isn't counted: ${notCountedByPage[pageNumber]} shows the same level`;
   const droppedOnJob = (run: { x1: number; y1: number; x2: number; y2: number }) => measurementForRun(run)?.label === DROPPED_LABEL;
   /** The found list again from every run, less the demoted and the dropped. */
   const rebuildFound = (dropped: Set<number>) => {
@@ -3892,6 +3897,11 @@ export function TakeoffPlanViewer({
             <p className="text-xs text-ink-muted">
               Greyed on the drawing. If one is a wall, put it back — it rejoins the list and the total.
             </p>
+            {notCounted !== null && (
+              <p data-takeoff="not-counted" className="text-xs text-tag-amber-ink">
+                {notCounted}, so putting one back changes nothing on the estimate.
+              </p>
+            )}
             {/* Capped: eleven rows once squeezed the drawing to 2 px on a 721 px window (Chrome round 5). */}
             <ul data-takeoff="demoted-list" className="mt-2 flex max-h-24 flex-col gap-1 overflow-y-auto">
               {demoted.map((d) => (
@@ -4043,6 +4053,8 @@ export function TakeoffPlanViewer({
                   why:
                     measurementForRun(sheetReviewRun)?.label === HELD_LABEL
                       ? "held off the estimate, to confirm"
+                      : measurementForRun(sheetReviewRun) === null && notCounted !== null
+                        ? notCounted
                       : measurementForRun(sheetReviewRun) === null
                         ? "not on the job yet: D only takes it off this list"
                         : reviewScores.current[reviewAt] == null

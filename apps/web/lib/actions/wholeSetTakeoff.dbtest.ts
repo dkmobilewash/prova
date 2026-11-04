@@ -109,13 +109,13 @@ describe("whole-set takeoff", () => {
     expect(row?.wholeSetTakeoffOn).toBe(true);
   });
 
-  it("makes a task for exactly the scaled floor plans that have no walls yet", async () => {
+  it("makes a task for every scaled floor plan, one already found included, so its labels are read again", async () => {
     const result = await startPlanIngest(planId, "WALLS");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.total).toBe(2);
+    expect(result.value.total).toBe(3);
     const tasks = await prisma.planIngestTask.findMany({ where: { jobId: result.value.jobId }, select: { pageNumber: true } });
-    expect(tasks.map((task) => task.pageNumber).sort()).toEqual([1, 5]);
+    expect(tasks.map((task) => task.pageNumber).sort()).toEqual([1, 2, 5]);
   });
 
   it("runs the detection every sheet would get on its own, and writes what each came to", async () => {
@@ -125,9 +125,16 @@ describe("whole-set takeoff", () => {
       targets.push(target);
       return target.pageNumber === 1 ? ("written" as const) : ("nothing-found" as const);
     };
-    const work = wallsWork({ planId, companyId, ingestJobId: run.id, jobId, startedByUserId: context.id }, { detect });
+    const refreshed: number[] = [];
+    const refresh = async (target: DetectTarget) => {
+      refreshed.push(target.pageNumber);
+      return { kind: "replaced" as const };
+    };
+    const work = wallsWork({ planId, companyId, ingestJobId: run.id, jobId, startedByUserId: context.id }, { detect, refresh });
     const report = await runIngest({ ports: claimPorts({ jobId: run.id, work }), budgetMs: 10_000 });
-    expect(report).toMatchObject({ done: 2, retryable: 0, exhausted: 0 });
+    expect(report).toMatchObject({ done: 3, retryable: 0, exhausted: 0 });
+    // The sheet already found is found again, not detected as new.
+    expect(refreshed).toEqual([2]);
     expect(await closeIfSettled(run.id)).toBe(true);
     expect((await ingestViewOf(run.id, "WALLS")).complete).toBe(true);
 
@@ -136,7 +143,11 @@ describe("whole-set takeoff", () => {
     expect(targets.find((t) => t.pageNumber === 1)?.pageId).toBe(pageIds[1]);
 
     const tasks = await prisma.planIngestTask.findMany({ where: { jobId: run.id }, select: { pageNumber: true, note: true } });
-    expect(Object.fromEntries(tasks.map((t) => [t.pageNumber, t.note]))).toEqual({ 1: "walls found", 5: "nothing found" });
+    expect(Object.fromEntries(tasks.map((t) => [t.pageNumber, t.note]))).toEqual({
+      1: "walls found",
+      2: "found again; to confirm read again from the wall model, kept and dropped left as decided",
+      5: "nothing found",
+    });
   });
 
   it("the summary says what became of every sheet of the set", async () => {
@@ -152,16 +163,16 @@ describe("whole-set takeoff", () => {
     expect(by[5].status).toEqual({ kind: "looked", note: "nothing found" });
   });
 
-  it("a second press hands back nothing to do when every sheet is settled, rather than a run of zero", async () => {
-    // Page 1's "written" was simulated without rows, so it is eligible again;
-    // give it rows the way real detection would, then press again.
+  it("a second press finds every counted floor plan again", async () => {
+    // Page 1's "written" was simulated without rows; give it rows the way real
+    // detection would, then press again.
     const calibration = await prisma.takeoffScaleCalibration.findFirstOrThrow({ where: { pageId: pageIds[1] } });
     await prisma.takeoffWallProposal.create({
       data: { pageId: pageIds[1], calibrationId: calibration.id, thicknessInches: 6, source: "REMAINDER", runs: [] },
     });
     const result = await startPlanIngest(planId, "WALLS");
-    // Page 5 found nothing and stays eligible: pressing again is asking again.
+    // Pages 1 and 2 are found again, and page 5, which found nothing, is asked again.
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.total).toBe(1);
+    if (result.ok) expect(result.value.total).toBe(3);
   });
 });

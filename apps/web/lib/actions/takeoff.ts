@@ -2,7 +2,7 @@
 
 import { syncReviewedItems, syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
 import { namedItem, untypedItem } from "@/lib/plan-ingest/wallItems";
-import { DROPPED_ITEM, DROPPED_LABEL, HELD_LABEL } from "@/lib/takeoff/estimateHold";
+import { DROPPED_ITEM, DROPPED_LABEL, HELD_LABEL, KEPT_LABEL } from "@/lib/takeoff/estimateHold";
 import { countItemFor } from "@/lib/takeoff/countItem";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
@@ -451,7 +451,7 @@ export async function confirmHeldWall(jobId: string, measurementId: string): Pro
   if (!measurement) return actionFail("That wall is no longer waiting. Reload the page.");
   await prisma.$transaction(async (tx) => {
     const itemId = await untypedItem(tx, context.company.id, jobId);
-    await tx.takeoffMeasurement.update({ where: { id: measurement.id }, data: { itemId, label: "wall, untyped" } });
+    await tx.takeoffMeasurement.update({ where: { id: measurement.id }, data: { itemId, label: KEPT_LABEL } });
     await syncReviewedItems(tx, context.company.id, jobId, [measurement.itemId, itemId]);
   });
   revalidatePath(`/jobs/${jobId}/takeoff`);
@@ -491,7 +491,7 @@ export async function reviewWall(
   await prisma.$transaction(async (tx) => {
     let next: { itemId: string | null; label: string | null } | null = null;
     if (decision === "drop") next = { itemId: await namedItem(tx, context.company.id, jobId, DROPPED_ITEM), label: DROPPED_LABEL };
-    else if (decision === "keep" && measurement.label === HELD_LABEL) next = { itemId: await untypedItem(tx, context.company.id, jobId), label: "wall, untyped" };
+    else if (decision === "keep" && measurement.label === HELD_LABEL) next = { itemId: await untypedItem(tx, context.company.id, jobId), label: KEPT_LABEL };
     else if (decision === "restore") next = restore!;
     if (next === null) return;
     await tx.takeoffMeasurement.update({ where: { id: measurement.id }, data: next });

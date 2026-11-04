@@ -42,6 +42,10 @@ export const HELD_LABEL = "wall, to confirm";
 /** Where a run a reviewer dropped goes: on the sheet, off the estimate, one undo from back. */
 export const DROPPED_ITEM = "Walls — dropped";
 export const DROPPED_LABEL = "wall, dropped";
+/** A run a person said is a wall: priced untyped, and a re-find leaves it there. */
+export const KEPT_LABEL = "wall, kept";
+/** Labels only a person writes. A re-find keeps these and re-reads every other from the model. */
+export const PERSON_LABELS: readonly string[] = [KEPT_LABEL, DROPPED_LABEL];
 /** Items the estimate leaves out: nothing on them is a wall anybody has accepted. */
 export const OFF_ESTIMATE_ITEMS: readonly string[] = [HELD_ITEM, DROPPED_ITEM];
 
