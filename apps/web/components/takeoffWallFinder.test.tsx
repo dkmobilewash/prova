@@ -948,7 +948,10 @@ describe("the caution on a sheet that carries two drawings", () => {
     // loading". The gate is on the button, so the person is never the one
     // who waits and retries.
     const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
-    expect(viewer).toMatch(/disabled=\{finding \|\| !calibration \|\| notATakeoffSheet \|\| !pageSize\}\s*data-takeoff="find-walls"/);
+    // One reason, shared with the revision panel's button (round 6).
+    expect(viewer).toMatch(/disabled=\{finding \|\| findWallsWhy !== null\}\s*data-takeoff="find-walls"/);
+    expect(viewer).toMatch(/const findWallsWhy = notATakeoffSheet[\s\S]{0,200}?!calibration[\s\S]{0,200}?!pageSize/);
+    expect(viewer).toMatch(/findDisabled=\{finding \|\| findWallsWhy !== null\}/);
     expect(viewer).toMatch(/"The sheet is still loading\."/);
   });
 

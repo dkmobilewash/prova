@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sheetRooms } from "./sheetRooms";
+import { sheetRooms, splitToWalls } from "./sheetRooms";
 import { splitLinesFrom } from "./userExclusions";
 import { pointInRing } from "./drawTools";
 
@@ -105,3 +105,35 @@ describe("Split area, any line", () => {
   });
 });
 
+
+describe("A split that stops short of a wall", () => {
+  // The 20 x 10 ft room above, in page-width units (feetPerUnit = W).
+  const room = { xs: [0, ft(20), ft(20), 0], ys: [0, 0, ft(10), ft(10)] };
+  it("is taken to the walls when each end is within 5 ft of one", () => {
+    const line = splitToWalls([room], { x1: ft(10), y1: ft(3), x2: ft(10), y2: ft(7) }, W)!;
+    expect(line.y1 * W).toBeCloseTo(0);
+    expect(line.y2 * W).toBeCloseTo(10);
+    expect(line.x1 * W).toBeCloseTo(10);
+    // And it then divides the room, where the line as drawn did not.
+    expect(go([{ x1: ft(10), y1: ft(3), x2: ft(10), y2: ft(7) }]).rooms).toHaveLength(1);
+    expect(go([line]).rooms).toHaveLength(2);
+  });
+  it("leaves an end already at or past a wall where it was drawn", () => {
+    const line = splitToWalls([room], { x1: ft(10), y1: ft(-1), x2: ft(10), y2: ft(8) }, W)!;
+    expect(line.y1 * W).toBeCloseTo(-1);
+    expect(line.y2 * W).toBeCloseTo(10);
+  });
+  it("is refused when an end is further than that from a wall, or the line is in no room", () => {
+    expect(splitToWalls([room], { x1: ft(7), y1: ft(5), x2: ft(13), y2: ft(5) }, W)).toBeNull();
+    expect(splitToWalls([room], { x1: ft(30), y1: ft(4), x2: ft(30), y2: ft(6) }, W)).toBeNull();
+  });
+  it("cuts the piece it ends in when it meets an earlier split, as a T", () => {
+    const first = { x1: ft(10), y1: ft(-0.5), x2: ft(10), y2: ft(10.5) };
+    const pieces = go([first]).rooms;
+    const t = splitToWalls(pieces, { x1: ft(12), y1: ft(5), x2: ft(18), y2: ft(5) }, W)!;
+    const rooms = go([first, t]).rooms;
+    expect(rooms).toHaveLength(3);
+    const total = (rs: typeof rooms) => rs.reduce((n, r) => n + r.squareFeet, 0);
+    expect(total(rooms)).toBeCloseTo(total(pieces), 6);
+  });
+});

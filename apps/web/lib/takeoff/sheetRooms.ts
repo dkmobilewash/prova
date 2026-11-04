@@ -134,8 +134,10 @@ function splitRooms(whole: RoomsFromWallsResult, splits: readonly Line[], feetPe
   const rooms: RoomFromWalls[] = [];
   for (const room of whole.rooms) {
     const pieces: Ring[] = [{ xs: room.xs, ys: room.ys }];
+    // Each piece is crossed on its own, so a line ending on an earlier split (a T)
+    // cuts the piece it is in: its end is on that piece's outline, not the room's.
     for (const line of splits) {
-      for (const [a, b] of chordsOf({ xs: room.xs, ys: room.ys }, line)) {
+      for (const [a, b] of [...pieces].flatMap((piece) => chordsOf(piece, line))) {
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
         const k = pieces.findIndex((p) => pointInRing(mid.x, mid.y, p.xs, p.ys));
         if (k < 0) continue;
@@ -164,4 +166,42 @@ function splitRooms(whole: RoomsFromWallsResult, splits: readonly Line[], feetPe
   }
   const numbered = rooms.map((r, id) => ({ ...r, id }));
   return { ...whole, rooms: numbered, mergedTags: numbered.flatMap((r) => r.sharedTags ?? []) };
+}
+
+/** How far short of a wall an end of a split may stop and still be taken to the wall, in feet. */
+export const SPLIT_SNAP_FEET = 5;
+
+/**
+ * ── A SPLIT THAT STOPS SHORT OF A WALL IS TAKEN TO IT, OR REFUSED ──
+ *
+ * Round 6: a line across a room that stopped a few feet short of one wall was
+ * saved ("Remove 2 splits") and divided nothing, because a cut needs both ends on
+ * the room's outline. So before it is saved, each end that stops inside the room
+ * is carried along the line to the outline, when that is within
+ * `SPLIT_SNAP_FEET`. An end already at or past a wall stays where it was drawn.
+ * Null means it cannot be made to reach: the line's middle is in no room, or an
+ * end is further than that from a wall, and the screen says so.
+ */
+export function splitToWalls(rooms: readonly Ring[], line: Line, feetPerUnit: number): Line | null {
+  const mid = { x: (line.x1 + line.x2) / 2, y: (line.y1 + line.y2) / 2 };
+  const room = rooms.find((r) => pointInRing(mid.x, mid.y, r.xs, r.ys));
+  const length = Math.hypot(line.x2 - line.x1, line.y2 - line.y1);
+  if (room === undefined || length === 0) return null;
+  const dx = line.x2 - line.x1, dy = line.y2 - line.y1;
+  const ts: number[] = [];
+  for (let i = 0; i < room.xs.length; i += 1) {
+    const j = (i + 1) % room.xs.length;
+    const ex = room.xs[j]! - room.xs[i]!, ey = room.ys[j]! - room.ys[i]!;
+    const den = dx * ey - dy * ex;
+    if (den === 0) continue;
+    const t = ((room.xs[i]! - line.x1) * ey - (room.ys[i]! - line.y1) * ex) / den;
+    const u = ((room.xs[i]! - line.x1) * dy - (room.ys[i]! - line.y1) * dx) / den;
+    if (u >= 0 && u <= 1) ts.push(t);
+  }
+  const before = Math.max(...ts.filter((t) => t < 0.5)), after = Math.min(...ts.filter((t) => t > 0.5));
+  if (!Number.isFinite(before) || !Number.isFinite(after)) return null;
+  const reach = SPLIT_SNAP_FEET / feetPerUnit / length;
+  if (before < -reach || after > 1 + reach) return null;
+  const t1 = Math.min(0, before), t2 = Math.max(1, after);
+  return { x1: line.x1 + t1 * dx, y1: line.y1 + t1 * dy, x2: line.x1 + t2 * dx, y2: line.y1 + t2 * dy };
 }
