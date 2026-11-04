@@ -4081,6 +4081,12 @@ export function TakeoffPlanViewer({
           }}
         />
       )}
+      {/* On load, beside the walls total: nothing kept on this sheet reaches the estimate (Chrome round 7). */}
+      {answerKey === undefined && notCounted !== null && (
+        <p data-takeoff="not-counted-sheet" className="shrink-0 text-xs font-medium text-tag-amber-ink">
+          {notCounted}
+        </p>
+      )}
       {answerKey === undefined && (
         <TakeoffExclusionBar
           feet={found === null ? null : found.reduce((sum, group) => sum + group.feet, 0)}
