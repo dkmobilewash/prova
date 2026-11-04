@@ -8,6 +8,7 @@ import { buyoutSpecCheck, specCheckSentence } from "@/lib/buyout-spec-check";
 import { loadJobSpecFindings } from "@/lib/buyout-spec-query";
 import { formatCalendarDate } from "@/lib/render-date";
 import { requireCapability } from "@/lib/authz";
+import { loadPurchaseOrderDraft } from "@/lib/ask/drafts";
 import { SendDocument, SendHistory } from "@/components/SendDocument";
 import { purchaseOrderEmail } from "@/lib/document-email";
 import { purchaseOrderDocument } from "@/lib/purchase-order-document";
@@ -24,11 +25,22 @@ import type { CostCategory } from "@/lib/cost-category";
  * draft purchase orders made from them. VIEW_JOB_COSTS, the gate on the
  * Estimate tab that links here, because this page is budgets and prices.
  */
-export default async function BuyoutPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function BuyoutPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ draft?: string }>;
+}) {
   const { id } = await params;
+  const { draft } = (await searchParams) ?? {};
   const { context, allowed } = await requireCapability("VIEW_JOB_COSTS");
   if (!allowed) return <NoAccess capability="VIEW_JOB_COSTS" />;
   const { company } = context;
+  // A card from the Ask box: that line's row opens with the vendor and
+  // quantity filled in; its own Add to draft PO is the write.
+  const askDraft = await loadPurchaseOrderDraft(context, draft, id);
+  const poDraft = askDraft.kind === "draft" ? askDraft.draft : undefined;
 
   const job = await prisma.job.findFirst({
     where: { id, companyId: company.id },
@@ -155,6 +167,7 @@ export default async function BuyoutPage({ params }: { params: Promise<{ id: str
                   row={row}
                   vendors={vendors}
                   findings={specCheck.byLine.get(row.line.id)}
+                  askDraft={poDraft?.lineItemId === row.line.id ? poDraft : undefined}
                 />
               ))}
             </ul>

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { CAPABILITIES, ROUTE_CAPABILITY, type Principal } from "@/lib/permissions";
 import {
@@ -31,6 +32,20 @@ const ACCOUNTING: Principal = { role: "MEMBER", jobFunction: "ACCOUNTING" };
 const OPEN_HANDOFF_PAGES: Record<string, string> = {
   "/messages":
     "On lib/permissions.test.ts's open list: the delivery log is open to every signed-in person, and sending is the action's problem, not the page's. send_email's MANAGE_JOBS narrows who is OFFERED the card, not who can reach the composer.",
+};
+
+/**
+ * Job tabs a HANDOFF may open, with where that tab's guard lives. The
+ * buyout page is a hard `requireCapability`; the estimate tab is the soft
+ * `showsJobMoney` gate its own doc comment explains, which IS
+ * `can(principal, "VIEW_JOB_COSTS")` (lib/jobs/job-access.ts).
+ */
+const JOB_TAB_GUARDS: Record<string, { file: string; guard: (cap: string) => RegExp }> = {
+  buyout: { file: "../../app/(app)/jobs/[id]/buyout/page.tsx", guard: (cap) => new RegExp(`requireCapability\\("${cap}"\\)`) },
+  estimate: {
+    file: "../../app/(app)/jobs/[id]/(tabs)/estimate/page.tsx",
+    guard: (cap) => (cap === "VIEW_JOB_COSTS" ? /if \(!showsJobMoney\)/ : /$^/),
+  },
 };
 
 describe("every command", () => {
@@ -80,10 +95,17 @@ describe("every command", () => {
         // The page it opens is the one guarded by the command's own
         // capability — or open to everyone, with the reason recorded above
         // — and the card id rides in ?draft= and nowhere else.
-        const href = command.handoffHref!("card-id");
+        const href = command.handoffHref!("card-id", { jobId: "job-id" });
         const [path, query] = href.split("?");
         expect(query, command.name).toBe("draft=card-id");
-        if (path in OPEN_HANDOFF_PAGES) {
+        const jobTab = /^\/jobs\/job-id\/([a-z-]+)$/.exec(path)?.[1];
+        if (jobTab) {
+          // A job tab is not in ROUTE_CAPABILITY (its path has an id), so
+          // its own guard is read off the page file instead.
+          expect(JOB_TAB_GUARDS[jobTab], `${command.name} opens /jobs/[id]/${jobTab}, which has no recorded guard`).toBeDefined();
+          const { file, guard } = JOB_TAB_GUARDS[jobTab];
+          expect(guard(command.capability).test(readFileSync(new URL(file, import.meta.url), "utf8")), `${file} guards on ${command.capability}`).toBe(true);
+        } else if (path in OPEN_HANDOFF_PAGES) {
           expect(ROUTE_CAPABILITY[path], `${path} is listed open but is guarded`).toBeUndefined();
         } else {
           expect(ROUTE_CAPABILITY[path], `${command.name} opens ${path}`).toBe(command.capability);
@@ -165,6 +187,8 @@ describe("who is offered what", () => {
       "set_pursuit_stage",
       "add_contact",
       "find_bid_leads",
+      "start_change_order",
+      "draft_purchase_order",
     ]);
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_items");
     // Writing the crew schedule is MANAGE_FIELD, which an estimator lacks.
@@ -186,10 +210,19 @@ describe("who is offered what", () => {
     expect(commandsFor({ role: "MEMBER", jobFunction: "PROJECT_MANAGER" }).map((c) => c.name)).toContain("log_bid_invitation");
   });
 
-  it("offers accounting exactly the three money commands, and nothing that touches the field or writes to a GC", () => {
-    expect(commandsFor(ACCOUNTING).map((c) => c.name)).toEqual(["draft_invoice", "log_payment", "release_retainage"]);
+  it("offers accounting exactly the three money commands and the two job-cost drafts, and nothing that touches the field or writes to a GC", () => {
+    // The change order and PO drafts are offered on VIEW_JOB_COSTS, the gate
+    // accounting already passes on the Estimate tab and Buyout; both are
+    // HANDOFFs that send nothing.
+    expect(commandsFor(ACCOUNTING).map((c) => c.name)).toEqual([
+      "draft_invoice",
+      "log_payment",
+      "release_retainage",
+      "start_change_order",
+      "draft_purchase_order",
+    ]);
     for (const command of commandsFor(ACCOUNTING)) {
-      expect(command.capability, command.name).toBe("MANAGE_BILLING");
+      expect(["MANAGE_BILLING", "VIEW_JOB_COSTS"], command.name).toContain(command.capability);
       expect(command.tier, command.name).toBe("T3_MONEY_EVIDENCE");
     }
   });
@@ -251,7 +284,7 @@ describe("who is offered what", () => {
     for (const command of outward) {
       expect(command.mode, command.name).toBe("HANDOFF");
       expect(command.execute, command.name).toBeUndefined();
-      expect(command.handoffHref!("x"), command.name).toBe("/messages?draft=x");
+      expect(command.handoffHref!("x", {}), command.name).toBe("/messages?draft=x");
       // Both land on sendOutboundEmail, which demands MANAGE_JOBS — so the
       // card is offered on exactly the capability the send will check.
       expect(command.action, command.name).toBe("sendOutboundEmail");

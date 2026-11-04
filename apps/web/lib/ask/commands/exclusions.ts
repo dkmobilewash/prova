@@ -71,7 +71,6 @@ export const notYetRegistered: Exclusion[] = [
   { action: "takeoffOffer.*", reason: "Prova's own customer acquisition — the public /wall-takeoff intake, which has no signed-in principal at all, and the owner-gated action that mails the finished read back. The target company is resolved from isProvaOperator server-side, never from input, and the rows land in Prova's internal CRM. Nothing here for the assistant to offer a tenant. Never a command." },
 
   // Diego's lane, later phases.
-  { action: "changeOrders.*", reason: "Change orders move contract value a sent pay application may depend on (T5 decisions, T3 drafts); a later phase." },
   { action: "backcharges.*", reason: MONEY },
   { action: "closeoutSubmissions.*", reason: "Counter-numbered closeout packages go to a GC; phase 3 once retries are safe." },
   { action: "proposals.*", reason: "Bid proposals are a scope + price + exclusions document built from a job's estimate; clauses are edited where the document is shown. Never a command." },

@@ -51,7 +51,7 @@ describe("send_email", () => {
     expect(sendEmailCommand.tier).toBe("T4_OUTWARD");
     expect(sendEmailCommand.execute).toBeUndefined();
     expect(sendEmailCommand.core).toBeUndefined();
-    expect(sendEmailCommand.handoffHref!("abc")).toBe("/messages?draft=abc");
+    expect(sendEmailCommand.handoffHref!("abc", {})).toBe("/messages?draft=abc");
     expect(sendEmailCommand.capability).toBe("MANAGE_JOBS");
     expect(sendEmailCommand.action).toBe("sendOutboundEmail");
     for (const key of Object.keys(sendEmailCommand.input_schema.properties)) {
