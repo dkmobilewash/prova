@@ -1,3 +1,4 @@
+import { filledWallCandidates } from "./filledWalls";
 import {
   type WallCandidate,
   type WallCluster,
@@ -114,6 +115,8 @@ export type FindWallsInput = {
   regionClipped?: boolean;
   /** Removes a wall the rules chose, and nothing else — see `WallFinderOptions.veto`. */
   veto?: WallFinderOptions["veto"];
+  /** Offer a wall along each wall-shaped filled band the pairer left uncovered — see `filledWalls.ts`. */
+  filledBands?: boolean;
   /**
    * Called with each stage's name and how long it took, when a caller wants
    * to know. Optional and unset everywhere in the product.
@@ -436,44 +439,60 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   });
 
   stage("curves");
-  const notLettering = wallsNotLettering([...everywhere, ...curves], textBoxes, feetPerUnit);
-  const notBorder = wallsNotTheSheetBorder(notLettering, 1, aspect);
-  // THE GRAPHIC SCALE BAR is two parallel lines a wall-thickness apart and
-  // 32 ft long — a textbook wall by every measurement, and the one thing on
-  // the sheet that is literally a ruler.
-  const notScaleBar = wallsNotTheScaleBar(
-    notBorder,
-    scaleBarLabels(textItems, pageSize.widthPt),
-    feetPerUnit,
-  );
-  // AND ONLY THEN, WHERE THE BUILDING IS. A floor plan is one connected
-  // thing; whatever is left over after the filters above is either part of it
-  // or is somewhere else on the sheet.
-  stage("noise-filters");
-  // ── AND THE THINGS STANDING INSIDE THE BUILDING THAT ARE NOT IT ──
+  // ── THE NOISE FILTERS, AS ONE CHAIN, SO A FILLED BAND RUNS THE SAME ONE ──
   //
-  // Before `wallsInTheBuilding` and not after, because that one joins at
-  // TWENTY feet to keep a plan together across its gaps — so a bench in a
-  // lobby is comfortably part of the building by its measure and survives.
-  // This asks the tighter question first: does this short run touch anything
-  // at all? See `isolatedStubs.ts` for the measurement on two real sheets.
-  const notStubs = wallsNotIsolatedStubs(notScaleBar, feetPerUnit);
-  // ── AND THE RUNS WITH NOTHING ACTUALLY DRAWN ALONG THEM ──
-  //
-  // Hatching, including diagonal hatching, whose ticks `oneFacePerLine` has
-  // assembled into two long "faces" a plausible thickness apart. On Camp Bow
-  // Wow A120 that was 29 runs and 176 ft of ±60° X patterns across an enlarged
-  // restroom plan, every one of them a textbook partition by thickness.
-  //
-  // BEFORE `wallsInTheBuilding`, with the other noise filters, and for the
-  // reason this block already gives: the X's cover the middle of the plan, so
-  // they are comfortably part of the biggest connected group and grouping
-  // cannot refuse them. `drawnCoverage.ts` carries the measurement, why
-  // counting the lines BETWEEN the faces does not work, and why the rule is
-  // deliberately blind to a run's angle.
-  const notHatch = wallsActuallyDrawn(notStubs, inUnits, feetPerUnit);
-  const hatchDropped = notStubs.length - notHatch.length;
-  const inBuilding = wallsInTheBuilding(notHatch, feetPerUnit);
+  // The building and stub tests judge a run by the runs around it, so adding
+  // bands to the pairer's list would move which of the PAIRER'S runs survive:
+  // measured on Camp Bow Wow A120, an 8 ft run across a restroom came back with
+  // no band anywhere near it. So the pairer's runs take the chain alone, as
+  // they always have, and a band is kept when it survives the chain beside them.
+  const chain = (runs: WallCandidate[]) => {
+    const notLettering = wallsNotLettering(runs, textBoxes, feetPerUnit);
+    const notBorder = wallsNotTheSheetBorder(notLettering, 1, aspect);
+    // THE GRAPHIC SCALE BAR is two parallel lines a wall-thickness apart and
+    // 32 ft long — a textbook wall by every measurement, and the one thing on
+    // the sheet that is literally a ruler.
+    const notScaleBar = wallsNotTheScaleBar(
+      notBorder,
+      scaleBarLabels(textItems, pageSize.widthPt),
+      feetPerUnit,
+    );
+    // AND ONLY THEN, WHERE THE BUILDING IS. A floor plan is one connected
+    // thing; whatever is left over after the filters above is either part of it
+    // or is somewhere else on the sheet.
+    stage("noise-filters");
+    // ── AND THE THINGS STANDING INSIDE THE BUILDING THAT ARE NOT IT ──
+    //
+    // Before `wallsInTheBuilding` and not after, because that one joins at
+    // TWENTY feet to keep a plan together across its gaps — so a bench in a
+    // lobby is comfortably part of the building by its measure and survives.
+    // This asks the tighter question first: does this short run touch anything
+    // at all? See `isolatedStubs.ts` for the measurement on two real sheets.
+    const notStubs = wallsNotIsolatedStubs(notScaleBar, feetPerUnit);
+    // ── AND THE RUNS WITH NOTHING ACTUALLY DRAWN ALONG THEM ──
+    //
+    // Hatching, including diagonal hatching, whose ticks `oneFacePerLine` has
+    // assembled into two long "faces" a plausible thickness apart. On Camp Bow
+    // Wow A120 that was 29 runs and 176 ft of ±60° X patterns across an enlarged
+    // restroom plan, every one of them a textbook partition by thickness.
+    //
+    // BEFORE `wallsInTheBuilding`, with the other noise filters, and for the
+    // reason this block already gives: the X's cover the middle of the plan, so
+    // they are comfortably part of the biggest connected group and grouping
+    // cannot refuse them. `drawnCoverage.ts` carries the measurement, why
+    // counting the lines BETWEEN the faces does not work, and why the rule is
+    // deliberately blind to a run's angle.
+    const notHatch = wallsActuallyDrawn(notStubs, inUnits, feetPerUnit);
+    const hatchDropped = notStubs.length - notHatch.length;
+    const inBuilding = wallsInTheBuilding(notHatch, feetPerUnit);
+    return { notLettering, notBorder, hatchDropped, inBuilding };
+  };
+  const own = chain([...everywhere, ...curves]);
+  const { notLettering, notBorder, hatchDropped } = own;
+  const filled = input.filledBands === true ? filledWallCandidates(inUnits, feetPerUnit, [...everywhere, ...curves]) : [];
+  const bands = new Set<WallCandidate>(filled);
+  const keptBands = filled.length === 0 ? [] : chain([...everywhere, ...curves, ...filled]).inBuilding.filter((w) => bands.has(w));
+  const inBuilding = [...own.inBuilding, ...keptBands];
   // ── AND THEIR ENDS PUT BACK ON THE CORNERS ──
   //
   // Last, because it needs the final set: a wall can only be joined to one
@@ -492,10 +511,12 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // `duplicateCoverage.ts` has the measurements and the three discriminators
   // that do NOT work, including two that were built and reverted.
   stage("in-building");
-  const noDuplicates = wallsNotDuplicateCoverage(inBuilding, scheduleIn);
+  // The pairer's runs only, for the chain's reason: a band was already refused
+  // where a found run covers half of it, and must not decide which runs stay.
+  const noDuplicates = wallsNotDuplicateCoverage(own.inBuilding, scheduleIn);
 
   stage("duplicates");
-  const walls = joinAtCorners(noDuplicates.kept, feetPerUnit);
+  const walls = joinAtCorners([...noDuplicates.kept, ...keptBands], feetPerUnit);
 
   // ── WHAT THE DRAWING CALLS THESE, where it says so ──
   //

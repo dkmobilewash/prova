@@ -777,6 +777,7 @@ export function wallsPerView(input: {
    * recurring shape wearing a type signature.
    */
   veto?: Parameters<typeof findWallsOnSheet>[0]["veto"];
+  filledBands?: boolean;
   /**
    * The symbol-tag vocabulary, declared here for the reason the veto above
    * is: a caller spreading `{ ...base, views }` would hand it in and
@@ -868,6 +869,7 @@ export function wallsPerView(input: {
       // it — so a spread caller's model was dropped and the sheet measured
       // by the rules alone. See the `veto` field above.
       veto: input.veto,
+      filledBands: input.filledBands,
     });
     return {
       view: band.view,
