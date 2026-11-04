@@ -11,7 +11,7 @@ import {
   reviewSignature,
   restoreOffer,
 } from "./reviewDraft";
-import type { Candidate, ReviewState } from "./answerKeyReview";
+import { addTraced, type Candidate, type ReviewState } from "./answerKeyReview";
 import { splitCandidate } from "./splitCandidate";
 
 /**
@@ -481,5 +481,33 @@ describe("the signature a save is remembered by", () => {
   it("is empty for nothing at all", () => {
     expect(reviewSignature(fresh(["w0"]))).toBe("|");
     expect(reviewSignature(null)).toBe("");
+  });
+});
+
+describe("restored traces never reissue an id, round 10c", () => {
+  // Chrome's Washington Village backup: the last two traces were a second t0
+  // and t1, because a restored draft's counter started at 0 again.
+  const ids = (state: ReviewState) => state.traced.map((t) => t.id);
+
+  it("a trace drawn after a restore gets the next id, not t0 again", () => {
+    const draft = draftFrom({ state: reviewed(), ...DRAFT })!;
+    const got = restoreDraft(draft, fresh(["w0", "w1", "w2"]), 100);
+    if (!got.ok) throw new Error(got.why);
+    expect(ids(addTraced(got.state, traced("x", 0.9)))).toEqual(["t0", "t1", "t2"]);
+  });
+
+  it("a backup that already repeats ids comes back with every trace, each under its own id", () => {
+    const draft = draftFrom({ state: reviewed(), ...DRAFT })!;
+    draft.traced = [traced("t0", 0.6), traced("t1", 0.65), traced("t0", 0.7), traced("t1", 0.75)];
+    const got = restoreDraft(draft, fresh(["w0", "w1", "w2"]), 100);
+    if (!got.ok) throw new Error(got.why);
+    expect(ids(got.state)).toEqual(["t0", "t1", "t2", "t3"]);
+    expect(got.state.traced.map((t) => t.y1)).toEqual([0.6, 0.65, 0.7, 0.75]);
+    expect(ids(addTraced(got.state, traced("x", 0.9)))).toContain("t4");
+  });
+
+  it("a re-read that keeps the review keeps the counter too", () => {
+    const kept = keepReview(reviewed(), fresh(["w0", "w1", "w2"]));
+    expect(ids(addTraced(kept, traced("x", 0.9)))).toEqual(["t0", "t1", "t2"]);
   });
 });

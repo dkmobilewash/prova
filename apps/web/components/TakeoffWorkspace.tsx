@@ -792,6 +792,8 @@ export function TakeoffWorkspace({
    * unsaved is still a reason to warn.
    */
   const [savedSigByPage, setSavedSigByPage] = useState<Record<number, string>>({});
+  /** Whether the review on screen is in this browser's draft right now. */
+  const draftHolds = useRef(false);
   const savedSignature = onThisSheet(savedSigByPage, page) ?? undefined;
 
   // ── WRITTEN AFTER EVERY CHANGE, NOT ON A TIMER ──
@@ -800,6 +802,7 @@ export function TakeoffWorkspace({
   // is exactly the decision somebody just made. `keyState` changes on every
   // verdict, split and trace, so this effect is the event.
   useEffect(() => {
+    draftHolds.current = false;
     if (!keyMode || keyState === null || draftSet === "") return;
     // ── NOT WHILE A DRAFT IS WAITING TO BE RECLAIMED ──
     //
@@ -822,13 +825,15 @@ export function TakeoffWorkspace({
     // already saved.
     if (savedSignature !== undefined && savedSignature === reviewSignature(keyState)) return;
     const draft = draftFrom({ state: keyState, set: draftSet, page, finderVersion });
+    // Nothing to keep, or kept: either way a reload loses nothing.
+    draftHolds.current = draft === null || saveDraft(draft);
     if (draft === null) {
       // Nothing worth keeping — and clear any older draft for this sheet, so
       // an undo back to nothing does not leave one behind to offer later.
       clearDraft(draftSet, page, finderVersion);
       return;
     }
-    if (!saveDraft(draft)) {
+    if (!draftHolds.current) {
       // Storage refused — a private window, blocked site data, or a full
       // quota. The reviewer is told, because the alternative is believing
       // their work is being kept when it is not.
@@ -1082,6 +1087,15 @@ export function TakeoffWorkspace({
   useEffect(() => {
     if (!keyMode || keyState === null || !hasUnsavedWork(keyState, savedSignature)) return;
     const warn = (event: BeforeUnloadEvent) => {
+      // ── NOT WHEN THE DRAFT HOLDS IT ──
+      //
+      // A reload of this very sheet offers the draft back, and so does coming
+      // back after closing the tab. The prompt is for work the draft does NOT
+      // hold: storage refused, or a restore offer still waiting (the draft is
+      // not written over then). Round 10c: Chrome's "reload" was cancelled by
+      // this prompt, the tab kept running stale JavaScript, and its old
+      // refusal kept appearing as if the reload had changed nothing.
+      if (draftHolds.current) return;
       event.preventDefault();
       event.returnValue = "";
     };

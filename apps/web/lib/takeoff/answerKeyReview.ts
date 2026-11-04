@@ -209,6 +209,27 @@ export function addTraced(state: ReviewState, wall: Candidate): ReviewState {
   };
 }
 
+/**
+ * Puts traces carried over from elsewhere — a draft, or the review a re-read
+ * replaced — onto a fresh state, with the counter past every id they use.
+ *
+ * A fresh state's counter is 0, so a restored draft's next trace was `t0`
+ * again, beside the restored `t0`; Chrome's Washington Village backup ended in
+ * a second `t0` and `t1` (round 10c). A repeat already in the carried list is
+ * renumbered, so no save can merge two traces or drop one.
+ */
+export function withTraces(state: ReviewState, traced: readonly Candidate[]): ReviewState {
+  const num = (id: string) => (/^t(\d+)$/.exec(id) ? Number(id.slice(1)) : -1);
+  let next = Math.max(state.nextTraceId, ...traced.map((t) => num(t.id) + 1));
+  const seen = new Set<string>();
+  const kept = traced.map((t) => {
+    const id = seen.has(t.id) ? `t${next++}` : t.id;
+    seen.add(id);
+    return { ...t, id };
+  });
+  return { ...state, traced: kept, nextTraceId: next };
+}
+
 export function removeTraced(state: ReviewState, id: string): ReviewState {
   return { ...state, traced: state.traced.filter((w) => w.id !== id) };
 }

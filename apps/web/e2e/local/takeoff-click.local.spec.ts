@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Dialog, type Page } from "@playwright/test";
 import * as XLSX from "xlsx";
 import { prisma } from "@prova/db";
 import { pageInventoryWork, realDeps } from "../../lib/plan-ingest/pageInventory";
@@ -1190,4 +1190,53 @@ test("K14 the plan file answers a big set's burst of range requests, none refuse
   );
   const refused = statuses.filter((s) => s !== 206);
   expect(refused, `statuses other than 206: ${[...new Set(refused)].join(", ")}`).toEqual([]);
+});
+
+test("K15 a reload with a trace unsaved is not stopped by the leave prompt, and a trace after Restore gets a new id", async () => {
+  // Joplin A-101: no other step traces or saves here, so the counts are this step's own.
+  const url = `/takeoff/${SETS.joplin.id}?page=46&key=1`;
+  const open = async () => {
+    await page.goto(url);
+    await drawn();
+  };
+  const find = async () => {
+    const anyway = button("Run anyway");
+    if (await anyway.isVisible().catch(() => false)) await anyway.click();
+    await hook("find-walls").click();
+    await expect(hook("key-progress")).toBeVisible({ timeout: 120_000 });
+  };
+  await open();
+  await find();
+  const traceAt = async (y: number) => {
+    await page.keyboard.press("t");
+    await clickAt(0.36, y);
+    await clickAt(0.42, y);
+    await page.keyboard.press("Enter");
+  };
+  const tracedNow = async () => Number(/(\d+) traced/.exec((await hook("key-progress").textContent()) ?? "")?.[1] ?? 0);
+  const before = 0;
+  await traceAt(0.32);
+  await expect.poll(tracedNow).toBe(before + 1);
+  // Round 10c: the prompt cancelled Chrome's reload and the tab kept stale JS.
+  // The draft holds the trace, so nothing asks.
+  const prompts: string[] = [];
+  const onDialog = (d: Dialog) => { prompts.push(d.type()); void d.accept(); };
+  page.on("dialog", onDialog);
+  await page.reload();
+  page.off("dialog", onDialog);
+  expect(prompts).toEqual([]);
+  await drawn();
+  await find();
+  await hook("key-labels").locator('[data-takeoff="key-restore-yes"]').click();
+  await expect.poll(tracedNow).toBe(before + 1);
+  await traceAt(0.34);
+  await expect.poll(tracedNow).toBe(before + 2);
+  // Read back what the browser kept: two traces, two ids.
+  const ids = await page.evaluate(() =>
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith("takeoff-review-draft:") && k.includes(":46:"))
+      .flatMap((k) => (JSON.parse(localStorage.getItem(k)!) as { traced: { id: string }[] }).traced.map((t) => t.id)),
+  );
+  expect(ids.length).toBe(before + 2);
+  expect(new Set(ids).size, `trace ids ${ids.join(", ")}`).toBe(ids.length);
 });
