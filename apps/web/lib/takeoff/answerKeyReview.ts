@@ -431,3 +431,21 @@ export const VERDICT_COLOURS: Record<Verdict, string> = {
 /** A single line is offered in its own colour, because it is a different
  *  question: not "is this wall right" but "is this a wall at all". */
 export const SINGLE_LINE_COLOUR = "#2563eb";
+
+/** Where this browser keeps the reviewer's name between sheets. */
+export const REVIEWER_KEY = "prova.answerKey.reviewedBy";
+
+/**
+ * Whether a key press is someone typing, so a letter is text and not a verdict.
+ * Only text-entry controls: a focused checkbox, button or select (the panel's
+ * "unreviewed only" box, a row just clicked) used to count as typing because it
+ * is an INPUT or has focus, and A/R/U then did nothing (round 10).
+ */
+export function isTypingTarget(target: EventTarget | null): boolean {
+  if (target === null || typeof (target as HTMLElement).tagName !== "string") return false;
+  const el = target as HTMLElement;
+  if (el.isContentEditable || el.tagName === "TEXTAREA") return true;
+  if (el.tagName !== "INPUT") return false;
+  const type = ((el as HTMLInputElement).type || "text").toLowerCase();
+  return !["checkbox", "radio", "button", "submit", "reset", "range", "color", "file", "image"].includes(type);
+}

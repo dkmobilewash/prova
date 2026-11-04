@@ -2,8 +2,8 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { startReview, type Candidate } from "@/lib/takeoff/answerKeyReview";
-import { AnswerKeyPanel, REVIEWER_KEY, isTypingTarget } from "./AnswerKeyPanel";
+import { REVIEWER_KEY, isTypingTarget, startReview, type Candidate } from "@/lib/takeoff/answerKeyReview";
+import { AnswerKeyPanel } from "./AnswerKeyPanel";
 
 /**
  * Round 10: Chrome labelled 2 of 14 sheets because this panel was slow to use.
