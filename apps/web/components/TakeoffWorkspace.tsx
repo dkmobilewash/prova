@@ -138,7 +138,7 @@ const KEY = {
 
 /** A button on the top bar. */
 const BAR_BUTTON =
-  "inline-flex min-h-[32px] items-center rounded-md border border-line-card px-2.5 text-xs text-ink-body hover:bg-rail-hover";
+  "inline-flex min-h-[32px] shrink-0 items-center rounded-md border border-line-card px-2.5 text-xs text-ink-body hover:bg-rail-hover";
 /** A labelled icon on the tool rail's foot. */
 const RAIL_BUTTON =
   "flex h-9 w-9 items-center justify-center rounded-md text-sm text-ink-label hover:bg-rail-hover disabled:opacity-40 aria-expanded:bg-rail-hover aria-expanded:text-ink";
@@ -1213,11 +1213,12 @@ export function TakeoffWorkspace({
           </span>
           {/* WHICH PLAN SET, because a job can have several revisions and a
               measurement taken off the wrong one is wrong quietly. */}
-          <span className="hidden truncate text-xs text-ink-muted 2xl:inline" data-takeoff="plan-set">
+          <span className="hidden truncate text-xs text-ink-muted min-[1800px]:inline" data-takeoff="plan-set">
             {data.plan.revisionLabel ?? data.plan.fileName ?? "Plan set"}
           </span>
         </div>
         <div ref={setPagerSlot} className="shrink-0" />
+
         {phone && (
           <span
             className="rounded border border-line-card px-1.5 py-0.5 text-[10px] text-ink-muted"
@@ -1227,11 +1228,17 @@ export function TakeoffWorkspace({
           </span>
         )}
 
-        <div className="flex min-w-4 flex-1 justify-center">
-          <div ref={setTabsSlot} />
+        {/* ── NOTHING IN THIS ROW MAY LIE ON ANYTHING ELSE ──
+            The tabs stay whole and centred in what is left; the finders are
+            the part that gives way, scrolling sideways in their own strip with
+            Run takeoff first. Measured: at 1280 with a demolition sheet's
+            finders out, the Compare tab used to sit on Run takeoff and took
+            its clicks. */}
+        <div className="flex min-w-0 flex-1 justify-center">
+          <div ref={setTabsSlot} className="shrink-0" />
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+        <div className="flex min-w-0 shrink items-center gap-1.5 whitespace-nowrap">
           {/* SAVE STATUS. Every edit here is a server action that has already
               returned before the screen changes, so there is no "saving…"
               state to show and inventing one would be a lie. What an estimator
@@ -1251,7 +1258,11 @@ export function TakeoffWorkspace({
               )}
             </span>
           )}
-          <div ref={setActionsSlot} className="flex items-center gap-1.5" />
+          <div
+            ref={setActionsSlot}
+            className="flex min-w-0 shrink items-center gap-1.5 overflow-x-auto [scrollbar-width:none]"
+            data-takeoff="bar-actions"
+          />
           {!phone && data.wallReviewQueue.length > 0 && setReview === null && (
             <button
               type="button"
@@ -1290,7 +1301,7 @@ export function TakeoffWorkspace({
                 }
               }}
               aria-expanded={keyMode}
-              className={`rounded-md border px-2 py-1 text-xs ${
+              className={`shrink-0 rounded-md border px-2 py-1 text-xs ${
                 keyMode ? "border-brand bg-brand text-neutral-900" : "border-line-card text-ink-body hover:bg-rail"
               }`}
               data-takeoff="toggle-answer-key"

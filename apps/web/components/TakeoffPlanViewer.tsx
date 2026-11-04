@@ -5850,7 +5850,10 @@ export function TakeoffPlanViewer({
           <div
             ref={setNoticeSlot}
             data-hud="notices"
-            className="absolute left-2 top-2 z-20 flex max-h-[45%] w-[min(28rem,calc(100%-1rem))] flex-col gap-2 overflow-y-auto rounded-md border border-line-card bg-surface/95 p-2 shadow-lg empty:hidden"
+            // Top CENTRE: a sheet's corners are where a drag starts (the click
+            // list's split-in-no-room step begins at 2% of the page), and its
+            // top edge is usually margin.
+            className="absolute left-1/2 top-2 z-20 flex max-h-[45%] w-[min(28rem,calc(100%-1rem))] -translate-x-1/2 flex-col gap-2 overflow-y-auto rounded-md border border-line-card bg-surface/95 p-2 shadow-lg empty:hidden"
           />
           <div ref={setScaleSlot} data-hud="scale" className="absolute bottom-2 left-2 z-20 flex flex-wrap items-center gap-2 empty:hidden" />
           <div

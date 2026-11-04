@@ -629,11 +629,21 @@ test.describe("the full-screen takeoff workspace", () => {
     // The screenshots the full-screen brief asks for. Walls are found first so
     // the layer panel has rows and the plan has colour; the first row is
     // clicked so the readout is on the drawing too.
-    for (const size of [DESKTOP, WIDE_SCREEN]) {
+    for (const size of [NARROW, DESKTOP, WIDE_SCREEN]) {
       await page.setViewportSize(size);
       await onWorkspace(jobTwo);
       await findTheWalls(`S15 at ${size.width}`);
       await fitAndSettle();
+      // NOTHING IN THE TOP BAR LIES ON RUN TAKEOFF, with the finders that
+      // follow a find all out. The Compare tab once did, at 1280, and took
+      // its clicks; the element at the button's own centre must be it.
+      const owner = await page.locator('[data-takeoff="find-walls"]').evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return hit !== null && node.contains(hit) ? "itself" : (hit?.textContent ?? "nothing");
+      });
+      expect(owner, `at ${size.width} something sits on Run takeoff`).toBe("itself");
+      if (size === NARROW) continue;
       const row = page.locator('[data-takeoff="layer-row"]').first();
       await expect(row, "Run takeoff left the layer panel empty").toBeVisible();
       await row.click();
