@@ -35,6 +35,7 @@ let clerkUser: {
 
 vi.mock("@clerk/nextjs/server", () => ({
   currentUser: async () => clerkUser,
+  auth: async () => ({ userId: clerkUser?.id ?? null }),
 }));
 
 vi.mock("next/navigation", () => ({
