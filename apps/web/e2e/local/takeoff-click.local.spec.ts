@@ -7,6 +7,7 @@ import { pageInventoryWork, realDeps } from "../../lib/plan-ingest/pageInventory
 import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
+import { openFinders } from "../lib/finders";
 
 /**
  * THE TAKEOFF CLICK LIST, AS A SPEC. LOCAL ONLY: `pnpm test:e2e -- --takeoff-click`.
@@ -149,6 +150,7 @@ async function ensureWalls() {
 async function ensureRooms() {
   if (await hook("rooms-panel").isVisible().catch(() => false)) return;
   await ensureWalls();
+  await openFinders(page);
   await hook("find-rooms").click();
   await expect(hook("rooms-panel")).toBeVisible({ timeout: 120_000 });
 }
@@ -425,6 +427,7 @@ test("X1 Download Excel: Quantities and Sheets tabs, ZZ Troffers as saved", asyn
 // ── PART B. Demolition: E Street A1.1, then the sheets that must not offer it ──
 test("B1 Find demolition is on the toolbar, grey until a scale", async () => {
   await sheet("estreet", 24);
+  await openFinders(page);
   await expect(hook("find-demolition")).toBeVisible();
   await expect(hook("find-demolition")).toBeDisabled();
   await expect(hook("find-demolition")).toHaveAttribute("title", /set the scale/i);
@@ -450,13 +453,14 @@ test("B2 the printed scale is offered: 1/4\" = 1'-0\"", async () => {
 
 test("B3 Find demolition: 24 walls to remove, 226 ft, 4 doors", async () => {
   await on("estreet", 24);
+  await openFinders(page);
   await hook("find-demolition").click();
   await expect(hook("demo-total")).toContainText("24 walls to remove, 226 ft · 4 doors", { timeout: 60_000 });
 });
 
 test("B4 unticking a run takes it out of the count and the feet", async () => {
   await on("estreet", 24);
-  if ((await hook("demo-total").count()) === 0) await hook("find-demolition").click();
+  if ((await hook("demo-total").count()) === 0) { await openFinders(page); await hook("find-demolition").click(); }
   await hook("demo-panel").getByRole("checkbox").first().uncheck();
   const total = await hook("demo-total").innerText();
   expect(total).toContain("23 walls");
@@ -475,6 +479,7 @@ test("B5 Save to takeoff: Demo walls and Demo doors, still there after a reload"
 
 test("B6 saving it again is refused, and adds no item", async () => {
   await on("estreet", 24);
+  await openFinders(page);
   await hook("find-demolition").click();
   await expect(hook("demo-save")).toBeVisible({ timeout: 60_000 });
   await hook("demo-save").click();
@@ -491,8 +496,10 @@ for (const [n, what] of [[28, "A2.1, a new floor plan"], [27, "A1.4, the roof de
 
 test("B8 Baker A001 (keynote legend with a demo plan): 0 walls, 2 doors", async () => {
   await sheet("baker", 11);
+  await openFinders(page);
   await expect(hook("find-demolition")).toBeVisible();
   await takeOfferedScale(`1/8" = 1'-0"`);
+  await openFinders(page);
   await hook("find-demolition").click();
   await expect(hook("demo-total")).toContainText(/0 walls[^·]*· 2 doors/, { timeout: 60_000 });
 });
@@ -510,6 +517,7 @@ test("C1 Find the walls then the rooms: the panel opens itself, about 70 rooms, 
   await findWalls();
   joplinWalls = await settledWallFeet();
   await expect(hook("renovation-prompt")).toHaveCount(0);
+  await openFinders(page);
   await hook("find-rooms").click();
   await expect(hook("rooms-panel")).toBeVisible({ timeout: 120_000 });
   const rooms = num(await hook("rooms-panel").locator("h3").innerText());
@@ -583,6 +591,7 @@ test("C5 after a reload the line is still there; Remove split gives one row agai
   await drawn();
   await expect(hook("split-line")).toHaveCount(1, { timeout: 30_000 });
   await findWalls();
+  await openFinders(page);
   await hook("find-rooms").click();
   await expect.poll(async () => (await roomRows()).filter((r) => /DINING|KITCHEN/.test(r.name)).length, { timeout: 120_000 }).toBe(2);
   await hook("remove-splits").click();
@@ -662,6 +671,7 @@ test("E5 after a reload Remove work area is offered first; removing it restores 
 test("R1 Review walls: K keeps, D drops and the total falls, U takes it back", async () => {
   await on("baker", 12);
   await ensureWalls();
+  await openFinders(page);
   await hook("review-walls").click();
   const counter = hook("review-counter");
   await expect(counter).toContainText(/^0 of \d+ reviewed/);
@@ -738,6 +748,7 @@ test("X3 on a job with nothing measured, either button says so", async () => {
 test("R5-6 Topeka A-101: Review walls starts at 0 of N, on a highlighted run", async () => {
   await sheet("topeka", 74);
   await findWalls();
+  await openFinders(page);
   await hook("review-walls").click();
   await expect(hook("review-counter")).toContainText(/^0 of \d+ reviewed/);
   // Drawn on the overlay, which Playwright cannot call "visible"; that it is there is the check.
@@ -748,6 +759,7 @@ test("R5-8 D then U: the run comes back and the counter returns to 0", async () 
   await on("topeka", 74);
   if (!(await hook("review-counter").isVisible().catch(() => false))) {
     await findWalls();
+    await openFinders(page);
     await hook("review-walls").click();
   }
   await page.keyboard.press("d");
@@ -913,6 +925,7 @@ test("R6-3 a split in no room is refused, saying why, and nothing is recorded", 
 test("R6-4 Topeka A-101 Review walls: D on a run not yet on the job says it only takes it off this list", async () => {
   await sheet("topeka", 74);
   await findWalls();
+  await openFinders(page);
   await hook("review-walls").click();
   await says("D only takes it off this list");
   await page.keyboard.press("d");
@@ -1167,7 +1180,10 @@ test("K13 Save to labels through the button saves a TRACE-ONLY sheet: nothing of
   // The offer opens Set scale with the printed figure filled in; Set the scale keeps it.
   const confirm = button("Use the printed scale");
   if (await confirm.isVisible().catch(() => false)) await confirm.click();
-  await button("Set the scale").click();
+  // B8 has usually set this sheet's scale earlier in the same run, and then
+  // there is no form to press; the line after this is what proves a scale.
+  const setIt = button("Set the scale");
+  if (await setIt.isVisible().catch(() => false)) await setIt.click();
   await saysNot("Set the scale on this sheet before measuring");
   // A001 reads as an elevations sheet, so the finder waits to be told.
   await button("Run anyway").click();

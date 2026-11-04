@@ -644,6 +644,40 @@ test.describe("the full-screen takeoff workspace", () => {
       });
       expect(owner, `at ${size.width} something sits on Run takeoff`).toBe("itself");
       if (size === NARROW) continue;
+
+      // NOTHING RUNS PAST THE PANEL'S EDGE: every element in it ends inside it.
+      const spill = await page.locator('[data-takeoff="layers-rail"]').evaluate((rail) => {
+        const edge = rail.getBoundingClientRect().right + 0.5;
+        return Array.from(rail.querySelectorAll("*"))
+          .filter((node) => {
+            const box = node.getBoundingClientRect();
+            return box.width > 0 && box.right > edge;
+          })
+          .map((node) => `${node.tagName}.${(node as HTMLElement).dataset.takeoff ?? ""}`)
+          .slice(0, 5);
+      });
+      expect(spill, `at ${size.width} something runs past the layer panel's edge`).toEqual([]);
+
+      // S15's "check this is the right sheet" caution: a folded banner ABOVE
+      // the layer rows, one line until opened.
+      const caution = page.locator('[data-takeoff="layer-panel"] [data-takeoff="duplicate-walls-caution"]');
+      await expect(caution, "the caution is not in the layer panel").toHaveCount(1);
+      expect(await caution.evaluate((node) => (node as HTMLDetailsElement).open), "the caution is open on arrival").toBe(false);
+      expect(
+        await caution.evaluate((node) => {
+          const rows = document.querySelector('[data-takeoff="layer-rows"]');
+          return rows !== null && (node.compareDocumentPosition(rows) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+        }),
+        "the caution is not above the layer rows",
+      ).toBe(true);
+
+      // ONE MAIN ACTION: the finders are behind its arrow, and the arrow opens them.
+      await expect(page.locator('[data-takeoff="bar-actions"] [data-takeoff="find-rooms"]'), "Find the rooms is loose in the top bar").toBeHidden();
+      await page.locator('[data-takeoff="run-more"]').click();
+      await expect(page.locator('[data-takeoff="run-menu"] [data-takeoff="find-rooms"]')).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.locator('[data-takeoff="run-menu"]')).toBeHidden();
+      if (size === NARROW) continue;
       const row = page.locator('[data-takeoff="layer-row"]').first();
       await expect(row, "Run takeoff left the layer panel empty").toBeVisible();
       await row.click();

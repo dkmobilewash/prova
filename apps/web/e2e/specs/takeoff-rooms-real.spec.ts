@@ -6,6 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
+import { openFinders } from "../lib/finders";
 
 /**
  * ── THE ROOMS ON A REAL TRAINING SHEET, FOR SCREENSHOTS ──
@@ -125,6 +126,7 @@ test.describe("find the rooms on a real sheet", () => {
     await expect(findWalls).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 540_000 });
     await page.screenshot({ path: path.join(OUT, `p${PAGE}-01-walls.png`), fullPage: false });
     const findRooms = page.locator('[data-takeoff="find-rooms"]');
+    await openFinders(page);
     await expect(findRooms).toBeEnabled({ timeout: 30_000 });
     await findRooms.click();
     await expect(page.locator('[data-takeoff="rooms-panel"]')).toBeVisible({ timeout: 60_000 });

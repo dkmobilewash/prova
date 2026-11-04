@@ -6,6 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
+import { openFinders } from "../lib/finders";
 
 /**
  * ── "DEMOTE, DON'T HIDE" ON A REAL TRAINING SHEET, FOR SCREENSHOTS ──
@@ -147,6 +148,7 @@ test.describe("demote, don't hide, on a real sheet", () => {
 
     // The real check, refused (no key in e2e): captured for the replay.
     const check = page.locator('[data-takeoff="check-runs"]');
+    await openFinders(page);
     const [response] = await Promise.all([page.waitForResponse(isActionPost, { timeout: 60_000 }), check.click()]);
     const body = await response.text();
     const contentType = response.headers()["content-type"] ?? "text/x-component";

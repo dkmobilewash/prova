@@ -1229,11 +1229,10 @@ export function TakeoffWorkspace({
         )}
 
         {/* ── NOTHING IN THIS ROW MAY LIE ON ANYTHING ELSE ──
-            The tabs stay whole and centred in what is left; the finders are
-            the part that gives way, scrolling sideways in their own strip with
-            Run takeoff first. Measured: at 1280 with a demolition sheet's
-            finders out, the Compare tab used to sit on Run takeoff and took
-            its clicks. */}
+            The tabs stay whole and centred in what is left. Measured: at 1280
+            with a demolition sheet's finders out loose, the Compare tab sat on
+            Run takeoff and took its clicks; the finders are behind Run
+            takeoff's arrow now, so the right-hand side is short. */}
         <div className="flex min-w-0 flex-1 justify-center">
           <div ref={setTabsSlot} className="shrink-0" />
         </div>
@@ -1260,7 +1259,7 @@ export function TakeoffWorkspace({
           )}
           <div
             ref={setActionsSlot}
-            className="flex min-w-0 shrink items-center gap-1.5 overflow-x-auto [scrollbar-width:none]"
+            className="flex shrink-0 items-center gap-1.5"
             data-takeoff="bar-actions"
           />
           {!phone && data.wallReviewQueue.length > 0 && setReview === null && (

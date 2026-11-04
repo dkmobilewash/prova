@@ -58,6 +58,7 @@ export function TakeoffLayerPanel({
   lit,
   onLit,
   onToggle,
+  banner,
   review,
   children,
 }: {
@@ -66,7 +67,10 @@ export function TakeoffLayerPanel({
   lit: string | null;
   onLit: (key: string | null) => void;
   onToggle: (key: string) => void;
-  /** The "Needs review" row, rendered by the viewer because it owns the action. */
+  /** A folded caution about the sheet, over everything else. */
+  banner?: React.ReactNode;
+  /** The "Needs review" row, rendered by the viewer because it owns the action.
+   *  Walls, so it shows under All and Line. */
   review?: React.ReactNode;
   /** Everything else the viewer keeps beside the drawing, under the rows. */
   children?: React.ReactNode;
@@ -99,7 +103,8 @@ export function TakeoffLayerPanel({
   );
 
   return (
-    <div className="flex flex-col gap-2 p-2" data-takeoff="layer-panel">
+    <div className="flex min-w-0 flex-col gap-2 p-2" data-takeoff="layer-panel">
+      {banner}
       <div className="grid grid-cols-4 gap-1" role="group" aria-label="Show layers of one kind">
         {FILTERS.map((entry) => (
           <button
@@ -139,7 +144,6 @@ export function TakeoffLayerPanel({
       >
         <span aria-hidden>☰</span> Legend
       </Link>
-      {review}
       <ul className="flex flex-col" data-takeoff="layer-rows">
         {shown.length === 0 && (
           <li className="px-2 py-1.5 text-xs text-ink-muted" data-takeoff="layers-empty">
@@ -204,6 +208,10 @@ export function TakeoffLayerPanel({
             </span>
           </li>
         ))}
+        {/* Hidden rather than unmounted under Area and Count: it is a place
+            the viewer portals into, and an unmounted place drops its content
+            back into the page. */}
+        <li className={filter === "area" || filter === "count" ? "hidden" : undefined}>{review}</li>
       </ul>
       {children}
     </div>

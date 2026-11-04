@@ -6,6 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
+import { openFinders } from "../lib/finders";
 
 /**
  * ── DEMOTE, DON'T HIDE, IN A REAL BROWSER ──
@@ -147,6 +148,7 @@ test.describe("demote, don't hide", () => {
     await hydrated(page, '[data-takeoff="find-walls"]');
     await findWalls.click();
     await expect(findWalls).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 180_000 });
+    await openFinders(page);
     await expect(page.locator('[data-takeoff="check-runs"]')).toBeVisible({ timeout: 30_000 });
     return foundCount();
   }
@@ -223,6 +225,7 @@ test.describe("demote, don't hide", () => {
     expect(before, "S05 should pair more than two runs").toBeGreaterThan(2);
     baseline = before;
     expect(await page.locator('[data-takeoff="demoted"]').count(), "the switch was turned off above, yet the model demoted at find").toBe(0);
+    await openFinders(page);
     const [response] = await Promise.all([
       page.waitForResponse(isActionPost, { timeout: 60_000 }),
       page.locator('[data-takeoff="check-runs"]').click(),
@@ -238,6 +241,7 @@ test.describe("demote, don't hide", () => {
   test("switch off, a verdict: the two runs are HIDDEN and only a re-find brings them back", async () => {
     await replayVerdict();
     const before = await foundCount();
+    await openFinders(page);
     await page.locator('[data-takeoff="check-runs"]').click();
     await expect(page.locator('[data-takeoff="check-done"]')).toContainText("2 run(s) set aside", { timeout: 30_000 });
     expect(await foundCount()).toBe(before - 2);
@@ -289,6 +293,7 @@ test.describe("demote, don't hide", () => {
 
   test("the check is the second opinion: its verdicts join the list, and one click puts a run back", async () => {
     await replayVerdict();
+    await openFinders(page);
     await page.locator('[data-takeoff="check-runs"]').click();
     const demoted = page.locator('[data-takeoff="demoted"]');
     await expect(demoted).toContainText("casework: a counter", { timeout: 30_000 });
@@ -308,6 +313,7 @@ test.describe("demote, don't hide", () => {
 
   test("a check that calls every run a wall overrides the model: nothing left demoted", async () => {
     await replayVerdict(ALL_WALLS);
+    await openFinders(page);
     await page.locator('[data-takeoff="check-runs"]').click();
     await expect(page.locator('[data-takeoff="check-done"]')).toContainText("Every run checked looks like a wall", { timeout: 30_000 });
     expect(await page.locator('[data-takeoff="demoted"]').count()).toBe(0);

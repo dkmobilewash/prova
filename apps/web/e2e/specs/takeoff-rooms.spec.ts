@@ -6,6 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
+import { openFinders } from "../lib/finders";
 
 /**
  * ── "FIND THE ROOMS", END TO END, ON AN INVENTED SHEET ──
@@ -139,6 +140,7 @@ test.describe("find the rooms", () => {
     await page.goto(`/takeoff/${jobId}`);
     await expect(page.locator('[data-takeoff="find-walls"]')).toBeVisible({ timeout: 60_000 });
     if (fresh) {
+      await openFinders(page);
       await expect(
         page.locator('[data-takeoff="find-rooms"]'),
         "a new company should get Find the rooms without opening Settings",
@@ -185,6 +187,7 @@ test.describe("find the rooms", () => {
     await expect(findWalls).toBeVisible({ timeout: 60_000 });
     await hydrated(page, '[data-takeoff="find-walls"]');
     const findRooms = page.locator('[data-takeoff="find-rooms"]');
+    await openFinders(page);
     await expect(findRooms, "switch on, button absent").toBeVisible();
     await expect(findRooms, "rooms cannot be found before walls").toBeDisabled();
     // The button now waits for the sheet itself (the comment below describes

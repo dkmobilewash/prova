@@ -31,17 +31,20 @@ export function TakeoffHeldWalls({
   }
   return (
     <details
-      className={`shrink-0 text-xs text-ink-muted${asRow ? " rounded-md bg-tag-amber px-2 py-1.5" : ""}`}
+      className={`shrink-0 text-xs text-ink-muted${asRow ? " rounded-md px-1.5 py-1.5 hover:bg-rail" : ""}`}
       data-takeoff="held-walls"
     >
       <summary className="cursor-pointer text-ink-body">
+        {/* As a layer row: the same swatch, name, count and total columns. */}
         {asRow && (
-          <span className="inline-flex w-[calc(100%-1rem)] items-center gap-2 font-medium text-tag-amber-ink">
-            Needs review · {walls.length}
-            <span className="ml-auto tabular-nums">{total.toLocaleString()} ft</span>
+          <span className="inline-flex w-[calc(100%-1rem)] items-center gap-2" data-takeoff="needs-review-row">
+            <span aria-hidden className="h-2.5 w-4 shrink-0 rounded-sm bg-bar-amber" />
+            <span className="min-w-0 flex-1 truncate font-medium text-tag-amber-ink">Needs review</span>
+            <span className="shrink-0 rounded bg-rail px-1 text-[10px] text-ink-muted">{walls.length}</span>
+            <span className="w-20 shrink-0 text-right tabular-nums text-ink-body">{total.toLocaleString()} ft</span>
           </span>
         )}
-        <span className={asRow ? "block pl-4 font-normal text-ink-muted" : undefined}>
+        <span className={asRow ? "block pl-10 font-normal text-ink-muted" : undefined}>
           {walls.length} {walls.length === 1 ? "run" : "runs"} to confirm, {total.toLocaleString()} ft: not on the estimate
         </span>
       </summary>

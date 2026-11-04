@@ -6,6 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
+import { openFinders } from "../lib/finders";
 
 /**
  * ── ROOMS AND CEILINGS REACH THE ESTIMATE, ON INVENTED DATA ──
@@ -149,6 +150,7 @@ test.describe("rooms and ceilings reach the estimate", () => {
   test("find the rooms, type two ceilings, save: the items rail names Rooms and one item per ceiling family, with square feet", async () => {
     await page.goto(`/takeoff/${jobId}`);
     await findTheWalls();
+    await openFinders(page);
     await page.locator('[data-takeoff="find-rooms"]').click();
     await expect(page.locator('[data-takeoff="rooms-panel"]')).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('[data-takeoff="room-ceiling-from"]').first()).toHaveText("nothing read", { timeout: 60_000 });

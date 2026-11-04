@@ -1034,6 +1034,25 @@ export function TakeoffPlanViewer({
   const [sideSlot, setSideSlot] = useState<HTMLElement | null>(null);
   const [foundSlot, setFoundSlot] = useState<HTMLElement | null>(null);
   const [reviewSlot, setReviewSlot] = useState<HTMLElement | null>(null);
+  const [bannerSlot, setBannerSlot] = useState<HTMLElement | null>(null);
+  const [menuSlot, setMenuSlot] = useState<HTMLElement | null>(null);
+  const [runMenu, setRunMenu] = useState(false);
+  // The finder menu closes on the next click anywhere — an item, the drawing,
+  // or outside — after the one that opened it, and on Escape.
+  useEffect(() => {
+    if (!runMenu) return;
+    const close = () => setRunMenu(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    const timer = window.setTimeout(() => document.addEventListener("click", close), 0);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("click", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [runMenu]);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState(true);
@@ -3938,8 +3957,12 @@ export function TakeoffPlanViewer({
             }}
           />
         ))}
+        {/* ── ONE MAIN ACTION ──
+            In the full-screen shell, Run takeoff is the solid button and the
+            finders that follow it are behind its arrow. `contents` on the tab,
+            where they all stay in the toolbar as they always were. */}
         {slot(bar?.actions, (
-        <>
+        <div className={fill ? "relative flex shrink-0" : "contents"}>
         <button
           type="button"
           onClick={onFindWalls}
@@ -3948,12 +3971,41 @@ export function TakeoffPlanViewer({
           title={findWallsWhy ?? (fill ? "Find the walls on this sheet again, from the drawing" : undefined)}
           className={
             fill
-              ? "min-h-[32px] rounded-md bg-tag-green px-3 text-xs font-semibold text-tag-green-ink hover:opacity-90 disabled:opacity-40"
+              ? // emerald-700 under white is 5.5:1, so full strength reads.
+                "min-h-[32px] rounded-l-md bg-emerald-700 px-3 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-40"
               : "min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
           }
         >
           {finding ? "Reading the lines…" : fill ? "Run takeoff" : "Find the walls"}
         </button>
+        {fill && (
+          <>
+            <button
+              type="button"
+              aria-label="More ways to find things on this sheet"
+              title="Find the rooms, review or check the walls, and the rest"
+              aria-expanded={runMenu}
+              onClick={() => setRunMenu((open) => !open)}
+              data-takeoff="run-more"
+              className="min-h-[32px] rounded-r-md border-l border-emerald-900 bg-emerald-700 px-2 text-xs text-white hover:bg-emerald-800"
+            >
+              ▾
+            </button>
+            <div
+              ref={setMenuSlot}
+              data-takeoff="run-menu"
+              className={
+                runMenu
+                  ? "absolute right-0 top-full z-50 mt-1 flex w-60 flex-col items-stretch gap-1 rounded-md border border-line-card bg-surface p-1 shadow-xl empty:hidden"
+                  : "hidden"
+              }
+            />
+          </>
+        )}
+        </div>
+        ))}
+        {slot(menuSlot, (
+        <>
         {found !== null && runsRef.current.length > 0 && !readOnly && answerKey === undefined && review === null && (
           <button
             type="button"
@@ -3996,7 +4048,7 @@ export function TakeoffPlanViewer({
             measured and switched off once (`takeoffRoomFinder.test.tsx`) and
             a control that reads as "exists but broken" is what that file
             exists to prevent. With the switch on it waits for a find. */}
-        {slot(bar?.actions, (
+        {slot(menuSlot, (
         <>
         {roomFinder && (
           <button
@@ -4023,14 +4075,16 @@ export function TakeoffPlanViewer({
             {slot(noticeSlot, <span className="text-[11px] text-ink-muted" data-takeoff="not-a-takeoff-sheet">
               {takeoffVerdict?.why}
             </span>)}
-            <button
+            {/* Beside Run takeoff in the shell, not in its menu: it is what
+                takes the grey off the main action. */}
+            {slot(bar?.actions, <button
               type="button"
               onClick={() => setOverriddenByPage((prev) => ({ ...prev, [pageNumber]: true }))}
               data-takeoff="run-anyway"
-              className="min-h-[36px] rounded-md border border-line-card bg-surface px-2 text-[11px] text-link hover:text-link-hover"
+              className="min-h-[36px] shrink-0 rounded-md border border-line-card bg-surface px-2 text-[11px] text-link hover:text-link-hover"
             >
               Run anyway
-            </button>
+            </button>)}
           </>
         )}
 
@@ -4066,7 +4120,7 @@ export function TakeoffPlanViewer({
             more carefully than usual.
           </p>
         ))}
-        {slot(bar?.actions, scannedPages.includes(pageNumber) && (
+        {slot(menuSlot, scannedPages.includes(pageNumber) && (
           <button
             type="button"
             onClick={onReadSheet}
@@ -4532,7 +4586,7 @@ export function TakeoffPlanViewer({
               and a person may have corrected; the one below is read off the
               title block here and only fills a silence. One slot, never two
               cautions saying the same thing in different words. */}
-          {sheetCaution && found.length > 0 && (
+          {sheetCaution && found.length > 0 && !fill && (
             <p
               className="mb-3 rounded-md bg-tag-amber p-2 text-xs text-tag-amber-ink"
               data-takeoff="duplicate-walls-caution"
@@ -4541,6 +4595,21 @@ export function TakeoffPlanViewer({
               {sheetCaution}
             </p>
           )}
+          {/* ── IN THE SHELL, A BANNER ABOVE THE LAYERS, FOLDED ──
+              One line until opened: the panel is 300px, and the full caution
+              took a third of its height above every group. */}
+          {sheetCaution && found.length > 0 && fill &&
+            slot(
+              bannerSlot,
+              <details className="rounded-md bg-tag-amber text-xs text-tag-amber-ink" data-takeoff="duplicate-walls-caution">
+                <summary className="cursor-pointer truncate px-2 py-1.5">
+                  <span className="font-semibold">Check this is the right sheet</span>
+                  {" · "}
+                  {sheetCaution.split(/(?<=\.)\s/)[0]}
+                </summary>
+                <p className="break-words px-2 pb-2">{sheetCaution}</p>
+              </details>,
+            )}
           {found.length === 0 ? (
             /* ── TWO KINDS OF EMPTY, AND THIS SAID THE WRONG ONE ──
 
@@ -4749,7 +4818,7 @@ export function TakeoffPlanViewer({
                         onChange={(event) =>
                           setChosen((current) => ({ ...current, [index]: event.target.value }))
                         }
-                        className="min-h-[36px] max-w-[min(22rem,100%)] rounded-md border border-line-card bg-surface px-2 text-xs text-ink-body"
+                        className={`min-h-[36px] rounded-md border border-line-card bg-surface px-2 text-xs text-ink-body ${fill ? "w-full min-w-0" : "max-w-[min(22rem,100%)]"}`}
                       >
                         <option value="">What are these?</option>
                         {groupChoices(verdict, wallTypes).map((choice) =>
@@ -5875,8 +5944,9 @@ export function TakeoffPlanViewer({
           data-takeoff="layers-rail"
           className={
             panelDrawer
-              ? "fixed bottom-0 right-0 top-12 z-40 w-80 overflow-y-auto border-l border-line-card bg-surface shadow-xl"
-              : "w-[min(300px,calc(25vw-48px))] min-w-[15rem] shrink-0 overflow-y-auto border-l border-line-card bg-surface"
+              ? "fixed bottom-0 right-0 top-12 z-40 w-80 overflow-y-auto overflow-x-hidden border-l border-line-card bg-surface shadow-xl"
+              : // overflow-x hidden: nothing in it runs past its edge.
+                "w-[min(300px,calc(25vw-48px))] min-w-[15rem] shrink-0 overflow-y-auto overflow-x-hidden border-l border-line-card bg-surface"
           }
         >
           {panelOpen && (
@@ -5892,9 +5962,10 @@ export function TakeoffPlanViewer({
                   return next;
                 })
               }
+              banner={<div ref={setBannerSlot} className="empty:hidden" />}
               review={<div ref={setReviewSlot} className="empty:hidden" />}
             >
-              <div ref={setFoundSlot} className="empty:hidden" />
+              <div ref={setFoundSlot} className="min-w-0 break-words empty:hidden" />
             </TakeoffLayerPanel>
           )}
           <div ref={setSideSlot} className="flex flex-col gap-2 p-2 empty:hidden" />

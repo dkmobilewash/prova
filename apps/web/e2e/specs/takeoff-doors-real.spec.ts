@@ -10,6 +10,7 @@ import { openPlanPdf, titleBlockText } from "@/lib/plan-ingest/planPdf";
 import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
 import { storedLegendTypes } from "@/lib/takeoff/legendProposal";
 import { legendCropRects } from "@/lib/takeoff/legendSight";
+import { openFinders } from "../lib/finders";
 
 /**
  * ── DOOR OPENINGS INTO THE ESTIMATE, ON A REAL TRAINING SET ──
@@ -419,6 +420,7 @@ test.describe("door openings into the estimate, on a real set", () => {
       await page.locator('[data-takeoff="find-walls"]').click();
       await expect(findRooms).toBeEnabled({ timeout: 900_000 });
     }
+    await openFinders(page);
     await findRooms.click();
     const panel = page.locator('[data-takeoff="rooms-panel"]');
     await expect(panel).toBeVisible({ timeout: 120_000 });
