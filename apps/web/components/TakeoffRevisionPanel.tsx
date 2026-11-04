@@ -22,6 +22,9 @@ export function TakeoffRevisionPanel({
   state,
   onFindWalls,
   findDisabled,
+  findWhy = null,
+  onRunAnyway,
+  scaleOffer,
   onFindRooms,
   roomsDisabled,
   onClear,
@@ -29,6 +32,16 @@ export function TakeoffRevisionPanel({
   state: { earlier: string; busy: boolean; error: string | null; result: RevisionCompare | null };
   onFindWalls: () => void;
   findDisabled: boolean;
+  /**
+   * Why Find the walls cannot run, the toolbar's own sentence. Round 6 pressed
+   * the button on a sheet with no scale that was also classed as unit numbering,
+   * and nothing happened and nothing said why.
+   */
+  findWhy?: string | null;
+  /** Present when the sheet was classed as not worth measuring: the toolbar's "Run anyway". */
+  onRunAnyway?: () => void;
+  /** Present when the sheet has no scale and prints one: the toolbar's "Use the printed scale". */
+  scaleOffer?: { label: string; onUse: () => void };
   /** Absent when the company has room finding off. */
   onFindRooms?: () => void;
   roomsDisabled?: boolean;
@@ -68,11 +81,17 @@ export function TakeoffRevisionPanel({
       ) : (
         <p className="mt-2 text-ink-muted">No takeoff measured on the earlier version runs through a change.</p>
       )}
+      {findWhy && (
+        <p className="mt-2 text-ink-muted" data-takeoff="revision-find-why">
+          {findWhy}
+        </p>
+      )}
       <div className="mt-2 flex flex-wrap gap-2">
         <button
           type="button"
           onClick={onFindWalls}
           disabled={findDisabled}
+          title={findWhy ?? undefined}
           data-takeoff="revision-find-walls"
           className="min-h-[36px] rounded-md border border-line-card bg-brand px-3 text-xs font-medium text-neutral-900 hover:bg-brand-hover disabled:opacity-40"
         >
@@ -88,6 +107,16 @@ export function TakeoffRevisionPanel({
             className="min-h-[36px] rounded-md border border-line-card px-3 text-xs text-ink-body disabled:opacity-40"
           >
             Find the rooms
+          </button>
+        )}
+        {scaleOffer && (
+          <button type="button" onClick={scaleOffer.onUse} data-takeoff="revision-scale-offer" className="min-h-[36px] rounded-md border border-line-card px-3 text-xs text-ink-body">
+            {scaleOffer.label}
+          </button>
+        )}
+        {onRunAnyway && (
+          <button type="button" onClick={onRunAnyway} data-takeoff="revision-run-anyway" className="min-h-[36px] rounded-md border border-line-card px-3 text-xs text-link hover:text-link-hover">
+            Run anyway
           </button>
         )}
         <button type="button" onClick={onClear} data-takeoff="revision-clear" className="min-h-[36px] rounded-md border border-line-card px-3 text-xs text-ink-body">

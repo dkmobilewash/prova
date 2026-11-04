@@ -43,3 +43,17 @@ describe("saving a count across the set", () => {
     expect(host.querySelector('[data-takeoff="symbol-across-saved"]')?.textContent).toMatch(/Saved 21 on 1 sheet as one count/);
   });
 });
+
+describe("a box round more than one symbol", () => {
+  it("asks which one, and counts the one picked", () => {
+    const onPick = vi.fn();
+    const state = { matches: [], dropped: new Set<number>(), ms: 0, busy: false, error: null, choices: [{}, {}] };
+    const host = document.createElement("div");
+    document.body.append(host);
+    act(() => createRoot(host).render(createElement(TakeoffSymbolPanel, { jobId: "j", planId: "p", pageId: "g", pageNumber: 1, itemId: null, state, across: null, pageCount: 1, onAcross: () => {}, onCancelAcross: () => {}, onPick, onClear: () => {}, onSaved: () => {} })));
+    expect(host.querySelector('[data-takeoff="symbol-which"]')?.textContent).toContain("That box holds 2 symbols");
+    expect(host.querySelector('[data-takeoff="symbol-save"]')).toBeNull();
+    act(() => (host.querySelectorAll('[data-takeoff="symbol-pick"]')[1] as HTMLButtonElement).click());
+    expect(onPick).toHaveBeenCalledWith(1);
+  });
+});

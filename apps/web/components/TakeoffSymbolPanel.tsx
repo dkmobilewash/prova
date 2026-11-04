@@ -39,6 +39,7 @@ export function TakeoffSymbolPanel({
   pageCount,
   onAcross,
   onCancelAcross,
+  onPick,
   onClear,
   onSaved,
 }: {
@@ -48,12 +49,14 @@ export function TakeoffSymbolPanel({
   pageId: string | null;
   pageNumber: number;
   itemId: string | null;
-  state: { matches: SymbolMatch[]; dropped: Set<number>; ms: number; busy: boolean; error: string | null; label?: string | null; tag?: string | null };
+  state: { matches: SymbolMatch[]; dropped: Set<number>; ms: number; busy: boolean; error: string | null; label?: string | null; tag?: string | null; choices?: readonly unknown[] };
   /** The across-the-set walk, once started. */
   across: AcrossState | null;
   pageCount: number | null;
   onAcross: (scope: SheetScope) => void;
   onCancelAcross: () => void;
+  /** The box held more than one symbol: count the one numbered `i + 1` on the sheet. */
+  onPick?: (i: number) => void;
   onClear: () => void;
   /** `keepOpen` leaves the panel up, because the across-the-set result is said here. */
   onSaved: (saved: { id: string }, keepOpen?: boolean) => void;
@@ -100,6 +103,21 @@ export function TakeoffSymbolPanel({
         </p>
       ) : state.error ? (
         <p className="text-tag-rose-ink">{state.error}</p>
+      ) : state.choices && state.choices.length > 0 ? (
+        <div data-takeoff="symbol-which">
+          <p className="text-sm font-medium text-ink">That box holds {state.choices.length} symbols. Which one are you counting?</p>
+          <p className="mt-0.5 text-ink-muted">They are numbered on the sheet. Click one there or here.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {state.choices.map((_, i) => (
+              <button key={i} type="button" onClick={() => onPick?.(i)} data-takeoff="symbol-pick" className="min-h-[36px] min-w-[36px] rounded-md border border-line-card px-3 text-xs text-ink-body">
+                {i + 1}
+              </button>
+            ))}
+            <button type="button" onClick={onClear} className="min-h-[36px] rounded-md border border-line-card px-3 text-xs text-ink-body">
+              Cancel
+            </button>
+          </div>
+        </div>
       ) : (
         <>
           <p className="text-sm font-medium text-ink" data-takeoff="symbol-count-total">

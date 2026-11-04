@@ -37,6 +37,25 @@ describe("the revision panel", () => {
     expect((host.querySelector('[data-takeoff="revision-find-rooms"]') as HTMLButtonElement).disabled).toBe(true);
     expect(host.textContent).toContain("No line work changed.");
   });
+  it("says why Find the walls cannot run, and offers the toolbar's ways past it", () => {
+    const onRunAnyway = vi.fn(), onUse = vi.fn();
+    const { host } = paint(
+      { earlier: "x", added: [], removed: [], truncated: false, agreement: 1, changedItems: [] },
+      { findDisabled: true, findWhy: "This looks like a unit-numbering plan.", onRunAnyway, scaleOffer: { label: "Use the printed scale 1/8\" = 1'-0\"", onUse } },
+    );
+    expect((host.querySelector('[data-takeoff="revision-find-walls"]') as HTMLButtonElement).disabled).toBe(true);
+    expect(host.querySelector('[data-takeoff="revision-find-why"]')?.textContent).toBe("This looks like a unit-numbering plan.");
+    act(() => (host.querySelector('[data-takeoff="revision-run-anyway"]') as HTMLButtonElement).click());
+    act(() => (host.querySelector('[data-takeoff="revision-scale-offer"]') as HTMLButtonElement).click());
+    expect(onRunAnyway).toHaveBeenCalled();
+    expect(onUse).toHaveBeenCalled();
+    expect(host.querySelector('[data-takeoff="revision-scale-offer"]')?.textContent).toContain("1/8");
+  });
+  it("says nothing extra when Find the walls can run", () => {
+    const { host } = paint({ earlier: "x", added: [], removed: [], truncated: false, agreement: 1, changedItems: [] });
+    expect(host.querySelector('[data-takeoff="revision-find-why"]')).toBeNull();
+    expect(host.querySelector('[data-takeoff="revision-run-anyway"]')).toBeNull();
+  });
   it("says a re-drawn sheet was re-drawn rather than drawing it all", () => {
     const { host } = paint({ earlier: "x", added: [], removed: [], truncated: true, agreement: 0.27, changedItems: [] });
     expect(host.querySelector('[data-takeoff="revision-redrawn"]')?.textContent).toContain("27%");

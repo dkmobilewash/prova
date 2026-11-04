@@ -158,6 +158,7 @@ import { doorsAndWindowsForSheet, type DoorsWindowsResult, type StoredScheduleRo
 import { TakeoffDemoPanel } from "./TakeoffDemoPanel";
 import { demoEvidence, demoForSheet, demoSheetTitle, notWallDemoSheet, type DemoSheet } from "@/lib/takeoff/demoWalls";
 import { TakeoffSymbolPanel, type AcrossRow, type AcrossState } from "./TakeoffSymbolPanel";
+import { symbolsInBox } from "@/lib/takeoff/symbolBox";
 import { findSymbolsFrom, scaleSymbolTemplate, symbolTemplate, type Box as SymbolBox, type SymbolMatch, type SymbolTemplate } from "@/lib/takeoff/symbolSignature";
 import { sheetInScope, type SheetScope } from "@/lib/takeoff/symbolScope";
 import { acrossSheet } from "@/lib/takeoff/symbolAcross";
@@ -166,7 +167,7 @@ import { scaleFromPrinted } from "@/lib/takeoff/scaleFromPrinted";
 type RasterRead = { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[]; widthPt?: number; heightPt?: number; printedScale?: string | null };
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
 import { type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
-import { sheetRooms } from "@/lib/takeoff/sheetRooms";
+import { sheetRooms, splitToWalls } from "@/lib/takeoff/sheetRooms";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -809,7 +810,7 @@ export function TakeoffPlanViewer({
   /** The Split area line being dragged, page-width units. */
   const [splitLine, setSplitLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [symbolBox, setSymbolBox] = useState<SymbolBox | null>(null);
-  const [symbols, setSymbols] = useState<{ page: number; matches: SymbolMatch[]; dropped: Set<number>; ms: number; busy: boolean; error: string | null; label?: string | null; tag?: string | null } | null>(null);
+  const [symbols, setSymbols] = useState<{ page: number; matches: SymbolMatch[]; dropped: Set<number>; ms: number; busy: boolean; error: string | null; label?: string | null; tag?: string | null; choices?: SymbolBox[] } | null>(null);
   /** The boxed symbol as a template, kept so "Find on all sheets" lays the same one over the rest of the set. */
   const symbolTemplateRef = useRef<{ made: SymbolTemplate; widthPt: number; fpu: number | null; number: string | null } | null>(null);
   const [across, setAcross] = useState<AcrossState | null>(null);
@@ -1625,7 +1626,7 @@ export function TakeoffPlanViewer({
    * and the matches come back as footprints to mark. Pure geometry; no
    * model. See `lib/takeoff/symbolSignature.ts` and NOTES-symbols.md.
    */
-  const searchSymbols = async (box: SymbolBox) => {
+  const searchSymbols = async (drawn: SymbolBox, picked = false) => {
     const doc = docRef.current;
     if (!doc || !pageSize) return;
     setSymbols({ page: pageNumber, matches: [], dropped: new Set(), ms: 0, busy: true, error: null });
@@ -1639,6 +1640,16 @@ export function TakeoffPlanViewer({
       const text = words.map((w) => ({ x: w.x / W, y: (w.y - w.height) / W, width: w.width / W, height: w.height / W, str: w.str }));
       const t0 = performance.now();
       const segs = segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W }));
+      // The box says where; the symbol's own ink says how big. A box holding two
+      // symbols asks which, rather than counting a guess (`symbolBox.ts`).
+      const inBox = picked ? null : symbolsInBox(segs, text, drawn);
+      if (inBox?.kind === "several") {
+        symbolTemplateRef.current = null;
+        setAcross(null);
+        setSymbols({ page: pageNumber, matches: [], dropped: new Set(), ms: 0, busy: false, error: null, choices: inBox.boxes });
+        return;
+      }
+      const box = inBox?.kind === "one" ? inBox.box : drawn;
       const made = symbolTemplate(segs, text, box);
       const found = made === null ? null : findSymbolsFrom(segs, text, made);
       const printed = scaleFromPrinted(printedScalesOnPage(words), W, pageSize.heightPt);
@@ -2765,6 +2776,14 @@ export function TakeoffPlanViewer({
     takeoffVerdict !== null &&
     !takeoffVerdict.worthMeasuring &&
     onThisSheet(overriddenByPage, pageNumber) === null;
+  /** Why Find the walls cannot run here, in the words both the toolbar and the revision panel show. */
+  const findWallsWhy = notATakeoffSheet
+    ? (takeoffVerdict?.why ?? "This sheet does not look like one to measure walls on.")
+    : !calibration
+      ? "Set the scale on this sheet first — wall thickness is measured in feet of building."
+      : !pageSize
+        ? "The sheet is still loading."
+        : null;
 
   /**
    * ── FIND THE ROOMS ──
@@ -3698,17 +3717,9 @@ export function TakeoffPlanViewer({
         <button
           type="button"
           onClick={onFindWalls}
-          disabled={finding || !calibration || notATakeoffSheet || !pageSize}
+          disabled={finding || findWallsWhy !== null}
           data-takeoff="find-walls"
-          title={
-            notATakeoffSheet
-              ? (takeoffVerdict?.why ?? undefined)
-              : !calibration
-                ? "Set the scale on this sheet first — wall thickness is measured in feet of building."
-                : !pageSize
-                  ? "The sheet is still loading."
-                  : undefined
-          }
+          title={findWallsWhy ?? undefined}
           className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
         >
           {finding ? "Reading the lines…" : "Find the walls"}
@@ -4633,7 +4644,20 @@ export function TakeoffPlanViewer({
         <TakeoffRevisionPanel
           state={revision}
           onFindWalls={() => void onFindWalls()}
-          findDisabled={finding || !calibration || !pageSize}
+          findDisabled={finding || findWallsWhy !== null}
+          findWhy={findWallsWhy}
+          onRunAnyway={notATakeoffSheet ? () => setOverriddenByPage((prev) => ({ ...prev, [pageNumber]: true })) : undefined}
+          scaleOffer={
+            !calibration && scalePrefillByPage[pageNumber]
+              ? {
+                  label: `Use the printed scale${scalePrefillByPage[pageNumber]!.scaleName ? ` ${scalePrefillByPage[pageNumber]!.scaleName}` : ""}`,
+                  onUse: () => {
+                    setScaleOnOpen(true);
+                    setTool("calibrate");
+                  },
+                }
+              : undefined
+          }
           onFindRooms={roomFinder ? () => void onFindRooms() : undefined}
           roomsDisabled={finding || found === null || found.length === 0 || foundOnPage !== pageNumber}
           onClear={() => setRevision(null)}
@@ -4651,6 +4675,7 @@ export function TakeoffPlanViewer({
           pageCount={pageCount}
           onAcross={(scope) => void searchAcrossSheets(scope)}
           onCancelAcross={() => { acrossCancel.current = true; }}
+          onPick={(i) => { const b = symbols.choices?.[i]; if (b) void searchSymbols(b, true); }}
           onClear={() => { acrossCancel.current = true; setAcross(null); setSymbols(null); }}
           onSaved={(saved, keepOpen) => {
             if (!keepOpen) setSymbols(null);
@@ -4810,7 +4835,13 @@ export function TakeoffPlanViewer({
                 if (splitLine !== null) {
                   const line = splitLine;
                   setSplitLine(null);
-                  if (Math.hypot(line.x2 - line.x1, line.y2 - line.y1) > 0.002) void addExclusion("ROOM_SPLIT", [line.x1, line.x2], [line.y1, line.y2]);
+                  if (Math.hypot(line.x2 - line.x1, line.y2 - line.y1) <= 0.002) return;
+                  const reaching = rooms === null || feetPerUnit === null ? null : splitToWalls(rooms.rooms, line, feetPerUnit);
+                  if (reaching === null) {
+                    setFindError("The line must reach a wall at both ends.");
+                    return;
+                  }
+                  void addExclusion("ROOM_SPLIT", [reaching.x1, reaching.x2], [reaching.y1, reaching.y2]);
                   return;
                 }
                 if (symbolBox !== null) {
@@ -5183,6 +5214,16 @@ export function TakeoffPlanViewer({
                 <g data-takeoff="demo-overlay">
                   {demo.read.runs.map((r, i) => !demoDropped.has(i) && <line key={`${r.x1}:${r.y1}`} x1={r.x1} y1={r.y1} x2={r.x2} y2={r.y2} stroke="#dc2626" strokeWidth={STROKE_PX + 1} vectorEffect="non-scaling-stroke" />)}
                   {demo.read.doors.map((d) => <circle key={`${d.x}:${d.y}`} cx={d.x} cy={d.y} r={0.006} fill="none" stroke="#dc2626" strokeWidth={STROKE_PX} vectorEffect="non-scaling-stroke" />)}
+                </g>
+              )}
+              {symbols !== null && symbols.page === pageNumber && symbols.choices && (
+                <g data-takeoff="symbol-choices">
+                  {symbols.choices.map((b, i) => (
+                    <g key={i} data-takeoff="symbol-choice" style={{ cursor: "pointer" }} onClick={() => void searchSymbols(b, true)}>
+                      <rect x={b.x1} y={b.y1} width={b.x2 - b.x1} height={b.y2 - b.y1} fill="#f59e0b" fillOpacity={0.15} stroke="#f59e0b" strokeWidth={STROKE_PX * 1.5} vectorEffect="non-scaling-stroke" />
+                      <text x={b.x1} y={b.y1 - 0.001} fontSize={Math.max(0.004, (b.y2 - b.y1) * 0.4)} fill="#b45309">{i + 1}</text>
+                    </g>
+                  ))}
                 </g>
               )}
               {symbols !== null && symbols.page === pageNumber && (

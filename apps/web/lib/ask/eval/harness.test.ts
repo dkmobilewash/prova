@@ -318,6 +318,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: renders the detections over each fixture as a PNG so a failure can be looked at rather than reasoned about, guarded by the same skip plus an assertion that one image was written per fixture",
     "splitAnyLine.eval.ts":
       "calls no model: Split area over many wall-to-wall lines on a REAL training sheet, guarded by a skip on REAL_PLAN_DIR plus an assertion that the sheet read to walls before any line is tried",
+    "countBox.eval.ts":
+      "calls no model: Count like this over 30 boxes per symbol on REAL training sheets, guarded by a skip on REAL_PLAN_DIR plus an assertion that the sheet read to strokes",
     "legendAcross.eval.ts":
       "calls no model: Find on all sheets against a REAL legend sheet with 20 boxes, guarded by a skip on REAL_PLAN_DIR plus an assertion that both sheets read to strokes",
     "sheetTemplate.eval.ts":
