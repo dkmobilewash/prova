@@ -4007,16 +4007,29 @@ export function TakeoffPlanViewer({
           </span>
         )}
 
-        <span className="ml-auto text-xs text-ink-muted" data-takeoff="sheet-scale-state">
-          {calibration ? (
-            <>
-              Scale set{scaleReading?.name ? `: ${scaleReading.name}` : ""}
-              {scaleReading ? ` · sheet reads ${Math.round(scaleReading.sheetWidthFeet)} ft across` : ""}
-            </>
-          ) : (
-            <span className="text-tag-amber-ink">Set the scale on this sheet before measuring.</span>
-          )}
-        </span>
+        {/* ── NEVER A ROW OF ITS OWN ──
+            `flex-1 basis-0` keeps the status on the row of the buttons before
+            it and cuts it short there, the whole of it in the tooltip. Left to
+            wrap, it took a 24px row as soon as the company's switches put one
+            more button on that row ("Find the rooms", on by default for new
+            companies since 2026-11-04), which put the chrome over its budget
+            at 1280 (`takeoff-workspace.spec.ts`, test 11). */}
+        {(() => {
+          const scaleState = calibration
+            ? `Scale set${scaleReading?.name ? `: ${scaleReading.name}` : ""}${
+                scaleReading ? ` · sheet reads ${Math.round(scaleReading.sheetWidthFeet)} ft across` : ""
+              }`
+            : "Set the scale on this sheet before measuring.";
+          return (
+            <span
+              className={`min-w-24 flex-1 basis-0 truncate text-right text-xs ${calibration ? "text-ink-muted" : "text-tag-amber-ink"}`}
+              data-takeoff="sheet-scale-state"
+              title={scaleState}
+            >
+              {scaleState}
+            </span>
+          );
+        })()}
       </div>
       )}
 

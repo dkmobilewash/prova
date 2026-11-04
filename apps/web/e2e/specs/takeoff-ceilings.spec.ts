@@ -48,25 +48,10 @@ test.describe("ceilings in the rooms panel", () => {
     mkdirSync(SHOTS, { recursive: true });
   });
   test.afterAll(async () => {
-    // ── PUT THE COMPANY-WIDE SWITCH BACK ──
-    // This file turns `roomFinderOn` ON for the persona's whole company, and
-    // `takeoff-workspace.spec.ts` signs in as the same persona: left on, it
-    // changed what that spec rendered and failed its assembly step in a
-    // combined run. Best effort — the default state is what every other spec
-    // expects anyway.
-    try {
-      if (page !== undefined && !page.isClosed()) {
-        await page.goto("/settings?tab=estimating");
-        const box = page.locator('[data-settings="room-finder"] input[name="roomFinderOn"]');
-        if (await box.isVisible()) {
-          if (await box.isChecked()) await box.uncheck();
-          await page.locator('[data-settings="room-finder"]').getByRole("button", { name: "Save" }).click();
-          await page.locator('[data-settings="room-finder"]').getByText("Saved.").waitFor({ timeout: 30_000 });
-        }
-      }
-    } catch {
-      // a cleanup that throws would fail the file for a reason unrelated to it
-    }
+    // No switch to put back: `roomFinderOn` is ON by default for a new
+    // company since 2026-11-04, so this file only ever finds it on. Turning
+    // it OFF here, as it used to, would leave the shared persona in a state
+    // no new company has.
     await page?.context().close();
   });
 

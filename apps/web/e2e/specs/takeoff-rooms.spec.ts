@@ -15,7 +15,9 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
  * areas known by arithmetic in `fixtures/truth/S05.json` — LIVING 101 is
  * 264.63 sf. The journey:
  *
- *   1. the switch is OFF: the takeoff offers no "Find the rooms";
+ *   1. a new company starts with whole-set walls, rooms, and doors and
+ *      windows ON (Diego, 2026-11-04), seen without opening Settings; the
+ *      owner turns rooms OFF and the takeoff offers no "Find the rooms";
  *   2. the owner turns it on under Settings;
  *   3. find the walls, find the rooms: rows with square feet appear and at
  *      least one is NAMED from its tag;
@@ -66,44 +68,9 @@ test.describe("find the rooms", () => {
   });
 
   test.afterAll(async () => {
-    // ── PUT THE COMPANY-WIDE SWITCH BACK ──
-    //
-    // This file turns `roomFinderOn` ON for a whole company and shares that
-    // company with `takeoff-workspace.spec.ts`, which signs in as the same
-    // persona. Leaving it on changed what every later spec rendered, and
-    // produced three failures that looked unrelated:
-    //
-    //   · the workspace's chrome budget — the extra "Find the rooms" button
-    //     put 176px above the canvas against a 170px budget at 1280 with the
-    //     items rail open;
-    //   · this file's own first test, "with the switch off", failing on a
-    //     RETRY, because a retry re-runs the file from the start and by then
-    //     the test below has turned the switch on;
-    //   · and both of those appearing in some runs and not others, which is
-    //     the spec ORDER rather than anything about the code.
-    //
-    // Best effort: a cleanup that throws would fail the file for a reason
-    // that has nothing to do with rooms, and the state it is restoring is
-    // the default every other spec expects anyway.
-    try {
-      if (page !== undefined && !page.isClosed()) {
-        await page.goto("/settings?tab=estimating");
-        const box = page.locator('[data-settings="room-finder"] input[name="roomFinderOn"]');
-        if (await box.isVisible()) {
-          if (await box.isChecked()) await box.uncheck();
-          await page
-            .locator('[data-settings="room-finder"]')
-            .getByRole("button", { name: "Save" })
-            .click();
-          await page
-            .locator('[data-settings="room-finder"]')
-            .getByText("Saved.")
-            .waitFor({ timeout: 30_000 });
-        }
-      }
-    } catch {
-      // Already closed, already off, or the settings page did not load.
-    }
+    // No switch to put back: this persona has a company of its own (see
+    // `personas.ts`), and step 1 sets the switch itself rather than assuming
+    // it, so a retry that re-runs the file from the top starts the same way.
     await page?.context().close();
   });
 
@@ -142,9 +109,17 @@ test.describe("find the rooms", () => {
     await expect(page.getByText(/^Scale set/)).toBeVisible({ timeout: 30_000 });
   }
 
-  test("with the switch off, the takeoff offers no room finder", async () => {
+  test("a new company starts with all three on; with the rooms switch off, the takeoff offers no room finder", async () => {
     await signInAs(page, PERSONAS.rooms.email);
     await landOnDashboard(page, monitor);
+    // ── A FRESH COMPANY, SETTINGS NEVER OPENED ──
+    // Diego, 2026-11-04: new companies start with whole-set walls, rooms, and
+    // doors and windows ON. Whole-set and rooms are checked here, before
+    // anything touches Settings; doors and windows after the find in the step
+    // that finds walls (its panel only exists once walls are found), and no
+    // step of this file ever touches that switch. A retry finds whatever the
+    // attempt before it left, so only the first attempt asserts the defaults.
+    const fresh = test.info().retry === 0;
     jobId = await startJob(page, monitor, { name: JOB, gcName: GC_NAME });
     await finishWizard(page, monitor, jobId);
     await openJobTab(page, "Takeoff");
@@ -155,6 +130,31 @@ test.describe("find the rooms", () => {
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
     // S05 is 3/16" = 1'-0" on a 24-inch sheet: 128 ft across, so half of it is 64.
     await setScaleByClicking(64);
+    if (fresh) {
+      await expect(
+        page.locator('[data-takeoff="find-walls-everywhere"]'),
+        "a new company should get Find walls on every floor plan without opening Settings",
+      ).toBeVisible({ timeout: 30_000 });
+    }
+    await page.goto(`/takeoff/${jobId}`);
+    await expect(page.locator('[data-takeoff="find-walls"]')).toBeVisible({ timeout: 60_000 });
+    if (fresh) {
+      await expect(
+        page.locator('[data-takeoff="find-rooms"]'),
+        "a new company should get Find the rooms without opening Settings",
+      ).toBeVisible();
+    }
+
+    await page.goto("/settings?tab=estimating");
+    await hydrated(page, '[data-settings="room-finder"]');
+    const form = page.locator('[data-settings="room-finder"]');
+    const box = form.locator('input[name="roomFinderOn"]');
+    if (fresh) expect(await box.isChecked(), "a new company should start with the room finder on").toBe(true);
+    if (await box.isChecked()) {
+      await box.uncheck();
+      await form.getByRole("button", { name: "Save" }).click();
+      await expect(form.getByText("Saved.")).toBeVisible({ timeout: 30_000 });
+    }
     await page.goto(`/takeoff/${jobId}`);
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
     await expect(page.locator('[data-takeoff="find-walls"]')).toBeVisible({ timeout: 60_000 });
@@ -257,6 +257,12 @@ test.describe("find the rooms", () => {
       timeout: 180_000,
     });
     await expect(findRooms).toBeEnabled({ timeout: 30_000 });
+    // Nothing in this file touches the doors-and-windows switch, so this is
+    // a new company's default: the find also read the door and window symbols.
+    await expect(
+      page.locator('[data-takeoff="doors-windows"]'),
+      "a new company should get doors and windows after Find the walls without opening Settings",
+    ).toBeVisible({ timeout: 30_000 });
     await findRooms.click();
     const panel = page.locator('[data-takeoff="rooms-panel"]');
     await expect(panel).toBeVisible({ timeout: 30_000 });
