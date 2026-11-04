@@ -90,7 +90,7 @@ import { signInAs } from "../lib/signIn";
  * naming routes, which also means it cannot drift from the product: a page
  * added to the sidebar is probed without editing this file.
  */
-const PASSES = 2;
+const PASSES = 3;
 
 /**
  * Installed before any page script. Records every DOM mutation and every
@@ -343,12 +343,13 @@ test.describe("#510: name the mismatched element", () => {
     // The nav's own destinations, collected exactly as the journey collects
     // them — groups opened first, because a closed group hides its links.
     await page.goto("/dashboard", { waitUntil: "load" });
-    const nav = page.getByRole("navigation", { name: "Main" });
-    for (let guard = 0; guard < 20; guard += 1) {
-      const closed = nav.locator('button[aria-expanded="false"]');
-      if ((await closed.count()) === 0) break;
-      await closed.first().click();
-    }
+    // Concept G (2026-10-10) moved every destination into the avatar menu's
+    // "All pages" dialog; read them there, exactly as journey.spec.ts step 10
+    // does. This asked the old "Main" rail and found 0 links on its first run.
+    await page.getByRole("button", { name: /^Your menu/ }).click();
+    await page.getByRole("button", { name: "All pages" }).click();
+    const nav = page.getByRole("dialog", { name: "All pages" });
+    await expect(nav).toBeVisible();
     const hrefs = await nav.locator('a[href^="/"]').evaluateAll((anchors) =>
       anchors.map((a) => (a as HTMLAnchorElement).getAttribute("href") ?? ""),
     );
