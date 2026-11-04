@@ -230,7 +230,8 @@ export const PERSONAS = {
   /**
    * ── ROOMS GETS ITS OWN COMPANY, BECAUSE IT FLIPS A COMPANY-WIDE SWITCH ──
    *
-   * `takeoff-rooms.spec.ts` turns `Company.roomFinderOn` on. Twelve spec
+   * `takeoff-rooms.spec.ts` turns `Company.roomFinderOn` off and back on
+   * (a new company starts with it ON since 2026-11-04). Twelve spec
    * files share the `takeoff` persona, so on that persona the switch reached
    * all of them — and the takeoff workspace renders an extra toolbar button
    * when it is on, which put 176px of chrome above the canvas against a
