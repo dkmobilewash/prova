@@ -82,6 +82,23 @@ export function isPlanView(caption: string | null | undefined): boolean {
 }
 
 /**
+ * Is this caption a plan of ANY trade — the question a SCALE asks, which is
+ * not the question a wall count asks.
+ *
+ * `isPlanView` refuses a finish plan, a reflected ceiling plan or a life-safety
+ * plan, and is right to: their walls repeat the floor plan's and must not be
+ * counted twice. But each one is still drawn at plan scale, and its caption is
+ * as good a reading of that scale as any. Clerk of Courts A-601.3 (round 10b)
+ * carries one plan, "FLOOR FINISH PLAN" at 1/8", beside a 1/2" marble-base
+ * detail; dropping the finish plan left the detail as the sheet's only scale,
+ * and the sheet was calibrated at 1/2".
+ */
+export function isPlanOfAnyKind(caption: string | null | undefined): boolean {
+  const verdict = viewKind(caption);
+  return verdict.kind === "plan" || (verdict.kind === "not-a-plan" && /\bPLANS?\b/i.test(caption ?? ""));
+}
+
+/**
  * How the caution should name a set of left-out drawings.
  *
  * "Left out: 8 elevations, 1 schedule" rather than "8 views excluded", because

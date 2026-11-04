@@ -1050,7 +1050,11 @@ export function TakeoffWorkspace({
       );
       return;
     }
-    const got = restoreDraft(draft, current);
+    const got = restoreDraft(
+      draft,
+      current,
+      currentSheet?.calibration != null ? (feetPerPageWidth(currentSheet.calibration) ?? 0) : 0,
+    );
     if (!got.ok) {
       // ── REFUSED, AND SAID ──
       //
@@ -1063,7 +1067,7 @@ export function TakeoffWorkspace({
     setKeyState(got.state);
     setRestorable(null);
     setDraftNote(null);
-  }, [draftSet, page, finderVersion, setKeyState]);
+  }, [draftSet, page, finderVersion, setKeyState, currentSheet]);
 
   const clearReviewDraft = useCallback(() => {
     clearDraft(draftSet, page, finderVersion);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isServerActionPost } from "./journey";
+import { isFormSubmission, isServerActionPost } from "./journey";
 
 /**
  * The predicate `settleAction` waits on.
@@ -54,5 +54,17 @@ describe("the post settleAction is waiting for", () => {
     // A substring match would pass here and must not. This pins that the
     // lookup is by KEY rather than by scanning the header blob.
     expect(isServerActionPost(request("POST", { "x-next-action-id": "7f3a1c" }))).toBe(false);
+  });
+});
+
+describe("the form submission settleAction waits for, on a page with its own actions", () => {
+  it("accepts an action post carrying a form (multipart)", () => {
+    expect(isFormSubmission(request("POST", { "next-action": "60", "content-type": "multipart/form-data; boundary=----WebKitFormBoundaryX" }))).toBe(true);
+  });
+  it("ignores the page's own background action (text/plain) — the takeoff tab's flake", () => {
+    expect(isFormSubmission(request("POST", { "next-action": "60", "content-type": "text/plain;charset=UTF-8" }))).toBe(false);
+  });
+  it("ignores a multipart post that is not an action", () => {
+    expect(isFormSubmission(request("POST", { "content-type": "multipart/form-data; boundary=x" }))).toBe(false);
   });
 });

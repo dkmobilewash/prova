@@ -1,5 +1,6 @@
 import type { SheetTextItem } from "@/lib/takeoff/findWallsOnSheet";
-import { sheetViews, viewRegions, viewsInRegions, viewsWithOwnScale } from "@/lib/takeoff/sheetViews";
+import { sheetViews, viewRegions, viewsInRegions } from "@/lib/takeoff/sheetViews";
+import { isPlanOfAnyKind } from "@/lib/takeoff/viewKind";
 import type { StrokeSegment } from "@/lib/takeoff/wallVectors";
 
 /**
@@ -92,29 +93,35 @@ export function sheetScale(input: SheetScaleInput): SheetScale {
     };
   }
 
-  const views = viewsWithOwnScale(
-    viewsInRegions(
-      sheetViews(input.textItems, input.pageSize.widthPt),
-      viewRegions(input.segments, input.pageSize),
-    ),
-    input.pageSize.widthPt,
-  );
+  // ANY PLAN, NOT ONLY ONE WHOSE WALLS ARE COUNTED. `viewsWithOwnScale` keeps
+  // the plans `wallsPerView` measures, which leaves out a finish plan — and on a
+  // sheet whose only plan IS the finish plan, that left a 1/2" detail as the
+  // sheet's one scale. See `isPlanOfAnyKind`.
+  const views = viewsInRegions(
+    sheetViews(input.textItems, input.pageSize.widthPt),
+    viewRegions(input.segments, input.pageSize),
+  ).filter((view) => view.feetPerInch !== null && view.feetPerInch > 0 && isPlanOfAnyKind(view.name));
   // A VIEW WITH NO GEOMETRY IN IT IS NOT A DRAWING. `viewsInRegions` gives a
   // caption its region from the sheet's own gutters, and a caption sitting over
-  // empty paper — a legend, a note block — gets one too.
-  const drawn = views.filter(({ view }) =>
-    input.segments.some((one) => {
-      const mx = (one.x1 + one.x2) / 2 / input.pageSize.widthPt;
-      const my = (one.y1 + one.y2) / 2 / input.pageSize.widthPt;
-      return mx >= view.from && mx < view.to && my >= view.fromY && my < view.toY;
-    }),
-  );
+  // empty paper — a legend, a note block — gets one too. The most-drawn view
+  // comes first, so the sheet's main plan heads the list it is picked from.
+  const drawn = views
+    .map((view) => ({
+      view,
+      strokes: input.segments.filter((one) => {
+        const mx = (one.x1 + one.x2) / 2 / input.pageSize.widthPt;
+        const my = (one.y1 + one.y2) / 2 / input.pageSize.widthPt;
+        return mx >= view.from && mx < view.to && my >= view.fromY && my < view.toY;
+      }).length,
+    }))
+    .filter((one) => one.strokes > 0)
+    .sort((a, b) => b.strokes - a.strokes);
   if (drawn.length > 0) {
     return {
       kind: "VIEWS",
       views: drawn.map(({ view }) => ({
         name: view.name,
-        // Both are non-null by construction: `viewsWithOwnScale` drops a view
+        // Both are non-null by construction: the filter above drops a view
         // whose caption names no scale, which is what NTS and AS NOTED produce.
         scaleName: view.scaleName ?? "",
         feetPerInch: view.feetPerInch ?? 0,

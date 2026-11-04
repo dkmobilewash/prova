@@ -275,7 +275,7 @@ test.describe("on-screen plan takeoff", () => {
     await measurement.locator('input[name="label"]').fill(MEASUREMENT_LABEL);
     // Waits for the action's answer, so the reload cannot race the write whose
     // stored geometry is about to be read back.
-    await settleAction(page, () => measurement.getByRole("button", { name: `Save (${reading})` }).click());
+    await settleAction(page, () => measurement.getByRole("button", { name: `Save (${reading})` }).click(), { formSubmission: true });
 
     await page.reload();
     await expectHealthy(page, "takeoff tab after saving a measurement", { monitor });
@@ -300,7 +300,7 @@ test.describe("on-screen plan takeoff", () => {
     // The height is the one thing a drawing cannot carry.
     await post.locator('input[name="heightFt"]').fill("9");
 
-    await settleAction(page, () => post.getByRole("button", { name: "Add 1 to the estimate" }).click());
+    await settleAction(page, () => post.getByRole("button", { name: "Add 1 to the estimate" }).click(), { formSubmission: true });
 
     await page.reload();
     await expectHealthy(page, "takeoff tab after adding to the estimate", { monitor });
@@ -343,7 +343,9 @@ test.describe("on-screen plan takeoff", () => {
     // ENTERED, not stamped: the date printed on the sheet is what later
     // revisions are compared against.
     await revision.locator('input[name="sheetIssuedOn"]').fill("2026-01-12");
-    await settleAction(page, () => revision.getByRole("button", { name: "Save" }).click());
+    // The FORM's post: this tab fires Server Actions of its own on load, and the
+    // first of those to answer is not the save (run 41762039632, see settleAction).
+    await settleAction(page, () => revision.getByRole("button", { name: "Save" }).click(), { formSubmission: true });
 
     await page.reload();
     await expectHealthy(page, "takeoff tab after dating the sheet", { monitor });

@@ -122,6 +122,37 @@ describe("the order itself, which is what used to differ", () => {
   });
 });
 
+describe("a sheet of several drawings offers every PLAN's scale", () => {
+  // Clerk of Courts A-601.3's shape, invented: a large finish plan at 1/8" and
+  // a small marble-base plan at 1/2", with a gutter between. The finish plan's
+  // walls are not counted (`isPlanView` refuses it), but its caption is the
+  // sheet's real scale — dropping it left the 1/2" detail as the only answer.
+  const W = 2592;
+  const box = (x0: number, x1: number, y0: number, y1: number, n: number) =>
+    Array.from({ length: n }, (_, i) => {
+      const y = y0 + ((y1 - y0) * i) / Math.max(1, n - 1);
+      return { x1: x0, y1: y, x2: x1, y2: y, width: 1 };
+    });
+  const answer = sheetScale({
+    textItems: [
+      { str: "CLERK OF COURTS - FLOOR FINISH PLAN", x: 1600, y: 1600, width: 300, height: 10 },
+      { str: 'SCALE: 1/8" = 1\'-0"', x: 1600, y: 1615, width: 120, height: 10 },
+      { str: "FLOOR PLAN - MARBLE BASE", x: 150, y: 1600, width: 200, height: 10 },
+      { str: 'SCALE: 1/2" = 1\'-0"', x: 150, y: 1615, width: 120, height: 10 },
+    ],
+    segments: [...box(1200, 2500, 100, 1550, 60), ...box(80, 500, 1300, 1550, 6)] as never,
+    pageSize: { widthPt: W, heightPt: 1728 },
+    fromDimensions: { ok: false, reason: "too few dimensions agree" },
+    fromPrinted: null,
+  });
+
+  it("keeps the finish plan, and lists the most-drawn view first", () => {
+    expect(answer.kind).toBe("VIEWS");
+    const views = answer.kind === "VIEWS" ? answer.views : [];
+    expect(views.map((v) => v.scaleName)).toEqual(['1/8" = 1\'-0"', '1/2" = 1\'-0"']);
+  });
+});
+
 describe("feet per page unit is converted in one place", () => {
   it("turns a caption into the unit every measurement downstream wants", () => {
     // 1/8" = 1'-0" is 8 feet per paper inch; a 2592pt sheet is 36 inches.
