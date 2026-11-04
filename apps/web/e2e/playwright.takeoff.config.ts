@@ -1,4 +1,6 @@
 import path from "node:path";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import baseConfig from "./playwright.config";
 
 /**
@@ -19,6 +21,7 @@ import baseConfig from "./playwright.config";
  * per sheet, in order.
  */
 const plans = process.env.TAKEOFF_CLICK_PLANS ?? "";
+const labelDir = process.env.TAKEOFF_CLICK_LABEL_DIR ?? mkdtempSync(path.join(tmpdir(), "takeoff-click-labels-"));
 const webServer = Array.isArray(baseConfig.webServer) ? baseConfig.webServer[0]! : baseConfig.webServer!;
 
 export default {
@@ -36,6 +39,8 @@ export default {
       HOSTNAME: "localhost",
       TAKEOFF_LOCAL_PLAN_DIR: plans,
       TAKEOFF_WALL_MODEL: path.resolve(__dirname, "..", "models", "wall-model.json"),
+      // Answer-key saves land in a throwaway folder, never the real labels.
+      TAKEOFF_LABEL_DIR: labelDir,
     },
   },
 };

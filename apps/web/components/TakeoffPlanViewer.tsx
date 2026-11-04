@@ -4831,7 +4831,7 @@ export function TakeoffPlanViewer({
                 const point = placePoint(raw, from, event.shiftKey);
                 setEditDraft(moveVertex(editDraft.xs, editDraft.ys, draggingVertex, point));
               }}
-              onPointerUp={() => {
+              onPointerUp={(event) => {
                 if (splitLine !== null) {
                   const line = splitLine;
                   setSplitLine(null);
@@ -4881,6 +4881,29 @@ export function TakeoffPlanViewer({
                     answerKey.focusedId !== null
                   ) {
                     answerKey.onSplitAt(answerKey.focusedId, { x: keyBox.x2, y: keyBox.y2 });
+                    setKeyBox(null);
+                    return;
+                  }
+                  // ── A CLICK SELECTS THE LINE NEAREST IT ──
+                  //
+                  // Round 10: Chrome labelled 2 of 14 sheets, because a line on
+                  // the drawing could be selected only by landing on its own
+                  // 1-3 px stroke; a click beside it was a zero-sized box that
+                  // cleared the selection. A click that did not move now takes
+                  // the candidate within ~10 screen pixels, and clicking the
+                  // same place again takes the next one under it (a covered
+                  // twin). The lines have no click handler of their own any
+                  // more: two handlers advanced the selection twice per click.
+                  if (!keyShift && moved <= CLICK_NOT_DRAG) {
+                    const width = (event.currentTarget as Element).getBoundingClientRect().width;
+                    const picked = pickOnClick({
+                      candidates: answerKey.state.candidates,
+                      x: keyBox.x2,
+                      y: keyBox.y2,
+                      focusedId: answerKey.focusedId,
+                      radius: width > 0 ? KEY_PICK_PX / width : undefined,
+                    });
+                    answerKey.onFocus(picked);
                     setKeyBox(null);
                     return;
                   }
@@ -5038,44 +5061,36 @@ export function TakeoffPlanViewer({
                         opacity={verdict === "not-a-wall" ? 0.35 : 1}
                         vectorEffect="non-scaling-stroke"
                         style={{ cursor: "pointer" }}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          // Shift-click is handled on the SVG's pointer-up, as
-                          // a GESTURE on the selected candidate — see the
-                          // "shift-click acts on the selection" note there.
-                          // Hit-testing it here meant whichever thin line was
-                          // on top won, which is the bug this replaced.
-                          //
-                          // ── AND A COVERED TWIN NEEDS A SECOND CLICK ──
-                          //
-                          // Every line is the same few SCREEN pixels wide
-                          // (`non-scaling-stroke`), and a duplicate pair is
-                          // offset by inches of building — nine, on E Street.
-                          // At any sensible zoom they are the same pixels, so
-                          // SVG gives every click to whichever it painted
-                          // last, and a pre-rejected grey candidate could not
-                          // be selected on the drawing at all; only its row in
-                          // the panel worked. Clicking the same place again
-                          // now takes the next candidate under the pointer.
-                          const svg = event.currentTarget.ownerSVGElement;
-                          const box = svg?.getBoundingClientRect();
-                          if (box === undefined || box.width <= 0) {
-                            answerKey.onFocus(one.id);
-                            return;
-                          }
-                          answerKey.onFocus(
-                            pickOnClick({
-                              candidates: answerKey.state.candidates,
-                              x: (event.clientX - box.left) / box.width,
-                              y: (event.clientY - box.top) / box.width,
-                              focusedId: answerKey.focusedId,
-                              clicked: one.id,
-                            }),
-                          );
-                        }}
                       />
                     );
                   })}
+                  {/* ── EACH CANDIDATE'S NUMBER, ON ITS LINE ──
+                      The panel's number (the candidate's place in the list, which
+                      is also its index in the saved file), drawn at the line's
+                      middle so a reviewer can match row to line without hunting.
+                      In the sheet's own units, so it rides the drawing through
+                      pan and zoom; sized in screen pixels so it stays readable. */}
+                  {answerKey.state.candidates.map((one, index) => (
+                    <text
+                      key={`n${one.id}`}
+                      data-takeoff="key-number"
+                      data-id={one.id}
+                      x={(one.x1 + one.x2) / 2}
+                      y={(one.y1 + one.y2) / 2}
+                      dy={-3 / Math.max(cssWidth, 1)}
+                      textAnchor="middle"
+                      fontSize={(answerKey.focusedId === one.id ? 13 : 10) / Math.max(cssWidth, 1)}
+                      fontWeight={answerKey.focusedId === one.id ? 700 : 500}
+                      fontFamily="ui-sans-serif, system-ui, sans-serif"
+                      fill="#ffffff"
+                      stroke="#0f0f0f"
+                      strokeWidth={2.5 / Math.max(cssWidth, 1)}
+                      paintOrder="stroke"
+                      pointerEvents="none"
+                    >
+                      {index + 1}
+                    </text>
+                  ))}
                   {answerKey.state.traced.map((one) => (
                     // ── A HIT AREA WIDER THAN THE INK ──
                     //
@@ -6260,6 +6275,8 @@ const EMPTY_MISSED: { where: string; why: string }[] = [];
  * an area", and the two gestures are nowhere near each other.
  */
 const CLICK_NOT_DRAG = 0.004;
+/** How far from a key candidate a click still selects it, in screen pixels: about a fingertip. */
+const KEY_PICK_PX = 10;
 
 const STROKE_PX = 2;
 

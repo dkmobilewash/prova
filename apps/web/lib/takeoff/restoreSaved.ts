@@ -375,6 +375,13 @@ export function reapplySplits(
   return { state: working, splits, declined };
 }
 
+/** Two traces with the same ends, either way round, to well under a pixel. */
+function sameEnds(a: { x1: number; y1: number; x2: number; y2: number }, b: { x1: number; y1: number; x2: number; y2: number }): boolean {
+  const near = (p: number, q: number) => Math.abs(p - q) < 1e-6;
+  return (near(a.x1, b.x1) && near(a.y1, b.y1) && near(a.x2, b.x2) && near(a.y2, b.y2)) ||
+    (near(a.x1, b.x2) && near(a.y1, b.y2) && near(a.x2, b.x1) && near(a.y2, b.y1));
+}
+
 export function restoreSaved(
   saved: SavedSheet,
   fresh: ReviewState,
@@ -417,6 +424,12 @@ export function restoreSaved(
     state = setVerdict(state, [candidate.id], DECIDED[v.verdict]);
   }
   traces.forEach((t, index) => {
+    // ── NOT A SECOND COPY OF ONE ALREADY HERE ──
+    //
+    // Round 10: a reopen restored a saved trace on top of the same trace still
+    // in memory, and the panel said "2 traced" for one wall. A trace with the
+    // same two ends (either way round) is the same trace.
+    if (state.traced.some((w) => sameEnds(w, t))) return;
     // A trace was drawn by hand and belongs to no candidate, so it is rebuilt
     // from its own two endpoints exactly as the reviewer left it. `at` is the
     // index that makes its id unique, which is why it is passed rather than

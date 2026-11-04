@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KEY_RULES } from "@/lib/takeoff/answerKey";
 import {
+  REVIEWER_KEY,
   candidatesInBox,
+  isTypingTarget,
   keyFromReview,
   nextUnreviewed,
   progressOf,
@@ -138,6 +140,7 @@ export { SINGLE_LINE_COLOUR, VERDICT_COLOURS };
  */
 export const IDLE_AFTER_SECONDS = 360;
 
+
 export function AnswerKeyPanel({
   onSplit,
   splitNote,
@@ -219,7 +222,36 @@ export function AnswerKeyPanel({
    * would be convenient and wrong often enough to matter: these sessions get
    * driven from one laptop by whoever is sitting at it.
    */
-  const [reviewer, setReviewer] = useState("");
+  const [reviewer, setReviewerState] = useState("");
+  // ── REMEMBERED IN THIS BROWSER ──
+  //
+  // Round 10: Save sat greyed on sheet after sheet because the name box at the
+  // bottom of a long panel was empty again. The name is per browser, not per
+  // sheet, so it is kept in this browser and filled in whenever the box is
+  // empty. Storage can be refused (a private window); then it is simply typed.
+  const setReviewer = (next: string | ((current: string) => string)) => {
+    setReviewerState((current) => {
+      const value = typeof next === "function" ? next(current) : next;
+      try {
+        if (value.trim() !== "") window.localStorage.setItem(REVIEWER_KEY, value.trim());
+      } catch {
+        // Not kept; typed next time.
+      }
+      return value;
+    });
+  };
+  useEffect(() => {
+    let remembered = "";
+    try {
+      remembered = window.localStorage.getItem(REVIEWER_KEY) ?? "";
+    } catch {
+      remembered = "";
+    }
+    if (remembered !== "") setReviewerState((current) => (current.trim() === "" ? remembered : current));
+  }, []);
+  const reviewerInput = useRef<HTMLInputElement | null>(null);
+  /** What the last Save to labels did, said beside that button. */
+  const [labelsResult, setLabelsResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [noticeDismissed, setNoticeDismissed] = useState(false);
   // A new notice is a new thing to read, so dismissing one does not hide the
   // next.
@@ -277,6 +309,10 @@ export function AnswerKeyPanel({
 
   function decide(id: string | null, verdict: Verdict) {
     noteActivity();
+    // Nothing selected yet is not "do nothing": a reviewer who opens a sheet
+    // and presses A means the first undecided candidate (round 10, where A/R/U
+    // "did not register" until a row had been clicked).
+    if (id === null) id = nextUnreviewed(state, null)?.id ?? null;
     if (id === null) return;
     const next = setVerdict(state, [id], verdict);
     onState(next);
@@ -293,10 +329,7 @@ export function AnswerKeyPanel({
   // accept a wall with every "a".
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      const target = event.target as HTMLElement | null;
-      const typing =
-        target !== null &&
-        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      const typing = isTypingTarget(event.target);
       // ── THE ONE MODIFIER SHORTCUT, LET THROUGH BY NAME ──
       //
       // This guard exists so the single-letter keys below cannot fire while a
@@ -536,10 +569,11 @@ export function AnswerKeyPanel({
         }),
       });
       const body = (await response.json()) as { ok: boolean; error?: string; path?: string; rows?: number };
-      setSaved(
+      const decisions = verdicts.length + (carried ?? []).length;
+      setLabelsResult(
         body.ok
-          ? `Labels saved — ${body.path}`
-          : `Not saved: ${body.error ?? "the request failed"}`,
+          ? { ok: true, text: `Saved ${decisions} decision${decisions === 1 ? "" : "s"} to ${body.path}` }
+          : { ok: false, text: `Not saved: ${body.error ?? "the request failed"}` },
       );
       // ── ONLY AFTER THE FILE IS ON DISK ──
       //
@@ -549,7 +583,7 @@ export function AnswerKeyPanel({
       // it was.
       if (body.ok) onSaved?.();
     } catch (cause) {
-      setSaved(`Not saved: ${String(cause)}`);
+      setLabelsResult({ ok: false, text: `Not saved: ${String(cause)}` });
     } finally {
       setSavingLabels(false);
     }
@@ -708,10 +742,9 @@ export function AnswerKeyPanel({
               A wall that stops being a wall part way along
             </p>
             <p>
-              <b>NIC counts.</b> A wall in an area marked <b>NIC</b> or{" "}
-              &ldquo;not in contract&rdquo; is still a wall — say so. Whether it
-              is in your scope is decided later in the estimate, and a wall left
-              out here is invisible to that decision.
+              <b>Only NEW walls are walls.</b> Existing walls, walls to be
+              demolished, and walls marked <b>NIC</b> or &ldquo;not in
+              contract&rdquo; are <b>not</b> walls here — reject them.
             </p>
             <p>
               A wall that continues past the building into a yard, a canopy or a
@@ -956,40 +989,42 @@ export function AnswerKeyPanel({
         </div>
       ) : null}
 
-      {restoreOffer != null && restoreOffer !== "" ? (
-        <div
-          className="rounded-md border border-brand/60 bg-brand/10 p-2"
-          data-takeoff="key-restore"
-        >
-          <p className="text-[11px] text-ink-label">
-            This sheet has an unsaved review in this browser.
-          </p>
-          <div className="mt-1.5 flex gap-1.5">
-            <button
-              type="button"
-              data-takeoff="key-restore-yes"
-              onClick={() => onRestore?.()}
-              className="flex-1 rounded-md bg-brand px-2 py-1 text-[11px] font-semibold text-neutral-900 hover:bg-yellow-500"
-            >
-              {restoreOffer}
-            </button>
-            <button
-              type="button"
-              data-takeoff="key-restore-no"
-              onClick={() => onDiscardDraft?.()}
-              className="rounded-md border border-line-card px-2 py-1 text-[11px] text-ink-muted hover:text-ink-label"
-            >
-              Discard
-            </button>
-          </div>
-        </div>
-      ) : null}
       {draftNote != null && draftNote !== "" ? (
         <p className="text-[11px] text-ink-muted" data-takeoff="key-draft-note">
           {draftNote}
         </p>
       ) : null}
       <div className="rounded-md border border-line-card p-2" data-takeoff="key-labels">
+        {/* ── A WAITING DRAFT IS SAID HERE, BESIDE SAVE ──
+            It sat at the top of the panel, where a reviewer working at the
+            Save button never looked (round 10). Save is not blocked by it:
+            saving writes what is on screen and then clears the draft. */}
+        {restoreOffer != null && restoreOffer !== "" ? (
+          <div className="mb-2 rounded-md border border-brand/60 bg-brand/10 p-2" data-takeoff="key-restore">
+            <p className="text-[11px] text-ink-label">
+              This sheet has an unsaved review in this browser. Restore it, or discard it. Saving now
+              saves what is on screen and discards it.
+            </p>
+            <div className="mt-1.5 flex gap-1.5">
+              <button
+                type="button"
+                data-takeoff="key-restore-yes"
+                onClick={() => onRestore?.()}
+                className="flex-1 rounded-md bg-brand px-2 py-1 text-[11px] font-semibold text-neutral-900 hover:bg-yellow-500"
+              >
+                {restoreOffer}
+              </button>
+              <button
+                type="button"
+                data-takeoff="key-restore-no"
+                onClick={() => onDiscardDraft?.()}
+                className="rounded-md border border-line-card px-2 py-1 text-[11px] text-ink-muted hover:text-ink-label"
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        ) : null}
         <button
           type="button"
           data-takeoff="key-save-labels"
@@ -1006,6 +1041,24 @@ export function AnswerKeyPanel({
             "Save to labels"
           )}
         </button>
+        {reviewer.trim() === "" && (
+          <button
+            type="button"
+            data-takeoff="key-need-reviewer"
+            onClick={() => reviewerInput.current?.focus()}
+            className="mt-1.5 text-[11px] font-medium text-link hover:text-link-hover"
+          >
+            Fill in Reviewed by to save
+          </button>
+        )}
+        {labelsResult !== null && (
+          <p
+            className={`mt-1.5 text-[11px] ${labelsResult.ok ? "text-ink-body" : "text-tag-rose-ink"}`}
+            data-takeoff="key-labels-saved"
+          >
+            {labelsResult.text}
+          </p>
+        )}
         <p className="mt-1.5 text-[11px] text-ink-muted">
           {pairings === undefined || pairings.length === 0
             ? "No pairings captured yet — run Find the walls first."
@@ -1038,6 +1091,7 @@ export function AnswerKeyPanel({
                 data-verdict={verdict}
                 data-number={numberOf.get(one.id) ?? ""}
                 data-id={one.id}
+                data-focused={focusedId === one.id ? "true" : undefined}
                 onClick={() => onFocus(one.id)}
                 className={`flex w-full items-baseline justify-between gap-2 rounded-md border px-2 py-1 text-left text-xs ${
                   focusedId === one.id
@@ -1112,6 +1166,7 @@ export function AnswerKeyPanel({
             // with no name is one nothing can refer to.
             name="reviewedBy"
             data-takeoff="key-reviewer"
+            ref={reviewerInput}
             value={reviewer}
             onChange={(event) => setReviewer(event.target.value)}
             placeholder="your name"
@@ -1130,7 +1185,7 @@ export function AnswerKeyPanel({
         {!canSave && (
           <p className="mt-1 text-[11px] text-ink-muted" data-takeoff="key-cannot-save">
             {sheet.feetPerUnit > 0
-              ? "Put your name in first — a key records whose judgement it is."
+              ? "Fill in Reviewed by to save — a key records whose judgement it is."
               : "This sheet has no scale yet, so there is nothing to measure against."}
           </p>
         )}

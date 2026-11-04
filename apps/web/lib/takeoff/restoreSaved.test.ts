@@ -130,6 +130,18 @@ describe("restoring a saved sheet", () => {
     expect(got.state.traced[0].lengthFeet).toBeCloseTo(25);
   });
 
+  it("does not add a second copy of a trace already in memory, either way round (round 10's \"2 traced\" for 1)", () => {
+    const here = { ...fresh(), traced: [{ ...cand("t0", 50, 25, 0, null), id: "t0" }], nextTraceId: 1 };
+    const got = restoreSaved(file([sv(10, 0, 40, "wall"), sv(50, 0, 25, "traced")]), here, FPU);
+    expect(got.ok).toBe(true);
+    if (!got.ok) return;
+    expect(got.state.traced).toHaveLength(1);
+    // A different trace still comes back.
+    const other = restoreSaved(file([sv(10, 0, 40, "wall"), sv(60, 0, 25, "traced")]), here, FPU);
+    if (!other.ok) throw new Error(other.message);
+    expect(other.state.traced).toHaveLength(2);
+  });
+
   it("restores a sheet whose only saved work is traces", () => {
     // The case Chrome is about to hit: come back and add traces to a sheet
     // that was fully decided, so the decisions are all that need matching.
