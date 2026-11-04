@@ -38,7 +38,7 @@ describe.skipIf(LABELS === "" || PLANS === "" || OUT === "")("the duplicate rule
   it("keeps the twin the reviewer accepted", { timeout: 7_200_000 }, async () => {
     const lines: string[] = [];
     const tally = new Map<string, { right: number; wrong: number; pairs: number }>();
-    let sheets = 0;
+    const read: string[] = [];
     for (const dir of readdirSync(LABELS).sort()) {
       if ((heldOutReason(dir) !== null) !== HELD) continue;
       // The held-out hotel set where Chrome saw the case is not used, even for totals.
@@ -49,9 +49,9 @@ describe.skipIf(LABELS === "" || PLANS === "" || OUT === "")("the duplicate rule
         const lab = JSON.parse(readFileSync(join(LABELS, dir, name), "utf8")) as { page: number; feetPerUnit: number; verdicts: Row[] };
         const rows = lab.verdicts.filter((v) => v.verdict === "wall" || v.verdict === "not-wall");
         const candidates: Candidate[] = rows.map((v, i) => ({ id: String(i), x1: v.x1, y1: v.y1, x2: v.x2, y2: v.y2, lengthFeet: v.lengthFeet, thicknessIn: v.thicknessFeet > 0 ? v.thicknessFeet * 12 : null, from: "pair", note: "" }));
-        const read = await sheetStrokes(Buffer.from(readFileSync(pdf)), lab.page);
-        const segs = read.segments.map(inPageWidthUnits(read.widthPt));
-        sheets += 1;
+        const strokes = await sheetStrokes(Buffer.from(readFileSync(pdf)), lab.page);
+        const segs = strokes.segments.map(inPageWidthUnits(strokes.widthPt));
+        read.push(`${dir}/${name}`);
         const t = tally.get(dir) ?? { right: 0, wrong: 0, pairs: 0 };
         for (const p of duplicatePairs(candidates, lab.feetPerUnit, segs)) {
           t.pairs += 1;
@@ -88,7 +88,8 @@ describe.skipIf(LABELS === "" || PLANS === "" || OUT === "")("the duplicate rule
         tally.set(dir, t);
       }
     }
-    expect(sheets, "no labelled sheet was read").toBeGreaterThan(0);
+    expect(read.length, "no labelled sheet was read").toBeGreaterThan(0);
+    const sheets = read.length;
     let right = 0;
     let wrong = 0;
     for (const [dir, t] of tally) {
