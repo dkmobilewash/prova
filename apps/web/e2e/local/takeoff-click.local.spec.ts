@@ -91,7 +91,9 @@ async function drawn() {
     if (waited > 180_000) throw new Error(`${page.url()}: the sheet never reached the canvas`);
     await page.waitForTimeout(500);
   }
-  await expect(page.getByText("Drawing…")).toHaveCount(0, { timeout: 180_000 });
+  // Both stages: since round 10b the open says "Opening the set…", not "Drawing…",
+  // and a fresh canvas is 300 px wide before anything is drawn on it.
+  await expect(hook("viewer-busy")).toHaveCount(0, { timeout: 180_000 });
   expect(monitor.crashes, "the browser threw").toEqual([]);
 }
 const overlay = () => page.locator('[data-testid="takeoff-plan-port"] svg').first();
@@ -1157,8 +1159,8 @@ test("K13 Save to labels through the button saves a TRACE-ONLY sheet: nothing of
   if (await confirm.isVisible().catch(() => false)) await confirm.click();
   await button("Set the scale").click();
   await saysNot("Set the scale on this sheet before measuring");
-  const anyway = button("Run anyway");
-  if (await anyway.isVisible().catch(() => false)) await anyway.click();
+  // A001 reads as an elevations sheet, so the finder waits to be told.
+  await button("Run anyway").click();
   await hook("find-walls").click();
   await expect(hook("key-progress")).toBeVisible({ timeout: 120_000 });
   await expect(hook("key-line")).toHaveCount(0);

@@ -192,11 +192,11 @@ test.describe("the workspace on a real sheet", () => {
           .toBeGreaterThan(0);
         const firstRenderMs = Date.now() - started;
 
-        // ── TIME TO FULL RESOLUTION. The viewer shows "Drawing…" while a
-        //    render is in flight and removes it when the page is on the canvas
+        // ── TIME TO FULL RESOLUTION. The viewer shows "Opening the set…" and
+        //    then "Drawing…" (`viewer-busy`, round 10b) while a render is in flight and removes it when the page is on the canvas
         //    at the current zoom, so its disappearance IS the full-resolution
         //    moment rather than a guess at one.
-        await expect(page.getByText("Drawing…")).toHaveCount(0, { timeout: 180_000 });
+        await expect(page.locator('[data-takeoff="viewer-busy"]')).toHaveCount(0, { timeout: 180_000 });
         const fullRenderMs = Date.now() - started;
 
         // NOT `expectHealthy` here, and the reason is worth keeping: its floor
@@ -221,7 +221,7 @@ test.describe("the workspace on a real sheet", () => {
 
         // ── FIT, and a screenshot of the whole sheet ──
         await page.locator('[data-takeoff="fit"]').click();
-        await expect(page.getByText("Drawing…")).toHaveCount(0, { timeout: 120_000 });
+        await expect(page.locator('[data-takeoff="viewer-busy"]')).toHaveCount(0, { timeout: 120_000 });
         await page.screenshot({ path: path.join(OUT, `${sheet.label}-1440-fit.png`) });
 
         const canvas = await port().boundingBox();
@@ -242,7 +242,7 @@ test.describe("the workspace on a real sheet", () => {
         for (let i = 0; i < 4; i += 1) {
           const t = Date.now();
           await page.getByRole("button", { name: "Zoom in" }).click();
-          await expect(page.getByText("Drawing…")).toHaveCount(0, { timeout: 120_000 });
+          await expect(page.locator('[data-takeoff="viewer-busy"]')).toHaveCount(0, { timeout: 120_000 });
           zoomTimes.push(Date.now() - t);
         }
         const panStart = Date.now();

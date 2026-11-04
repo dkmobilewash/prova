@@ -6,3 +6,5 @@
 - Round 10c's trace-only "Save to labels" refusal was a tab still running the JavaScript from before :3010 was rebuilt. The rebuilt bundle does not contain the old message. A spec step now saves a trace-only sheet through the button.
 
 Check: `pnpm test:e2e -- --takeoff-click -g "K13|K14"`. K14 fires 150 range requests at once; with the old path, 55 came back refused.
+
+Also: since round 10b the viewer says "Opening the set…" before "Drawing…", so a test waiting for "Drawing…" to go could finish before the set had even opened. The local takeoff spec and the real-sheet spec now wait on `viewer-busy`. K5 failed once because of this (stuck on "Opening the set…" when the click came); with the fixed wait it passes in 3.9 s.
