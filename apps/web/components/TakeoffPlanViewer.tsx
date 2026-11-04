@@ -1452,6 +1452,10 @@ export function TakeoffPlanViewer({
         const task = page.render({ canvasContext, viewport });
         renderTaskRef.current = task;
         await task.promise;
+        // THE SHEET IS ON SCREEN NOW, so "Drawing…" goes. The words below are
+        // read for the demolition check only; holding the indicator through
+        // them made a word-heavy sheet read as still drawing (round 10b).
+        if (!cancelled) setIsRendering(false);
         const words = await pageTextItems(page as never, (await import("pdfjs-dist/legacy/build/pdf.mjs")) as never).catch(() => []);
         if (!cancelled && demoEvidence(words) !== null) setDemoOnPage(pageNumber);
         // ── RELEASE THE PAGE ──
@@ -5460,7 +5464,12 @@ export function TakeoffPlanViewer({
           </div>
         )}
         {isRendering && !loadError && (
-          <p className="absolute right-3 top-3 rounded bg-rail-hover px-2 py-1 text-xs text-ink-muted">Drawing…</p>
+          // Two stages, named apart, so a stall says which one it is: the set
+          // itself still opening, or this sheet being drawn (round 10b, a
+          // 142-sheet set that sat on "Drawing…" for 35 seconds).
+          <p className="absolute right-3 top-3 rounded bg-rail-hover px-2 py-1 text-xs text-ink-muted" data-takeoff="viewer-busy">
+            {pageCount === null ? "Opening the set…" : "Drawing…"}
+          </p>
         )}
       </div>
 

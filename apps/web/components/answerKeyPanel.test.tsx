@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { REVIEWER_KEY, isTypingTarget, startReview, type Candidate } from "@/lib/takeoff/answerKeyReview";
+import { REVIEWER_KEY, addTraced, isTypingTarget, startReview, tracedWall, type Candidate } from "@/lib/takeoff/answerKeyReview";
 import { AnswerKeyPanel } from "./AnswerKeyPanel";
 
 /**
@@ -112,5 +113,66 @@ describe("the answer-key panel, round 10", () => {
     act(() => (q(host, "key-help-toggle") as HTMLButtonElement).click());
     expect(host.textContent).toContain("Only NEW walls are walls.");
     expect(host.textContent).not.toContain("NIC counts");
+  });
+});
+
+describe("the answer-key panel, round 10b", () => {
+  it("Save as answer key counts as a save, so the draft and the leave-warning clear", () => {
+    window.localStorage.setItem(REVIEWER_KEY, "Diego");
+    const state = { ...startReview([cand("w0", 0.1), cand("w1", 0.2)]) };
+    state.verdicts = { w0: "wall", w1: "not-a-wall" };
+    const onSaved = vi.fn();
+    const created = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:x");
+    const { host } = paint({ state, onSaved });
+    act(() => (q(host, "key-save") as HTMLButtonElement).click());
+    expect(q(host, "key-saved")).not.toBeNull();
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    created.mockRestore();
+  });
+
+  it("has the remembered name in the box on the FIRST render, before any effect", () => {
+    // Filled from an effect, the name arrived after the reviewer clicked in,
+    // and their typing went on after it: "DiegoDiego".
+    window.localStorage.setItem(REVIEWER_KEY, "Diego");
+    const { props } = paint();
+    expect(renderToStaticMarkup(createElement(AnswerKeyPanel, props))).toContain('value="Diego"');
+  });
+
+  it("does not drop a late saved-file name into a box that has focus", () => {
+    const { host, root, props } = paint({ restoredReviewer: null });
+    const box = q(host, "key-reviewer") as HTMLInputElement;
+    act(() => box.focus());
+    act(() => root.render(createElement(AnswerKeyPanel, { ...props, restoredReviewer: "Diego" })));
+    expect(box.value).toBe("");
+  });
+
+  it("saves a TRACE-ONLY sheet: no candidates, no pairings, traces only", async () => {
+    window.localStorage.setItem(REVIEWER_KEY, "Diego");
+    const state = addTraced(startReview([]), tracedWall({ x: 0.1, y: 0.1 }, { x: 0.3, y: 0.1 }, 100) as Candidate);
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ ok: true, path: "labels/S/A1.json" })));
+    const { host } = paint({ state, pairings: [] });
+    await act(async () => { (q(host, "key-save-labels") as HTMLButtonElement).click(); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body));
+    expect(body.candidates).toEqual([]);
+    expect(body.verdicts.filter((v: { verdict: string }) => v.verdict === "traced")).toHaveLength(1);
+    fetchMock.mockRestore();
+  });
+
+  it("refuses only a sheet with nothing decided and nothing traced, and says so", async () => {
+    window.localStorage.setItem(REVIEWER_KEY, "Diego");
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const { host } = paint({ state: startReview([]), pairings: [] });
+    await act(async () => { (q(host, "key-save-labels") as HTMLButtonElement).click(); });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(q(host, "key-labels-saved")?.textContent).toContain("nothing on this sheet has been decided or traced");
+    fetchMock.mockRestore();
+  });
+
+  it("says partial-height walls count", () => {
+    const { host } = paint();
+    act(() => (q(host, "key-help-toggle") as HTMLButtonElement).click());
+    expect(host.textContent).toContain("Partial-height walls");
+    expect(host.textContent).toContain("They are walls");
   });
 });

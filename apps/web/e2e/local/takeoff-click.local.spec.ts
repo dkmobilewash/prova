@@ -1076,3 +1076,70 @@ test("K8 the help says only NEW walls are walls, and NIC is not", async () => {
   await says("Only NEW walls are walls.");
   await saysNot("NIC counts");
 });
+
+// ── ROUND 10b ──
+test("K9 Save as answer key clears the draft, so another job's URL opens", async () => {
+  await keySheet();
+  await ensureReviewer();
+  const { off } = await besideLine(5);
+  await page.mouse.click(off.x, off.y);
+  await page.keyboard.press("a");
+  const download = page.waitForEvent("download");
+  await hook("key-save").click();
+  await download;
+  await expect(hook("key-saved")).toBeVisible();
+  // Before: the leave-warning stayed armed, Playwright dismisses it like an
+  // automation browser does, and a dismissed prompt cancels the navigation.
+  await page.goto(`/takeoff/${SETS.joplin.id}?page=46`, { timeout: 30_000 });
+  await drawn();
+  await page.goto(KEY_URL);
+  await drawn();
+  await keySheet();
+  await expect(hook("key-restore")).toHaveCount(0);
+});
+
+test("K10 the help says partial-height walls count", async () => {
+  await keySheet();
+  await hook("key-help-toggle").click();
+  await says("Partial-height walls");
+});
+
+test("K11 the labels route takes a TRACE-ONLY sheet: no candidates, traces only", async () => {
+  // The panel half (no pairings is not a refusal) is in answerKeyPanel.test.tsx;
+  // this is the server half, through the real route, into the throwaway folder.
+  const response = await page.request.post("/api/takeoff/labels", {
+    data: {
+      set: SETS.baker.file, sheet: "ZZ-trace-only", page: 99, reviewedBy: "ZZ Spec", feetPerUnit: 288,
+      candidates: [],
+      verdicts: [{ x1: 0.1, y1: 0.1, x2: 0.3, y2: 0.1, lengthFeet: 57.6, thicknessFeet: 0, verdict: "traced" }],
+    },
+  });
+  const body = (await response.json()) as { ok: boolean; error?: string };
+  expect(body.error ?? "").toBe("");
+  expect(body.ok).toBe(true);
+});
+
+test("K12 a draft with a split restores, and says nothing about the finder reading it differently", async () => {
+  await keySheet();
+  // The longest of the first twenty lines, so a cut at its middle leaves two real halves.
+  const lens = await hook("key-line").evaluateAll((ls) => ls.slice(0, 20).map((l) => Math.hypot(Number(l.getAttribute("x2")) - Number(l.getAttribute("x1")), Number(l.getAttribute("y2")) - Number(l.getAttribute("y1")))));
+  const n = lens.indexOf(Math.max(...lens));
+  const { id, mid, off } = await besideLine(n);
+  await page.mouse.click(off.x, off.y);
+  await expect(focusedRow()).toHaveAttribute("data-id", id);
+  const before = await hook("key-line").count();
+  await page.keyboard.down("Shift");
+  await page.mouse.click(mid.x, mid.y);
+  await page.keyboard.up("Shift");
+  await expect(hook("key-line")).toHaveCount(before + 1);
+  const { off: half } = await besideLine(n);
+  await page.mouse.click(half.x, half.y);
+  await page.keyboard.press("a");
+  await page.reload();
+  await drawn();
+  await keySheet();
+  const labels = hook("key-labels");
+  await labels.locator('[data-takeoff="key-restore-yes"]').click();
+  await saysNot("Could not restore");
+  await expect(hook("key-line")).toHaveCount(before + 1);
+});
