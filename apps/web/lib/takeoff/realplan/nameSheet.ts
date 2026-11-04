@@ -103,6 +103,21 @@ const TITLE_TIER = 0.8;
 /** A title has to be this much taller than the block's typical lettering before it is proposed as one. */
 const DISTINCT_TITLE = 1.3;
 
+/**
+ * ── A LEGEND'S HEADING IS NOT THE SHEET'S NAME ──
+ *
+ * Baker A111 is the reflected ceiling plan and A001 the demolition plan, and
+ * both were named "KEYNOTE LEGEND": the keynote table's heading sits inside
+ * the title-block region in 26 pt lettering, taller than the real title. A111
+ * then passed the whole-set filter and put 947 ft of ceiling grid on the job.
+ * HPL I-110..I-112 were named "KEYNOTES" the same way, and those ARE partition
+ * plans, so refusing the word downstream would lose them. The heading is what is
+ * wrong, so it never qualifies, and the next size down names the sheet.
+ */
+// Up to two words before it ("RCP SYMBOL LEGEND"), none of them PLAN: K-4's
+// "FLOOR PLAN KEYNOTES" is part of that sheet's real title.
+export const LEGEND_HEADING = /^(?:(?!PLANS?\b)[\w.&/-]+\s+){0,2}(?:LEGENDS?|KEYNOTES?)$/i;
+
 export type TitleBlockItem = { str: string; x: number; y: number; height: number };
 
 export function nameSheet(
@@ -135,7 +150,7 @@ export function nameSheet(
    * run-on is worse than a truncation in a 232px rail.
    */
   const qualifies = (w: string) =>
-    w.length > 2 && !/^[\d.\-/'"_ ]+$/.test(w) && !BOILER.test(w) && !SHEET_NO.test(w.replace(/\s+/g, ""));
+    w.length > 2 && !/^[\d.\-/'"_ ]+$/.test(w) && !BOILER.test(w) && !LEGEND_HEADING.test(w) && !SHEET_NO.test(w.replace(/\s+/g, ""));
   const titleItems = bySize.slice(0, 24).filter((i) => qualifies(i.str.trim()));
   const tallest = titleItems[0]?.height ?? 0;
   const heights = inBlock.map((i) => i.height).sort((a, b) => a - b);

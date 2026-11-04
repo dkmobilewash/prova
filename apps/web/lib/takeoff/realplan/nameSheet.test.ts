@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BOILER, SHEET_NO, nameSheet } from "./nameSheet";
+import { BOILER, LEGEND_HEADING, SHEET_NO, nameSheet } from "./nameSheet";
 
 /**
  * Every string in this file was READ OFF A REAL PLAN SET on 2026-10-16 —
@@ -133,5 +133,27 @@ describe("nameSheet", () => {
     const flat = nameSheet([inBlock("COVER SHEET", 12), inBlock("A101", 12), inBlock("ISSUED FOR BID", 12), inBlock("CHECKED BY", 12)], page);
     expect(flat.title).toBe("COVER SHEET");
     expect(flat.distinct).toBe(false);
+  });
+});
+
+describe("a legend's heading is not the sheet's name", () => {
+  // Baker A111 (2026-11-03): the keynote table's heading, 26 pt, inside the
+  // title-block region; the sheet's own title, 16 pt, beside it. The 9 pt
+  // "NOTE n TEXT" rows are filler standing in for the general notes.
+  const page = { widthPt: 2592, heightPt: 1728 };
+  const at = (str: string, height: number, x = 2400, y = 1600) => ({ str, x, y, height });
+  it("names the sheet by its title, not by a taller KEYNOTE LEGEND heading", () => {
+    const named = nameSheet([at("A111", 40), at("KEYNOTE LEGEND", 26), at("REFLECTED CEILING PLAN", 16), ...Array.from({ length: 12 }, (_, i) => at(`NOTE ${i} TEXT`, 9))], page);
+    expect(named.number).toBe("A111");
+    expect(named.title).toBe("REFLECTED CEILING PLAN");
+  });
+  it("matches the table headings and never a title that names a plan", () => {
+    for (const heading of ["KEYNOTE LEGEND", "KEYNOTES", "LEGEND", "SYMBOL LEGEND", "RCP SYMBOL LEGEND", "Keynotes"]) {
+      expect(LEGEND_HEADING.test(heading), heading).toBe(true);
+    }
+    // K-4 A3.11's real title, and titles that merely contain the word.
+    for (const title of ["FLOOR PLAN KEYNOTES", "FLOOR PLAN LEGEND", "LEGEND SITE PLAN FOR BID", "SYMBOL LEGEND, DETAILS & SCHEDULES", "FLOOR PLAN"]) {
+      expect(LEGEND_HEADING.test(title), title).toBe(false);
+    }
   });
 });
