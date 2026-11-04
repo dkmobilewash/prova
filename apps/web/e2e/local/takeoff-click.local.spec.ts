@@ -94,6 +94,9 @@ async function drawn() {
   // Both stages: since round 10b the open says "Opening the set…", not "Drawing…",
   // and a fresh canvas is 300 px wide before anything is drawn on it.
   await expect(hook("viewer-busy")).toHaveCount(0, { timeout: 180_000 });
+  // The items rail starts closed since the full-screen layout; these steps read
+  // it, so open it (remembered in this browser from then on).
+  if ((await hook("toggle-items").getAttribute("aria-expanded")) === "false") await hook("toggle-items").click();
   expect(monitor.crashes, "the browser threw").toEqual([]);
 }
 const overlay = () => page.locator('[data-testid="takeoff-plan-port"] svg').first();

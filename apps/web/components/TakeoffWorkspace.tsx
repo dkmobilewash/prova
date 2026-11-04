@@ -1201,7 +1201,7 @@ export function TakeoffWorkspace({
         <Link href={`/jobs/${jobId}/estimate`} className="sr-only" data-takeoff="back-to-estimate">
           Back to C&nbsp;Stream
         </Link>
-        <div className="flex min-w-0 shrink items-baseline gap-1.5">
+        <div className="flex min-w-[8rem] shrink items-baseline gap-1.5">
           <h1 className="truncate text-sm font-semibold text-ink-label" data-takeoff="workspace-job">
             {jobName}
           </h1>
@@ -1237,7 +1237,7 @@ export function TakeoffWorkspace({
               state to show and inventing one would be a lie. What an estimator
               actually needs to know is that nothing is held locally. */}
           {!phone && (
-            <span className="hidden text-[11px] text-ink-muted 2xl:inline" data-takeoff="save-status">
+            <span className="hidden text-[11px] text-ink-muted min-[1800px]:inline" data-takeoff="save-status">
               {busy ? (
                 // KEEP THE WORD — the spinner is aria-hidden, so the word is
                 // all a screen reader gets. A label that simply stops changing

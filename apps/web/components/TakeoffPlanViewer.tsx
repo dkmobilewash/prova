@@ -3765,7 +3765,7 @@ export function TakeoffPlanViewer({
               aria-selected={revision?.page !== pageNumber}
               onClick={() => setRevision(null)}
               data-takeoff="tab-takeoff"
-              className={`border-b-2 py-1 text-sm font-semibold ${
+              className={`whitespace-nowrap border-b-2 py-1 text-sm font-semibold ${
                 revision?.page !== pageNumber ? "border-ink text-ink" : "border-transparent text-ink-muted hover:text-ink-body"
               }`}
             >
@@ -3783,7 +3783,7 @@ export function TakeoffPlanViewer({
                   ? `Lay this sheet over ${earlierVersionByPage[pageNumber]} and show what changed`
                   : "There is no earlier version of this sheet to compare with."
               }
-              className={`border-b-2 py-1 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${
+              className={`whitespace-nowrap border-b-2 py-1 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${
                 revision?.page === pageNumber ? "border-ink text-ink" : "border-transparent text-ink-muted hover:text-ink-body"
               }`}
             >
@@ -4018,9 +4018,11 @@ export function TakeoffPlanViewer({
             at the drawing knows better than its title block does. */}
         {notATakeoffSheet && (
           <>
-            <span className="text-[11px] text-ink-muted" data-takeoff="not-a-takeoff-sheet">
+            {/* The reason is a sentence, so in the shell it goes with the
+                messages; the way past it stays beside Run takeoff. */}
+            {slot(noticeSlot, <span className="text-[11px] text-ink-muted" data-takeoff="not-a-takeoff-sheet">
               {takeoffVerdict?.why}
-            </span>
+            </span>)}
             <button
               type="button"
               onClick={() => setOverriddenByPage((prev) => ({ ...prev, [pageNumber]: true }))}
@@ -4273,7 +4275,9 @@ export function TakeoffPlanViewer({
                 data-takeoff="sheet-scale-state"
                 title={`${scaleState} Click to change it.`}
               >
-                {calibration ? `Scale ${scaleReading?.name ?? "set"}` : "Set the scale"}
+                {/* Not "Set the scale": that is the form's own button, and two
+                    controls with one name is one control nobody can aim at. */}
+                {calibration ? `Scale ${scaleReading?.name ?? "set"}` : "Scale: not set"}
               </button>,
             );
           }

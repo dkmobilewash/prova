@@ -107,6 +107,9 @@ export function TakeoffLayerPanel({
             type="button"
             onClick={() => setFilter(entry.id)}
             aria-pressed={filter === entry.id}
+            // Named for what it shows: a bare "Line" or "Count" is also a tool's
+            // name, and a click by name must reach one control, not two.
+            aria-label={`${entry.label} layers`}
             data-takeoff={`layer-filter-${entry.id}`}
             className={`rounded-md px-1 py-1 text-xs ${
               filter === entry.id ? "bg-ink text-canvas" : "text-ink-body hover:bg-rail-hover"
