@@ -22,6 +22,12 @@ export type BoxedSymbols = { kind: "none" } | { kind: "one"; box: Box } | { kind
 export const SYMBOL_GAP = 0.0006;
 /** A piece with less ink than this share of the box's is a speck, not a symbol. */
 const SPECK = 0.05;
+/** A piece thinner than this share of its length is a straight line, not a shape. */
+const LINE_ASPECT = 0.15;
+/** A thin piece of more strokes than this is lettering drawn as paths. */
+const LETTERING_STROKES = 8;
+/** The share of a shape's bounds that must lie inside the box for it to be what was boxed. */
+const INSIDE = 0.8;
 /** A second piece with at least this share of the largest one's ink is a second symbol. */
 const RIVAL = 0.4;
 
@@ -104,13 +110,46 @@ export function symbolsInBox(segments: readonly StrokeSegment[], text: readonly 
     }
     return symbol;
   };
+  // A straight line is never a symbol on its own. A box drawn just inside a
+  // troffer cuts its short sides off and leaves its long sides as two separate
+  // lines, which counted as two rival symbols. So lines are set aside, the
+  // symbols are found among the rest, and each line joins the nearest symbol
+  // only when it runs alongside it (and is a stray otherwise).
+  const lineLike = (p: Piece) => Math.min(p.b.x2 - p.b.x1, p.b.y2 - p.b.y1) < LINE_ASPECT * size(p.b);
+  // A thin strip of many tiny strokes is lettering drawn as paths (a circuit
+  // label under a troffer), not a line of the symbol's: it is dropped.
+  const lettering = (p: Piece) => lineLike(p) && p.strokes.length > LETTERING_STROKES;
+  // Only a shape mostly inside the box can be the symbol. A bigger neighbour the
+  // box clips (its short strokes cross the edge) outweighed an exit sign that sat
+  // wholly inside, and the neighbour was counted.
+  const insideShare = (b: Box) => {
+    const w = Math.max(0, Math.min(b.x2, x2) - Math.max(b.x1, x1)), h = Math.max(0, Math.min(b.y2, y2) - Math.max(b.y1, y1));
+    const area = Math.max((b.x2 - b.x1) * (b.y2 - b.y1), 1e-12);
+    return (w * h) / area;
+  };
+  const shapes = pieces.filter((p) => !lineLike(p) && insideShare(p.b) >= INSIDE);
+  const lines = shapes.length > 0 ? pieces.filter((p) => lineLike(p) && !lettering(p)) : [];
   const symbols: Piece[] = [];
-  const rest = [...pieces];
+  const rest = shapes.length > 0 ? [...shapes] : [...pieces];
   while (rest.length > 0) {
     const seed = rest.shift()!;
     const symbol = grow(seed, rest);
     // A second symbol is one with ink comparable to the first; anything smaller is a stray.
     if (symbols.length === 0 || symbol.ink >= symbols[0]!.ink * RIVAL) symbols.push(symbol);
+  }
+  // A line of the symbol's runs ALONGSIDE it (a troffer's long sides either side
+  // of its lamp): the symbol's middle is within the line's span, and the line is
+  // closer than half its length. A duct or leader running off it is not.
+  const alongside = (sym: Box, line: Box) => {
+    const mx = (sym.x1 + sym.x2) / 2, my = (sym.y1 + sym.y2) / 2;
+    const across = line.x2 - line.x1 >= line.y2 - line.y1 ? mx >= line.x1 && mx <= line.x2 : my >= line.y1 && my <= line.y2;
+    return across && gapBetween(sym, line) <= size(line) / 2;
+  };
+  for (const line of lines) {
+    const k = symbols.reduce((best, sym, i) => (gapBetween(sym.b, line.b) < gapBetween(symbols[best]!.b, line.b) ? i : best), 0);
+    if (!alongside(symbols[k]!.b, line.b)) continue;
+    const strokes = [...symbols[k]!.strokes, ...line.strokes];
+    symbols[k] = { strokes, b: bounds(strokes), ink: symbols[k]!.ink + line.ink };
   }
   if (symbols.length === 1) return { kind: "one", box: pad(core(symbols[0]!.strokes)) };
   const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;

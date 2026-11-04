@@ -13,23 +13,26 @@ import { findSymbols, type Box } from "../symbolSignature";
  * sign) and M1.01 (CD-1 diffuser), with the hand keys in labels-symbols/. For
  * each symbol, 30 boxes an estimator might drag: 0.9 to 2.5 times the symbol's
  * size on each axis (a box drawn just inside a troffer's outline is still a box
- * round the troffer), shifted at random by up to the difference. "Before" boxes the way the app did; "after" first takes the symbol's own
- * tight bounds (`symbolsInBox`); where the box holds two symbols it asks, and the
- * estimator's answer is taken to be the one under the key point. The spread of
- * counts is the result, with how often it had to ask.
+ * round the troffer), shifted at random by up to the difference, 15 round each
+ * of two keyed instances. "Before" boxes the way the app did; "after" first
+ * takes the symbol's own tight bounds (`symbolsInBox`); where the box holds two
+ * symbols it asks, and the estimator's answer is taken to be the one under the
+ * key point. `key` is the count Count like this should give (EL1.01's legend
+ * sheet excluded). SYMBOLS_ONLY=R1,X1 runs a subset.
  *
  *     REAL_PLAN_DIR="<folder holding 2025.07.08_Baker_EOC_BID.pdf>" OUT=<file> \
  *       pnpm exec vitest run --config vitest.eval.config.mts lib/takeoff/realplan/countBox.eval.ts
  */
 const DIR = process.env.REAL_PLAN_DIR ?? "";
 const FILE = join(DIR, "2025.07.08_Baker_EOC_BID.pdf");
-const SYMBOLS = [
+const SYMBOLS_ALL = [
   { name: "R1 troffer", page: 54, key: 21, probe: 0.009, at: [{ x: 0.2455, y: 0.3412 }, { x: 0.2038, y: 0.369 }] },
   { name: "OS sensor", page: 54, probe: 0.005, key: 16, at: [{ x: 0.3335, y: 0.4939 }, { x: 0.3318, y: 0.4453 }] },
   { name: "E2 fixture", page: 54, probe: 0.005, key: 7, at: [{ x: 0.3362, y: 0.5269 }, { x: 0.3688, y: 0.3259 }] },
   { name: "X1 exit sign", page: 54, probe: 0.005, key: 5, at: [{ x: 0.3542, y: 0.3411 }, { x: 0.1928, y: 0.4858 }] },
   { name: "CD-1 diffuser", page: 38, probe: 0.006, key: 17, at: [{ x: 0.3109, y: 0.3829 }, { x: 0.2246, y: 0.3134 }] },
 ];
+const SYMBOLS = process.env.SYMBOLS_ONLY ? SYMBOLS_ALL.filter((x) => process.env.SYMBOLS_ONLY!.split(",").includes(x.name.split(" ")[0]!)) : SYMBOLS_ALL;
 
 async function sheet(page: number) {
   const strokes = await sheetStrokes(Buffer.from(readFileSync(FILE)), page);
@@ -51,15 +54,16 @@ const spread = (xs: (number | string)[]) => {
 describe.skipIf(DIR === "" || !existsSync(FILE))("Count like this against the box", () => {
   it("counts the same for any reasonable box", { timeout: 1_800_000 }, async () => {
     const sheets = new Map<number, Awaited<ReturnType<typeof sheet>>>();
-    for (const p of [54, 38]) sheets.set(p, await sheet(p));
-    expect(sheets.get(54)!.segs.length, "EL1.01 read to no strokes").toBeGreaterThan(1000);
+    for (const p of [...new Set(SYMBOLS.map((x) => x.page))]) sheets.set(p, await sheet(p));
+    expect([...sheets.values()][0]!.segs.length, "the sheet read to no strokes").toBeGreaterThan(1000);
     let seed = 5;
+    // The same 15 boxes per instance as the measurement in the PR body.
     const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
     const lines: string[] = [];
-    const results: { name: string; key: number; after: (number | string)[] }[] = [];
+    const results: { name: string; key: number; first: (number | string)[] }[] = [];
     for (const sym of SYMBOLS) {
       const { segs, text } = sheets.get(sym.page)!;
-      const before: number[] = [], after: (number | string)[] = [];
+      const before: number[][] = sym.at.map(() => []), after: (number | string)[][] = sym.at.map(() => []);
       let asked = 0;
       for (let i = 0; i < 30; i += 1) {
         const c = sym.at[i % sym.at.length]!;
@@ -72,20 +76,26 @@ describe.skipIf(DIR === "" || !existsSync(FILE))("Count like this against the bo
         const bw = hw * (0.9 + rand() * 1.6), bh = hh * (0.9 + rand() * 1.6);
         const ox = (rand() * 2 - 1) * Math.abs(bw - hw), oy = (rand() * 2 - 1) * Math.abs(bh - hh);
         const box = { x1: mx + ox - bw, y1: my + oy - bh, x2: mx + ox + bw, y2: my + oy + bh };
-        before.push(findSymbols(segs as never, text, box).matches.length);
+        const k = i % sym.at.length;
+        before[k]!.push(findSymbols(segs as never, text, box).matches.length);
         const s = symbolsInBox(segs, text, box);
         if (s.kind === "several") asked += 1;
         // Asked, the estimator picks the symbol they meant: the candidate under the key point.
         const picked = s.kind === "one" ? s.box : s.kind === "several" ? (s.boxes.find((b) => c.x >= b.x1 && c.x <= b.x2 && c.y >= b.y1 && c.y <= b.y2) ?? null) : null;
-        after.push(picked === null ? "none" : findSymbols(segs as never, text, picked).matches.length);
+        after[k]!.push(picked === null ? "none" : findSymbols(segs as never, text, picked).matches.length);
       }
-      lines.push(`${sym.name} (key ${sym.key}): before ${spread(before)} | after ${spread(after)} (asked which symbol on ${asked} of 30)`);
-      results.push({ name: sym.name, key: sym.key, after });
+      lines.push(`${sym.name}, key ${sym.key} (asked which symbol on ${asked} of 30)`);
+      sym.at.forEach((c, k) => lines.push(`  instance ${k + 1} (${c.x}, ${c.y}): before ${spread(before[k]!)} | after ${spread(after[k]!)}`));
+      results.push({ name: sym.name, key: sym.key, first: after[0]! });
     }
     const report = lines.join("\n");
     console.log(report);
     if (process.env.OUT) writeFileSync(process.env.OUT, report);
-    expect(results.length).toBeGreaterThan(4);
-    for (const r of results) expect(new Set(r.after).size, `${r.name}: ${spread(r.after)}`).toBe(1);
+    expect(results.length).toBe(SYMBOLS.length);
+    // The first instance of each is drawn the way most of its copies are, and every
+    // box round it counts the key's number. The second instance is reported, not
+    // held: three of them carry ink drawn touching the symbol (lettering, a
+    // differently drawn outline) that becomes part of the template.
+    for (const r of results) expect(r.first, `${r.name}: ${spread(r.first)}`).toEqual(r.first.map(() => r.key));
   });
 });

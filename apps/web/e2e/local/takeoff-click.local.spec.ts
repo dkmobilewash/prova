@@ -38,6 +38,7 @@ const SETS = {
   topeka: { id: "zz-click-topeka", file: "Topeka-Senior-Villas.pdf" },
 } as const;
 type SetKey = keyof typeof SETS;
+const REV_JOB = "zz-click-rev";
 /** page → [sheet number, title as the inventory names it, feet per page width where :3010 had a scale]. */
 const PAGES: Record<SetKey, Record<number, [string, string, number | null]>> = {
   baker: { 11: ["A001", "KEYNOTE LEGEND", null], 12: ["A100", "OVERALL FLOOR PLAN", 288], 13: ["A101", "FLOOR PLAN", 288], 52: ["E0.03", "ELECTRICAL LEGEND", null], 54: ["EL1.01", "ELECTRICAL LIGHTING LEVEL 1 PLAN", null] },
@@ -186,8 +187,49 @@ test.beforeAll(async ({ browser }) => {
       if (fpu !== null) await prisma.takeoffScaleCalibration.create({ data: { pageId: row.id, x1: 0, y1: 0, x2: 1, y2: 0, declaredDistanceFeet: String(fpu) } as never });
     }
   }
+  // A TWO-ISSUE JOB from two sets on disk, nothing uploaded: Baker as the earlier
+  // issue and Topeka as the later, each with an A-101, so Topeka's carries
+  // "Compare with earlier version" and the two are different buildings. The
+  // newest plan is the one the workspace opens. No scale on either.
+  if (!(await prisma.job.findUnique({ where: { id: REV_JOB } }))) {
+    await prisma.job.create({ data: { id: REV_JOB, companyId, contactId: contact.id, name: "ZZ Click Two issues", status: "ESTIMATE" } });
+    for (const [key, pageNumber, ago] of [["baker", 13, 60_000], ["topeka", 74, 0]] as const) {
+      const file = SETS[key].file;
+      const plan = await prisma.takeoffPlan.create({ data: { companyId, jobId: REV_JOB, fileUrl: `local:${file}`, fileName: file, uploadedByUserId: user.id, createdAt: new Date(Date.now() - ago) } });
+      const ingest = await prisma.planIngestJob.create({ data: { planId: plan.id, companyId, stage: "PAGE_INVENTORY", pageCount: pageNumber } });
+      const bytes = readFileSync(join(PLANS, file));
+      const inventory = pageInventoryWork(
+        { planId: plan.id, companyId, ingestJobId: ingest.id, jobId: REV_JOB, startedByUserId: user.id },
+        { ...realDeps, readPlanBytes: async () => ({ ok: true as const, bytes: Buffer.from(bytes) }), planTextReadOn: async () => true },
+      );
+      const read = await inventory({ id: `seed-${REV_JOB}-${key}`, pageNumber, stage: "PAGE_INVENTORY", attempts: 1 });
+      if (!read.ok) throw new Error(`inventory of ${file} p${pageNumber}: ${JSON.stringify(read)}`);
+      await prisma.takeoffPlanPage.create({ data: { planId: plan.id, pageNumber } });
+    }
+  }
   page = await (await browser.newContext({ acceptDownloads: true })).newPage();
   monitor = new HealthMonitor(page);
+  // ── TAKEOFF_RANGE_LOG=<file>: EVERY PLAN BYTE REQUEST, FOR pdf.js "Bad end offset" ──
+  // Seen once in three full runs (R5-11, 2026-11-03) and not since. pdf.js throws
+  // it when a range answer ends short of a chunk and is reported as complete.
+  // Ruled out so far: the route (every 206 carried a content-length equal to the
+  // body), pdf.js's own cancels (teardown only, and it marks itself aborted
+  // first) and a navigation cutting a fetch (Chromium rejects the read, measured).
+  // With this set, the next occurrence shows the range, status, length and bytes
+  // received for the request that did it.
+  if (process.env.TAKEOFF_RANGE_LOG) {
+    const { appendFileSync } = await import("node:fs");
+    const log = (line: string) => appendFileSync(process.env.TAKEOFF_RANGE_LOG!, `${new Date().toISOString()} ${line}\n`);
+    page.on("response", async (r) => {
+      if (!r.url().includes("/api/takeoff/plan/")) return;
+      const h = r.headers();
+      let n = -1;
+      try { n = (await r.body()).length; } catch (e) { n = -2; }
+      log(`${r.request().headers()["range"] ?? "-"} ${r.status()} len=${h["content-length"] ?? "-"} cr=${h["content-range"] ?? "-"} te=${h["transfer-encoding"] ?? "-"} got=${n} ${r.url().split("/api/takeoff/plan/")[1]}`);
+    });
+    page.on("requestfailed", (q) => { if (q.url().includes("/api/takeoff/plan/")) log(`FAILED ${q.headers()["range"] ?? "-"} ${q.failure()?.errorText}`); });
+    page.on("pageerror", (e) => log(`PAGEERROR ${e.message}`));
+  }
   await signInAs(page, PERSONAS.main.email);
 });
 
@@ -772,3 +814,113 @@ test("R5-20 deleting an item offers to delete its measurements, ticked, and leav
   expect(unassignedAfter, "nothing new in Unassigned").toBe(unassignedBefore);
 });
 
+
+// ── COUNT LIKE THIS, WHATEVER THE BOX: Baker EL1.01 ───────────────────────
+test("CB1 a loose box round an R1 troffer counts 21, the same as the close one", async () => {
+  await on("baker", 54);
+  await boxSymbol(R1, 21, 0.012, 0.012);
+  await boxSymbol(R1, 21, 0.0062, 0.0042);
+});
+
+test("CB2 a box round an OS sensor and its neighbours asks which; the sensor counts 16", async () => {
+  await on("baker", 54);
+  const clear = hook("symbol-count").getByRole("button", { name: "Clear", exact: true });
+  if (await clear.isVisible().catch(() => false)) await clear.click();
+  await button("Fit").click();
+  await tool("Count like this");
+  await drag(OS.x - 0.009, OS.y - 0.009, OS.x + 0.009, OS.y + 0.009);
+  await expect(hook("symbol-which")).toContainText(/That box holds \d symbols/, { timeout: 60_000 });
+  // The estimator clicks the numbered symbol they meant: the one drawn round the sensor.
+  const target = await at(OS.x, OS.y);
+  const choices = await hook("symbol-choice").all();
+  let picked = -1;
+  for (let i = 0; i < choices.length && picked < 0; i += 1) {
+    const b = (await choices[i]!.boundingBox())!;
+    if (target.x >= b.x && target.x <= b.x + b.width && target.y >= b.y && target.y <= b.y + b.height) picked = i;
+  }
+  expect(picked, "a numbered choice is drawn round the sensor").toBeGreaterThanOrEqual(0);
+  await hook("symbol-pick").nth(picked).click();
+  await expect.poll(async () => num(await hook("symbol-count-total").innerText().catch(() => "")), { timeout: 60_000 }).toBe(16);
+});
+
+// ── ROUND 6 ───────────────────────────────────────────────────────────────
+/** The rooms drawn on the sheet, as rings in page-width units. */
+const roomRings = async () =>
+  (await hook("room").evaluateAll((ps) => ps.map((p) => p.getAttribute("points") ?? ""))).map((pts) => {
+    const xy = pts.trim().split(/\s+/).map((pair) => pair.split(",").map(Number));
+    return { xs: xy.map((q) => q[0]!), ys: xy.map((q) => q[1]!) };
+  });
+async function clearSplits() {
+  if ((await hook("split-line").count()) > 0) {
+    await hook("remove-splits").click();
+    await expect(hook("split-line")).toHaveCount(0, { timeout: 20_000 });
+  }
+}
+
+test("R6-1 two lines across the dining room: the parts add up and the floor total does not move", async () => {
+  await on("joplin", 46);
+  await ensureRooms();
+  await clearSplits();
+  await expect.poll(async () => (await roomRows()).some(isDining), { timeout: 60_000 }).toBe(true);
+  const floor = await floorTotal(), rows = (await roomRows()).length;
+  // The dining room's own outline, so the second line crosses it wall to wall.
+  const mid = { x: (SPLIT.x1 + SPLIT.x2) / 2, y: SPLIT.y };
+  const ring = (await roomRings()).find((r) => r.xs.some((_, i) => r.ys[i]! < mid.y) && r.xs.some((_, i) => r.ys[i]! > mid.y) && Math.min(...r.xs) < mid.x && Math.max(...r.xs) > mid.x);
+  expect(ring, "a drawn room holds the split's middle").toBeDefined();
+  const x = SPLIT.x1 + (SPLIT.x2 - SPLIT.x1) * 0.7;
+  await splitDining();
+  await drag(x, Math.min(...ring!.ys) - 0.002, x, Math.max(...ring!.ys) + 0.002);
+  await expect(hook("split-line")).toHaveCount(2, { timeout: 20_000 });
+  await expect.poll(async () => (await roomRows()).length, { timeout: 60_000 }).toBeGreaterThanOrEqual(rows + 2);
+  expect(Math.abs((await floorTotal()) - floor), `floor total ${await floorTotal()} against ${floor}`).toBeLessThanOrEqual(1);
+  await clearSplits();
+});
+
+test("R6-2 a split stopped 3 ft short of each wall is taken to the walls and divides the room", async () => {
+  await on("joplin", 46);
+  await ensureRooms();
+  await clearSplits();
+  const short = 3 / PAGES.joplin[46]![2]!;
+  await tool("Split area");
+  await drag(SPLIT.x1 + short, SPLIT.y, SPLIT.x2 - short, SPLIT.y);
+  await expect(hook("split-line")).toHaveCount(1, { timeout: 20_000 });
+  await expect.poll(async () => (await roomRows()).some(isDining), { timeout: 60_000 }).toBe(false);
+  await clearSplits();
+});
+
+test("R6-3 a split in no room is refused, saying why, and nothing is recorded", async () => {
+  await on("joplin", 46);
+  await ensureRooms();
+  await clearSplits();
+  await tool("Split area");
+  await drag(0.02, 0.02, 0.05, 0.02);
+  await says("The line must reach a wall at both ends.");
+  await expect(hook("split-line")).toHaveCount(0);
+});
+
+test("R6-4 Topeka A-101 Review walls: D on a run not yet on the job says it only takes it off this list", async () => {
+  await sheet("topeka", 74);
+  await findWalls();
+  await hook("review-walls").click();
+  await says("D only takes it off this list");
+  await page.keyboard.press("d");
+  await expect(hook("review-counter")).toContainText(/^1 of \d+ reviewed/);
+  await page.keyboard.press("u");
+  await hook("review-close").click();
+});
+
+test("R6-5 no Compare with earlier version on a sheet with one issue", async () => {
+  await on("topeka", 74);
+  await expect(hook("compare-revision")).toHaveCount(0);
+});
+
+test("R6-6 a two-issue job: Compare says too much changed, and Find the walls says why it waits", async () => {
+  await page.goto(`/takeoff/${REV_JOB}?page=74`);
+  await drawn();
+  await hook("compare-revision").click();
+  await expect(hook("revision-redrawn")).toContainText("Too much changed to draw", { timeout: 120_000 });
+  await expect(hook("revision-find-walls")).toBeDisabled();
+  await expect(hook("revision-find-why")).toContainText(/scale|Run anyway|plan/i);
+  // Where the toolbar offers the printed scale, so does the panel.
+  if ((await hook("toolbar-scale-offer").count()) > 0) await expect(hook("revision-scale-offer")).toBeVisible();
+});
