@@ -109,7 +109,7 @@ test.describe("ceilings on a real set", () => {
     const findWalls = page.locator('[data-takeoff="find-walls"]');
     await expect(findWalls, "the sheet never got a scale").toBeEnabled({ timeout: 120_000 });
     await findWalls.click();
-    await expect(findWalls).toHaveText("Find the walls", { timeout: 540_000 });
+    await expect(findWalls).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 540_000 });
     await page.locator('[data-takeoff="find-rooms"]').click();
     await expect(page.locator('[data-takeoff="rooms-panel"]')).toBeVisible({ timeout: 60_000 });
     // Reading the other page's text takes a moment; wait until no row still says reading.

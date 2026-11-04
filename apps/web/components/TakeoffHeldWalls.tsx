@@ -12,8 +12,11 @@ export type HeldWall = { id: string; feet: number };
 export function TakeoffHeldWalls({
   walls,
   onConfirm,
+  asRow = false,
 }: {
   walls: readonly HeldWall[];
+  /** The workspace's layer panel: one "Needs review" row that opens in place. */
+  asRow?: boolean;
   /** Resolves to a sentence when it did not save. */
   onConfirm: (id: string) => Promise<string | null>;
 }) {
@@ -27,9 +30,20 @@ export function TakeoffHeldWalls({
     setSaving(null);
   }
   return (
-    <details className="shrink-0 text-xs text-ink-muted" data-takeoff="held-walls">
+    <details
+      className={`shrink-0 text-xs text-ink-muted${asRow ? " rounded-md bg-tag-amber px-2 py-1.5" : ""}`}
+      data-takeoff="held-walls"
+    >
       <summary className="cursor-pointer text-ink-body">
-        {walls.length} {walls.length === 1 ? "run" : "runs"} to confirm, {total.toLocaleString()} ft: not on the estimate
+        {asRow && (
+          <span className="inline-flex w-[calc(100%-1rem)] items-center gap-2 font-medium text-tag-amber-ink">
+            Needs review · {walls.length}
+            <span className="ml-auto tabular-nums">{total.toLocaleString()} ft</span>
+          </span>
+        )}
+        <span className={asRow ? "block pl-4 font-normal text-ink-muted" : undefined}>
+          {walls.length} {walls.length === 1 ? "run" : "runs"} to confirm, {total.toLocaleString()} ft: not on the estimate
+        </span>
       </summary>
       {error !== null && <p className="text-tag-amber-ink">{error}</p>}
       <ul className="mt-1 flex max-h-40 flex-col gap-1 overflow-auto">

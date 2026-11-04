@@ -39,6 +39,8 @@ import {
   undoOnce,
 } from "@/lib/takeoff/undoStack";
 import type { TakeoffWorkspaceClientData } from "@/lib/takeoff/workspaceLoad";
+import { TOOL_KEYS } from "@/lib/takeoff-plan-view";
+import { TakeoffExportButtons } from "@/components/TakeoffExportButtons";
 import { TakeoffWallReview } from "@/components/TakeoffWallReview";
 import { reviewWall } from "@/lib/actions";
 import { setReviewProgress, type SetReviewItem } from "@/lib/takeoff/wallReview";
@@ -95,6 +97,7 @@ const KEYS: { keys: string; does: string }[] = [
   { keys: "[", does: "sheets" },
   { keys: "]", does: "quantities" },
   { keys: "\\", does: "sheet facts" },
+  { keys: "v a r l c e s", does: "select, area, rectangle, line, count, edit, scale" },
   { keys: "f", does: "fit" },
   { keys: "j / k", does: "next / previous sheet" },
   { keys: "b", does: "bookmark this sheet" },
@@ -120,15 +123,25 @@ const KEYS: { keys: string; does: string }[] = [
  * says how such a thing is announced.
  */
 const KEY = {
-  panel: "prova.takeoff.panel",
-  sheets: "prova.takeoff.sheets",
+  // `.v2` since the full-screen layout of 2026-11-04: the rails' remembered
+  // state from before it would reopen the sheet and items rails on everybody
+  // and take the drawing back under three quarters of the screen.
+  panel: "prova.takeoff.v2.panel",
+  sheets: "prova.takeoff.v2.sheets",
   facts: "prova.takeoff.facts",
   railWidth: "prova.takeoff.railWidth",
   summary: "prova.takeoff.summary",
-  items: "prova.takeoff.items",
+  items: "prova.takeoff.v2.items",
   hidden: (jobId: string) => `prova.takeoff.hidden.${jobId}`,
   bookmarks: (jobId: string) => `prova.takeoff.bookmarks.${jobId}`,
 };
+
+/** A button on the top bar. */
+const BAR_BUTTON =
+  "inline-flex min-h-[32px] items-center rounded-md border border-line-card px-2.5 text-xs text-ink-body hover:bg-rail-hover";
+/** A labelled icon on the tool rail's foot. */
+const RAIL_BUTTON =
+  "flex h-9 w-9 items-center justify-center rounded-md text-sm text-ink-label hover:bg-rail-hover disabled:opacity-40 aria-expanded:bg-rail-hover aria-expanded:text-ink";
 
 /** Below this the rails are drawers rather than part of the flow. */
 const RAIL_WIDTH = 1280;
@@ -268,6 +281,12 @@ export function TakeoffWorkspace({
   const [hiddenItems, setHiddenItems] = useState<ReadonlySet<string>>(new Set());
   const [summaryOpen, setSummaryOpen] = useState(true);
   const [itemsOpen, setItemsOpen] = useState(false);
+  // Where the viewer portals its sheet stepper, finders and tabs into the top
+  // bar. State rather than refs, so the viewer re-renders once they exist.
+  const [pagerSlot, setPagerSlot] = useState<HTMLElement | null>(null);
+  const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
+  const [tabsSlot, setTabsSlot] = useState<HTMLElement | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   // ── THE REMEMBERED FURNITURE, once, on mount ──
   //
@@ -278,20 +297,24 @@ export function TakeoffWorkspace({
     const panel = readStored(KEY.panel);
     if (panel === "open") setPanelOpen(true);
     else if (panel === "closed") setPanelOpen(false);
-    else setPanelOpen(window.innerWidth >= WIDE);
+    // ── THE LAYERS OPEN, THE OTHER RAILS CLOSED ──
+    // The drawing takes at least three quarters of the width at 1280 and up
+    // with the layer panel open beside it, and only if nothing else is: the
+    // sheet stepper in the top bar does the sheet rail's everyday job, and
+    // both rails are one press away on the tool rail.
+    else setPanelOpen(window.innerWidth >= RAIL_WIDTH);
 
     const sheets = readStored(KEY.sheets);
-    setSheetsOpen(sheets === null ? window.innerWidth >= RAIL_WIDTH : sheets === "open");
+    setSheetsOpen(sheets === "open");
     setFactsOpen(readStored(KEY.facts) === "open");
 
     const stored = Number(readStored(KEY.railWidth));
     if (Number.isFinite(stored) && stored >= RAIL_MIN && stored <= RAIL_MAX) setRailWidth(stored);
 
     setSummaryOpen(readStored(KEY.summary) !== "closed");
-    // Open by default at rail widths: the items list is what this workspace is
-    // FOR, and arriving with it closed hides the feature behind a button.
-    const itemsPref = readStored(KEY.items);
-    setItemsOpen(itemsPref === null ? window.innerWidth >= RAIL_WIDTH : itemsPref === "open");
+    // Closed by default since the layer panel took the right-hand side; its
+    // button is on the tool rail, labelled, beside the sheets.
+    setItemsOpen(readStored(KEY.items) === "open");
     const hide = readStored(KEY.hidden(jobId));
     if (hide) {
       try {
@@ -538,7 +561,9 @@ export function TakeoffWorkspace({
       // The rest belong to the viewer, which owns the canvas. Forwarded as an
       // event rather than reached into: this shell has no business holding the
       // viewer's zoom.
-      if (["f", "j", "k"].includes(event.key)) {
+      // The tool keys go the same way; the viewer ignores them while an answer
+      // key is being made, where A and R are verdicts.
+      if (["f", "j", "k", ...Object.values(TOOL_KEYS)].includes(event.key)) {
         document.dispatchEvent(new CustomEvent("takeoff-shortcut", { detail: { key: event.key } }));
       }
     },
@@ -1152,33 +1177,47 @@ export function TakeoffWorkspace({
       className="flex h-[100dvh] flex-col overflow-hidden bg-canvas"
       style={
         {
-          "--shell-port": `calc(100dvh - 2.75rem${factsOpen && !phone ? ` - ${FACTS_REM}rem` : ""})`,
+          "--shell-port": `calc(100dvh - 3rem${factsOpen && !phone ? ` - ${FACTS_REM}rem` : ""})`,
         } as React.CSSProperties
       }
       data-takeoff="workspace"
     >
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-line-card bg-surface px-3">
-        {!phone && (
-          <button
-            type="button"
-            onClick={() => rememberSheets(!sheetsOpen)}
-            aria-expanded={sheetsOpen}
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail"
-            data-takeoff="toggle-sheets"
-          >
-            Sheets
-          </button>
-        )}
-        <div className="flex min-w-0 items-baseline gap-2">
+      {/* ── THE TOP BAR ──
+          Left: the way back, where you are, and the sheet stepper. Middle: Take
+          off | Compare. Right: Run takeoff and the finders that follow it, then
+          Quantities, PDF and Export. One row at every width, so it never takes
+          a second line of the drawing's height. */}
+      <header className="relative z-40 flex h-12 shrink-0 items-center gap-2 border-b border-line-card bg-surface px-2">
+        <Link
+          href={`/jobs/${jobId}/takeoff`}
+          aria-label="Back to the job"
+          title="Back to the job"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-lg text-ink-label hover:bg-rail-hover"
+          data-takeoff="back-to-job"
+        >
+          ←
+        </Link>
+        {/* The answer-key gate counts this hook; it is the same way back. */}
+        <Link href={`/jobs/${jobId}/estimate`} className="sr-only" data-takeoff="back-to-estimate">
+          Back to C&nbsp;Stream
+        </Link>
+        <div className="flex min-w-0 shrink items-baseline gap-1.5">
           <h1 className="truncate text-sm font-semibold text-ink-label" data-takeoff="workspace-job">
             {jobName}
           </h1>
+          <span className="text-ink-muted" aria-hidden>
+            /
+          </span>
+          <span className="truncate text-sm text-ink" data-takeoff="workspace-sheet">
+            {data.sheetLabelByPage[page] ?? `Sheet ${page}`}
+          </span>
           {/* WHICH PLAN SET, because a job can have several revisions and a
               measurement taken off the wrong one is wrong quietly. */}
-          <span className="hidden truncate text-xs text-ink-muted sm:inline" data-takeoff="plan-set">
+          <span className="hidden truncate text-xs text-ink-muted 2xl:inline" data-takeoff="plan-set">
             {data.plan.revisionLabel ?? data.plan.fileName ?? "Plan set"}
           </span>
         </div>
+        <div ref={setPagerSlot} className="shrink-0" />
         {phone && (
           <span
             className="rounded border border-line-card px-1.5 py-0.5 text-[10px] text-ink-muted"
@@ -1188,13 +1227,17 @@ export function TakeoffWorkspace({
           </span>
         )}
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex min-w-4 flex-1 justify-center">
+          <div ref={setTabsSlot} />
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           {/* SAVE STATUS. Every edit here is a server action that has already
               returned before the screen changes, so there is no "saving…"
               state to show and inventing one would be a lie. What an estimator
               actually needs to know is that nothing is held locally. */}
           {!phone && (
-            <span className="hidden text-[11px] text-ink-muted lg:inline" data-takeoff="save-status">
+            <span className="hidden text-[11px] text-ink-muted 2xl:inline" data-takeoff="save-status">
               {busy ? (
                 // KEEP THE WORD — the spinner is aria-hidden, so the word is
                 // all a screen reader gets. A label that simply stops changing
@@ -1208,141 +1251,98 @@ export function TakeoffWorkspace({
               )}
             </span>
           )}
+          <div ref={setActionsSlot} className="flex items-center gap-1.5" />
+          {!phone && data.wallReviewQueue.length > 0 && setReview === null && (
+            <button
+              type="button"
+              onClick={() => setSetReview({ queue: data.wallReviewQueue, decided: new Map(), history: [] })}
+              className={BAR_BUTTON}
+              data-takeoff="review-set"
+            >
+              Review walls
+            </button>
+          )}
+          {/* A deliberate, slow mode, so it says what it is rather than
+              wearing an icon. Turning it ON clears any previous review,
+              because a key half-made on one sheet must not leak into
+              another. */}
+          {!phone && labellingAvailable && (
+            <button
+              type="button"
+              onClick={() => {
+                const on = !keyMode;
+                setKeyFocus(null);
+                setKeyState(null);
+                setKeyMode(on);
+                // ── THE OTHER RAILS GET OUT OF THE WAY ──
+                //
+                // Three rails open at once squeezed the canvas to 5% zoom —
+                // a reviewer deciding what IS a wall, unable to see the
+                // drawing. Seen in a screenshot of the browser walk; nothing
+                // in the DOM says a canvas is too narrow to work in.
+                //
+                // And the quantities rail in particular must not be beside
+                // this one: a total that already assumes the answer is the
+                // last thing somebody should read while deciding it.
+                if (on) {
+                  rememberPanel(false);
+                  rememberItems(false);
+                }
+              }}
+              aria-expanded={keyMode}
+              className={`rounded-md border px-2 py-1 text-xs ${
+                keyMode ? "border-brand bg-brand text-neutral-900" : "border-line-card text-ink-body hover:bg-rail"
+              }`}
+              data-takeoff="toggle-answer-key"
+            >
+              Answer key
+            </button>
+          )}
           {!phone && (
             <>
-              <div className="flex items-center" data-takeoff="undo-group">
-                <button
-                  type="button"
-                  onClick={() => void runUndo("undo")}
-                  disabled={!canUndo(undoState) || busy}
-                  title={nextUndoLabel(undoState) ? `Undo: ${nextUndoLabel(undoState)}` : "Nothing to undo"}
-                  aria-label="Undo"
-                  data-takeoff="undo"
-                  className="rounded-l-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail disabled:opacity-40"
-                >
-                  ↺
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void runUndo("redo")}
-                  disabled={!canRedo(undoState) || busy}
-                  title={nextRedoLabel(undoState) ? `Redo: ${nextRedoLabel(undoState)}` : "Nothing to redo"}
-                  aria-label="Redo"
-                  data-takeoff="redo"
-                  className="-ml-px rounded-r-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail disabled:opacity-40"
-                >
-                  ↻
-                </button>
-              </div>
-              <button
-                type="button"
-                onClick={() => setOverview((open) => !open)}
-                aria-expanded={overview}
-                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail"
-                data-takeoff="toggle-overview"
-              >
-                Overview
-              </button>
-              <button
-                type="button"
-                onClick={() => setHelpOpen((open) => !open)}
-                className="hidden rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail sm:inline-block"
-                aria-expanded={helpOpen}
-                data-takeoff="toggle-shortcuts"
-              >
-                Shortcuts
-              </button>
-              {/* ── EVERY PANEL TOGGLE LIVES HERE ──
-                  The sheet-facts one had its own strip along the bottom of
-                  the window for about an hour, and the layout assertion
-                  caught what that cost: a permanent 22px bar took the canvas
-                  from 86% of the viewport to 83.7%, under the floor. A
-                  control for a panel that is usually closed must not charge
-                  rent on the drawing. */}
-              <button
-                type="button"
-                onClick={() => rememberItems(!itemsOpen)}
-                aria-expanded={itemsOpen}
-                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail"
-                data-takeoff="toggle-items"
-              >
-                Items
-              </button>
-              <button
-                type="button"
-                onClick={() => rememberFacts(!factsOpen)}
-                aria-expanded={factsOpen}
-                className="hidden rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail lg:inline-block"
-                data-takeoff="toggle-facts"
-              >
-                Sheet facts
-              </button>
-              {!phone && data.wallReviewQueue.length > 0 && setReview === null && (
-                <button
-                  type="button"
-                  onClick={() => setSetReview({ queue: data.wallReviewQueue, decided: new Map(), history: [] })}
-                  className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail"
-                  data-takeoff="review-set"
-                >
-                  Review walls
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => rememberPanel(!panelOpen)}
                 aria-expanded={panelOpen}
-                className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail"
+                className={`${BAR_BUTTON}${panelOpen ? " bg-rail-hover" : ""}`}
                 data-takeoff="toggle-panel"
               >
                 Quantities
               </button>
-              {/* A deliberate, slow mode, so it says what it is rather than
-                  wearing an icon. Turning it ON clears any previous review,
-                  because a key half-made on one sheet must not leak into
-                  another. */}
-              {labellingAvailable && (
-              <button
-                type="button"
-                onClick={() => {
-                  const on = !keyMode;
-                  setKeyFocus(null);
-                  setKeyState(null);
-                  setKeyMode(on);
-                  // ── THE OTHER RAILS GET OUT OF THE WAY ──
-                  //
-                  // Three rails open at once squeezed the canvas to 5% zoom —
-                  // a reviewer deciding what IS a wall, unable to see the
-                  // drawing. Seen in a screenshot of the browser walk; nothing
-                  // in the DOM says a canvas is too narrow to work in.
-                  //
-                  // And the quantities rail in particular must not be beside
-                  // this one: a total that already assumes the answer is the
-                  // last thing somebody should read while deciding it.
-                  if (on) {
-                    rememberPanel(false);
-                    rememberItems(false);
-                  }
-                }}
-                aria-expanded={keyMode}
-                className={`rounded-md border px-2 py-1 text-xs ${
-                  keyMode
-                    ? "border-brand bg-brand text-neutral-900"
-                    : "border-line-card text-ink-body hover:bg-rail"
-                }`}
-                data-takeoff="toggle-answer-key"
+              {/* The drawing as it was issued, in a tab of its own at this sheet. */}
+              <a
+                href={`/api/takeoff/plan/${data.plan.id}#page=${page}`}
+                target="_blank"
+                rel="noopener"
+                className={BAR_BUTTON}
+                data-takeoff="open-pdf"
               >
-                Answer key
-              </button>
-              )}
+                PDF
+              </a>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setExportOpen((open) => !open)}
+                  aria-expanded={exportOpen}
+                  className={BAR_BUTTON}
+                  data-takeoff="toggle-export"
+                >
+                  Export
+                </button>
+                {exportOpen && (
+                  <div className="absolute right-0 top-full z-50 mt-1 w-64 rounded-md border border-line-card bg-surface p-2 shadow-xl">
+                    <p className="text-xs text-ink-muted">The job&rsquo;s takeoff, every sheet, as a file.</p>
+                    <TakeoffExportButtons jobId={jobId} />
+                  </div>
+                )}
+              </div>
             </>
           )}
-          <Link
-            href={`/jobs/${jobId}/estimate`}
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-link hover:text-link-hover"
-            data-takeoff="back-to-estimate"
-          >
-            Back to C&nbsp;Stream
-          </Link>
+          {phone && (
+            <Link href={`/jobs/${jobId}/estimate`} className={BAR_BUTTON}>
+              Back to C&nbsp;Stream
+            </Link>
+          )}
         </div>
       </header>
 
@@ -1416,18 +1416,11 @@ export function TakeoffWorkspace({
             same rule the sheet tree follows. It is the workspace's own panel
             rather than the viewer's: the viewer owns the quantities it
             detected, this owns what a person decided to take off. */}
+        {/* ── NO PADDING AND NO LIFTED PANEL ──
+            The viewer lays out its own rail, canvas and layer panel in here,
+            and below 1280 makes that panel a drawer itself (`panelDrawer`). */}
         <main
-          className={`flex min-h-0 min-w-0 flex-1 flex-col p-2${
-            drawers && panelOpen
-              ? " [&_[data-takeoff=found-walls]]:fixed [&_[data-takeoff=found-walls]]:top-11 [&_[data-takeoff=found-walls]]:bottom-0" +
-                " [&_[data-takeoff=found-walls]]:right-0 [&_[data-takeoff=found-walls]]:z-40" +
-                " [&_[data-takeoff=found-walls]]:w-80 [&_[data-takeoff=found-walls]]:overflow-y-auto" +
-                " [&_[data-takeoff=found-walls]]:rounded-none" +
-                " [&_[data-takeoff=quantities-empty]]:fixed [&_[data-takeoff=quantities-empty]]:top-11 [&_[data-takeoff=quantities-empty]]:bottom-0" +
-                " [&_[data-takeoff=quantities-empty]]:right-0 [&_[data-takeoff=quantities-empty]]:z-40 [&_[data-takeoff=quantities-empty]]:w-80" +
-                " [&_[data-takeoff=quantities-empty]]:rounded-none [&_[data-takeoff=quantities-empty]]:pt-10"
-              : ""
-          }`}
+          className="flex min-h-0 min-w-0 flex-1 flex-col"
           data-takeoff="canvas-region"
         >
           <div className="relative flex min-h-0 flex-1 flex-col">
@@ -1602,6 +1595,59 @@ export function TakeoffWorkspace({
               ceilingPages={data.ceilingPages}
               initialPage={openPage}
               fill
+              bar={{ pager: pagerSlot, actions: actionsSlot, tabs: tabsSlot }}
+              panelDrawer={drawers}
+              rail={{
+                undo: (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void runUndo("undo")}
+                      disabled={!canUndo(undoState) || busy}
+                      title={nextUndoLabel(undoState) ? `Undo: ${nextUndoLabel(undoState)} (⌘Z)` : "Nothing to undo"}
+                      aria-label="Undo"
+                      data-takeoff="undo"
+                      className={RAIL_BUTTON}
+                    >
+                      ↺
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void runUndo("redo")}
+                      disabled={!canRedo(undoState) || busy}
+                      title={nextRedoLabel(undoState) ? `Redo: ${nextRedoLabel(undoState)} (⌘⇧Z)` : "Nothing to redo"}
+                      aria-label="Redo"
+                      data-takeoff="redo"
+                      className={RAIL_BUTTON}
+                    >
+                      ↻
+                    </button>
+                  </>
+                ),
+                // ── THE WORKSPACE'S OWN PANELS, AT THE RAIL'S FOOT ──
+                // Each one labelled for a screen reader and a click by name,
+                // with its key in the tooltip. Small, because they are opened
+                // now and then; the drawing is what is used all the time.
+                foot: (
+                  <>
+                    <button type="button" onClick={() => rememberSheets(!sheetsOpen)} aria-expanded={sheetsOpen} aria-label="Sheets" title="Sheets ([)" className={RAIL_BUTTON} data-takeoff="toggle-sheets">
+                      ▤
+                    </button>
+                    <button type="button" onClick={() => rememberItems(!itemsOpen)} aria-expanded={itemsOpen} aria-label="Items" title="Items: what you are taking off" className={RAIL_BUTTON} data-takeoff="toggle-items">
+                      ☰
+                    </button>
+                    <button type="button" onClick={() => rememberFacts(!factsOpen)} aria-expanded={factsOpen} aria-label="Sheet facts" title={"Sheet facts (\\)"} className={RAIL_BUTTON} data-takeoff="toggle-facts">
+                      ⓘ
+                    </button>
+                    <button type="button" onClick={() => setOverview((open) => !open)} aria-expanded={overview} aria-label="Overview" title="Overview (G)" className={RAIL_BUTTON} data-takeoff="toggle-overview">
+                      ▦
+                    </button>
+                    <button type="button" onClick={() => setHelpOpen((open) => !open)} aria-expanded={helpOpen} aria-label="Shortcuts" title="Shortcuts (?)" className={RAIL_BUTTON} data-takeoff="toggle-shortcuts">
+                      ?
+                    </button>
+                  </>
+                ),
+              }}
               panelOpen={panelOpen && !phone}
               onResults={onResults}
               readOnly={phone}
@@ -1797,7 +1843,7 @@ export function TakeoffWorkspace({
           stand for a moment, not a page to link to, and leaving the viewer
           mounted means coming back costs no re-render of the drawing. */}
       {overview && !phone && (
-        <div className="fixed inset-0 top-11 z-40 overflow-y-auto bg-canvas p-6" data-takeoff="overview">
+        <div className="fixed inset-0 top-12 z-40 overflow-y-auto bg-canvas p-6" data-takeoff="overview">
           <div className="mx-auto max-w-3xl">
             <div className="flex items-baseline justify-between">
               <h2 className="text-lg font-semibold text-ink">{jobName}</h2>

@@ -25,8 +25,10 @@ describe("one click always works", () => {
   });
   it("the quantities drawer lays no backdrop over the page, and leaves the top bar clear", () => {
     expect(workspace).toMatch(/\{\(sheetsOpen \|\| itemsOpen\) && \(\s+<button\s+type="button"\s+aria-label="Close the panels"/);
-    expect(workspace).toContain("[&_[data-takeoff=found-walls]]:top-11");
-    expect(workspace).toContain("[&_[data-takeoff=quantities-empty]]:top-11");
+    // Below 1280 the viewer makes its own layer panel the drawer, under the
+    // 48px top bar (`panelDrawer`); nothing is lifted out of it by CSS now.
+    expect(workspace).toContain("panelDrawer={drawers}");
+    expect(viewer).toContain('"fixed bottom-0 right-0 top-12 z-40 w-80');
   });
   it("Undo is available before the re-find, and a Find does not hold it greyed", () => {
     expect(viewer.indexOf("exclusionUndoEntry(row, {")).toBeLessThan(viewer.indexOf("await afterExclusionChange(saved,"));

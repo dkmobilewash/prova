@@ -315,7 +315,9 @@ describe("the ghost lines over the sheet", () => {
     // is the half nothing else can cover.
     const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).toMatch(/<FoundWalls\s+clusters=\{shownGroups\}\s+hovered=\{hovered\}\s*\/>/);
+    // `hovered` falls back to the layer row clicked in the full-screen shell,
+    // and that shell passes its own palette, weight and switched-off groups.
+    expect(code).toMatch(/<FoundWalls\s+clusters=\{shownGroups\}\s+hovered=\{hovered \?\? litGroup\?\.index \?\? null\}/);
     // And that it sits inside the overlay rather than somewhere harmless.
     const overlay = code.slice(code.indexOf("<svg"), code.indexOf("</svg>"));
     expect(overlay).toContain("<FoundWalls");
@@ -821,7 +823,11 @@ describe("the sheet and the found walls share a row", () => {
     expect(port, "the plan port must render").not.toBeNull();
     // The row exists whether or not walls have been found — the sheet lives in
     // it either way, so the panel has somewhere to arrive.
-    const row = port?.parentElement;
+    // Through a `contents` wrapper, which is no box at all on the tab; it is
+    // the full-screen shell's canvas column, which shares the row the same way.
+    const wrapper = port?.parentElement;
+    expect(wrapper?.className).toBe("contents");
+    const row = wrapper?.parentElement;
     expect(row, "the plan port must sit inside a row container").not.toBeNull();
     expect(row?.className ?? "").toContain("flex-row-reverse");
     await act(async () => root.unmount());

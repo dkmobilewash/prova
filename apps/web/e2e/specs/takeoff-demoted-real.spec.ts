@@ -133,7 +133,7 @@ test.describe("demote, don't hide, on a real sheet", () => {
     await expect(findWalls).toBeVisible({ timeout: 120_000 });
     await expect(findWalls, "the sheet never got a scale, so nothing can be found").toBeEnabled({ timeout: 120_000 });
     await findWalls.click();
-    await expect(findWalls).toHaveText("Find the walls", { timeout: 540_000 });
+    await expect(findWalls).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 540_000 });
     const standing = await foundCount();
     const byModel = await page.locator('[data-takeoff="demoted-row"]').count();
     const before = standing + byModel;

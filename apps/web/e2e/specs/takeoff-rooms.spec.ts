@@ -253,7 +253,7 @@ test.describe("find the rooms", () => {
         },
       )
       .toBe("started");
-    await expect(findWalls, "the find started and never finished").toHaveText("Find the walls", {
+    await expect(findWalls, "the find started and never finished").toHaveText(/^(Find the walls|Run takeoff)$/, {
       timeout: 180_000,
     });
     await expect(findRooms).toBeEnabled({ timeout: 30_000 });

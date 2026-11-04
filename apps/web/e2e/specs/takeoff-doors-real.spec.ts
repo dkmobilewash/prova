@@ -333,7 +333,7 @@ test.describe("door openings into the estimate, on a real set", () => {
     const findWalls = page.locator('[data-takeoff="find-walls"]');
     await expect(findWalls).toBeEnabled({ timeout: 60_000 });
     await findWalls.click();
-    await expect(findWalls).toHaveText("Find the walls", { timeout: 900_000 });
+    await expect(findWalls).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 900_000 });
     await page.waitForTimeout(1000);
     await shot("walls-found");
     const groups = page.locator('[data-takeoff="found-group"]');

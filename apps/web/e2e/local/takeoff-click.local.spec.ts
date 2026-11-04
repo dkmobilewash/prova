@@ -150,8 +150,13 @@ async function ensureRooms() {
   await expect(hook("rooms-panel")).toBeVisible({ timeout: 120_000 });
 }
 const floorTotal = async () => num((await hook("rooms-panel").innerText()).match(/([\d,]+) sf ·/)?.[1] ?? "");
-/** A toolbar tool. `.first()` because the renovation prompt repeats Work area and Exclude like this below the toolbar. */
+/** The tool rail's "⋯" menu, open: the tools without a slot of their own are in it. */
+async function moreTools() {
+  if ((await hook("rail-more").getAttribute("aria-expanded")) !== "true") await hook("rail-more").click();
+}
+/** A tool, from the rail or its "⋯" menu. `.first()` because the renovation prompt repeats Work area and Exclude like this below the toolbar. */
 async function tool(label: string) {
+  if (!(await button(label).first().isVisible().catch(() => false))) await moreTools();
   const b = button(label).first();
   // Pressing the tool that is already on turns it off, so press it only when it is not.
   if (!((await b.getAttribute("class")) ?? "").includes("bg-brand")) await b.click();
@@ -317,7 +322,9 @@ async function acrossSheets() {
 test("A1 no scale: Count and Count like this pressable, Line and Area grey", async () => {
   await sheet("baker", 54);
   await expect(button("Count")).toBeEnabled();
+  await moreTools();
   await expect(button("Count like this")).toBeEnabled();
+  await hook("rail-more").click();
   await expect(button("Line")).toBeDisabled();
   await expect(button("Area")).toBeDisabled();
 });

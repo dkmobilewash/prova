@@ -124,7 +124,7 @@ test.describe("a real set reaches the estimate", () => {
     const findWalls = page.locator('[data-takeoff="find-walls"]');
     await expect(findWalls, "the sheet never got a scale").toBeEnabled({ timeout: 120_000 });
     await findWalls.click();
-    await expect(findWalls).toHaveText("Find the walls", { timeout: 540_000 });
+    await expect(findWalls).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 540_000 });
     await page.locator('[data-takeoff="find-rooms"]').click();
     await expect(page.locator('[data-takeoff="rooms-panel"]')).toBeVisible({ timeout: 60_000 });
     await expect.poll(async () => (await page.locator('[data-takeoff="room-ceiling-from"]').allTextContents()).filter((t) => /reading/.test(t)).length, { timeout: 120_000 }).toBe(0);

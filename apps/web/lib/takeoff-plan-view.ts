@@ -382,6 +382,44 @@ export const TOOLS: { id: ToolId; label: string; hint: string }[] = [
 ];
 
 /**
+ * ── THE FULL-SCREEN WORKSPACE'S TOOL RAIL ──
+ *
+ * The tools that get a slot of their own on the rail, in the order a takeoff
+ * uses them; the rest sit behind its "…" menu. Nothing is dropped — every
+ * entry in `TOOLS` is in one place or the other, and `toolRail.test.ts` says
+ * so. There is no separate "measure" tool: Line IS the measurement.
+ */
+export const RAIL_TOOLS: readonly ToolId[] = ["pan", "area", "rect", "linear", "count", "edit", "calibrate"];
+
+/** One key per rail tool, shown in its tooltip. Not in answer-key mode, where
+ *  A and R already decide candidates. */
+export const TOOL_KEYS: Partial<Record<ToolId, string>> = {
+  pan: "v",
+  area: "a",
+  rect: "r",
+  linear: "l",
+  count: "c",
+  edit: "e",
+  calibrate: "s",
+};
+
+/** A 24-unit outline icon per tool, drawn with `currentColor`. */
+export const TOOL_ICONS: Record<ToolId, string> = {
+  pan: "M5 3l6.5 17 2.4-7.1L21 10.5z",
+  area: "M12 3l8.5 6.2-3.2 10.8H6.7L3.5 9.2z",
+  rect: "M4 6h16v12H4z",
+  linear: "M5 19L19 5M3 17l4 4M17 3l4 4",
+  count: "M5 12a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0-3.2 0M10.4 12a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0-3.2 0M15.8 12a1.6 1.6 0 1 0 3.2 0a1.6 1.6 0 1 0-3.2 0",
+  edit: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4",
+  calibrate: "M3 17L17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2",
+  symbol: "M4 4h6v6H4zM14 4h6v6h-6zM14 14h6v6h-6z",
+  cutout: "M4 4h16v16H4zM9 9h6v6H9z",
+  exclude: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M5.6 5.6l12.8 12.8",
+  split: "M4 4h16v16H4zM12 4v16",
+  workarea: "M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4",
+};
+
+/**
  * HOW THE MEASURED ERROR IS WORDED, and it used to print a FLOOR as though it
  * were the measurement.
  *

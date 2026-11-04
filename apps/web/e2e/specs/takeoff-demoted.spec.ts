@@ -146,7 +146,7 @@ test.describe("demote, don't hide", () => {
     await settledOverlayBox();
     await hydrated(page, '[data-takeoff="find-walls"]');
     await findWalls.click();
-    await expect(findWalls).toHaveText("Find the walls", { timeout: 180_000 });
+    await expect(findWalls).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 180_000 });
     await expect(page.locator('[data-takeoff="check-runs"]')).toBeVisible({ timeout: 30_000 });
     return foundCount();
   }

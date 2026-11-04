@@ -122,7 +122,7 @@ test.describe("find the rooms on a real sheet", () => {
     await expect(findWalls).toBeVisible({ timeout: 120_000 });
     await expect(findWalls, "the sheet never got a scale, so nothing can be found").toBeEnabled({ timeout: 120_000 });
     await findWalls.click();
-    await expect(findWalls).toHaveText("Find the walls", { timeout: 540_000 });
+    await expect(findWalls).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 540_000 });
     await page.screenshot({ path: path.join(OUT, `p${PAGE}-01-walls.png`), fullPage: false });
     const findRooms = page.locator('[data-takeoff="find-rooms"]');
     await expect(findRooms).toBeEnabled({ timeout: 30_000 });
