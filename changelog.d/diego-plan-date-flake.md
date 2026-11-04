@@ -1,0 +1,3 @@
+### The takeoff spec's step 6 waited for the wrong Server Action
+
+`settleAction` resolved on the first Server Action to answer, and the takeoff tab fires two of its own on every load. So step 6 reloaded while the revision Save was still in flight: the reload either cut it off (main 8aefc37c, every retry: the sheet stayed undated) or overlapped its commit, so the banner, read before, disagreed with the plan, read after (#938: "1 plan here has no issue date" beside "Rev 1 · 2026-01-12"). There was no duplicate plan. `settleAction(..., { formSubmission: true })` now waits for the form's own post, which is the multipart one; the page's own calls are text/plain. Check: with the old wait, 1 of 3 local runs failed exactly as #938 did; with the new one, 6 of 6 passed.
