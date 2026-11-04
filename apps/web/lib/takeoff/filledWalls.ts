@@ -84,6 +84,27 @@ export type BandRules = { minIn: number; maxIn: number; minFeet: number; maxFill
 /** 3–16 in is the request's own band; 0.85 keeps light tints (a floor finish) out and grey poché in. */
 export const BAND_RULES: BandRules = { minIn: 3, maxIn: 16, minFeet: 2, maxFill: 0.85, minAspect: 4 };
 
+/**
+ * A ring with its collinear vertices taken out. A fill's outline is often cut
+ * at every door, jamb and grid crossing into pieces shorter than the 2 ft an
+ * edge needs, and the face is the run of them, not any one piece.
+ */
+function straightened(ring: readonly Pt[]): Pt[] {
+  const out: Pt[] = [];
+  for (const p of ring) {
+    while (out.length >= 2) {
+      const a = out[out.length - 2]!;
+      const b = out[out.length - 1]!;
+      const cross = (b.x - a.x) * (p.y - b.y) - (b.y - a.y) * (p.x - b.x);
+      const dot = (b.x - a.x) * (p.x - b.x) + (b.y - a.y) * (p.y - b.y);
+      if (dot <= 0 || Math.abs(cross) > 1e-3 * Math.hypot(b.x - a.x, b.y - a.y) * Math.hypot(p.x - b.x, p.y - b.y)) break;
+      out.pop();
+    }
+    out.push(p);
+  }
+  return out;
+}
+
 type Edge = { a: Pt; b: Pt; len: number; ux: number; uy: number; angle: number };
 
 /**
@@ -101,7 +122,7 @@ export function filledBands(segs: readonly StrokeSegment[], feetPerUnit: number,
   for (const area of filledAreas(segs)) {
     if (area.fill > rules.maxFill) continue;
     const buckets = new Map<number, Edge[]>();
-    for (const ring of area.rings) {
+    for (const ring of area.rings.map(straightened)) {
       for (let i = 0; i + 1 < ring.length; i += 1) {
         const a = ring[i]!;
         const b = ring[i + 1]!;
@@ -140,7 +161,7 @@ function bandBetween(e: Edge, f: Edge, rings: readonly Pt[][], feetPerUnit: numb
   const my = (f.a.y + f.b.y) / 2 - e.a.y;
   const signed = mx * -e.uy + my * e.ux;
   const d = Math.abs(signed);
-  if (d < minD || d > maxD) return null;
+  if (d < minD * (1 - 1e-6) || d > maxD * (1 + 1e-6)) return null;
   const t = (p: Pt) => (p.x - e.a.x) * e.ux + (p.y - e.a.y) * e.uy;
   const lo = Math.max(0, Math.min(t(f.a), t(f.b)));
   const hi = Math.min(e.len, Math.max(t(f.a), t(f.b)));
@@ -157,7 +178,9 @@ function bandBetween(e: Edge, f: Edge, rings: readonly Pt[][], feetPerUnit: numb
   let clear = 0;
   for (const k of [0.2, 0.5, 0.8]) {
     const along = lo + (hi - lo) * k;
-    if (!insideArea(at(along, 0.5), rings)) return null;
+    // Across the whole width, not only the middle: strips of a hatch, side by
+    // side, have fill at the middle of a pair and gaps either side of it.
+    if (![0.15, 0.5, 0.85].every((across) => insideArea(at(along, across), rings))) return null;
     if (!insideArea(at(along, -0.25), rings) && !insideArea(at(along, 1.25), rings)) clear += 1;
   }
   if (clear < 2) return null;
@@ -166,11 +189,12 @@ function bandBetween(e: Edge, f: Edge, rings: readonly Pt[][], feetPerUnit: numb
   return { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, thicknessFeet: d * feetPerUnit, lengthFeet: (hi - lo) * feetPerUnit };
 }
 
-type Line = { x1: number; y1: number; x2: number; y2: number };
-/** Units of `b` lying within `tol` of a parallel line in `by`, as a length in the same units. */
-export function coveredLength(b: Line, by: readonly Line[], tol: number): number {
+type Line = { x1: number; y1: number; x2: number; y2: number; thicknessFeet?: number };
+
+/** The stretches of `b`, as [from, to] along it in its own units, lying within `tol` of a parallel line in `by`. */
+function coveredSpans(b: Line, by: readonly Line[], tol: number | ((c: Line) => number)): [number, number][] {
   const len = Math.hypot(b.x2 - b.x1, b.y2 - b.y1);
-  if (len === 0) return 0;
+  if (len === 0) return [];
   const ux = (b.x2 - b.x1) / len;
   const uy = (b.y2 - b.y1) / len;
   const spans: [number, number][] = [];
@@ -179,7 +203,7 @@ export function coveredLength(b: Line, by: readonly Line[], tol: number): number
     if (cl === 0 || Math.abs((ux * (c.y2 - c.y1) - uy * (c.x2 - c.x1)) / cl) > 0.09) continue;
     const mx = (c.x1 + c.x2) / 2 - b.x1;
     const my = (c.y1 + c.y2) / 2 - b.y1;
-    if (Math.abs(mx * -uy + my * ux) > tol) continue;
+    if (Math.abs(mx * -uy + my * ux) > (typeof tol === "number" ? tol : tol(c))) continue;
     const t1 = (c.x1 - b.x1) * ux + (c.y1 - b.y1) * uy;
     const t2 = (c.x2 - b.x1) * ux + (c.y2 - b.y1) * uy;
     const lo = Math.max(0, Math.min(t1, t2));
@@ -187,33 +211,74 @@ export function coveredLength(b: Line, by: readonly Line[], tol: number): number
     if (hi > lo) spans.push([lo, hi]);
   }
   spans.sort((p, q) => p[0] - q[0]);
-  let total = 0;
-  let start = 0;
-  let end = -1;
+  const merged: [number, number][] = [];
   for (const [lo, hi] of spans) {
-    if (lo > end) {
-      if (end > start) total += end - start;
-      start = lo;
-      end = hi;
-    } else end = Math.max(end, hi);
+    const last = merged[merged.length - 1];
+    if (last !== undefined && lo <= last[1]) last[1] = Math.max(last[1], hi);
+    else merged.push([lo, hi]);
   }
-  if (end > start) total += end - start;
-  return total;
+  return merged;
+}
+
+/** Units of `b` lying within `tol` of a parallel line in `by`. */
+export function coveredLength(b: Line, by: readonly Line[], tol: number): number {
+  return coveredSpans(b, by, tol).reduce((t, [lo, hi]) => t + hi - lo, 0);
 }
 
 /**
- * The bands the pairer did not already find, as candidates: a band at least
- * half covered by a found wall is that wall, and a band at least half covered
- * by a longer band already kept is the same band drawn twice.
+ * The stretches of band the pairer did not already find, as candidates. A
+ * band is cut where a found run (or a longer band already kept) lies along it,
+ * so a wall the pairer read is never offered twice; what is left is kept when
+ * it is still a band by `BAND_RULES` — 2 ft and four times its thickness.
  */
-export function filledWallCandidates(strokes: readonly StrokeSegment[], feetPerUnit: number, found: readonly Line[]): WallCandidate[] {
-  const kept: FilledBand[] = [];
-  const bands = filledBands(strokes, feetPerUnit).sort((a, b) => b.lengthFeet - a.lengthFeet);
+export function filledWallCandidates(strokes: readonly StrokeSegment[], feetPerUnit: number, found: readonly Line[], rules: BandRules = BAND_RULES, unreadShare = UNREAD_SHARE): WallCandidate[] {
+  const kept: WallCandidate[] = [];
+  const bands = filledBands(strokes, feetPerUnit, rules).sort((a, b) => b.lengthFeet - a.lengthFeet);
+  const total = bands.reduce((t, b) => t + b.lengthFeet, 0);
   for (const b of bands) {
     const len = b.lengthFeet / feetPerUnit;
-    const tol = b.thicknessFeet / feetPerUnit;
-    if (coveredLength(b, found, tol) >= len / 2 || coveredLength(b, kept, tol) >= len / 2) continue;
-    kept.push(b);
+    const thick = b.thicknessFeet / feetPerUnit;
+    const ux = (b.x2 - b.x1) / len;
+    const uy = (b.y2 - b.y1) / len;
+    let from = 0;
+    const gaps: [number, number][] = [];
+    // Within half of each wall's thickness of the other: a grey core inside a
+    // thicker outlined wall is that wall, wherever in it the core sits.
+    const near = (c: Line) => Math.max(thick, (thick + (c.thicknessFeet ?? 0) / feetPerUnit) / 2);
+    for (const [lo, hi] of [...coveredSpans(b, [...found, ...kept], near), [len, len] as [number, number]]) {
+      if (lo > from) gaps.push([from, lo]);
+      from = Math.max(from, hi);
+    }
+    for (const [lo, hi] of gaps) {
+      const piece = hi - lo;
+      if (piece * feetPerUnit < rules.minFeet || piece < rules.minAspect * thick) continue;
+      kept.push({
+        x1: b.x1 + ux * lo,
+        y1: b.y1 + uy * lo,
+        x2: b.x1 + ux * hi,
+        y2: b.y1 + uy * hi,
+        thicknessFeet: b.thicknessFeet,
+        lengthFeet: piece * feetPerUnit,
+        fromFill: true,
+      });
+    }
   }
-  return kept.map(({ x1, y1, x2, y2, thicknessFeet, lengthFeet }) => ({ x1, y1, x2, y2, thicknessFeet, lengthFeet, fromFill: true }));
+  const left = kept.reduce((t, b) => t + b.lengthFeet, 0);
+  return left >= unreadShare * total ? kept : [];
 }
+
+/**
+ * ── ONLY ON A SHEET WHOSE FILLED WALLS THE PAIRER DID NOT READ ──
+ *
+ * The shipping rule, per building, measured 2026-11-03 on the 40 labelled
+ * training sheets (24 of them carry wall-shaped fill): the pairer already
+ * covers at least 82% of every sheet's band footage — Topeka p74 2,202 of
+ * 2,210 ft, Baker A100 605 of 617, the worst MHK A1.01 545 of 648 — because
+ * there the fill's edges pair as faces. Offering the leftovers on those sheets
+ * recovered 65 ft of key and added about 200 ft of junk and unjudged lines,
+ * mostly door-jamb ends and the grey core of a wall already found. So a sheet
+ * gets bands only where at least half its band footage is unread, which is the
+ * shape Chrome reported on Washington Village A.100: walls, and no candidates.
+ * No training sheet reaches it, so no training building changes.
+ */
+export const UNREAD_SHARE = 0.5;

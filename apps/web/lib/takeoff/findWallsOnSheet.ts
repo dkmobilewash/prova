@@ -115,7 +115,7 @@ export type FindWallsInput = {
   regionClipped?: boolean;
   /** Removes a wall the rules chose, and nothing else — see `WallFinderOptions.veto`. */
   veto?: WallFinderOptions["veto"];
-  /** Offer a wall along each wall-shaped filled band the pairer left uncovered — see `filledWalls.ts`. */
+  /** Offer a wall along each wall-shaped filled band the pairer left uncovered — see `filledWalls.ts`. On unless false. */
   filledBands?: boolean;
   /**
    * Called with each stage's name and how long it took, when a caller wants
@@ -489,7 +489,7 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   };
   const own = chain([...everywhere, ...curves]);
   const { notLettering, notBorder, hatchDropped } = own;
-  const filled = input.filledBands === true ? filledWallCandidates(inUnits, feetPerUnit, [...everywhere, ...curves]) : [];
+  const filled = input.filledBands !== false ? filledWallCandidates(inUnits, feetPerUnit, [...everywhere, ...curves]) : [];
   const bands = new Set<WallCandidate>(filled);
   const keptBands = filled.length === 0 ? [] : chain([...everywhere, ...curves, ...filled]).inBuilding.filter((w) => bands.has(w));
   const inBuilding = [...own.inBuilding, ...keptBands];

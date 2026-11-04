@@ -6,7 +6,7 @@ import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { inPageWidthUnits } from "../findWallsOnSheet";
 import { heldOutReason } from "../heldOutSets";
 import { keyFromLabels, scoreSheet, totalScore, type SheetScore } from "../heldOutScore";
-import { coveredLength } from "../filledWalls";
+import { coveredLength, filledBands, filledWallCandidates } from "../filledWalls";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { pagesToSample } from "../sheetTemplate";
 import { sheetStrokes } from "../sheetStrokes";
@@ -43,6 +43,7 @@ describe.skipIf(LABELS === "" || PLANS === "" || OUT === "")("filled bands, off 
     const arms: Record<"off" | "on", SheetScore[]> = { off: [], on: [] };
     const lines: string[] = [];
     let unscored = 0;
+    let sheetsWithBands = 0;
     for (const dir of readdirSync(LABELS).sort()) {
       if ((heldOutReason(dir) !== null) !== HELD) continue;
       const pdf = pdfFor(dir);
@@ -67,7 +68,7 @@ describe.skipIf(LABELS === "" || PLANS === "" || OUT === "")("filled bands, off 
         const byArm: Record<string, { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessIn: number | null }[]> = {};
         const bandRuns: { x1: number; y1: number; x2: number; y2: number }[] = [];
         for (const arm of ["off", "on"] as const) {
-          const det = detectForSheet({ segments: read.segments, textItems: words, pageSize: { widthPt: read.widthPt, heightPt: read.heightPt }, feetPerUnit: lab.feetPerUnit, sampledSheets: sampled, scanned: false, filledBands: arm === "on" });
+          const det = detectForSheet({ segments: read.segments, textItems: words, pageSize: { widthPt: read.widthPt, heightPt: read.heightPt }, feetPerUnit: lab.feetPerUnit, sampledSheets: sampled, scanned: false, filledBands: arm === "on" ? undefined : false });
           const offered = offeredCandidates({
             walls: det.found.walls,
             segments: det.found.inUnits.map((s) => ({ ...s, x1: s.x1 * read.widthPt, y1: s.y1 * read.widthPt, x2: s.x2 * read.widthPt, y2: s.y2 * read.widthPt })),
@@ -87,8 +88,14 @@ describe.skipIf(LABELS === "" || PLANS === "" || OUT === "")("filled bands, off 
             keyFromTracedFeet: fromTracedFeet,
           });
           arms[arm].push(s);
+          if (arm === "off") {
+            const all = filledBands(det.found.inUnits, lab.feetPerUnit).reduce((t, b) => t + b.lengthFeet, 0);
+            const left = filledWallCandidates(det.found.inUnits, lab.feetPerUnit, det.found.everywhere, undefined, 0).reduce((t, b) => t + b.lengthFeet, 0);
+            row.push(`bands ${all.toFixed(0)} uncovered ${left.toFixed(0)}`);
+          }
           byArm[arm] = offered.candidates;
           if (arm === "on") bandRuns.push(...offered.offeredRuns.filter((w) => w.fromFill === true));
+          if (arm === "on" && offered.offeredRuns.some((w) => w.fromFill === true)) sheetsWithBands += 1;
           row.push(`${arm} miss ${s.missingFeet.toFixed(0)} junk ${s.confirmedJunkFeet.toFixed(0)} unjudged ${s.unjudgedFeet.toFixed(0)}`);
         }
         if (!HELD) lines.push(row.join("\t"));
@@ -115,7 +122,7 @@ describe.skipIf(LABELS === "" || PLANS === "" || OUT === "")("filled bands, off 
         lines.push(`${set.slice(0, 40)}\n  off ${t(arms.off.filter((s) => s.set === set))}\n  on  ${t(arms.on.filter((s) => s.set === set))}`);
       }
     }
-    lines.push("", `${HELD ? "HELD-OUT" : "TRAINING"} TOTAL${unscored > 0 ? ` (${unscored} label folder(s) had no pdf)` : ""}`, `  off ${t(arms.off)}`, `  on  ${t(arms.on)}`);
+    lines.push("", `${HELD ? "HELD-OUT" : "TRAINING"} TOTAL${unscored > 0 ? ` (${unscored} label folder(s) had no pdf)` : ""} · sheets offered a band: ${sheetsWithBands}`, `  off ${t(arms.off)}`, `  on  ${t(arms.on)}`);
     writeFileSync(OUT, lines.join("\n") + "\n");
   });
 });
