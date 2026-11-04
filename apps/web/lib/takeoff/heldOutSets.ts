@@ -140,6 +140,29 @@ export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: str
     match: "CedarHollow",
     why: "the practice plan whose answer key this repo generated; never training data",
   },
+  {
+    // ── ROUND 10, HELD OUT 2026-11-04 BEFORE A LABEL WAS WRITTEN ──
+    //
+    // Diego approved the fourth session's split in
+    // `coordination/survey-round10.md`: four of the thirteen sets added that
+    // day. The file is spelled "cattauragus" on disk, and that spelling is
+    // what a label's `set` field will carry, so it is the one matched here.
+    match: "cattauragus-county-courtroom-renovations",
+    why: "courtroom renovation — held out 2026-11-04 (round 10), before a label was written",
+  },
+  {
+    match: "Washington-Village-Addendum",
+    why: "branch library renovation — held out 2026-11-04 (round 10), before a label was written",
+  },
+  {
+    // Held out for the restaurant rule: nothing in training sees a restaurant.
+    match: "Construction Plan 4259 Fulton Rd",
+    why: "restaurant tenant improvement — held out 2026-11-04 (round 10), before a label was written",
+  },
+  {
+    match: "EH Hutto TX",
+    why: "extended-stay hotel, new build — held out 2026-11-04 (round 10), before a label was written",
+  },
 ];
 
 /** Punctuation and extension removed, so one spelling matches another. */
