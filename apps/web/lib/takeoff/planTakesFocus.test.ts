@@ -74,7 +74,7 @@ describe("the plan takes the keyboard when it is clicked", () => {
       join(__dirname, "..", "..", "components", "AnswerKeyPanel.tsx"),
       "utf8",
     );
-    expect(panel).toContain('target.tagName === "INPUT"');
+    expect(panel).toContain("const typing = isTypingTarget(event.target);");
     expect(panel).toContain("if (typing");
   });
 });

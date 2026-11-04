@@ -772,3 +772,155 @@ test("R5-20 deleting an item offers to delete its measurements, ticked, and leav
   expect(unassignedAfter, "nothing new in Unassigned").toBe(unassignedBefore);
 });
 
+
+// ── THE ANSWER-KEY TOOL, ROUND 10: Baker A101 with ?key=1 ─────────────────
+// Saves go to the throwaway TAKEOFF_LABEL_DIR the config makes, never the real labels.
+const KEY_URL = `/takeoff/${SETS.baker.id}?page=13&key=1`;
+async function keySheet() {
+  if (!page.url().endsWith(KEY_URL)) {
+    await page.goto(KEY_URL);
+    await drawn();
+  }
+  if ((await hook("key-line").count()) === 0) {
+    const anyway = button("Run anyway");
+    if (await anyway.isVisible().catch(() => false)) await anyway.click();
+    await hook("find-walls").click();
+    await expect.poll(async () => hook("key-line").count(), { timeout: 120_000 }).toBeGreaterThan(0);
+  }
+}
+/** The screen centre of a candidate's line, and a point a few pixels off it. */
+async function besideLine(n: number) {
+  const line = hook("key-line").nth(n);
+  const [x1, y1, x2, y2] = await Promise.all(["x1", "y1", "x2", "y2"].map(async (a) => Number(await line.getAttribute(a))));
+  const mid = await at((x1! + x2!) / 2, (y1! + y2!) / 2);
+  const len = Math.hypot(x2! - x1!, y2! - y1!) || 1;
+  // 5 px off the line, across it: a hand, not a pixel-perfect aim.
+  return { id: (await line.getAttribute("data-id"))!, mid, off: { x: mid.x - ((y2! - y1!) / len) * 5, y: mid.y + ((x2! - x1!) / len) * 5 } };
+}
+const focusedRow = () => page.locator('[data-takeoff="key-candidate"][data-focused="true"]');
+/** A step run on its own starts with an empty name box; Save needs one. */
+async function ensureReviewer() {
+  if ((await hook("key-reviewer").inputValue()) === "") await hook("key-reviewer").fill("ZZ Spec");
+}
+
+test("K1 every candidate's number is drawn on its line, and stays on it through a zoom", async () => {
+  await keySheet();
+  const lines = await hook("key-line").count();
+  await expect(hook("key-number")).toHaveCount(lines);
+  const near = async () => {
+    const { mid } = await besideLine(0);
+    const box = (await hook("key-number").first().boundingBox())!;
+    return Math.hypot(box.x + box.width / 2 - mid.x, box.y + box.height / 2 - mid.y);
+  };
+  expect(await hook("key-number").first().textContent()).toBe("1");
+  expect(await near(), "number 1 sits on line 1").toBeLessThan(20);
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.waitForTimeout(500);
+  expect(await near(), "and is still on it after zooming in").toBeLessThan(20);
+});
+
+test("K2 a click beside a line on the drawing selects it", async () => {
+  await keySheet();
+  const { id, off } = await besideLine(2);
+  await page.mouse.click(off.x, off.y);
+  await expect(focusedRow()).toHaveAttribute("data-id", id);
+});
+
+test("K3 A, R and U register: with the name box focused then the drawing clicked, and with nothing selected", async () => {
+  await keySheet();
+  // Focus left in the name box is what a reviewer has after typing it.
+  await hook("key-reviewer").click();
+  const { id, off } = await besideLine(3);
+  await page.mouse.click(off.x, off.y);
+  await expect(focusedRow()).toHaveAttribute("data-id", id);
+  await page.keyboard.press("a");
+  await expect(page.locator(`[data-takeoff="key-candidate"][data-id="${id}"]`)).toHaveAttribute("data-verdict", "wall");
+  await expect(hook("key-reviewer")).toHaveValue("");
+  // Nothing selected: a click on empty paper clears it, and R takes the first undecided one.
+  await clickAt(0.02, 0.02);
+  await expect(focusedRow()).toHaveCount(0);
+  const rejected = () => page.locator('[data-takeoff="key-candidate"][data-verdict="not-a-wall"]').count();
+  const before = await rejected();
+  await page.keyboard.press("r");
+  await expect.poll(rejected).toBe(before + 1);
+  const unsure = () => page.locator('[data-takeoff="key-candidate"][data-verdict="unsure"]').count();
+  const u0 = await unsure();
+  await page.keyboard.press("u");
+  await expect.poll(unsure).toBe(u0 + 1);
+});
+
+test("K4 Save says to fill in Reviewed by, and the name is remembered in this browser", async () => {
+  await keySheet();
+  await expect(hook("key-need-reviewer")).toHaveText("Fill in Reviewed by to save");
+  await expect(hook("key-save-labels")).toBeDisabled();
+  await hook("key-need-reviewer").click();
+  await expect(hook("key-reviewer")).toBeFocused();
+  await page.keyboard.type("ZZ Spec");
+  await expect(hook("key-need-reviewer")).toHaveCount(0);
+  await page.reload();
+  await drawn();
+  // The panel appears once the candidates do.
+  await keySheet();
+  await expect(hook("key-reviewer")).toHaveValue("ZZ Spec");
+});
+
+test("K5 a stale draft is said beside Save with Restore and Discard, and Save still works", async () => {
+  await keySheet();
+  // A decision not yet saved is a draft in this browser; a reload leaves it waiting.
+  const { off } = await besideLine(4);
+  await page.mouse.click(off.x, off.y);
+  await page.keyboard.press("a");
+  await page.reload();
+  await drawn();
+  await keySheet();
+  const labels = hook("key-labels");
+  await expect(labels.locator('[data-takeoff="key-restore"]')).toContainText("unsaved review in this browser");
+  await expect(labels.locator('[data-takeoff="key-restore-yes"]')).toBeVisible();
+  await expect(labels.locator('[data-takeoff="key-restore-no"]')).toBeVisible();
+  await expect(hook("key-save-labels")).toBeEnabled();
+  await labels.locator('[data-takeoff="key-restore-yes"]').click();
+  await expect(labels.locator('[data-takeoff="key-restore"]')).toHaveCount(0);
+});
+
+test("K6 Save to labels says how many decisions it saved", async () => {
+  await keySheet();
+  await ensureReviewer();
+  await hook("key-save-labels").click();
+  await expect(hook("key-labels-saved")).toHaveText(/^Saved \d+ decisions? to /, { timeout: 30_000 });
+});
+
+/** A sheet opened from the sheet tree, which moves the workspace (j/k move only the viewer). */
+async function treeSheet(pageNumber: number) {
+  if ((await page.locator('[data-takeoff="sheet-tree"]').count()) === 0) await hook("toggle-sheets").click();
+  await page.locator(`[data-takeoff="tree-sheet"][data-page="${pageNumber}"] button`).first().click();
+  await drawn();
+}
+
+test("K7 a saved trace, still in memory, is not restored a second time on coming back to the sheet", async () => {
+  await keySheet();
+  await page.keyboard.press("t");
+  await clickAt(0.36, 0.30);
+  await clickAt(0.42, 0.30);
+  await page.keyboard.press("Enter");
+  await expect(hook("key-progress")).toContainText("1 traced");
+  await ensureReviewer();
+  await hook("key-save-labels").click();
+  await expect(hook("key-labels-saved")).toHaveText(/^Saved \d+ decisions? to /, { timeout: 30_000 });
+  // Away to A100 and its walls, then back to A101. A GUARD ON THE RESULT, NOT A REPRODUCTION:
+  // run against a build without the dedupe, this sequence (and a Restore raced against a
+  // late-loading saved file) still showed "1 traced", so the round-10 "2 traced" needs a path
+  // not found here. The dedupe itself is proved in restoreSaved.test.ts, mutation-tested.
+  await treeSheet(12);
+  await hook("find-walls").click();
+  await expect.poll(async () => hook("key-line").count(), { timeout: 120_000 }).toBeGreaterThan(0);
+  await treeSheet(13);
+  await page.waitForTimeout(4000);
+  await expect(hook("key-progress")).toContainText("1 traced");
+});
+
+test("K8 the help says only NEW walls are walls, and NIC is not", async () => {
+  await keySheet();
+  await hook("key-help-toggle").click();
+  await says("Only NEW walls are walls.");
+  await saysNot("NIC counts");
+});

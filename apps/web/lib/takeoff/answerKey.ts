@@ -28,6 +28,7 @@ export const KEY_RULES = [
   "A wall is measured along its CENTRELINE.",
   "GROSS: a door or a window does not break a wall. Measure through them.",
   "Interior and exterior partitions both count.",
+  "Only NEW walls. Existing walls, walls to be demolished and NIC (not in contract) walls are not walls.",
   "Not furniture, casework, fixtures, curbs, grid lines, dimension strings or hatching.",
 ] as const;
 
