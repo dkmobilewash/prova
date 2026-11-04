@@ -91,7 +91,9 @@ async function drawn() {
     if (waited > 180_000) throw new Error(`${page.url()}: the sheet never reached the canvas`);
     await page.waitForTimeout(500);
   }
-  await expect(page.getByText("Drawing…")).toHaveCount(0, { timeout: 180_000 });
+  // Both stages: since round 10b the open says "Opening the set…", not "Drawing…",
+  // and a fresh canvas is 300 px wide before anything is drawn on it.
+  await expect(hook("viewer-busy")).toHaveCount(0, { timeout: 180_000 });
   expect(monitor.crashes, "the browser threw").toEqual([]);
 }
 const overlay = () => page.locator('[data-testid="takeoff-plan-port"] svg').first();
@@ -1142,4 +1144,50 @@ test("K12 a draft with a split restores, and says nothing about the finder readi
   await labels.locator('[data-takeoff="key-restore-yes"]').click();
   await saysNot("Could not restore");
   await expect(hook("key-line")).toHaveCount(before + 1);
+});
+
+test("K13 Save to labels through the button saves a TRACE-ONLY sheet: nothing offered, one trace", async () => {
+  // Round 10c: Washington Village A.100 (0 candidates, 8 traces) still read as
+  // refused on :3010. K11 is the route alone; this is the button, end to end,
+  // on a legend sheet where Find the walls offers nothing.
+  await page.goto(`/takeoff/${SETS.baker.id}?page=11&key=1`);
+  await drawn();
+  const printed = page.getByRole("button", { name: /^Use the printed scale/ });
+  if (await printed.isVisible().catch(() => false)) await printed.click();
+  // The offer opens Set scale with the printed figure filled in; Set the scale keeps it.
+  const confirm = button("Use the printed scale");
+  if (await confirm.isVisible().catch(() => false)) await confirm.click();
+  await button("Set the scale").click();
+  await saysNot("Set the scale on this sheet before measuring");
+  // A001 reads as an elevations sheet, so the finder waits to be told.
+  await button("Run anyway").click();
+  await hook("find-walls").click();
+  await expect(hook("key-progress")).toBeVisible({ timeout: 120_000 });
+  await expect(hook("key-line")).toHaveCount(0);
+  await page.keyboard.press("t");
+  await clickAt(0.36, 0.30);
+  await clickAt(0.42, 0.30);
+  await page.keyboard.press("Enter");
+  await expect(hook("key-progress")).toContainText("1 traced");
+  await ensureReviewer();
+  await hook("key-save-labels").click();
+  await expect(hook("key-labels-saved")).toHaveText(/^Saved 1 decision to /, { timeout: 30_000 });
+});
+
+test("K14 the plan file answers a big set's burst of range requests, none refused", async () => {
+  // Round 10c: Hutto (247 MB, 142 pages) sat on "Opening the set…" for 85 s
+  // with nearly every plan request a 503 — each range request asked Clerk's
+  // backend for the user, and Clerk answered 429. 150 at once is a big set's
+  // open; a known user must now cost Clerk nothing.
+  const planUrl = page.waitForResponse((r) => r.url().includes("/api/takeoff/plan/"));
+  await page.goto(`/takeoff/${SETS.topeka.id}?page=74`);
+  const url = (await planUrl).url();
+  await drawn();
+  const statuses = await Promise.all(
+    Array.from({ length: 150 }, (_, i) =>
+      page.request.get(url, { headers: { range: `bytes=${i * 65536}-${i * 65536 + 65535}` } }).then((r) => r.status()),
+    ),
+  );
+  const refused = statuses.filter((s) => s !== 206);
+  expect(refused, `statuses other than 206: ${[...new Set(refused)].join(", ")}`).toEqual([]);
 });

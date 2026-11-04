@@ -44,6 +44,8 @@ let apiUserId: string | null = null;
 /** How many times the backend Clerk lookup ran — the round trip a known
  * phone user must not pay on every request. */
 let getUserCalls = 0;
+/** How many times `currentUser()` ran — the web path's Clerk round trip. */
+let currentUserCalls = 0;
 /** The backend User `clerkClient().users.getUser()` returns for that id. */
 let backendUser: {
   id: string;
@@ -58,7 +60,10 @@ let backendUser: {
 } | null = null;
 
 vi.mock("@clerk/nextjs/server", () => ({
-  currentUser: async () => clerkUser,
+  currentUser: async () => {
+    currentUserCalls += 1;
+    return clerkUser;
+  },
   auth: async () => ({ userId: apiUserId }),
   clerkClient: async () => ({
     users: {
@@ -200,5 +205,34 @@ describe("requireApiContext — the mobile path", () => {
     expect(getUserCalls).toBe(0);
     expect(again?.id).toBe(first?.id);
     expect(again).toMatchObject({ clerkId: "clerk_owner", company: expect.anything() });
+  });
+});
+
+describe("requireCompanyContext — a known user costs Clerk nothing (round 10c)", () => {
+  // The plan viewer reads a big set as hundreds of range requests, each
+  // through here. One `currentUser()` per request drew 41 Clerk 429s on one
+  // open and left the viewer on "Opening the set…" for 85 s.
+  it("answers a user it already knows from the session and the database, without currentUser()", async () => {
+    signInAs("owner@example.com", true);
+    const first = await requireCompanyContext();
+    apiUserId = "clerk_owner";
+    currentUserCalls = 0;
+
+    const again = await requireCompanyContext();
+
+    expect(currentUserCalls).toBe(0);
+    expect(again.id).toBe(first.id);
+    expect(again).toMatchObject({ clerkId: "clerk_owner", company: expect.anything() });
+  });
+
+  it("still asks Clerk for someone it has never seen, so adoption keeps its verified-email gate", async () => {
+    signInAs("new@example.com", true);
+    apiUserId = "clerk_new";
+    currentUserCalls = 0;
+
+    const context = await requireCompanyContext();
+
+    expect(currentUserCalls).toBe(1);
+    expect(context).toMatchObject({ clerkId: "clerk_new" });
   });
 });

@@ -33,6 +33,24 @@ import { isMissingRecordError, isUniqueConstraintError } from "@/lib/actions/sha
  * avoid it.
  */
 export async function requireCompanyContext() {
+  // ── A KNOWN USER COSTS CLERK NOTHING ──
+  //
+  // `currentUser()` is a Clerk BACKEND API call, and this runs on every page
+  // and every API request. The plan viewer reads a 247 MB set as hundreds of
+  // byte-range requests, each one through here: the development instance
+  // answered 429 to 41 of them in one open, and the viewer sat on "Opening
+  // the set…" for 85 s (round 10c). `auth()` reads the session token
+  // locally, so a person already linked to this Clerk id is answered from
+  // the database alone, exactly as `requireApiContext` does below. Only
+  // ADOPTING someone needs the full Clerk user.
+  const { userId } = await auth();
+  if (userId) {
+    const known = await prisma.user.findUnique({ where: { clerkId: userId }, include: { company: true } });
+    if (known) {
+      await recordLastSeen(known);
+      return known;
+    }
+  }
   const clerkUser = await currentUser();
   if (!clerkUser) {
     redirect("/sign-in");
