@@ -22,17 +22,19 @@ afterAll(async () => {
 });
 
 describe("saveDoorsWindowsSwitch", () => {
-  it("is off by default, refuses a member, and an owner turns it on and off", async () => {
-    expect((await prisma.company.findUnique({ where: { id: companyId } }))?.doorsWindowsOn).toBe(false);
+  it("is ON for a new company, refuses a member, and an owner turns it off and on", async () => {
+    // Diego, 2026-11-04: new companies start with doors and windows on.
+    const read = async () => (await prisma.company.findUnique({ where: { id: companyId } }))?.doorsWindowsOn;
+    expect(await read()).toBe(true);
     context.role = "MEMBER";
+    expect((await saveDoorsWindowsSwitch(new FormData())).ok).toBe(false);
+    expect(await read()).toBe(true);
+    context.role = "OWNER";
+    expect((await saveDoorsWindowsSwitch(new FormData())).ok).toBe(true);
+    expect(await read()).toBe(false);
     const on = new FormData();
     on.set("doorsWindowsOn", "on");
-    const refused = await saveDoorsWindowsSwitch(on);
-    expect(refused.ok).toBe(false);
-    context.role = "OWNER";
     expect((await saveDoorsWindowsSwitch(on)).ok).toBe(true);
-    expect((await prisma.company.findUnique({ where: { id: companyId } }))?.doorsWindowsOn).toBe(true);
-    expect((await saveDoorsWindowsSwitch(new FormData())).ok).toBe(true);
-    expect((await prisma.company.findUnique({ where: { id: companyId } }))?.doorsWindowsOn).toBe(false);
+    expect(await read()).toBe(true);
   });
 });

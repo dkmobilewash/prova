@@ -88,10 +88,11 @@ model Company {
   /// in this schema with no source to derive it from.
   isProvaOperator Boolean @default(false)
 
-  /// "Find the rooms" on the takeoff: OFF for every company until the owner
-  /// turns it on under Settings, like the plan-text opt-in. Not an AI feature
-  /// (no model is called), so not in `CompanyAiSettings`.
-  roomFinderOn Boolean @default(false)
+  /// "Find the rooms" on the takeoff. Not an AI feature (no model is called),
+  /// so not in `CompanyAiSettings`. ON for companies created from 2026-11-04
+  /// (Diego's decision); a company created before keeps the value it had, and
+  /// the owner can turn it either way under Settings.
+  roomFinderOn Boolean @default(true)
 
   /// SUPERSEDED 2026-10-29 by Company.demotedWallsOff (this file): the same
   /// decision read the other way round, so that ON could become the default
@@ -116,8 +117,9 @@ model Company {
 
   /// "Find walls on every floor plan" on the takeoff: one press runs the wall
   /// finder over every scaled floor-plan sheet in the set, in the background,
-  /// behind this switch, OFF until the owner turns it on. No model is called.
-  wholeSetTakeoffOn Boolean @default(false)
+  /// behind this switch. No model is called. ON for companies created from
+  /// 2026-11-04, like `roomFinderOn`; older companies keep their value.
+  wholeSetTakeoffOn Boolean @default(true)
 
   /// Scanned sheets read as lines and text for the wall finder (the RASTER
   /// ingest stage): OFF for every company until the owner turns it on under
@@ -125,8 +127,9 @@ model Company {
   scannedPlansOn Boolean @default(false)
   /// "Doors and windows from the plan" on the takeoff: the door-swing and
   /// window symbols read off the drawing, counted, measured and placed on
-  /// their wall runs. No model. OFF until the owner turns it on.
-  doorsWindowsOn Boolean @default(false)
+  /// their wall runs. No model. ON for companies created from 2026-11-04,
+  /// like `roomFinderOn`; older companies keep their value.
+  doorsWindowsOn Boolean @default(true)
 
   /// "Find all like this" on the takeoff: box one symbol, count every match
   /// on the sheet by its vector shape, save the count. No model. OFF until

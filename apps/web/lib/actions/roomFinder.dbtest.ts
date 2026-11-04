@@ -21,7 +21,7 @@ let jobId = "";
 let pageId = "";
 
 beforeAll(async () => {
-  const company = await prisma.company.create({ data: { name: "Rooms Test Co" } });
+  const company = await prisma.company.create({ data: { name: "Rooms Test Co", roomFinderOn: false } });
   companyId = company.id;
   context.company.id = companyId;
   const owner = await prisma.user.create({
