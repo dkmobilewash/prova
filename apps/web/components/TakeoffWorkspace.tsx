@@ -201,9 +201,14 @@ export function TakeoffWorkspace({
   const [setReviewBusy, setSetReviewBusy] = useState(false);
   const [setReviewError, setSetReviewError] = useState<string | null>(null);
   const setCurrent = setReview === null ? null : (setReview.queue.find((item) => !setReview.decided.has(item.measurementId)) ?? null);
-  // Each run's own sheet, so the set review jumps between sheets by itself.
+  // Each run's own sheet, so the set review jumps between sheets by itself. The
+  // viewer owns the page on screen and hears about it only through the event,
+  // as from the rail and the overview; `setPage` alone moved the rail's
+  // highlight and left the drawing on the old sheet (the takeoff spec, R5-11).
   useEffect(() => {
-    if (setCurrent !== null) setPage(setCurrent.pageNumber);
+    if (setCurrent === null) return;
+    setPage(setCurrent.pageNumber);
+    document.dispatchEvent(new CustomEvent("takeoff-goto", { detail: { page: setCurrent.pageNumber } }));
   }, [setCurrent]);
   const onSetDecide = useCallback(
     async (kind: "keep" | "drop") => {

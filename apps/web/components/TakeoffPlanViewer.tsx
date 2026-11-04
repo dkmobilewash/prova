@@ -5406,7 +5406,10 @@ export function TakeoffPlanViewer({
 
       {/* ── What the draft reads, and what to do with it ──────────── */}
       {drawing && (
-        <div className="rounded-lg border border-line-card bg-surface-card p-3">
+        <div className="relative z-20 rounded-lg border border-line-card bg-surface-card p-3">
+          {/* relative z-20: above the workspace's floating "This sheet" summary
+              (z-10, bottom-left), which sat on Save work area once a sheet had
+              measured items and took the click (the takeoff spec, R5-15). */}
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs text-ink-body">
               {draft.xs.length === 0
