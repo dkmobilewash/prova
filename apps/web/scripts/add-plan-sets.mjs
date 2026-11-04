@@ -29,7 +29,7 @@
  */
 import { readFile, readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { PDFDocument } from "pdf-lib";
+import { readPlanPageCount } from "./plan-page-count.mjs";
 // The workspace package, resolved the way `set-review-scales.mjs` does it:
 // a bare "@prisma/client" does not resolve from apps/web.
 import pkg from "../../../packages/db/node_modules/@prisma/client/default.js";
@@ -95,6 +95,12 @@ async function queueInventory(planId, companyId, pageCount) {
 
 /** Everything the app needs to serve a local plan, created once per file. */
 async function ingestOne(companyId, contactId, file, relPath) {
+  // Read the file BEFORE creating anything, so an unreadable one leaves no
+  // empty job or plan behind.
+  const bytes = await readFile(join(dir, file));
+  const read = await readPlanPageCount(bytes);
+  if (!read.ok) return { unreadable: read.reason };
+  const pageCount = read.pageCount;
   const id = `local-${relPath.slice(0, 20).replace(/\W+/g, "")}`;
   const job = await prisma.job.upsert({
     where: { id },
@@ -102,8 +108,6 @@ async function ingestOne(companyId, contactId, file, relPath) {
     update: {},
   });
   const existing = await prisma.takeoffPlan.findFirst({ where: { jobId: job.id } });
-  const bytes = await readFile(join(dir, file));
-  const pageCount = (await PDFDocument.load(bytes, { updateMetadata: false })).getPageCount();
   const plan =
     existing ??
     (await prisma.takeoffPlan.create({
@@ -168,7 +172,13 @@ async function main() {
       console.log(`SKIPPED  ${file}\n  the name marks it as held out, so it is not ingested`);
       continue;
     }
-    const { job, plan, pageCount, bytes, queued } = await ingestOne(company.id, contact.id, file, file);
+    const one = await ingestOne(company.id, contact.id, file, file);
+    if ("unreadable" in one) {
+      // One bad file is reported and skipped; it does not end the run.
+      console.log(`NOT READY  ${file}\n  could not be read: ${one.unreadable}`);
+      continue;
+    }
+    const { job, plan, pageCount, bytes, queued } = one;
     const scan = looksScanned(bytes);
     console.log(`${file}`);
     console.log(
