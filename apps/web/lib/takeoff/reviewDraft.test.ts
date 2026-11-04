@@ -12,6 +12,7 @@ import {
   restoreOffer,
 } from "./reviewDraft";
 import type { Candidate, ReviewState } from "./answerKeyReview";
+import { splitCandidate } from "./splitCandidate";
 
 /**
  * ── WHAT WAS LOST, AND WHAT MUST NOT BE RESTORED WRONGLY ──
@@ -99,7 +100,7 @@ describe("keeping an in-progress review", () => {
 describe("putting it back", () => {
   it("restores every decision and every trace", () => {
     const draft = draftFrom({ state: reviewed(), ...DRAFT });
-    const got = restoreDraft(draft!, fresh(["w0", "w1", "w2"]));
+    const got = restoreDraft(draft!, fresh(["w0", "w1", "w2"]), 100);
     expect(got.ok).toBe(true);
     if (!got.ok) return;
     expect(got.state.verdicts).toEqual({ w0: "wall", w1: "not-a-wall", w2: "unsure" });
@@ -117,7 +118,7 @@ describe("putting it back", () => {
       state: { ...withPremark, verdicts: { w0: "unreviewed", w1: "wall" } },
       ...DRAFT,
     });
-    const got = restoreDraft(draft!, withPremark);
+    const got = restoreDraft(draft!, withPremark, 100);
     expect(got.ok).toBe(true);
     if (got.ok) expect(got.state.verdicts.w1).toBe("wall");
   });
@@ -128,7 +129,7 @@ describe("putting it back", () => {
     // Ids are positional. A draft about three candidates applied to four
     // attaches w1's verdict to a different wall, silently.
     const draft = draftFrom({ state: reviewed(), ...DRAFT });
-    const got = restoreDraft(draft!, fresh(["w0", "w1", "w2", "w3"]));
+    const got = restoreDraft(draft!, fresh(["w0", "w1", "w2", "w3"]), 100);
     expect(got.ok).toBe(false);
     if (!got.ok) expect(got.why).toContain("wrong walls");
   });
@@ -139,14 +140,14 @@ describe("putting it back", () => {
     const draft = draftFrom({ state: reviewed(), ...DRAFT });
     const moved = fresh(["w0", "w1", "w2"]);
     moved.candidates[1] = { ...moved.candidates[1], y1: 0.9, y2: 0.9 };
-    const got = restoreDraft(draft!, moved);
+    const got = restoreDraft(draft!, moved, 100);
     expect(got.ok, "a moved wall was treated as the same wall").toBe(false);
   });
 
   it("refuses a draft from another version of this screen", () => {
     const draft = draftFrom({ state: reviewed(), ...DRAFT });
     const old = { ...draft!, format: "takeoff-review-draft-v0" as typeof DRAFT_FORMAT };
-    const got = restoreDraft(old, fresh(["w0", "w1", "w2"]));
+    const got = restoreDraft(old, fresh(["w0", "w1", "w2"]), 100);
     expect(got.ok).toBe(false);
   });
 
@@ -157,7 +158,38 @@ describe("putting it back", () => {
     const draft = draftFrom({ state: reviewed(), ...DRAFT });
     const jittered = fresh(["w0", "w1", "w2"]);
     jittered.candidates[0] = { ...jittered.candidates[0], x1: 0.1 + 1e-9 };
-    expect(restoreDraft(draft!, jittered).ok).toBe(true);
+    expect(restoreDraft(draft!, jittered, 100).ok).toBe(true);
+  });
+});
+
+describe("a draft with a split, round 10b", () => {
+  // Fulton p2: one split made the review 35 candidates, the fresh read is 34,
+  // and the restore refused. The split has to be made again first.
+  const split = () => {
+    const start = fresh(["w0", "w1", "w2"]);
+    const cut = splitCandidate(start, "w1", { x: 0.25, y: start.candidates[1]!.y1 }, 100);
+    expect(cut.halves).not.toBeNull();
+    const [a] = cut.halves!;
+    return { state: { ...cut.state, verdicts: { ...cut.state.verdicts, [a]: "wall" as const } }, a };
+  };
+
+  it("re-applies the split before comparing, and puts the verdict back on its half", () => {
+    const { state, a } = split();
+    const draft = draftFrom({ state, ...DRAFT });
+    const got = restoreDraft(draft!, fresh(["w0", "w1", "w2"]), 100);
+    expect(got.ok, got.ok ? "" : got.why).toBe(true);
+    if (!got.ok) return;
+    expect(got.state.candidates).toHaveLength(state.candidates.length);
+    expect(got.state.verdicts[a]).toBe("wall");
+    expect(got.state.splits).toHaveLength(1);
+  });
+
+  it("does not cut again a review that already carries the split", () => {
+    const { state } = split();
+    const draft = draftFrom({ state, ...DRAFT });
+    const got = restoreDraft(draft!, { ...state, verdicts: {} }, 100);
+    expect(got.ok).toBe(true);
+    if (got.ok) expect(got.state.candidates).toHaveLength(state.candidates.length);
   });
 });
 

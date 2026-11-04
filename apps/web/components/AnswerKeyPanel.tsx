@@ -222,7 +222,18 @@ export function AnswerKeyPanel({
    * would be convenient and wrong often enough to matter: these sessions get
    * driven from one laptop by whoever is sitting at it.
    */
-  const [reviewer, setReviewerState] = useState("");
+  // READ IN THE INITIALISER, NOT IN AN EFFECT. Round 10b: filled one tick
+  // after mount, the name landed in a box the reviewer had already clicked
+  // into, and their typing went on after it — "DiegoDiego". The panel only
+  // exists after Find the walls has run in this browser, so it is never
+  // server-rendered and reading storage here cannot mismatch hydration.
+  const [reviewer, setReviewerState] = useState(() => {
+    try {
+      return window.localStorage.getItem(REVIEWER_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
   // ── REMEMBERED IN THIS BROWSER ──
   //
   // Round 10: Save sat greyed on sheet after sheet because the name box at the
@@ -240,15 +251,6 @@ export function AnswerKeyPanel({
       return value;
     });
   };
-  useEffect(() => {
-    let remembered = "";
-    try {
-      remembered = window.localStorage.getItem(REVIEWER_KEY) ?? "";
-    } catch {
-      remembered = "";
-    }
-    if (remembered !== "") setReviewerState((current) => (current.trim() === "" ? remembered : current));
-  }, []);
   const reviewerInput = useRef<HTMLInputElement | null>(null);
   /** What the last Save to labels did, said beside that button. */
   const [labelsResult, setLabelsResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -265,6 +267,9 @@ export function AnswerKeyPanel({
   // after a restore, not to decide who the reviewer is.
   useEffect(() => {
     if (restoredReviewer == null || restoredReviewer === "") return;
+    // Nor into a box that has focus: the saved file arrives late, and a name
+    // dropped under the caret is one the reviewer then types after.
+    if (reviewerInput.current !== null && document.activeElement === reviewerInput.current) return;
     setReviewer((current) => (current.trim() === "" ? restoredReviewer : current));
   }, [restoredReviewer]);
   const progress = progressOf(state);
@@ -457,6 +462,11 @@ export function AnswerKeyPanel({
     a.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
     setSaved(`${filename} — ${key.walls.length} walls, ${progress.feet.toFixed(0)} ft`);
+    // A SAVE OF EITHER KIND IS A SAVE. Round 10b: this one never said so, so
+    // the browser draft stayed and the leave-warning stayed armed — and an
+    // automation browser dismisses that prompt, which cancels the navigation,
+    // so no other job's URL would open.
+    onSaved?.();
   }
 
   /**
@@ -468,8 +478,16 @@ export function AnswerKeyPanel({
    * made of each one. Only the second is training data.
    */
   async function saveLabels() {
-    if (pairings === undefined || pairings.length === 0) {
-      setSaved("No pairings were captured, so there is nothing to train on.");
+    // ── A TRACE-ONLY SHEET SAVES ──
+    //
+    // Round 10b: a sheet where the finder offered nothing and the reviewer
+    // traced every wall (8 traces, 0 candidates) was refused here for having
+    // no pairings. Its traces ARE the key; a trainer can skip a file with no
+    // pairings, but a save must not throw the review away. Refused only when
+    // there is nothing at all to write.
+    const anyDecision = Object.values(state.verdicts).some((v) => v !== "unreviewed");
+    if ((pairings ?? []).length === 0 && state.traced.length === 0 && !anyDecision) {
+      setLabelsResult({ ok: false, text: "Not saved: nothing on this sheet has been decided or traced yet." });
       return;
     }
     setSavingLabels(true);
@@ -538,7 +556,7 @@ export function AnswerKeyPanel({
           // withholds every unmatched pairing on the sheet as soon as one was
           // withheld. Marking each pairing says WHICH, so a pairing that was
           // offered and refused stays the honest negative it is.
-          candidates: pairings.map((p) => ({
+          candidates: (pairings ?? []).map((p) => ({
             ...p,
             offered: state.candidates.some(
               (c) =>
@@ -703,6 +721,10 @@ export function AnswerKeyPanel({
               <li>Two lines running together, a wall&apos;s thickness apart — one yes for the pair.</li>
               <li>Partitions between rooms, including short returns.</li>
               <li>A wall with a door or window in it. The opening is part of the wall.</li>
+              <li>
+                <b>Partial-height walls</b> — low walls, half walls, pony walls that stop short of the
+                ceiling. They are walls (Diego, round 10b).
+              </li>
               <li>Walls on an enlarged plan — but only mark a wall once across the sheet.</li>
             </ul>
             <p className="font-semibold text-ink-label">No</p>

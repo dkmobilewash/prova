@@ -1,4 +1,5 @@
-import type { Candidate, ReviewState, Verdict } from "./answerKeyReview";
+import type { Candidate, ReviewState, SplitRecord, Verdict } from "./answerKeyReview";
+import { reapplySplits } from "./restoreSaved";
 
 /**
  * ── AN IN-PROGRESS REVIEW SURVIVES THE TAB ──
@@ -47,6 +48,13 @@ export type ReviewDraft = {
   savedAt: string;
   verdicts: Record<string, Verdict>;
   traced: Candidate[];
+  /**
+   * The splits made on this sheet, in order. The fingerprint is taken AFTER
+   * them, so a restore has to make them again before comparing — round 10b,
+   * Fulton p2: one split, and the draft (35 candidates) was refused against a
+   * fresh read (34). Optional: a draft written before this has none.
+   */
+  splits?: SplitRecord[];
   /** For the restore offer, so it can say what is in there before restoring. */
   counts: { decided: number; traced: number };
 };
@@ -109,6 +117,7 @@ export function draftFrom(input: {
     savedAt: (input.now ?? new Date()).toISOString(),
     verdicts: { ...input.state.verdicts },
     traced: input.state.traced.map((t) => ({ ...t })),
+    splits: [...(input.state.splits ?? [])],
     counts: { decided, traced },
   };
 }
@@ -124,10 +133,14 @@ export type RestoreResult =
  * duplicate pre-marking. The draft's verdicts replace that, because the
  * reviewer's decisions outrank a rule's.
  */
-export function restoreDraft(draft: ReviewDraft, fresh: ReviewState): RestoreResult {
+export function restoreDraft(draft: ReviewDraft, start: ReviewState, feetPerUnit: number): RestoreResult {
   if (draft.format !== DRAFT_FORMAT) {
     return { ok: false, why: "that draft was written by a different version of this screen" };
   }
+  // The draft's splits first, in the order they were made, so the ids they
+  // produce are the ids its verdicts name. A split already on screen is not
+  // cut twice: its whole run is gone, so `reapplySplits` finds nothing to cut.
+  const fresh = reapplySplits([], start, feetPerUnit, draft.splits ?? []).state;
   const now = fingerprint(fresh.candidates);
   if (now !== draft.fingerprint) {
     // ── REFUSED, AND SAID ──
