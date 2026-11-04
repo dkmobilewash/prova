@@ -10,6 +10,7 @@ import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
 import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
 import { storedLegendTypes } from "@/lib/takeoff/legendProposal";
 import { legendCropRects } from "@/lib/takeoff/legendSight";
+import { openFinders, openItems } from "../lib/finders";
 
 /**
  * ── THE WHOLE TAKEOFF AS AN ESTIMATOR WOULD DO IT, ON A REAL TRAINING SET ──
@@ -321,7 +322,7 @@ test.describe("an estimator's takeoff on a real set", () => {
     const findWalls = page.locator('[data-takeoff="find-walls"]');
     await expect(findWalls).toBeEnabled({ timeout: 60_000 });
     await findWalls.click();
-    await expect(findWalls).toHaveText("Find the walls", { timeout: 900_000 });
+    await expect(findWalls).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 900_000 });
     await page.waitForTimeout(1000);
     await shot("walls-found");
     const groups = page.locator('[data-takeoff="found-group"]');
@@ -382,6 +383,7 @@ test.describe("an estimator's takeoff on a real set", () => {
     say(`groups left unadded (needing a choice or a type): ${left}`);
     for (let i = 0; i < left; i += 1) say(`  left ${i + 1}: ${(await groups.nth(i).innerText()).replace(/\s+/g, " ").slice(0, 400)}`);
     await shot("walls-after-adding");
+    await openItems(page);
     const rail = page.locator('[data-takeoff="items-rail"]');
     await shot("items-after-walls", rail);
     say(`items rail after walls: ${(await rail.innerText()).replace(/\s+/g, " ").slice(0, 800)}`);
@@ -393,6 +395,7 @@ test.describe("an estimator's takeoff on a real set", () => {
       await page.locator('[data-takeoff="find-walls"]').click();
       await expect(findRooms).toBeEnabled({ timeout: 900_000 });
     }
+    await openFinders(page);
     await findRooms.click();
     const panel = page.locator('[data-takeoff="rooms-panel"]');
     await expect(panel).toBeVisible({ timeout: 120_000 });
@@ -406,6 +409,7 @@ test.describe("an estimator's takeoff on a real set", () => {
     await expect(panel).toHaveCount(0, { timeout: 120_000 });
     await page.reload();
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 120_000 });
+    await openItems(page);
     const rail = page.locator('[data-takeoff="items-rail"]');
     await shot("items-after-rooms", rail);
     say(`items rail after rooms: ${(await rail.innerText()).replace(/\s+/g, " ").slice(0, 900)}`);

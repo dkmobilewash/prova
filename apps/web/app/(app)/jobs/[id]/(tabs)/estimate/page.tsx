@@ -1244,6 +1244,8 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
                   the new line-item list. */}
               <Link
                 href={`/takeoff/${job.id}`}
+                target="_blank"
+                rel="noopener"
                 className="text-link hover:text-link-hover"
                 data-estimate="open-takeoff-workspace"
               >

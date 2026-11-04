@@ -153,7 +153,7 @@ test.describe("a sheet that carries more than one drawing", () => {
     const find = page.locator('[data-takeoff="find-walls"]');
     await expect(find, "Find the walls never became available").toBeEnabled({ timeout: 60_000 });
     await find.click();
-    await expect(find).toHaveText("Find the walls", { timeout: 180_000 });
+    await expect(find).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 180_000 });
     await page.waitForTimeout(800);
 
     mkdirSync(SHOTS, { recursive: true });

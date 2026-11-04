@@ -139,7 +139,7 @@ test.describe("answer-key state belongs to one sheet", () => {
     const find = page.locator('[data-takeoff="find-walls"]');
     await expect(find).toBeEnabled({ timeout: 60_000 });
     await find.click();
-    await expect(find).toHaveText("Find the walls", { timeout: 240_000 });
+    await expect(find).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 240_000 });
     await page.waitForTimeout(1200);
 
     // ── THE CONTROL: THERE IS SOMETHING TO LEAK ──

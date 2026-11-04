@@ -6,6 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
+import { openFinders, openItems } from "../lib/finders";
 
 /**
  * ── A REAL TRAINING SET'S ROOMS AND CEILINGS, SAVED AND SENT TO THE ESTIMATE ──
@@ -124,7 +125,8 @@ test.describe("a real set reaches the estimate", () => {
     const findWalls = page.locator('[data-takeoff="find-walls"]');
     await expect(findWalls, "the sheet never got a scale").toBeEnabled({ timeout: 120_000 });
     await findWalls.click();
-    await expect(findWalls).toHaveText("Find the walls", { timeout: 540_000 });
+    await expect(findWalls).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 540_000 });
+    await openFinders(page);
     await page.locator('[data-takeoff="find-rooms"]').click();
     await expect(page.locator('[data-takeoff="rooms-panel"]')).toBeVisible({ timeout: 60_000 });
     await expect.poll(async () => (await page.locator('[data-takeoff="room-ceiling-from"]').allTextContents()).filter((t) => /reading/.test(t)).length, { timeout: 120_000 }).toBe(0);
@@ -135,6 +137,7 @@ test.describe("a real set reaches the estimate", () => {
     await expect(panel).toHaveCount(0, { timeout: 60_000 });
     await page.reload();
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
+    await openItems(page);
     const rail = page.locator('[data-takeoff="items-rail"]');
     const item = (name: string) => rail.locator('[data-takeoff="item-row"]').filter({ hasText: name });
     await expect(item("Rooms")).toHaveCount(1, { timeout: 30_000 });

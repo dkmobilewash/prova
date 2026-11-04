@@ -6,6 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
+import { openFinders } from "../lib/finders";
 
 /**
  * ── "DEMOTE, DON'T HIDE" ON A REAL TRAINING SHEET, FOR SCREENSHOTS ──
@@ -133,7 +134,7 @@ test.describe("demote, don't hide, on a real sheet", () => {
     await expect(findWalls).toBeVisible({ timeout: 120_000 });
     await expect(findWalls, "the sheet never got a scale, so nothing can be found").toBeEnabled({ timeout: 120_000 });
     await findWalls.click();
-    await expect(findWalls).toHaveText("Find the walls", { timeout: 540_000 });
+    await expect(findWalls).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 540_000 });
     const standing = await foundCount();
     const byModel = await page.locator('[data-takeoff="demoted-row"]').count();
     const before = standing + byModel;
@@ -147,6 +148,7 @@ test.describe("demote, don't hide, on a real sheet", () => {
 
     // The real check, refused (no key in e2e): captured for the replay.
     const check = page.locator('[data-takeoff="check-runs"]');
+    await openFinders(page);
     const [response] = await Promise.all([page.waitForResponse(isActionPost, { timeout: 60_000 }), check.click()]);
     const body = await response.text();
     const contentType = response.headers()["content-type"] ?? "text/x-component";
@@ -174,6 +176,7 @@ test.describe("demote, don't hide, on a real sheet", () => {
         }
       },
     );
+    await openFinders(page);
     await check.click();
     const demoted = page.locator('[data-takeoff="demoted"]');
     await expect(demoted).toBeVisible({ timeout: 30_000 });

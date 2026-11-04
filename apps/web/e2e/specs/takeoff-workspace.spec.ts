@@ -32,6 +32,8 @@ const DESKTOP = { width: 1440, height: 900 };
 const TABLET = { width: 834, height: 1112 };
 const NARROW = { width: 1280, height: 900 };
 const PHONE = { width: 390, height: 844 };
+/** The two widths the full-screen layout is shown at. */
+const WIDE_SCREEN = { width: 1920, height: 1080 };
 
 test.describe("the full-screen takeoff workspace", () => {
   const GC_NAME = "ZZ-E2E Workspace GC";
@@ -139,7 +141,7 @@ test.describe("the full-screen takeoff workspace", () => {
     const find = page.locator('[data-takeoff="find-walls"]');
     await expect(find, `Find the walls never became available on ${label}`).toBeEnabled({ timeout: 60_000 });
     await find.click();
-    await expect(find).toHaveText("Find the walls", { timeout: 180_000 });
+    await expect(find).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 180_000 });
     await page.waitForTimeout(800);
   }
 
@@ -179,6 +181,9 @@ test.describe("the full-screen takeoff workspace", () => {
     const workspaceLink = page.locator('[data-takeoff="open-workspace"]');
     await expect(workspaceLink, "no way into the workspace from the takeoff tab").toBeVisible();
     await expect(workspaceLink).toHaveAttribute("href", `/takeoff/${jobOne}`);
+    // ITS OWN TAB, and no handle back on this one.
+    await expect(workspaceLink).toHaveAttribute("target", "_blank");
+    await expect(workspaceLink).toHaveAttribute("rel", /noopener/);
     expect(await workspaceLink.evaluate((node) => node.tagName)).toBe("A");
 
     // THE DRAWING IS ABOVE THE INDEX, measured by document position rather
@@ -211,8 +216,43 @@ test.describe("the full-screen takeoff workspace", () => {
     // "can you get there" test and fail the actual ask.
     await expect(link).toHaveAttribute("href", `/takeoff/${jobOne}`);
     expect(await link.evaluate((node) => node.tagName)).toBe("A");
-    await link.click();
-    await page.waitForURL(new RegExp(`/takeoff/${jobOne}`));
+    // A NEW TAB, and this one stays on the estimate.
+    const [opened] = await Promise.all([page.context().waitForEvent("page"), link.click()]);
+    await opened.waitForURL(new RegExp(`/takeoff/${jobOne}`));
+    await opened.close();
+    expect(page.url(), "the estimate tab navigated away").toContain(`/jobs/${jobOne}/estimate`);
+    await onWorkspace(jobOne);
+  });
+
+  test("2b. TAKEOFF OPENS A NEW TAB, AND THE PLAN HAS THREE QUARTERS OF IT", async () => {
+    // The click a person makes: the job's Takeoff button. It must leave this
+    // tab where it was and give the drawing at least 75% of the new window's
+    // width, with the layer panel open beside it — measured, not read off a
+    // class.
+    await page.goto(`/jobs/${jobOne}/takeoff`);
+    const button = page.locator('[data-takeoff="open-workspace"]');
+    await expect(button).toBeVisible();
+    const [tab] = await Promise.all([page.context().waitForEvent("page"), button.click()]);
+    await tab.waitForURL(new RegExp(`/takeoff/${jobOne}`));
+    expect(page.url(), "the job tab navigated away").toContain(`/jobs/${jobOne}/takeoff`);
+
+    const port = tab.locator('[data-testid="takeoff-plan-port"]');
+    await expect(tab.locator('[data-takeoff="workspace"]')).toBeVisible();
+    await expect
+      .poll(async () => port.locator("canvas").evaluate((n) => (n as HTMLCanvasElement).width), { timeout: 60_000 })
+      .toBeGreaterThan(0);
+    await expect(tab.locator('[data-takeoff="layer-panel"]'), "the layer panel is not open beside the plan").toBeVisible();
+    const box = await port.boundingBox();
+    const width = tab.viewportSize()?.width ?? 0;
+    expect(box, "the canvas has no box").not.toBeNull();
+    expect(
+      (box?.width ?? 0) / width,
+      `the canvas is ${box?.width.toFixed(0)}px of a ${width}px window`,
+    ).toBeGreaterThanOrEqual(0.75);
+    // No C-Stream sidebar and no job tabs: the workspace is the whole window.
+    await expect(tab.locator('nav:not([data-takeoff="tool-rail"])')).toHaveCount(0);
+    await tab.close();
+    await onWorkspace(jobOne);
   });
 
   test("3. it fills the viewport, with none of the app chrome", async () => {
@@ -221,7 +261,11 @@ test.describe("the full-screen takeoff workspace", () => {
     // THE CLAIM IS ABOUT PIXELS, so it is measured. The shell's own nav is the
     // thing the workspace exists to be rid of; its absence is what makes the
     // drawing large.
-    await expect(page.locator("nav").first(), "the app sidebar is still on screen").toHaveCount(0);
+    // The tool rail is the one <nav> left, and it is the workspace's own.
+    await expect(
+      page.locator('nav:not([data-takeoff="tool-rail"])'),
+      "the app sidebar is still on screen",
+    ).toHaveCount(0);
     const shell = await page.locator('[data-takeoff="workspace"]').boundingBox();
     const view = page.viewportSize();
     expect(shell, "the workspace has no box").not.toBeNull();
@@ -232,12 +276,22 @@ test.describe("the full-screen takeoff workspace", () => {
   });
 
   test("4. the sheet rail and the quantities panel both collapse", async () => {
+    // CLOSED ON ARRIVAL since the full-screen layout: the stepper in the top
+    // bar does its everyday job, and the drawing keeps three quarters of the
+    // width. One press on the tool rail opens it.
     const rail = page.locator('[data-takeoff="sheet-rail"]');
-    await expect(rail, "the sheet rail is missing").toBeVisible();
+    await expect(rail, "the sheet rail is open on arrival").toHaveCount(0);
+    await page.locator('[data-takeoff="toggle-sheets"]').click();
+    await expect(rail, "the sheet rail did not open").toBeVisible();
     await page.locator('[data-takeoff="toggle-sheets"]').click();
     await expect(rail, "the sheet rail did not collapse").toHaveCount(0);
-    await page.locator('[data-takeoff="toggle-sheets"]').click();
-    await expect(rail).toBeVisible();
+
+    const layers = page.locator('[data-takeoff="layers-rail"]');
+    await expect(layers, "the layer panel is not open on arrival").toBeVisible();
+    await page.locator('[data-takeoff="toggle-panel"]').click();
+    await expect(layers, "the layer panel did not collapse").toHaveCount(0);
+    await page.locator('[data-takeoff="toggle-panel"]').click();
+    await expect(layers).toBeVisible();
   });
 
   test("5. Find the walls runs HERE, and the overlay draws", async () => {
@@ -385,7 +439,11 @@ test.describe("the full-screen takeoff workspace", () => {
    * The second is the assertion with the history. The first is what stops the
    * next rail or ribbon eating the drawing without anybody noticing.
    */
-  const CHROME_BUDGET = 170;
+  // 48 since the full-screen layout of 2026-11-04: the top bar is the whole of
+  // the chrome above the drawing, and the toolbar is a rail BESIDE it. A few
+  // pixels of slack for a border, and nothing like the 170 the old toolbar
+  // needed — this is the number that says the toolbar has not come back.
+  const CHROME_BUDGET = 52;
 
   test("11. the canvas owns everything the chrome does not, at 1440 AND 1280", async () => {
     // Both rails, open AND closed. Closed only is not enough: this passed for
@@ -420,6 +478,16 @@ test.describe("the full-screen takeoff workspace", () => {
             `${where} the canvas is ${canvas.height.toFixed(0)}px of the ${available.toFixed(0)}px ` +
               `left below the chrome — something else is taking the height`,
           ).toBeGreaterThan(available - 16);
+
+          // 3. THREE QUARTERS OF THE WIDTH, with the layer panel open or not —
+          //    unless somebody opened the items rail as well, which is theirs
+          //    to choose and costs what it costs.
+          if (!itemsOpen) {
+            expect(
+              canvas.width / size.width,
+              `${where} the canvas is ${canvas.width.toFixed(0)}px of ${size.width}px`,
+            ).toBeGreaterThanOrEqual(0.75);
+          }
         }
       }
     }
@@ -446,6 +514,9 @@ test.describe("the full-screen takeoff workspace", () => {
       const hits: string[] = [];
       for (const node of Array.from(document.body.querySelectorAll("*"))) {
         if (node === port || port.contains(node) || node.contains(port)) continue;
+        // The canvas's own corner controls — zoom, the scale badge, the notice
+        // stack — float over it on purpose and are measured below.
+        if (node.closest("[data-hud]") !== null) continue;
         const style = window.getComputedStyle(node);
         if (style.position !== "fixed" && style.position !== "absolute") continue;
         if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") continue;
@@ -459,6 +530,16 @@ test.describe("the full-screen takeoff workspace", () => {
       return hits;
     });
     expect(overlapping, "something is layered over the canvas with the drawers closed").toEqual([]);
+
+    // AND THOSE CORNERS STAY SMALL: together under 6% of the canvas, so a
+    // control can sit on the drawing without becoming a panel that does.
+    const hud = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("[data-hud]")).reduce((sum, node) => {
+        const rect = node.getBoundingClientRect();
+        return sum + rect.width * rect.height;
+      }, 0),
+    );
+    expect(hud / (canvas.width * canvas.height), "the canvas's corner controls cover too much of it").toBeLessThan(0.06);
 
     // AND NOTHING CLIPPED SIDEWAYS. A horizontal scrollbar on the document is
     // how the broken version showed itself.
@@ -542,6 +623,94 @@ test.describe("the full-screen takeoff workspace", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-takeoff="sheet-drawer"]')).toHaveCount(0);
     await page.setViewportSize(DESKTOP);
+  });
+
+  test("13c. 1440 AND 1920, walls found and a layer picked out", async () => {
+    // The screenshots the full-screen brief asks for. Walls are found first so
+    // the layer panel has rows and the plan has colour; the first row is
+    // clicked so the readout is on the drawing too.
+    for (const size of [NARROW, DESKTOP, WIDE_SCREEN]) {
+      await page.setViewportSize(size);
+      await onWorkspace(jobTwo);
+      await findTheWalls(`S15 at ${size.width}`);
+      await fitAndSettle();
+      // NOTHING IN THE TOP BAR LIES ON RUN TAKEOFF, with the finders that
+      // follow a find all out. The Compare tab once did, at 1280, and took
+      // its clicks; the element at the button's own centre must be it.
+      const owner = await page.locator('[data-takeoff="find-walls"]').evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return hit !== null && node.contains(hit) ? "itself" : (hit?.textContent ?? "nothing");
+      });
+      expect(owner, `at ${size.width} something sits on Run takeoff`).toBe("itself");
+      if (size === NARROW) continue;
+
+      // NOTHING RUNS PAST THE PANEL'S EDGE: every element in it ends inside it.
+      const spill = await page.locator('[data-takeoff="layers-rail"]').evaluate((rail) => {
+        const edge = rail.getBoundingClientRect().right + 0.5;
+        return Array.from(rail.querySelectorAll("*"))
+          .filter((node) => {
+            const box = node.getBoundingClientRect();
+            return box.width > 0 && box.right > edge;
+          })
+          .map((node) => `${node.tagName}.${(node as HTMLElement).dataset.takeoff ?? ""}`)
+          .slice(0, 5);
+      });
+      expect(spill, `at ${size.width} something runs past the layer panel's edge`).toEqual([]);
+
+      // S15's "check this is the right sheet" caution: a folded banner ABOVE
+      // the layer rows, one line until opened.
+      const caution = page.locator('[data-takeoff="layer-panel"] [data-takeoff="duplicate-walls-caution"]');
+      await expect(caution, "the caution is not in the layer panel").toHaveCount(1);
+      expect(await caution.evaluate((node) => (node as HTMLDetailsElement).open), "the caution is open on arrival").toBe(false);
+      expect(
+        await caution.evaluate((node) => {
+          const rows = document.querySelector('[data-takeoff="layer-rows"]');
+          return rows !== null && (node.compareDocumentPosition(rows) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+        }),
+        "the caution is not above the layer rows",
+      ).toBe(true);
+
+      // ONE MAIN ACTION: the finders are behind its arrow, and the arrow opens them.
+      await expect(page.locator('[data-takeoff="bar-actions"] [data-takeoff="find-rooms"]'), "Find the rooms is loose in the top bar").toBeHidden();
+      await page.locator('[data-takeoff="run-more"]').click();
+      await expect(page.locator('[data-takeoff="run-menu"] [data-takeoff="find-rooms"]')).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.locator('[data-takeoff="run-menu"]')).toBeHidden();
+      if (size === NARROW) continue;
+      const row = page.locator('[data-takeoff="layer-row"]').first();
+      await expect(row, "Run takeoff left the layer panel empty").toBeVisible();
+      await row.click();
+      await expect(page.locator('[data-takeoff="layer-readout"]'), "no readout on the drawing").toBeVisible();
+      await expect(row).toHaveAttribute("data-lit", "true");
+      await page.screenshot({ path: path.join(SHOTS, `takeoff-v2-${size.width}x${size.height}.png`) });
+    }
+    await page.setViewportSize(DESKTOP);
+  });
+
+  test("13d. a layer's eye hides it on the plan, and a double-click renames the row", async () => {
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+    await findTheWalls("S15 for the layer eye");
+    const first = page.locator('[data-takeoff="layer-row"]').first();
+    const drawn = () => overlay().locator("[data-found-wall='0']").count();
+    expect(await drawn(), "the first group drew nothing to hide").toBeGreaterThan(0);
+    await first.locator('[data-takeoff="layer-eye"]').click();
+    await expect.poll(drawn, { message: "the eye did not take the layer off the plan" }).toBe(0);
+    await first.locator('[data-takeoff="layer-eye"]').click();
+    await expect.poll(drawn).toBeGreaterThan(0);
+
+    await first.locator('[data-takeoff="layer-name"]').dblclick();
+    const box = first.locator('[data-takeoff="layer-rename"]');
+    await box.fill("ZZ-E2E walls");
+    await box.press("Enter");
+    await expect(first.locator('[data-takeoff="layer-name"]')).toHaveText("ZZ-E2E walls");
+    // One person's label, kept in this browser across a reload.
+    await page.reload();
+    await findTheWalls("S15 after the rename");
+    await expect(page.locator('[data-takeoff="layer-row"]').first().locator('[data-takeoff="layer-name"]')).toHaveText(
+      "ZZ-E2E walls",
+    );
   });
 
   test("14. the phone gets a read-only canvas", async () => {
@@ -869,7 +1038,11 @@ test.describe("the full-screen takeoff workspace", () => {
     //
     // The midpoint of its first segment is a point guaranteed to be ON it.
     const target = overlay.locator('polyline[stroke="#38bdf8"]').first();
-    await expect(target, "test 18's measurement is not on the sheet").toBeVisible();
+    // ATTACHED, NOT VISIBLE: test 18's shape is a horizontal line, and a
+    // probe in real Chromium found Playwright never calls a horizontal
+    // polyline visible, though it has a 322x2 box. The proof that it is on
+    // the sheet is the click below landing on it and opening the edit bar.
+    await expect(target, "test 18's measurement is not on the sheet").toBeAttached();
     const pts = (await target.getAttribute("points")) ?? "";
     const [p1, p2] = pts.trim().split(/\s+/);
     const mx = (Number(p1.split(",")[0]) + Number(p2.split(",")[0])) / 2;

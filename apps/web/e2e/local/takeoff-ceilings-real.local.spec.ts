@@ -6,6 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
+import { openFinders } from "../lib/finders";
 
 /**
  * ── CEILINGS READ OFF A REAL TRAINING SET, FOR SCREENSHOTS ──
@@ -109,7 +110,8 @@ test.describe("ceilings on a real set", () => {
     const findWalls = page.locator('[data-takeoff="find-walls"]');
     await expect(findWalls, "the sheet never got a scale").toBeEnabled({ timeout: 120_000 });
     await findWalls.click();
-    await expect(findWalls).toHaveText("Find the walls", { timeout: 540_000 });
+    await expect(findWalls).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 540_000 });
+    await openFinders(page);
     await page.locator('[data-takeoff="find-rooms"]').click();
     await expect(page.locator('[data-takeoff="rooms-panel"]')).toBeVisible({ timeout: 60_000 });
     // Reading the other page's text takes a moment; wait until no row still says reading.

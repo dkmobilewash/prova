@@ -1788,8 +1788,17 @@ anything about SIZE.
       or locale value is a TEXT mismatch and produces the other word. Check
       the `args[]` before theorising.
     - **It is measuring a race, so one green run is one sample.** Two
-      consecutive clean runs is the weakest claim worth making. A residual
-      remains; two fixes reduced it and neither removed it.
+      consecutive clean runs is the weakest claim worth making.
+    - **The residual was found and fixed 2026-11-04** (`diego/hydration-418`).
+      A production-mode instrument named the fiber: React replayed the HOST
+      `<main>` after its child — Next's LayoutRouter, blocked on the
+      `(app)/error.tsx` chunk and handed back as a lazy — suspended it, and
+      the replay re-claimed a node it had already walked past. **The page
+      reaches `<main>` through `components/PageSlot.tsx`**; never put a
+      server-written element that holds a client module in its props
+      directly under a host element. 42 mismatches in 540 probe loads before,
+      0 in 270 after. The instrument (component stack, DOM at the throw,
+      Flight state) is `e2e/probes/mismatch-locator.probe.spec.ts`.
     - **Pair a shell region with its widget inside
       `components/AppChrome.tsx`**, so the element never crosses the RSC
       boundary as `children`. **Every Clerk UI component renders inside
@@ -1799,7 +1808,7 @@ anything about SIZE.
       boundary just for being big, and the sidebar always is.
     - **The dev-mode instrument is exhausted:** a development build does not
       reproduce the residual, so it cannot name the element. Do not spend a
-      run on it. A dev run is still worth doing occasionally, because it
+      run on it; the production locator above names it instead. A dev run is still worth doing occasionally, because it
       reports defects a production build strips, such as missing `key`
       warnings.
     - **`e2e-public` proves nothing here:** it calls `expectHealthy` without a

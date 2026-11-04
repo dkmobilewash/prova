@@ -229,7 +229,9 @@ describe("and the viewer actually mounts it", () => {
     // that broke was the COMPARISON and a looser assertion would have passed it
     // too. `pageCount > 1` is also the correct bound on its own terms: a
     // one-sheet plan has nowhere to jump to.
-    expect(source).toContain("{pageCount !== null && pageCount > 1 && (");
+    // The full-screen shell shows its stepper on a one-sheet set too ("1 of 1",
+    // no picker — `SheetPager compact`), so the tab's bound is the right half.
+    expect(source).toContain("{slot(bar?.pager, pageCount !== null && (fill || pageCount > 1) && (");
   });
 
   it("no longer prints the position-only wording it replaced", () => {

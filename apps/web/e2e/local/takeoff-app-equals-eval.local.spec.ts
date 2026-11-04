@@ -106,7 +106,7 @@ test.describe("the app's candidate list against the eval's", () => {
       const find = page.locator('[data-takeoff="find-walls"]');
       await expect(find).toBeEnabled({ timeout: 60_000 });
       await find.click();
-      await expect(find).toHaveText("Find the walls", { timeout: 600_000 });
+      await expect(find).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 600_000 });
       await page.waitForTimeout(1500);
       const keyLines = await page.locator('[data-takeoff="key-line"]').count();
       const cautionNode = page.locator('[data-takeoff="found-walls"]');

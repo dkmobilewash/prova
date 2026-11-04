@@ -6,6 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
+import { openFinders } from "../lib/finders";
 
 /**
  * ── CEILINGS IN THE ROOMS PANEL, ON INVENTED DATA ──
@@ -133,6 +134,7 @@ test.describe("ceilings in the rooms panel", () => {
   test("every room row shows a ceiling type, a height and where they came from", async () => {
     await page.goto(`/takeoff/${jobId}`);
     await findTheWalls();
+    await openFinders(page);
     await page.locator('[data-takeoff="find-rooms"]').click();
     await expect(page.locator('[data-takeoff="rooms-panel"]')).toBeVisible({ timeout: 30_000 });
     const rows = await page.locator('[data-takeoff="room-row"]').count();
@@ -172,6 +174,7 @@ test.describe("ceilings in the rooms panel", () => {
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
     // Find the rooms again: the panel's job line reads the SAVED rooms, whatever is on screen.
     await findTheWalls();
+    await openFinders(page);
     await page.locator('[data-takeoff="find-rooms"]').click();
     const job = page.locator('[data-takeoff="ceiling-summary-job"]');
     await expect(job).toBeVisible({ timeout: 30_000 });

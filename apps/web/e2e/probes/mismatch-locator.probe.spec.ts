@@ -90,7 +90,7 @@ import { signInAs } from "../lib/signIn";
  * naming routes, which also means it cannot drift from the product: a page
  * added to the sidebar is probed without editing this file.
  */
-const PASSES = 2;
+const PASSES = 3;
 
 /**
  * Installed before any page script. Records every DOM mutation and every
@@ -98,9 +98,55 @@ const PASSES = 2;
  */
 const INSTRUMENT = () => {
   type Mut = { t: number; path: string; removed: number; added: number; boundary: boolean; gone: string; came: string };
-  const w = window as Window & { __mut?: Mut[]; __err?: { t: number; msg: string }[] };
+  type Stack = { t: number; msg: string; stack: string };
+  const w = window as Window & { __mut?: Mut[]; __err?: { t: number; msg: string }[]; __stacks?: Stack[] };
   w.__mut = [];
   w.__err = [];
+  w.__stacks = [];
+
+  // ── THE COMPONENT STACK, WHICH PRODUCTION REACT COMPUTES AND NEXT DROPS ──
+  //
+  // React 19 production still builds a component stack for every hydration
+  // error (`createCapturedValueAtFiber` -> `getStackByFiberInDevAndProd`) and
+  // hands it to the root's `onRecoverableError(error, { componentStack })`.
+  // Next 15.5's handler (`react-client-callbacks/on-recoverable-error.js`)
+  // takes only the first argument and calls `reportError`, so the stack never
+  // reaches `pageerror`. React assigns the handler with
+  // `this.onRecoverableError = …` inside `FiberRootNode`, a plain assignment,
+  // so a setter on Object.prototype sees it before hydration and can wrap it.
+  // An object literal (Next's hydrateRoot options) defines its own property
+  // and never reaches the setter.
+  Object.defineProperty(Object.prototype, "onRecoverableError", {
+    configurable: true,
+    get() {
+      return undefined;
+    },
+    set(this: object, fn: unknown) {
+      // FiberRootNode is built inside hydrateRoot, so this is hydration's start.
+      const row = document.getElementById("main")?.parentNode;
+      (w as unknown as { __row?: string[] }).__row?.push(
+        `${performance.now().toFixed(1)}ms ROOT CREATED, readyState=${document.readyState}` +
+          (row ? "" : ", no <main> parsed yet"),
+      );
+      const wrapped =
+        typeof fn === "function"
+          ? function (this: unknown, error: unknown, info?: { componentStack?: string }) {
+              w.__stacks?.push({
+                t: performance.now(),
+                msg: String((error as Error | null)?.message ?? error),
+                stack: String(info?.componentStack ?? ""),
+              });
+              return (fn as (...a: unknown[]) => unknown).call(this, error, info);
+            }
+          : fn;
+      Object.defineProperty(this, "onRecoverableError", {
+        value: wrapped,
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      });
+    },
+  });
 
   window.addEventListener("error", (event: ErrorEvent) => {
     w.__err?.push({ t: performance.now(), msg: String(event.message ?? event) });
@@ -194,9 +240,105 @@ const INSTRUMENT = () => {
     return false;
   };
 
+  const outline = (parent: Node) =>
+    Array.from(parent.childNodes)
+      .map((c) => (c.nodeType === 8 ? `<!--${(c as Comment).data.slice(0, 20)}-->` : describeNode(c)))
+      .join(" , ");
+  const rowLog: string[] = [];
+  (w as unknown as { __row?: string[] }).__row = rowLog;
+
+  // ── THE DOM AT THE INSTANT REACT DECIDES, NOT AT THE COMMIT ──
+  // `throwOnHydrationMismatch` builds its error with a bare `Error(...)`, a
+  // global lookup at call time, and it runs DURING the render — before the
+  // regeneration touches the DOM. A Proxy over Error (instanceof, `extends`
+  // and `new` all forward untouched) sees that call and can read the server's
+  // nodes as hydration had them, plus the JS stack that says which React
+  // function threw: claiming a node (beginWork) or finding one left over
+  // (completeWork).
+  const describeDeep = (el: Node, depth: number): string =>
+    Array.from(el.childNodes)
+      .map((c) => {
+        const self = c.nodeType === 8 ? `<!--${(c as Comment).data.slice(0, 20)}-->` : describeNode(c);
+        return depth > 0 && c.nodeType === 1 && c.childNodes.length > 0
+          ? `${self}[ ${describeDeep(c, depth - 1)} ]`
+          : self;
+      })
+      .join(" , ");
+  // Next replaces `self.__next_f.push` with its own callback once its runtime
+  // loads, so later rows never land in the array. Mirror every push.
+  const flightMirror: unknown[][] = [];
+  const flightArray: unknown[][] = [];
+  let nextPush: ((...items: unknown[][]) => unknown) | null = null;
+  Object.defineProperty(flightArray, "push", {
+    configurable: true,
+    get() {
+      return (...items: unknown[][]) => {
+        flightMirror.push(...items);
+        return nextPush ? nextPush(...items) : Array.prototype.push.apply(flightArray, items);
+      };
+    },
+    set(fn: (...items: unknown[][]) => unknown) {
+      nextPush = fn;
+    },
+  });
+  (window as unknown as { __next_f: unknown[][] }).__next_f = flightArray;
+  const throwLog: string[] = [];
+  (w as unknown as { __throw?: string[] }).__throw = throwLog;
+  const NativeError = window.Error;
+  window.Error = new Proxy(NativeError, {
+    apply(target, thisArg, args: unknown[]) {
+      const made = Reflect.apply(target, thisArg, args) as Error;
+      if (/#418\b|error #418/.test(String(args[0] ?? ""))) {
+        const main = document.getElementById("main");
+        // ── WHAT <main>'S CHILD WAS IN THE FLIGHT PAYLOAD, AND WHICH CLIENT
+        // MODULES WERE STILL UNLOADED ── A child that is still a lazy — a
+        // deferred row (`$L…` in child position) or an element blocked on a
+        // client module whose chunk has not executed — suspends the PARENT's
+        // beginWork, and React replays a suspended host fiber from the top.
+        const g = window as unknown as { webpackChunk_N_E?: [unknown[]][] };
+        const flight = flightMirror.filter((e) => e[0] === 1).map((e) => String(e[1])).join("");
+        const at = flight.indexOf('"id":"main"');
+        const childAt = at >= 0 ? flight.indexOf('"children":', at) : -1;
+        const loaded = new Set((g.webpackChunk_N_E ?? []).flatMap((e) => (e[0] as unknown[]).map(String)));
+        const pending: string[] = [];
+        for (const row of flight.split("\n")) {
+          const im = row.match(/^([0-9a-f]+):I\[(\d+),(\[[^\]]*\])/);
+          if (!im) continue;
+          const chunks = (JSON.parse(im[3]) as string[]).filter((_, i) => i % 2 === 0);
+          const missing = chunks.filter((c) => !loaded.has(c));
+          if (missing.length > 0) pending.push(`${im[1]}(${missing.join("+")})`);
+        }
+        throwLog.push(
+          `${performance.now().toFixed(1)}ms FLIGHT main.children=` +
+            (childAt >= 0 ? flight.slice(childAt + 11, childAt + 40) : "(main not in flight yet)") +
+            ` | flight ${flight.length} chars | I-rows with unloaded chunks: ${pending.join(" ") || "none"}`,
+        );
+        throwLog.push(
+          `${performance.now().toFixed(1)}ms #418 BUILT\n` +
+            `   main: ${main ? describeDeep(main, 2).slice(0, 1200) : "(none)"}\n` +
+            `   js:   ${String(made.stack ?? "").split("\n").slice(1, 9).map((l) => l.trim()).join(" | ")}`,
+        );
+      }
+      return made;
+    },
+  });
+
   new MutationObserver((records) => {
     const t = performance.now();
     for (const record of records) {
+      // ── THE ROW `<main>` SITS IN, OVER TIME ──
+      // Every change to it or to a comment directly in it, with what it held
+      // afterwards. React's streaming reveal ($RC marks a boundary "$~", $RV
+      // later swaps the template for content and marks it "$") lands here,
+      // and so does a regeneration — on one clock with the error.
+      const row = document.getElementById("main")?.parentNode;
+      if (row && (record.target === row || record.target.parentNode === row)) {
+        const what =
+          record.type === "characterData"
+            ? `comment "${record.oldValue}" -> "${(record.target as Comment).data}"`
+            : `-${record.removedNodes.length}/+${record.addedNodes.length}`;
+        rowLog.push(`${t.toFixed(1)}ms ${what} | ${outline(row)}`);
+      }
       if (record.type !== "childList") continue;
       // Only a real structural change. A single text node arriving is the
       // other error number and not this one.
@@ -222,6 +364,22 @@ const INSTRUMENT = () => {
       }
       if (!attached || inHead) continue;
 
+      // ── WHAT THE SERVER'S TREE LOOKED LIKE WHEN REACT TORE IT OUT ──
+      // A regeneration removes the server's nodes whole, and a removed node is
+      // detached but intact — so the row `<main>` sat in can still be read.
+      // NOT as hydration found it: streaming reveals may have landed between
+      // the mismatch and the removal. The row timeline above is for that.
+      for (const node of Array.from(record.removedNodes)) {
+        if (node.nodeType !== 1) continue;
+        const main = (node as Element).querySelector("main#main");
+        if (!main || !main.parentNode) continue;
+        (w as unknown as { __dump?: string[] }).__dump = [
+          `shell: ${outline(node)}`,
+          `row:   ${outline(main.parentNode)}`,
+          `main:  ${outline(main).slice(0, 300)}`,
+        ];
+      }
+
       w.__mut?.push({
         t,
         path: pathOf(record.target),
@@ -232,29 +390,68 @@ const INSTRUMENT = () => {
         came: Array.from(record.addedNodes).map(describeNode).join(" , ").slice(0, 160),
       });
     }
-  }).observe(document, { childList: true, subtree: true });
+  }).observe(document, { childList: true, subtree: true, characterData: true, characterDataOldValue: true });
 };
 
 type Readout = {
   errors: { t: number; msg: string }[];
+  stacks: { t: number; msg: string; stack: string }[];
+  dump: string[];
+  row: string[];
+  thrown: string[];
   muts: { t: number; path: string; removed: number; added: number; boundary: boolean; gone: string; came: string }[];
   hydrated: boolean;
 };
 
 async function readout(page: import("@playwright/test").Page): Promise<Readout> {
   return page.evaluate(() => {
-    const w = window as unknown as { __mut: Readout["muts"]; __err: Readout["errors"] };
+    const w = window as unknown as {
+      __mut: Readout["muts"];
+      __err: Readout["errors"];
+      __stacks: Readout["stacks"];
+      __dump?: string[];
+      __row?: string[];
+      __throw?: string[];
+    };
     // HYDRATION IS PROVED, not assumed. React cannot mismatch on a page it
     // never hydrated, and an un-hydrated load is a silent zero — the vacuous
     // green this whole directory exists to end.
     const hydrated = [...document.querySelectorAll("body *")]
       .slice(0, 400)
       .some((el) => Object.keys(el).some((k) => k.startsWith("__reactFiber$")));
-    return { errors: w.__err ?? [], muts: w.__mut ?? [], hydrated };
+    return { errors: w.__err ?? [], stacks: w.__stacks ?? [], dump: w.__dump ?? [], row: w.__row ?? [], thrown: w.__throw ?? [], muts: w.__mut ?? [], hydrated };
   }) as Promise<Readout>;
 }
 
 const IS_418 = (msg: string) => /Minified React error #418|error #418/.test(msg);
+
+/**
+ * Prints a production component stack readably. Host frames (`at div`) are
+ * already plain; a function component's frame is `at <mangled> (chunk:line:col)`,
+ * so the code around that column is printed too — a minified name says
+ * nothing, but the className strings and JSX next to it do.
+ */
+async function printStack(page: import("@playwright/test").Page, prefix: string, stack: string): Promise<void> {
+  const frames = stack.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 40);
+  const sources = new Map<string, string>();
+  for (const frame of frames) {
+    const at = frame.match(/^at (\S+)(?: \((.+):(\d+):(\d+)\))?/);
+    if (!at || !at[2]) {
+      console.log(`${prefix} ${frame}`);
+      continue;
+    }
+    const [, name, url, line, col] = at;
+    let snippet = "";
+    try {
+      if (!sources.has(url)) sources.set(url, await (await page.request.get(url)).text());
+      const text = (sources.get(url) ?? "").split("\n")[Number(line) - 1] ?? "";
+      snippet = text.slice(Math.max(0, Number(col) - 1), Number(col) + 200).replace(/\s+/g, " ");
+    } catch {
+      snippet = "(source unavailable)";
+    }
+    console.log(`${prefix} at ${name}  ${url.replace(/^.*\/_next\//, "_next/")}:${line}:${col}\n${prefix}     ${snippet}`);
+  }
+}
 
 /** Mutations within this many ms of the error are reported as its neighbours.
  *  #501 saw its burst "in the same millisecond"; 60 is generous enough to
@@ -274,12 +471,13 @@ test.describe("#510: name the mismatched element", () => {
     // The nav's own destinations, collected exactly as the journey collects
     // them — groups opened first, because a closed group hides its links.
     await page.goto("/dashboard", { waitUntil: "load" });
-    const nav = page.getByRole("navigation", { name: "Main" });
-    for (let guard = 0; guard < 20; guard += 1) {
-      const closed = nav.locator('button[aria-expanded="false"]');
-      if ((await closed.count()) === 0) break;
-      await closed.first().click();
-    }
+    // Concept G (2026-10-10) moved every destination into the avatar menu's
+    // "All pages" dialog; read them there, exactly as journey.spec.ts step 10
+    // does. This asked the old "Main" rail and found 0 links on its first run.
+    await page.getByRole("button", { name: /^Your menu/ }).click();
+    await page.getByRole("button", { name: "All pages" }).click();
+    const nav = page.getByRole("dialog", { name: "All pages" });
+    await expect(nav).toBeVisible();
     const hrefs = await nav.locator('a[href^="/"]').evaluateAll((anchors) =>
       anchors.map((a) => (a as HTMLAnchorElement).getAttribute("href") ?? ""),
     );
@@ -337,6 +535,13 @@ test.describe("#510: name the mismatched element", () => {
             (injected.length > 0 ? ` — THIRD-PARTY INJECTION NEARBY: ${injected.join(" ; ")}` : "");
           hits.push(line);
           console.log(`LOC ${line}`);
+          const stacks = data.stacks.filter((s) => IS_418(s.msg));
+          console.log(`LOC    component stacks caught: ${stacks.length}`);
+          for (const d of data.dump) console.log(`LOC    SERVER TREE ${d}`);
+          console.log(`LOC    ROW TIMELINE (error at ${error.t.toFixed(1)}ms)`);
+          for (const r of data.row.slice(0, 24)) console.log(`LOC      ${r}`);
+          for (const r of data.thrown) console.log(`LOC    ${r.replace(/\n/g, "\nLOC    ")}`);
+          for (const s of stacks.slice(0, 2)) await printStack(page, "LOC    STACK", s.stack);
           // The suspects first, then the boundary noise, so the answer is not
           // buried in the thing #501 mistook for it.
           for (const m of real.slice(0, 6)) {
@@ -388,6 +593,8 @@ test.describe("#510: name the mismatched element", () => {
 
     let caught = 0;
     let named = 0;
+    let stacked = 0;
+    let built = 0;
     for (let i = 0; i < 3; i += 1) {
       await page.goto("/dashboard", { waitUntil: "load" });
       await page.waitForTimeout(1200);
@@ -400,6 +607,11 @@ test.describe("#510: name the mismatched element", () => {
         .filter((m) => Math.abs(m.t - error.t) <= WINDOW_MS && !m.boundary && m.removed > 0)
         .sort((a, b) => b.removed - a.removed || Math.abs(a.t - error.t) - Math.abs(b.t - error.t));
       console.log(`LOC CONTROL load ${i + 1}: caught #418, ${near.length} non-boundary mutations`);
+      const stacks = data.stacks.filter((s) => IS_418(s.msg));
+      if (stacks.length > 0) stacked += 1;
+      if (data.thrown.length > 0) built += 1;
+      for (const r of data.thrown) console.log(`LOC    CONTROL ${r.replace(/\n/g, "\nLOC    CONTROL ")}`);
+      for (const s of stacks.slice(0, 1)) await printStack(page, "LOC    CONTROL STACK", s.stack);
       for (const m of near.slice(0, 4)) {
         console.log(
           `LOC    +${(m.t - error.t).toFixed(1)}ms  -${m.removed}/+${m.added}  in ${m.path}  GONE: ${m.gone || "(none)"}`,
@@ -410,7 +622,9 @@ test.describe("#510: name the mismatched element", () => {
       if (near.some((m) => /(^|> )body/.test(m.path))) named += 1;
     }
 
-    console.log(`LOC === CONTROL caught ${caught}/3, named the container on ${named}`);
+    console.log(`LOC === CONTROL caught ${caught}/3, named the container on ${named}, component stack on ${stacked}`);
+    expect(stacked, "the control mismatched but no component stack reached the instrument").toBe(caught);
+    expect(built, "the control mismatched but the Error proxy never saw #418 being built").toBe(caught);
     expect(caught, "the control never produced a mismatch — the harness is broken, not the app").toBeGreaterThan(0);
     expect(named, "the control mismatched but the locator could not name the container").toBeGreaterThan(0);
   });

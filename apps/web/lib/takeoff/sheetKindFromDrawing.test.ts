@@ -149,8 +149,15 @@ describe("and the viewer actually shows it", () => {
     // against an earlier version of this file, because the guard and the value
     // were the same two names and a census could not tell them apart.
     expect(region, "the caution is not guarded by whether there IS one").toMatch(
-      /\{\s*sheetCaution\s*&&\s*found\.length > 0\s*&&\s*\(/,
+      // `!fill` since the full-screen shell, which folds the same caution
+      // into a banner above its layers (asserted next).
+      /\{\s*sheetCaution\s*&&\s*found\.length > 0\s*&&\s*(!fill\s*&&\s*)?\(/,
     );
+    // AND THE SHELL'S BANNER, under the same guard, printing the same value.
+    const bannerAt = text.indexOf("sheetCaution && found.length > 0 && fill");
+    expect(bannerAt, "the shell's caution banner is gone").toBeGreaterThan(0);
+    const banner = text.slice(bannerAt);
+    expect(banner.slice(0, 900), "the shell's banner never prints the caution").toMatch(/\{\s*sheetCaution\s*\}/);
     expect(region, "the caution is never actually printed").toMatch(/\{\s*sheetCaution\s*\}/);
   });
 
