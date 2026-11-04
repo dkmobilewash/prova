@@ -2875,7 +2875,7 @@ through `detectForSheet` to every finder call, whichever branch the sheet
 takes, so answer-key mode still collects pairings on multi-view sheets.
 
 **App = eval, proved in a browser rather than asserted.**
-`e2e/specs/takeoff-app-equals-eval.spec.ts` drives the real app on the real
+`e2e/local/takeoff-app-equals-eval.local.spec.ts` drives the real app on the real
 sheets on a throwaway stack — serves each PDF through the route stub, sets
 the scale by two clicks, finds the walls, and writes what the panel drew
 and what the finder saw to `APP_EQ_OUT`; `realplan/zzAppEquals.eval.ts`

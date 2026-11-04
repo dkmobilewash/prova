@@ -13,7 +13,7 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
  * SKIPS unless `REAL_SET_PDF` names a plan set outside the repository and
  * `REAL_SET_PAGE` its floor-plan page; one page is pulled out with pdf-lib
  * into `REAL_SHEET_OUT` (also outside) and served in place of the upload.
- * Same harness as `takeoff-rooms-real.spec.ts`.
+ * Same harness as `takeoff-rooms-real.local.spec.ts`.
  *
  * With `TAKEOFF_WALL_MODEL` naming a TRAINED model (outside the repository)
  * the first screenshot is the real product behaviour: what the model demotes
