@@ -1487,9 +1487,35 @@ export function keptPlanViews(measured: readonly ViewWalls[]): { kept: ViewWalls
     const p = primaryView(measured);
     return { kept: p.primary === null ? [] : [p.primary], others: p.others };
   }
+  // ── SEVERAL UNITS ON ONE SHEET ARE SEVERAL FLOOR PLANS ──
+  //
+  // ELEVEN03 A3.1 draws three units' plans — CLEAR FLOORPLAN_D3-HC, _C1-HC and
+  // _B1-HC — and none names a level, so all three fell into the one "" group
+  // and two of them were dropped as the same floor drawn twice. Floor plans
+  // with no level and DIFFERENT subjects are different drawings, so on such a
+  // sheet each subject is its own group, and a level-less plan of another kind
+  // (TRANSITION PLAN_D3-HC, a unit's floor drawn again for its flooring) joins
+  // the floor plan it shares the most words with. A sheet with one level-less
+  // floor plan, or none, groups exactly as it always did.
+  const subjectOf = new Map<ViewWalls, string>();
+  if (!noFloorPlan) {
+    const levelless = grouped.filter((m) => planLevel(m.view.name) === null);
+    const plans = levelless.filter((m) => viewClass(m.view.name).kind === "floor-plan");
+    const subjects = [...new Set(plans.map((m) => planSubject(m.view.name)))];
+    if (subjects.length > 1) {
+      const words = (s: string) => new Set(s.split(" ").filter(Boolean));
+      for (const m of plans) subjectOf.set(m, planSubject(m.view.name));
+      for (const m of levelless.filter((v) => !plans.includes(v))) {
+        const mine = words(planSubject(m.view.name));
+        const shared = (s: string) => [...words(s)].filter((w) => mine.has(w)).length;
+        subjectOf.set(m, subjects.reduce((best, s) => (shared(s) > shared(best) ? s : best), subjects[0]!));
+      }
+    }
+  }
   const byLevel = new Map<string, ViewWalls[]>();
   for (const m of grouped) {
-    const level = planLevel(m.view.name) ?? (noFloorPlan ? `subject:${planSubject(m.view.name)}` : "");
+    const subject = subjectOf.get(m);
+    const level = planLevel(m.view.name) ?? (noFloorPlan ? `subject:${planSubject(m.view.name)}` : subject === undefined ? "" : `subject:${subject}`);
     byLevel.set(level, [...(byLevel.get(level) ?? []), m]);
   }
   const kept: ViewWalls[] = [];

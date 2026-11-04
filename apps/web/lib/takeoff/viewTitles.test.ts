@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { excludedViews, keptPlanViews, sheetDrawings, type ViewWalls } from "./sheetViews";
 import { isLevelPlan, planLevel, planSubject, viewClass, viewTitles } from "./viewTitles";
 import type { StrokeSegment } from "./wallVectors";
+import { viewKind } from "./viewKind";
+import { captionWords } from "./sheetSuitability";
 
 /** An invented sheet, 2592pt wide: notes at 8pt, two big ruled titles, one big unruled room name. */
 const W = 2592;
@@ -156,5 +158,41 @@ describe("a level written as a word", () => {
     expect(planLevel("Second Floor Plan")).not.toBe(planLevel("First Floor Plan"));
     expect(planLevel("Third Floor Mezzanine Plan")).toBe("3 MEZZANINE");
     expect(isLevelPlan("Second Floor Plan")).toBe(true);
+  });
+});
+
+describe("a caption joined with underscores is still read as words", () => {
+  // ELEVEN03's unit sheets, as their CAD export captions them. Each read
+  // "the caption does not say what kind of drawing this is", so view triage
+  // kept no drawing on the sheet.
+  it("FLOORPLAN and PLAN_ are a floor plan and a plan", () => {
+    expect(viewKind("UNIT FLOORPLAN_B3-M").kind).toBe("plan");
+    expect(viewClass("UNIT FLOORPLAN_B3-M").kind).toBe("floor-plan");
+    expect(viewKind("TRANSITION PLAN_C1-A").kind).toBe("plan");
+  });
+  it("the level after an underscore is the level", () => {
+    expect(planLevel("TRASHROOM FLOORPLAN_LEVEL 5")).toBe(planLevel("TRASHROOM FLOOR PLAN LEVEL 5"));
+    expect(planLevel("TRASHROOM FLOORPLAN_LEVEL 5")).not.toBeNull();
+  });
+  it("what is not a plan stays not a plan", () => {
+    expect(viewKind("UNIT C1-HC BATHROOM 2_ELEVATION 4").kind).toBe("not-a-plan");
+    expect(captionWords("FLOORPLANS")).toBe("FLOOR PLANS");
+    expect(captionWords("FLOORPLANNING")).toBe("FLOORPLANNING");
+  });
+});
+
+describe("several units' floor plans on one sheet", () => {
+  const vw = (name: string, lengthFeet: number) => ({ view: { name }, lengthFeet }) as unknown as ViewWalls;
+  it("keeps every unit, and not the unit's transition plan as well", () => {
+    // ELEVEN03 A3.1 and A3.8, as captioned.
+    const units = keptPlanViews([vw("CLEAR FLOORPLAN_D3-HC", 672), vw("CLEAR FLOORPLAN_C1-HC", 550), vw("CLEAR FLOORPLAN_B1-HC", 263)]);
+    expect(units.kept.map((k) => k.view.name)).toEqual(["CLEAR FLOORPLAN_D3-HC", "CLEAR FLOORPLAN_C1-HC", "CLEAR FLOORPLAN_B1-HC"]);
+    const withTransition = keptPlanViews([vw("UNIT FLOORPLAN_C3", 665), vw("TRANSITION PLAN_C3", 410)]);
+    expect(withTransition.kept.map((k) => k.view.name)).toEqual(["UNIT FLOORPLAN_C3"]);
+    const two = keptPlanViews([vw("UNIT FLOORPLAN_D3-HC", 981), vw("TRANSITION PLAN_D3-HC", 475), vw("UNIT FLOORPLAN_C1-HC", 461), vw("TRANSITION PLAN_C1-HC", 405)]);
+    expect(two.kept.map((k) => k.view.name)).toEqual(["UNIT FLOORPLAN_D3-HC", "UNIT FLOORPLAN_C1-HC"]);
+  });
+  it("a floor plan beside a dimension plan of the same thing is still one floor", () => {
+    expect(keptPlanViews([vw("DIMENSION PLAN - WAREHOUSE", 50), vw("FLOOR PLAN - WAREHOUSE", 40)]).kept).toHaveLength(1);
   });
 });

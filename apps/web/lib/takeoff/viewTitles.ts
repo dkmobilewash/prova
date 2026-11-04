@@ -1,4 +1,4 @@
-import { takeoffRank } from "./sheetSuitability";
+import { captionWords, takeoffRank } from "./sheetSuitability";
 import type { StrokeSegment } from "./wallVectors";
 
 /**
@@ -89,7 +89,8 @@ export type ViewClass =
  */
 const TEXT_BLOCK = /\b(NOTES?|LEGENDS?|KEY ?NOTES?|KEYED NOTES?|TYPES|ABBREVIATIONS?|SYMBOLS?|SCHEDULES?|SCHED\.?|INDEX|SPECIFICATIONS?|TABLE|MATRIX)\b/i;
 
-export function viewClass(title: string): { kind: ViewClass; why: string } {
+export function viewClass(caption: string): { kind: ViewClass; why: string } {
+  const title = captionWords(caption);
   if (TEXT_BLOCK.test(title)) return { kind: "text-block", why: "a heading over notes, a legend or a table" };
   const rank = takeoffRank(null, title);
   // "PENTHOUSE FLOOR (P2)": a level and the word FLOOR with no PLAN after it.
@@ -237,7 +238,7 @@ const ORDINAL_WORDS: Record<string, string> = {
 };
 const ORDINAL_WORD = new RegExp(`\\b(${Object.keys(ORDINAL_WORDS).join("|")})\\b`, "g");
 export function planLevel(title: string): string | null {
-  const up = title.toUpperCase().replace(ORDINAL_WORD, (w) => ORDINAL_WORDS[w] ?? w);
+  const up = captionWords(title).toUpperCase().replace(ORDINAL_WORD, (w) => ORDINAL_WORDS[w] ?? w);
   const num = LEVEL_AFTER_KEYWORD.exec(up) ?? LEVEL_BEFORE_KEYWORD.exec(up);
   const name = LEVEL_NAME.exec(up);
   const number = num === null ? null : (() => {
@@ -264,7 +265,7 @@ export function planLevel(title: string): string | null {
  */
 const SUBJECT_WORDS = /\b(ENLARGED|SLOPING|PLANS?|FLOOR|DIMENSIONED|DIMENSIONS?|PARTITIONS?|TYPICAL|TYP)\b/g;
 export function planSubject(title: string): string {
-  return title
+  return captionWords(title)
     .toUpperCase()
     .replace(/^\s*\d{1,2}\s*[-.:]?\s*/, "")
     .replace(SUBJECT_WORDS, " ")
@@ -272,6 +273,7 @@ export function planSubject(title: string): string {
     .trim();
 }
 
-export function isLevelPlan(title: string): boolean {
+export function isLevelPlan(caption: string): boolean {
+  const title = captionWords(caption);
   return planLevel(title) !== null && /\bFLOOR\b/i.test(title) && !/\b(ELEV|ELEVATION|SECTION|SECT|DETAIL|DET|SCHEDULE|FRAMING|FINISH|CEILING|RCP|DEMO|ROOF|NOTES?|LEGEND)\b/i.test(title);
 }
