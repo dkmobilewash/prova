@@ -247,6 +247,41 @@ const INSTRUMENT = () => {
   const rowLog: string[] = [];
   (w as unknown as { __row?: string[] }).__row = rowLog;
 
+  // ── THE DOM AT THE INSTANT REACT DECIDES, NOT AT THE COMMIT ──
+  // `throwOnHydrationMismatch` builds its error with a bare `Error(...)`, a
+  // global lookup at call time, and it runs DURING the render — before the
+  // regeneration touches the DOM. A Proxy over Error (instanceof, `extends`
+  // and `new` all forward untouched) sees that call and can read the server's
+  // nodes as hydration had them, plus the JS stack that says which React
+  // function threw: claiming a node (beginWork) or finding one left over
+  // (completeWork).
+  const describeDeep = (el: Node, depth: number): string =>
+    Array.from(el.childNodes)
+      .map((c) => {
+        const self = c.nodeType === 8 ? `<!--${(c as Comment).data.slice(0, 20)}-->` : describeNode(c);
+        return depth > 0 && c.nodeType === 1 && c.childNodes.length > 0
+          ? `${self}[ ${describeDeep(c, depth - 1)} ]`
+          : self;
+      })
+      .join(" , ");
+  const throwLog: string[] = [];
+  (w as unknown as { __throw?: string[] }).__throw = throwLog;
+  const NativeError = window.Error;
+  window.Error = new Proxy(NativeError, {
+    apply(target, thisArg, args: unknown[]) {
+      const made = Reflect.apply(target, thisArg, args) as Error;
+      if (/#418\b|error #418/.test(String(args[0] ?? ""))) {
+        const main = document.getElementById("main");
+        throwLog.push(
+          `${performance.now().toFixed(1)}ms #418 BUILT\n` +
+            `   main: ${main ? describeDeep(main, 2).slice(0, 1200) : "(none)"}\n` +
+            `   js:   ${String(made.stack ?? "").split("\n").slice(1, 9).map((l) => l.trim()).join(" | ")}`,
+        );
+      }
+      return made;
+    },
+  });
+
   new MutationObserver((records) => {
     const t = performance.now();
     for (const record of records) {
@@ -322,6 +357,7 @@ type Readout = {
   stacks: { t: number; msg: string; stack: string }[];
   dump: string[];
   row: string[];
+  thrown: string[];
   muts: { t: number; path: string; removed: number; added: number; boundary: boolean; gone: string; came: string }[];
   hydrated: boolean;
 };
@@ -334,6 +370,7 @@ async function readout(page: import("@playwright/test").Page): Promise<Readout> 
       __stacks: Readout["stacks"];
       __dump?: string[];
       __row?: string[];
+      __throw?: string[];
     };
     // HYDRATION IS PROVED, not assumed. React cannot mismatch on a page it
     // never hydrated, and an un-hydrated load is a silent zero — the vacuous
@@ -341,7 +378,7 @@ async function readout(page: import("@playwright/test").Page): Promise<Readout> 
     const hydrated = [...document.querySelectorAll("body *")]
       .slice(0, 400)
       .some((el) => Object.keys(el).some((k) => k.startsWith("__reactFiber$")));
-    return { errors: w.__err ?? [], stacks: w.__stacks ?? [], dump: w.__dump ?? [], row: w.__row ?? [], muts: w.__mut ?? [], hydrated };
+    return { errors: w.__err ?? [], stacks: w.__stacks ?? [], dump: w.__dump ?? [], row: w.__row ?? [], thrown: w.__throw ?? [], muts: w.__mut ?? [], hydrated };
   }) as Promise<Readout>;
 }
 
@@ -462,6 +499,7 @@ test.describe("#510: name the mismatched element", () => {
           for (const d of data.dump) console.log(`LOC    SERVER TREE ${d}`);
           console.log(`LOC    ROW TIMELINE (error at ${error.t.toFixed(1)}ms)`);
           for (const r of data.row.slice(0, 24)) console.log(`LOC      ${r}`);
+          for (const r of data.thrown) console.log(`LOC    ${r.replace(/\n/g, "\nLOC    ")}`);
           for (const s of stacks.slice(0, 2)) await printStack(page, "LOC    STACK", s.stack);
           // The suspects first, then the boundary noise, so the answer is not
           // buried in the thing #501 mistook for it.
@@ -515,6 +553,7 @@ test.describe("#510: name the mismatched element", () => {
     let caught = 0;
     let named = 0;
     let stacked = 0;
+    let built = 0;
     for (let i = 0; i < 3; i += 1) {
       await page.goto("/dashboard", { waitUntil: "load" });
       await page.waitForTimeout(1200);
@@ -529,6 +568,8 @@ test.describe("#510: name the mismatched element", () => {
       console.log(`LOC CONTROL load ${i + 1}: caught #418, ${near.length} non-boundary mutations`);
       const stacks = data.stacks.filter((s) => IS_418(s.msg));
       if (stacks.length > 0) stacked += 1;
+      if (data.thrown.length > 0) built += 1;
+      for (const r of data.thrown) console.log(`LOC    CONTROL ${r.replace(/\n/g, "\nLOC    CONTROL ")}`);
       for (const s of stacks.slice(0, 1)) await printStack(page, "LOC    CONTROL STACK", s.stack);
       for (const m of near.slice(0, 4)) {
         console.log(
@@ -542,6 +583,7 @@ test.describe("#510: name the mismatched element", () => {
 
     console.log(`LOC === CONTROL caught ${caught}/3, named the container on ${named}, component stack on ${stacked}`);
     expect(stacked, "the control mismatched but no component stack reached the instrument").toBe(caught);
+    expect(built, "the control mismatched but the Error proxy never saw #418 being built").toBe(caught);
     expect(caught, "the control never produced a mismatch — the harness is broken, not the app").toBeGreaterThan(0);
     expect(named, "the control mismatched but the locator could not name the container").toBeGreaterThan(0);
   });
