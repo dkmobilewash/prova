@@ -264,6 +264,24 @@ const INSTRUMENT = () => {
           : self;
       })
       .join(" , ");
+  // Next replaces `self.__next_f.push` with its own callback once its runtime
+  // loads, so later rows never land in the array. Mirror every push.
+  const flightMirror: unknown[][] = [];
+  const flightArray: unknown[][] = [];
+  let nextPush: ((...items: unknown[][]) => unknown) | null = null;
+  Object.defineProperty(flightArray, "push", {
+    configurable: true,
+    get() {
+      return (...items: unknown[][]) => {
+        flightMirror.push(...items);
+        return nextPush ? nextPush(...items) : Array.prototype.push.apply(flightArray, items);
+      };
+    },
+    set(fn: (...items: unknown[][]) => unknown) {
+      nextPush = fn;
+    },
+  });
+  (window as unknown as { __next_f: unknown[][] }).__next_f = flightArray;
   const throwLog: string[] = [];
   (w as unknown as { __throw?: string[] }).__throw = throwLog;
   const NativeError = window.Error;
@@ -272,6 +290,29 @@ const INSTRUMENT = () => {
       const made = Reflect.apply(target, thisArg, args) as Error;
       if (/#418\b|error #418/.test(String(args[0] ?? ""))) {
         const main = document.getElementById("main");
+        // ── WHAT <main>'S CHILD WAS IN THE FLIGHT PAYLOAD, AND WHICH CLIENT
+        // MODULES WERE STILL UNLOADED ── A child that is still a lazy — a
+        // deferred row (`$L…` in child position) or an element blocked on a
+        // client module whose chunk has not executed — suspends the PARENT's
+        // beginWork, and React replays a suspended host fiber from the top.
+        const g = window as unknown as { webpackChunk_N_E?: [unknown[]][] };
+        const flight = flightMirror.filter((e) => e[0] === 1).map((e) => String(e[1])).join("");
+        const at = flight.indexOf('"id":"main"');
+        const childAt = at >= 0 ? flight.indexOf('"children":', at) : -1;
+        const loaded = new Set((g.webpackChunk_N_E ?? []).flatMap((e) => (e[0] as unknown[]).map(String)));
+        const pending: string[] = [];
+        for (const row of flight.split("\n")) {
+          const im = row.match(/^([0-9a-f]+):I\[(\d+),(\[[^\]]*\])/);
+          if (!im) continue;
+          const chunks = (JSON.parse(im[3]) as string[]).filter((_, i) => i % 2 === 0);
+          const missing = chunks.filter((c) => !loaded.has(c));
+          if (missing.length > 0) pending.push(`${im[1]}(${missing.join("+")})`);
+        }
+        throwLog.push(
+          `${performance.now().toFixed(1)}ms FLIGHT main.children=` +
+            (childAt >= 0 ? flight.slice(childAt + 11, childAt + 40) : "(main not in flight yet)") +
+            ` | flight ${flight.length} chars | I-rows with unloaded chunks: ${pending.join(" ") || "none"}`,
+        );
         throwLog.push(
           `${performance.now().toFixed(1)}ms #418 BUILT\n` +
             `   main: ${main ? describeDeep(main, 2).slice(0, 1200) : "(none)"}\n` +
