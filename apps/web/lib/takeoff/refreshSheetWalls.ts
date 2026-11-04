@@ -1,6 +1,6 @@
 import { prisma } from "@prova/db";
 import { wallItemsForSheet } from "@/lib/plan-ingest/wallItems";
-import { isHeldRun } from "./estimateHold";
+import { isHeldRun, PERSON_LABELS } from "./estimateHold";
 import { detectWallsForCalibration, type DetectTarget } from "./detectWallsForCalibration";
 
 /**
@@ -21,8 +21,10 @@ import { detectWallsForCalibration, type DetectTarget } from "./detectWallsForCa
  * The re-detection used to write without the hold, so a work area turned every
  * "to confirm" run into an untyped one on the estimate (Baker A101: 29 ft to
  * confirm became 0, Chrome round 5). It now holds what the model doubts, as the
- * whole-set run does, and a run already on the sheet before the replace goes
- * back on the item and label it had: to confirm, dropped, kept, or moved by hand.
+ * whole-set run does, and a run a PERSON decided (kept or dropped) goes back on
+ * the item and label they gave it. Every other label is the model's, read again:
+ * keeping those too kept the untyped labels the old bug wrote, so Baker A101
+ * showed 0 to confirm however often it was found again (Chrome round 6).
  */
 type Line = { x1: number; y1: number; x2: number; y2: number };
 const lineOf = (m: { xs: number[]; ys: number[] }): Line => ({ x1: m.xs[0] ?? NaN, y1: m.ys[0] ?? NaN, x2: m.xs[1] ?? NaN, y2: m.ys[1] ?? NaN });
@@ -46,7 +48,7 @@ export async function refreshSheetWalls(target: DetectTarget & { jobId: string; 
   await wallItemsForSheet({ planId: target.planId, companyId: target.companyId, jobId: target.jobId, pageNumber: target.pageNumber, userId: target.userId, held });
   const after = await prisma.takeoffMeasurement.findMany({ where: detected, select: { id: true, xs: true, ys: true, itemId: true, label: true } });
   for (const row of after) {
-    const was = before.find((old) => isHeldRun(lineOf(old), [lineOf(row)]));
+    const was = before.find((old) => old.label !== null && PERSON_LABELS.includes(old.label) && isHeldRun(lineOf(old), [lineOf(row)]));
     if (was && (was.itemId !== row.itemId || was.label !== row.label)) {
       await prisma.takeoffMeasurement.update({ where: { id: row.id }, data: { itemId: was.itemId, label: was.label } });
     }

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { prisma } from "@prova/db";
 import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
-import { DROPPED_ITEM, HELD_ITEM, HELD_LABEL } from "@/lib/takeoff/estimateHold";
+import { DROPPED_ITEM, HELD_ITEM, HELD_LABEL, KEPT_LABEL } from "@/lib/takeoff/estimateHold";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 
 const context = { company: { id: "" }, id: "", role: "OWNER" as string, jobFunction: null as string | null };
@@ -66,7 +66,7 @@ describe("a review decision moves one run", () => {
     expect(await confirmHeldWall(jobId, held[0]!)).toEqual({ ok: true });
     expect(await lines()).toEqual([]);
     const moved = await prisma.takeoffMeasurement.findUniqueOrThrow({ where: { id: held[0]! }, include: { item: true } });
-    expect([moved.label, moved.item?.name]).toEqual(["wall, untyped", UNTYPED_ITEM]);
+    expect([moved.label, moved.item?.name]).toEqual([KEPT_LABEL, UNTYPED_ITEM]);
   });
   it("ON A SENT ONE, only the walls' line moves: the finish and count lines stay as they were sent", async () => {
     await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, jobId));

@@ -10,6 +10,7 @@ import { effectiveSheetNumber, effectiveTitle, type SheetRow } from "./sheetInde
 import { levelFromTitle } from "./sheetLevel";
 import { sheetIndexFor } from "./sheetIndexQuery";
 import { roomsForSheet, type RoomsOutcome } from "./rooms";
+import { refreshSheetWalls, type RefreshOutcome } from "@/lib/takeoff/refreshSheetWalls";
 import type { StageCtx, StageWork } from "./stages";
 
 /**
@@ -95,6 +96,13 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
     const reason = out.get(sheet.pageNumber);
     return reason === null || reason === "already found";
   });
+  // A sheet that already has walls is still the same level as the one kept:
+  // Baker A100's scale save stored its walls, and "already found" hid that
+  // A101 is the sheet that counts (Chrome round 6).
+  const open = (sheet: WallsSheet) => {
+    const reason = out.get(sheet.pageNumber);
+    return reason === null || reason === "already found";
+  };
   const named = new Map<WallsSheet, string>();
   for (const sheet of candidates) {
     const level = levelFromTitle(sheet.title, "PLAN");
@@ -131,7 +139,7 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
     if (whole.length > 0) {
       const keep = [...whole].sort(preferWholeFloor)[0];
       for (const sheet of group) {
-        if (sheet !== keep && out.get(sheet.pageNumber) === null) out.set(sheet.pageNumber, `same level as ${nameOf(keep)}`);
+        if (sheet !== keep && open(sheet)) out.set(sheet.pageNumber, `same level as ${nameOf(keep)}`);
       }
       continue;
     }
@@ -145,7 +153,7 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
       const keep = [...part].sort(preferWholeFloor)[0];
       kept.push(keep);
       for (const sheet of part) {
-        if (sheet !== keep && out.get(sheet.pageNumber) === null) out.set(sheet.pageNumber, `same level as ${nameOf(keep)}`);
+        if (sheet !== keep && open(sheet)) out.set(sheet.pageNumber, `same level as ${nameOf(keep)}`);
       }
     }
     if (kept.length === 0) {
@@ -154,12 +162,18 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
     }
     const first = [...kept].sort(preferWholeFloor)[0];
     for (const sheet of group) {
-      if (!kept.includes(sheet) && areaOfTitle(sheet.title) === null && out.get(sheet.pageNumber) === null) {
+      if (!kept.includes(sheet) && areaOfTitle(sheet.title) === null && open(sheet)) {
         out.set(sheet.pageNumber, `same level as ${nameOf(first)}`);
       }
     }
   }
   return out;
+}
+
+/** The sheets a run does: every counted floor plan, a found one again, so stale labels are read again (`wallsWork`). */
+export function wallsTaskPages(sheets: readonly WallsSheet[]): number[] {
+  const plan = wallsPlan(sheets);
+  return sheets.filter((sheet) => plan.get(sheet.pageNumber) === null || plan.get(sheet.pageNumber) === "already found").map((sheet) => sheet.pageNumber);
 }
 
 function nameOf(sheet: WallsSheet): string {
@@ -280,13 +294,31 @@ export type WallsDeps = {
   findRooms?: (input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null; boundary?: DetectedBoundary }) => Promise<RoomsOutcome>;
   /** The sheet's walls onto the job, an item per wall type; `wallItemsForSheet` unless a test says otherwise. */
   writeWallItems?: (input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null; held?: readonly { x1: number; y1: number; x2: number; y2: number }[] }) => Promise<WallItemsOutcome>;
+  /** A sheet found before, found again; `refreshSheetWalls` unless a test says otherwise. */
+  refresh?: (target: DetectTarget & { jobId: string; userId: string | null }) => Promise<RefreshOutcome>;
 };
 
 const realDeps: WallsDeps = {
   detect: (target) => detectWallsForCalibration(target),
   findRooms: (input) => roomsForSheet(input),
   writeWallItems: (input) => wallItemsForSheet(input),
+  refresh: (target) => refreshSheetWalls(target),
 };
+
+/** What a re-run says about a sheet it found again. */
+export function refreshNoteFor(kind: RefreshOutcome["kind"]): string {
+  switch (kind) {
+    case "replaced":
+      return "found again; to confirm read again from the wall model, kept and dropped left as decided";
+    case "emptied":
+      return "found again: no walls left";
+    case "posted-left-alone":
+      return "already found; walls already sent to the estimate are left alone";
+    case "proposals-only":
+    case "failed":
+      return "already found";
+  }
+}
 
 /** The note a task carries once its rooms were looked for, after the walls' own note. */
 export function roomsNoteFor(outcome: RoomsOutcome): string {
@@ -346,11 +378,19 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       await note(task.id, "no scale");
       return { ok: true };
     }
+    const types = await loadWallTypes();
+    // ── A RE-RUN READS A SHEET ALREADY FOUND AGAIN ──
+    // Its stored labels were what the run wrote then, and a bug can have
+    // written them: Baker A101 kept 0 to confirm through every re-run, because
+    // the run skipped a sheet with walls (Chrome round 6). So the sheet is
+    // found again and every label a person did not set is read from the model.
     if (page.wallProposals.some((p) => p.calibrationId === calibration.id)) {
-      await note(task.id, "already found");
+      const refresh = deps.refresh ?? realDeps.refresh!;
+      const again = await refresh({ pageId: page.id, calibrationId: calibration.id, planId: ctx.planId, companyId: ctx.companyId, pageNumber: task.pageNumber, feetPerUnit, wallTypes: types, pairWithThicknesses: false, jobId: ctx.jobId, userId: ctx.startedByUserId });
+      if (again.kind === "failed") return { ok: false, error: "Finding the walls on this sheet again failed. Retry it." };
+      await note(task.id, refreshNoteFor(again.kind));
       return { ok: true };
     }
-    const types = await loadWallTypes();
     let boundary: DetectedBoundary | undefined;
     const outcome = await deps.detect({
       onBoundary: (seen) => {

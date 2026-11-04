@@ -8,7 +8,7 @@ import { claimPorts, closeIfSettled, ingestViewOf } from "@/lib/plan-ingest/clai
 import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
 import { runIngest, MAX_ATTEMPTS, type IngestView } from "@/lib/plan-ingest/runner";
 import { isRunnableStage, stageWork, STAGE_SPENDS } from "@/lib/plan-ingest/stages";
-import { wallsPlan, wallsSheetsFor } from "@/lib/plan-ingest/walls";
+import { wallsSheetsFor, wallsTaskPages } from "@/lib/plan-ingest/walls";
 import { scannedPageNumbers } from "@/lib/plan-ingest/raster";
 import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "./shared";
 
@@ -152,8 +152,7 @@ export async function startPlanIngest(planId: string, stage: PlanIngestStage): P
       return { ok: false, error: "Finding walls across the whole set is off for your company. The account owner can turn it on under Settings." };
     }
     const sheets = await wallsSheetsFor(planId, companyId);
-    const plan = wallsPlan(sheets);
-    pageNumbers = sheets.filter((sheet) => plan.get(sheet.pageNumber) === null).map((sheet) => sheet.pageNumber);
+    pageNumbers = wallsTaskPages(sheets);
     if (pageNumbers.length === 0) {
       return { ok: false, error: "There is no floor plan with a scale that still needs its walls found. Set a scale on a floor plan first, or open a sheet to see the walls already found." };
     }
