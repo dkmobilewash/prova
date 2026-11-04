@@ -1,4 +1,5 @@
 import type { Candidate, ReviewState, SplitRecord, Verdict } from "./answerKeyReview";
+import { withTraces } from "./answerKeyReview";
 import { reapplySplits } from "./restoreSaved";
 
 /**
@@ -164,7 +165,7 @@ export function restoreDraft(draft: ReviewDraft, start: ReviewState, feetPerUnit
   }
   return {
     ok: true,
-    state: { ...fresh, verdicts, traced: draft.traced.map((t) => ({ ...t })) },
+    state: withTraces({ ...fresh, verdicts }, draft.traced),
   };
 }
 
@@ -279,7 +280,7 @@ export function keepReview(existing: ReviewState | null, fresh: ReviewState): Re
   for (const [id, verdict] of Object.entries(existing.verdicts)) {
     if (id in verdicts && verdict !== "unreviewed") verdicts[id] = verdict;
   }
-  return { ...fresh, verdicts, traced: existing.traced };
+  return withTraces({ ...fresh, verdicts }, existing.traced);
 }
 
 /**
