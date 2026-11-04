@@ -511,9 +511,10 @@ describe("the ghost lines over the sheet", () => {
     // matters is unchanged and is the one below: what gets grouped is the
     // FILTERED set. This one only has to see that the lettering filter is
     // still on the path, with `everywhere` reaching it.
-    expect(code).toMatch(
-      /wallsNotLettering\(\s*\[\s*\.\.\.everywhere\s*,\s*\.\.\.curves\s*\]\s*,\s*textBoxes\s*,\s*feetPerUnit\s*\)/,
-    );
+    // The filters are one chain since filled bands (`filledWalls.ts`): the
+    // pairer's runs take it alone, and the lettering filter heads it.
+    expect(code).toMatch(/const chain = \(runs: WallCandidate\[\]\) => \{\s*const notLettering = wallsNotLettering\(runs, textBoxes, feetPerUnit\)/);
+    expect(code).toMatch(/const own = chain\(\[\s*\.\.\.everywhere\s*,\s*\.\.\.curves\s*\]\)/);
     expect(code, "curves must not bypass the filters").toMatch(/const curves = curvedWalls\(/);
     expect(code).toMatch(/clusterByThickness\(walls\)/);
     expect(code).not.toMatch(/clusterByThickness\(inBuilding\)/);
