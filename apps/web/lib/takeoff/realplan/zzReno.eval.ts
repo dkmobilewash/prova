@@ -44,7 +44,7 @@ const findPdf = (dir: string) => {
 type Saved = Parameters<typeof keyFromLabels>[0] & { page: number; feetPerUnit: number };
 type Rule = "pens" | "compare";
 type Arm = { real: number; junk: number; posted: number };
-type Row = { set: string; sheet: string; renovation: boolean; legend: boolean; demoPair: string | null; twoPens: boolean; filledReal: number; filledJunk: number; outlineReal: number; outlineJunk: number; key: number; posted: number; rules: Record<Rule, Arm> };
+type Row = { found: number; junkConfirmed: number; offered: number; set: string; sheet: string; renovation: boolean; legend: boolean; demoPair: string | null; twoPens: boolean; filledReal: number; filledJunk: number; outlineReal: number; outlineJunk: number; key: number; posted: number; rules: Record<Rule, Arm> };
 
 describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF_WALL_MODEL === undefined)("renovation conventions and the parked rules", () => {
   it("measures each sheet", { timeout: 7_200_000 }, async () => {
@@ -81,6 +81,15 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const isJunk = (r: WallCandidate) => scoreSheet({ set: dir, sheet, key, proposed: [{ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFeet: r.lengthFeet, thicknessFeet: r.thicknessFeet } as ScoredRun], feetPerUnit: fpu }).extraFeet >= 0.5 * r.lengthFeet;
         const junk = new Map(runs.map((r) => [r, isJunk(r)]));
         const keyFeet = scoreSheet({ set: dir, sheet, key, proposed: [], feetPerUnit: fpu }).keyFeet;
+        // Recall and junk on the list as offered, before the hold: the scorecard's own measure.
+        const asOffered = scoreSheet({
+          set: dir,
+          sheet,
+          key,
+          proposed: runs.map((r) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFeet: r.lengthFeet, thicknessFeet: r.thicknessFeet })),
+          judged: saved.verdicts.filter((v) => v.verdict === "not-wall").map((v) => ({ x1: v.x1, y1: v.y1, x2: v.x2, y2: v.y2, lengthFeet: v.lengthFeet, thicknessFeet: v.thicknessFeet })),
+          feetPerUnit: fpu,
+        });
         const held = new Set(runsHeldOffEstimate(config.model, runs, scored, fpu, false));
         const posted = (without: ReadonlySet<WallCandidate>) => runs.reduce((n, r) => n + (held.has(r) || without.has(r) ? 0 : r.lengthFeet), 0);
         const units = d.found.inUnits;
@@ -141,7 +150,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           for (const r of s) { if (junk.get(r)) j += r.lengthFeet; else real += r.lengthFeet; }
           return { real, junk: j, posted: posted(s) };
         };
-        rows.push({ set: dir, sheet, renovation, legend, demoPair, twoPens: penned.length > 0, filledReal, filledJunk, outlineReal, outlineJunk, key: keyFeet, posted: posted(new Set()), rules: { pens: arm(penned), compare: arm(compared) } });
+        rows.push({ found: asOffered.keyFeet - asOffered.missingFeet, junkConfirmed: asOffered.confirmedJunkFeet, offered: asOffered.proposedFeet, set: dir, sheet, renovation, legend, demoPair, twoPens: penned.length > 0, filledReal, filledJunk, outlineReal, outlineJunk, key: keyFeet, posted: posted(new Set()), rules: { pens: arm(penned), compare: arm(compared) } });
       }
     }
     expect(rows.length, "no labelled sheet was read").toBeGreaterThan(0);
@@ -160,15 +169,33 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         lines.push(`  ${set.slice(0, 40).padEnd(40)} pens ${t("pens").padStart(10)}   compare ${t("compare").padStart(10)}`);
       }
     }
-    for (const group of ["renovation", "new build", "all"] as const) {
-      const rs = rows.filter((r) => group === "all" || r.renovation === (group === "renovation"));
+    const card = (rs: Row[]) => {
+      const key = rs.reduce((n, r) => n + r.key, 0), offered = rs.reduce((n, r) => n + r.offered, 0), junk = rs.reduce((n, r) => n + r.junkConfirmed, 0);
+      return `recall ${((100 * rs.reduce((n, r) => n + r.found, 0)) / key).toFixed(1)}%, junk ${((100 * junk) / key).toFixed(0)}/100 ft key, ${((100 * junk) / Math.max(1, offered)).toFixed(0)}/100 ft offered`;
+    };
+    if (!HELD) {
+      lines.push("", "TRAINING RENOVATION PER BUILDING — as offered (shipped rules), posted at the hold, and plan-compare");
+      for (const set of [...new Set(rows.filter((r) => r.renovation).map((r) => r.set))]) {
+        const rs = rows.filter((r) => r.renovation && r.set === set);
+        const key = rs.reduce((n, r) => n + r.key, 0), base = rs.reduce((n, r) => n + r.posted, 0), after = rs.reduce((n, r) => n + r.rules.compare.posted, 0);
+        const real = rs.reduce((n, r) => n + r.rules.compare.real, 0), junk = rs.reduce((n, r) => n + r.rules.compare.junk, 0);
+        lines.push(`  ${set.slice(0, 38).padEnd(38)} sheets ${rs.length} key ${f(key).padStart(5)} | ${card(rs)} | posted ${pct(base, key)} | compare real ${f(real)} / junk ${f(junk)}, posted ${pct(after, key)}`);
+      }
+    }
+    const groups: { name: string; rows: Row[] }[] = [
+      { name: "renovation", rows: rows.filter((r) => r.renovation) },
+      { name: "new build", rows: rows.filter((r) => !r.renovation) },
+      { name: "all", rows },
+      ...(HELD ? [{ name: "Hutto", rows: rows.filter((r) => /hutto/i.test(r.set)) }, { name: "all but Hutto", rows: rows.filter((r) => !/hutto/i.test(r.set)) }] : []),
+    ];
+    for (const { name: group, rows: rs } of groups) {
       if (rs.length === 0) continue;
       const key = rs.reduce((n, r) => n + r.key, 0), base = rs.reduce((n, r) => n + r.posted, 0);
       const tot = (rule: Rule) => {
         const real = rs.reduce((n, r) => n + r.rules[rule].real, 0), junk = rs.reduce((n, r) => n + r.rules[rule].junk, 0), after = rs.reduce((n, r) => n + r.rules[rule].posted, 0);
         return `${rule}: real lost ${f(real)} / junk removed ${f(junk)} (${real > 0 ? (junk / real).toFixed(1) : "∞"}:1), posted ${pct(after, key)}`;
       };
-      lines.push(`${HELD ? "HELD-OUT" : "TRAINING"} ${group}: sheets ${rs.length}, key ${f(key)}, posted ${pct(base, key)} | ${tot("pens")} | ${tot("compare")}`);
+      lines.push(`${HELD ? "HELD-OUT" : "TRAINING"} ${group}: sheets ${rs.length}, key ${f(key)}, ${card(rs)}, posted ${pct(base, key)} | ${tot("pens")} | ${tot("compare")}`);
     }
     writeFileSync(OUT, lines.join("\n") + "\n");
   });
