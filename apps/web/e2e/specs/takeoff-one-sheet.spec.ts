@@ -77,6 +77,43 @@ test.describe("a find belongs to the sheet it was run on", () => {
     };
   }
 
+  const port = () => page.locator('[data-testid="takeoff-plan-port"]');
+  const overlay = () => port().locator("svg");
+
+  async function settledOverlayBox(): Promise<{ width: number }> {
+    let previous = -1;
+    let steady = 0;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const box = await overlay().boundingBox();
+      if (box && box.width > 0 && Math.abs(box.width - previous) < 0.5) {
+        steady += 1;
+        if (steady >= 3) return { width: box.width };
+      } else {
+        steady = 0;
+      }
+      previous = box?.width ?? -1;
+      await page.waitForTimeout(100);
+    }
+    throw new Error("the sheet never stopped resizing, so no click on it can be trusted");
+  }
+
+  /** Two clicks half a sheet apart and the feet between them — exactly
+   *  `takeoff-workspace.spec.ts`'s `setScaleByClicking`. */
+  async function setScaleByClicking(halfSheetFeet: number): Promise<void> {
+    await expect
+      .poll(async () => port().locator("canvas").evaluate((n) => (n as HTMLCanvasElement).width), { timeout: 60_000 })
+      .toBeGreaterThan(0);
+    await page.getByRole("button", { name: "Set scale", exact: true }).click();
+    const box = await settledOverlayBox();
+    await overlay().click({ position: { x: box.width * 0.2, y: box.width * 0.5 } });
+    await overlay().click({ position: { x: box.width * 0.7, y: box.width * 0.5 } });
+    const form = page.locator("form").filter({ has: page.getByRole("button", { name: "Set the scale" }) });
+    await form.locator('input[name="declaredDistanceFeet"]').fill(String(halfSheetFeet));
+    await form.locator('input[name="pageLabel"]').fill("sheet 1");
+    await form.getByRole("button", { name: "Set the scale" }).click();
+    await expect(page.getByText(/^Scale set/)).toBeVisible({ timeout: 30_000 });
+  }
+
   /** Move to a sheet by its number in the set, and wait for it to render. */
   async function goToSheet(n: number): Promise<void> {
     await page.locator('[data-takeoff="sheet-picker"]').selectOption(String(n));
@@ -118,6 +155,15 @@ test.describe("a find belongs to the sheet it was run on", () => {
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({
       timeout: 60_000,
     });
+    // ── THE FIRST SHEET IS SCALED BY THE APP'S OWN FLOW, NOT HOPED FOR ──
+    //
+    // The two tests below need Find the walls on sheet 1, and Find is disabled
+    // without a scale. They used to SKIP when sheet 1 had none, which in CI was
+    // every run — so neither ever ran there. Sheet 1 is S02, and the viewer
+    // opens on page 1: set its scale here the way `takeoff-workspace.spec.ts`
+    // sets S02's (half the sheet is 48 ft), so the precondition is guaranteed
+    // and the tests below assert it instead of skipping on it.
+    await setScaleByClicking(48);
 
     await page.goto(`/takeoff/${id}`);
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
@@ -141,9 +187,9 @@ test.describe("a find belongs to the sheet it was run on", () => {
 
     // The scale, set by the viewer's own two clicks, so Find the walls can run.
     const find = page.locator('[data-takeoff="find-walls"]');
-    if (!(await find.isEnabled())) {
-      test.skip(true, "sheet 1 has no scale and this spec is not about calibrating");
-    }
+    await expect(find, "sheet 1 was scaled in the first test, so Find the walls should be enabled").toBeEnabled({
+      timeout: 60_000,
+    });
     await find.click();
     await expect(find).toHaveText("Find the walls", { timeout: 180_000 });
     await page.waitForTimeout(800);
@@ -180,13 +226,14 @@ test.describe("a find belongs to the sheet it was run on", () => {
     // bid. A total from one drawing shown against another is the failure
     // worth being loudest about.
     await goToSheet(1);
-    // ── THE SAME PRECONDITION THE TEST ABOVE SKIPS ON ──
+    // ── THE SAME PRECONDITION THE TEST ABOVE ASSERTS ──
     //
     // This test counts the groups a FIND produced, and the find is run by
     // "RUNS FOUND ON SHEET 1 DO NOT APPEAR ON SHEET 2 OR SHEET 3" above. That
-    // test skips when sheet 1 has no scale, because the Find button is
+    // test used to skip when sheet 1 had no scale, because the Find button is
     // disabled without one — and this one did not, so it ran with nothing
-    // found and reported 0 groups against its own control.
+    // found and reported 0 groups against its own control. The first test now
+    // sets the scale, so both assert it rather than skip on it.
     //
     // Which is the control doing its job: zero groups really does mean
     // nothing could leak. The bug was that the two tests disagreed about
@@ -195,9 +242,9 @@ test.describe("a find belongs to the sheet it was run on", () => {
     // It surfaced today because the test BEFORE both of them was failing on
     // an unrelated assertion, so execution never reached here.
     const find = page.locator('[data-takeoff="find-walls"]');
-    if (!(await find.isEnabled())) {
-      test.skip(true, "sheet 1 has no scale, so no find ran and there are no groups to leak");
-    }
+    await expect(find, "sheet 1 was scaled in the first test, so the find above ran").toBeEnabled({
+      timeout: 60_000,
+    });
     const groups = page.locator('[data-takeoff="found-group"]');
     // ── THE CONTROL, AGAIN, AND NOT A GUARD ──
     //

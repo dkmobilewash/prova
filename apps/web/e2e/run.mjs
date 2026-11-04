@@ -15,10 +15,12 @@
  *                              (e2e/playwright.takeoff.config.ts). No CI job
  *                              runs it.
  *   pnpm test:e2e -- --real-plans [name]  LOCAL ONLY: the specs that need real
- *                              client drawings (every e2e/local/*.local.spec.ts
- *                              but the two click lists — e2e/playwright.real.config.ts).
+ *                              client drawings, or (answer-key-mode) a server that
+ *                              allows labelling — every e2e/local/*.local.spec.ts
+ *                              but the two click lists (e2e/playwright.real.config.ts).
  *                              Each names its own env in its header (REAL_PLAN_DIR,
- *                              REAL_SET_PDF, TRACE_SHOTS, …) and skips without it.
+ *                              REAL_SET_PDF, TRACE_SHOTS, ALLOW_LOCAL_PLANS, …) and
+ *                              skips without it.
  *                              They left specs/ because in CI they could only
  *                              skip, and verdicts.mjs counts a skip as a failure.
  *                              e.g. REAL_PLAN_DIR=… APP_EQ_OUT=… pnpm test:e2e --

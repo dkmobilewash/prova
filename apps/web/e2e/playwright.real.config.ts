@@ -1,14 +1,16 @@
 import baseConfig from "./playwright.config";
 
 /**
- * The REAL-DRAWING specs, LOCAL ONLY. Run from the repo root with the env each
- * spec names in its own header (REAL_PLAN_DIR, REAL_SET_PDF, TRACE_SHOTS, …):
+ * The specs CI cannot run, LOCAL ONLY: the real-drawing walks, plus
+ * `answer-key-mode.local.spec.ts`, which needs a server that allows labelling.
+ * Run from the repo root with the env each spec names in its own header
+ * (REAL_PLAN_DIR, REAL_SET_PDF, TRACE_SHOTS, ALLOW_LOCAL_PLANS, …):
  *
  *     REAL_PLAN_DIR=… APP_EQ_OUT=… pnpm test:e2e -- --real-plans takeoff-app-equals-eval
  *     … --real-plans --skip-build          reuses the last build
  *
- * Client drawings never enter the repository, so in CI every one of these could
- * only SKIP — and `verdicts.mjs` counts a skip as a failure, on purpose. So they
+ * Client drawings never enter the repository and CI's server refuses labelling
+ * by design, so in CI every one of these could only SKIP — and `verdicts.mjs` counts a skip as a failure, on purpose. So they
  * live in `local/`, which the main config's `testDir: "./specs"` never reaches,
  * and no CI job runs them. Everything else is the main config's: same
  * globalSetup, webServer (whose env passes the shell's through), workers and
