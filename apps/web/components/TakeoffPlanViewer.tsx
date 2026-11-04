@@ -3299,7 +3299,7 @@ export function TakeoffPlanViewer({
       //
       // Digests of every input (segments in value and in order, text, the
       // template sample, the page size, the scale) and the stage counts,
-      // written to the plan port so `e2e/specs/takeoff-app-equals-eval.spec.ts`
+      // written to the plan port so `e2e/local/takeoff-app-equals-eval.local.spec.ts`
       // can hold the app against `realplan/zzAppEquals.eval.ts` number for
       // number. That comparison is what found that the finder's answer
       // depends on whether an answer-key hook is set. Customers never pay

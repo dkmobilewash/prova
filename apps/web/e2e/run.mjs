@@ -14,6 +14,17 @@
  *                              over training sheets named by TAKEOFF_CLICK_PLANS
  *                              (e2e/playwright.takeoff.config.ts). No CI job
  *                              runs it.
+ *   pnpm test:e2e -- --real-plans [name]  LOCAL ONLY: the specs that need real
+ *                              client drawings, or (answer-key-mode) a server that
+ *                              allows labelling — every e2e/local/*.local.spec.ts
+ *                              but the two click lists (e2e/playwright.real.config.ts).
+ *                              Each names its own env in its header (REAL_PLAN_DIR,
+ *                              REAL_SET_PDF, TRACE_SHOTS, ALLOW_LOCAL_PLANS, …) and
+ *                              skips without it.
+ *                              They left specs/ because in CI they could only
+ *                              skip, and verdicts.mjs counts a skip as a failure.
+ *                              e.g. REAL_PLAN_DIR=… APP_EQ_OUT=… pnpm test:e2e --
+ *                                   --real-plans takeoff-app-equals-eval
  *
  *   pnpm test:e2e:public       NO CLERK INSTANCE NEEDED — every page
  *                              reachable without signing in, at 320, 375
@@ -102,11 +113,15 @@ const skipBuild = argv.includes("--skip-build") || process.env.E2E_SKIP_BUILD ==
  * this is the mode CI runs with no secrets at all.
  */
 const publicOnly = argv.includes("--public") || process.env.E2E_PUBLIC_ONLY === "1";
-/** `--billing-click` and `--takeoff-click` each run their one spec in e2e/local/ and nothing else.
+/** `--billing-click` and `--takeoff-click` each run their one spec in e2e/local/ and nothing else;
+ * `--real-plans` runs the rest of e2e/local/, the specs that need real client drawings.
  * Local only: they live outside `specs/`, so the `e2e` CI job never reaches them. */
 const billingClick = argv.includes("--billing-click");
 const takeoffClick = argv.includes("--takeoff-click");
-const playwrightArgs = argv.filter((arg) => arg !== "--skip-build" && arg !== "--public" && arg !== "--billing-click" && arg !== "--takeoff-click");
+const realPlans = argv.includes("--real-plans");
+const playwrightArgs = argv.filter(
+  (arg) => arg !== "--skip-build" && arg !== "--public" && arg !== "--billing-click" && arg !== "--takeoff-click" && arg !== "--real-plans",
+);
 
 // ------------------------------------------------------------- Clerk keys
 /** Minimal .env reader: KEY=value, optional quotes, comments ignored. */
@@ -315,7 +330,9 @@ try {
       ? "e2e/playwright.billing.config.ts"
       : takeoffClick
         ? "e2e/playwright.takeoff.config.ts"
-        : "e2e/playwright.config.ts";
+        : realPlans
+          ? "e2e/playwright.real.config.ts"
+          : "e2e/playwright.config.ts";
   log(`playwright: driving the browser (${config})…`);
   exitCode = await run("pnpm", ["exec", "playwright", "test", "--config", config, ...playwrightArgs], {
     cwd: webRoot,
