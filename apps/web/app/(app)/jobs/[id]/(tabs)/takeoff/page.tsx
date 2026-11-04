@@ -446,12 +446,18 @@ function Header({ jobId, hasPlan = false }: { jobId: string; hasPlan?: boolean }
             <TakeoffExportButtons jobId={jobId} />
           </div>
           {hasPlan && (
+            /* ── IN A TAB OF ITS OWN ──
+               The workspace is a full screen of its own, so it opens beside
+               this one and C-Stream stays where it was. `noopener`: the new
+               tab has no handle back on this one. */
             <Link
               href={`/takeoff/${jobId}`}
-              className="rounded-md border border-line-card px-3 py-1.5 text-sm text-link hover:text-link-hover"
+              target="_blank"
+              rel="noopener"
+              className="rounded-md bg-brand px-3 py-1.5 text-sm font-semibold text-neutral-900 hover:opacity-90"
               data-takeoff="open-workspace"
             >
-              Open full screen
+              Takeoff ↗
             </Link>
           )}
         </div>

@@ -215,7 +215,7 @@ test.describe("the workspace on a real sheet", () => {
         await expect(find, "Find the walls never became available").toBeEnabled({ timeout: 120_000 });
         const findStarted = Date.now();
         await find.click();
-        await expect(find).toHaveText("Find the walls", { timeout: 300_000 });
+        await expect(find).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 300_000 });
         const findMs = Date.now() - findStarted;
         await page.waitForTimeout(500);
 

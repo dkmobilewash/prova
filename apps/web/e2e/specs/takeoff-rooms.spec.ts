@@ -6,6 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
+import { openFinders, openItems } from "../lib/finders";
 
 /**
  * ── "FIND THE ROOMS", END TO END, ON AN INVENTED SHEET ──
@@ -139,6 +140,7 @@ test.describe("find the rooms", () => {
     await page.goto(`/takeoff/${jobId}`);
     await expect(page.locator('[data-takeoff="find-walls"]')).toBeVisible({ timeout: 60_000 });
     if (fresh) {
+      await openFinders(page);
       await expect(
         page.locator('[data-takeoff="find-rooms"]'),
         "a new company should get Find the rooms without opening Settings",
@@ -185,6 +187,7 @@ test.describe("find the rooms", () => {
     await expect(findWalls).toBeVisible({ timeout: 60_000 });
     await hydrated(page, '[data-takeoff="find-walls"]');
     const findRooms = page.locator('[data-takeoff="find-rooms"]');
+    await openFinders(page);
     await expect(findRooms, "switch on, button absent").toBeVisible();
     await expect(findRooms, "rooms cannot be found before walls").toBeDisabled();
     // The button now waits for the sheet itself (the comment below describes
@@ -253,7 +256,7 @@ test.describe("find the rooms", () => {
         },
       )
       .toBe("started");
-    await expect(findWalls, "the find started and never finished").toHaveText("Find the walls", {
+    await expect(findWalls, "the find started and never finished").toHaveText(/^(Find the walls|Run takeoff)$/, {
       timeout: 180_000,
     });
     await expect(findRooms).toBeEnabled({ timeout: 30_000 });
@@ -263,6 +266,7 @@ test.describe("find the rooms", () => {
       page.locator('[data-takeoff="doors-windows"]'),
       "a new company should get doors and windows after Find the walls without opening Settings",
     ).toBeVisible({ timeout: 30_000 });
+    await openFinders(page);
     await findRooms.click();
     const panel = page.locator('[data-takeoff="rooms-panel"]');
     await expect(panel).toBeVisible({ timeout: 30_000 });
@@ -292,6 +296,7 @@ test.describe("find the rooms", () => {
     // The save lands every room in a "Rooms" item now (and ceilings in their
     // own), so the rail shows an item with square feet rather than N loose
     // measurements under Unassigned.
+    await openItems(page);
     const roomsItem = page.locator('[data-takeoff="items-rail"] [data-takeoff="item-row"]').filter({ hasText: "Rooms" });
     await expect(roomsItem).toHaveCount(1, { timeout: 60_000 });
     await expect(roomsItem.locator('[data-takeoff="item-total"]')).toContainText(/sq ft/);

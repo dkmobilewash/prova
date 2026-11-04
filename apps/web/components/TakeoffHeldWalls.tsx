@@ -12,8 +12,11 @@ export type HeldWall = { id: string; feet: number };
 export function TakeoffHeldWalls({
   walls,
   onConfirm,
+  asRow = false,
 }: {
   walls: readonly HeldWall[];
+  /** The workspace's layer panel: one "Needs review" row that opens in place. */
+  asRow?: boolean;
   /** Resolves to a sentence when it did not save. */
   onConfirm: (id: string) => Promise<string | null>;
 }) {
@@ -27,9 +30,23 @@ export function TakeoffHeldWalls({
     setSaving(null);
   }
   return (
-    <details className="shrink-0 text-xs text-ink-muted" data-takeoff="held-walls">
+    <details
+      className={`shrink-0 text-xs text-ink-muted${asRow ? " rounded-md px-1.5 py-1.5 hover:bg-rail" : ""}`}
+      data-takeoff="held-walls"
+    >
       <summary className="cursor-pointer text-ink-body">
-        {walls.length} {walls.length === 1 ? "run" : "runs"} to confirm, {total.toLocaleString()} ft: not on the estimate
+        {/* As a layer row: the same swatch, name, count and total columns. */}
+        {asRow && (
+          <span className="inline-flex w-[calc(100%-1rem)] items-center gap-2" data-takeoff="needs-review-row">
+            <span aria-hidden className="h-2.5 w-4 shrink-0 rounded-sm bg-bar-amber" />
+            <span className="min-w-0 flex-1 truncate font-medium text-tag-amber-ink">Needs review</span>
+            <span className="shrink-0 rounded bg-rail px-1 text-[10px] text-ink-muted">{walls.length}</span>
+            <span className="w-20 shrink-0 text-right tabular-nums text-ink-body">{total.toLocaleString()} ft</span>
+          </span>
+        )}
+        <span className={asRow ? "block pl-10 font-normal text-ink-muted" : undefined}>
+          {walls.length} {walls.length === 1 ? "run" : "runs"} to confirm, {total.toLocaleString()} ft: not on the estimate
+        </span>
       </summary>
       {error !== null && <p className="text-tag-amber-ink">{error}</p>}
       <ul className="mt-1 flex max-h-40 flex-col gap-1 overflow-auto">

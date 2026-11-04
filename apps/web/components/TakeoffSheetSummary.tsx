@@ -32,7 +32,8 @@ import { type TakeoffItemRow, formatQuantity, itemQuantityOnPage } from "@/lib/t
  *
  * Bottom-left is clear of the toolbar above and of the title block's own
  * corner diagonally opposite, which is the property the first version was
- * actually reaching for.
+ * actually reaching for. Since the full-screen layout it sits clear of the tool
+ * rail on its left and above the scale badge in that corner.
  */
 
 type Props = {
@@ -53,7 +54,7 @@ export function TakeoffSheetSummary({ items, pageNumber, hidden, onClose }: Prop
 
   return (
     <div
-      className="pointer-events-auto absolute bottom-3 left-3 z-10 max-w-[18rem] rounded-md border border-line-card bg-surface/95 p-2 shadow-lg backdrop-blur-sm"
+      className="pointer-events-auto absolute bottom-14 left-14 z-10 max-w-[18rem] rounded-md border border-line-card bg-surface/95 p-2 shadow-lg backdrop-blur-sm"
       data-takeoff="sheet-summary"
     >
       <div className="flex items-center gap-2">

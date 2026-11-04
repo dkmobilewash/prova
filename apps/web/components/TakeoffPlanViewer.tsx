@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { pickOnClick } from "@/lib/takeoff/clickPick";
 import {
   SNAP_RADIUS,
@@ -22,7 +23,8 @@ import { Spinner } from "@/components/Spinner";
 import { SubmitButton } from "@/components/SubmitButton";
 import { canvasPlan } from "@/lib/takeoff/canvasPlan";
 import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
-import { DISTINCT_MARKS, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
+import { DISTINCT_MARKS, DOOR_COLOUR, LAYER_COLOURS, ROOM_COLOUR, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
+import { TakeoffLayerPanel, type Layer } from "@/components/TakeoffLayerPanel";
 import { formatFeetInches, parseFeetInches } from "@/lib/feet-inches";
 import {
   calibrationNotices,
@@ -60,6 +62,9 @@ import {
   fitZoom,
   fitWidthZoom,
   stepZoom,
+  RAIL_TOOLS,
+  TOOL_ICONS,
+  TOOL_KEYS,
   TOOLS,
   ZOOM_STEPS,
   type ToolId,
@@ -325,6 +330,9 @@ export function TakeoffPlanViewer({
   ceilingPages = [],
   onMeasurementSaved,
   onUndoable,
+  bar,
+  rail,
+  panelDrawer = false,
   focusRun = null,
   activeItemId = null,
   earlierVersionByPage = {},
@@ -456,6 +464,15 @@ export function TakeoffPlanViewer({
    */
   /** A change the workspace's top-bar undo can take back. */
   onUndoable?: (entry: UndoEntry) => void;
+  /** `fill` only: places in the workspace's top bar for the sheet stepper,
+   *  the finders and the Take off | Compare tabs. The viewer still owns them —
+   *  they are portalled, so their state stays here. */
+  bar?: { pager: HTMLElement | null; actions: HTMLElement | null; tabs: HTMLElement | null };
+  /** `fill` only: the workspace's buttons for the tool rail — undo/redo under
+   *  the tools, and the panel toggles at its foot. */
+  rail?: { undo?: React.ReactNode; foot?: React.ReactNode };
+  /** `fill` only: below 1280 the layer panel is a drawer over the canvas. */
+  panelDrawer?: boolean;
   /** A run the workspace's set-wide review is on, shown and zoomed to on its page. */
   focusRun?: { pageNumber: number; x1: number; y1: number; x2: number; y2: number } | null;
   onMeasurementSaved?: (saved: { id: string; kind: MeasurementKind }) => void;
@@ -739,6 +756,7 @@ export function TakeoffPlanViewer({
       // what the spec caught: the pager was visible and the key did nothing.
       else if (key === "j") setPageNumber((at) => (pageCount === null ? at : Math.min(pageCount, at + 1)));
       else if (key === "k") setPageNumber((at) => Math.max(1, at - 1));
+      else if (key !== undefined) pickToolRef.current(key);
     };
     const onGoto = (event: Event) => {
       const page = (event as CustomEvent<{ page?: number }>).detail?.page;
@@ -1002,6 +1020,39 @@ export function TakeoffPlanViewer({
   const [finding, setFinding] = useState(false);
   const [findError, setFindError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
+  // ── THE FULL-SCREEN SHELL'S OWN STATE (`fill`) ──
+  // The clicked layer row stays lit where hover lets go; switched-off layers
+  // are left off the drawing; and the slots are where the shell's pieces of
+  // the old toolbar are portalled to, set by ref once they exist.
+  const [litLayer, setLitLayer] = useState<string | null>(null);
+  const [hiddenLayers, setHiddenLayers] = useState<ReadonlySet<string>>(new Set());
+  const [railMore, setRailMore] = useState(false);
+  const pickToolRef = useRef<(key: string) => void>(() => {});
+  const [zoomSlot, setZoomSlot] = useState<HTMLElement | null>(null);
+  const [noticeSlot, setNoticeSlot] = useState<HTMLElement | null>(null);
+  const [scaleSlot, setScaleSlot] = useState<HTMLElement | null>(null);
+  const [sideSlot, setSideSlot] = useState<HTMLElement | null>(null);
+  const [foundSlot, setFoundSlot] = useState<HTMLElement | null>(null);
+  const [reviewSlot, setReviewSlot] = useState<HTMLElement | null>(null);
+  const [bannerSlot, setBannerSlot] = useState<HTMLElement | null>(null);
+  const [menuSlot, setMenuSlot] = useState<HTMLElement | null>(null);
+  const [runMenu, setRunMenu] = useState(false);
+  // The finder menu closes on the next click anywhere — an item, the drawing,
+  // or outside — after the one that opened it, and on Escape.
+  useEffect(() => {
+    if (!runMenu) return;
+    const close = () => setRunMenu(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    const timer = window.setTimeout(() => document.addEventListener("click", close), 0);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("click", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [runMenu]);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState(true);
@@ -1397,6 +1448,54 @@ export function TakeoffPlanViewer({
     // this fits BOTH dimensions and why that took a second attempt.
     return fitZoom({ width: frameWidth, height: frameHeight }, pageSize, BASE_SCALE);
   }, [zoom, pageSize, frameWidth, frameHeight]);
+  const zoomFactorRef = useRef(zoomFactor);
+  zoomFactorRef.current = zoomFactor;
+
+  // ── THE WHEEL ZOOMS, IN THE FULL-SCREEN SHELL ──
+  //
+  // A trackpad pinch arrives as a wheel event with ctrlKey set; a mouse wheel
+  // moves in lines, or in whole steps of 50 or more with no sideways part. Both
+  // zoom, about the pointer. A two-finger trackpad scroll is neither, and is
+  // left to the frame's own scrolling, which is the pan. Throttled, because
+  // every step re-renders the sheet.
+  const wheelAnchor = useRef<{ fx: number; fy: number; px: number; py: number } | null>(null);
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!fill || frame === null) return;
+    let last = 0;
+    const onWheel = (event: WheelEvent) => {
+      const mouse =
+        event.deltaMode !== 0 ||
+        (event.deltaX === 0 && Math.abs(event.deltaY) >= 50 && Number.isInteger(event.deltaY));
+      if (!event.ctrlKey && !event.metaKey && !mouse) return;
+      event.preventDefault();
+      const now = performance.now();
+      if (now - last < 60) return;
+      last = now;
+      const box = frame.getBoundingClientRect();
+      const px = event.clientX - box.left;
+      const py = event.clientY - box.top;
+      wheelAnchor.current = {
+        fx: (frame.scrollLeft + px) / Math.max(1, frame.scrollWidth),
+        fy: (frame.scrollTop + py) / Math.max(1, frame.scrollHeight),
+        px,
+        py,
+      };
+      setZoom(stepZoom(zoomFactorRef.current, event.deltaY < 0 ? 1 : -1));
+    };
+    frame.addEventListener("wheel", onWheel, { passive: false });
+    return () => frame.removeEventListener("wheel", onWheel);
+  }, [fill]);
+  // Once the sheet has its new size, put the point that was under the pointer
+  // back under it — so a wheel zooms INTO what you are looking at.
+  useLayoutEffect(() => {
+    const anchor = wheelAnchor.current;
+    const frame = frameRef.current;
+    if (anchor === null || frame === null) return;
+    wheelAnchor.current = null;
+    frame.scrollLeft = anchor.fx * frame.scrollWidth - anchor.px;
+    frame.scrollTop = anchor.fy * frame.scrollHeight - anchor.py;
+  }, [cssWidth]);
 
   // ── Render the current page at the current zoom ───────────────────────
   useEffect(() => {
@@ -3580,8 +3679,138 @@ export function TakeoffPlanViewer({
 
   findRef.current = onFindWalls;
 
+  // ── THE FULL-SCREEN SHELL'S PIECES ─────────────────────────────────────
+  /** In the shell, a piece of the toolbar goes where the shell made a place
+   *  for it; everywhere else, and until that place exists, it renders where it
+   *  is written. */
+  const slot = (target: HTMLElement | null | undefined, node: React.ReactNode) =>
+    fill && target ? createPortal(node, target) : node;
+  /** The measuring tools need a scale; the rest do not. */
+  function toolDisabled(id: ToolId): boolean {
+    return !calibration && (id === "linear" || id === "area" || id === "rect" || id === "cutout");
+  }
+  // A tool key arrives through the workspace's `takeoff-shortcut` event, whose
+  // listener is set up once; the ref is how it reaches this render's scale.
+  pickToolRef.current = (key: string) => {
+    if (readOnly || answerKey !== undefined) return;
+    const id = (Object.keys(TOOL_KEYS) as ToolId[]).find((one) => TOOL_KEYS[one] === key);
+    if (id !== undefined && !toolDisabled(id)) setTool(id);
+  };
+  const layerKey = (group: WallGroup) =>
+    `wall:${toEighth(group.inches)}:${group.source.kind === "TAG" ? group.source.tag : ""}`;
+  const itemNames = new Map((takeoffItems ?? []).map((item) => [item.id, item.name]));
+  const layers: Layer[] = !fill
+    ? []
+    : [
+        ...ordered.map(({ group, index }) => {
+          const key = layerKey(group);
+          return {
+            key,
+            name: [
+              group.itemId ? itemNames.get(group.itemId) : null,
+              group.source.kind === "TAG" ? plainTag(group.source.tag) : null,
+              inchLabel(group.inches),
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            kind: "line" as const,
+            colour: markFor(index, 2, LAYER_COLOURS).stroke,
+            dash: markFor(index, 2, LAYER_COLOURS).dash,
+            count: group.runs.length,
+            total: `${Math.round(group.feet).toLocaleString()} ft`,
+            hidden: hiddenLayers.has(key),
+          };
+        }),
+        ...(rooms !== null && roomsOnPage === pageNumber
+          ? [
+              {
+                key: "rooms",
+                name: "Rooms",
+                kind: "area" as const,
+                colour: ROOM_COLOUR,
+                count: rooms.rooms.length,
+                total: `${Math.round(rooms.rooms.reduce((n, room) => n + room.squareFeet, 0)).toLocaleString()} sf`,
+                hidden: hiddenLayers.has("rooms"),
+              },
+            ]
+          : []),
+        ...(openings !== null && openings.page === pageNumber
+          ? [
+              {
+                key: "doors",
+                name: "Doors and windows",
+                kind: "count" as const,
+                colour: DOOR_COLOUR,
+                count: openings.result.doors.length + openings.result.windows.length,
+                total: `${openings.result.doors.length + openings.result.windows.length} ea`,
+                hidden: hiddenLayers.has("doors"),
+              },
+            ]
+          : []),
+      ];
+  /** The groups switched off, by the index the overlay draws them under. */
+  const hiddenGroups = new Set(
+    fill ? ordered.filter(({ group }) => hiddenLayers.has(layerKey(group))).map(({ index }) => index) : [],
+  );
+  const litGroup = fill ? (ordered.find(({ group }) => layerKey(group) === litLayer) ?? null) : null;
+  /** The lit layer's readout, pinned to the middle of its longest run. */
+  const litReadout = (() => {
+    if (litGroup === null || litGroup.group.runs.length === 0) return null;
+    const run = litGroup.group.runs.reduce((a, b) =>
+      Math.hypot(b.x2 - b.x1, b.y2 - b.y1) > Math.hypot(a.x2 - a.x1, a.y2 - a.y1) ? b : a,
+    );
+    return {
+      x: (run.x1 + run.x2) / 2,
+      y: (run.y1 + run.y2) / 2,
+      text: `${formatFeetInches(litGroup.group.feet)} · ${litGroup.group.runs.length} ${litGroup.group.runs.length === 1 ? "run" : "runs"}`,
+    };
+  })();
+  const sidePanelOn =
+    demo?.page === pageNumber || revision?.page === pageNumber || symbols?.page === pageNumber;
+
   return (
-    <div className={`flex flex-col gap-3${fill ? " h-full min-h-0" : ""}`}>
+    <div className={fill ? "relative flex h-full min-h-0 flex-col" : "flex flex-col gap-3"}>
+      {/* ── TAKE OFF | COMPARE, in the shell's top bar ──
+          Compare is the revision compare that already exists, laid over the
+          sheet. It is there on every sheet and says why when it cannot run;
+          the hook is only on it when it can, as on the tab. */}
+      {fill &&
+        bar?.tabs &&
+        createPortal(
+          <div className="flex items-center gap-5" role="tablist" aria-label="Takeoff view">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={revision?.page !== pageNumber}
+              onClick={() => setRevision(null)}
+              data-takeoff="tab-takeoff"
+              className={`whitespace-nowrap border-b-2 py-1 text-sm font-semibold ${
+                revision?.page !== pageNumber ? "border-ink text-ink" : "border-transparent text-ink-muted hover:text-ink-body"
+              }`}
+            >
+              Take off
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={revision?.page === pageNumber}
+              onClick={() => void onCompareRevision()}
+              disabled={!earlierVersionByPage[pageNumber] || revision?.busy === true}
+              data-takeoff={earlierVersionByPage[pageNumber] ? "compare-revision" : undefined}
+              title={
+                earlierVersionByPage[pageNumber]
+                  ? `Lay this sheet over ${earlierVersionByPage[pageNumber]} and show what changed`
+                  : "There is no earlier version of this sheet to compare with."
+              }
+              className={`whitespace-nowrap border-b-2 py-1 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${
+                revision?.page === pageNumber ? "border-ink text-ink" : "border-transparent text-ink-muted hover:text-ink-body"
+              }`}
+            >
+              Compare
+            </button>
+          </div>,
+          bar.tabs,
+        )}
       {/* ── Toolbar ───────────────────────────────────────────────── */}
       {/* NOT RENDERED in read-only, rather than each control disabled. A row of
           greyed tools is an invitation that does not work; on a phone the row
@@ -3590,11 +3819,17 @@ export function TakeoffPlanViewer({
           the attribute's `display: none` comes from the UA stylesheet and
           Tailwind's own `flex` class beats it, so the row stayed on screen and
           the phone test caught it. */}
+      {/* ── IN THE FULL-SCREEN SHELL THIS ROW IS EMPTY, AND HIDDEN ──
+          Every piece of it is portalled to where the shell has a place for it
+          — the tools to the rail, the finders and the sheet stepper to the
+          top bar, zoom and the scale to the corners of the canvas, the
+          messages to the notice stack — so the drawing gets the height. */}
       {!readOnly && (
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line-card bg-surface-card p-2">
+      <div className={fill ? "hidden" : "flex flex-wrap items-center gap-2 rounded-lg border border-line-card bg-surface-card p-2"}>
+        {!fill && (
         <div className="flex items-center gap-1">
           {TOOLS.filter((entry) => entry.id !== "symbol" || symbolCount).map((entry) => {
-            const disabled = !calibration && (entry.id === "linear" || entry.id === "area" || entry.id === "rect" || entry.id === "cutout");
+            const disabled = toolDisabled(entry.id);
             return (
               <button
                 key={entry.id}
@@ -3613,8 +3848,9 @@ export function TakeoffPlanViewer({
             );
           })}
         </div>
+        )}
 
-        <span className="mx-1 h-4 w-px bg-line-card" aria-hidden />
+        {!fill && <span className="mx-1 h-4 w-px bg-line-card" aria-hidden />}
 
         {/* ── ZOOM, WITH FIT AS A FIRST-CLASS SETTING ──
 
@@ -3622,6 +3858,7 @@ export function TakeoffPlanViewer({
             CURRENT rendered size rather than jumping to a remembered index, so
             pressing − on a fitted 42-inch sheet makes it a little smaller
             instead of suddenly enormous. */}
+        {slot(zoomSlot, (
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -3674,18 +3911,20 @@ export function TakeoffPlanViewer({
             Fit width
           </button>
         </div>
+        ))}
 
-        {pageCount !== null && pageCount > 1 && (
+        {slot(bar?.pager, pageCount !== null && (fill || pageCount > 1) && (
           <>
-            <span className="mx-1 h-4 w-px bg-line-card" aria-hidden />
+            {!fill && <span className="mx-1 h-4 w-px bg-line-card" aria-hidden />}
             <SheetPager
               pageNumber={pageNumber}
               pageCount={pageCount}
               sheetLabelByPage={sheetLabelByPage}
               onJump={setPageNumber}
+              compact={fill}
             />
           </>
-        )}
+        ))}
 
         {/* FIND THE WALLS — only once the sheet is calibrated, and the reason
             is structural rather than tidy: the finder's bounds are in FEET of
@@ -3709,7 +3948,7 @@ export function TakeoffPlanViewer({
             So it is on the toolbar either way, and `title` says what is in the
             way. The measuring tools beside it already take exactly this
             posture — disabled until the sheet is calibrated, never hidden. */}
-        {!calibration && tool !== "calibrate" && scalePrefillByPage[pageNumber] && (
+        {slot(scaleSlot, !calibration && tool !== "calibrate" && scalePrefillByPage[pageNumber] && (
           <ToolbarScaleOffer
             prefill={scalePrefillByPage[pageNumber]!}
             onUse={() => {
@@ -3717,17 +3956,56 @@ export function TakeoffPlanViewer({
               setTool("calibrate");
             }}
           />
-        )}
+        ))}
+        {/* ── ONE MAIN ACTION ──
+            In the full-screen shell, Run takeoff is the solid button and the
+            finders that follow it are behind its arrow. `contents` on the tab,
+            where they all stay in the toolbar as they always were. */}
+        {slot(bar?.actions, (
+        <div className={fill ? "relative flex shrink-0" : "contents"}>
         <button
           type="button"
           onClick={onFindWalls}
           disabled={finding || findWallsWhy !== null}
           data-takeoff="find-walls"
-          title={findWallsWhy ?? undefined}
-          className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
+          title={findWallsWhy ?? (fill ? "Find the walls on this sheet again, from the drawing" : undefined)}
+          className={
+            fill
+              ? // emerald-700 under white is 5.5:1, so full strength reads.
+                "min-h-[32px] rounded-l-md bg-emerald-700 px-3 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-40"
+              : "min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
+          }
         >
-          {finding ? "Reading the lines…" : "Find the walls"}
+          {finding ? "Reading the lines…" : fill ? "Run takeoff" : "Find the walls"}
         </button>
+        {fill && (
+          <>
+            <button
+              type="button"
+              aria-label="More ways to find things on this sheet"
+              title="Find the rooms, review or check the walls, and the rest"
+              aria-expanded={runMenu}
+              onClick={() => setRunMenu((open) => !open)}
+              data-takeoff="run-more"
+              className="min-h-[32px] rounded-r-md border-l border-emerald-900 bg-emerald-700 px-2 text-xs text-white hover:bg-emerald-800"
+            >
+              ▾
+            </button>
+            <div
+              ref={setMenuSlot}
+              data-takeoff="run-menu"
+              className={
+                runMenu
+                  ? "absolute right-0 top-full z-50 mt-1 flex w-60 flex-col items-stretch gap-1 rounded-md border border-line-card bg-surface p-1 shadow-xl empty:hidden"
+                  : "hidden"
+              }
+            />
+          </>
+        )}
+        </div>
+        ))}
+        {slot(menuSlot, (
+        <>
         {found !== null && runsRef.current.length > 0 && !readOnly && answerKey === undefined && review === null && (
           <button
             type="button"
@@ -3751,7 +4029,9 @@ export function TakeoffPlanViewer({
             Find demolition
           </button>
         )}
-        {earlierVersionByPage[pageNumber] && (
+        </>
+        ))}
+        {!fill && earlierVersionByPage[pageNumber] && (
           <button
             type="button"
             onClick={() => void onCompareRevision()}
@@ -3768,6 +4048,8 @@ export function TakeoffPlanViewer({
             measured and switched off once (`takeoffRoomFinder.test.tsx`) and
             a control that reads as "exists but broken" is what that file
             exists to prevent. With the switch on it waits for a find. */}
+        {slot(menuSlot, (
+        <>
         {roomFinder && (
           <button
             type="button"
@@ -3788,17 +4070,21 @@ export function TakeoffPlanViewer({
             at the drawing knows better than its title block does. */}
         {notATakeoffSheet && (
           <>
-            <span className="text-[11px] text-ink-muted" data-takeoff="not-a-takeoff-sheet">
+            {/* The reason is a sentence, so in the shell it goes with the
+                messages; the way past it stays beside Run takeoff. */}
+            {slot(noticeSlot, <span className="text-[11px] text-ink-muted" data-takeoff="not-a-takeoff-sheet">
               {takeoffVerdict?.why}
-            </span>
-            <button
+            </span>)}
+            {/* Beside Run takeoff in the shell, not in its menu: it is what
+                takes the grey off the main action. */}
+            {slot(bar?.actions, <button
               type="button"
               onClick={() => setOverriddenByPage((prev) => ({ ...prev, [pageNumber]: true }))}
               data-takeoff="run-anyway"
-              className="min-h-[36px] rounded-md border border-line-card bg-surface px-2 text-[11px] text-link hover:text-link-hover"
+              className="min-h-[36px] shrink-0 rounded-md border border-line-card bg-surface px-2 text-[11px] text-link hover:text-link-hover"
             >
               Run anyway
-            </button>
+            </button>)}
           </>
         )}
 
@@ -3819,6 +4105,8 @@ export function TakeoffPlanViewer({
             {checking ? "Checking the runs…" : "Check these are walls"}
           </button>
         )}
+        </>
+        ))}
         {/* ── A SHEET THAT IS A SCAN ──
             Gated on the page having no TEXT LAYER, a fact settled at ingest.
             It deliberately does not wait for Find the walls: that button is
@@ -3826,13 +4114,13 @@ export function TakeoffPlanViewer({
             had by reading the picture, and this is the thing that reads it —
             so gating on it made the feature unreachable on every sheet it was
             built for. See `scannedPages`. */}
-        {(rasterByPage[pageNumber] !== undefined || rasterPages.includes(pageNumber)) && (
+        {slot(noticeSlot, (rasterByPage[pageNumber] !== undefined || rasterPages.includes(pageNumber)) && (
           <p data-takeoff="scanned-caution" className="w-full text-xs text-ink-muted">
             Scanned sheet: the lines were read from an image, not from the drawing. Check each group against the sheet
             more carefully than usual.
           </p>
-        )}
-        {scannedPages.includes(pageNumber) && (
+        ))}
+        {slot(menuSlot, scannedPages.includes(pageNumber) && (
           <button
             type="button"
             onClick={onReadSheet}
@@ -3843,7 +4131,9 @@ export function TakeoffPlanViewer({
           >
             {reading ? (readProgress ?? "Reading the sheet…") : "Read this sheet"}
           </button>
-        )}
+        ))}
+        {slot(noticeSlot, (
+        <>
         {readError !== null && (
           <p data-takeoff="read-error" className="text-xs text-ink-muted">
             {readError}
@@ -3967,6 +4257,8 @@ export function TakeoffPlanViewer({
             </ul>
           </div>
         )}
+        </>
+        ))}
 
         {/* ── THERE IS NO "FIND THE ROOMS" BUTTON, AND THAT IS DELIBERATE ──
             #702 shipped one and it was clicked on real sheets the same day.
@@ -3998,14 +4290,14 @@ export function TakeoffPlanViewer({
             no levels and a label saying "no level" would be noise on every
             sheet of it. See `sheetLevel.ts` for why a sheet naming TWO floors
             is also silent. */}
-        {levelByPage?.[pageNumber] !== undefined && (
+        {slot(scaleSlot, levelByPage?.[pageNumber] !== undefined && (
           <span
             data-takeoff="sheet-level"
-            className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body"
+            className={`rounded-md border border-line-card px-2 py-1 text-xs text-ink-body${fill ? " bg-surface/95 shadow" : ""}`}
           >
             {levelByPage[pageNumber]}
           </span>
-        )}
+        ))}
 
         {/* ── NEVER A ROW OF ITS OWN ──
             `flex-1 basis-0` keeps the status on the row of the buttons before
@@ -4020,6 +4312,29 @@ export function TakeoffPlanViewer({
                 scaleReading ? ` · sheet reads ${Math.round(scaleReading.sheetWidthFeet)} ft across` : ""
               }`
             : "Set the scale on this sheet before measuring.";
+          // ── IN THE FULL-SCREEN SHELL, THE SCALE IS A BADGE ON THE CANVAS ──
+          // Bottom-left, and pressing it is how the scale is changed: it picks
+          // the Set scale tool, exactly as the rail's ruler does.
+          if (fill) {
+            return slot(
+              scaleSlot,
+              <button
+                type="button"
+                onClick={() => setTool("calibrate")}
+                className={`rounded-md border px-2 py-1 text-xs shadow ${
+                  calibration
+                    ? "border-line-card bg-surface/95 text-ink-body hover:bg-rail-hover"
+                    : "border-tag-amber-ink bg-tag-amber text-tag-amber-ink"
+                }`}
+                data-takeoff="sheet-scale-state"
+                title={`${scaleState} Click to change it.`}
+              >
+                {/* Not "Set the scale": that is the form's own button, and two
+                    controls with one name is one control nobody can aim at. */}
+                {calibration ? `Scale ${scaleReading?.name ?? "set"}` : "Scale: not set"}
+              </button>,
+            );
+          }
           return (
             <span
               className={`min-w-24 flex-1 basis-0 truncate text-right text-xs ${calibration ? "text-ink-muted" : "text-tag-amber-ink"}`}
@@ -4033,7 +4348,7 @@ export function TakeoffPlanViewer({
       </div>
       )}
 
-      {findError && (
+      {slot(noticeSlot, findError && (
         <p
           data-takeoff="find-error"
           data-missing={missingToFind || undefined}
@@ -4041,7 +4356,7 @@ export function TakeoffPlanViewer({
         >
           {findError}
         </p>
-      )}
+      ))}
 
       {/* ── WHAT THE SHEET GAVE UP, BIGGEST FOOTAGE FIRST ──
 
@@ -4063,6 +4378,8 @@ export function TakeoffPlanViewer({
           honest than "it does your takeoff": the biggest wall types come for
           free. Accepting one group on one real sheet replaced ninety-nine hand
           traces. Whatever it missed is still traced the way it always was. */}
+      {slot(noticeSlot, (
+      <>
       {scaleSuggestion !== null && (
         <TakeoffScaleSuggestion
           suggestion={scaleSuggestion}
@@ -4098,8 +4415,11 @@ export function TakeoffPlanViewer({
           onClose={() => setReview(null)}
         />
       )}
-      {answerKey === undefined && !readOnly && feetPerUnit !== null && (
+      </>
+      ))}
+      {slot(panelOpen ? reviewSlot : noticeSlot, answerKey === undefined && !readOnly && feetPerUnit !== null && (
         <TakeoffHeldWalls
+          asRow={fill && panelOpen}
           walls={(sheet?.measurements ?? [])
             .filter((m) => m.label === HELD_LABEL)
             .map((m) => ({ id: m.id, feet: Math.hypot(m.xs[1]! - m.xs[0]!, m.ys[1]! - m.ys[0]!) * feetPerUnit }))}
@@ -4108,14 +4428,14 @@ export function TakeoffPlanViewer({
             return saved.ok ? null : saved.error;
           }}
         />
-      )}
+      ))}
       {/* On load, beside the walls total: nothing kept on this sheet reaches the estimate (Chrome round 7). */}
-      {answerKey === undefined && notCounted !== null && (
+      {slot(noticeSlot, answerKey === undefined && notCounted !== null && (
         <p data-takeoff="not-counted-sheet" className="shrink-0 text-xs font-medium text-tag-amber-ink">
           {notCounted}
         </p>
-      )}
-      {answerKey === undefined && (
+      ))}
+      {slot(panelOpen ? sideSlot : noticeSlot, answerKey === undefined && (
         <TakeoffExclusionBar
           feet={found === null ? null : found.reduce((sum, group) => sum + group.feet, 0)}
           aside={userAside}
@@ -4132,7 +4452,7 @@ export function TakeoffPlanViewer({
           onUndo={(kind) => void onUndoExclusion(kind)}
           onClear={(kind) => void onClearExclusions(kind)}
         />
-      )}
+      ))}
       {/* ── THE SHEET IS THE INSTRUMENT, SO IT GETS THE ROOM ──
           Found walls used to stack ABOVE the drawing, and the frame reserved a
           fixed 22rem for them whether they were there or not. With six groups
@@ -4160,7 +4480,7 @@ export function TakeoffPlanViewer({
         // MODE rather than a width: in answer-key mode the rail is the
         // working surface and this list is a reference, which belongs under
         // the drawing rather than beside it.
-        className={`flex gap-3 ${answerKey === undefined ? "xl:flex-row-reverse" : ""}${
+        className={fill ? "flex min-h-0 flex-1" : `flex gap-3 ${answerKey === undefined ? "xl:flex-row-reverse" : ""}${
           fill
             ? // CANVAS FIRST AT EVERY WIDTH, which is the host's whole promise.
               // Below xl this is a COLUMN and the panel is first in the DOM, so
@@ -4179,14 +4499,78 @@ export function TakeoffPlanViewer({
           narrow-screen drawer only its Close button. Say what fills it — unless a
           count or demolition panel already has the side column, where at 1600 px
           the two together left the sheet no width at all (the takeoff click spec, A5). */}
-      {found === null && panelOpen && symbols?.page !== pageNumber && demo?.page !== pageNumber && (
-        <p className="rounded-md border border-line-card bg-surface p-3 text-xs text-ink-muted xl:w-[23rem] xl:shrink-0" data-takeoff="quantities-empty">
-          No quantities on this sheet yet. Press Find the walls, or measure by hand, and they show here.
-        </p>
+      {fill && !readOnly && (
+        <nav
+          aria-label="Takeoff tools"
+          data-takeoff="tool-rail"
+          className="flex w-11 shrink-0 flex-col items-center gap-0.5 border-r border-line-card bg-surface py-1.5"
+        >
+          {RAIL_TOOLS.map((id) => TOOLS.find((entry) => entry.id === id)!).map((entry) => (
+            <RailTool
+              key={entry.id}
+              id={entry.id}
+              label={entry.label}
+              hint={toolDisabled(entry.id) ? "Set the scale on this sheet first." : entry.hint}
+              active={tool === entry.id}
+              disabled={toolDisabled(entry.id)}
+              onPick={() => setTool(entry.id)}
+            />
+          ))}
+          <span aria-hidden className="my-1 h-px w-6 bg-line-card" />
+          {rail?.undo}
+          <span aria-hidden className="my-1 h-px w-6 bg-line-card" />
+          {/* ── NOTHING IS DROPPED: THE REST ARE ONE PRESS AWAY ── */}
+          <div className="relative">
+            <button
+              type="button"
+              aria-label="More tools"
+              aria-expanded={railMore}
+              title="More tools"
+              onClick={() => setRailMore((open) => !open)}
+              data-takeoff="rail-more"
+              className={`flex h-9 w-9 items-center justify-center rounded-md text-base ${
+                railMore || (!RAIL_TOOLS.includes(tool) && tool !== "pan") ? "bg-rail-hover text-ink" : "text-ink-label hover:bg-rail-hover"
+              }`}
+            >
+              ⋯
+            </button>
+            {railMore && (
+              <div
+                data-takeoff="rail-more-menu"
+                className="absolute left-full top-0 z-50 ml-1 flex w-52 flex-col rounded-md border border-line-card bg-surface p-1 shadow-xl"
+              >
+                {TOOLS.filter((entry) => !RAIL_TOOLS.includes(entry.id) && (entry.id !== "symbol" || symbolCount)).map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => {
+                      setTool(entry.id);
+                      setRailMore(false);
+                    }}
+                    disabled={toolDisabled(entry.id)}
+                    title={toolDisabled(entry.id) ? "Set the scale on this sheet first." : entry.hint}
+                    className={`flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs ${
+                      tool === entry.id ? "bg-brand text-neutral-900" : "text-ink-body hover:bg-rail-hover"
+                    } disabled:cursor-not-allowed disabled:opacity-40`}
+                  >
+                    <ToolIcon id={entry.id} />
+                    {entry.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="mt-auto flex flex-col items-center gap-0.5">{rail?.foot}</div>
+        </nav>
       )}
-      {found !== null && panelOpen && (
+      {slot(foundSlot, found === null && panelOpen && symbols?.page !== pageNumber && demo?.page !== pageNumber && (
+        <p className={fill ? "px-2 text-xs text-ink-muted" : "rounded-md border border-line-card bg-surface p-3 text-xs text-ink-muted xl:w-[23rem] xl:shrink-0"} data-takeoff="quantities-empty">
+          No quantities on this sheet yet. Press {fill ? "Run takeoff" : "Find the walls"}, or measure by hand, and they show here.
+        </p>
+      ))}
+      {slot(foundSlot, found !== null && panelOpen && (
         <div
-          className={`rounded-md border border-line-card bg-surface p-3${
+          className={fill ? "border-t border-line-card p-2" : `rounded-md border border-line-card bg-surface p-3${
             answerKey === undefined
               ? " xl:w-[23rem] xl:shrink-0 xl:overflow-auto xl:max-h-[calc(var(--shell-port)-11rem)]"
               : // Under the plan, and short: it is a reference here, not the
@@ -4202,7 +4586,7 @@ export function TakeoffPlanViewer({
               and a person may have corrected; the one below is read off the
               title block here and only fills a silence. One slot, never two
               cautions saying the same thing in different words. */}
-          {sheetCaution && found.length > 0 && (
+          {sheetCaution && found.length > 0 && !fill && (
             <p
               className="mb-3 rounded-md bg-tag-amber p-2 text-xs text-tag-amber-ink"
               data-takeoff="duplicate-walls-caution"
@@ -4211,6 +4595,21 @@ export function TakeoffPlanViewer({
               {sheetCaution}
             </p>
           )}
+          {/* ── IN THE SHELL, A BANNER ABOVE THE LAYERS, FOLDED ──
+              One line until opened: the panel is 300px, and the full caution
+              took a third of its height above every group. */}
+          {sheetCaution && found.length > 0 && fill &&
+            slot(
+              bannerSlot,
+              <details className="rounded-md bg-tag-amber text-xs text-tag-amber-ink" data-takeoff="duplicate-walls-caution">
+                <summary className="cursor-pointer truncate px-2 py-1.5">
+                  <span className="font-semibold">Check this is the right sheet</span>
+                  {" · "}
+                  {sheetCaution.split(/(?<=\.)\s/)[0]}
+                </summary>
+                <p className="break-words px-2 pb-2">{sheetCaution}</p>
+              </details>,
+            )}
           {found.length === 0 ? (
             /* ── TWO KINDS OF EMPTY, AND THIS SAID THE WRONG ONE ──
 
@@ -4335,7 +4734,7 @@ export function TakeoffPlanViewer({
                         three different blues is the disagreement this change
                         exists to end, so the swatch draws what the overlay
                         draws: same colour, same dash, same function. */}
-                    <ClusterMark index={index} />
+                    <ClusterMark index={index} palette={fill ? LAYER_COLOURS : undefined} />
                     {/* ── THE LABEL IS ROUNDED; THE MEASUREMENT IS NOT ──
                         What is shown is the nearest eighth, because that is
                         how partitions are drawn and how a wall type is typed
@@ -4419,7 +4818,7 @@ export function TakeoffPlanViewer({
                         onChange={(event) =>
                           setChosen((current) => ({ ...current, [index]: event.target.value }))
                         }
-                        className="min-h-[36px] max-w-[22rem] rounded-md border border-line-card bg-surface px-2 text-xs text-ink-body"
+                        className={`min-h-[36px] rounded-md border border-line-card bg-surface px-2 text-xs text-ink-body ${fill ? "w-full min-w-0" : "max-w-[min(22rem,100%)]"}`}
                       >
                         <option value="">What are these?</option>
                         {groupChoices(verdict, wallTypes).map((choice) =>
@@ -4644,8 +5043,10 @@ export function TakeoffPlanViewer({
             Clear what was found
           </button>
         </div>
-      )}
+      ))}
 
+      {slot(sideSlot, (
+      <>
       {demo !== null && demo.page === pageNumber && sheet !== null && (
         <TakeoffDemoPanel
           jobId={jobId}
@@ -4700,7 +5101,13 @@ export function TakeoffPlanViewer({
           }}
         />
       )}
+      </>
+      ))}
       {/* ── The sheet ─────────────────────────────────────────────── */}
+      {/* `contents` outside the full-screen shell, so the tab's layout is the
+          one it always had; inside it, the column the canvas and its corner
+          controls share. */}
+      <div className={fill ? "relative flex min-h-0 min-w-0 flex-1 flex-col" : "contents"}>
       {/* The height reserve shrinks to 11rem once the panel is beside rather
           than above; that reserve is the toolbar and the page's own padding,
           and nothing else.
@@ -4716,8 +5123,9 @@ export function TakeoffPlanViewer({
         className={
           fill
             ? // The host has decided the height; take all of it. No max-h and
-              // no min-h, because both would reintroduce the short frame.
-              "relative min-h-0 flex-1 overflow-auto rounded-lg border border-line-card bg-rail"
+              // no min-h, because both would reintroduce the short frame. No
+              // border either: the rail and the panel are its edges.
+              "relative min-h-0 flex-1 overflow-auto bg-rail"
             : "relative max-h-[calc(var(--shell-port)-22rem)] min-h-[24rem] overflow-auto rounded-lg border border-line-card bg-rail xl:flex-1 xl:max-h-[calc(var(--shell-port)-11rem)]"
         }
         data-testid="takeoff-plan-port"
@@ -4797,6 +5205,16 @@ export function TakeoffPlanViewer({
           <div className={fill ? "flex min-h-full min-w-full" : ""}>
           <div className={`relative w-fit${fill ? " m-auto" : ""}`}>
             <canvas ref={canvasRef} className="block" />
+            {/* The lit layer's length, on the drawing beside the run it names. */}
+            {litReadout !== null && cssWidth > 0 && (
+              <div
+                data-takeoff="layer-readout"
+                className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-[140%] whitespace-nowrap rounded bg-ink px-2 py-0.5 text-xs font-semibold text-canvas shadow-lg"
+                style={{ left: litReadout.x * cssWidth, top: litReadout.y * cssWidth }}
+              >
+                ⟷ {litReadout.text}
+              </div>
+            )}
             <svg
               viewBox={`0 0 1 ${aspect}`}
               preserveAspectRatio="none"
@@ -5182,7 +5600,7 @@ export function TakeoffPlanViewer({
               {/* The doors and windows read from this sheet's symbols: a dot at
                   each hinge, the leaf hinge to strike, a bar across each window.
                   Page-width units like everything else here. */}
-              {openings !== null && openings.page === pageNumber && (
+              {openings !== null && openings.page === pageNumber && !hiddenLayers.has("doors") && (
                 <g data-takeoff="doors-overlay">
                   {openings.result.doors.map((d, i) => {
                     const lit = hoveredOpening === `door-${i}`;
@@ -5411,7 +5829,13 @@ export function TakeoffPlanViewer({
                   list: "Show the other 7" reveals the rows and their lines
                   together. Nothing is lost, because it was never actionable —
                   only visible. */}
-              <FoundWalls clusters={shownGroups} hovered={hovered} />
+              <FoundWalls
+                clusters={shownGroups}
+                hovered={hovered ?? litGroup?.index ?? null}
+                palette={fill ? LAYER_COLOURS : undefined}
+                strokePx={fill ? STROKE_PX * 1.5 : STROKE_PX}
+                hidden={hiddenGroups}
+              />
               {/* The demoted runs: grey and dashed so nobody reads one as found. */}
               {reviewRun !== null && (
                 <line
@@ -5447,6 +5871,7 @@ export function TakeoffPlanViewer({
               })}
               {rooms !== null &&
                 roomsOnPage === pageNumber &&
+                !hiddenLayers.has("rooms") &&
                 rooms.rooms.map((room) => (
                   <polygon
                     key={`room-${room.id}`}
@@ -5485,12 +5910,81 @@ export function TakeoffPlanViewer({
           </p>
         )}
       </div>
+      {/* ── THE CANVAS'S CORNERS ──
+          Messages top-left, the scale bottom-left, zoom bottom-right. Each is
+          a place the old toolbar's pieces are portalled to, and each hides
+          when nothing is in it, so an empty corner covers no drawing. */}
+      {fill && (
+        <>
+          <div
+            ref={setNoticeSlot}
+            data-hud="notices"
+            // Top CENTRE: a sheet's corners are where a drag starts (the click
+            // list's split-in-no-room step begins at 2% of the page), and its
+            // top edge is usually margin.
+            className="absolute left-1/2 top-2 z-20 flex max-h-[45%] w-[min(28rem,calc(100%-1rem))] -translate-x-1/2 flex-col gap-2 overflow-y-auto rounded-md border border-line-card bg-surface/95 p-2 shadow-lg empty:hidden"
+          />
+          <div ref={setScaleSlot} data-hud="scale" className="absolute bottom-2 left-2 z-20 flex flex-wrap items-center gap-2 empty:hidden" />
+          <div
+            ref={setZoomSlot}
+            data-hud="zoom"
+            className="absolute bottom-2 right-2 z-20 rounded-md border border-line-card bg-surface/95 p-1 shadow-lg empty:hidden"
+          />
+        </>
+      )}
+      </div>
+
+      {/* ── THE LAYERS ──
+          Open by default and collapsible from the top bar's Quantities. It also
+          opens on its own while a demolition, comparison or count panel is in
+          use, because those are only ever reached from a button that started
+          them, and a result with nowhere to show is a button that did nothing. */}
+      {fill && (panelOpen || sidePanelOn) && (
+        <aside
+          data-takeoff="layers-rail"
+          className={
+            panelDrawer
+              ? "fixed bottom-0 right-0 top-12 z-40 w-80 overflow-y-auto overflow-x-hidden border-l border-line-card bg-surface shadow-xl"
+              : // overflow-x hidden: nothing in it runs past its edge.
+                "w-[min(300px,calc(25vw-48px))] min-w-[15rem] shrink-0 overflow-y-auto overflow-x-hidden border-l border-line-card bg-surface"
+          }
+        >
+          {panelOpen && (
+            <TakeoffLayerPanel
+              jobId={jobId}
+              layers={layers}
+              lit={litLayer}
+              onLit={setLitLayer}
+              onToggle={(key) =>
+                setHiddenLayers((was) => {
+                  const next = new Set(was);
+                  if (!next.delete(key)) next.add(key);
+                  return next;
+                })
+              }
+              banner={<div ref={setBannerSlot} className="empty:hidden" />}
+              review={<div ref={setReviewSlot} className="empty:hidden" />}
+            >
+              <div ref={setFoundSlot} className="min-w-0 break-words empty:hidden" />
+            </TakeoffLayerPanel>
+          )}
+          <div ref={setSideSlot} className="flex flex-col gap-2 p-2 empty:hidden" />
+        </aside>
+      )}
 
       </div>
 
       {/* ── What the draft reads, and what to do with it ──────────── */}
       {drawing && (
-        <div className="relative z-20 rounded-lg border border-line-card bg-surface-card p-3">
+        <div
+          className={
+            fill
+              ? // Floating over the bottom of the canvas, since the canvas is
+                // the whole height: in the flow it would push the drawing up.
+                "absolute bottom-12 left-1/2 z-30 w-[min(40rem,calc(100%-24rem))] min-w-[20rem] -translate-x-1/2 rounded-lg border border-line-card bg-surface p-3 shadow-xl"
+              : "relative z-20 rounded-lg border border-line-card bg-surface-card p-3"
+          }
+        >
           {/* relative z-20: above the workspace's floating "This sheet" summary
               (z-10, bottom-left), which sat on Save work area once a sheet had
               measured items and took the click (the takeoff spec, R5-15). */}
@@ -5781,8 +6275,52 @@ export function TakeoffPlanViewer({
  * is in page-width units: the dash RATIOS must match, the absolute lengths
  * cannot. A dash scaled for the drawing renders as one solid blob at this size.
  */
-export function ClusterMark({ index }: { index: number }) {
-  const mark = markFor(index, 2);
+/** One tool on the workspace's rail: an icon, its name for a screen reader and
+ *  a click by role, and a tooltip that says what it does and its key. */
+function RailTool({
+  id,
+  label,
+  hint,
+  active,
+  disabled,
+  onPick,
+}: {
+  id: ToolId;
+  label: string;
+  hint: string;
+  active: boolean;
+  disabled: boolean;
+  onPick: () => void;
+}) {
+  const key = TOOL_KEYS[id];
+  return (
+    <button
+      type="button"
+      onClick={onPick}
+      disabled={disabled}
+      aria-label={label}
+      aria-pressed={active}
+      title={`${label}${key ? ` (${key.toUpperCase()})` : ""}: ${hint}`}
+      data-tool={id}
+      className={`flex h-9 w-9 items-center justify-center rounded-md ${
+        active ? "bg-brand text-neutral-900" : "text-ink-label hover:bg-rail-hover"
+      } disabled:cursor-not-allowed disabled:opacity-40`}
+    >
+      <ToolIcon id={id} />
+    </button>
+  );
+}
+
+function ToolIcon({ id }: { id: ToolId }) {
+  return (
+    <svg aria-hidden viewBox="0 0 24 24" className="h-5 w-5 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d={TOOL_ICONS[id]} />
+    </svg>
+  );
+}
+
+export function ClusterMark({ index, palette }: { index: number; palette?: readonly string[] }) {
+  const mark = markFor(index, 2, palette);
   return (
     <svg aria-hidden width="16" height="8" viewBox="0 0 16 8" className="shrink-0">
       <line
@@ -5859,12 +6397,52 @@ export function SheetPager({
   pageCount,
   sheetLabelByPage,
   onJump,
+  compact = false,
 }: {
   pageNumber: number;
   pageCount: number;
   sheetLabelByPage: Record<number, string>;
   onJump: (page: number) => void;
+  /** The workspace's top bar: ← 3 of 24 →, the dropdown on the count. */
+  compact?: boolean;
 }) {
+  if (compact) {
+    const step = "flex h-7 w-7 items-center justify-center rounded-full text-ink-label hover:bg-rail-hover disabled:opacity-30";
+    return (
+      <div className="flex items-center gap-0.5 rounded-full border border-line-card px-1" data-takeoff="sheet-stepper">
+        <button type="button" aria-label="Previous sheet" onClick={() => onJump(Math.max(1, pageNumber - 1))} disabled={pageNumber <= 1} className={step}>
+          ←
+        </button>
+        {pageCount > 1 ? (
+          <label className="relative flex items-center text-xs text-ink-body">
+            <span aria-hidden className="pointer-events-none px-1 tabular-nums">
+              {pageNumber} of {pageCount}
+            </span>
+            {/* The real control, invisible over the count: one press opens
+                every sheet by its name. */}
+            <select
+              value={pageNumber}
+              onChange={(event) => onJump(Number(event.target.value))}
+              data-takeoff="sheet-picker"
+              aria-label="Jump to a sheet"
+              className="absolute inset-0 cursor-pointer opacity-0"
+            >
+              {Array.from({ length: pageCount }, (_, index) => index + 1).map((number) => (
+                <option key={number} value={number}>
+                  {sheetLabelByPage[number] ?? `Sheet ${number}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <span className="px-1 text-xs tabular-nums text-ink-muted">1 of 1</span>
+        )}
+        <button type="button" aria-label="Next sheet" onClick={() => onJump(Math.min(pageCount, pageNumber + 1))} disabled={pageNumber >= pageCount} className={step}>
+          →
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="flex items-center gap-1">
       <button
@@ -5950,17 +6528,25 @@ export function ClusterTag({ names }: { names: readonly string[] }) {
 export function FoundWalls({
   clusters,
   hovered,
+  palette,
+  strokePx = STROKE_PX,
+  hidden,
 }: {
   /** Anything with runs on it. A `WallGroup` since the tag split, a
    *  `WallCluster` before it, and the drawing code never cared which. */
   clusters: { runs: { x1: number; y1: number; x2: number; y2: number }[] }[] | null;
   hovered: number | null;
+  /** The full-screen shell's stronger palette and weight; the tab's otherwise. */
+  palette?: readonly string[];
+  strokePx?: number;
+  /** Groups whose layer is switched off. */
+  hidden?: ReadonlySet<number>;
 }) {
   if (clusters === null) return null;
   return (
     <>
       {clusters.map((cluster, index) =>
-        cluster.runs.map((run, runIndex) => (
+        hidden?.has(index) ? null : cluster.runs.map((run, runIndex) => (
           <line
             key={`${index}-${runIndex}`}
             data-found-wall={index}
@@ -5968,9 +6554,9 @@ export function FoundWalls({
             y1={run.y1}
             x2={run.x2}
             y2={run.y2}
-            stroke={markFor(index, STROKE_PX).stroke}
-            strokeWidth={hovered === index ? STROKE_PX * 2.5 : STROKE_PX}
-            strokeDasharray={markFor(index, STROKE_PX).dash}
+            stroke={markFor(index, strokePx, palette).stroke}
+            strokeWidth={hovered === index ? strokePx * 2.5 : strokePx}
+            strokeDasharray={markFor(index, strokePx, palette).dash}
             strokeOpacity={hovered === null || hovered === index ? 1 : 0.25}
             vectorEffect="non-scaling-stroke"
           />

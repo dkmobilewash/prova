@@ -24,6 +24,23 @@
 export const CLUSTER_COLOURS = ["#38bdf8", "#f472b6", "#a78bfa", "#34d399", "#fbbf24", "#fb923c"];
 
 /**
+ * THE FULL-SCREEN WORKSPACE'S LAYERS, which are read off a white sheet at Fit.
+ *
+ * The palette above is the takeoff tab's, tuned beside the scale line (see
+ * `calibrationMark.test.ts`), and its 400-weight tints wash out on paper once
+ * a sheet is zoomed out to fit a screen. These are the 600-700 weights of the
+ * same idea: six strong hues, none of them the scale line's amber, the rooms'
+ * green/amber or the doors' blue/magenta, so every layer in the panel has one
+ * colour on the plan and nothing else wears it. Same length as the tab's, so
+ * `DISTINCT_MARKS` holds for both.
+ */
+export const LAYER_COLOURS = ["#9333ea", "#0369a1", "#dc2626", "#0d9488", "#4d7c0f", "#c2410c"];
+
+/** The workspace's fixed layers, matching what the overlay already draws them in. */
+export const ROOM_COLOUR = "#15803d";
+export const DOOR_COLOUR = "#2563eb";
+
+/**
  * The dash a group is drawn with, so a COLOUR is not the whole mark.
  *
  * ── SIX COLOURS WERE LABELLING NINETEEN GROUPS, AND FOUR OF THEM WERE BLUE ──
@@ -88,10 +105,14 @@ export const SHOWN_AT_FIRST = 12;
  * absolute lengths cannot. A dash scaled for the drawing is one solid blob at
  * swatch size.
  */
-export function markFor(index: number, strokePx: number): { stroke: string; dash: string } {
-  const stroke = CLUSTER_COLOURS[index % CLUSTER_COLOURS.length];
+export function markFor(
+  index: number,
+  strokePx: number,
+  palette: readonly string[] = CLUSTER_COLOURS,
+): { stroke: string; dash: string } {
+  const stroke = palette[index % palette.length]!;
   // The dash changes only once the palette has been all the way round, so the
   // first six groups keep the mark they have always had.
-  const on = CLUSTER_DASHES[Math.floor(index / CLUSTER_COLOURS.length) % CLUSTER_DASHES.length];
+  const on = CLUSTER_DASHES[Math.floor(index / palette.length) % CLUSTER_DASHES.length];
   return { stroke, dash: `${strokePx * on} ${strokePx * 2}` };
 }

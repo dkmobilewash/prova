@@ -29,6 +29,9 @@ describe("the sheet whose walls are on the job is the one counted", () => {
 describe("A100 says it isn't counted on load, beside the walls total", () => {
   it("renders the sentence whenever the loader names the counting sheet, before the exclusion bar", () => {
     const viewer = read("../../components/TakeoffPlanViewer.tsx");
-    expect(viewer).toMatch(/answerKey === undefined && notCounted !== null && \(\s*<p data-takeoff="not-counted-sheet"[^>]*>\s*\{notCounted\}\s*<\/p>\s*\)\}\s*\{answerKey === undefined && \(\s*<TakeoffExclusionBar/);
+    // In the full-screen shell both are portalled (`slot(...)`) — the sentence
+    // to the canvas's notice stack, the bar beside the layers — so the order is
+    // asserted through the wrapper. Still: on load, and still before the bar.
+    expect(viewer).toMatch(/answerKey === undefined && notCounted !== null && \(\s*<p data-takeoff="not-counted-sheet"[^>]*>\s*\{notCounted\}\s*<\/p>\s*\)\)\}\s*\{slot\(panelOpen \? sideSlot : noticeSlot, answerKey === undefined && \(\s*<TakeoffExclusionBar/);
   });
 });
