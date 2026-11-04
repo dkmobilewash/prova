@@ -601,8 +601,21 @@ export function nextRscAnswer(page: Page, timeout = 15_000): Promise<string> {
     );
 }
 
-export async function settleAction(page: Page, act: () => Promise<unknown>): Promise<void> {
-  const posted = page.waitForResponse((response) => isServerActionPost(response.request()));
+/**
+ * `formSubmission: true` waits for the action a FORM sent, and nothing else.
+ *
+ * Use it on any page that calls Server Actions by itself. The takeoff tab
+ * fires two on every load (text/plain argument posts), and plain
+ * `settleAction` resolved on one of them: in run 41762039632, Save on the
+ * revision form was clicked, a background action answered first, the step
+ * reloaded 209 ms later and cut the Save off unanswered, and the sheet stayed
+ * undated on every retry. When the reload instead overlapped the Save's commit,
+ * the page's two reads disagreed (#938's "1 plan has no issue date" beside
+ * "Rev 1 · 2026-01-12"), because the banner and the plan are loaded separately.
+ */
+export async function settleAction(page: Page, act: () => Promise<unknown>, { formSubmission = false } = {}): Promise<void> {
+  const wanted = formSubmission ? isFormSubmission : isServerActionPost;
+  const posted = page.waitForResponse((response) => wanted(response.request()));
   await act();
   await posted;
 }
@@ -630,4 +643,16 @@ export function isServerActionPost(request: {
   headers(): Record<string, string>;
 }): boolean {
   return request.method() === "POST" && ACTION_HEADER in request.headers();
+}
+
+/**
+ * A Server Action post carrying a form's fields. Next encodes the arguments
+ * with `encodeReply`, which yields a FormData (sent multipart) when an argument
+ * is a FormData and a string (sent text/plain) otherwise — so a form's submit is
+ * multipart and a background call with plain arguments is not. Measured in the
+ * trace of run 41762039632: all six form submits multipart, both of the takeoff
+ * tab's own on-load actions text/plain.
+ */
+export function isFormSubmission(request: { method(): string; headers(): Record<string, string> }): boolean {
+  return isServerActionPost(request) && /^multipart\/form-data/i.test(request.headers()["content-type"] ?? "");
 }
