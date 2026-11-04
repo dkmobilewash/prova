@@ -98,9 +98,49 @@ const PASSES = 2;
  */
 const INSTRUMENT = () => {
   type Mut = { t: number; path: string; removed: number; added: number; boundary: boolean; gone: string; came: string };
-  const w = window as Window & { __mut?: Mut[]; __err?: { t: number; msg: string }[] };
+  type Stack = { t: number; msg: string; stack: string };
+  const w = window as Window & { __mut?: Mut[]; __err?: { t: number; msg: string }[]; __stacks?: Stack[] };
   w.__mut = [];
   w.__err = [];
+  w.__stacks = [];
+
+  // ── THE COMPONENT STACK, WHICH PRODUCTION REACT COMPUTES AND NEXT DROPS ──
+  //
+  // React 19 production still builds a component stack for every hydration
+  // error (`createCapturedValueAtFiber` -> `getStackByFiberInDevAndProd`) and
+  // hands it to the root's `onRecoverableError(error, { componentStack })`.
+  // Next 15.5's handler (`react-client-callbacks/on-recoverable-error.js`)
+  // takes only the first argument and calls `reportError`, so the stack never
+  // reaches `pageerror`. React assigns the handler with
+  // `this.onRecoverableError = …` inside `FiberRootNode`, a plain assignment,
+  // so a setter on Object.prototype sees it before hydration and can wrap it.
+  // An object literal (Next's hydrateRoot options) defines its own property
+  // and never reaches the setter.
+  Object.defineProperty(Object.prototype, "onRecoverableError", {
+    configurable: true,
+    get() {
+      return undefined;
+    },
+    set(this: object, fn: unknown) {
+      const wrapped =
+        typeof fn === "function"
+          ? function (this: unknown, error: unknown, info?: { componentStack?: string }) {
+              w.__stacks?.push({
+                t: performance.now(),
+                msg: String((error as Error | null)?.message ?? error),
+                stack: String(info?.componentStack ?? ""),
+              });
+              return (fn as (...a: unknown[]) => unknown).call(this, error, info);
+            }
+          : fn;
+      Object.defineProperty(this, "onRecoverableError", {
+        value: wrapped,
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      });
+    },
+  });
 
   window.addEventListener("error", (event: ErrorEvent) => {
     w.__err?.push({ t: performance.now(), msg: String(event.message ?? event) });
@@ -237,24 +277,53 @@ const INSTRUMENT = () => {
 
 type Readout = {
   errors: { t: number; msg: string }[];
+  stacks: { t: number; msg: string; stack: string }[];
   muts: { t: number; path: string; removed: number; added: number; boundary: boolean; gone: string; came: string }[];
   hydrated: boolean;
 };
 
 async function readout(page: import("@playwright/test").Page): Promise<Readout> {
   return page.evaluate(() => {
-    const w = window as unknown as { __mut: Readout["muts"]; __err: Readout["errors"] };
+    const w = window as unknown as { __mut: Readout["muts"]; __err: Readout["errors"]; __stacks: Readout["stacks"] };
     // HYDRATION IS PROVED, not assumed. React cannot mismatch on a page it
     // never hydrated, and an un-hydrated load is a silent zero — the vacuous
     // green this whole directory exists to end.
     const hydrated = [...document.querySelectorAll("body *")]
       .slice(0, 400)
       .some((el) => Object.keys(el).some((k) => k.startsWith("__reactFiber$")));
-    return { errors: w.__err ?? [], muts: w.__mut ?? [], hydrated };
+    return { errors: w.__err ?? [], stacks: w.__stacks ?? [], muts: w.__mut ?? [], hydrated };
   }) as Promise<Readout>;
 }
 
 const IS_418 = (msg: string) => /Minified React error #418|error #418/.test(msg);
+
+/**
+ * Prints a production component stack readably. Host frames (`at div`) are
+ * already plain; a function component's frame is `at <mangled> (chunk:line:col)`,
+ * so the code around that column is printed too — a minified name says
+ * nothing, but the className strings and JSX next to it do.
+ */
+async function printStack(page: import("@playwright/test").Page, prefix: string, stack: string): Promise<void> {
+  const frames = stack.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 40);
+  const sources = new Map<string, string>();
+  for (const frame of frames) {
+    const at = frame.match(/^at (\S+)(?: \((.+):(\d+):(\d+)\))?/);
+    if (!at || !at[2]) {
+      console.log(`${prefix} ${frame}`);
+      continue;
+    }
+    const [, name, url, line, col] = at;
+    let snippet = "";
+    try {
+      if (!sources.has(url)) sources.set(url, await (await page.request.get(url)).text());
+      const text = (sources.get(url) ?? "").split("\n")[Number(line) - 1] ?? "";
+      snippet = text.slice(Math.max(0, Number(col) - 1), Number(col) + 200).replace(/\s+/g, " ");
+    } catch {
+      snippet = "(source unavailable)";
+    }
+    console.log(`${prefix} at ${name}  ${url.replace(/^.*\/_next\//, "_next/")}:${line}:${col}\n${prefix}     ${snippet}`);
+  }
+}
 
 /** Mutations within this many ms of the error are reported as its neighbours.
  *  #501 saw its burst "in the same millisecond"; 60 is generous enough to
@@ -337,6 +406,9 @@ test.describe("#510: name the mismatched element", () => {
             (injected.length > 0 ? ` — THIRD-PARTY INJECTION NEARBY: ${injected.join(" ; ")}` : "");
           hits.push(line);
           console.log(`LOC ${line}`);
+          const stacks = data.stacks.filter((s) => IS_418(s.msg));
+          console.log(`LOC    component stacks caught: ${stacks.length}`);
+          for (const s of stacks.slice(0, 2)) await printStack(page, "LOC    STACK", s.stack);
           // The suspects first, then the boundary noise, so the answer is not
           // buried in the thing #501 mistook for it.
           for (const m of real.slice(0, 6)) {
@@ -388,6 +460,7 @@ test.describe("#510: name the mismatched element", () => {
 
     let caught = 0;
     let named = 0;
+    let stacked = 0;
     for (let i = 0; i < 3; i += 1) {
       await page.goto("/dashboard", { waitUntil: "load" });
       await page.waitForTimeout(1200);
@@ -400,6 +473,9 @@ test.describe("#510: name the mismatched element", () => {
         .filter((m) => Math.abs(m.t - error.t) <= WINDOW_MS && !m.boundary && m.removed > 0)
         .sort((a, b) => b.removed - a.removed || Math.abs(a.t - error.t) - Math.abs(b.t - error.t));
       console.log(`LOC CONTROL load ${i + 1}: caught #418, ${near.length} non-boundary mutations`);
+      const stacks = data.stacks.filter((s) => IS_418(s.msg));
+      if (stacks.length > 0) stacked += 1;
+      for (const s of stacks.slice(0, 1)) await printStack(page, "LOC    CONTROL STACK", s.stack);
       for (const m of near.slice(0, 4)) {
         console.log(
           `LOC    +${(m.t - error.t).toFixed(1)}ms  -${m.removed}/+${m.added}  in ${m.path}  GONE: ${m.gone || "(none)"}`,
@@ -410,7 +486,8 @@ test.describe("#510: name the mismatched element", () => {
       if (near.some((m) => /(^|> )body/.test(m.path))) named += 1;
     }
 
-    console.log(`LOC === CONTROL caught ${caught}/3, named the container on ${named}`);
+    console.log(`LOC === CONTROL caught ${caught}/3, named the container on ${named}, component stack on ${stacked}`);
+    expect(stacked, "the control mismatched but no component stack reached the instrument").toBe(caught);
     expect(caught, "the control never produced a mismatch — the harness is broken, not the app").toBeGreaterThan(0);
     expect(named, "the control mismatched but the locator could not name the container").toBeGreaterThan(0);
   });
