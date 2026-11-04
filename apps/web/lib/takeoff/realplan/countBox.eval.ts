@@ -55,7 +55,8 @@ describe.skipIf(DIR === "" || !existsSync(FILE))("Count like this against the bo
   it("counts the same for any reasonable box", { timeout: 1_800_000 }, async () => {
     const sheets = new Map<number, Awaited<ReturnType<typeof sheet>>>();
     for (const p of [...new Set(SYMBOLS.map((x) => x.page))]) sheets.set(p, await sheet(p));
-    expect([...sheets.values()][0]!.segs.length, "the sheet read to no strokes").toBeGreaterThan(1000);
+    const first = [...sheets.values()][0]!;
+    expect(first.segs.length, "the sheet read to no strokes").toBeGreaterThan(1000);
     let seed = 5;
     // The same 15 boxes per instance as the measurement in the PR body.
     const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
