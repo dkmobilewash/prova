@@ -122,6 +122,12 @@ const INSTRUMENT = () => {
       return undefined;
     },
     set(this: object, fn: unknown) {
+      // FiberRootNode is built inside hydrateRoot, so this is hydration's start.
+      const row = document.getElementById("main")?.parentNode;
+      (w as unknown as { __row?: string[] }).__row?.push(
+        `${performance.now().toFixed(1)}ms ROOT CREATED, readyState=${document.readyState}` +
+          (row ? "" : ", no <main> parsed yet"),
+      );
       const wrapped =
         typeof fn === "function"
           ? function (this: unknown, error: unknown, info?: { componentStack?: string }) {
@@ -234,9 +240,29 @@ const INSTRUMENT = () => {
     return false;
   };
 
+  const outline = (parent: Node) =>
+    Array.from(parent.childNodes)
+      .map((c) => (c.nodeType === 8 ? `<!--${(c as Comment).data.slice(0, 20)}-->` : describeNode(c)))
+      .join(" , ");
+  const rowLog: string[] = [];
+  (w as unknown as { __row?: string[] }).__row = rowLog;
+
   new MutationObserver((records) => {
     const t = performance.now();
     for (const record of records) {
+      // ── THE ROW `<main>` SITS IN, OVER TIME ──
+      // Every change to it or to a comment directly in it, with what it held
+      // afterwards. React's streaming reveal ($RC marks a boundary "$~", $RV
+      // later swaps the template for content and marks it "$") lands here,
+      // and so does a regeneration — on one clock with the error.
+      const row = document.getElementById("main")?.parentNode;
+      if (row && (record.target === row || record.target.parentNode === row)) {
+        const what =
+          record.type === "characterData"
+            ? `comment "${record.oldValue}" -> "${(record.target as Comment).data}"`
+            : `-${record.removedNodes.length}/+${record.addedNodes.length}`;
+        rowLog.push(`${t.toFixed(1)}ms ${what} | ${outline(row)}`);
+      }
       if (record.type !== "childList") continue;
       // Only a real structural change. A single text node arriving is the
       // other error number and not this one.
@@ -262,18 +288,15 @@ const INSTRUMENT = () => {
       }
       if (!attached || inHead) continue;
 
-      // ── WHAT THE SERVER'S TREE LOOKED LIKE WHEN REACT GAVE UP ON IT ──
+      // ── WHAT THE SERVER'S TREE LOOKED LIKE WHEN REACT TORE IT OUT ──
       // A regeneration removes the server's nodes whole, and a removed node is
-      // detached but intact — so the row `<main>` sat in can still be read,
-      // exactly as hydration found it.
+      // detached but intact — so the row `<main>` sat in can still be read.
+      // NOT as hydration found it: streaming reveals may have landed between
+      // the mismatch and the removal. The row timeline above is for that.
       for (const node of Array.from(record.removedNodes)) {
         if (node.nodeType !== 1) continue;
         const main = (node as Element).querySelector("main#main");
         if (!main || !main.parentNode) continue;
-        const outline = (parent: Node) =>
-          Array.from(parent.childNodes)
-            .map((c) => (c.nodeType === 8 ? `<!--${(c as Comment).data.slice(0, 20)}-->` : describeNode(c)))
-            .join(" , ");
         (w as unknown as { __dump?: string[] }).__dump = [
           `shell: ${outline(node)}`,
           `row:   ${outline(main.parentNode)}`,
@@ -291,13 +314,14 @@ const INSTRUMENT = () => {
         came: Array.from(record.addedNodes).map(describeNode).join(" , ").slice(0, 160),
       });
     }
-  }).observe(document, { childList: true, subtree: true });
+  }).observe(document, { childList: true, subtree: true, characterData: true, characterDataOldValue: true });
 };
 
 type Readout = {
   errors: { t: number; msg: string }[];
   stacks: { t: number; msg: string; stack: string }[];
   dump: string[];
+  row: string[];
   muts: { t: number; path: string; removed: number; added: number; boundary: boolean; gone: string; came: string }[];
   hydrated: boolean;
 };
@@ -309,6 +333,7 @@ async function readout(page: import("@playwright/test").Page): Promise<Readout> 
       __err: Readout["errors"];
       __stacks: Readout["stacks"];
       __dump?: string[];
+      __row?: string[];
     };
     // HYDRATION IS PROVED, not assumed. React cannot mismatch on a page it
     // never hydrated, and an un-hydrated load is a silent zero — the vacuous
@@ -316,7 +341,7 @@ async function readout(page: import("@playwright/test").Page): Promise<Readout> 
     const hydrated = [...document.querySelectorAll("body *")]
       .slice(0, 400)
       .some((el) => Object.keys(el).some((k) => k.startsWith("__reactFiber$")));
-    return { errors: w.__err ?? [], stacks: w.__stacks ?? [], dump: w.__dump ?? [], muts: w.__mut ?? [], hydrated };
+    return { errors: w.__err ?? [], stacks: w.__stacks ?? [], dump: w.__dump ?? [], row: w.__row ?? [], muts: w.__mut ?? [], hydrated };
   }) as Promise<Readout>;
 }
 
@@ -435,6 +460,8 @@ test.describe("#510: name the mismatched element", () => {
           const stacks = data.stacks.filter((s) => IS_418(s.msg));
           console.log(`LOC    component stacks caught: ${stacks.length}`);
           for (const d of data.dump) console.log(`LOC    SERVER TREE ${d}`);
+          console.log(`LOC    ROW TIMELINE (error at ${error.t.toFixed(1)}ms)`);
+          for (const r of data.row.slice(0, 24)) console.log(`LOC      ${r}`);
           for (const s of stacks.slice(0, 2)) await printStack(page, "LOC    STACK", s.stack);
           // The suspects first, then the boundary noise, so the answer is not
           // buried in the thing #501 mistook for it.
