@@ -187,6 +187,8 @@ export type WallCandidate = {
    * faces to be unbalanced about.
    */
   fromBalancedFaces?: boolean;
+  /** Read off a solid filled band rather than two drawn faces — see `filledWalls.ts`. */
+  fromFill?: boolean;
 };
 
 export type WallFinderOptions = {

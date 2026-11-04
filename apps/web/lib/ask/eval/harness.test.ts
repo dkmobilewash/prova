@@ -322,6 +322,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: Count like this over 30 boxes per symbol on REAL training sheets, guarded by a skip on REAL_PLAN_DIR plus an assertion that the sheet read to strokes",
     "legendAcross.eval.ts":
       "calls no model: Find on all sheets against a REAL legend sheet with 20 boxes, guarded by a skip on REAL_PLAN_DIR plus an assertion that both sheets read to strokes",
+    "zzFilledArms.eval.ts":
+      "calls no model and writes only its own report: scores the app's candidate list with filled bands OFF and ON against every labelled sheet's answer key, per building on training and TOTALS ONLY on the held-out buildings. Skips without ARMS_LABELS, ARMS_PLANS and ARMS_OUT, and asserts at least one sheet was scored, so an empty folder cannot read as two identical arms",
     "sheetTemplate.eval.ts":
       "calls no model: the template filter's recurrence histogram over a REAL set, guarded by a skip on REAL_PLAN_PDF plus a non-zero segment assertion — a sheet that parsed to nothing must not read as a sheet with no furniture on it",
   };

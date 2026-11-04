@@ -518,6 +518,8 @@ export type SheetDetectInput = {
    * veto against a list built without it compares two different pipelines.
    */
   veto?: Parameters<typeof findWallsOnSheet>[0]["veto"];
+  /** See `FindWallsInput.filledBands`. */
+  filledBands?: boolean;
   /** Every pairing the finder considers, for answer-key mode. Forwarded to
    *  every finder call this makes, whichever branch the sheet takes. */
   onCandidate?: Parameters<typeof findWallsOnSheet>[0]["onCandidate"];
@@ -609,6 +611,7 @@ export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
     wallTypes: [...(input.wallTypes ?? [])],
     sampledSheets: input.sampledSheets ?? null,
     veto: input.veto,
+    filledBands: input.filledBands,
     onCandidate: input.onCandidate,
     planText: input.planText,
   };
