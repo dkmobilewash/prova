@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { inPageWidthUnits } from "../findWallsOnSheet";
 import { heldOutReason } from "../heldOutSets";
@@ -112,6 +112,7 @@ describe.skipIf(LABELS === "" || PLANS === "" || OUT === "")("filled bands, off 
         }
       }
     }
+    expect(arms.off.length, "no labelled sheet was scored").toBeGreaterThan(0);
     const t = (a: SheetScore[]) => {
       const x = totalScore(a);
       return `sheets ${x.sheets} key ${x.keyFeet.toFixed(0)} proposed ${x.proposedFeet.toFixed(0)} missing ${x.missingFeet.toFixed(0)} junk ${x.confirmedJunkFeet.toFixed(0)} unjudged ${x.unjudgedFeet.toFixed(0)} net ${x.netFeet.toFixed(0)}`;
