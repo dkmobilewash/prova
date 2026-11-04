@@ -123,6 +123,10 @@ const allSources = sourceFiles(join(WEB_ROOT, "app"))
   .concat(sourceFiles(join(WEB_ROOT, "components")))
   .concat(sourceFiles(join(WEB_ROOT, "lib")))
   .filter((file) => file !== DECLARES_NON_CALLERS);
+// Read once. Each of ~500 cases used to re-read every source file, which
+// took the file to ~60-70s in one synchronous worker and tripped Vitest's
+// worker RPC timeout ("Timeout calling onTaskUpdate") on a full run.
+const sourceText = new Map(allSources.map((file) => [file, readFileSync(file, "utf8")]));
 
 describe("every Server Action is reachable", () => {
   const actions = actionModules.flatMap((file) =>
@@ -141,7 +145,7 @@ describe("every Server Action is reachable", () => {
       if (source === file) return false; // its own definition
       const base = source.split("/").pop() ?? "";
       if (source.startsWith(ACTIONS_DIR) && NOT_A_CALLER.has(base)) return false; // the barrel
-      return new RegExp(`\\b${name}\\b`).test(readFileSync(source, "utf8"));
+      return new RegExp(`\\b${name}\\b`).test(sourceText.get(source) ?? "");
     });
 
     expect(
