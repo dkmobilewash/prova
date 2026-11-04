@@ -13,6 +13,7 @@ import {
   TimeZoneCookieRegion,
   TopBarRegion,
 } from "@/components/AppChrome";
+import { PageSlot } from "@/components/PageSlot";
 import { shellQueryFailed } from "@/lib/shell-region-failure";
 import { routesHiddenByAnswers, type BusinessScopeAnswers } from "@/lib/businessScope";
 import { loadRoutesWithData } from "@/lib/businessScopeData";
@@ -218,7 +219,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             without it a focused "Review & send" scrolled in behind the tabs
             (measured at 390x844, 2026-10-10). */}
         <main className="min-h-0 min-w-0 flex-1 overflow-y-auto pb-[var(--shell-tabs)] scroll-pb-[var(--shell-tabs)] [--shell-port:calc(100dvh-var(--shell-topbar)-var(--shell-tabs))] focus:outline-none" id="main" tabIndex={-1}>
-          {children}
+          {/* Never {children} straight under <main>: a host element whose
+              child arrives as a lazy is replayed during hydration and
+              re-claims a node it already walked past — #510's residual #418.
+              See PageSlot in components/AppChrome.tsx. */}
+          <PageSlot>
+            {children}
+          </PageSlot>
         </main>
       </div>
       <BottomTabsRegion

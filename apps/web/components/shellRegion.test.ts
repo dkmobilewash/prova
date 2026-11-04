@@ -359,7 +359,10 @@ describe("4b. app/(app)/layout.tsx mounts those regions and pairs none itself", 
   });
 
   it("the layout imports nothing from @/components/ but those regions and the fallback", () => {
-    const allowed = regions.concat("ShellRegionFallback");
+    // PageSlot is not a region and is the one import that takes the page:
+    // it is a bare function component between <main> and {children}, so a
+    // page that arrives as a lazy suspends it rather than <main> (#510).
+    const allowed = regions.concat("ShellRegionFallback", "PageSlot");
     const imported = importedComponents(layoutCode);
     // Not vacuous: the layout does import the chrome.
     expect(imported.length).toBeGreaterThanOrEqual(regions.length);
@@ -427,6 +430,16 @@ describe("4b. app/(app)/layout.tsx mounts those regions and pairs none itself", 
   // a control scrolled into view (focus, scrollIntoView) lands under them.
   // happy-dom cannot measure this; the Playwright probe in the 2026-10-10
   // report did. This pins the two classes it measured.
+  // #510: a host `<main>` holding the page directly is replayed when the
+  // page's element arrives as a lazy, and the replay re-claims a node the
+  // first attempt walked past — the residual #418. `PageSlot` (PageSlot.tsx)
+  // takes the suspension instead; components/pageSlot.test.tsx reproduces
+  // the mismatch without it. This pins that the layout still uses it.
+  it("the page reaches <main> through PageSlot, never as <main>'s direct child", () => {
+    expect(layoutCode).toMatch(/<main\b[^>]*>\s*(?:\{\}\s*)?<PageSlot>\s*\{children\}\s*<\/PageSlot>\s*<\/main>/);
+    expect(read("./PageSlot.tsx").replace(/\/\*[\s\S]*?\*\//g, "")).toMatch(/export function PageSlot\(\{ children \}[^)]*\)\s*\{\s*return children;\s*\}/);
+  });
+
   it("the scroll port clears the phone's fixed tabs, for content and for focus", () => {
     expect(layoutCode).toMatch(/<main className="[^"]*\bpb-\[var\(--shell-tabs\)\][^"]*\bscroll-pb-\[var\(--shell-tabs\)\]/);
   });
