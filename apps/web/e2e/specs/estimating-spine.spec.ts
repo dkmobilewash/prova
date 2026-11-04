@@ -182,7 +182,7 @@ test.describe("the estimating desk", () => {
     await expect(page.getByRole("heading", { name: "Wall types", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "No wall types yet", exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: "Start from two common wall types" }).click();
+    await page.getByRole("button", { name: "Start from the common trade assemblies" }).click();
 
     // ── A COLD ROUTE'S FIRST SERVER ACTION NEEDS MORE THAN TEN SECONDS (#707) ──
     //
@@ -205,7 +205,14 @@ test.describe("the estimating desk", () => {
     //
     // The 30s is the describe's own 180s budget, not a new allowance: it is
     // room for one cold compile, on the one assertion that waits on one.
-    await expect(page.getByText("Added W1 and W2.")).toBeVisible({ timeout: 30_000 });
+    //
+    // ── AND THE COLD COMPILE WAS NOT WHY IT KEPT FAILING (2026-11-04) ──
+    // The answer lived in the button's own state, and the button sat inside
+    // the empty state, which the add's revalidation removes, so the message
+    // went with it. `StarterWallTypesButton` is mounted outside that switch
+    // now. The label and the message had also changed under this step (#809:
+    // ten-odd starters, not two), so it could not have passed as written.
+    await expect(page.getByText(/^Added W1, W2, /)).toBeVisible({ timeout: 30_000 });
 
     await page.reload();
     await expectHealthy(page, "/wall-types after the starter types", { monitor });

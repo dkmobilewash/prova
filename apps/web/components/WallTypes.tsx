@@ -142,34 +142,47 @@ export function NewWallTypeForm({ initial }: { initial?: Partial<WallTypeView> }
   );
 }
 
-export function StarterWallTypesButton() {
+/**
+ * ── MOUNTED OUTSIDE THE EMPTY STATE, SO ITS ANSWER SURVIVES IT ──
+ *
+ * The add revalidates the page and the library stops being empty, so the
+ * empty state goes. This sat inside it, went with it, and took "Added …
+ * they arrive unpriced on purpose" along: nobody ever saw the sentence, and
+ * two browser specs waited for it in vain. The page renders this beside the
+ * empty-state/list switch, so it keeps its state; `offer` only says whether
+ * the button shows.
+ */
+export function StarterWallTypesButton({ offer }: { offer: boolean }) {
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
+  if (!offer && message === null) return null;
   return (
-    <div className="flex flex-col items-start gap-1">
-      <button
-        type="button"
-        disabled={isPending}
-        onClick={() =>
-          startTransition(async () => {
-            const result = await addStarterWallTypes();
-            // `join(", ")`, not `" and "`. The starter set was two entries
-            // when this was written and is ten now — "W1 and W2 and W3 and…"
-            // is what that reads as.
-            setMessage(
-              result.ok
-                ? `Added ${result.value.added.join(", ")}. Link each part to your price book — they arrive unpriced on purpose.`
-                : result.error,
-            );
-          })
-        }
-        className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
-      >
-        {/* NOT "two common wall types" any more. The set covers partitions,
-            exterior wall, drywall finish, ceilings, flooring, painting, slab
-            and footing — the trades the takeoff workspace can measure. */}
-        {isPending ? "Adding…" : "Start from the common trade assemblies"}
-      </button>
+    <div className="mb-6 flex flex-col items-start gap-1">
+      {offer && (
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={() =>
+            startTransition(async () => {
+              const result = await addStarterWallTypes();
+              // `join(", ")`, not `" and "`. The starter set was two entries
+              // when this was written and is ten now — "W1 and W2 and W3 and…"
+              // is what that reads as.
+              setMessage(
+                result.ok
+                  ? `Added ${result.value.added.join(", ")}. Link each part to your price book — they arrive unpriced on purpose.`
+                  : result.error,
+              );
+            })
+          }
+          className="rounded-md border border-line-card px-3 py-1.5 text-sm text-ink-label hover:bg-rail-hover disabled:opacity-50"
+        >
+          {/* NOT "two common wall types" any more. The set covers partitions,
+              exterior wall, drywall finish, ceilings, flooring, painting, slab
+              and footing — the trades the takeoff workspace can measure. */}
+          {isPending ? "Adding…" : "Start from the common trade assemblies"}
+        </button>
+      )}
       {message && <p className="text-sm text-ink-body">{message}</p>}
     </div>
   );
