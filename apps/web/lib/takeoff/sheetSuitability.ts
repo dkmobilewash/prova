@@ -513,12 +513,26 @@ const NOT_WHAT_YOU_PRICE: ReadonlyArray<readonly [RegExp, number, string]> = [
 /** The architectural discipline, which is where partitions are drawn. */
 const ARCHITECTURAL = /^A[-\s.]?\d/i;
 
+/**
+ * ── A CAPTION AS WORDS, HOWEVER THE CAD EXPORT JOINED THEM ──
+ *
+ * ELEVEN03's unit sheets caption their plans `UNIT FLOORPLAN_B3-M`,
+ * `TRANSITION PLAN_C1-A` and `TRASHROOM FLOORPLAN_LEVEL 5`. An underscore is a
+ * word character, so `\bPLAN\b` does not match `PLAN_C1`, and FLOORPLAN is not
+ * FLOOR PLAN — every one read "the caption does not say what kind of drawing
+ * this is", and view triage kept no drawing on eleven floor-plan sheets. The
+ * rules are written for words, so the caption is made of words first.
+ */
+export function captionWords(text: string): string {
+  return text.replace(/_+/g, " ").replace(/\bFLOOR(PLANS?)\b/gi, (_, plan: string) => `FLOOR ${plan}`).trim();
+}
+
 export function takeoffRank(
   sheetNumber: string | null | undefined,
   title: string | null | undefined,
 ): SheetRank {
   const number = (sheetNumber ?? "").trim();
-  const name = (title ?? "").trim();
+  const name = captionWords(title ?? "");
 
   // ── A DEMOTION WINS OVER A PROMOTION, BECAUSE ALL OF THEM SAY "PLAN" ──
   //
