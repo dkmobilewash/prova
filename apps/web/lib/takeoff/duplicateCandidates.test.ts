@@ -163,3 +163,30 @@ describe("one wall offered twice", () => {
     expect(duplicatePairs([run("only", 0, 0, 0, 10)], FEET_PER_UNIT)).toHaveLength(0);
   });
 });
+
+describe("a wall and the counter in front of it", () => {
+  // A bath, in feet: the wall along y = 0, 11 ft between two side walls, and
+  // carrying on into the next room; the vanity's front edge 1.3 ft in front of
+  // it, a little longer because it runs into both side walls' faces.
+  const wall = run("wall", 0, 0, 11, 0, 5);
+  const counterAt = (y: number, to = 11.4) => run("counter", 0.1, y, to, y, 1.5);
+  const room = [run("west", 0, 0, 0, 8, 5), run("east", 11, 0, 11, 8, 5), run("next", 11, 0, 20, 0, 5)];
+  const kept = (cands: Candidate[]) => duplicatePairs(cands, FEET_PER_UNIT).find((p) => [p.keep, p.drop].includes("wall"))?.keep;
+
+  it("keeps the WALL — thicker, met at both ends, carrying on — where length kept the counter", () => {
+    expect(kept([wall, counterAt(1.3), ...room])).toBe("wall");
+  });
+
+  it("decides on what the lines do, not on being near: with no walls around it, length still decides", () => {
+    // Thicker alone is one signal, and one is not enough.
+    expect(kept([wall, counterAt(1.3)])).toBe("counter");
+  });
+
+  it("leaves twins under a foot apart to the old rule — those are one wall read through different faces", () => {
+    expect(kept([wall, counterAt(0.8), ...room])).toBe("counter");
+  });
+
+  it("and twins of different lengths, where the longer is the wall and the short one a piece of it", () => {
+    expect(kept([wall, counterAt(1.3, 15), ...room])).toBe("counter");
+  });
+});

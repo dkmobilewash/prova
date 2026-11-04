@@ -142,6 +142,41 @@ export const SUPPORT_MARGIN = 0.2;
 export const SIMILAR_LENGTH = 2.5;
 
 /**
+ * ── A WALL AND THE COUNTER IN FRONT OF IT ARE NOT ONE WALL OFFERED TWICE ──
+ *
+ * Chrome, 2026-11-04, on a held-out hotel bath: a wall and the vanity's front
+ * edge run side by side about 1.3 ft apart for the same 11 ft. That is inside
+ * `SAME_WALL_FEET`, both faces of both readings are drawn, so support ties and
+ * length picked the counter — and the wall started rejected.
+ *
+ * Two twins that far apart and that alike in length are not the same wall seen
+ * through different faces; they are two things, and the wall is the one that
+ * BEHAVES like a wall. Three signals, read off the other candidates and the
+ * pair itself, no legend and no model:
+ *
+ *   thicker      its pair is an inch or more thicker — a counter's two lines
+ *                are an edge and a nosing, a wall's are its faces
+ *   both ends    other runs meet it at both ends (`endEvidence`)
+ *   carries on   a run on its own line continues past one of its ends
+ *
+ * The twin with at least TWO more of them is kept. Only between 1.0 and 1.5 ft
+ * apart, within a quarter of each other's length, and only where support did
+ * not already decide. Under a foot, twins are one wall read through different
+ * faces — the case this file was written for — and are left to it.
+ *
+ * Measured on the 42 labelled training sheets, 408 pairs the reviewer split:
+ * no training sheet has the wall-and-vanity case (its nearest relatives are
+ * Topeka's kitchen peninsulas, where BOTH twins are counter). It changes one
+ * pair: Clerk of Courts A-101.3, two readings either side of a glass
+ * storefront 1.25 ft apart, which now keeps the 18.3 ft run the reviewer took
+ * (353 of 408 kept the reviewer's wall, from 352). Its neighbour on the same
+ * storefront is decided by support and does not move. No other building
+ * changes.
+ */
+export const COUNTER_APART_FEET = { from: 1.0, to: 1.5 } as const;
+export const COUNTER_SAME_LENGTH = 1.25;
+
+/**
  * ── WHAT THIS RULE CANNOT SEE ──
  *
  * Support separates two twins when the WRONG one is paired with something
@@ -257,11 +292,12 @@ export function duplicatePairs(
       const longer = Math.max(a.lengthFeet, b.lengthFeet);
       const shorter = Math.min(a.lengthFeet, b.lengthFeet);
       const comparable = shorter > 0 && longer / shorter <= SIMILAR_LENGTH;
-      const keepA =
-        support !== null &&
-        comparable &&
-        Math.abs(support.a - support.b) >= SUPPORT_MARGIN
-          ? support.a > support.b
+      const bySupport = support !== null && comparable && Math.abs(support.a - support.b) >= SUPPORT_MARGIN;
+      const wallLike = bySupport ? 0 : wallLikeMargin(a, b, apart, candidates, feetPerUnit);
+      const keepA = bySupport
+        ? support!.a > support!.b
+        : wallLike !== 0
+          ? wallLike > 0
           : !tie || (a.thicknessIn ?? 0) >= (b.thicknessIn ?? 0);
       out.push({
         keep: keepA ? a.id : b.id,
@@ -292,6 +328,25 @@ export function duplicatePairs(
   return out;
 }
 
+/**
+ * Positive when `a` behaves more like a wall than `b` by at least two of the
+ * three signals, negative the other way, zero when the pair is outside the
+ * counter shape or the signals do not decide. See `COUNTER_APART_FEET`.
+ */
+function wallLikeMargin(a: Candidate, b: Candidate, apartFeet: number, all: readonly Candidate[], feetPerUnit: number): number {
+  if (apartFeet < COUNTER_APART_FEET.from || apartFeet > COUNTER_APART_FEET.to) return 0;
+  const longer = Math.max(a.lengthFeet, b.lengthFeet);
+  const shorter = Math.min(a.lengthFeet, b.lengthFeet);
+  if (!(shorter > 0) || longer / shorter > COUNTER_SAME_LENGTH) return 0;
+  const others = all.filter((c) => c !== a && c !== b);
+  const score = (x: Candidate, y: Candidate) => {
+    const e = endEvidence(x, others, feetPerUnit);
+    return ((x.thicknessIn ?? 0) - (y.thicknessIn ?? 0) >= 1 ? 1 : 0) + (e.endsMet === 2 ? 1 : 0) + (e.continues ? 1 : 0);
+  };
+  const margin = score(a, b) - score(b, a);
+  return Math.abs(margin) >= 2 ? margin : 0;
+}
+
 /** The pair a candidate belongs to, if any — for the panel's note. */
 export function duplicateOf(
   pairs: readonly DuplicatePair[],
@@ -314,4 +369,59 @@ function asRun(candidate: Candidate) {
     lengthFeet: candidate.lengthFeet,
     thicknessFeet: (candidate.thicknessIn ?? 0) / 12,
   };
+}
+
+type Run = Line & { thicknessIn: number | null };
+
+/**
+ * What a line does at its ends, judged from the other candidates on the sheet.
+ *
+ * `endsMet` counts the ends (0–2) that reach another run: a crossing or
+ * abutting wall, or one carrying straight on. `continues` says a run on the
+ * same line carries on past an end. Parallel neighbours beside it — its own
+ * twin, a counter, the far face of a corridor — are not a meeting.
+ */
+export function endEvidence(run: Run, others: readonly Run[], feetPerUnit: number): { endsMet: number; continues: boolean } {
+  const len = lengthOf(run);
+  if (!(len > 0)) return { endsMet: 0, continues: false };
+  const ux = (run.x2 - run.x1) / len;
+  const uy = (run.y2 - run.y1) / len;
+  const half = (run.thicknessIn ?? 0) / 24 / feetPerUnit;
+  const slack = 0.5 / feetPerUnit;
+  /** Along this run from its start, in units. */
+  const along = (x: number, y: number) => (x - run.x1) * ux + (y - run.y1) * uy;
+  let continues = false;
+  const met = [false, false];
+  for (const o of others) {
+    const lo = lengthOf(o);
+    if (!(lo > 0) || o === run) continue;
+    const reach = half + (o.thicknessIn ?? 0) / 24 / feetPerUnit + slack;
+    const parallel = Math.abs(ux * ((o.x2 - o.x1) / lo) + uy * ((o.y2 - o.y1) / lo)) >= ROUGHLY_PARALLEL;
+    if (parallel) {
+      // Only a run ON this line and BEYOND an end: one beside it, or lying
+      // along it — another offer of the same wall, a counter — is not a meeting.
+      if (offLine(run, (o.x1 + o.x2) / 2, (o.y1 + o.y2) / 2) > Math.min(slack, Math.max(half, 0.25 / feetPerUnit))) continue;
+      const [from, to] = [along(o.x1, o.y1), along(o.x2, o.y2)].sort((p, q) => p - q) as [number, number];
+      if (to > len + 1 / feetPerUnit && from <= len + reach && from >= len - reach) {
+        met[1] = true;
+        continues = true;
+      }
+      if (from < -1 / feetPerUnit && to >= -reach && to <= reach) {
+        met[0] = true;
+        continues = true;
+      }
+      continue;
+    }
+    if (distanceToSegment(run.x1, run.y1, o) <= reach) met[0] = true;
+    if (distanceToSegment(run.x2, run.y2, o) <= reach) met[1] = true;
+  }
+  return { endsMet: met.filter(Boolean).length, continues };
+}
+
+function distanceToSegment(px: number, py: number, s: Line): number {
+  const dx = s.x2 - s.x1;
+  const dy = s.y2 - s.y1;
+  const l2 = dx * dx + dy * dy;
+  const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - s.x1) * dx + (py - s.y1) * dy) / l2));
+  return Math.hypot(px - (s.x1 + t * dx), py - (s.y1 + t * dy));
 }
