@@ -176,6 +176,7 @@ test.describe("demote, don't hide, on a real sheet", () => {
         }
       },
     );
+    await openFinders(page);
     await check.click();
     const demoted = page.locator('[data-takeoff="demoted"]');
     await expect(demoted).toBeVisible({ timeout: 30_000 });

@@ -6,7 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
-import { openFinders } from "../lib/finders";
+import { openFinders, openItems } from "../lib/finders";
 
 /**
  * ── "FIND THE ROOMS", END TO END, ON AN INVENTED SHEET ──
@@ -266,6 +266,7 @@ test.describe("find the rooms", () => {
       page.locator('[data-takeoff="doors-windows"]'),
       "a new company should get doors and windows after Find the walls without opening Settings",
     ).toBeVisible({ timeout: 30_000 });
+    await openFinders(page);
     await findRooms.click();
     const panel = page.locator('[data-takeoff="rooms-panel"]');
     await expect(panel).toBeVisible({ timeout: 30_000 });
@@ -295,6 +296,7 @@ test.describe("find the rooms", () => {
     // The save lands every room in a "Rooms" item now (and ceilings in their
     // own), so the rail shows an item with square feet rather than N loose
     // measurements under Unassigned.
+    await openItems(page);
     const roomsItem = page.locator('[data-takeoff="items-rail"] [data-takeoff="item-row"]').filter({ hasText: "Rooms" });
     await expect(roomsItem).toHaveCount(1, { timeout: 60_000 });
     await expect(roomsItem.locator('[data-takeoff="item-total"]')).toContainText(/sq ft/);

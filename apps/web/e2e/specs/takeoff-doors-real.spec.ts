@@ -10,7 +10,7 @@ import { openPlanPdf, titleBlockText } from "@/lib/plan-ingest/planPdf";
 import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
 import { storedLegendTypes } from "@/lib/takeoff/legendProposal";
 import { legendCropRects } from "@/lib/takeoff/legendSight";
-import { openFinders } from "../lib/finders";
+import { openFinders, openItems } from "../lib/finders";
 
 /**
  * ── DOOR OPENINGS INTO THE ESTIMATE, ON A REAL TRAINING SET ──
@@ -409,6 +409,7 @@ test.describe("door openings into the estimate, on a real set", () => {
     say(`groups left unadded (needing a choice or a type): ${left}`);
     for (let i = 0; i < left; i += 1) say(`  left ${i + 1}: ${(await groups.nth(i).innerText()).replace(/\s+/g, " ").slice(0, 400)}`);
     await shot("walls-after-adding");
+    await openItems(page);
     const rail = page.locator('[data-takeoff="items-rail"]');
     await shot("items-after-walls", rail);
     say(`items rail after walls: ${(await rail.innerText()).replace(/\s+/g, " ").slice(0, 800)}`);
@@ -434,6 +435,7 @@ test.describe("door openings into the estimate, on a real set", () => {
     await expect(panel).toHaveCount(0, { timeout: 120_000 });
     await page.reload();
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 120_000 });
+    await openItems(page);
     const rail = page.locator('[data-takeoff="items-rail"]');
     await shot("items-after-rooms", rail);
     say(`items rail after rooms: ${(await rail.innerText()).replace(/\s+/g, " ").slice(0, 900)}`);

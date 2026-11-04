@@ -6,7 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
-import { openFinders } from "../lib/finders";
+import { openFinders, openItems } from "../lib/finders";
 
 /**
  * ── ROOMS AND CEILINGS REACH THE ESTIMATE, ON INVENTED DATA ──
@@ -168,6 +168,7 @@ test.describe("rooms and ceilings reach the estimate", () => {
     await expect(page.locator('[data-takeoff="rooms-panel"]')).toHaveCount(0, { timeout: 60_000 });
     await page.reload();
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
+    await openItems(page);
     const rail = page.locator('[data-takeoff="items-rail"]');
     const item = (name: string) => rail.locator('[data-takeoff="item-row"]').filter({ hasText: name });
     await expect(item("Rooms")).toHaveCount(1, { timeout: 30_000 });
@@ -184,6 +185,7 @@ test.describe("rooms and ceilings reach the estimate", () => {
   });
 
   test("the ACT ceiling item prices tile, tees and wall angle off the starter, and Send to estimate lands the lines", async () => {
+    await openItems(page);
     const rail = page.locator('[data-takeoff="items-rail"]');
     await rail.locator('[data-takeoff="item-row"]').filter({ hasText: "Ceiling — ACT" }).locator('[data-takeoff="pick-item"]').click();
     const assemblyPanel = page.locator('[data-takeoff="assembly-panel"]');

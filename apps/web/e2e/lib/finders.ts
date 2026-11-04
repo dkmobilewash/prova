@@ -12,3 +12,14 @@ export async function openFinders(page: Page): Promise<void> {
   if ((await more.count()) === 0) return;
   if ((await more.getAttribute("aria-expanded")) !== "true") await more.click();
 }
+
+/**
+ * Opens the workspace's items rail, which starts closed since the full-screen
+ * layout (the layer panel has the right-hand side by default). A no-op where
+ * it is already open or does not exist.
+ */
+export async function openItems(page: Page): Promise<void> {
+  const toggle = page.locator('[data-takeoff="toggle-items"]');
+  if ((await toggle.count()) === 0) return;
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+}

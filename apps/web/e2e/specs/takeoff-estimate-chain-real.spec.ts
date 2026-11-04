@@ -6,7 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
-import { openFinders } from "../lib/finders";
+import { openFinders, openItems } from "../lib/finders";
 
 /**
  * ── A REAL TRAINING SET'S ROOMS AND CEILINGS, SAVED AND SENT TO THE ESTIMATE ──
@@ -137,6 +137,7 @@ test.describe("a real set reaches the estimate", () => {
     await expect(panel).toHaveCount(0, { timeout: 60_000 });
     await page.reload();
     await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
+    await openItems(page);
     const rail = page.locator('[data-takeoff="items-rail"]');
     const item = (name: string) => rail.locator('[data-takeoff="item-row"]').filter({ hasText: name });
     await expect(item("Rooms")).toHaveCount(1, { timeout: 30_000 });
