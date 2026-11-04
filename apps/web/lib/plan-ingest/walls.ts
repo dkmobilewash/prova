@@ -51,6 +51,8 @@ export type WallsSheet = {
   title: string | null;
   hasScale: boolean;
   hasWalls: boolean;
+  /** Its walls are on the job (DETECTED measurements, any scale): the sheet the estimate counts. */
+  onJob?: boolean;
   /** What on the sheet says it shows existing work; empty when nothing does. */
   renovation?: string[];
 };
@@ -61,7 +63,7 @@ export type WallsSkip = "no scale" | "not a floor plan" | "already found" | `sam
  *  Pure. The set-level rule, one plan per floor, is `wallsPlan` below. */
 export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
   if (!sheet.hasScale) return "no scale";
-  if (sheet.hasWalls) return "already found";
+  if (sheet.hasWalls || sheet.onJob) return "already found";
   if (takeoffSheetVerdict({ sheetNumber: sheet.sheetNumber, title: sheet.title }).skipAutomatically) {
     return "not a floor plan";
   }
@@ -225,8 +227,11 @@ export function isEnlargedPlanTitle(title: string | null): boolean {
  * both (`shots/pilot/overall-pairs.log`).
  */
 function preferWholeFloor(a: WallsSheet, b: WallsSheet): number {
+  // Walls on the job first: that is the sheet the estimate counts. Walls found
+  // against the current scale alone let Baker A100 take the count from A101
+  // once A101's scale was saved again (Chrome round 7).
   const score = (s: WallsSheet) =>
-    (s.hasWalls ? 8 : 0) + (/\bOVERALL\b/i.test(s.title ?? "") ? 0 : 4) + (/\bENLARGED\b/i.test(s.title ?? "") ? 0 : 2);
+    (s.onJob ? 16 : 0) + (s.hasWalls ? 8 : 0) + (/\bOVERALL\b/i.test(s.title ?? "") ? 0 : 4) + (/\bENLARGED\b/i.test(s.title ?? "") ? 0 : 2);
   const byScore = score(b) - score(a);
   if (byScore !== 0) return byScore;
   return (a.sheetNumber ?? "").localeCompare(b.sheetNumber ?? "", undefined, { numeric: true }) || a.pageNumber - b.pageNumber;
@@ -243,6 +248,7 @@ export async function wallsSheetsFor(planId: string, companyId: string): Promise
         pageNumber: true,
         calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } },
         wallProposals: { select: { calibrationId: true } },
+        measurements: { where: { source: "DETECTED", kind: "LINEAR" }, select: { id: true }, take: 1 },
       },
     }),
     prisma.planSheetText.findMany({ where: { planId }, select: { pageNumber: true, renovationMarks: true } }),
@@ -263,6 +269,7 @@ export async function wallsSheetsFor(planId: string, companyId: string): Promise
         title: row ? effectiveTitle(row) : null,
         hasScale: calibration !== null,
         hasWalls: calibration !== null && (page?.wallProposals ?? []).some((p) => p.calibrationId === calibration.id),
+        onJob: (page?.measurements ?? []).length > 0,
         renovation: marksByPage.get(pageNumber) ?? [],
       };
     });
@@ -359,6 +366,7 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
           select: { id: true, x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true },
         },
         wallProposals: { select: { calibrationId: true } },
+        measurements: { where: { source: "DETECTED", kind: "LINEAR" }, select: { id: true }, take: 1 },
       },
     });
     const calibration = page?.calibrations[0] ?? null;
@@ -384,7 +392,9 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
     // written them: Baker A101 kept 0 to confirm through every re-run, because
     // the run skipped a sheet with walls (Chrome round 6). So the sheet is
     // found again and every label a person did not set is read from the model.
-    if (page.wallProposals.some((p) => p.calibrationId === calibration.id)) {
+    // Walls on the job under an older scale count too: a fresh detection would
+    // find the sheet's walls and then refuse to write them beside the old rows.
+    if (page.wallProposals.some((p) => p.calibrationId === calibration.id) || page.measurements.length > 0) {
       const refresh = deps.refresh ?? realDeps.refresh!;
       const again = await refresh({ pageId: page.id, calibrationId: calibration.id, planId: ctx.planId, companyId: ctx.companyId, pageNumber: task.pageNumber, feetPerUnit, wallTypes: types, pairWithThicknesses: false, jobId: ctx.jobId, userId: ctx.startedByUserId });
       if (again.kind === "failed") return { ok: false, error: "Finding the walls on this sheet again failed. Retry it." };
