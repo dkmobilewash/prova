@@ -462,6 +462,102 @@ where its short entry keeps the rules.
   instrument that can identify an element without React's help — and the
   honest state of it is that nobody has designed one.
 
+  **DESIGNED AND RUN 2026-11-04, AND IT NAMED THE FIBER. THE RESIDUAL IS
+  FIXED.** Both sentences above were true when written and the second has now
+  expired: the instrument did not need to work "without React's help",
+  because production React was helping all along and Next was throwing the
+  help away. Branch `diego/hydration-418`; everything below is in
+  `e2e/probes/mismatch-locator.probe.spec.ts` and ran on the `Mismatch
+  locator (#510)` workflow, production build, GitHub runner.
+
+  **Three instruments, each proved by the existing positive control (an
+  injected `<div>` in `<body>`) before any zero or any name was read:**
+
+    - **The component stack.** React 19 production still builds one for every
+      hydration error (`createCapturedValueAtFiber` →
+      `getStackByFiberInDevAndProd`) and passes it as the SECOND argument of
+      `root.onRecoverableError(error, { componentStack })`. Next 15.5's
+      handler (`react-client-callbacks/on-recoverable-error.js`) takes only the
+      first. React assigns the handler with a plain `this.onRecoverableError =`
+      inside `FiberRootNode`, so a setter on `Object.prototype` installed by an
+      init script wraps it before hydration. Control: stack on 3 of 3, naming
+      `div > __next_metadata_boundary__`, exactly where the injected node lands.
+    - **The DOM and JS stack at the instant the error is BUILT.**
+      `throwOnHydrationMismatch` calls a bare global `Error(...)` during the
+      render, before any regeneration — a `Proxy` over `window.Error` sees it.
+      The minified JS frames are mapped by reading the chunk at the column.
+    - **The Flight payload and the webpack chunk registry at that instant**
+      (`self.__next_f` mirrored, because Next replaces its `push`;
+      `webpackChunk_N_E` for what has executed).
+
+  **What every one of 42 mismatches said, in 540 loads over four runs**
+  (`41908874679` 12, `41910108825` 14, `41911225218` 6, `41912650379` 10;
+  45 nav destinations × 3 passes each, 135/135 hydrated every run):
+
+    - component stack: `at main > div > div > (app) layout router` — all 42,
+      identical, on ~30 different pages;
+    - the throw came from `replaySuspendedUnitOfWork` (minified `iw`), case 5
+      (HostComponent), re-entering `beginWork` for `<main>` — after the work
+      loop's SuspendedOnData branch found the thenable already settled;
+    - at that instant `<main>`'s first DOM child was the page's own
+      `div.mx-auto.max-w-7xl` — the DOM was CORRECT. The row timeline proves
+      it from the other side: the sidebar's outlined boundary was revealed
+      (`$?` → `$~` → `$`, ~80ms) well before the root was created (~116ms).
+
+  **The mechanism, read out of the installed react-dom and Flight client.**
+  `<main>`'s child is Next's LayoutRouter element, and one of its props is the
+  `(app)/error.tsx` client module (`"error":"$1f"`). The Flight client counts
+  an unloaded module reference as a dependency of the innermost ELEMENT that
+  holds it and, while it is pending, hands back that element wrapped in a lazy
+  (`createLazyChunkWrapper`). At hydration time on the runner that chunk was
+  routinely unexecuted (`8880`, the `(app)/error` chunk, listed as unloaded).
+  A lazy in CHILD position is resolved inside the PARENT's `beginWork`
+  (`resolveLazy` in `reconcileChildFibers`), so it suspended `<main>`.
+  `<main>`'s first attempt had already claimed itself and moved the hydration
+  cursor to its first child; the replay claims again from there, compares a
+  `<div>` with `"main"`, and throws #418 `HTML`. No Suspense boundary sits
+  above `<main>`, so the whole root regenerates — which is why the locator
+  always saw `<body>`'s two children torn out.
+
+  **That replaces the 3,200-byte deferral as the named mechanism, with a
+  bound.** Same family — a lazy where an element was expected — but the
+  trigger measured here is module blocking: locally `<main>`'s child is
+  serialized INLINE (at ~2,400 of a 3,788-char row), not as a `$L` deferral.
+  Why it vanished under `next dev` is NOT measured; module loading and timing
+  both differ there.
+
+  **Why only `<main>`:** only a plain host fiber (tag 5) moves the cursor when
+  it claims itself. The region elements beside it carry only plain data, so
+  if their module is late their TYPE is a lazy, which mounts as a fiber of its
+  own and suspends nothing above it. `<body>` is a singleton and does not move
+  the cursor on entry. `<main>` was the one host whose child carried a module
+  in its props.
+
+  **The fix:** `components/PageSlot.tsx`, a bare function component between
+  `<main>` and `{children}`. The lazy suspends a fiber that claims no DOM node,
+  so the replay re-claims nothing. `components/pageSlot.test.tsx` reproduces
+  the defect against the real react-dom — hydrate `<main>{lazy}</main>`
+  inside a transition with a lazy that settles during the first yield: #418
+  without the slot (the control), none with it. It needs BOTH a transition
+  and a settle-during-the-yield; with `act()` or a slow promise React unwinds
+  to the root instead, which is clean, and the control cannot fire.
+
+  | probe, production, runner | loads | mismatches | control |
+  | --- | --- | --- | --- |
+  | before (4 runs, above) | 540 | **42** | 3/3 each |
+  | after, `41918157046` | 135 | **0** | 3/3 |
+  | after, `41919703391` | 135 | **0** | 3/3 |
+
+  At the before-rate (7.8%), P(0 in 270) ≈ 3·10⁻¹⁰.
+
+  **Bounds.** The probe walks nav destinations, not job tabs; the journey
+  does, and only CI's `e2e` job on the PR measures step 11. The underlying
+  React behaviour is not fixed — any OTHER plain host element whose direct
+  child is an element holding a client module in its props can do the same
+  thing; the probe now names such a host in one run. And the `body` "hidden
+  div" from #701 is Next's streaming-metadata holder, regenerated along with
+  everything else, not a cause.
+
   **Two bounds, stated because the number above is smaller than it looks.**
   24 loads is a QUARTER of the laptop sweep's 96, over 4 routes rather than
   16 — so this is the weaker sample of the two, and it is only decisive
