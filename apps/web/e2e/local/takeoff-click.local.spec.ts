@@ -923,6 +923,8 @@ test("R6-6 a two-issue job: Compare says too much changed, and Find the walls sa
   await expect(hook("revision-find-why")).toContainText(/scale|Run anyway|plan/i);
   // Where the toolbar offers the printed scale, so does the panel.
   if ((await hook("toolbar-scale-offer").count()) > 0) await expect(hook("revision-scale-offer")).toBeVisible();
+});
+
 // ── THE ANSWER-KEY TOOL, ROUND 10: Baker A101 with ?key=1 ─────────────────
 // Saves go to the throwaway TAKEOFF_LABEL_DIR the config makes, never the real labels.
 const KEY_URL = `/takeoff/${SETS.baker.id}?page=13&key=1`;
