@@ -8,7 +8,7 @@ const base = { roomFinderOn: false, demotedWallsOn: false, ai: { aiEnabled: true
 describe("the takeoff features list", () => {
   it("lists every switch, each with where it lives and one plain sentence", () => {
     const rows = takeoffFeatureRows(base);
-    expect(rows.map((r) => r.key)).toEqual(["wallTypesFromDrawings", "roomsAndCeilings", "greyOut", "wholeSet", "doorsWindows", "symbolCount", "scannedPlans"]);
+    expect(rows.map((r) => r.key)).toEqual(["wallTypesFromDrawings", "roomsAndCeilings", "greyOut", "wholeSet", "doorsWindows", "symbolCount", "planCompare", "scannedPlans"]);
     for (const row of rows) {
       expect(row.explain.length).toBeGreaterThan(40);
       expect(row.where.href.startsWith("/settings")).toBe(true);
@@ -56,7 +56,7 @@ describe("each feature's settings link", () => {
   const rows = takeoffFeatureRows({ roomFinderOn: true, demotedWallsOn: true, ai: { aiEnabled: true, planTextReadOptedIn: true }, anthropicConfigured: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOn: true });
   const onSettings = rows.filter((r) => r.where.href.startsWith("/settings?tab=estimating#"));
   it("covers the switches on the estimating tab", () => {
-    expect(onSettings.map((r) => r.key).sort()).toEqual(["doorsWindows", "greyOut", "roomsAndCeilings", "scannedPlans", "symbolCount", "wholeSet"]);
+    expect(onSettings.map((r) => r.key).sort()).toEqual(["doorsWindows", "greyOut", "planCompare", "roomsAndCeilings", "scannedPlans", "symbolCount", "wholeSet"]);
   });
   for (const row of onSettings) {
     const id = row.where.href.split("#")[1]!;

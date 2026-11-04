@@ -34,6 +34,7 @@ import { OpeningDeductionForm } from "@/components/OpeningDeductionForm";
 import { RoomFinderSwitch } from "@/components/RoomFinderSwitch";
 import { ScannedPlansSwitch } from "@/components/ScannedPlansSwitch";
 import { SymbolCountSwitch } from "@/components/SymbolCountSwitch";
+import { PlanCompareSwitch } from "@/components/PlanCompareSwitch";
 import { DemotedWallsSwitch } from "@/components/DemotedWallsSwitch";
 import { WholeSetTakeoffSwitch } from "@/components/WholeSetTakeoffSwitch";
 import { TakeoffFeaturesSection } from "@/components/TakeoffFeaturesSection";
@@ -186,7 +187,7 @@ export default async function SettingsPage({
   // are columns on the same row and there is no reason to ask twice.
   const switches = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOff: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOff: true },
+    select: { roomFinderOn: true, demotedWallsOff: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOff: true, planCompareOn: true },
   });
   const roomFinderOn = switches?.roomFinderOn ?? false;
   // The switch reads as ON unless this company turned it off, so the box is
@@ -197,6 +198,8 @@ export default async function SettingsPage({
   // On unless this company turned it off, like the grey-out.
   const symbolCountOn = !(switches?.symbolCountOff ?? false);
   const doorsWindowsOn = switches?.doorsWindowsOn ?? false;
+  // Off until the owner turns it on: plan comparison has not been switched on for anybody.
+  const planCompareOn = switches?.planCompareOn ?? false;
   // Every takeoff switch in one list (PILOT.md's first finding); the switches
   // themselves stay in their own sections below and on the Assistant page.
   const aiSettings = await aiSettingsFor(company.id);
@@ -212,6 +215,7 @@ export default async function SettingsPage({
     scannedPlansOn,
     doorsWindowsOn,
     symbolCountOn,
+    planCompareOn,
   });
   const { qb, qb_detail, tab: tabParam } = await searchParams;
   // The same rule PageTabs highlights by, so the tab lit is the group shown.
@@ -663,6 +667,9 @@ export default async function SettingsPage({
             </div>
             <div id="symbol-count" className="scroll-mt-20">
               <SymbolCountSwitch on={symbolCountOn} isOwner={currentUser.role === "OWNER"} />
+            </div>
+            <div id="plan-compare" className="mt-4 scroll-mt-20">
+              <PlanCompareSwitch on={planCompareOn} isOwner={currentUser.role === "OWNER"} />
             </div>
           </section>
 

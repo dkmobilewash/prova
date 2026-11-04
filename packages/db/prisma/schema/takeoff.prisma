@@ -189,6 +189,14 @@ model TakeoffPlanPage {
   /// a wrong one labels somebody's quantities with another floor's name.
   label String?
 
+  /// The demolition plan a PERSON chose to compare this sheet with, as its page
+  /// number, when they changed or removed the automatic pairing. The automatic
+  /// pairing itself is derived from sheet numbers and titles and never stored
+  /// (`priorPlan.ts`). `priorPageChoice` says which: "user" uses `priorPage`,
+  /// "none" means they removed the pairing; null means use the automatic one.
+  priorPage Int?
+  priorPageChoice String?
+
   /// THE PAGE BOX'S WIDTH IN PDF POINTS, as the browser reports it from
   /// `getViewport({ scale: 1 }).width`.
   ///

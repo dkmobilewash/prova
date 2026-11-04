@@ -171,6 +171,9 @@ import { scaleFromPrinted } from "@/lib/takeoff/scaleFromPrinted";
 /** One scanned page's stored read, as the raster route and `rasterByPage` both give it. */
 type RasterRead = { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[]; widthPt?: number; heightPt?: number; printedScale?: string | null };
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
+import { priorPlanFor, type Pairing } from "@/lib/takeoff/priorPlan";
+import type { PriorLine } from "@/lib/takeoff/planCompare";
+import { PriorPlanBar, type PriorStatus } from "@/components/PriorPlanBar";
 import { type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 import { sheetRooms, splitToWalls } from "@/lib/takeoff/sheetRooms";
 
@@ -325,6 +328,7 @@ export function TakeoffPlanViewer({
   symbolCount = false,
   demotedWalls = false,
   doorsWindows = false,
+  planCompare = null,
   doorScheduleRows = [],
   wallModel = null,
   ceilingPages = [],
@@ -433,6 +437,12 @@ export function TakeoffPlanViewer({
    * See `lib/takeoff/NOTES-doors.md`.
    */
   doorsWindows?: boolean;
+  /**
+   * Plan comparison (`Company.planCompareOn`): each new plan's demolition plan
+   * and the set's sheets for the picker. Null when the company has it off.
+   * See `lib/takeoff/priorPlan.ts`.
+   */
+  planCompare?: { pairs: Record<number, Pairing>; sheets: { pageNumber: number; sheetNumber: string | null; title: string | null }[] } | null;
   /** The set's door schedule rows as the ingest read them, for the join; empty when none. */
   doorScheduleRows?: StoredScheduleRow[];
   /**
@@ -1083,6 +1093,8 @@ export function TakeoffPlanViewer({
   // From the sheet at first paint: a saved work area has its control on open.
   const [exclusionRows, setExclusionRows] = useState<ExclusionRow[]>(sheet?.exclusions ?? []);
   const [userAside, setUserAside] = useState<{ kind: string; why: string; n: number }[]>([]);
+  /** What plan comparison did on the sheet last found — shown by `PriorPlanBar`. */
+  const [priorStatus, setPriorStatus] = useState<PriorStatus | null>(null);
   const putExclusionRows = useCallback((rows: ExclusionRow[]) => {
     exclusionRowsRef.current = rows;
     exclusionsRef.current = userExclusionsFromRows(rows);
@@ -3363,19 +3375,50 @@ export function TakeoffPlanViewer({
       // this sheet, so the screen and the estimate cannot disagree. Labelling
       // mode keeps the finder's own runs: a key grades them.
       const W = pageSize.widthPt;
-      const offered =
-        answerKey !== undefined
-          ? null
-          : offeredCandidates({
-              walls: found.walls,
-              segments: found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })),
-              pageSegments: segments,
-              widthPt: W,
-              feetPerUnit,
-              planBoxes: detected.planBoxes,
-              textItems,
-              ...(exclusionsRef.current === null ? {} : { user: exclusionsRef.current }),
-            });
+      const offerHere = (priorPlan?: { lines: PriorLine[]; sheet: string }) =>
+        offeredCandidates({
+          walls: found.walls,
+          segments: found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })),
+          pageSegments: segments,
+          widthPt: W,
+          feetPerUnit,
+          planBoxes: detected.planBoxes,
+          textItems,
+          ...(exclusionsRef.current === null ? {} : { user: exclusionsRef.current }),
+          ...(priorPlan === undefined ? {} : { priorPlan }),
+        });
+      let offered = answerKey !== undefined ? null : offerHere();
+      // ── PLAN COMPARISON, ON A PAIRED SHEET — see `priorPlan.ts` ──
+      //
+      // The paired demolition plan is read from this same document, the way
+      // the template's sampled pages are. It is applied only if it lines up.
+      const pairing = offered !== null && raster === undefined ? planCompare?.pairs[pageNumber] : undefined;
+      let prior: PriorStatus | null = null;
+      if (planCompare !== null && offered !== null && pairing !== undefined && pairing.demoPage !== pageNumber && pairing.demoPage <= doc.numPages) {
+        const sheet = planCompare.sheets.find((s) => s.pageNumber === pairing.demoPage)?.sheetNumber ?? `page ${pairing.demoPage}`;
+        try {
+          const demoPage = await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(pairing.demoPage);
+          const read = await segmentsFromOpenPage(demoPage, pdfjs, pairing.demoPage, layers);
+          const words = await pageTextItems(demoPage, pdfjs);
+          const lines = priorPlanFor({
+            demo: { segments: read.segments, textItems: words, widthPt: read.widthPt, heightPt: read.heightPt },
+            newPage: { segments, widthPt: W },
+            newRuns: offered.offeredRuns,
+            feetPerUnit,
+          });
+          if (lines.lines === null) {
+            prior = { page: pageNumber, pairing, sheet, n: 0, feet: 0, why: lines.why };
+          } else {
+            offered = offerHere({ lines: lines.lines, sheet });
+            const aside = offered.setAsideLines.filter((l) => l.kind === "on-prior-plan");
+            prior = { page: pageNumber, pairing, sheet, n: aside.length, feet: aside.reduce((n, l) => n + l.lengthFeet, 0), why: null };
+          }
+        } catch (error) {
+          console.warn(`[takeoff] plan comparison: page ${pairing.demoPage} did not read, so nothing was compared`, error);
+          prior = { page: pageNumber, pairing, sheet, n: 0, feet: 0, why: "the demolition plan could not be read, so nothing was compared" };
+        }
+      }
+      setPriorStatus(planCompare === null || offered === null ? null : (prior ?? { page: pageNumber, pairing: null, sheet: null, n: 0, feet: 0, why: null }));
       setUserAside((offered?.setAside ?? []).filter((a) => a.kind === "excluded-like" || a.kind === "outside-work-area"));
       const walls = offered?.offeredRuns ?? found.walls;
       const regroup = found.regroup;
@@ -4452,6 +4495,9 @@ export function TakeoffPlanViewer({
           onUndo={(kind) => void onUndoExclusion(kind)}
           onClear={(kind) => void onClearExclusions(kind)}
         />
+      ))}
+      {slot(panelOpen ? sideSlot : noticeSlot, answerKey === undefined && planCompare !== null && priorStatus !== null && priorStatus.page === pageNumber && (
+        <PriorPlanBar status={priorStatus} sheets={planCompare.sheets} pageNumber={pageNumber} jobId={jobId} planId={planId} readOnly={readOnly} />
       ))}
       {/* ── THE SHEET IS THE INSTRUMENT, SO IT GETS THE ROOM ──
           Found walls used to stack ABOVE the drawing, and the frame reserved a
