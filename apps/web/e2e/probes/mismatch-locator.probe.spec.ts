@@ -262,6 +262,25 @@ const INSTRUMENT = () => {
       }
       if (!attached || inHead) continue;
 
+      // ── WHAT THE SERVER'S TREE LOOKED LIKE WHEN REACT GAVE UP ON IT ──
+      // A regeneration removes the server's nodes whole, and a removed node is
+      // detached but intact — so the row `<main>` sat in can still be read,
+      // exactly as hydration found it.
+      for (const node of Array.from(record.removedNodes)) {
+        if (node.nodeType !== 1) continue;
+        const main = (node as Element).querySelector("main#main");
+        if (!main || !main.parentNode) continue;
+        const outline = (parent: Node) =>
+          Array.from(parent.childNodes)
+            .map((c) => (c.nodeType === 8 ? `<!--${(c as Comment).data.slice(0, 20)}-->` : describeNode(c)))
+            .join(" , ");
+        (w as unknown as { __dump?: string[] }).__dump = [
+          `shell: ${outline(node)}`,
+          `row:   ${outline(main.parentNode)}`,
+          `main:  ${outline(main).slice(0, 300)}`,
+        ];
+      }
+
       w.__mut?.push({
         t,
         path: pathOf(record.target),
@@ -278,20 +297,26 @@ const INSTRUMENT = () => {
 type Readout = {
   errors: { t: number; msg: string }[];
   stacks: { t: number; msg: string; stack: string }[];
+  dump: string[];
   muts: { t: number; path: string; removed: number; added: number; boundary: boolean; gone: string; came: string }[];
   hydrated: boolean;
 };
 
 async function readout(page: import("@playwright/test").Page): Promise<Readout> {
   return page.evaluate(() => {
-    const w = window as unknown as { __mut: Readout["muts"]; __err: Readout["errors"]; __stacks: Readout["stacks"] };
+    const w = window as unknown as {
+      __mut: Readout["muts"];
+      __err: Readout["errors"];
+      __stacks: Readout["stacks"];
+      __dump?: string[];
+    };
     // HYDRATION IS PROVED, not assumed. React cannot mismatch on a page it
     // never hydrated, and an un-hydrated load is a silent zero — the vacuous
     // green this whole directory exists to end.
     const hydrated = [...document.querySelectorAll("body *")]
       .slice(0, 400)
       .some((el) => Object.keys(el).some((k) => k.startsWith("__reactFiber$")));
-    return { errors: w.__err ?? [], stacks: w.__stacks ?? [], muts: w.__mut ?? [], hydrated };
+    return { errors: w.__err ?? [], stacks: w.__stacks ?? [], dump: w.__dump ?? [], muts: w.__mut ?? [], hydrated };
   }) as Promise<Readout>;
 }
 
@@ -409,6 +434,7 @@ test.describe("#510: name the mismatched element", () => {
           console.log(`LOC ${line}`);
           const stacks = data.stacks.filter((s) => IS_418(s.msg));
           console.log(`LOC    component stacks caught: ${stacks.length}`);
+          for (const d of data.dump) console.log(`LOC    SERVER TREE ${d}`);
           for (const s of stacks.slice(0, 2)) await printStack(page, "LOC    STACK", s.stack);
           // The suspects first, then the boundary noise, so the answer is not
           // buried in the thing #501 mistook for it.
