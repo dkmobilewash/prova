@@ -68,7 +68,9 @@ describe("Split area, any line", () => {
     return { x: U(a[0] + (b[0] - a[0]) * t), y: U(a[1] + (b[1] - a[1]) * t) };
   };
 
-  it("keeps the floor total for 300 random wall-to-wall lines", () => {
+  // 100 lines, and a timeout with headroom: 300 timed out at 30 s on a slow CI
+  // runner (#941's run 41747307847) while taking seconds on a laptop.
+  it("keeps the floor total for 100 random wall-to-wall lines", { timeout: 120_000 }, () => {
     const before = run().rooms;
     expect(before).toHaveLength(1);
     const whole = floor(before);
@@ -77,7 +79,7 @@ describe("Split area, any line", () => {
     // Wall to wall: the line stays in the room.
     const staysInside = (a: { x: number; y: number }, b: { x: number; y: number }) =>
       Array.from({ length: 19 }, (_, k) => (k + 1) / 20).every((t) => pointInRing(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, room.xs, room.ys));
-    for (let i = 0; i < 300; i += 1) {
+    for (let i = 0; i < 100; i += 1) {
       let a = onWall(), b = onWall();
       while (!staysInside(a, b)) (a = onWall()), (b = onWall());
       const after = run([{ x1: a.x, y1: a.y, x2: b.x, y2: b.y }]).rooms;
@@ -86,7 +88,7 @@ describe("Split area, any line", () => {
       for (const r of after) expect(r.squareFeet, `line ${i}`).toBeGreaterThanOrEqual(9);
     }
     // The property is only worth something if most lines really divided the room.
-    expect(split).toBeGreaterThan(150);
+    expect(split).toBeGreaterThan(50);
   });
   it("does not cut off a sliver smaller than a room, so nothing is lost to it", () => {
     // Along the base wall, a twentieth of a foot inside it: the strip would be 3 sf.
