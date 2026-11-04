@@ -35,6 +35,7 @@ const SETS = {
   joplin: { id: "zz-click-joplin", file: "Joplin-community-center.pdf" },
   estreet: { id: "zz-click-estreet", file: "E_Street_421-Set.pdf" },
   irving: { id: "zz-click-irving", file: "Irving-Lofts-Building-A-Cleburne-TX.pdf" },
+  topeka: { id: "zz-click-topeka", file: "Topeka-Senior-Villas.pdf" },
 } as const;
 type SetKey = keyof typeof SETS;
 /** page → [sheet number, title as the inventory names it, feet per page width where :3010 had a scale]. */
@@ -43,6 +44,7 @@ const PAGES: Record<SetKey, Record<number, [string, string, number | null]>> = {
   joplin: { 46: ["A-101", "OVERALL FIRST FLOOR PLAN", 288.1829733163914] },
   estreet: { 24: ["A1.1", "DEMOLITION - FLOOR PLAN", null], 27: ["A1.4", "DEMOLITION - ROOF PLAN", null], 28: ["A2.1", "FLOOR PLAN", null], 74: ["E1.2", "ELECTRICAL DEMOLITION - ROOF PLAN", null] },
   irving: { 12: ["DA2.1", "BUILDING A", null], 24: ["AA2.3", "BUILDING A", null] },
+  topeka: { 73: ["AS-101", "TOPEKA SENIOR VILLAS VILLAS", null], 74: ["A-101", "TOPEKA SENIOR VILLAS", 384.17074255224526] },
 };
 
 let page: Page;
@@ -159,7 +161,7 @@ test.skip(missing, "TAKEOFF_CLICK_PLANS must name the folder holding the four tr
 test.beforeAll(async ({ browser }) => {
   const user = await prisma.user.findFirstOrThrow({ where: { email: PERSONAS.main.email } });
   const companyId = user.companyId;
-  await prisma.company.update({ where: { id: companyId }, data: { symbolCountOn: true, roomFinderOn: true, doorsWindowsOn: true } });
+  await prisma.company.update({ where: { id: companyId }, data: { symbolCountOn: true, roomFinderOn: true, doorsWindowsOn: true, wholeSetTakeoffOn: true } });
   const contact = (await prisma.contact.findFirst({ where: { companyId } })) ?? (await prisma.contact.create({ data: { companyId, name: "ZZ Click GC" } }));
   for (const [key, set] of Object.entries(SETS) as [SetKey, (typeof SETS)[SetKey]][]) {
     if (await prisma.job.findUnique({ where: { id: set.id } })) continue;
@@ -187,6 +189,44 @@ test.beforeAll(async ({ browser }) => {
   page = await (await browser.newContext({ acceptDownloads: true })).newPage();
   monitor = new HealthMonitor(page);
   await signInAs(page, PERSONAS.main.email);
+});
+
+// ── ROUND 5, steps 1-4: the whole-set run on Baker, FIRST ──
+// Before any step presses Find the walls: a sheet whose walls are already found
+// is not a sheet the whole-set run has left to do, and round 5 ran it on a fresh set.
+test("R5-1 the whole-set run on Baker finishes", async () => {
+  await page.goto(`/jobs/${SETS.baker.id}/takeoff`);
+  await expectHealthy(page, "baker takeoff tab", { monitor });
+  const progress = hook("whole-set-progress");
+  for (let tries = 0; tries < 10 && !((await progress.textContent().catch(() => "")) ?? "").includes("done"); tries += 1) {
+    const go = hook("find-walls-everywhere");
+    if (await go.isEnabled().catch(() => false)) await go.click();
+    await expect(progress).toContainText(/done|paused|waiting/, { timeout: 300_000 });
+  }
+  await expect(progress).toContainText("done");
+  await expect(hook("whole-set-counts")).toContainText(/\d+ sheets? ha(s|ve) walls/);
+});
+
+test("R5-2 'Walls — to confirm' is among the items, with runs and feet", async () => {
+  await sheet("baker", 12);
+  const row = hook("item-row").filter({ hasText: "Walls — to confirm" });
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText(/\d+ lin ft|\d+ ft|\d/);
+});
+
+// Round 5 saw these on A100. Here the set is five sheets, and the run counts A101
+// for that level (A100 "passed over: same level"), so the step opens whichever
+// sheet the run put them on.
+test("R5-3 the sheet with runs to confirm says they are not on the estimate", async () => {
+  const held = await prisma.takeoffMeasurement.findFirstOrThrow({ where: { label: "wall, to confirm", page: { plan: { jobId: SETS.baker.id } } }, select: { page: { select: { pageNumber: true } } } });
+  await on("baker", held.page.pageNumber);
+  await expect(hook("held-walls")).toContainText(/\d+ runs? to confirm, [\d,]+ ft: not on the estimate/);
+});
+
+test("R5-4 the estimate has no line for 'Walls — to confirm'", async () => {
+  await page.goto(`/jobs/${SETS.baker.id}/estimate`);
+  await expectHealthy(page, "baker estimate", { monitor });
+  await saysNot("Walls — to confirm");
 });
 
 // ── PART A. Count like this, with no scale: Baker EL1.01 ──────────────────
@@ -637,3 +677,98 @@ test("X3 on a job with nothing measured, either button says so", async () => {
   await hook("export-xlsx").click();
   await says("Nothing is measured on this job yet.");
 });
+
+// ── ROUND 5's PASSING STEPS, so Chrome need not click them again ─────────────
+// Numbered as round 5 numbers them (sheets-to-label.md, "CHROME ROUND 5").
+
+test("R5-6 Topeka A-101: Review walls starts at 0 of N, on a highlighted run", async () => {
+  await sheet("topeka", 74);
+  await findWalls();
+  await hook("review-walls").click();
+  await expect(hook("review-counter")).toContainText(/^0 of \d+ reviewed/);
+  // Drawn on the overlay, which Playwright cannot call "visible"; that it is there is the check.
+  await expect(hook("review-run")).toHaveCount(1);
+});
+
+test("R5-8 D then U: the run comes back and the counter returns to 0", async () => {
+  await on("topeka", 74);
+  if (!(await hook("review-counter").isVisible().catch(() => false))) {
+    await findWalls();
+    await hook("review-walls").click();
+  }
+  await page.keyboard.press("d");
+  await expect(hook("review-counter")).toContainText(/^1 of \d+ reviewed/);
+  await page.keyboard.press("u");
+  await expect(hook("review-counter")).toContainText(/^0 of \d+ reviewed/);
+});
+
+test("R5-10 Done, then K pages to the previous sheet again", async () => {
+  await on("topeka", 74);
+  if (await hook("review-close").isVisible().catch(() => false)) await hook("review-close").click();
+  await expect(hook("review-counter")).toHaveCount(0);
+  await page.keyboard.press("k");
+  // K pages inside the viewer; the sheet picker says which sheet is open.
+  const picker = page.getByRole("combobox", { name: /Jump to a sheet/ });
+  await expect.poll(async () => picker.evaluate((el) => (el as HTMLSelectElement).selectedOptions[0]?.textContent ?? "")).toContain("AS-101");
+});
+
+test("R5-11 Review walls in the top bar opens a sheet at 0 of N looked at · 0 ft dropped", async () => {
+  await sheet("baker", 12);
+  await hook("review-set").click();
+  await expect(hook("review-counter")).toContainText(/^0 of \d+ looked at · 0 ft dropped/);
+  // The first run is on whichever sheet holds it, and the viewer must open that sheet.
+  const where = (await hook("review-counter").locator("xpath=..").innerText()).match(/sheet (\S+)/)?.[1] ?? "";
+  const picker = page.getByRole("combobox", { name: /Jump to a sheet/ });
+  await expect.poll(async () => picker.evaluate((el) => (el as HTMLSelectElement).selectedOptions[0]?.textContent ?? "")).toContain(where);
+  await expect(hook("review-run")).toHaveCount(1);
+});
+
+test("R5-12/13 D moves on and adds the dropped feet; U takes it back; Done", async () => {
+  if (!(await hook("review-counter").isVisible().catch(() => false))) {
+    await sheet("baker", 12);
+    await hook("review-set").click();
+  }
+  await page.keyboard.press("d");
+  await expect(hook("review-counter")).toContainText(/^1 of \d+ looked at · [1-9][\d,]* ft dropped/);
+  await page.keyboard.press("u");
+  await expect(hook("review-counter")).toContainText(/^0 of \d+ looked at · 0 ft dropped/);
+  await hook("review-close").click();
+  await expect(hook("review-counter")).toHaveCount(0);
+});
+
+test("R5-15 Baker A101 shows the renovation prompt, and a saved work area takes it away", async () => {
+  await sheet("baker", 13);
+  await findWalls();
+  await expect(hook("renovation-prompt")).toContainText("This sheet shows existing work.");
+  await hook("renovation-work-area").click();
+  // Round the left part of A101's plan (its key walls run x 0.334-0.565, y 0.252-0.525).
+  const area = [{ x: 0.33, y: 0.245 }, { x: 0.45, y: 0.245 }, { x: 0.45, y: 0.53 }, { x: 0.33, y: 0.53 }];
+  // Three points are enough for Save; a person draws round and presses it.
+  for (const p of area) await clickAt(p.x, p.y);
+  await hook("save-work-area").click();
+  await says("outside the work area you drew");
+  await expect(hook("renovation-prompt")).toHaveCount(0);
+});
+
+test("R5-19 Quantities on a sheet with nothing found says nothing is measured yet", async () => {
+  await sheet("joplin", 46);
+  if ((await hook("quantities-empty").count()) === 0) await hook("toggle-panel").click();
+  await expect(hook("quantities-empty")).toContainText("No quantities on this sheet yet.");
+});
+
+test("R5-20 deleting an item offers to delete its measurements, ticked, and leaves nothing in Unassigned", async () => {
+  await sheet("baker", 54);
+  const row = hook("item-row").filter({ hasText: "ZZ Click Count" }).first();
+  await expect(row).toBeVisible();
+  const unassignedBefore = (await hook("unassigned").innerText().catch(() => "")).replace(/\s+/g, " ");
+  await row.hover();
+  await row.getByRole("button", { name: "Delete", exact: true }).click();
+  const box = page.locator('[data-takeoff="delete-item-measurements"]');
+  await expect(box).toBeChecked();
+  await expect(box.locator("xpath=..")).toContainText(/Also delete its \d+ measurements?/);
+  await page.getByRole("button", { name: "Confirm delete", exact: true }).click();
+  await expect(hook("item-row").filter({ hasText: "ZZ Click Count" })).toHaveCount(0, { timeout: 20_000 });
+  const unassignedAfter = (await hook("unassigned").innerText().catch(() => "")).replace(/\s+/g, " ");
+  expect(unassignedAfter, "nothing new in Unassigned").toBe(unassignedBefore);
+});
+
