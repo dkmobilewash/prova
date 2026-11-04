@@ -107,7 +107,6 @@ export default async function WallTypesPage({ searchParams }: { searchParams?: P
             }
             actions={[{ label: "Open your price book", href: "/catalog" }]}
           />
-          <StarterWallTypesButton />
         </div>
       ) : (
         <ul data-tour="wall-types-list" className="mb-6 divide-y divide-line-row rounded-lg border border-line-card bg-surface">
@@ -122,6 +121,8 @@ export default async function WallTypesPage({ searchParams }: { searchParams?: P
           ))}
         </ul>
       )}
+      {/* Outside the switch above, so the add's answer outlives the empty state. */}
+      <StarterWallTypesButton offer={views.length === 0} />
 
       {/* Behind its button (declutter, 2026-10-13: it rendered open). */}
       <div data-tour="wall-types-add">
