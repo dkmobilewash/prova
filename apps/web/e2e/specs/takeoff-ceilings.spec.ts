@@ -17,7 +17,7 @@ import { openFinders } from "../lib/finders";
  * and height typed in change the sheet summary at once; saving stores them
  * on the room's area and the job summary reads them back after a reload.
  * What the drawings say is proved by the evals and by
- * `takeoff-ceilings-real.spec.ts` on a training sheet.
+ * `takeoff-ceilings-real.local.spec.ts` on a training sheet.
  */
 const SHOTS = path.resolve(__dirname, "../artifacts/ceilings");
 const FIXTURES = path.resolve(__dirname, "../../lib/takeoff/fixtures/plans");

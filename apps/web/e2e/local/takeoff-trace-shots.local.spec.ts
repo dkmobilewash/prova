@@ -12,7 +12,7 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
  *
  *     REAL_PLAN_DIR="/path/to/sets" TRACE_SHOTS="/path/outside/the/repo" \
  *       pnpm --filter @prova/web exec playwright test \
- *         --config e2e/playwright.config.ts takeoff-trace-shots
+ *         --config e2e/playwright.real.config.ts takeoff-trace-shots
  *
  * Reported from the workspace: "I press t, click the start of a wall, and
  * there is no visual change at all, so I can't tell where the wall will go or
