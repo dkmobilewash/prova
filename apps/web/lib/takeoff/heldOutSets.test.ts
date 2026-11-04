@@ -121,7 +121,9 @@ describe("the sets that must never reach training", () => {
     // 2026-10-29 (Modbox, Darrington, Hillside), each held out BEFORE a label
     // was written for it, which is the only order in which holding out means
     // anything. 12 to 13 later the same day: Evergreen, the scanned key.
-    expect(HELD_OUT_SETS).toHaveLength(16);
+    // 16 to 20 on 2026-11-04: round 10's four (Cattaraugus, Washington
+    // Village, 4259 Fulton Rd, EH Hutto), before a label was written.
+    expect(HELD_OUT_SETS).toHaveLength(20);
   });
 
   it("refuses the three that were declared held out in round 7 and only listed in round 9", () => {
@@ -208,5 +210,51 @@ describe("the scanned answer key, held out 2026-10-29", () => {
   });
   it("keeps every entry in the list refusing its own match", () => {
     for (const one of HELD_OUT_SETS) expect(isHeldOut(one.match), one.match).toBe(true);
+  });
+});
+
+/**
+ * ── ROUND 10: THE THIRTEEN SETS OF 2026-11-04, BY THEIR REAL FILE NAMES ──
+ *
+ * Copied from `real-plans/new/`, not typed from the survey, because a name
+ * that does not match the file refuses nothing. Four held out, nine training,
+ * as Diego approved in `coordination/survey-round10.md`.
+ */
+describe("round 10's held-out sets", () => {
+  const HELD_OUT = [
+    "drawings_-_cattauragus_county_courtroom_renovations.pdf",
+    "Washington-Village-Addendum-1.pdf",
+    "Construction Plan 4259 Fulton Rd.pdf",
+    "4.13.26 - Plans - EH Hutto TX - IFP Set (1).pdf",
+  ];
+  const TRAINING = [
+    "BID DRAWINGS-Clerk of Courts Renovations.pdf",
+    "bsl-senior-center-library-bid-set-021825.pdf",
+    "2020-0614 FS5 Fire Station No. 5 Renovation - Addendum 4A - Plan Drawings.pdf",
+    "15-025 - K-4 Addendum #2.pdf",
+    "W8thStPermitSet.pdf",
+    "Dane County CCB First Floor Drawings RFB 314000.pdf",
+    "554-2014_Appendix_D_1101 Wabasha_Site Plan_Main Floor Plan_Basement Floor Plan_Original Structural DrawingsBinder1.pdf",
+    "1960 Dennis Chavez Community Center - Gymnasium.pdf",
+    "1996 Weight Room Addition.pdf",
+  ];
+
+  it("refuses all four by their real file names, saying round 10", () => {
+    for (const file of HELD_OUT) {
+      expect(isHeldOut(file), file).toBe(true);
+      expect(heldOutReason(file), file).toMatch(/round 10/);
+    }
+  });
+
+  it("refuses them however the name was punctuated on its way through", () => {
+    expect(isHeldOut("drawings___cattauragus_county_courtroom_renovations")).toBe(true);
+    expect(isHeldOut("Washington_Village_Addendum_1.pdf")).toBe(true);
+    expect(isHeldOut("Construction_Plan_4259_Fulton_Rd")).toBe(true);
+    expect(isHeldOut("4_13_26_-_Plans_-_EH_Hutto_TX_-_IFP_Set_(1).pdf")).toBe(true);
+    expect(isHeldOut("EHHUTTOTX")).toBe(true);
+  });
+
+  it("allows the nine training sets, including the library and courthouse that are NOT held out", () => {
+    for (const file of TRAINING) expect(isHeldOut(file), file).toBe(false);
   });
 });
