@@ -174,6 +174,7 @@ export function TakeoffLayerPanel({
             {renaming === layer.key ? (
               <input
                 autoFocus
+                name="layerName"
                 defaultValue={names[layer.key] ?? layer.name}
                 aria-label="Layer name"
                 data-takeoff="layer-rename"

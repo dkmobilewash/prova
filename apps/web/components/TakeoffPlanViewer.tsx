@@ -5903,7 +5903,7 @@ export function TakeoffPlanViewer({
             fill
               ? // Floating over the bottom of the canvas, since the canvas is
                 // the whole height: in the flow it would push the drawing up.
-                "absolute bottom-12 left-1/2 z-30 w-[min(40rem,calc(100%-24rem))] min-w-[20rem] -translate-x-1/2 rounded-lg border border-line-card bg-surface-card p-3 shadow-xl"
+                "absolute bottom-12 left-1/2 z-30 w-[min(40rem,calc(100%-24rem))] min-w-[20rem] -translate-x-1/2 rounded-lg border border-line-card bg-surface p-3 shadow-xl"
               : "relative z-20 rounded-lg border border-line-card bg-surface-card p-3"
           }
         >
