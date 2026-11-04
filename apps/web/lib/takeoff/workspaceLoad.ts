@@ -8,6 +8,7 @@ import { aiGate } from "@/lib/ai/settings";
 import { wallTypeSummary } from "@/lib/takeoff/wallTypeMatch";
 
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
+import { wallsPlan, wallsSheetsFor } from "@/lib/plan-ingest/walls";
 import { earlierVersionsFor } from "@/lib/takeoff/sheetRevisions";
 import { isScannedSheet } from "@/lib/plan-ingest/scannedSheet";
 import { cutoutsFromJson, type ItemMeasurement, type TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
@@ -412,6 +413,12 @@ export async function loadTakeoffWorkspace(
     if (row.sheetNumber !== null) scannedNumberByPage[row.pageNumber] = row.sheetNumber;
   }
   const duplicateWallsByPage: Record<number, string> = {};
+  // The sheet that counts instead, for a sheet the whole set leaves to another
+  // of its level: "It is a wall" there saves nothing, and the viewer says why.
+  const notCountedByPage: Record<number, string> = {};
+  for (const [pageNumber, skip] of wallsPlan(await wallsSheetsFor(plan.id, company.id))) {
+    if (skip?.startsWith("same level as ")) notCountedByPage[pageNumber] = skip.slice("same level as ".length);
+  }
   /**
    * WHAT EACH SHEET IS CALLED, so the pager can be jumped to one.
    *
@@ -661,6 +668,7 @@ export async function loadTakeoffWorkspace(
     viewScalesByPage,
     scaleDeclineByPage,
     duplicateWallsByPage,
+    notCountedByPage,
     sheetLabelByPage,
     earlierVersionByPage,
     sheetRows,

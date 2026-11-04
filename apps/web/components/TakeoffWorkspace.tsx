@@ -1571,6 +1571,7 @@ export function TakeoffWorkspace({
               }
               scaleDeclineByPage={data.scaleDeclineByPage}
               duplicateWallsByPage={data.duplicateWallsByPage}
+              notCountedByPage={data.notCountedByPage}
               sheetLabelByPage={data.sheetLabelByPage}
               earlierVersionByPage={data.earlierVersionByPage}
               wallTypes={data.viewerWallTypes}
