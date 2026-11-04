@@ -47,6 +47,11 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+        env:
+          # tsc over apps/web ran out of heap on the runner's default limit:
+          # exit 134, FatalProcessOutOfMemory, four times on main on
+          # 2026-11-03/04, each passing on a re-run. Same 8 GB as Build below.
+          NODE_OPTIONS: --max-old-space-size=8192
 
       - name: Build
         run: pnpm build
