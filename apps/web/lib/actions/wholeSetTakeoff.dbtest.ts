@@ -20,6 +20,7 @@ vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 const { saveWholeSetTakeoffSwitch, wholeSetTakeoffSummary } = await import("./wholeSetTakeoff");
 const { startPlanIngest } = await import("./planIngest");
+const { postSheetWalls, saveTakeoffMeasurements } = await import("./takeoff");
 
 let companyId = "";
 let planId = "";
@@ -88,6 +89,9 @@ afterAll(async () => {
   await prisma.planIngestJob.deleteMany({ where: { planId } });
   await prisma.planSheetText.deleteMany({ where: { planId } });
   await prisma.takeoffPlan.deleteMany({ where: { id: planId } });
+  // Posting the walls (the last cases) gives the job items and estimate lines.
+  await prisma.jobLineItem.deleteMany({ where: { jobId } });
+  await prisma.takeoffItem.deleteMany({ where: { jobId } });
   await prisma.job.deleteMany({ where: { id: jobId } });
   await prisma.contact.deleteMany({ where: { companyId } });
   await prisma.user.deleteMany({ where: { companyId } });
@@ -174,5 +178,60 @@ describe("whole-set takeoff", () => {
     // Pages 1 and 2 are found again, and page 5, which found nothing, is asked again.
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.total).toBe(3);
+  });
+
+  it("A SHEET FOUND BUT NEVER POSTED IS POSTED: its stored walls go onto the job (new-customer run v2, M3)", async () => {
+    // Page 2 has walls stored under its scale (as saving a scale leaves them)
+    // and nothing on the job. The run used to note "already found" and post
+    // nothing, so a new job's whole-set run put 0 walls on the job.
+    expect(await prisma.takeoffMeasurement.count({ where: { pageId: pageIds[2], source: "DETECTED" } })).toBe(0);
+    const run = await prisma.planIngestJob.findFirstOrThrow({ where: { planId, stage: "WALLS" }, orderBy: { createdAt: "desc" }, select: { id: true } });
+    const held = [{ x1: 0.9, y1: 0.9, x2: 0.95, y2: 0.9 }];
+    const work = wallsWork(
+      { planId, companyId, ingestJobId: run.id, jobId, startedByUserId: context.id },
+      {
+        detect: async () => "nothing-found" as const,
+        // Found again: the same stored walls, nothing on the job — the real
+        // `refreshSheetWalls` answer for this state (its own test pins that).
+        refresh: async (target) => (target.pageNumber === 2 ? { kind: "proposals-only" as const, held } : { kind: "posted-left-alone" as const }),
+        findRooms: async () => ({ kind: "skipped" as const, why: "room finding is off" }),
+      },
+    );
+    await runIngest({ ports: claimPorts({ jobId: run.id, work }), budgetMs: 10_000 });
+    const posted = await prisma.takeoffMeasurement.findMany({ where: { pageId: pageIds[2], source: "DETECTED", kind: "LINEAR" }, select: { xs: true, ys: true, item: { select: { name: true } } } });
+    expect(posted.map((m) => [m.xs, m.ys, m.item?.name])).toEqual([[[0.1, 0.4], [0.5, 0.5], "Walls — untyped"]]);
+    const note = (await prisma.planIngestTask.findFirstOrThrow({ where: { jobId: run.id, pageNumber: 2 }, select: { note: true } })).note;
+    expect(note).toBe("walls found; on the job by type: none typed; untyped 30 ft");
+  });
+
+  it("RUN TAKEOFF PUTS A SHEET'S STORED WALLS ON THE JOB, and never twice (postSheetWalls)", async () => {
+    // Page 5: walls stored under its scale, nothing on the job.
+    const calibration = await prisma.takeoffScaleCalibration.findFirstOrThrow({ where: { pageId: pageIds[5] } });
+    await prisma.takeoffWallProposal.create({
+      data: { pageId: pageIds[5], calibrationId: calibration.id, thicknessInches: 6, source: "REMAINDER", runs: [{ x1: 0.2, y1: 0.2, x2: 0.6, y2: 0.2, thicknessFeet: 0.5 }] },
+    });
+    const first = await postSheetWalls(jobId, planId, 5);
+    expect(first).toEqual({ ok: true, value: { note: "on the job by type: none typed; untyped 40 ft" } });
+    const onJob = () => prisma.takeoffMeasurement.count({ where: { pageId: pageIds[5], kind: "LINEAR" } });
+    expect(await onJob()).toBe(1);
+    // Pressed again: the sheet has walls on the job, so it is left alone.
+    expect(await postSheetWalls(jobId, planId, 5)).toEqual({ ok: true, value: { note: null } });
+    expect(await onJob()).toBe(1);
+  });
+
+  it("ADD THESE NEVER WRITES A RUN THAT IS ALREADY ON THE JOB: all of them refused, some of them left out", async () => {
+    const form = (shapes: { xs: number[]; ys: number[] }[]) => {
+      const f = new FormData();
+      f.set("pageId", pageIds[5]!);
+      f.set("label", "6 in wall");
+      for (const shape of shapes) f.append("shape", JSON.stringify(shape));
+      return f;
+    };
+    const posted = { xs: [0.2, 0.6], ys: [0.2, 0.2] };
+    const all = await saveTakeoffMeasurements(jobId, form([posted, { xs: [0.6, 0.2], ys: [0.2, 0.2] }]));
+    expect(all).toEqual({ ok: false, error: "These walls are already on the job. Give them a type with Set type, or in the review queue." });
+    expect(await saveTakeoffMeasurements(jobId, form([posted, { xs: [0.2, 0.2], ys: [0.3, 0.7] }]))).toEqual({ ok: true });
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId: pageIds[5], kind: "LINEAR" }, select: { xs: true } });
+    expect(rows.map((r) => r.xs).sort()).toEqual([[0.2, 0.2], [0.2, 0.6]]);
   });
 });
