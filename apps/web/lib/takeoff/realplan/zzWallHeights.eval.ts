@@ -3,17 +3,16 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { WallLegendRead } from "@prova/integrations/src/wallLegend";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
-import { sheetNumberFrom } from "../../plan-ingest/sheetNumber";
 import { studsRequired } from "../../takeoff";
 import { runGeometry } from "../../wall-assemblies";
 import { readPartitionAssembly } from "../partitionAssembly";
-import { pageLines } from "../planTextRead";
 import { sheetStrokes } from "../sheetStrokes";
-import { sheetViews } from "../sheetViews";
 import { shapeFromLegend, tagSymbols } from "../tagSymbols";
 import { legendVocabulary, tagsFromSymbols } from "../symbolTagging";
 import { propagateTypes } from "../typePropagation";
-import { heightFactsFromText, lettersNotesFromLines, resolveHeight, type HeightFact } from "../wallHeights";
+import { buildingsOf, resolveHeight } from "../wallHeights";
+import { sheetViews } from "../sheetViews";
+import { heightOfLegendType, setHeightFacts } from "../setHeightFacts";
 import { tagByRun } from "../wallTags";
 import type { WallCandidate } from "../wallVectors";
 
@@ -57,7 +56,9 @@ function latestSight(cacheKey: string): WallLegendSightRead | null {
 describe.skipIf(DIR === "" || CACHE === "" || SET === "" || LEGEND_PAGE === 0)("wall heights off the drawings", () => {
   it("reads each type's height with its source and confidence, and prices Baker end to end", { timeout: 1_800_000 }, async () => {
     const cacheKey = SET.replace(/\W+/g, "_");
-    const textAt = join(CACHE, `${cacheKey}-p${LEGEND_PAGE}-wall-legend.1.json`);
+    // The newest text read of this legend page (`…-wall-legend.N.json`).
+    const reads = readdirSync(CACHE).filter((f) => new RegExp(`^${cacheKey}-p${LEGEND_PAGE}-wall-legend\\.\\d+\\.json$`).test(f)).sort((a, b) => Number(/\.(\d+)\.json$/.exec(a)?.[1]) - Number(/\.(\d+)\.json$/.exec(b)?.[1]));
+    const textAt = join(CACHE, reads[reads.length - 1] ?? `${cacheKey}-p${LEGEND_PAGE}-wall-legend.1.json`);
     expect(existsSync(textAt), `no text read cached at ${textAt}`).toBe(true);
     const text = JSON.parse(readFileSync(textAt, "utf8")) as WallLegendRead;
     const sight = latestSight(cacheKey);
@@ -66,33 +67,8 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || LEGEND_PAGE === 0)("
     const doc = await openPlanPdf(pdf());
     expect(doc.pageCount).toBeGreaterThan(0);
 
-    // ── FACTS, FROM THE SHEETS THAT CARRY THEM ──
-    const facts: HeightFact[] = [];
-    const factSheets: string[] = [];
-    for (let page = 1; page <= doc.pageCount; page++) {
-      const t = await doc.pageText(page);
-      const items = t.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
-      if (items.length < 20) continue;
-      const r = sheetNumberFrom({ pageNumber: page, widthPt: t.widthPt, heightPt: t.heightPt, rotation: 0, items });
-      const views = sheetViews(items, t.widthPt).map((v) => v.name).join(" | ");
-      const sheet = `${r.sheetNumber ?? `p${page}`}`;
-      const isSection = /\bSECTION\b/i.test(views) || /\bSECTION\b/i.test(r.regionText);
-      const isCeiling = /CEILING PLAN|RCP/i.test(views) || /CEILING PLAN/i.test(r.regionText);
-      // A sheet-wide rule can sit on the legend sheet (Baker's note A) or on
-      // the floor plan's general notes; read every lettered note that names
-      // walls, and let the legend page's win below.
-      if (page === LEGEND_PAGE || /GENERAL NOTES/i.test(items.map((i) => i.str).join(" "))) {
-        facts.push(...lettersNotesFromLines(sheet, await pageLines(doc, page)).map((f) => ({ ...f, sheet: page === LEGEND_PAGE ? sheet : `${sheet} (p${page})` })));
-      }
-      if (!isSection && !isCeiling) continue;
-      const read = heightFactsFromText({ sheet, items }).filter((f) => (isSection ? f.kind === "structure-elevation" || f.kind === "bearing-elevation" : f.kind === "ceiling-height"));
-      if (read.length > 0) {
-        factSheets.push(`${sheet} (${isSection ? "section" : "ceiling plan"}): ${[...new Set(read.map((f) => f.phrase))].slice(0, 4).join("; ")}`);
-        facts.push(...read);
-      }
-    }
-    const isGeneral = (f: HeightFact) => f.kind === "note" && /ALL\s+(?:NEW\s+|INTERIOR\s+)?(?:WALLS|PARTITIONS)/i.test(f.text ?? "") && /DECK|STRUCTURE|CEILING|HEIGHT|FULL/i.test(f.text ?? "");
-    const generalNote = facts.find((f) => isGeneral(f) && !f.sheet.includes("(p")) ?? facts.find(isGeneral) ?? null;
+    // ── FACTS, FROM THE SHEETS THAT CARRY THEM — the app's own walk (`setHeightFacts`) ──
+    const { facts, generalNote, factSheets } = await setHeightFacts(doc, { legendPage: LEGEND_PAGE });
     console.log(`\n=== ${SET}: legend p${LEGEND_PAGE}, ${text.types.length} types`);
     console.log(`  facts: ${factSheets.join(" || ") || "none"}`);
     console.log(`  general note: ${generalNote === null ? "none" : `${generalNote.sheet} "${generalNote.phrase}"`}`);
@@ -103,11 +79,33 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || LEGEND_PAGE === 0)("
       return resolveHeight({ code: t.code, heightNote: s?.heightNote ?? null, ownPhrases: t.lines, generalNote, facts });
     });
     for (const r of readings) {
+      console.log(`HEIGHTJSON ${JSON.stringify({ set: SET, code: r.code, feet: r.feet, options: (r.options ?? []).map((f) => f.feet), why: r.why })}`);
       console.log(
         `  ${r.code.padEnd(14)} ${r.feet === null ? "   —  " : `${r.feet.toFixed(1).padStart(5)} ft`}  ${r.confidence.padEnd(6)} ${r.generalNoteOnly ? "GENERAL NOTE ONLY " : ""}${r.basis?.kind ?? "no basis"}: ${r.why}`,
       );
     }
     expect(readings.length).toBe(text.types.length);
+    // What the library writes (`legendHeightOf`), and the same for the plan sheet HEIGHT_PLAN's own building.
+    const planBuildings = PLAN_PAGE > 0 ? buildingsOf(sheetViews((await doc.pageText(PLAN_PAGE)).items, (await doc.pageText(PLAN_PAGE)).widthPt).map((v) => v.name)) : [];
+    for (const [tag, buildings] of [["PRODUCT_HEIGHTS_JSON", undefined], ["SHEET_HEIGHTS_JSON", planBuildings]] as const) {
+      console.log(`${tag} ${JSON.stringify(text.types.map((t) => {
+        const s = sight?.types.find((x: SightType) => x.code.toUpperCase() === t.code.toUpperCase());
+        const r = heightOfLegendType({ code: t.code, lines: t.lines, heightNote: s?.heightNote ?? null }, { facts, generalNote, factSheets }, buildings);
+        return { code: t.code, feet: r.feet, conf: r.feet === null ? null : r.confidence, gno: r.generalNoteOnly, options: (r.options ?? []).map((f) => f.feet), sentence: r.why.slice(0, 160) };
+      }))}`);
+    }
+
+    if (process.env.HEIGHT_PLANS) for (const f of facts.filter((f) => f.kind === "structure-elevation" || f.kind === "bearing-elevation")) console.log(`LEVEL ${f.sheet} zone=${JSON.stringify(f.zone)} buildings=${JSON.stringify(f.buildings ?? [])} ${f.phrase}`);
+    // ── PER PLAN SHEET: the zone the sheet's own building takes (HEIGHT_PLANS="31,35") ──
+    for (const page of (process.env.HEIGHT_PLANS ?? "").split(",").filter(Boolean).map(Number)) {
+      const t = await doc.pageText(page);
+      const buildings = buildingsOf(sheetViews(t.items, t.widthPt).map((v) => v.name));
+      for (const tp of text.types) {
+        const s = sight?.types.find((x: SightType) => x.code.toUpperCase() === tp.code.toUpperCase());
+        const r = resolveHeight({ code: tp.code, heightNote: s?.heightNote ?? null, ownPhrases: tp.lines, generalNote, facts, buildings });
+        console.log(`HEIGHTSHEET ${JSON.stringify({ set: SET, page, buildings, code: r.code, feet: r.feet, options: (r.options ?? []).map((f) => f.feet) })}`);
+      }
+    }
 
     // ── BAKER END TO END, WHEN A LABEL FILE IS GIVEN ──
     if (LABEL !== "" && PLAN_PAGE > 0 && sight !== null) {

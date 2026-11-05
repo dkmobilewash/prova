@@ -14,7 +14,7 @@ import { sameCode } from "@/lib/takeoff/legendMerge";
 import { storedLegendTypes, storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { assemblyFromSight } from "@/lib/takeoff/legendSight";
 import { pageLines } from "@/lib/takeoff/planTextRead";
-import { legendHeightOf, legendHeightsFor, type LegendHeightResult } from "@/lib/takeoff/legendHeights";
+import { heightOptionLines, legendHeightOf, legendHeightsFor, type LegendHeightResult } from "@/lib/takeoff/legendHeights";
 import { sightFieldsFor } from "@/lib/takeoff/legendProposal";
 import { readWallLegendBySight } from "@/lib/takeoff/readWallLegend";
 import { actionFail, isUniqueConstraintError, type ActionResultWith } from "./shared";
@@ -157,6 +157,7 @@ export async function addWallTypeFromLegend(
   const notes = [
     `Read off ${where} of the plan set. Check against the drawing before pricing.`,
     height.sentence,
+    ...heightOptionLines(height),
     ...original.lines,
   ]
     .join("\n")
