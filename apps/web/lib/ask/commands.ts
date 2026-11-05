@@ -21,6 +21,8 @@ import { contactCommands, contactExclusions } from "./commands/contacts";
 import { leadCommands } from "./commands/leads";
 import { changeOrderCommands, changeOrderExclusions } from "./commands/changeOrders";
 import { purchaseOrderCommands } from "./commands/purchaseOrders";
+import { payApplicationCommands } from "./commands/payApplications";
+import { lienWaiverCommands } from "./commands/lienWaivers";
 
 /**
  * The commands: what Ask can DO, as distinct from what it can answer.
@@ -78,7 +80,10 @@ export type CommandName =
   | "add_contact"
   | "find_bid_leads"
   | "start_change_order"
-  | "draft_purchase_order";
+  | "draft_purchase_order"
+  | "start_pay_application"
+  | "bill_retainage"
+  | "prepare_lien_waiver";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
  * composer) has no member on purpose: it cannot be registered. T4 is an
@@ -304,6 +309,8 @@ export const COMMANDS: CommandDefinition[] = [
   ...leadCommands,
   ...changeOrderCommands,
   ...purchaseOrderCommands,
+  ...payApplicationCommands,
+  ...lienWaiverCommands,
 ];
 
 export const EXCLUSIONS: Exclusion[] = [

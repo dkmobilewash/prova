@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayLabel, daysBetween, parseDateWords, parsePastDay, relativeToToday } from "./dates";
+import { dayLabel, daysBetween, parseDateWords, parsePastDay, periodEndFromWords, relativeToToday } from "./dates";
 
 /**
  * Every phrase the schedule command accepts, against fixed todays. A
@@ -274,5 +274,25 @@ describe("parsePastDay — a day being recorded", () => {
     expect(parsePastDay("Sunday", SUNDAY_IN_DECEMBER)).toBe(SUNDAY_IN_DECEMBER);
     expect(parsePastDay("last Sunday", SUNDAY_IN_DECEMBER)).toBe("2026-12-13");
     expect(parsePastDay("three weeks ago", "2027-01-05")).toBe("2026-12-15");
+  });
+});
+
+describe("periodEndFromWords — the period-to of a bill", () => {
+  it.each([
+    ["October", "2026-11-04", "2026-10-31"],
+    ["for October", "2026-11-04", "2026-10-31"],
+    ["November", "2026-11-04", "2026-11-30"],
+    // A month still ahead this year is LAST year's: a bill is for work done.
+    ["December", "2026-11-04", "2025-12-31"],
+    ["February 2028", "2026-11-04", "2028-02-29"],
+    ["sept", "2026-11-04", "2026-09-30"],
+    ["October 15", "2026-11-04", "2026-10-15"],
+  ])("%s on %s -> %s", (words, today, end) => {
+    expect(periodEndFromWords(words, today)).toBe(end);
+  });
+
+  it("is null rather than a guess", () => {
+    expect(periodEndFromWords("the usual", "2026-11-04")).toBeNull();
+    expect(periodEndFromWords("", "2026-11-04")).toBeNull();
   });
 });

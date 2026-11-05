@@ -6,7 +6,8 @@ import { secondaryActionClass } from "@/components/emptyStateStyles";
 import { Hint } from "@/components/Hint";
 import { useLocalToday } from "@/components/localToday";
 import { NEW_PAY_APP_HASH } from "@/components/job/payAppFigures";
-import { submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
+import { settleAskDraft, submitPayApplication, updateInvoiceStatus } from "@/lib/actions";
+import type { BillingDraft } from "@/lib/ask/drafts";
 import { money } from "@/lib/money";
 import { monthEnd } from "@/lib/month-end";
 import { parseNumericInput } from "@/lib/numeric-input";
@@ -111,9 +112,12 @@ export function StatusForm({ jobId, invoiceId, status }: { jobId: string; invoic
 export function PayApplications({
   jobId,
   lineItems,
+  draft,
 }: {
   jobId: string;
   lineItems: PayAppLineItemOption[];
+  /** A card from the Ask box: the form opens, focused, with this period-to. */
+  draft?: Extract<BillingDraft, { form: "pay_application" }>;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   // The default PERIOD TO: the last day of the user's own current month, because
@@ -140,9 +144,13 @@ export function PayApplications({
       setIsOpen(true);
     };
     openFromHash();
+    if (draft) {
+      focusOnOpen.current = true;
+      setIsOpen(true);
+    }
     window.addEventListener("hashchange", openFromHash);
     return () => window.removeEventListener("hashchange", openFromHash);
-  }, []);
+  }, [draft]);
   useEffect(() => {
     if (!isOpen || !focusOnOpen.current || !formRef.current) return;
     focusOnOpen.current = false;
@@ -317,6 +325,7 @@ export function PayApplications({
                 setPctNote({});
                 setTotal(0);
                 setIsOpen(false);
+                if (draft) void settleAskDraft(draft.proposalId);
               } catch (err) {
                 setError(err instanceof Error ? err.message : "Could not submit the pay application");
               }
@@ -338,7 +347,7 @@ export function PayApplications({
               <input
                 type="date"
                 name="periodTo"
-                defaultValue={defaultPeriodTo}
+                defaultValue={draft?.periodTo ?? defaultPeriodTo}
                 onChange={(event) => setPeriodTo(event.target.value)}
                 className="rounded-md border border-line-card bg-canvas px-3 py-2 text-ink focus:border-link focus:outline-none"
               />

@@ -64,7 +64,8 @@ describe("the hundred questions", () => {
     // The refusal they follow is a KNOWN_GAP, not a census question.
     // 126 with record_bid_outcome, 2026-10-11 (124 on main before the merge).
     // 128 with start_change_order and draft_purchase_order, 2026-11-04.
-    expect(TOTAL_QUESTIONS).toBe(128);
+    // 131 with the three billing-tab hand-offs, same day.
+    expect(TOTAL_QUESTIONS).toBe(131);
     expect(TOP_QUESTIONS).toHaveLength(TOTAL_QUESTIONS);
   });
 
