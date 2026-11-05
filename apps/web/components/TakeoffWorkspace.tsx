@@ -1014,7 +1014,7 @@ export function TakeoffWorkspace({
     void (async () => {
       try {
         const response = await fetch(
-          `/api/takeoff/labels?set=${encodeURIComponent(draftSet)}&sheet=${encodeURIComponent(sheetNumber)}`,
+          `/api/takeoff/labels?set=${encodeURIComponent(draftSet)}&sheet=${encodeURIComponent(sheetNumber)}&page=${page}`,
           { cache: "no-store" },
         );
         // NOT marked tried: a transport failure is not an answer about this

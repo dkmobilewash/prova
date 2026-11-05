@@ -65,3 +65,81 @@ describe("the labels route keys files by the sheet number", () => {
     expect(existsSync(join(dir, "Baker", "A101.json"))).toBe(true);
   });
 });
+
+/**
+ * Sheets labelled before a number was read for their page were saved as
+ * `p74.json`. Once the number appeared the page asked for "A-101", found
+ * nothing, opened with 0 walls — and a save forked a second file.
+ */
+describe("a page-keyed label file still loads, and saves back to itself", () => {
+  let dir: string;
+  const saved = { sheet: "p74", page: 74, verdicts: [{ candidateId: "w1", verdict: "accepted" }], rows: [] };
+  const other = { sheet: "A-101", page: 74, verdicts: [], rows: [] };
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "labels-route-page-"));
+    vi.stubEnv("TAKEOFF_LABEL_DIR", dir);
+    vi.stubEnv("NODE_ENV", "development");
+    mkdirSync(join(dir, "Topeka"));
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const sheet = "A-101 · FIRST FLOOR PLAN";
+  const get = (page?: number) =>
+    GET(
+      new Request(
+        `http://x/api/takeoff/labels?set=Topeka&sheet=${encodeURIComponent(sheet)}` +
+          (page === undefined ? "" : `&page=${page}`),
+      ),
+    );
+  const post = (page?: number) =>
+    POST(
+      new Request("http://x/api/takeoff/labels", {
+        method: "POST",
+        body: JSON.stringify({
+          set: "Topeka",
+          sheet,
+          ...(page === undefined ? {} : { page }),
+          candidates: [],
+          verdicts: [],
+        }),
+      }),
+    );
+
+  it("loads p74.json for a numbered sheet on page 74", async () => {
+    writeFileSync(join(dir, "Topeka", "p74.json"), JSON.stringify(saved));
+    expect((await (await get(74)).json()).saved).toEqual(saved);
+  });
+
+  it("a save writes p74.json back and creates no A-101.json", async () => {
+    writeFileSync(join(dir, "Topeka", "p74.json"), JSON.stringify(saved));
+    expect((await (await post(74)).json()).ok).toBe(true);
+    expect(readdirSync(join(dir, "Topeka"))).toEqual(["p74.json"]);
+    const written = JSON.parse(readFileSync(join(dir, "Topeka", "p74.json"), "utf8"));
+    expect(written.sheet).toBe("p74");
+    expect(written.page).toBe(74);
+  });
+
+  it("the number wins when both A-101.json and p74.json exist", async () => {
+    writeFileSync(join(dir, "Topeka", "p74.json"), JSON.stringify(saved));
+    writeFileSync(join(dir, "Topeka", "A-101.json"), JSON.stringify(other));
+    expect((await (await get(74)).json()).saved).toEqual(other);
+    expect((await (await post(74)).json()).ok).toBe(true);
+    expect(JSON.parse(readFileSync(join(dir, "Topeka", "p74.json"), "utf8"))).toEqual(saved);
+  });
+
+  it("with no page in the request, behaves as before: number only, p74 unseen", async () => {
+    writeFileSync(join(dir, "Topeka", "p74.json"), JSON.stringify(saved));
+    expect((await (await get()).json()).saved).toBeNull();
+    expect((await (await post()).json()).ok).toBe(true);
+    expect(readdirSync(join(dir, "Topeka")).sort()).toEqual(["A-101.json", "p74.json"]);
+    expect(JSON.parse(readFileSync(join(dir, "Topeka", "A-101.json"), "utf8")).sheet).toBe("A-101");
+  });
+
+  it("the overwrite guard reads the page-keyed file it would replace", async () => {
+    const big = { ...saved, verdicts: Array.from({ length: 30 }, (_, i) => ({ candidateId: `w${i}` })) };
+    writeFileSync(join(dir, "Topeka", "p74.json"), JSON.stringify(big));
+    expect((await post(74)).status).toBe(409);
+  });
+});
