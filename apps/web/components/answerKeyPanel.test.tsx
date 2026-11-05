@@ -207,3 +207,38 @@ describe("round 12: the type picker", () => {
     fetchMock.mockRestore();
   });
 });
+
+describe("round 13: marking windows", () => {
+  it("arms marking, counts the marks, and a number tags the newest from the sheet's window tags", async () => {
+    const { addOpening } = await import("@/lib/takeoff/answerKeyReview");
+    const onMarking = vi.fn(), onFocusOpening = vi.fn();
+    const state = addOpening(addOpening(startReview([]), { x: 0.1, y: 0.1, kind: "window" }), { x: 0.2, y: 0.1, kind: "window" });
+    const { host, onState } = paint({ state, marking: true, onMarking, focusedOpening: "o2", onFocusOpening, windowTags: ["W1", "W2", "W3"] });
+    expect(q(host, "key-window-count")?.textContent).toBe("2 windows marked");
+    expect(q(host, "key-window-tag")?.textContent).toContain("W2 (2)");
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "3" })); });
+    expect(onState.mock.calls.at(-1)![0].openings[1]).toEqual({ id: "o2", x: 0.2, y: 0.1, kind: "window", tag: "W3" });
+    expect(onFocusOpening).toHaveBeenLastCalledWith(null);
+    act(() => (q(host, "key-mark-windows") as HTMLButtonElement).click());
+    expect(onMarking).toHaveBeenCalledWith(false);
+  });
+
+  it("0 is no tag shown", async () => {
+    const { addOpening } = await import("@/lib/takeoff/answerKeyReview");
+    const { onState } = paint({ state: addOpening(startReview([]), { x: 0.1, y: 0.1, kind: "window" }), marking: true, focusedOpening: "o1", windowTags: [] });
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "0" })); });
+    expect(onState.mock.calls.at(-1)![0].openings[0].tag).toBe("-");
+  });
+
+  it("saves a sheet holding only windows, with the windows in the body", async () => {
+    window.localStorage.setItem(REVIEWER_KEY, "Diego");
+    const { addOpening, setOpeningTag } = await import("@/lib/takeoff/answerKeyReview");
+    const state = setOpeningTag(addOpening(startReview([]), { x: 0.1, y: 0.1, kind: "window" }), "o1", "W1");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ ok: true, path: "labels/S/A1.json" })));
+    const { host } = paint({ state, pairings: [] });
+    await act(async () => { (q(host, "key-save-labels") as HTMLButtonElement).click(); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]!.body)).openings).toEqual([{ x: 0.1, y: 0.1, kind: "window", tag: "W1" }]);
+    fetchMock.mockRestore();
+  });
+});

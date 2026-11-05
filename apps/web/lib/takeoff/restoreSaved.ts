@@ -1,5 +1,5 @@
 import type { Candidate, ReviewState, SplitRecord, Verdict } from "./answerKeyReview";
-import { addTraced, setVerdict, setWallType, tracedWall } from "./answerKeyReview";
+import { addOpening, addTraced, setOpeningTag, setVerdict, setWallType, tracedWall } from "./answerKeyReview";
 import { splitCandidate } from "./splitCandidate";
 
 /**
@@ -64,6 +64,8 @@ export type SavedSheet = {
   /** The splits the reviewer made, when the file is new enough to have them. */
   splits?: SplitRecord[];
   verdicts?: SavedVerdict[];
+  /** Round 13: windows and doors marked, with their tags. */
+  openings?: { x: number; y: number; kind: string; tag?: string }[];
 };
 
 export type RestoreSavedResult =
@@ -390,7 +392,8 @@ export function restoreSaved(
   feetPerUnit: number,
 ): RestoreSavedResult {
   const all = saved.verdicts ?? [];
-  if (all.length === 0) {
+  const openings = (saved.openings ?? []).filter((o) => o.kind === "window" || o.kind === "door");
+  if (all.length === 0 && openings.length === 0) {
     return { ok: false, message: "That sheet has a saved file, but it holds no decisions." };
   }
 
@@ -443,6 +446,16 @@ export function restoreSaved(
     );
     if (typeof t.wallType === "string") state = setWallType(state, [state.traced[state.traced.length - 1]!.id], t.wallType);
   });
+
+  // Openings are points a person placed, not candidates: they come back as
+  // they were, replacing any marked in memory so a reopen never doubles one.
+  if (openings.length > 0) {
+    state = { ...state, openings: [] };
+    for (const o of openings) {
+      state = addOpening(state, { x: o.x, y: o.y, kind: o.kind as "window" | "door" });
+      if (typeof o.tag === "string") state = setOpeningTag(state, state.openings![state.openings!.length - 1]!.id, o.tag);
+    }
+  }
 
   const carried = decisions.filter((v) => !pairs.some((p) => p.saved === v));
 
