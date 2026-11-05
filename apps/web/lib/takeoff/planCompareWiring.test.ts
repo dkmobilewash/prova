@@ -6,11 +6,14 @@ import { describe, expect, it } from "vitest";
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 describe("plan comparison runs only where it was switched on and paired", () => {
-  it("the server path reads the company's switch before it compares", () => {
+  it("the server path applies it only behind the company's switch; off, it only counts what it would set aside", () => {
     const server = read("./detectWallsForCalibration.ts");
-    expect(server).toMatch(/select: \{ planCompareOn: true \}[\s\S]{0,120}if \(company\?\.planCompareOn === true\)/);
+    expect(server).toMatch(/select: \{ planCompareOn: true \}/);
     expect(server).toMatch(/pairings\.byPage\.get\(target\.pageNumber\)/);
-    expect(server).toMatch(/if \(prior\.lines !== null\) offered = offer\(\{ lines: prior\.lines/);
+    expect(server).toMatch(/const compared = offer\(\{ lines: prior\.lines/);
+    // The ONE assignment of the compared runs, and it is behind the switch.
+    expect(server.match(/offered = compared/g)).toHaveLength(1);
+    expect(server).toMatch(/if \(company\?\.planCompareOn === true\) offered = compared;\s*else \{/);
   });
 
   it("the workspace sends no pairings to a company with it off", () => {
