@@ -35,7 +35,8 @@ describe("Review walls across the set", () => {
     // The rail's highlight AND the viewer: setPage alone moved only the rail (the takeoff spec, R5-11).
     expect(ws).toContain("setPage(setCurrent.pageNumber);");
     expect(ws).toContain('document.dispatchEvent(new CustomEvent("takeoff-goto", { detail: { page: setCurrent.pageNumber } }));');
-    expect(ws).toContain("focusRun={setCurrent}");
+    // The job's review queue (`reviewQueue.ts`) focuses through the same prop when this review is off.
+    expect(ws).toContain("focusRun={setCurrent ?? queueFocus}");
     expect(ws).toContain("await reviewWall(jobId, setCurrent.measurementId, kind)");
     expect(ws).toContain('await reviewWall(jobId, last.id, "restore", last.was)');
   });

@@ -880,11 +880,11 @@ export default async function JobEstimatePage({
               {lineItemWip.map(({ item, wip }) => (
                 <Disclosure
                   key={item.id}
+                  variant="row"
+                  name="estimate-line"
                   id={`line-${item.id}`}
                   open={line === item.id || undefined}
                   className="scroll-mt-4"
-                  variant="row"
-                  name="estimate-line"
                   summary={
                     <span className={estimateLineGrid}>
                       <span className="min-w-0 break-words">
