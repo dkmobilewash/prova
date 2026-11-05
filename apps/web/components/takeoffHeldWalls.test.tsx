@@ -36,3 +36,31 @@ describe("walls held off the estimate", () => {
     expect(host.textContent).toContain("Nope.");
   });
 });
+
+describe("Needs review, pointed at and clicked (Chrome's click test, item 12)", () => {
+  it("pointing at a run says which, and leaving says none", () => {
+    const onHover = vi.fn();
+    act(() => root.render(createElement(TakeoffHeldWalls, { walls: [{ id: "a", feet: 40 }, { id: "b", feet: 12 }], onConfirm: vi.fn(), onHover })));
+    const second = host.querySelectorAll('[data-takeoff="held-wall"]')[1]!;
+    act(() => second.dispatchEvent(new MouseEvent("mouseover", { bubbles: true })));
+    expect(onHover).toHaveBeenLastCalledWith("b");
+    act(() => second.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })));
+    expect(onHover).toHaveBeenLastCalledWith(null);
+  });
+
+  it("clicking a run's length asks to be taken there, and confirming is still its own button", () => {
+    const onShow = vi.fn();
+    const onConfirm = vi.fn(async () => null);
+    act(() => root.render(createElement(TakeoffHeldWalls, { walls: [{ id: "a", feet: 40 }], onConfirm, onShow })));
+    const show = host.querySelector<HTMLButtonElement>('[data-takeoff="show-held-wall"]')!;
+    expect(show.getAttribute("aria-label")).toBe("Show the 40 ft run on the plan");
+    act(() => show.click());
+    expect(onShow).toHaveBeenCalledWith("a");
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("without a way to show, the length is plain text, as on the tab", () => {
+    paint([{ id: "a", feet: 40 }]);
+    expect(host.querySelector('[data-takeoff="show-held-wall"]')).toBeNull();
+  });
+});
