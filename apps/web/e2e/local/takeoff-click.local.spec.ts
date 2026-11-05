@@ -279,6 +279,20 @@ test("R5-3 the sheet with runs to confirm says they are not on the estimate", as
 
 // ── CHROME'S CLICK TEST, ITEM 12: point at a held run to see it, click to go there ──
 const NEEDS_REVIEW_SHOTS = join(__dirname, "../artifacts/needs-review");
+test("R5-3c the job stepper's Review and Takeoff open on the right sheet: the first held wall's, Needs review open; the last sheet worked", async () => {
+  const held = await prisma.takeoffMeasurement.findMany({ where: { label: "wall, to confirm", page: { plan: { jobId: SETS.baker.id } } }, select: { page: { select: { pageNumber: true } } } });
+  const firstHeld = Math.min(...held.map((m) => m.page.pageNumber));
+  await page.goto(`/takeoff/${SETS.baker.id}?open=review`);
+  await drawn();
+  await expect(hook("sheet-picker")).toHaveValue(String(firstHeld));
+  await expect(hook("held-walls"), "Review opened with Needs review closed").toHaveAttribute("open", "");
+  // No page asked for: the sheet last measured on, never the cover.
+  const last = await prisma.takeoffMeasurement.findFirstOrThrow({ where: { page: { plan: { jobId: SETS.baker.id } } }, orderBy: { createdAt: "desc" }, select: { page: { select: { pageNumber: true } } } });
+  await page.goto(`/takeoff/${SETS.baker.id}`);
+  await drawn();
+  await expect(hook("sheet-picker")).toHaveValue(String(last.page.pageNumber));
+});
+
 test("R5-3b Needs review: pointing at a run picks it out on the plan, and its length zooms there", async () => {
   const held = await prisma.takeoffMeasurement.findFirstOrThrow({ where: { label: "wall, to confirm", page: { plan: { jobId: SETS.baker.id } } }, select: { page: { select: { pageNumber: true } } } });
   await on("baker", held.page.pageNumber);

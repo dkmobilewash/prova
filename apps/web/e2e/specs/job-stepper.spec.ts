@@ -90,7 +90,15 @@ test.describe("the job stepper", () => {
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
     await page.reload();
     expect(await states()).toBe("job:done plans:done scale:current takeoff:todo review:todo estimate:todo send:todo");
-    await expect(next()).toHaveText("Next: Set the scale");
+    await expect(next()).toHaveText("Next: Set the scale ↗");
+    // Scale opens the workspace on the first sheet with no scale, in its own tab.
+    await expect(next()).toHaveAttribute("href", `/takeoff/${jobId}?open=scale`);
+    await expect(next()).toHaveAttribute("target", "_blank");
+    const [tab] = await Promise.all([page.context().waitForEvent("page"), next().click()]);
+    await tab.waitForURL(new RegExp(`/takeoff/${jobId}\\?open=scale`));
+    await expect(tab.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 60_000 });
+    await expect(tab.getByRole("button", { name: "Set scale", exact: true })).toBeVisible();
+    await tab.close();
   });
 
   test("4. set the scale: Takeoff is current, and its Next opens the workspace in a NEW TAB", async () => {
@@ -137,15 +145,17 @@ test.describe("the job stepper", () => {
     await tab.close();
   });
 
-  test("5. something taken off: the walls are ALREADY on the estimate, with real feet, and Send is current", async () => {
+  test("5. something taken off: the walls are ALREADY on the estimate, with real feet, and Estimate stays current until they are priced", async () => {
     await onJob();
-    expect(await states()).toBe("job:done plans:done scale:done takeoff:done review:done estimate:done send:current");
-    await expect(next()).toContainText("Next: Send it for signature");
+    // An unpriced footage line is not an estimate: no "Send" on a $0.00 bid.
+    expect(await states()).toBe("job:done plans:done scale:done takeoff:done review:done estimate:current send:todo");
+    await expect(next()).toContainText("Next: Price 1 line on the estimate");
+    await expect(next()).toHaveAttribute("href", `/jobs/${jobId}/estimate`);
     await bar().screenshot({ path: path.join(SHOTS, "stepper-estimate-current.png") });
     await page.screenshot({ path: path.join(SHOTS, "job-page-estimate-current-1440.png") });
     // No hidden setup between the takeoff and the estimate: the footage is a
     // line on the estimate tab, unpriced and saying so.
-    await step("estimate").click();
+    await next().click();
     await page.waitForURL(new RegExp(`/jobs/${jobId}/estimate`));
     const line = page.getByText(/Walls — untyped \(no type: check\)/).first();
     await expect(line).toBeVisible({ timeout: 30_000 });
