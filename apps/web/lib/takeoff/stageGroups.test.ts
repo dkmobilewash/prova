@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { hatchedRuns } from "./stageGroups";
+import { hatchedRuns, siblingPages, tagsFromSibling } from "./stageGroups";
+import { isSiblingTag, siblingTag } from "./planTextTags";
 import { wallGroups } from "./wallGroups";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
@@ -53,5 +54,44 @@ describe("a hatched band", () => {
     expect(got.map((g) => [g.runs[0], g.source.kind])).toEqual([[hollow, "GENERAL_NOTE"], [wall, "REMAINDER"]]);
     const both = wallGroups(clusters, new Map(), [a, b], { ...drywall, others: [{ type: b, note: "ALL INTERIOR MASONRY PARTITIONS ARE TYPE 'B'" }] }, new Set([wall]));
     expect(both.map((g) => [g.runs[0], g.source.kind, g.candidates[0]?.code])).toEqual([[hollow, "GENERAL_NOTE", "A"], [wall, "GENERAL_NOTE", "B"]]);
+  });
+});
+
+describe("a floor plan with no wall tags reads them off its sibling sheet (Green Bay A3.1 / A3.2)", () => {
+  // Paper 1000 pt wide at 100 ft per width: 1 pt = 0.1 ft. One building, its
+  // walls as face pairs 5 pt apart; the sibling draws it 30 pt right and 20 pt
+  // down, with one square tag "B" beside the third wall.
+  const W = 1000;
+  const walls: [number, number, number, number][] = [[100, 100, 400, 100], [100, 100, 100, 330], [180, 220, 400, 220], [260, 100, 260, 220], [100, 330, 300, 330], [400, 100, 400, 330], [300, 260, 300, 330]];
+  const faces = (dx: number, dy: number): StrokeSegment[] =>
+    walls.flatMap(([x1, y1, x2, y2]) => (y1 === y2 ? [[0, -2.5], [0, 2.5]] : [[-2.5, 0], [2.5, 0]]).map(([ox, oy]) => ({ x1: x1 + ox! + dx, y1: y1 + oy! + dy, x2: x2 + ox! + dx, y2: y2 + oy! + dy })));
+  const square = (cx: number, cy: number): StrokeSegment[] => [[cx - 9, cy - 9, cx + 9, cy - 9], [cx + 9, cy - 9, cx + 9, cy + 9], [cx + 9, cy + 9, cx - 9, cy + 9], [cx - 9, cy + 9, cx - 9, cy - 9]].map(([x1, y1, x2, y2]) => ({ x1: x1!, y1: y1!, x2: x2!, y2: y2! }));
+  const found = { walls: walls.map(([x1, y1, x2, y2]) => run(x1 / W, y1 / W, x2 / W, y2 / W)) } as never;
+  const types = ["A", "B"].map((code) => ({ id: code, code, name: code, hasParts: true, thicknessIn: null }));
+  const sibling = { segmentsPt: [...faces(30, 20), ...square(320, 252)], textItems: [{ str: "B", x: 315, y: 256, width: 10, height: 8 }], widthPt: W };
+
+  it("types the wall under the sibling's tag, marked as read elsewhere", () => {
+    const got = tagsFromSibling({ found, segmentsPt: faces(0, 0), widthPt: W, feetPerUnit: FPU, wallTypes: types, legendCodes: ["A", "B"], sibling });
+    expect(got).not.toBeNull();
+    const third = (found as unknown as { walls: WallCandidate[] }).walls[2]!;
+    expect(got!.byRun.get(third)).toBe(siblingTag("B"));
+    expect(isSiblingTag(got!.byRun.get(third)!)).toBe(true);
+  });
+
+  it("reads nothing from a sheet that does not line up, or is another paper size", () => {
+    expect(tagsFromSibling({ found, segmentsPt: faces(0, 0), widthPt: W, feetPerUnit: FPU, wallTypes: types, legendCodes: ["A", "B"], sibling: { ...sibling, segmentsPt: square(320, 252) } })).toBeNull();
+    expect(tagsFromSibling({ found, segmentsPt: faces(0, 0), widthPt: W, feetPerUnit: FPU, wallTypes: types, legendCodes: ["A", "B"], sibling: { ...sibling, widthPt: 1200 } })).toBeNull();
+  });
+
+  it("finds the siblings by sheet number, never a demolition plan", () => {
+    const sheets = [
+      { pageNumber: 9, sheetNumber: "A3.1", title: "FLOOR PLAN" },
+      { pageNumber: 10, sheetNumber: "A3.2", title: "DIMENSION PLAN" },
+      { pageNumber: 11, sheetNumber: "A3.3", title: "DEMOLITION PLAN" },
+      { pageNumber: 12, sheetNumber: "A4.1", title: "RCP" },
+      { pageNumber: 13, sheetNumber: "A101", title: "FLOOR PLAN" },
+    ];
+    expect(siblingPages(sheets, 9)).toEqual([10]);
+    expect(siblingPages(sheets, 13)).toEqual([]);
   });
 });

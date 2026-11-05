@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { focusOf, heightItem, reviewQueue, typeItems, wallItem, type ReviewItem } from "./reviewQueue";
+import { focusOf, heightItem, orderedCodes, reviewQueue, typeItems, wallItem, type ReviewItem } from "./reviewQueue";
 
 const sheet = { pageNumber: 3, sheet: "A101", feetPerUnit: 100 };
 const run = (x1: number, x2: number, y = 0.5) => ({ x1, y1: y, x2, y2: y });
@@ -55,5 +55,19 @@ describe("the job's one review queue", () => {
     expect((item as { options: { kind: string; feet: number }[] }).options.map((o) => [o.kind, o.feet])).toEqual([["ceiling", 9], ["legend", 14]]);
     expect(focusOf(item)).toEqual({ pageNumber: 4, ...run(0.2, 0.8) });
     expect(heightItem({ id: "i2", name: "W2" }, [{ sheet, runs: [], rooms: [] }], legend)).toBeNull();
+  });
+});
+
+describe("the drawing's type is pre-filled with its source (suggest, don't post)", () => {
+  it("carries the group's suggestion onto its item, and none where the drawing named nothing", () => {
+    const untyped = [{ xs: [0.1, 0.2], ys: [0.5, 0.5] }];
+    expect(typeItems(sheet, untyped, [{ id: "g", inches: 5, runs: [run(0.1, 0.2)], suggested: { code: "IW-2", from: "printed tag" } }])[0]).toMatchObject({ suggested: "IW-2", suggestedFrom: "printed tag" });
+    expect(typeItems(sheet, untyped, [{ id: "g", inches: 5, runs: [run(0.1, 0.2)] }])[0]).toMatchObject({ suggested: null, suggestedFrom: null });
+  });
+
+  it("puts the suggestion first and does not repeat it", () => {
+    expect(orderedCodes(["IW-1", "IW-2", "IW-4"], "IW-4")).toEqual(["IW-4", "IW-1", "IW-2"]);
+    expect(orderedCodes(["IW-1", "IW-2"], "C6")).toEqual(["C6", "IW-1", "IW-2"]);
+    expect(orderedCodes(["IW-1", "IW-2"], null)).toEqual(["IW-1", "IW-2"]);
   });
 });

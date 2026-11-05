@@ -5,10 +5,11 @@ import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { sheetStrokes } from "../sheetStrokes";
 import { detectForSheet } from "../offeredCandidates";
 import { groupsForStage } from "../stageGroups";
-import { planTextTagByRun, isPropagatedTag, plainTag, tagVocabulary } from "../planTextTags";
+import { planTextTagByRun, plainTag, tagVocabulary } from "../planTextTags";
 import { wallTypeTags } from "../wallTags";
 import type { MatchableWallType } from "../wallTypeMatch";
-import { settledType, verdictFor, type WallGroup } from "../wallGroups";
+import type { WallGroup } from "../wallGroups";
+import { POSTS, typeSource, type PostSource } from "../postingGate";
 import { storedLegendTypes } from "../legendProposal";
 import type { WallLegendRead } from "@prova/integrations/src/wallLegend";
 import type { WallLegendSightRead } from "@prova/integrations/src/wallLegendSight";
@@ -71,18 +72,12 @@ function legendAt(path: string): Legend | null {
   };
 }
 
-type Source = "tag" | "carried" | "note" | "schedule-thickness";
+type Source = PostSource;
 
-/** The type a group is posted as, and how — `wallItems.ts` `typeOf`, word for word. */
-function postedAs(group: WallGroup): { code: string; source: Source } | null {
-  const verdict = verdictFor(group);
-  const settled = settledType(verdict);
-  if (settled !== null) {
-    if (group.source.kind === "TAG") return { code: settled.code, source: isPropagatedTag(group.source.tag) ? "carried" : "tag" };
-    return { code: settled.code, source: "schedule-thickness" };
-  }
-  if (verdict.state === "ASK" && group.source.kind === "GENERAL_NOTE" && verdict.suggested && group.candidates.length === 1) return { code: verdict.suggested.code, source: "note" };
-  return null;
+/** The type a group is given and how — `postingGate.ts` `typeSource`, the stage's own; `posted` is whether the gate lets it through. */
+function postedAs(group: WallGroup): { code: string; source: Source; posted: boolean } | null {
+  const found = typeSource(group);
+  return found === null ? null : { code: found.type.code, source: found.source, posted: POSTS[found.source] };
 }
 
 /** The company's types as the legend would create them: one per code, thickness unknown. */
@@ -136,12 +131,16 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
         sampledSheets: null,
         ...(planText === undefined ? {} : { planText }),
       }).found;
-      const staged = groupsForStage({ found, segmentsPt: read.segments, textItems: items, widthPt: W, feetPerUnit: fpu, wallTypes, legendCodes: planText?.legendCodes ?? null });
+      // WT_SIBLING="set.pdf:9>10;…": page 10 is page 9's other sheet of the same floor (`tagsFromSibling`).
+      const siblingPage = (process.env.WT_SIBLING ?? "").split(";").map((p) => p.trim().split(">")).find(([at]) => at === `${set}:${page}`)?.[1];
+      const siblingRead = siblingPage === undefined ? null : await sheetStrokes(Buffer.from(readFileSync(join(DIR, set!))), Number(siblingPage));
+      const sibling = siblingRead === null ? null : { segmentsPt: siblingRead.segments, widthPt: siblingRead.widthPt, textItems: (await doc.pageText(Number(siblingPage))).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height })) };
+      const staged = groupsForStage({ found, segmentsPt: read.segments, textItems: items, widthPt: W, feetPerUnit: fpu, wallTypes, legendCodes: planText?.legendCodes ?? null, sibling });
       const groups: WallGroup[] = staged.groups;
       const total = groups.reduce((s, g) => s + g.feet, 0);
-      const by: Record<Source | "untyped" | "tagNoType", number> = { tag: 0, carried: 0, note: 0, "schedule-thickness": 0, untyped: 0, tagNoType: 0 };
+      const by: Record<Source | "untyped" | "tagNoType", number> = { tag: 0, "tag-variant": 0, carried: 0, sibling: 0, note: 0, thickness: 0, untyped: 0, tagNoType: 0 };
       const perType = new Map<string, number>();
-      const posted = new Map<WallGroup["runs"][number], { code: string; source: Source } | null>();
+      const posted = new Map<WallGroup["runs"][number], { code: string; source: Source; posted: boolean } | null>();
       for (const g of groups) {
         const as = postedAs(g);
         for (const r of g.runs) posted.set(r, as);
@@ -153,12 +152,12 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
           perType.set(as.code, (perType.get(as.code) ?? 0) + g.feet);
         }
       }
-      const typed = by.tag + by.carried + by.note + by["schedule-thickness"];
+      const typed = by.tag + by["tag-variant"] + by.carried + by.sibling + by.note + by.thickness;
       const heldOut = isHeldOut(set);
       const report = planText === undefined ? null : planTextTagByRun({ segments: read.segments, text: items, widthPt: W, walls: found.walls, feetPerUnit: fpu, legendCodes: vocabulary, textTags: wallTypeTags(items, W), wallTypes }).report;
       const pct = (n: number) => (total > 0 ? `${((100 * n) / total).toFixed(0)}%` : "-");
       console.log(`\nWT ${set} p${page}${heldOut ? " [HELD-OUT, measured only]" : ""}: ${found.walls.length} runs, ${Math.round(total)} ft, ${staged.hatched.size} hatched; legend ${legend === null ? "none" : wallTypes.map((t) => (t.thicknessIn === null ? t.code : `${t.code}@${t.thicknessIn}`)).join("/")}`);
-      console.log(`   typed ${Math.round(typed)} ft (${pct(typed)}) — tag ${Math.round(by.tag)} ft (${pct(by.tag)}), carried ${Math.round(by.carried)} ft (${pct(by.carried)}), note ${Math.round(by.note)} ft (${pct(by.note)}), schedule-thickness ${Math.round(by["schedule-thickness"])} ft (${pct(by["schedule-thickness"])}), untyped ${Math.round(by.untyped)} ft (${pct(by.untyped)}; ${Math.round(by.tagNoType)} ft of it tagged with no such type)`);
+      console.log(`   typed ${Math.round(typed)} ft (${pct(typed)}) — tag ${Math.round(by.tag)} ft (${pct(by.tag)}), carried ${Math.round(by.carried)} ft (${pct(by.carried)}), note ${Math.round(by.note)} ft (${pct(by.note)}), thickness ${Math.round(by.thickness)} ft (${pct(by.thickness)}), untyped ${Math.round(by.untyped)} ft (${pct(by.untyped)}; ${Math.round(by.tagNoType)} ft of it tagged with no such type)`);
       console.log(`   per type: ${[...perType].sort((a, b) => b[1] - a[1]).map(([c, f]) => `${c} ${Math.round(f)} ft`).join(" · ") || "none"}`);
       console.log(`WTJSON ${JSON.stringify({ set, page, heldOut, legend: legend === null ? null : legendCodes, runs: found.walls.length, totalFt: total, typedFt: typed, ...by })}`);
       if (process.env.WT_DEBUG === "1") {
@@ -187,7 +186,7 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
           JSON.stringify({
             set, page, feetPerUnit: fpu, heldOut, legend: legend === null ? null : legendCodes, units: "page-width",
             totalFt: total, typedFt: typed, by,
-            runs: [...posted].map(([r, as]) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFt: r.lengthFeet, thicknessIn: r.thicknessFeet * 12, type: as?.code ?? null, source: as?.source ?? null, hatched: staged.hatched.has(r) })),
+            runs: [...posted].map(([r, as]) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFt: r.lengthFeet, thicknessIn: r.thicknessFeet * 12, type: as?.code ?? null, source: as?.source ?? null, posted: as?.posted ?? false, hatched: staged.hatched.has(r) })),
           }),
         );
       }

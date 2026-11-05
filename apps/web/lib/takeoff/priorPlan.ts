@@ -2,8 +2,8 @@ import { demoRuns } from "./demoWalls";
 import { existingWallSet } from "./existingWallSet";
 import { findWallsOnSheet } from "./findWallsOnSheet";
 import { FEW_WALLS_SHARE, MIN_VOTES, onPriorPlan, type PriorLine } from "./planCompare";
-import { alignViews, type Line } from "./viewAlign";
-import { oneFacePerLine, type StrokeSegment, type WallCandidate } from "./wallVectors";
+import { alignViews, longFaces, type Line } from "./viewAlign";
+import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
  * ── WHICH DEMOLITION PLAN A NEW PLAN IS COMPARED WITH, AND WHAT IT SHOWS ──
@@ -31,12 +31,7 @@ import { oneFacePerLine, type StrokeSegment, type WallCandidate } from "./wallVe
 export type PairChoice = { priorPage: number | null; choice: "user" | "none" | null };
 export type Pairing = { demoPage: number; source: "auto" | "user"; basis: string };
 
-/** A page's long faces, page-width units: what the layout check votes with when the demolition plan pairs too few walls. */
-export function longFaces(segments: readonly StrokeSegment[], widthPt: number, feetPerUnit: number): Line[] {
-  return oneFacePerLine([...segments], feetPerUnit / widthPt)
-    .map((f) => ({ x1: f.x1 / widthPt, y1: f.y1 / widthPt, x2: f.x2 / widthPt, y2: f.y2 / widthPt }))
-    .filter((f) => Math.hypot(f.x2 - f.x1, f.y2 - f.y1) * feetPerUnit >= 3);
-}
+export { longFaces } from "./viewAlign";
 
 type Page = { segments: readonly StrokeSegment[]; textItems: readonly { str: string; x: number; y: number; width: number; height: number }[]; widthPt: number; heightPt: number };
 export type PriorPlan = { lines: PriorLine[]; votes: number; walls: "walls" | "faces" } | { lines: null; why: string };

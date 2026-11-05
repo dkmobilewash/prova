@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { confirmSheetScales, reviewWall, setWallGroupHeight, setWallGroupType } from "@/lib/actions";
 import { SetWallHeight } from "./SetWallHeight";
-import type { ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { orderedCodes, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
 
@@ -74,6 +74,7 @@ export function TakeoffReviewQueue({
   }
 
   const button = "min-h-[32px] rounded-md border border-line-card px-3 text-xs font-medium text-ink-body hover:bg-rail disabled:opacity-50";
+  const suggestedButton = "min-h-[32px] rounded-md border border-brand bg-brand px-3 text-xs font-semibold text-neutral-900 disabled:opacity-50";
   const row = current !== null && current.kind === "scale" ? planSet.find((r) => r.pageNumber === current.pageNumber) : undefined;
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-card bg-surface px-3 py-1.5 text-xs text-ink-body" data-takeoff="review-queue">
@@ -110,12 +111,14 @@ export function TakeoffReviewQueue({
                 <span className="text-ink-muted">This set&rsquo;s legend names no types: choose one in the sheet&rsquo;s group list.</span>
               ) : (
                 <>
-                  <span className="text-ink-muted">Set type</span>
-                  {legendCodes.map((code) => (
+                  <span className="text-ink-muted" data-takeoff="review-queue-suggested">
+                    {current.suggested === null ? "Set type" : `Suggested ${current.suggested} · from the ${current.suggestedFrom ?? "drawing"} · confirm or pick another`}
+                  </span>
+                  {orderedCodes(legendCodes, current.suggested).map((code) => (
                     <button
                       key={code}
                       type="button"
-                      className={button}
+                      className={code === current.suggested ? suggestedButton : button}
                       disabled={busy}
                       onClick={() => void decide(() => setWallGroupType(jobId, { planId, pageNumber: current.pageNumber, code, inches: current.inches, runs: current.runs }))}
                       data-takeoff="review-queue-type"

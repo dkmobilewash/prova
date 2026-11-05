@@ -241,17 +241,30 @@ function cornerCount(points: readonly Point[]): number {
  */
 function leaderEnd(
   centre: Point,
+  outline: readonly Point[],
   radius: number,
   nearby: readonly StrokeSegment[],
   all: readonly StrokeSegment[],
   grain: number,
 ): Point | null {
+  // ── THE EDGE IS THE SYMBOL'S OWN OUTLINE, NOT A CIRCLE ROUND ITS CENTRE ──
+  //
+  // McAllen's tags are boxes three times as wide as they are tall, stacked and
+  // side by side. Read as a circle of the half-width, a stroke ending by the
+  // box's far side counted as leaving its edge, and an IW-3 box took the IW-4
+  // tag's leader from beside it, so the IW-4 wall was typed IW-3. The band is
+  // 0.4 of the symbol's SHORT half-extent, which for a circle is the old
+  // 0.6–1.4 × radius ring exactly.
+  //
+  // ONLY FOR A LONG BOX. Baker's circle tags carry a square drawn inside them,
+  // the symbol kept is that square, and its leader starts at the circle: by
+  // the square's own edge it starts in mid-air. Anything rounder than
+  // `ELONGATED` keeps the ring.
   const dist = (p: Point) => Math.hypot(p.x - centre.x, p.y - centre.y);
-  const onEdge = (p: Point) => {
-    const d = dist(p);
-    return d >= radius * 0.6 && d <= radius * 1.4;
-  };
-  const outside = (p: Point) => dist(p) > radius * 1.4;
+  const long = elongated(outline);
+  const band = 0.4 * innerRadius(outline, radius);
+  const onEdge = (p: Point) => (long ? edgeDistance(p, outline) <= band : dist(p) >= radius * 0.6 && dist(p) <= radius * 1.4);
+  const outside = (p: Point) => (long ? !insideOutline(p, outline) && edgeDistance(p, outline) > band : dist(p) > radius * 1.4);
   const maxLength = radius * LEADER_MAX_RADII;
 
   let first: { from: Point; to: Point; length: number } | null = null;
@@ -303,6 +316,49 @@ function leaderEnd(
     travelled += next.length;
   }
   return end;
+}
+
+/** Longer side over shorter at which a symbol is a box to be measured by its outline, not a ring. */
+const ELONGATED = 2.5;
+
+function extent(outline: readonly Point[]): { w: number; h: number } {
+  const xs = outline.map((p) => p.x), ys = outline.map((p) => p.y);
+  return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+}
+
+function elongated(outline: readonly Point[]): boolean {
+  if (outline.length < 3) return false;
+  const { w, h } = extent(outline);
+  return Math.min(w, h) > 0 && Math.max(w, h) / Math.min(w, h) >= ELONGATED;
+}
+
+/** Half the outline's shorter extent; the radius when the outline is degenerate. */
+function innerRadius(outline: readonly Point[], radius: number): number {
+  if (outline.length < 3) return radius;
+  const { w, h } = extent(outline);
+  return Math.min(w, h) / 2;
+}
+
+/** Distance from a point to the nearest edge of a closed outline. */
+function edgeDistance(p: Point, outline: readonly Point[]): number {
+  let best = Infinity;
+  for (let i = 0; i < outline.length; i += 1) {
+    const a = outline[i]!, b = outline[(i + 1) % outline.length]!;
+    const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+    best = Math.min(best, Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy));
+  }
+  return best;
+}
+
+/** Even-odd test against a closed outline. */
+function insideOutline(p: Point, outline: readonly Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = outline.length - 1; i < outline.length; j = i, i += 1) {
+    const a = outline[i]!, b = outline[j]!;
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
 }
 
 /**
@@ -532,8 +588,11 @@ export function tagSymbols(input: {
     });
     const inside = text
       .filter((item) => {
+        // Inside the outline, not a circle round it: McAllen stacks its boxes
+        // edge to edge, and the circle of a box's half-width reached the
+        // lettering of the box above, reading "IW-5" as "IW-5/IW-4".
         const c = centreOf(item);
-        return Math.hypot(c.x - cx, c.y - cy) <= radius;
+        return Math.hypot(c.x - cx, c.y - cy) <= radius && (!elongated(points) || insideOutline(c, points));
       })
       .sort((a, b) => a.y - b.y || a.x - b.x);
 
@@ -607,7 +666,7 @@ export function tagSymbols(input: {
       text: words.join(" "),
       parts,
       split,
-      leader: rejected === null ? leaderEnd({ x: cx, y: cy }, radius, near(cx, cy), segments, grain) : null,
+      leader: rejected === null ? leaderEnd({ x: cx, y: cy }, points, radius, near(cx, cy), segments, grain) : null,
       rejected,
     });
   }
