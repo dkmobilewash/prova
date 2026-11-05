@@ -33,6 +33,8 @@ export type Layer = {
   count: number;
   total: string;
   hidden: boolean;
+  /** A wall group's area line, height source and Set height, under the row. */
+  detail?: React.ReactNode;
 };
 
 type Filter = "all" | Layer["kind"];
@@ -170,7 +172,7 @@ export function TakeoffLayerPanel({
             data-lit={lit === layer.key ? "true" : undefined}
             onClick={() => onLit(lit === layer.key ? null : layer.key)}
             onDoubleClick={() => setRenaming(layer.key)}
-            className={`flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1.5 text-xs ${
+            className={`flex cursor-pointer flex-wrap items-center gap-2 rounded-md px-1.5 py-1.5 text-xs ${
               lit === layer.key ? "bg-rail-hover" : "hover:bg-rail"
             } ${layer.hidden ? "opacity-50" : ""}`}
           >
@@ -224,6 +226,11 @@ export function TakeoffLayerPanel({
             <span className="w-20 shrink-0 text-right tabular-nums text-ink-body" data-takeoff="layer-total">
               {layer.total}
             </span>
+            {layer.detail != null && (
+              <div className="w-full pl-6" onDoubleClick={(event) => event.stopPropagation()}>
+                {layer.detail}
+              </div>
+            )}
           </li>
         ))}
         {/* Hidden rather than unmounted under Area and Count: it is a place
