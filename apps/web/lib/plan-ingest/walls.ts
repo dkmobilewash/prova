@@ -3,6 +3,7 @@ import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { detectWallsForCalibration, type DetectedBoundary, type DetectOutcome, type DetectTarget } from "@/lib/takeoff/detectWallsForCalibration";
 import { takeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
+import { sheetCategory } from "@/lib/takeoff/planSet";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
 import { wallItemsForSheet, wallItemsNoteFor, type WallItemsOutcome } from "./wallItems";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
@@ -68,6 +69,25 @@ export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
     return "not a floor plan";
   }
   return null;
+}
+
+/**
+ * ── THE FLOOR PLANS OF THE WORK: where the workspace opens (`startPage.ts`) ──
+ *
+ * The sheets this run counts, and only floor plans among them. Before any
+ * floor plan has its scale the run counts none, so the same question is asked
+ * as if every sheet had one: the workspace opens on A101 before its scale is
+ * set. Floor plans only, in both cases: forcing a scale made Baker's numberless
+ * COVER (page 5) count, since the run skips it only for having no scale, and
+ * "Run the takeoff" opened on it with the takeoff disabled (#996, found by the
+ * new-customer walk).
+ */
+export function floorPlansOfTheWork(sheets: readonly WallsSheet[]): number[] {
+  const counted = (list: readonly WallsSheet[]) =>
+    [...wallsPlan(list)].filter(([, skip]) => skip === null || skip === "already found").map(([pageNumber]) => pageNumber);
+  const floor = new Set(sheets.filter((s) => sheetCategory(s.sheetNumber, s.title, null) === "floor").map((s) => s.pageNumber));
+  const real = counted(sheets).filter((page) => floor.has(page));
+  return real.length > 0 ? real : counted(sheets.map((sheet) => ({ ...sheet, hasScale: true }))).filter((page) => floor.has(page));
 }
 
 /**
