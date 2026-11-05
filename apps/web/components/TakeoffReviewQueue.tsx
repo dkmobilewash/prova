@@ -142,7 +142,7 @@ export function TakeoffReviewQueue({
                 <span>
                   Untyped walls · sheet {current.sheet} · {inchLabel(current.inches)}
                 </span>
-                <span className="text-ink-muted">This set&rsquo;s legend names no types: choose one in the sheet&rsquo;s group list.</span>
+                <span className="text-ink-muted">No wall types to pick from: add them on the Wall types page.</span>
               </>
             ) : (
               <QueueGroupConfirm

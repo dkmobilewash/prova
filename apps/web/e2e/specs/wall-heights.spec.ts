@@ -76,6 +76,8 @@ test.describe("wall heights and square feet", () => {
     const type =
       (await prisma.wallType.findFirst({ where: { companyId, code: CODE }, select: { id: true } })) ??
       (await prisma.wallType.create({ data: { companyId, code: CODE, name: "ZZ-E2E partition to deck", defaultHeightFt: "14", sides: 2, notes: `Read off sheet A001 of the plan set. Check against the drawing before pricing.\n${LEGEND_NOTE}` }, select: { id: true } }));
+    // A type of the company's own with no height: the set has no legend, so the queue offers the library.
+    if ((await prisma.wallType.count({ where: { companyId, code: "ZH2" } })) === 0) await prisma.wallType.create({ data: { companyId, code: "ZH2", name: "ZZ-E2E partition to ceiling", sides: 2 } });
 
     const sheet = await prisma.takeoffPlanPage.create({ data: { planId: plan.id, pageNumber: 1, label: "A101", pageWidthPt: 2592 } });
     const calibration = await prisma.takeoffScaleCalibration.create({ data: { pageId: sheet.id, x1: 0, y1: 0.1, x2: 1, y2: 0.1, declaredDistanceFeet: "144" } });
@@ -112,11 +114,11 @@ test.describe("wall heights and square feet", () => {
     });
   });
 
-  test("2. the stepper's Review counts the three groups with no height", async () => {
+  test("2. the stepper's Review counts the two typed groups with no height and the untyped group", async () => {
     await page.goto(`/jobs/${jobId}`);
     await expectHealthy(page, "the job with walls to give a height", { monitor });
     // Three heights, and the untyped group to type.
-    await expect(page.locator("[data-job-next]")).toContainText("Next: Review 4 items");
+    await expect(page.locator("[data-job-next]")).toContainText("Next: Review 3 items");
   });
 
   let tab: Page;
@@ -161,26 +163,29 @@ test.describe("wall heights and square feet", () => {
     await tab.locator('[data-takeoff="layer-panel"]').screenshot({ path: path.join(SHOTS, "layers-heights-set.png") });
   });
 
-  test("6. the review queue holds the group still without a height, and the ceiling sets it", async () => {
+  test("6. the untyped group in the queue: the ceiling pre-filled, a type of the company's own picked, Enter", async () => {
     await tab.goto(`/takeoff/${jobId}?open=review`);
     const queue = tab.locator('[data-takeoff="review-queue"]');
     const item = queue.locator('[data-takeoff="review-queue-item"]');
-    await expect(queue.locator('[data-takeoff="review-queue-left"]')).toHaveText("2 left to review", { timeout: 60_000 });
+    // Its height is asked with its type, not as an item of its own.
+    await expect(queue.locator('[data-takeoff="review-queue-left"]')).toHaveText("1 left to review", { timeout: 60_000 });
     await expect(item).toHaveAttribute("data-kind", "type");
-    await item.locator('[data-takeoff="review-queue-next"]').click();
-    await expect(item).toHaveAttribute("data-kind", "height");
-    await expect(item).toContainText("No height · Walls — untyped · sheet p1 · 43 ft");
-    await tab.screenshot({ path: path.join(SHOTS, "queue-height-1440.png") });
-    // The ceiling is pre-filled, with where it came from: one press.
+    await expect(item).toContainText(`Walls · sheet p1 · 6-1/8" · 43 ft`);
+    // No type yet: the ceiling over its walls is the height, with where it came from.
     await expect(item.locator('[data-takeoff="queue-height"]')).toHaveValue(`10'-0"`);
     await expect(item.locator('[data-takeoff="queue-height-from"]')).toHaveText(`ceiling plan, room 104 OFFICE: 10'-0"`);
+    await tab.screenshot({ path: path.join(SHOTS, "queue-height-1440.png") });
+    // ZH2 has no height of its own, so the ceiling stays.
+    await item.locator('[data-takeoff="queue-code"]', { hasText: /ZH2$/ }).click();
+    await expect(item.locator('[data-takeoff="queue-height"]')).toHaveValue(`10'-0"`);
     await item.locator('[data-takeoff="queue-accept"]').click();
-    await expect(queue.locator('[data-takeoff="review-queue-left"]')).toHaveText("1 left to review");
-    await expect.poll(() => heightOf("untyped"), { timeout: 30_000 }).toBe("10");
-    expect((await prisma.takeoffItem.findUniqueOrThrow({ where: { id: ids.untyped }, select: { sides: true } })).sides, "an item with no sides takes 2").toBe(2);
+    await expect(queue.locator('[data-takeoff="review-queue-left"]')).toHaveText("Nothing left to review", { timeout: 30_000 });
+    const zh2 = () => prisma.takeoffItem.findFirst({ where: { jobId, wallType: { code: "ZH2" } }, select: { id: true, heightFt: true, sides: true, _count: { select: { measurements: true } } } });
+    await expect.poll(async () => { const i = await zh2(); return i === null ? null : [i.heightFt?.toString(), i.sides, i._count.measurements]; }, { timeout: 30_000 }).toEqual(["10", 2, 1]);
     // 43.2 ft × 10 × 2 = 864, and the room it came from.
-    await expect(area(tab, "untyped").locator('[data-takeoff="wall-area-line"]')).toHaveText(`43 ft × 10'-0" × 2 sides = 864 sf`, { timeout: 30_000 });
-    await expect(area(tab, "untyped").locator('[data-takeoff="wall-height-from"]')).toHaveText(`ceiling plan, room 104 OFFICE: 10'-0"`);
+    const row = tab.locator('[data-takeoff="layer-row"] [data-takeoff="wall-area"]').and(tab.locator(`[data-item="${(await zh2())!.id}"]`));
+    await expect(row.locator('[data-takeoff="wall-area-line"]')).toHaveText(`43 ft × 10'-0" × 2 sides = 864 sf`, { timeout: 30_000 });
+    await expect(row.locator('[data-takeoff="wall-height-from"]')).toHaveText(`ceiling plan, room 104 OFFICE: 10'-0"`);
     await tab.locator('[data-takeoff="layer-panel"]').screenshot({ path: path.join(SHOTS, "layers-ceiling.png") });
   });
 

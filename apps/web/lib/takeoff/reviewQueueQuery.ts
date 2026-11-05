@@ -22,7 +22,7 @@ import { feetLabel, legendOption, type CeilingRoom } from "@/lib/takeoff/wallHei
 export async function loadReviewQueue(
   companyId: string,
   jobId: string,
-): Promise<{ planId: string | null; items: ReviewItem[]; heights: Record<string, CodeHeight>; scaledSheets: number; floorPlans: number; floorPlansScaled: number }> {
+): Promise<{ planId: string | null; items: ReviewItem[]; heights: Record<string, CodeHeight>; codes: string[]; scaledSheets: number; floorPlans: number; floorPlansScaled: number }> {
   const plan = await prisma.takeoffPlan.findFirst({ where: { jobId, companyId }, orderBy: { createdAt: "desc" }, select: { id: true } });
   const unpriced = await prisma.jobLineItem.findMany({
     where: { jobId, job: { companyId }, isDeleted: false, unitPrice: null, budgetedUnitCost: null },
@@ -41,7 +41,7 @@ export async function loadReviewQueue(
     askCost,
     costCategory: asCostCategory(line.costCategory),
   }));
-  if (plan === null) return { planId: null, items: prices, heights: {}, scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0 };
+  if (plan === null) return { planId: null, items: prices, heights: {}, codes: [], scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0 };
 
   const [pages, sheetRows] = await Promise.all([
     prisma.takeoffPlanPage.findMany({
@@ -83,7 +83,7 @@ export async function loadReviewQueue(
   // typed items (with the height set on this job), the set's legend codes, and
   // the rooms whose ceilings were read.
   const [libraryTypes, typedItems, legendCodes, rooms] = await Promise.all([
-    prisma.wallType.findMany({ where: { companyId }, select: { id: true, code: true, name: true, thicknessIn: true, defaultHeightFt: true, notes: true, _count: { select: { components: true } } } }),
+    prisma.wallType.findMany({ where: { companyId }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }], select: { id: true, code: true, name: true, thicknessIn: true, defaultHeightFt: true, notes: true, _count: { select: { components: true } } } }),
     prisma.takeoffItem.findMany({ where: { jobId, companyId, wallTypeId: { not: null }, heightFt: { not: null } }, orderBy: { createdAt: "asc" }, select: { wallTypeId: true, heightFt: true } }),
     storedLegendCodes(plan.id),
     prisma.takeoffMeasurement.findMany({
@@ -91,6 +91,12 @@ export async function loadReviewQueue(
       select: { xs: true, ys: true, roomNumber: true, roomName: true, label: true, ceilingHeightFeet: true, ceilingFrom: true, page: { select: { pageNumber: true } } },
     }),
   ]);
+  // ── THE TYPES A GROUP CAN BE GIVEN: the legend's, else the company's own ──
+  // A set whose legend read named no types (Baker on a new company, the walk at
+  // 66eeca59) left every untyped group with nothing to pick, and the queue
+  // could not empty. The company's library — the starter types its trade gave
+  // it and any it made — is the next answer, numbered the same way.
+  const codes = legendCodes.length > 0 ? legendCodes : libraryTypes.map((type) => type.code);
   const wallTypes: MatchableWallType[] = libraryTypes.map((t) => ({ id: t.id, code: t.code, name: t.name, hasParts: t._count.components > 0, thicknessIn: t.thicknessIn === null ? null : Number(t.thicknessIn) }));
   const heights: Record<string, CodeHeight> = {};
   for (const type of libraryTypes) {
@@ -132,7 +138,7 @@ export async function loadReviewQueue(
   // above already holds is asked once, there, with its type.
   // Only where the queue can type it: with no legend codes and no suggestion, the
   // group's row cannot be confirmed there, so its height is still asked on its own.
-  const typing = new Set(items.flatMap((item) => (item.kind === "type" && (legendCodes.length > 0 || item.suggested !== null) ? item.runs.map((r) => `${item.pageNumber}:${r.x1},${r.y1},${r.x2},${r.y2}`) : [])));
+  const typing = new Set(items.flatMap((item) => (item.kind === "type" && (codes.length > 0 || item.suggested !== null) ? item.runs.map((r) => `${item.pageNumber}:${r.x1},${r.y1},${r.x2},${r.y2}`) : [])));
   const [heightless] = await Promise.all([
     prisma.takeoffItem.findMany({
       where: { jobId, companyId, heightFt: null, OR: [{ wallTypeId: { not: null } }, { name: UNTYPED_ITEM }], measurements: { some: { kind: "LINEAR", page: { planId: plan.id } } } },
@@ -170,6 +176,7 @@ export async function loadReviewQueue(
     planId: plan.id,
     items: reviewQueue(items),
     heights,
+    codes,
     scaledSheets: scaled.size,
     floorPlans: floors.length,
     floorPlansScaled: floors.filter((page) => scaled.has(page)).length,

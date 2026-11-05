@@ -89,7 +89,8 @@ test.describe("the job's one review queue", () => {
     if ((await prisma.wallType.count({ where: { companyId, code: CODE } })) === 0) {
       await page.goto("/wall-types");
       await page.getByRole("button", { name: /Start from the common trade assemblies/ }).click();
-      await expect(page.getByText(/^Added /)).toBeVisible({ timeout: 60_000 });
+      // By the row, not the "Added" toast: another spec on this company may add them first, and then this press says they are already there.
+      await expect.poll(() => prisma.wallType.count({ where: { companyId: companyId, code: "W1" } }), { timeout: 60_000 }).toBe(1);
     }
 
     // Sheet 1, scaled (1 page-width = 144 ft), with what the WALLS stage wrote:

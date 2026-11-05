@@ -96,13 +96,17 @@ export default async function TakeoffWorkspacePage({
           : open === "scale"
             ? data.startPage.scale
             : open === "review"
-              ? data.startPage.review
+              ? // The first item's own sheet: the queue's jump on mount can
+                // come before the viewer listens for it, and then the drawing
+                // stayed on whatever sheet it opened on (the walk at 66eeca59).
+                (queue.items.map((item) => ("pageNumber" in item ? item.pageNumber : null)).find((p): p is number => p !== null && sheetPages.has(p)) ?? data.startPage.review)
               : data.startPage.work
       }
       openReview={open === "review"}
       openScale={open === "scale"}
       reviewQueue={queue.items}
       reviewHeights={queue.heights}
+      reviewCodes={queue.codes}
       planSet={planSetFromLoaded(data)}
       /* ── ANSWER-KEY MODE FROM THE URL ──
          So a review session can be opened on the right sheet in one link,
