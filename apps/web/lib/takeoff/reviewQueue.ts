@@ -1,3 +1,5 @@
+import { ceilingOption, type CeilingRoom, type HeightOption } from "./wallHeight";
+
 /**
  * ── ONE REVIEW QUEUE FOR THE WHOLE JOB ──
  *
@@ -8,8 +10,10 @@
  *   1. wall   — a run the model held off the estimate, "to confirm";
  *   2. type   — a found wall group posted to "Walls — untyped", which the
  *               "Set type" picker names (`setWallGroupType`);
- *   3. scale  — a floor plan with no scale saved;
- *   4. price  — an estimate line with neither a price nor a cost.
+ *   3. height — a wall group (its takeoff item) with no height, which "Set
+ *               height" gives one (`setWallGroupHeight`, `wallHeight.ts`);
+ *   4. scale  — a floor plan with no scale saved;
+ *   5. price  — an estimate line with neither a price nor a cost.
  *
  * Built from rows that already exist, on every render, and never stored: an
  * item leaves the queue because the row behind it changed. Review is done
@@ -19,6 +23,7 @@ export type QueueRun = { x1: number; y1: number; x2: number; y2: number };
 export type ReviewItem =
   | ({ kind: "wall"; key: string; pageNumber: number; sheet: string; measurementId: string; feet: number | null } & QueueRun)
   | { kind: "type"; key: string; pageNumber: number; sheet: string; inches: number; runs: QueueRun[]; feet: number | null }
+  | { kind: "height"; key: string; itemId: string; name: string; pageNumber: number; sheet: string; runs: QueueRun[]; feet: number | null; options: HeightOption[] }
   | { kind: "scale"; key: string; pageNumber: number; sheet: string }
   | { kind: "price"; key: string; lineItemId: string; description: string; quantity: string; unit: string | null };
 
@@ -58,7 +63,26 @@ export function typeItems(
   return out;
 }
 
-const KIND_ORDER: ReviewItem["kind"][] = ["wall", "type", "scale", "price"];
+/**
+ * A wall item with no height, shown on the sheet holding most of its length.
+ * Its Set height offers the ceiling over the rooms its walls bound there and
+ * the type's legend height, where either exists.
+ */
+export function heightItem(
+  item: { id: string; name: string },
+  sheets: readonly { sheet: QueueSheet; runs: readonly QueueRun[]; rooms: readonly CeilingRoom[] }[],
+  legend: HeightOption | null,
+): ReviewItem | null {
+  const on = sheets.filter((s) => s.runs.length > 0);
+  if (on.length === 0) return null;
+  const span = (runs: readonly QueueRun[]) => runs.reduce((n, run) => n + length(run), 0);
+  const most = on.reduce((best, s) => ((feetOf(s.runs, s.sheet.feetPerUnit) ?? span(s.runs)) > (feetOf(best.runs, best.sheet.feetPerUnit) ?? span(best.runs)) ? s : best));
+  const feet = on.every((s) => s.sheet.feetPerUnit === null) ? null : on.reduce((n, s) => n + (feetOf(s.runs, s.sheet.feetPerUnit) ?? 0), 0);
+  const options = [ceilingOption(most.runs, most.rooms), legend].filter((o): o is HeightOption => o !== null);
+  return { kind: "height", key: `height:${item.id}`, itemId: item.id, name: item.name, pageNumber: most.sheet.pageNumber, sheet: most.sheet.sheet, runs: [...most.runs], feet, options };
+}
+
+const KIND_ORDER: ReviewItem["kind"][] = ["wall", "type", "height", "scale", "price"];
 
 /** The queue in the order a person meets it: by kind, then sheet, longest first. Prices keep the estimate's order. */
 export function reviewQueue(items: readonly ReviewItem[]): ReviewItem[] {
@@ -73,7 +97,7 @@ export function reviewQueue(items: readonly ReviewItem[]): ReviewItem[] {
 /** The run to zoom to: a held run itself, or a group's longest run. */
 export function focusOf(item: ReviewItem): (QueueRun & { pageNumber: number }) | null {
   if (item.kind === "wall") return { pageNumber: item.pageNumber, x1: item.x1, y1: item.y1, x2: item.x2, y2: item.y2 };
-  if (item.kind === "type") {
+  if (item.kind === "type" || item.kind === "height") {
     const longest = item.runs.reduce((best, run) => (length(run) > length(best) ? run : best));
     return { pageNumber: item.pageNumber, ...longest };
   }

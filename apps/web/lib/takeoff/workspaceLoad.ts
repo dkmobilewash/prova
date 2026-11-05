@@ -1,4 +1,7 @@
 import { ensureSheetNames, pairingsForPlan } from "./priorPlanLoad";
+import { openingsFromJson } from "@/lib/wall-assemblies";
+import { openingThresholdSqFt } from "@/lib/businessScope";
+import { legendOption } from "@/lib/takeoff/wallHeight";
 import { storedLegendCodes } from "./planTextRead";
 import { setReviewItems, setReviewOrder, type SetReviewItem } from "@/lib/takeoff/wallReview";
 import { storedRunsOrNull } from "@/lib/takeoff/wallProposal";
@@ -323,6 +326,7 @@ export async function loadTakeoffWorkspace(
           xs: true,
           ys: true,
           cutouts: true,
+          openings: true,
           page: { select: { pageNumber: true } },
           calibration: { select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } },
         },
@@ -351,6 +355,7 @@ export async function loadTakeoffWorkspace(
       xs: m.xs,
       ys: m.ys,
       cutouts: cutoutsFromJson(m.cutouts),
+      openings: openingsFromJson(m.openings),
       feetPerPageWidth: m.calibration === null ? null : feetPerPageWidth({
         x1: m.calibration.x1,
         y1: m.calibration.y1,
@@ -642,7 +647,7 @@ export async function loadTakeoffWorkspace(
   // same load that decides everything else on the screen.
   const roomFinder = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOff: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOff: true, planCompareOn: true },
+    select: { roomFinderOn: true, demotedWallsOff: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOff: true, planCompareOn: true, openingDeduction: true, openingDeductionSqFt: true },
   });
   // Plan comparison's pairings, only for a company that turned it on: each new
   // plan's demolition plan, derived from sheet numbers and titles with a
@@ -709,6 +714,9 @@ export async function loadTakeoffWorkspace(
     earlierVersionByPage,
     sheetRows,
     items,
+    // The company's opening rule exactly as the estimate applies it (`syncTakeoffItemLines`).
+    openingThresholdSqFt:
+      roomFinder?.openingDeduction == null ? 0 : openingThresholdSqFt(roomFinder.openingDeduction, roomFinder.openingDeductionSqFt === null ? null : Number(roomFinder.openingDeductionSqFt)),
     isEstimateStage,
     scheduleSheetCount,
     /**
@@ -757,6 +765,7 @@ export async function loadTakeoffWorkspace(
       thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
       summary: wallTypeSummary({ name: type.name, sides: type.sides, notes: type.notes, components: type.components.map((c) => ({ description: c.description, basis: c.basis, factor: Number(c.factor) })) }),
       defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt),
+      legendHeight: legendOption({ code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes }),
     })),
   };
 }
