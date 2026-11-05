@@ -27,7 +27,7 @@ import { addWallTypeFromLegend } from "./wallLegend";
  * sheets' groups at that thickness match it (`matchGroupToItem`) and the
  * WALLS stage posts them as this type (`wallItems.ts`).
  */
-const NO_ESTIMATING = "Typing walls is part of estimating, which isn't part of your job function.";
+const JOB_COSTS_ONLY = "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
 const RUNS_MAX = 2000;
 
 export type WallGroupTypeInput = {
@@ -40,7 +40,9 @@ export type WallGroupTypeInput = {
 
 export async function setWallGroupType(jobId: string, input: WallGroupTypeInput): Promise<ActionResult> {
   const context = await requireCompanyContext();
-  if (!can(context, "MANAGE_ESTIMATING")) return actionFail(NO_ESTIMATING);
+  // The takeoff tab's capability, as its other writes. Adding a NEW type to
+  // the library is still estimating's, and `addWallTypeFromLegend` says so.
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const companyId = context.company.id;
   const code = String(input.code ?? "").trim().toUpperCase();
   const runs = Array.isArray(input.runs) ? input.runs.filter((r) => [r.x1, r.y1, r.x2, r.y2].every(Number.isFinite)) : [];
