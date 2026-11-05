@@ -1042,18 +1042,39 @@ async function saveTakeoffMeasurementsFor(
     }
   }
 
-  const created = await prisma.takeoffMeasurement.createManyAndReturn({
-    data: shapes.map((shape) => ({
-      pageId: page.id,
-      calibrationId: calibration.id,
-      kind,
-      xs: shape.xs,
-      ys: shape.ys,
-      label: label || null,
-      packageLabel: packageLabel || null,
-      createdByUserId: userId,
-    })),
-    select: { id: true, kind: true, xs: true, ys: true, label: true },
+  // ── PLAIN WALLS GO ON THE ESTIMATE TOO ──
+  //
+  // A group added with no wall type ("plain measurements") used to be written
+  // with no item, under Unassigned — and Send to estimate exists only on an
+  // item, so a brand-new company, which has no wall types, took off walls that
+  // never reached the estimate and nothing said so (the new-job walkthrough,
+  // step 15). They now go under "Walls — untyped", the item the whole-set run
+  // already files untyped walls under, and that item's line is written in the
+  // same transaction: the feet are on the estimate, unpriced, the moment the
+  // group is added. A contracted job's estimate is not edited directly, so
+  // there the walls are filed and the line waits for a change order.
+  const plainWalls = wallTypeId === "" && kind === "LINEAR";
+  const jobStatus = plainWalls
+    ? (await prisma.job.findFirst({ where: { id: jobId, companyId: company.id }, select: { status: true } }))?.status
+    : null;
+  const created = await prisma.$transaction(async (tx) => {
+    const itemId = plainWalls ? await untypedItem(tx, company.id, jobId) : null;
+    const rows = await tx.takeoffMeasurement.createManyAndReturn({
+      data: shapes.map((shape) => ({
+        pageId: page.id,
+        calibrationId: calibration.id,
+        kind,
+        xs: shape.xs,
+        ys: shape.ys,
+        label: label || null,
+        packageLabel: packageLabel || null,
+        createdByUserId: userId,
+        itemId,
+      })),
+      select: { id: true, kind: true, xs: true, ys: true, label: true },
+    });
+    if (itemId !== null && jobStatus === "ESTIMATE") await syncTakeoffItemLines(tx, company.id, jobId, new Set([itemId]));
+    return rows;
   });
 
   // ── AND IF THE DRAWING SAID WHICH WALL TYPE, POST IT PRICED ──
@@ -1110,6 +1131,8 @@ async function saveTakeoffMeasurementsFor(
   }
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/jobs/${jobId}/estimate`);
+  revalidatePath(`/takeoff/${jobId}`);
   return actionOk;
 }
 

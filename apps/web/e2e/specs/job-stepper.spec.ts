@@ -130,24 +130,28 @@ test.describe("the job stepper", () => {
     const choice = tab.locator('[data-takeoff="group-choice"]').first();
     await choice.selectOption({ index: (await choice.locator("option").allInnerTexts()).findIndex((o) => /plain measurements/i.test(o)) });
     await tab.locator('[data-takeoff="add-group"]').first().click();
-    // Plain measurements on a company with no wall types file under
-    // Unassigned, not an item (the walkthrough's step 15) — saved either way.
+    // A company with no wall types adds walls plain. They file under the
+    // "Walls — untyped" item, not Unassigned (the walkthrough's step 15).
     await openItems(tab);
-    await expect(tab.getByRole("button", { name: /^Unassigned\s*\d+ measurements?$/ })).toBeVisible({ timeout: 30_000 });
+    await expect(tab.locator('[data-takeoff="item-row"]').filter({ hasText: "Walls — untyped" })).toBeVisible({ timeout: 30_000 });
     await tab.close();
   });
 
-  test("5. something taken off: Takeoff and Review done, Estimate current", async () => {
+  test("5. something taken off: the walls are ALREADY on the estimate, with real feet, and Send is current", async () => {
     await onJob();
-    expect(await states()).toBe("job:done plans:done scale:done takeoff:done review:done estimate:current send:todo");
-    // The quantities go on from the workspace's item panel, so that is where Next goes.
-    await expect(next()).toContainText("Next: Put the takeoff on the estimate");
-    await expect(next()).toHaveAttribute("href", `/takeoff/${jobId}`);
-    await expect(next()).toHaveAttribute("target", "_blank");
-    // The step itself is still the estimate tab, where a person prices by hand.
-    await expect(step("estimate")).toHaveAttribute("href", `/jobs/${jobId}/estimate`);
+    expect(await states()).toBe("job:done plans:done scale:done takeoff:done review:done estimate:done send:current");
+    await expect(next()).toContainText("Next: Send it for signature");
     await bar().screenshot({ path: path.join(SHOTS, "stepper-estimate-current.png") });
     await page.screenshot({ path: path.join(SHOTS, "job-page-estimate-current-1440.png") });
+    // No hidden setup between the takeoff and the estimate: the footage is a
+    // line on the estimate tab, unpriced and saying so.
+    await step("estimate").click();
+    await page.waitForURL(new RegExp(`/jobs/${jobId}/estimate`));
+    const line = page.getByText(/Walls — untyped \(no type: check\)/).first();
+    await expect(line).toBeVisible({ timeout: 30_000 });
+    const feet = Number(((await page.locator("body").innerText()).match(/([\d,]+(?:\.\d+)?)\s*lin ft/) ?? [])[1]?.replace(/,/g, "") ?? 0);
+    expect(feet, "the estimate shows no wall footage").toBeGreaterThan(0);
+    await page.screenshot({ path: path.join(SHOTS, "estimate-plain-walls-1440.png"), fullPage: true });
   });
 
   test("6. the phone: the bar scrolls in its own row and the page does not scroll sideways", async () => {

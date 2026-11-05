@@ -59,6 +59,8 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
   });
   const wallTypes: MatchableWallType[] = types.map((t) => ({ id: t.id, code: t.code, name: t.name, hasParts: t._count.components > 0, thicknessIn: t.thicknessIn === null ? null : Number(t.thicknessIn), defaultHeightFt: t.defaultHeightFt === null ? null : Number(t.defaultHeightFt) }));
   const groups = groupsFromProposals(rows, wallTypes, feetPerUnit);
+  const typedItems = await prisma.takeoffItem.findMany({ where: { jobId: input.jobId, companyId: input.companyId, wallTypeId: { not: null } }, select: { id: true, wallTypeId: true } });
+  const rememberedType = new Map(typedItems.map((i) => [i.id, i.wallTypeId!]));
   if (groups === null) return { kind: "skipped", why: "stored walls could not be read" };
 
   // The type each group settles to: a tag's own type, or the note's default.
@@ -70,8 +72,16 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
     // 7-1/4 in bucket is its CMU default B and its 6 in stud partition A3 at
     // once, and that is a question for the person, not a priced line.
     if (verdict.state === "ASK" && group.source.kind === "GENERAL_NOTE" && verdict.suggested && group.candidates.length === 1) return verdict.suggested;
-    return null;
+    // Remembered for the job: an estimator's "Set type" gave an item this
+    // thickness and type, and detection matched the group to that item.
+    // Never over a tag: a drawing's tag the library lacks is a question, not this.
+    if (group.source.kind === "TAG" || !group.itemId) return null;
+    const remembered = rememberedType.get(group.itemId);
+    const type = remembered === undefined ? null : (wallTypes.find((t) => t.id === remembered) ?? null);
+    if (type !== null) setForJob.add(group);
+    return type;
   };
+  const setForJob = new Set<WallGroup>();
 
   const written = await prisma.$transaction(async (tx) => {
     const byType = new Map<string, { code: string; feet: number }>();
@@ -89,9 +99,11 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
           ? "wall, untyped"
           : group.source.kind === "TAG"
             ? isPropagatedTag(group.source.tag) ? `${plainTag(group.source.tag)} wall (carried)` : `${type.code} wall`
-            : group.source.kind === "GENERAL_NOTE"
-              ? `${type.code} wall (U.N.O.)`
-              : `${type.code} wall (by thickness)`;
+            : setForJob.has(group)
+              ? `${type.code} wall (set for this job)`
+              : group.source.kind === "GENERAL_NOTE"
+                ? `${type.code} wall (U.N.O.)`
+                : `${type.code} wall (by thickness)`;
       for (const run of group.runs as Run[]) {
         // Doubted by the wall model: on the sheet, off the estimate. See `estimateHold.ts`.
         const isHeld = isHeldRun(run, held);
@@ -113,7 +125,7 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
   return { kind: "written", ...written };
 }
 
-async function itemForType(tx: Prisma.TransactionClient, companyId: string, jobId: string, type: MatchableWallType, row: { defaultHeightFt: unknown; sides: number | null }): Promise<string> {
+export async function itemForType(tx: Prisma.TransactionClient, companyId: string, jobId: string, type: MatchableWallType, row: { defaultHeightFt: unknown; sides: number | null }): Promise<string> {
   // A variant (C6 of family C) gets its own item under its full code, priced
   // with the family's assembly — so the family's item is found by its name
   // first, and never falls back onto a variant's.
