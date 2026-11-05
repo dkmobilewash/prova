@@ -5,6 +5,7 @@ import { prisma } from "@prova/db";
 import { pageInventoryWork, realDeps } from "@/lib/plan-ingest/pageInventory";
 import { pdfPageCount } from "@/lib/ask/pageCount";
 import { ensureSheetNames, pairingsForPlan } from "@/lib/takeoff/priorPlanLoad";
+import { wallsPlan, wallsSheetsFor } from "@/lib/plan-ingest/walls";
 
 /**
  * E Street 421 in the app: "No demolition plan is paired" on A2.1 and an
@@ -62,5 +63,19 @@ describe.skipIf(PDF === "")("E Street 421: A2.1 is paired with its demolition pl
     const { a21, pairing } = await a21Pairing(planId);
     expect(a21).toBeDefined();
     expect(pairing).toBeDefined();
+  }, 600_000);
+
+  // Chrome's re-test: A1.1, the demolition plan, was counted for A2.1's level
+  // because it had walls already, and A2.1 read "same level as A1.1".
+  it("the NEW floor plan A2.1 is the level's counted plan, even when the demolition plan A1.1 already has walls on the job", async () => {
+    const { companyId, planId } = await inventoried("E Street counted plan", true, async () => true);
+    const sheets = await wallsSheetsFor(planId, companyId);
+    const a11 = sheets.find((s) => s.sheetNumber === "A1.1")!;
+    const a21 = sheets.find((s) => s.sheetNumber === "A2.1")!;
+    expect(a11.title).toMatch(/DEMOLITION/);
+    const scaled = sheets.map((s) => ({ ...s, hasScale: true, ...(s === a11 ? { hasWalls: true, onJob: true } : {}) }));
+    const plan = wallsPlan(scaled);
+    expect(plan.get(a21.pageNumber)).toBeNull();
+    expect(plan.get(a11.pageNumber)).toBe("not a floor plan");
   }, 600_000);
 });

@@ -64,10 +64,17 @@ export type WallsSkip = "no scale" | "not a floor plan" | "already found" | `sam
  *  Pure. The set-level rule, one plan per floor, is `wallsPlan` below. */
 export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
   if (!sheet.hasScale) return "no scale";
-  if (sheet.hasWalls || sheet.onJob) return "already found";
+  // ── WHAT THE SHEET IS COMES BEFORE WHETHER IT HAS WALLS ──
+  //
+  // Chrome's re-test on E Street: A1.1 "DEMOLITION - FLOOR PLAN" had walls
+  // already, "already found" answered first, and it joined A2.1's level as a
+  // counted plan — winning it, for having walls, so the NEW floor plan read
+  // "same level as A1.1". A demolition plan is never a level's counted plan;
+  // plan comparison reads it to set existing walls aside, and that is all.
   if (takeoffSheetVerdict({ sheetNumber: sheet.sheetNumber, title: sheet.title }).skipAutomatically) {
     return "not a floor plan";
   }
+  if (sheet.hasWalls || sheet.onJob) return "already found";
   return null;
 }
 
