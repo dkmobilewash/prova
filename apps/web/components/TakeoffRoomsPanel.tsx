@@ -135,13 +135,17 @@ export function TakeoffRoomsPanel({
           find the rooms again.
         </p>
       ) : (
-        <table className="mt-2 w-full text-xs">
+        // FIXED columns that fit the workspace's 300px panel: the name takes what
+        // is left after the number and the two figures, and every box fills its
+        // cell rather than carrying a width of its own (Chrome's click test saw
+        // the perimeter column cut off at the panel's edge).
+        <table className="mt-2 w-full table-fixed text-xs">
           <thead>
             <tr className="text-left text-ink-label">
-              <th className="py-1 pr-2 font-medium">Room</th>
-              <th className="py-1 pr-2 font-medium">No.</th>
-              <th className="py-1 pr-2 text-right font-medium">sq ft</th>
-              <th className="py-1 text-right font-medium">perim. ft</th>
+              <th className="py-1 pr-1 font-medium">Room</th>
+              <th className="w-12 py-1 pr-1 font-medium">No.</th>
+              <th className="w-12 py-1 pr-1 text-right font-medium">sq ft</th>
+              <th className="w-12 py-1 text-right font-medium" title="perimeter, feet">perim.</th>
             </tr>
           </thead>
           {/* One <tbody> per room: the room's line, then its ceiling on a second
@@ -159,27 +163,27 @@ export function TakeoffRoomsPanel({
                   className={hovered === room.id ? "bg-rail-hover" : undefined}
                 >
                 <tr>
-                  <td className="py-1 pr-2">
+                  <td className="py-1 pr-1">
                     <input
                       name="roomName"
                       aria-label="Room name"
                       value={edited.name}
                       placeholder="unnamed"
                       onChange={(e) => setNames((prev) => ({ ...prev, [room.id]: { ...edited, name: e.target.value } }))}
-                      className="w-36 rounded border border-line-card bg-surface px-1 py-0.5 text-xs text-ink-body"
+                      className="w-full min-w-0 rounded border border-line-card bg-surface px-1 py-0.5 text-xs text-ink-body"
                     />
                   </td>
-                  <td className="py-1 pr-2">
+                  <td className="py-1 pr-1">
                     <input
                       name="roomNumber"
                       aria-label="Room number"
                       value={edited.number}
                       placeholder="—"
                       onChange={(e) => setNames((prev) => ({ ...prev, [room.id]: { ...edited, number: e.target.value } }))}
-                      className="w-16 rounded border border-line-card bg-surface px-1 py-0.5 text-xs text-ink-body"
+                      className="w-full min-w-0 rounded border border-line-card bg-surface px-1 py-0.5 text-xs text-ink-body"
                     />
                   </td>
-                  <td className="py-1 pr-2 text-right tabular-nums text-ink-body" data-takeoff="room-sf">
+                  <td className="py-1 pr-1 text-right tabular-nums text-ink-body" data-takeoff="room-sf">
                     {Math.round(room.squareFeet).toLocaleString()}
                   </td>
                   <td className="py-1 text-right tabular-nums text-ink-body">{Math.round(room.perimeterFeet).toLocaleString()}</td>

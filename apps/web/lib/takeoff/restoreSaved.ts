@@ -1,5 +1,5 @@
 import type { Candidate, ReviewState, SplitRecord, Verdict } from "./answerKeyReview";
-import { addTraced, setVerdict, tracedWall } from "./answerKeyReview";
+import { addTraced, setVerdict, setWallType, tracedWall } from "./answerKeyReview";
 import { splitCandidate } from "./splitCandidate";
 
 /**
@@ -47,6 +47,8 @@ export type SavedVerdict = {
   lengthFeet: number;
   thicknessFeet?: number;
   verdict: string;
+  /** Round 12: the reviewer's wall type for an accepted or traced wall — a legend code, or "U". */
+  wallType?: string;
 };
 
 export type SavedSheet = {
@@ -422,6 +424,7 @@ export function restoreSaved(
   let state = prepared.state;
   for (const { saved: v, candidate } of pairs) {
     state = setVerdict(state, [candidate.id], DECIDED[v.verdict]);
+    if (typeof v.wallType === "string") state = setWallType(state, [candidate.id], v.wallType);
   }
   traces.forEach((t, index) => {
     // ── NOT A SECOND COPY OF ONE ALREADY HERE ──
@@ -438,6 +441,7 @@ export function restoreSaved(
       state,
       tracedWall({ x: t.x1, y: t.y1 }, { x: t.x2, y: t.y2 }, feetPerUnit),
     );
+    if (typeof t.wallType === "string") state = setWallType(state, [state.traced[state.traced.length - 1]!.id], t.wallType);
   });
 
   const carried = decisions.filter((v) => !pairs.some((p) => p.saved === v));

@@ -81,6 +81,17 @@ async function legendFromProposal(planId: string): Promise<PlanTextLegend | null
   };
 }
 
+/**
+ * The set's legend codes as already read and stored — the WALL_LEGEND
+ * proposal, else the calibration path's cached read — with NO model call.
+ * The answer-key type picker offers these (round 12): the vocabulary the
+ * finder names walls with. Empty when the set has never been read.
+ */
+export async function storedLegendCodes(planId: string): Promise<string[]> {
+  const legend = (await legendFromProposal(planId)) ?? (await readStored<PlanTextLegend>(planId, SET_PAGE, "legend"));
+  return [...new Set((legend?.codes ?? []).map((c) => c.toUpperCase()))];
+}
+
 /** The `uno` list of a stored legend read, where one wrote it; nothing otherwise. */
 export function unoFromJson(value: unknown): { code: string; note: string }[] {
   const list = (value as { uno?: unknown } | null)?.uno;

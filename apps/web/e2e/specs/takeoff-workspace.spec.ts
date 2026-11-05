@@ -288,9 +288,11 @@ test.describe("the full-screen takeoff workspace", () => {
 
     const layers = page.locator('[data-takeoff="layers-rail"]');
     await expect(layers, "the layer panel is not open on arrival").toBeVisible();
-    await page.locator('[data-takeoff="toggle-panel"]').click();
+    // It collapses from its own header and comes back from the canvas's edge;
+    // the top bar's Quantities never closes it (Chrome's click test).
+    await page.locator('[data-takeoff="collapse-panel"]').click();
     await expect(layers, "the layer panel did not collapse").toHaveCount(0);
-    await page.locator('[data-takeoff="toggle-panel"]').click();
+    await page.locator('[data-takeoff="expand-panel"]').click();
     await expect(layers).toBeVisible();
   });
 
@@ -409,6 +411,13 @@ test.describe("the full-screen takeoff workspace", () => {
   }
 
   /** Put a top-bar panel toggle into a known state. */
+  /** The layer panel open or collapsed, from its own controls. */
+  async function setPanel(open: boolean): Promise<void> {
+    const isOpen = (await page.locator('[data-takeoff="collapse-panel"]').count()) > 0;
+    if (isOpen === open) return;
+    await page.locator(open ? '[data-takeoff="expand-panel"]' : '[data-takeoff="collapse-panel"]').click();
+    await page.waitForTimeout(250);
+  }
   async function setRail(handle: string, open: boolean): Promise<void> {
     const toggle = page.locator(`[data-takeoff="${handle}"]`);
     if ((await toggle.count()) === 0) return;
@@ -455,7 +464,7 @@ test.describe("the full-screen takeoff workspace", () => {
         for (const itemsOpen of [false, true]) {
           await page.setViewportSize(size);
           await onWorkspace(jobTwo);
-          await setRail("toggle-panel", railOpen);
+          await setPanel(railOpen);
           await setRail("toggle-items", itemsOpen);
           await fitAndSettle();
 
@@ -703,14 +712,172 @@ test.describe("the full-screen takeoff workspace", () => {
     await first.locator('[data-takeoff="layer-name"]').dblclick();
     const box = first.locator('[data-takeoff="layer-rename"]');
     await box.fill("ZZ-E2E walls");
-    await box.press("Enter");
+    // The save is a Server Action; wait for ITS answer, not the screen, which
+    // shows the typed name at once.
+    const saved = () =>
+      page.waitForResponse((r) => r.request().method() === "POST" && r.request().headers()["next-action"] !== undefined);
+    await Promise.all([saved(), box.press("Enter")]);
     await expect(first.locator('[data-takeoff="layer-name"]')).toHaveText("ZZ-E2E walls");
-    // One person's label, kept in this browser across a reload.
+    // ── THE TEAM'S NAME, SAVED WITH THE JOB ──
+    // A FRESH BROWSER, with nothing in its storage, signed in on the same
+    // company: if the name were kept in a browser this one could not see it.
+    // It shows on the layer row and on the group's Quantities detail.
+    const other = await page.context().browser()!.newContext({ viewport: DESKTOP });
+    const teammate = await other.newPage();
+    await teammate.route("**/api/takeoff/plan/**", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/pdf", body: servedPdf });
+    });
+    expect(await teammate.evaluate(() => window.localStorage.length).catch(() => 0)).toBe(0);
+    await signInAs(teammate, PERSONAS.takeoff.email);
+    await teammate.goto(`/takeoff/${jobTwo}`);
+    const find = teammate.locator('[data-takeoff="find-walls"]');
+    await expect(find).toBeEnabled({ timeout: 60_000 });
+    await find.click();
+    await expect(find).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 180_000 });
+    await expect(
+      teammate.locator('[data-takeoff="layer-row"]').first().locator('[data-takeoff="layer-name"]'),
+      "a teammate in another browser does not see the name",
+    ).toHaveText("ZZ-E2E walls");
+    await expect(teammate.locator('[data-takeoff="group-team-name"]').first()).toHaveText("ZZ-E2E walls");
+    await other.close();
+
+    // And clearing it puts the default back for everybody.
+    await first.locator('[data-takeoff="layer-name"]').dblclick();
+    await first.locator('[data-takeoff="layer-rename"]').fill("");
+    await Promise.all([saved(), first.locator('[data-takeoff="layer-rename"]').press("Enter")]);
     await page.reload();
-    await findTheWalls("S15 after the rename");
-    await expect(page.locator('[data-takeoff="layer-row"]').first().locator('[data-takeoff="layer-name"]')).toHaveText(
+    await findTheWalls("S15 after clearing the name");
+    await expect(page.locator('[data-takeoff="layer-row"]').first().locator('[data-takeoff="layer-name"]')).not.toHaveText(
       "ZZ-E2E walls",
     );
+    await expect(page.locator('[data-takeoff="group-team-name"]')).toHaveCount(0);
+  });
+
+  test("13e. CHROME'S CLICK TEST: select, let go, pan, zoom, rectangle, panel, export, PDF, scale line", async () => {
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+    await findTheWalls("S15 for the click-test fixes");
+    await fitAndSettle();
+    const box = async () => (await overlay().boundingBox())!;
+    const runMid = async () =>
+      overlay()
+        .locator("[data-found-wall]")
+        .first()
+        .evaluate((line) => {
+          const n = (a: string) => Number(line.getAttribute(a));
+          return { x: (n("x1") + n("x2")) / 2, y: (n("y1") + n("y2")) / 2 };
+        });
+    const clickSheet = async (x: number, y: number) => {
+      const b = await box();
+      await page.mouse.click(b.x + x * b.width, b.y + y * b.width);
+    };
+    const readout = page.locator('[data-takeoff="layer-readout"]');
+    const strip = page.locator('[data-takeoff="sheet-facts"]');
+
+    // 1. THE ARROW SELECTS: a run lights its layer, pins its length, fills the strip.
+    await expect(tool("Select")).toHaveAttribute("aria-pressed", "true");
+    await expect(strip, "the bottom strip is there with nothing selected").toHaveCount(0);
+    const mid = await runMid();
+    await clickSheet(mid.x, mid.y);
+    await expect(readout, "clicking a run with the arrow selected nothing").toBeVisible();
+    await expect(page.locator('[data-takeoff="layer-row"][data-lit="true"]')).toHaveCount(1);
+    await expect(page.locator('[data-takeoff="selection-facts"]')).toBeVisible();
+
+    // 2. AND LETS GO: Esc, and hiding the lit layer with its eye.
+    await page.keyboard.press("Escape");
+    await expect(readout).toHaveCount(0);
+    await expect(page.locator('[data-takeoff="layer-row"][data-lit="true"]')).toHaveCount(0);
+    await expect(strip).toHaveCount(0);
+    await clickSheet(mid.x, mid.y);
+    await expect(readout).toBeVisible();
+    await page.locator('[data-takeoff="layer-row"][data-lit="true"] [data-takeoff="layer-eye"]').click();
+    await expect(readout, "hiding the lit layer left its length on the plan").toHaveCount(0);
+    await page.locator('[data-takeoff="layer-eye"][aria-pressed="false"]').first().click();
+
+    // 3. THE WHEEL: plain scrolls, Ctrl+wheel zooms by about a tenth.
+    const zoomPct = async () => Number((await page.locator('[data-takeoff="zoom"]').innerText()).replace("%", ""));
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await settledOverlayBox();
+    const before = await zoomPct();
+    const b = await canvasBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.wheel(0, 300);
+    await page.waitForTimeout(300);
+    expect(await zoomPct(), "a plain wheel zoomed").toBe(before);
+    expect(await port().evaluate((n) => n.scrollTop), "a plain wheel did not scroll").toBeGreaterThan(0);
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, -100);
+    await page.keyboard.up("Control");
+    await expect.poll(zoomPct).not.toBe(before);
+    const step = (await zoomPct()) / before;
+    expect(step, `one Ctrl+wheel notch zoomed by ${step}`).toBeGreaterThan(1.05);
+    expect(step).toBeLessThan(1.2);
+
+    // 4. SPACE+DRAG PANS, and there is a Hand (H).
+    const left0 = await port().evaluate((n) => n.scrollLeft);
+    // Off any button first: Space on a focused button presses it.
+    await page.locator('[data-takeoff="workspace-job"]').click();
+    await page.keyboard.down("Space");
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 - 120, b.y + b.height / 2, { steps: 4 });
+    await page.mouse.up();
+    await page.keyboard.up("Space");
+    expect(await port().evaluate((n) => n.scrollLeft), "Space+drag did not pan").toBeGreaterThan(left0);
+    await expect(tool("Hand")).toBeVisible();
+    await fitAndSettle();
+
+    // 5. A RECTANGLE BY DRAGGING, read in square feet in its own words.
+    await tool("Rectangle").click();
+    const r = await box();
+    await page.mouse.move(r.x + 0.25 * r.width, r.y + 0.3 * r.width);
+    await page.mouse.down();
+    await page.mouse.move(r.x + 0.45 * r.width, r.y + 0.42 * r.width, { steps: 5 });
+    await page.mouse.up();
+    await expect(page.getByText(/^Rectangle · [\d,]+ sq ft$/)).toBeVisible();
+    await expect(page.getByText(/needs at least 3 points/)).toHaveCount(0);
+    await page.getByRole("button", { name: "Clear", exact: true }).click();
+    await tool("Select").click();
+
+    // 6. QUANTITIES KEEPS THE PANEL, AND THE PLAN DOES NOT MOVE.
+    const canvasBefore = await canvasBox();
+    await page.locator('[data-takeoff="toggle-panel"]').click();
+    await expect(page.locator('[data-takeoff="layers-rail"]')).toBeVisible();
+    await expect(page.locator('[data-takeoff="quantities-section"]')).toBeInViewport();
+    const canvasAfter = await canvasBox();
+    expect(Math.abs(canvasAfter.x - canvasBefore.x) + Math.abs(canvasAfter.width - canvasBefore.width), "the plan moved").toBeLessThan(2);
+
+    // 7. EXPORT CLOSES ON ESC AND ON A CLICK OUTSIDE.
+    const exportMenu = page.getByText("The job’s takeoff, every sheet, as a file.");
+    await page.locator('[data-takeoff="toggle-export"]').click();
+    await expect(exportMenu).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(exportMenu).toHaveCount(0);
+    await page.locator('[data-takeoff="toggle-export"]').click();
+    await expect(exportMenu).toBeVisible();
+    await page.locator('[data-takeoff="workspace-job"]').click();
+    await expect(exportMenu).toHaveCount(0);
+
+    // 8. THE PDF'S TAB IS NAMED FOR THE JOB AND THE SHEET.
+    const pdf = page.locator('[data-takeoff="open-pdf"]');
+    await expect(pdf).toHaveAttribute("href", new RegExp(`^/takeoff/${jobTwo}/pdf\\?page=\\d+$`));
+    const viewer = await page.context().newPage();
+    await viewer.goto((await pdf.getAttribute("href"))!);
+    expect(await viewer.title()).toMatch(new RegExp(`^${JOB_TWO} – `));
+    await viewer.close();
+
+    // 9. THE SCALE LINE SAYS WHAT IT IS, AND HAS A ROW.
+    await expect(overlay().locator('[data-takeoff="scale-line"] title')).toContainText("Scale line");
+    await expect(page.locator('[data-takeoff="layer-row"][data-layer="scale"]')).toHaveCount(1);
+
+    // 10. HINTS IN THE WORKSPACE'S WORDS, AND 11. THE ⋯ SHOWS THE TOOL THAT IS ON.
+    await page.locator('[data-takeoff="rail-more"]').click();
+    await expect(page.getByRole("button", { name: "Exclude like this", exact: true })).toHaveAttribute("title", /^After Run takeoff/);
+    await page.getByRole("button", { name: "Work area", exact: true }).click();
+    await expect(page.locator('[data-takeoff="rail-more"]')).toHaveClass(/bg-brand/);
+    await expect(page.locator('[data-takeoff="rail-more"] svg')).toHaveCount(1);
+    await tool("Select").click();
+    await expect(page.locator('[data-takeoff="rail-more"]')).toHaveText("⋯");
   });
 
   test("14. the phone gets a read-only canvas", async () => {
@@ -972,16 +1139,20 @@ test.describe("the full-screen takeoff workspace", () => {
     await page.getByRole("button", { name: "Rectangle", exact: true }).click();
     await click(0.25, 0.3);
     await click(0.45, 0.42);
-    // The draft reports four points, not two — the second click builds the
-    // corners rather than storing the drag.
-    await expect(page.getByText(/4 points/)).toBeVisible();
+    // The second click builds the four corners rather than storing two
+    // points, so the draft reads as a RECTANGLE with its square feet — its own
+    // words since Chrome's click test, not a point count.
+    await expect(page.getByText(/^Rectangle · [\d,]+ sq ft$/)).toBeVisible();
+    const corners = async () => (await overlay.locator("polygon, polyline").last().getAttribute("points"))?.trim().split(/\s+/).length;
+    expect(await corners(), "the rectangle is not four corners").toBe(4);
 
     // A THIRD click RE-DRAGS the far corner. It must never make a pentagon:
     // the shape is rebuilt from the first click every time, so four points
     // is four points however many times somebody clicks.
     await click(0.5, 0.5);
-    await expect(page.getByText(/4 points/)).toBeVisible();
-    await page.getByRole("button", { name: "Clear" }).click();
+    await expect(page.getByText(/^Rectangle · [\d,]+ sq ft$/)).toBeVisible();
+    expect(await corners(), "a third click made a pentagon").toBe(4);
+    await page.getByRole("button", { name: "Clear", exact: true }).click();
 
     // ── SHIFT LOCKS A LINE STRAIGHT ──
     //
@@ -1018,7 +1189,7 @@ test.describe("the full-screen takeoff workspace", () => {
     const span = Math.abs(Number(b?.split(",")[0]) - Number(a?.split(",")[0]));
     expect(span, `the segment spans ${span} of the page width, not 40/144`).toBeCloseTo(40 / 144, 3);
 
-    await page.getByRole("button", { name: "Clear" }).click();
+    await page.getByRole("button", { name: "Clear", exact: true }).click();
 
     // ── EDIT SELECTS A SAVED SHAPE, AND DELETE REMOVES IT ──
     //
@@ -1211,7 +1382,7 @@ test.describe("the full-screen takeoff workspace", () => {
     // The quantities panel is a RAIL here, not always-on furniture — step 5
     // saw it open because nothing had opened Items over it yet. Opening it
     // explicitly is what makes this step independent of the twenty before it.
-    await setRail("toggle-panel", true);
+    await setPanel(true);
 
     const panel = page.locator('[data-takeoff="found-walls"]');
     await expect(panel, "no quantities panel on S02").toBeVisible({ timeout: 20_000 });
@@ -1274,7 +1445,7 @@ test.describe("the full-screen takeoff workspace", () => {
 
     // ── AND THE GROUPS SORT THEMSELVES UNDER IT ──
     await findTheWalls("S02 with a condition named");
-    await setRail("toggle-panel", true);
+    await setPanel(true);
     await expect(panel).toBeVisible({ timeout: 20_000 });
     await expect(
       panel.getByText("ZZ Detected partition"),
@@ -1293,100 +1464,6 @@ test.describe("the full-screen takeoff workspace", () => {
 
     await expectHealthy(page, "workspace with sectioned proposals", { monitor, signedIn: false });
     await page.screenshot({ path: path.join(SHOTS, "workspace-proposal-sections.png") });
-  });
-
-  test("22. ANSWER-KEY MODE: candidates, not answers", async () => {
-    // ── THE ONE THING THIS MODE MUST NOT DO ──
-    //
-    // Pre-accept the detection. A key that agrees with the detector by
-    // construction is not a key, and the way it would happen is exactly this:
-    // load the findings, mark them accepted, let the reviewer delete what is
-    // wrong. Nobody deletes a hundred rows one at a time.
-    //
-    // `answerKeyReview.ts` holds that rule and is tested at every transition.
-    // What no unit test can see is whether the SCREEN honours it — this repo
-    // has shipped three fixes that were green and never rendered — so this
-    // walks it in a real browser.
-    await page.setViewportSize(DESKTOP);
-    await onWorkspace(jobOne);
-    await findTheWalls("S02 for the answer key");
-
-    // ── SKIPS WHERE LABELLING IS NOT ALLOWED, WHICH IS THIS SUITE ──
-    //
-    // `labellingRefusal` hides answer-key mode entirely unless a label
-    // folder, the local-plans opt-in, a loopback bind and no Vercel all hold.
-    // This suite's server satisfies NONE of that ON PURPOSE —
-    // `answer-key-gate.spec.ts` says so in its header and exists to prove a
-    // customer gets nothing — so the toggle is correctly absent and this test
-    // spent 30 seconds waiting for it.
-    //
-    // I first "fixed" that by giving the suite's server the labelling
-    // environment. That made this test pass and defeated the gate everywhere,
-    // including in the spec written to guard it: the suite stopped resembling
-    // a customer's deployment, which is the one property it has to keep. The
-    // revert is `b6d66318`.
-    //
-    // So this skips instead, and says which condition is missing rather than
-    // vanishing quietly. Answer-key mode is covered on a real labelling
-    // server by `e2e/smoke-labeling.mjs`, which has the environment because
-    // it IS one.
-    const toggle = page.locator('[data-takeoff="toggle-answer-key"]');
-    if ((await toggle.count()) === 0) {
-      test.skip(
-        true,
-        "labelling is not allowed on this server (by design — see answer-key-gate.spec.ts); " +
-          "answer-key mode is covered by e2e/smoke-labeling.mjs",
-      );
-    }
-    await toggle.click();
-    const rail = page.locator('[data-takeoff="answer-key-rail"]');
-    await expect(rail, "the answer-key rail never opened").toBeVisible({ timeout: 20_000 });
-
-    // The rules are ON SCREEN, because a key made under one definition and
-    // graded under another is worse than no key.
-    await expect(rail).toContainText(/CENTRELINE/i);
-    await expect(rail).toContainText(/furniture/i);
-
-    // ── NOTHING IS ACCEPTED YET ──
-    const progress = rail.locator('[data-takeoff="key-progress"]');
-    await expect(progress).toContainText(/\b0 of \d+\b/);
-    const candidates = rail.locator('[data-takeoff="key-candidate"]');
-    const total = await candidates.count();
-    expect(total, "no candidates loaded, so this step proves nothing").toBeGreaterThan(0);
-    // Every one of them is undecided. A single accepted row here would mean
-    // the mode had pre-answered the question it exists to ask.
-    const verdicts = await candidates.evaluateAll((nodes) =>
-      nodes.map((node) => node.getAttribute("data-verdict")),
-    );
-    expect(new Set(verdicts), "something was already decided").toEqual(new Set(["unreviewed"]));
-
-    // ── AND SAVING IS REFUSED UNTIL IT IS SOMEBODY'S JUDGEMENT ──
-    await expect(rail.locator('[data-takeoff="key-save"]')).toBeDisabled();
-
-    // ── ONE DECISION, BY KEYBOARD ──
-    await candidates.first().click();
-    await page.keyboard.press("a");
-    await expect(progress, "accepting a candidate did not move the count").toContainText(
-      /\b1 of \d+\b/,
-    );
-
-    // …and the focus moved on by itself, which is what makes a hundred
-    // decisions bearable.
-    await page.keyboard.press("r");
-    await expect(progress).toContainText(/\b2 of \d+\b/);
-
-    // ── THE RAW DRAWING, WITH EVERYTHING OFF ──
-    await page.locator('[data-takeoff="key-overlays"]').click();
-    await expect(page.locator('[data-takeoff="key-overlay"]')).toHaveCount(0);
-    await page.locator('[data-takeoff="key-overlays"]').click();
-    await expect(page.locator('[data-takeoff="key-overlay"]')).toHaveCount(1);
-
-    // ── AND WITH A NAME, IT CAN BE SAVED ──
-    await rail.locator('[data-takeoff="key-reviewer"]').fill("e2e");
-    await expect(rail.locator('[data-takeoff="key-save"]')).toBeEnabled();
-
-    await expectHealthy(page, "answer-key mode", { monitor, signedIn: false });
-    await page.screenshot({ path: path.join(SHOTS, "workspace-answer-key.png") });
   });
 
 });

@@ -415,7 +415,8 @@ test("X1 Download Excel: Quantities and Sheets tabs, ZZ Troffers as saved", asyn
   test.skip((await excel.count()) === 0, "the takeoff download is not on main yet (diego/takeoff-export-xlsx)");
   const [file] = await Promise.all([page.waitForEvent("download"), excel.click()]);
   const book = XLSX.read(readFileSync(await file.path()));
-  expect(book.SheetNames).toEqual(["Quantities", "Sheets"]);
+  // "Wall groups" since #961: the found groups under the team's names.
+  expect(book.SheetNames).toEqual(["Quantities", "Sheets", "Wall groups"]);
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(book.Sheets.Quantities!);
   // The file must agree with the item it was saved as (A7 says whether that was 26).
   const saved = num((await row.innerText()).match(/([\d,]+) ea/)?.[1] ?? "");
@@ -511,6 +512,23 @@ const SPLIT = { x1: 0.4815, y: 0.306, x2: 0.6018 };
 let joplinWalls = NaN;
 let wholeSf = NaN;
 let wholeFloor = NaN;
+
+// ── CHROME'S CLICK TEST, 2026-11-05: rooms off STORED walls came out unnamed ──
+// Baker A101's walls are stored by the whole-set run (R5-1), so a fresh visit
+// shows them without the finder having read the sheet in this browser, and
+// Find the rooms named none of its rooms though the sheet prints them.
+test("C0 Baker A101, straight from the stored walls: Find the rooms names the rooms the sheet prints", async () => {
+  await sheet("baker", 13);
+  await expect(hook("found-walls").or(hook("layer-row")).first(), "no stored walls on Baker A101 to start from").toBeVisible({ timeout: 60_000 });
+  await openFinders(page);
+  await hook("find-rooms").click();
+  await expect(hook("rooms-panel")).toBeVisible({ timeout: 180_000 });
+  const rows = await roomRows();
+  const named = rows.filter((r) => r.name.trim() !== "");
+  expect(rows.length, "no rooms at all").toBeGreaterThan(0);
+  expect(named.length, `named ${named.length} of ${rows.length}: ${rows.map((r) => r.name || "·").join(", ")}`).toBeGreaterThanOrEqual(Math.min(6, rows.length));
+  expect(named.map((r) => r.name).join(" | ")).toMatch(/CONFERENCE|CALL CENTER|STORAGE|JANITOR/);
+});
 
 test("C1 Find the walls then the rooms: the panel opens itself, about 70 rooms, no renovation prompt", async () => {
   await sheet("joplin", 46);
@@ -725,7 +743,7 @@ test("X2 the Takeoff tab downloads Excel and CSV, named after the job", async ()
   await expectHealthy(page, "baker takeoff tab", { monitor });
   const [xlsx] = await Promise.all([page.waitForEvent("download"), hook("export-xlsx").click()]);
   expect(xlsx.suggestedFilename()).toBe(`${stemOf(job.name)}.xlsx`);
-  expect(XLSX.read(readFileSync(await xlsx.path())).SheetNames).toEqual(["Quantities", "Sheets"]);
+  expect(XLSX.read(readFileSync(await xlsx.path())).SheetNames).toEqual(["Quantities", "Sheets", "Wall groups"]);
   const [csv] = await Promise.all([page.waitForEvent("download"), hook("export-csv").click()]);
   expect(csv.suggestedFilename()).toBe(`${stemOf(job.name)}.csv`);
   expect(readFileSync(await csv.path(), "utf8").split("\n")[0]).toBe("Item,Sheet,Quantity,Unit,Source,Note");

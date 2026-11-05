@@ -795,3 +795,37 @@ model TakeoffPlanTextRead {
 
   @@unique([planId, pageNumber, kind])
 }
+
+/// ── WHAT THE TEAM CALLS A TAKEOFF LAYER ON ONE JOB ──
+///
+/// The full-screen workspace lists each wall group the finder returned as a
+/// layer, named by its type or tag and its thickness ("A1 · 4-7/8″"). A
+/// double-click renames it, and the name belongs to the JOB: everybody on the
+/// team sees it, in the workspace's layer panel and its Quantities detail and
+/// in the export's "Wall groups" tab. Clearing it deletes the row and the
+/// default name comes back.
+///
+/// `groupKey` is the layer's key as the workspace builds it (`layerKeyOf` in
+/// `lib/takeoff/layerKey.ts`): `wall:<thickness to the eighth>:<tag>`, or
+/// `rooms` / `doors`. A key, not a foreign key, because a group is not a row:
+/// it is recomputed from the stored proposals on every load, and the same
+/// thickness and tag on a re-find is the same layer.
+///
+/// CASCADE from the job, unlike `TakeoffItem`: a name means nothing without
+/// its job, and a RESTRICT child here would be one more table both cleanup
+/// scripts must remember (the `InvoiceCounter` entry in CLAUDE.md).
+model TakeoffLayerName {
+  id    String @id @default(cuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  groupKey String
+  name     String
+
+  updatedAt       DateTime @updatedAt
+  /// Who named it last. Nullable, and not a relation: a name outlives the
+  /// person who typed it.
+  updatedByUserId String?
+
+  @@unique([jobId, groupKey])
+}

@@ -1,3 +1,4 @@
+import { storedLegendCodes } from "./planTextRead";
 import { setReviewItems, setReviewOrder, type SetReviewItem } from "@/lib/takeoff/wallReview";
 import { storedRunsOrNull } from "@/lib/takeoff/wallProposal";
 import { DROPPED_LABEL, HELD_LABEL } from "@/lib/takeoff/estimateHold";
@@ -648,6 +649,9 @@ export async function loadTakeoffWorkspace(
     // has turned plan-text reading on, the same switch the keyless sheet
     // names sit behind.
     planTextReadOn: (await aiGate(company.id, "PLAN_TEXT_READ")).ok,
+    // The set's legend codes as stored, for the answer-key type picker (round
+    // 12). No model call: empty until the set's legend has been read.
+    legendCodes: await storedLegendCodes(plan.id),
     // The trained wall model, only for a company whose switch is on: ~80 KB
     // of trees that nobody else's page should carry.
     wallModel: (roomFinder?.demotedWallsOff ?? false) ? null : loadWallModel(process.env),
@@ -661,6 +665,12 @@ export async function loadTakeoffWorkspace(
     rasterPages,
     rasterUrl: `/api/takeoff/raster/${plan.id}`,
     storedWallsByPage,
+    /** The team's names for this job's takeoff layers, by `layerKeyOf`. */
+    layerNames: Object.fromEntries(
+      (await prisma.takeoffLayerName.findMany({ where: { jobId: job.id }, select: { groupKey: true, name: true } })).map(
+        (row) => [row.groupKey, row.name],
+      ),
+    ) as Record<string, string>,
     wallReviewQueue: setReviewOrder(wallReviewItems),
     matchableItems,
     levelByPage,
@@ -811,7 +821,7 @@ export async function takeoffSavedSignature(companyId: string, jobId: string): P
   });
   if (plan === null) return "no-plan";
 
-  const [calibrations, measurements, proposals] = await Promise.all([
+  const [calibrations, measurements, proposals, names] = await Promise.all([
     prisma.takeoffScaleCalibration.aggregate({
       where: { page: { planId: plan.id } },
       _count: { _all: true },
@@ -827,11 +837,15 @@ export async function takeoffSavedSignature(companyId: string, jobId: string): P
       _count: { _all: true },
       _max: { createdAt: true },
     }),
+    // A teammate's rename is a change to this takeoff too, so another open
+    // tab says so rather than showing the old name until somebody reloads.
+    prisma.takeoffLayerName.aggregate({ where: { jobId }, _count: { _all: true }, _max: { updatedAt: true } }),
   ]);
 
   const part = (group: { _count: { _all: number }; _max: { createdAt: Date | null } }) =>
     `${group._count._all}@${group._max.createdAt?.toISOString() ?? "-"}`;
-  return [plan.id, part(calibrations), part(measurements), part(proposals)].join("|");
+  const named = `${names._count._all}@${names._max.updatedAt?.toISOString() ?? "-"}`;
+  return [plan.id, part(calibrations), part(measurements), part(proposals), named].join("|");
 }
 
 /** Every row of the newest DOOR schedule read on each page of the plan, flattened. */

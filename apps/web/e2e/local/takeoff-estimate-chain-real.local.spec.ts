@@ -11,7 +11,7 @@ import { openFinders, openItems } from "../lib/finders";
 /**
  * ── A REAL TRAINING SET'S ROOMS AND CEILINGS, SAVED AND SENT TO THE ESTIMATE ──
  *
- * The same two-page upload as `takeoff-ceilings-real.spec.ts`, carried on:
+ * The same two-page upload as `takeoff-ceilings-real.local.spec.ts`, carried on:
  * the rooms are saved, the items rail shows "Rooms" and one item per
  * ceiling family, the ACT item is sent, and the estimate page is shot before
  * and after. Nothing here is asserted about the drawings' numbers beyond

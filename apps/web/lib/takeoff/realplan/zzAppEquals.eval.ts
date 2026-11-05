@@ -13,7 +13,7 @@ import type { StrokeSegment } from "../wallVectors";
 /**
  * ── THE SAME LIST, COMPUTED IN NODE, AGAINST WHAT THE APP SHOWED ──
  *
- * `e2e/specs/takeoff-app-equals-eval.spec.ts` writes `app-counts.json` with
+ * `e2e/local/takeoff-app-equals-eval.local.spec.ts` writes `app-counts.json` with
  * the candidate count the answer-key panel drew on each sheet at a scale set
  * to exactly 288 ft per page width. This runs `detectForSheet` +
  * `offeredCandidates` on the same PDF, page, scale and template sample, and

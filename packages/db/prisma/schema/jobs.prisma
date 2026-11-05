@@ -182,6 +182,7 @@ model Job {
   media                          JobMedia[]
   takeoffPlans                   TakeoffPlan[]
   takeoffItems                   TakeoffItem[]
+  takeoffLayerNames              TakeoffLayerName[]
 
   /// ── WHEN THIS JOB'S ASSEMBLIES WERE FROZEN, or null ──
   ///

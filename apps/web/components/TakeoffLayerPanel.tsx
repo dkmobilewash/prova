@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { LAYER_NAME_MAX } from "@/lib/takeoff/layerKey";
 
 /**
  * ── THE LAYERS, ONE ROW EACH ──
@@ -12,12 +13,13 @@ import { useEffect, useState } from "react";
  * doors and windows — the groups that exist today. There is no exterior /
  * interior / corridor classification behind them, and a row never claims one.
  *
- * ── A NAME HERE IS ONE PERSON'S LABEL ──
+ * ── A NAME HERE IS THE TEAM'S ──
  *
- * Double-click renames the ROW, in this browser, for this job. It does not
- * touch the wall type in the library (every job using it would change) or the
- * estimate. That is a per-viewer convenience, which is what CLAUDE.md allows
- * `localStorage` for; a name the whole company sees would be a model.
+ * Double-click renames the row for everybody on this job: it is saved as a
+ * `TakeoffLayerName` and shows in this panel, the group's Quantities detail
+ * and the export's "Wall groups" tab. It does not touch the wall type in the
+ * library (every job using it would change) or the estimate. An empty name
+ * goes back to the default.
  */
 
 export type Layer = {
@@ -41,20 +43,11 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "count", label: "Count" },
 ];
 
-const namesKey = (jobId: string) => `prova.takeoff.layerNames.${jobId}`;
-
-function readNames(jobId: string): Record<string, string> {
-  try {
-    const raw = window.localStorage.getItem(namesKey(jobId));
-    return raw === null ? {} : (JSON.parse(raw) as Record<string, string>);
-  } catch {
-    return {};
-  }
-}
-
 export function TakeoffLayerPanel({
   jobId,
   layers,
+  names,
+  onRename,
   lit,
   onLit,
   onToggle,
@@ -64,6 +57,10 @@ export function TakeoffLayerPanel({
 }: {
   jobId: string;
   layers: readonly Layer[];
+  /** The team's saved names, by layer key, as the server last rendered them. */
+  names: Readonly<Record<string, string>>;
+  /** Saves a name for the team; resolves to a sentence when it did not save. */
+  onRename: (key: string, name: string) => Promise<string | null>;
   lit: string | null;
   onLit: (key: string | null) => void;
   onToggle: (key: string) => void;
@@ -77,21 +74,31 @@ export function TakeoffLayerPanel({
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
-  const [names, setNames] = useState<Record<string, string>>({});
   const [renaming, setRenaming] = useState<string | null>(null);
-  // After mount, not in the initialiser: this panel is server-rendered with the
-  // page, and a name only this browser knows would be a hydration mismatch.
-  useEffect(() => setNames(readNames(jobId)), [jobId]);
+  // What was just typed, shown at once while the save goes; the server's
+  // `names` take over when the page re-renders with them. `null` = cleared.
+  const [typed, setTyped] = useState<Record<string, string | null>>({});
+  const [error, setError] = useState<string | null>(null);
+  const nameOf = (layer: Layer) => {
+    const mine = typed[layer.key];
+    return mine === null ? layer.name : (mine ?? names[layer.key] ?? layer.name);
+  };
 
-  function rename(key: string, name: string) {
-    const next = { ...names };
-    if (name.trim() === "") delete next[key];
-    else next[key] = name.trim();
-    setNames(next);
-    try {
-      window.localStorage.setItem(namesKey(jobId), JSON.stringify(next));
-    } catch {
-      // Private window or blocked storage: the name lasts until reload.
+  async function rename(layer: Layer, raw: string) {
+    const name = raw.trim();
+    if (name === nameOf(layer)) return;
+    // Typing the default back is clearing it: the row then follows the group.
+    const value = name === layer.name ? "" : name;
+    setTyped((was) => ({ ...was, [layer.key]: value === "" ? null : value }));
+    setError(null);
+    const problem = await onRename(layer.key, value);
+    if (problem !== null) {
+      setError(problem);
+      setTyped((was) => {
+        const next = { ...was };
+        delete next[layer.key];
+        return next;
+      });
     }
   }
 
@@ -99,7 +106,7 @@ export function TakeoffLayerPanel({
   const shown = layers.filter(
     (layer) =>
       (filter === "all" || layer.kind === filter) &&
-      (needle === "" || (names[layer.key] ?? layer.name).toLowerCase().includes(needle)),
+      (needle === "" || nameOf(layer).toLowerCase().includes(needle)),
   );
 
   return (
@@ -144,6 +151,11 @@ export function TakeoffLayerPanel({
       >
         <span aria-hidden>☰</span> Legend
       </Link>
+      {error !== null && (
+        <p role="alert" className="text-xs text-tag-rose-ink" data-takeoff="layer-rename-error">
+          {error}
+        </p>
+      )}
       <ul className="flex flex-col" data-takeoff="layer-rows">
         {shown.length === 0 && (
           <li className="px-2 py-1.5 text-xs text-ink-muted" data-takeoff="layers-empty">
@@ -169,7 +181,7 @@ export function TakeoffLayerPanel({
                 onToggle(layer.key);
               }}
               aria-pressed={!layer.hidden}
-              aria-label={`${layer.hidden ? "Show" : "Hide"} ${names[layer.key] ?? layer.name}`}
+              aria-label={`${layer.hidden ? "Show" : "Hide"} ${nameOf(layer)}`}
               data-takeoff="layer-eye"
               className="w-4 shrink-0 text-ink-muted hover:text-ink-body"
             >
@@ -182,12 +194,14 @@ export function TakeoffLayerPanel({
               <input
                 autoFocus
                 name="layerName"
-                defaultValue={names[layer.key] ?? layer.name}
+                maxLength={LAYER_NAME_MAX}
+                placeholder={layer.name}
+                defaultValue={nameOf(layer)}
                 aria-label="Layer name"
                 data-takeoff="layer-rename"
                 onClick={(event) => event.stopPropagation()}
                 onBlur={(event) => {
-                  rename(layer.key, event.target.value);
+                  void rename(layer, event.target.value);
                   setRenaming(null);
                 }}
                 onKeyDown={(event) => {
@@ -198,8 +212,12 @@ export function TakeoffLayerPanel({
                 className="min-w-0 flex-1 rounded border border-line-card bg-surface px-1 text-xs text-ink"
               />
             ) : (
-              <span className="min-w-0 flex-1 truncate text-ink" title={layer.name} data-takeoff="layer-name">
-                {names[layer.key] ?? layer.name}
+              <span
+                className="min-w-0 flex-1 truncate text-ink"
+                title={nameOf(layer) === layer.name ? layer.name : `${nameOf(layer)} (${layer.name})`}
+                data-takeoff="layer-name"
+              >
+                {nameOf(layer)}
               </span>
             )}
             <span className="shrink-0 rounded bg-rail px-1 text-[10px] text-ink-muted">{layer.count}</span>
