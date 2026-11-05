@@ -21,7 +21,7 @@ async function titles(pdf: string, pages: number[]): Promise<Map<number, string 
   const plan = await prisma.takeoffPlan.create({ data: { companyId: company.id, jobId: job.id, fileUrl: "local:set.pdf" } });
   const ingest = await prisma.planIngestJob.create({ data: { planId: plan.id, companyId: company.id, stage: "PAGE_INVENTORY", pageCount: Math.max(...pages) } });
   const bytes = readFileSync(pdf);
-  const work = pageInventoryWork({ planId: plan.id, companyId: company.id, ingestJobId: ingest.id, jobId: job.id, startedByUserId: null }, { ...realDeps, readPlanBytes: async () => ({ ok: true as const, bytes }), planTextReadOn: async () => true });
+  const work = pageInventoryWork({ planId: plan.id, companyId: company.id, ingestJobId: ingest.id, jobId: job.id, startedByUserId: null }, { ...realDeps, readPlanBytes: async () => ({ ok: true as const, bytes }), sheetNamesOn: async () => true });
   for (const n of pages) expect((await work({ id: `t${n}`, pageNumber: n, stage: "PAGE_INVENTORY", attempts: 1 })).ok).toBe(true);
   const rows = await prisma.planSheetProposal.findMany({ where: { planId: plan.id }, select: { pageNumber: true, proposedSheetNumber: true, proposedTitle: true } });
   return new Map(rows.map((r) => [r.pageNumber, r.proposedTitle]));

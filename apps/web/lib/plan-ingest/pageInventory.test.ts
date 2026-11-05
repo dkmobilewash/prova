@@ -57,14 +57,14 @@ function deps(over: Partial<PageInventoryDeps> = {}) {
     saveSheetProposal: async (row) => {
       proposals.push(row);
     },
-    planTextReadOn: async () => true,
+    sheetNamesOn: async () => true,
   };
   return { deps: { ...base, ...over }, saved, scales, proposals, openPdf, readPlanBytes: base.readPlanBytes };
 }
 
 describe("naming the sheet without a model", () => {
   it("proposes nothing while the company has not opted into plan-text reading", async () => {
-    const d = deps({ planTextReadOn: async () => false });
+    const d = deps({ sheetNamesOn: async () => false });
     const work = pageInventoryWork(CTX, d.deps);
     expect(await work(task(1))).toEqual({ ok: true });
     expect(d.proposals).toEqual([]);

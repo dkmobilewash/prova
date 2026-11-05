@@ -36,7 +36,7 @@ describe.skipIf(PDF === "" || OUT === "")("view triage over one training set", (
         saveSheetText: async () => {},
         saveScaleReading: async (r) => void readings.set(r.pageNumber, r),
         saveSheetProposal: async (r) => void proposals.set(r.pageNumber, r),
-        planTextReadOn: async () => true,
+        sheetNamesOn: async () => true,
       },
     );
     for (let page = 1; page <= doc.pageCount; page += 1) {
