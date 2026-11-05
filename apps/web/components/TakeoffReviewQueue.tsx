@@ -48,6 +48,9 @@ export function TakeoffReviewQueue({
   };
 
   // A price is set on the estimate, in its own tab: coming back reads the queue again.
+  // ONE tab for the job's estimate, named, so every price lands in it on its
+  // line instead of opening a tab each (new-customer run v2, M5: nine prices,
+  // nine tabs). No `rel`: noopener can stop a browser reusing a named tab.
   const router = useRouter();
   const pricing = useRef(false);
   useEffect(() => {
@@ -175,7 +178,7 @@ export function TakeoffReviewQueue({
               <span>
                 No price · {current.description} · {current.quantity} {current.unit ?? ""}
               </span>
-              <a href={`/jobs/${jobId}/estimate?line=${current.lineItemId}#line-${current.lineItemId}`} target="_blank" rel="noreferrer" onClick={() => (pricing.current = true)} className={button + " inline-flex items-center"} data-takeoff="review-queue-line">
+              <a href={`/jobs/${jobId}/estimate?line=${current.lineItemId}#line-${current.lineItemId}`} target={`estimate-${jobId}`} onClick={() => (pricing.current = true)} className={button + " inline-flex items-center"} data-takeoff="review-queue-line">
                 Open the line ↗
               </a>
             </>
