@@ -10,9 +10,10 @@ import { CATEGORY_LABEL, CATEGORY_ORDER, type PlanSetRow, type ScaleConfidence }
  * The guided flow's Phase 2. Every row is built from what the inventory and the
  * scale reader stored (`lib/takeoff/planSet.ts`). Confirm scales saves every
  * sheet the reader is sure of; the floor plans it is not sure of are listed
- * first, each with its one-click fix, and one press uses the printed scale on
- * all of them. Confirm scales never reaches those, so the panel says they are
- * still to do rather than leaving a confirmed set that has no floor plan in it.
+ * first, each with its one-click fix — the printed scale one sheet at a time,
+ * because nothing on the sheet confirms it. Confirm scales never reaches those,
+ * so the panel says they are still to do rather than leaving a confirmed set
+ * with no floor plan in it.
  */
 const MARK: Record<ScaleConfidence, { word: string; className: string }> = {
   set: { word: "Confirmed", className: "bg-tag-green text-tag-green-ink" },
@@ -29,7 +30,6 @@ export function PlanSetScales({ jobId, planId, rows, reading }: { jobId: string;
   const floors = rows.filter((row) => row.category === "floor");
   const floorsSet = floors.filter((row) => row.confidence === "set").length;
   const toLookAt = floors.filter((row) => row.confidence === "printed" || row.confidence === "none");
-  const printable = toLookAt.filter((row) => row.printedFix && row.scaleName !== null);
   const stillToDo = toLookAt.length === 0 ? "" : ` ${toLookAt.length} floor plan${toLookAt.length === 1 ? " is" : "s are"} still to do, below.`;
 
   function run(pages: number[], usePrinted: boolean) {
@@ -83,20 +83,7 @@ export function PlanSetScales({ jobId, planId, rows, reading }: { jobId: string;
 
       {toLookAt.length > 0 && (
         <div id="plan-set-look" className="mt-4 scroll-mt-4 rounded-md border border-line-card p-3" data-takeoff="plan-set-look">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-ink">Floor plans that need a look ({toLookAt.length})</h3>
-            {printable.length > 1 && (
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => run(printable.map((row) => row.pageNumber), true)}
-                data-takeoff="plan-set-printed-all"
-                className="min-h-[32px] rounded-md bg-brand px-3 text-xs font-semibold text-neutral-900 hover:opacity-90 disabled:opacity-40"
-              >
-                Use the printed scale on all {printable.length}
-              </button>
-            )}
-          </div>
+          <h3 className="text-sm font-semibold text-ink">Floor plans that need a look ({toLookAt.length})</h3>
           <ul className="mt-2 flex flex-col gap-2">
             {toLookAt.map((row) => (
               <li key={row.pageNumber} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm" data-takeoff="plan-set-fix" data-page={row.pageNumber}>

@@ -117,7 +117,6 @@ test.describe("the plan set and its scales", () => {
     await expect(fix(1)).toHaveCount(0);
     // Confirm says what it covers, and that the floor plans are their own.
     await expect(panel().locator('[data-takeoff="plan-set-covers"]')).toHaveText("Confirm covers the 1 sheet the reader is sure of. The 3 floor plans below need their own.");
-    await expect(panel().locator('[data-takeoff="plan-set-printed-all"]')).toHaveText("Use the printed scale on all 2");
     await panel().screenshot({ path: path.join(SHOTS, "plan-set-before.png") });
   });
 
@@ -144,13 +143,13 @@ test.describe("the plan set and its scales", () => {
     await expect(panel().locator('[data-takeoff="plan-set-to-do"]')).toHaveAttribute("href", "#plan-set-look");
   });
 
-  test("5. the printed-scale fix on every floor plan that has one, in one click", async () => {
-    await panel().locator('[data-takeoff="plan-set-printed-all"]').click();
-    await expect(row(2)).toHaveAttribute("data-confidence", "set");
-    await expect(row(6)).toHaveAttribute("data-confidence", "set");
-    await expect(fix(2)).toHaveCount(0);
-    await expect(fix(6)).toHaveCount(0);
-    await expect(panel().locator('[data-takeoff="plan-set-message"]')).toHaveText("2 scales confirmed.");
+  test("5. the printed-scale fix, in one click a sheet, and the count still to do follows", async () => {
+    for (const pageNumber of [2, 6]) {
+      await fix(pageNumber).getByRole("button", { name: /Use the printed scale/ }).click();
+      await expect(row(pageNumber)).toHaveAttribute("data-confidence", "set");
+      await expect(fix(pageNumber)).toHaveCount(0);
+    }
+    await expect(panel().locator('[data-takeoff="plan-set-message"]')).toHaveText("1 scale confirmed.");
     await expect(panel().locator('[data-takeoff="plan-set-to-do"]')).toHaveText("1 floor plan still to do ↓");
     const note = (await prisma.takeoffScaleCalibration.findFirstOrThrow({ where: { page: { planId, pageNumber: 2 } }, select: { note: true } })).note;
     expect(note).toMatch(/^From the 1\/4" = 1'-0" printed on this sheet/);
