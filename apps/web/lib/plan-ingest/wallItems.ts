@@ -3,7 +3,7 @@ import { nextItemColor } from "@/lib/takeoff/itemColors";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
 import { settledType, verdictFor, type WallGroup } from "@/lib/takeoff/wallGroups";
-import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
+import { familyOf, type MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
 
 /**
@@ -114,7 +114,14 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
 }
 
 async function itemForType(tx: Prisma.TransactionClient, companyId: string, jobId: string, type: MatchableWallType, row: { defaultHeightFt: unknown; sides: number | null }): Promise<string> {
-  const found = await tx.takeoffItem.findFirst({ where: { jobId, companyId, wallTypeId: type.id }, select: { id: true } });
+  // A variant (C6 of family C) gets its own item under its full code, priced
+  // with the family's assembly — so the family's item is found by its name
+  // first, and never falls back onto a variant's.
+  const onType = await tx.takeoffItem.findMany({ where: { jobId, companyId, wallTypeId: type.id }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } });
+  const variantItem = (name: string) => /^(.*) walls$/.test(name) && familyOf(name.replace(/ walls$/, ""), [type.code]) !== null;
+  const found =
+    onType.find((i) => i.name === `${type.code} walls`) ??
+    (type.family === undefined ? onType.find((i) => !variantItem(i.name)) : undefined);
   if (found) return found.id;
   const existing = await tx.takeoffItem.findMany({ where: { jobId }, select: { colorHex: true, sortOrder: true }, orderBy: { sortOrder: "desc" } });
   const item = await tx.takeoffItem.create({
