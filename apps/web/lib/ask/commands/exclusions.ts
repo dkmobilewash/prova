@@ -376,11 +376,6 @@ export const notYetRegistered: Exclusion[] = [
   // more considered than a blank field, which is worse. Reading waivers
   // can be a tool; writing one is the billing tab.
   {
-    action: "createLienWaiver",
-    reason:
-      "A waiver gives up money and lien rights in writing. Its excepted amount is the one figure the app deliberately refuses to fill in for anybody (lib/lien-waiver.ts), and a model proposing one on a confirm card is that refusal routed around. Issued on the job's billing tab by a person. Never a command.",
-  },
-  {
     action: "updateLienWaiver",
     reason:
       "Correcting a waiver is the same judgement as issuing one — the form, the through date and the exceptions are what it gives up. Done on the billing tab, where the retainage and change-order figures are on screen beside it. Never a command.",

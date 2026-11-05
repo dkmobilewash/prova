@@ -340,3 +340,28 @@ export function relativeToToday(day: string, today: string): string {
   const unit = n === 1 ? "day" : "days";
   return days < 0 ? `${n} ${unit} ago` : `in ${n} ${unit}`;
 }
+
+/**
+ * The PERIOD TO of a billing period the person named: "October" or
+ * "October 2026" is that month's last day; a bare month is the most recent
+ * one not after today's month, because a bill is for work already done
+ * ("bill Fulton for October", said in November, is this October). Anything
+ * else must parse as an exact day through `parseDateWords`, or it is null
+ * and the command asks.
+ */
+export function periodEndFromWords(text: string | undefined, today: string): string | null {
+  const words = (text ?? "").trim().toLowerCase().replace(/^(?:for|through|thru|to|the month of)\s+/, "").replace(/[.,]/g, "");
+  const monthOnly = /^([a-z]+)(?:\s+(\d{4}))?$/.exec(words);
+  if (monthOnly && MONTHS[monthOnly[1]]) {
+    const month = MONTHS[monthOnly[1]];
+    const [thisYear, thisMonth] = today.split("-").map(Number);
+    const year = monthOnly[2] ? Number(monthOnly[2]) : month > thisMonth ? thisYear - 1 : thisYear;
+    const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return `${year}-${String(month).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+  }
+  // A month-day already past this year is THIS year's, for the same reason:
+  // nobody bills for a period that has not happened.
+  const day = parseDateWords(text, today);
+  if (day?.kind === "on") return day.day;
+  return day?.kind === "which-year" ? day.thisYear : null;
+}

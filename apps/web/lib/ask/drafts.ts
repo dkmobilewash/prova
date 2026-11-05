@@ -201,3 +201,39 @@ export async function loadPurchaseOrderDraft(
   if (str(found.draft, "jobId") !== jobId || !lineItemId || !vendorId || !quantity) return { kind: "gone" };
   return { kind: "draft", draft: { proposalId, lineItemId, vendorId, quantity } };
 }
+
+/** The Billing tab's three prefills. One loader because one page owns all
+ * three forms; `form` says which opens. The waiver carries no exception
+ * field at all — the form starts it empty (lib/ask/commands/lienWaivers.ts). */
+export type BillingDraft =
+  | { form: "pay_application"; proposalId: string; periodTo: string }
+  | { form: "retainage"; proposalId: string; amount: string | null; periodTo: string | null }
+  | { form: "waiver"; proposalId: string; invoiceId: string; amount: number; throughDate: string | null; stage: "PROGRESS" | "FINAL" };
+
+export const BILLING_TAB_COMMANDS = ["start_pay_application", "bill_retainage", "prepare_lien_waiver"] as const satisfies readonly CommandName[];
+
+export async function loadBillingDraft(
+  viewer: Viewer,
+  proposalId: string | undefined,
+  jobId: string,
+): Promise<DraftLookup<BillingDraft>> {
+  const found = await loadDraftRow(viewer, proposalId, BILLING_TAB_COMMANDS);
+  if (found.kind !== "draft" || !proposalId) return found as DraftLookup<BillingDraft>;
+  const p = found.draft;
+  if (str(p, "jobId") !== jobId) return { kind: "gone" };
+  const form = str(p, "form");
+  if (form === "pay_application") {
+    const periodTo = str(p, "periodTo");
+    return periodTo ? { kind: "draft", draft: { form, proposalId, periodTo } } : { kind: "gone" };
+  }
+  if (form === "retainage") {
+    return { kind: "draft", draft: { form, proposalId, amount: str(p, "amount"), periodTo: str(p, "periodTo") } };
+  }
+  if (form === "waiver") {
+    const invoiceId = str(p, "invoiceId");
+    const stage = str(p, "stage");
+    if (!invoiceId || typeof p.amount !== "number" || (stage !== "PROGRESS" && stage !== "FINAL")) return { kind: "gone" };
+    return { kind: "draft", draft: { form, proposalId, invoiceId, amount: p.amount, throughDate: str(p, "throughDate"), stage } };
+  }
+  return { kind: "gone" };
+}
