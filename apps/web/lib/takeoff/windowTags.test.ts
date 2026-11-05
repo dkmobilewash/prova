@@ -35,6 +35,18 @@ describe("windows counted by tag", () => {
     expect(got.windows[0]).toMatchObject({ tag: "W1", frame: 0, x: 0.31, y: 0.2 });
   });
 
+  it("reads one symbol once when one reading has a leader and the other does not (Bunkie W2)", () => {
+    const withLeader = { ...tag("W2", 30, 23), leader: { x: 330, y: 205 } } as TagSymbol;
+    const got = run([withLeader, tag("W2", 30.3, 23)], { frames: [frame(33)] });
+    expect(got.windows).toHaveLength(1);
+    // Two tags of one type side by side are still two windows.
+    expect(run([tag("W2", 10, 23), tag("W2", 20, 23)]).windows).toHaveLength(2);
+  });
+
+  it("leaves windows to check where the set has a schedule but this sheet has no tag", () => {
+    expect(run([]).counted).toBe(false);
+  });
+
   it("puts an unframed tag's window on the nearest wall, and never counts a frame with no tag", () => {
     const got = run([tag("W1", 30, 23)], { frames: [frame(70)] });
     expect(got.windows).toHaveLength(1);

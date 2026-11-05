@@ -93,13 +93,16 @@ export function windowsByTag(input: {
   const windows: TaggedWindow[] = [];
   // Where each counted tag was READ — not where its window was placed, which
   // is a frame's middle and says nothing about a second reading of the symbol.
-  const read: { tag: string; x: number; y: number }[] = [];
+  const read: { tag: string; x: number; y: number; cx: number; cy: number; r: number }[] = [];
   for (const s of input.symbols.filter(isTag)) {
     const tag = normaliseTag(s.text);
     // Where the tag points: its leader's end when it has one, else its centre.
     const at = s.leader ? { x: s.leader.x / W, y: s.leader.y / W } : { x: s.x / W, y: s.y / W };
-    if (read.some((r) => r.tag === tag && Math.hypot(r.x - at.x, r.y - at.y) <= same)) continue;
-    read.push({ tag, ...at });
+    // One symbol read twice — Bunkie's W2, once with its leader and once
+    // without — points to two places but has one centre.
+    const c = { cx: s.x / W, cy: s.y / W, r: s.radius / W };
+    if (read.some((r) => r.tag === tag && (Math.hypot(r.x - at.x, r.y - at.y) <= same || Math.hypot(r.cx - c.cx, r.cy - c.cy) <= Math.max(r.r, c.r)))) continue;
+    read.push({ tag, ...at, ...c });
     let frame: number | null = null, best = reachFrame;
     input.frames.forEach((f, i) => {
       if (usedFrames.has(i)) return;
@@ -119,6 +122,8 @@ export function windowsByTag(input: {
     if (place === null) continue;
     windows.push({ tag, ...place, row: rowOf.get(tag) ?? null, frame });
   }
+  // A schedule with no tag read on this sheet is not a count of zero windows.
+  if (windows.length === 0) return { counted: false, vocabulary: null, windows: [], byTag: [] };
   const order = [...new Set([...rowOf.keys(), ...windows.map((w) => w.tag)])].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   const byTag = order
     .map((tag) => ({ tag, count: windows.filter((w) => w.tag === tag).length, row: rowOf.get(tag) ?? null }))
