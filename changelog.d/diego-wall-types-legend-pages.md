@@ -1,5 +1,5 @@
 ### A legend that spans pages is read as one legend, and every set's legend has now been read (Diego)
-`diego/wall-types-legend-reads`
+`diego/wall-types-legend-pages`
 
 The WALL_LEGEND stage saves one proposal per page, and the stored legend
 (`planTextRead.ts` `legendFromProposal`) took only the NEWEST of them. Most
