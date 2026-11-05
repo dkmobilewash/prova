@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { EXAMPLES, isInstruction } from "./askExamples";
+import { EXAMPLES, WORKFLOW_EXAMPLES, isInstruction } from "./askExamples";
 import { SYSTEM_PROMPT } from "@/lib/ask/answer";
+import { COMMANDS } from "@/lib/ask/commands";
 
 /**
  * The ask box can do sixteen things and used to advertise none of them.
@@ -55,5 +56,41 @@ describe("the prompt tells the assistant to name what it CAN do", () => {
     expect(SYSTEM_PROMPT).toMatch(/does not relax the paragraph above/i);
     // And the original rule must still be there, unweakened.
     expect(SYSTEM_PROMPT).toMatch(/do not approximate from something adjacent/i);
+  });
+});
+
+describe("what you can say, by workflow", () => {
+  it("names only commands the registry actually holds", () => {
+    // CommandName already makes a made-up name a type error; this is the
+    // runtime half, in case a name is still in the union after its
+    // definition left COMMANDS.
+    const registered = new Set(COMMANDS.map((c) => c.name));
+    for (const group of WORKFLOW_EXAMPLES) {
+      for (const example of group.examples) {
+        expect(registered.has(example.command), `${example.say} -> ${example.command}`).toBe(true);
+      }
+    }
+  });
+
+  it("covers the six workflows, two examples each", () => {
+    expect(WORKFLOW_EXAMPLES.map((g) => g.workflow)).toEqual([
+      "Change orders",
+      "Purchase orders",
+      "Pay apps & retainage",
+      "Lien waivers",
+      "Takeoff",
+      "Estimate",
+    ]);
+    for (const group of WORKFLOW_EXAMPLES) expect(group.examples, group.workflow).toHaveLength(2);
+  });
+
+  it("are instructions, short, and never repeat a flat chip", () => {
+    for (const group of WORKFLOW_EXAMPLES) {
+      for (const { say } of group.examples) {
+        expect(isInstruction(say), say).toBe(true);
+        expect(say.length, say).toBeLessThanOrEqual(64);
+        expect(EXAMPLES as readonly string[], say).not.toContain(say);
+      }
+    }
   });
 });

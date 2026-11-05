@@ -18,7 +18,7 @@ import {
   summarizeQuestion,
   type TranscriptEntry,
 } from "@/lib/ask/transcript";
-import { EXAMPLES } from "@/components/askExamples";
+import { EXAMPLES, WORKFLOW_EXAMPLES } from "@/components/askExamples";
 import { ASK_PREFILL_EVENT, takePendingAsk } from "@/lib/empty-state-events";
 import type { AskRequest, AskStreamEvent, ClarifyView, ProposalView } from "@/lib/ask/answer";
 import type { Citation, ItemLink } from "@/lib/ask/tools";
@@ -1400,6 +1400,47 @@ export function AskPanel({
               {thread ? "New conversation" : "Ask something else"}
             </button>
           )}
+        </div>
+      )}
+
+      {!hasResult && !isAsking && (
+        <div className="mb-3" data-ask="what-you-can-say">
+          <p className="text-xs font-semibold text-ink">What you can say</p>
+          {/* The mic is named only where the mic button exists, for the
+              reason the button itself is conditional: a hint pointing at
+              nothing reads as broken. */}
+          <p className="mt-0.5 text-xs text-ink-muted">
+            {canDictate
+              ? "Tap one, then tap the mic and say the job. Or say the whole thing."
+              : "Tap one, add the job, and send."}
+          </p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            {WORKFLOW_EXAMPLES.map((group) => (
+              <section key={group.workflow} aria-label={group.workflow}>
+                <h3 className="text-xs text-ink-muted">{group.workflow}</h3>
+                <ul className="mt-1 flex flex-wrap gap-2">
+                  {group.examples.map((example) => (
+                    <li key={example.say}>
+                      <button
+                        type="button"
+                        // Fills, never sends: the chip names no job (see
+                        // WORKFLOW_EXAMPLES). The trailing space is where
+                        // " on Riverside" goes.
+                        onClick={() => {
+                          setQuestion(`${example.say} `);
+                          inputRef.current?.focus();
+                        }}
+                        className="rounded-full border border-line-card px-3 py-1 text-left text-xs text-ink-body hover:border-link hover:text-link"
+                      >
+                        {example.say}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+          <h3 className="mt-3 text-xs text-ink-muted">Or ask</h3>
         </div>
       )}
 
