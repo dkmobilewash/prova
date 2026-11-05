@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { jobSteps, type JobStepFacts } from "./job-steps";
 
-const base: JobStepFacts = { jobId: "j1", hasPlan: false, scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0, measurements: 0, wallsToConfirm: 0, lineItemCount: 0, unpricedLines: 0, signatureStatuses: [] };
+const base: JobStepFacts = { jobId: "j1", hasPlan: false, scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0, measurements: 0, wallsToConfirm: 0, lineItemCount: 0, unpricedLines: 0, signatureStatuses: [], markupNeeded: false };
 const states = (facts: Partial<JobStepFacts>) => jobSteps({ ...base, ...facts }).steps.map((s) => `${s.key}:${s.state}`).join(" ");
 
 describe("a job's estimating steps", () => {
@@ -64,5 +64,15 @@ describe("a job's estimating steps", () => {
       ["takeoff", "/takeoff/j1"],
       ["review", "/takeoff/j1?open=review"],
     ]);
+  });
+
+  it("ESTIMATE IS NOT DONE WHILE A NEW COMPANY'S MARKUP IS UNSET, and Next says so once every line is priced", () => {
+    const priced = { ...base, hasPlan: true, scaledSheets: 1, measurements: 3, lineItemCount: 2 };
+    expect(states({ ...priced, markupNeeded: true })).toContain("estimate:current");
+    expect(jobSteps({ ...priced, markupNeeded: true }).next).toEqual({ label: "Set your markup", href: "/jobs/j1/estimate", newTab: false });
+    // Unpriced lines still come first: pricing is the bigger job.
+    expect(jobSteps({ ...priced, unpricedLines: 1, markupNeeded: true }).next?.label).toBe("Price 1 line on the estimate");
+    // The control: the same job with markup set is past Estimate.
+    expect(states({ ...priced, markupNeeded: false })).toContain("estimate:done");
   });
 });

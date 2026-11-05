@@ -14,6 +14,7 @@ import { PhaseCodeField } from "@/components/PhaseCodeField";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ApplyEstimateTemplate } from "@/components/ApplyEstimateTemplate";
 import { dominantTradeScope } from "@/lib/estimate-templates";
+import { markupNeeded } from "@/lib/trade-presets";
 import { MarkContractedButton } from "@/components/MarkContractedButton";
 import { ChangeOrders, type ChangeOrderView } from "@/components/ChangeOrders";
 import { TRADE_SCOPE_OPTIONS, PriceBasisBadge, LaborCostHint, ProductionBackCheckHint } from "@/components/JobEstimateHelpers";
@@ -848,6 +849,19 @@ export default async function JobEstimatePage({
 
       {isEstimateStage ? (
         <>
+          {/* Guided flow Phase 5: a company asked its trade at signup owes its
+              own markup until all four figures are set. Never shown to a
+              company that predates the question (lib/trade-presets.ts). */}
+          {markupNeeded(company, bidDefaults) && (
+            <div role="status" data-estimate="set-markup" className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-brand bg-surface px-4 py-3">
+              <p className="text-sm text-ink">
+                <span className="font-semibold">Set your markup.</span> Material, labor, overhead and profit aren&apos;t all set, so this estimate&apos;s price carries none of them yet.
+              </p>
+              <Link href="/settings#bid-defaults" className="text-sm font-semibold text-link hover:underline">
+                Set your markup →
+              </Link>
+            </div>
+          )}
           <div className="mb-6 flex justify-end">{proposalLink}</div>
 
           <section className="mb-10" data-tour="job-line-items">

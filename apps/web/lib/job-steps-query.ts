@@ -1,6 +1,7 @@
 import { prisma } from "@prova/db";
 import { HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import type { JobStepFacts } from "@/lib/job-steps";
+import { markupNeeded } from "@/lib/trade-presets";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
 import { sheetCategory } from "@/lib/takeoff/planSet";
@@ -18,7 +19,7 @@ export async function loadJobStepFacts(companyId: string, jobId: string): Promis
     select: { id: true },
   });
   const onPlan = plan === null ? null : { page: { planId: plan.id } };
-  const [scaledPages, sheetRows, measurements, wallsToConfirm, lineItemCount, unpricedLines, signatures] = await Promise.all([
+  const [scaledPages, sheetRows, measurements, wallsToConfirm, lineItemCount, unpricedLines, signatures, company, bidDefaults] = await Promise.all([
     plan === null ? [] : prisma.takeoffPlanPage.findMany({ where: { planId: plan.id, calibrations: { some: {} } }, select: { pageNumber: true } }),
     plan === null ? [] : sheetIndexFor(plan.id, companyId),
     onPlan === null ? 0 : prisma.takeoffMeasurement.count({ where: onPlan }),
@@ -26,6 +27,8 @@ export async function loadJobStepFacts(companyId: string, jobId: string): Promis
     prisma.jobLineItem.count({ where: { jobId, job: { companyId }, isDeleted: false } }),
     prisma.jobLineItem.count({ where: { jobId, job: { companyId }, isDeleted: false, unitPrice: null, budgetedUnitCost: null } }),
     prisma.signatureRequest.findMany({ where: { jobId, job: { companyId } }, select: { status: true } }),
+    prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { tradePresetAskedAt: true } }),
+    prisma.companyBidDefaults.findUnique({ where: { companyId } }),
   ]);
   const scaled = new Set(scaledPages.map((row) => row.pageNumber));
   const floors = sheetRows
@@ -42,5 +45,6 @@ export async function loadJobStepFacts(companyId: string, jobId: string): Promis
     lineItemCount,
     unpricedLines,
     signatureStatuses: signatures.map((row) => row.status),
+    markupNeeded: markupNeeded(company, bidDefaults),
   };
 }

@@ -58,6 +58,8 @@ export type JobStepFacts = {
   /** Lines with neither a price nor a cost. */
   unpricedLines: number;
   signatureStatuses: string[];
+  /** Asked its trade at signup and its own markup still not all set (`markupNeeded`). */
+  markupNeeded: boolean;
 };
 export type JobNext = { label: string; href: string; newTab: boolean } | null;
 
@@ -81,7 +83,7 @@ export function jobSteps(facts: JobStepFacts): { steps: JobStep[]; next: JobNext
     scale: facts.floorPlans > 0 ? facts.floorPlansScaled === facts.floorPlans : facts.scaledSheets > 0,
     takeoff: facts.measurements > 0,
     review: facts.measurements > 0 && facts.wallsToConfirm === 0,
-    estimate: stage !== "NEEDS_PRICING" && facts.unpricedLines === 0,
+    estimate: stage !== "NEEDS_PRICING" && facts.unpricedLines === 0 && !facts.markupNeeded,
     send: stage === "OUT_FOR_SIGNATURE" || stage === "SIGNED",
   };
   const where: Record<JobStepKey, { href: string; newTab: boolean }> = {
@@ -129,7 +131,9 @@ export function jobSteps(facts: JobStepFacts): { steps: JobStep[]; next: JobNext
     estimate:
       facts.lineItemCount === 0
         ? "Put the takeoff on the estimate"
-        : `Price ${facts.unpricedLines} ${facts.unpricedLines === 1 ? "line" : "lines"} on the estimate`,
+        : facts.unpricedLines > 0
+          ? `Price ${facts.unpricedLines} ${facts.unpricedLines === 1 ? "line" : "lines"} on the estimate`
+          : "Set your markup",
     send: "Send it for signature",
   };
   const goes = key === "estimate" && facts.lineItemCount === 0 ? { href: workspace, newTab: true } : where[key];
