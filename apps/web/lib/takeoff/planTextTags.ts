@@ -173,12 +173,6 @@ export function planTextTagByRun(input: {
   const shape = [...byShape].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
   const fromSymbols = tagsFromSymbols({ symbols, legendCodes: codes, shape, walls, feetPerUnit, widthPt });
-  const bare = bareTextTags({ text, vocabulary: new Set(vocabulary.keys()), symbols, walls, feetPerUnit, widthPt });
-  const bareTags: WallTypeTag[] = bare.map((b) => ({
-    name: vocabulary.get(b.text.toUpperCase()) ?? b.text.toUpperCase(),
-    x: b.x,
-    y: b.y,
-  }));
 
   const asLegend = (tag: WallTypeTag): WallTypeTag =>
     shortForm && short !== null ? { ...tag, name: short.get(tag.name.toUpperCase()) ?? tag.name } : tag;
@@ -194,11 +188,19 @@ export function planTextTagByRun(input: {
   // number printed within a third of an inch of a text tag makes it a callout.
   const near = (0.35 * 72) / widthPt;
   const sheetRefs = text.filter((i) => SHEET_REFERENCE.test(i.str.replace(/[\s/]+/g, "").toUpperCase())).map((i) => ({ x: (i.x + i.width / 2) / widthPt, y: (i.y - i.height / 2) / widthPt }));
+  const callout = (t: { x: number; y: number }) => sheetRefs.some((r) => Math.hypot(r.x - t.x, r.y - t.y) <= near);
   const loose = textTags.filter(
-    (t) =>
-      !rejectedAt.some((s) => Math.hypot(s.x / widthPt - t.x, s.y / widthPt - t.y) <= (s.radius / widthPt) * 1.2) &&
-      !sheetRefs.some((r) => Math.hypot(r.x - t.x, r.y - t.y) <= near),
+    (t) => !rejectedAt.some((s) => Math.hypot(s.x / widthPt - t.x, s.y / widthPt - t.y) <= (s.radius / widthPt) * 1.2) && !callout(t),
   );
+  // The same holds for a bare tag: Grand Junction's section bubble "A3 / A112"
+  // is a circle with a pointer that never closes as a symbol, so its "A3" came
+  // through here as a wall tag and typed a 91 ft brick wall A3.
+  const bare = bareTextTags({ text, vocabulary: new Set(vocabulary.keys()), symbols, walls, feetPerUnit, widthPt }).filter((b) => !callout(b));
+  const bareTags: WallTypeTag[] = bare.map((b) => ({
+    name: vocabulary.get(b.text.toUpperCase()) ?? b.text.toUpperCase(),
+    x: b.x,
+    y: b.y,
+  }));
   const direct = tagByRun(walls, [...fromSymbols.tags.map(asLegend), ...bareTags, ...loose], feetPerUnit, wallTypes);
   const carried = propagateTypes({ walls, tagged: direct, feetPerUnit, defaultCode: null });
   const byRun = new Map<WallCandidate, string>(direct);
