@@ -40,7 +40,11 @@ export type WallGroupTypeInput = {
 };
 
 export async function setWallGroupType(jobId: string, input: WallGroupTypeInput): Promise<ActionResult> {
-  return typeGroup(jobId, input, null);
+  const context = await requireCompanyContext();
+  // The takeoff tab's capability, as its other writes. Adding a NEW type to
+  // the library is still estimating's, and `addWallTypeFromLegend` says so.
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  return typeGroup(context, jobId, input, null);
 }
 
 /**
@@ -53,16 +57,15 @@ export async function setWallGroupType(jobId: string, input: WallGroupTypeInput)
  * items the runs left and joined follow (`syncReviewedItems`).
  */
 export async function confirmWallGroup(jobId: string, input: WallGroupTypeInput & { heightFt: number | null }): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const heightFt = input.heightFt;
   if (heightFt !== null && (!Number.isFinite(heightFt) || heightFt <= 0 || heightFt >= 100)) return actionFail("A wall height is a number of feet between 0 and 100.");
-  return typeGroup(jobId, input, heightFt);
+  return typeGroup(context, jobId, input, heightFt);
 }
 
-async function typeGroup(jobId: string, input: WallGroupTypeInput, heightFt: number | null): Promise<ActionResult> {
-  const context = await requireCompanyContext();
-  // The takeoff tab's capability, as its other writes. Adding a NEW type to
-  // the library is still estimating's, and `addWallTypeFromLegend` says so.
-  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+/** Both actions' work, after each has checked the capability itself. */
+async function typeGroup(context: Awaited<ReturnType<typeof requireCompanyContext>>, jobId: string, input: WallGroupTypeInput, heightFt: number | null): Promise<ActionResult> {
   const companyId = context.company.id;
   const code = String(input.code ?? "").trim().toUpperCase();
   const runs = Array.isArray(input.runs) ? input.runs.filter((r) => [r.x1, r.y1, r.x2, r.y2].every(Number.isFinite)) : [];
