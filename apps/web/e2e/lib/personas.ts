@@ -295,6 +295,23 @@ export const PERSONAS = {
     // once — see the note on PLAN_INGEST's number just above.
     phone: "+15555550122",
   },
+  /**
+   * ── A BRAND-NEW COMPANY, EVERY RUN ──
+   *
+   * Signs in nowhere else, so on the suite's throwaway database its first
+   * sign-in creates a company with nothing in it: no GCs, no wall types, no
+   * jobs. That is the state the new-job walkthrough and the job stepper are
+   * about, and sharing a persona would hand them somebody else's rows.
+   */
+  newJob: {
+    email: "e2e-newjob+clerk_test@example.com",
+    label: "NEW_JOB",
+    username: "e2e_newjob",
+    // 0173, not 0123: 0123 is already on another account on the development
+    // instance (Clerk answered `form_identifier_exists` in global setup), most
+    // likely a persona on another branch. This table cannot see those.
+    phone: "+15555550173",
+  },
 } as const;
 
 export type PersonaKey = keyof typeof PERSONAS;
