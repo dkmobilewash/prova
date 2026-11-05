@@ -105,7 +105,7 @@ export function PlanSetScales({ jobId, planId, rows, reading }: { jobId: string;
             )}
           </div>
           {listing && (
-            <div className="mt-2 rounded-md bg-surface-card p-2" data-takeoff="plan-set-printed-list">
+            <div className="mt-2 rounded-md bg-rail p-2" data-takeoff="plan-set-printed-list">
               <p className="text-xs text-ink-body">These {printable.length} floor plans get the scale printed in their title block. Nothing on them confirms it, so check it against a dimension once you measure.</p>
               <ul className="mt-1 flex flex-col gap-0.5 text-xs">
                 {printable.map((row) => (

@@ -67,10 +67,13 @@ describe("Confirm scales", () => {
     expect(await saved()).toEqual([[1, 72]]);
   });
 
-  it("the printed fix: one page, and only one whose title block is all there is", async () => {
-    expect((await confirmSheetScales(jobId, planId, [2, 3], true)).ok).toBe(false);
+  it("the printed fix, on several pages at once: only those whose title block is all there is, each set once", async () => {
+    // Page 3 read no scale at all, so the printed fix is not its to take.
     expect(await confirmSheetScales(jobId, planId, [3], true)).toEqual({ ok: true, value: { confirmed: 0, skipped: 1 } });
-    expect(await confirmSheetScales(jobId, planId, [2], true)).toEqual({ ok: true, value: { confirmed: 1, skipped: 0 } });
+    expect(await confirmSheetScales(jobId, planId, [2, 3], true)).toEqual({ ok: true, value: { confirmed: 1, skipped: 1 } });
+    expect(await saved()).toEqual([[1, 72], [2, 144]]);
+    // Pressed again: page 2 has its scale now, so nothing is written over it.
+    expect(await confirmSheetScales(jobId, planId, [2, 3], true)).toEqual({ ok: true, value: { confirmed: 0, skipped: 2 } });
     expect(await saved()).toEqual([[1, 72], [2, 144]]);
   });
 
