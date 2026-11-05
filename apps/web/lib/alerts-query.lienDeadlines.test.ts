@@ -52,6 +52,7 @@ vi.mock("@prova/db", () => ({
     employerBurdenRate: { findMany: empty },
     job: { findMany: empty },
     alertAcknowledgement: { findMany: empty },
+    askProposal: { findMany: empty },
     contactInteraction: { findMany: empty },
     documentIntake: { findMany: empty },
     rfi: { findMany: empty },

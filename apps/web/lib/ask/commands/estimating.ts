@@ -642,7 +642,6 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "saveTakeoffMeasurements", reason: "Adding a group of found walls is a decision made by LOOKING at them drawn on the sheet — the whole safety of the wall finder is that a wrong line is visible on a drawing somebody is reading. A model has not seen the drawing, so it cannot make the only check that matters." },
   { action: "deleteTakeoffMeasurement", reason: "Deletes are never commands (T5)." },
   { action: "rescaleTakeoffMeasurements", reason: "Moving quantities onto a corrected scale needs the before-and-after figures on screen, which is the page's job." },
-  { action: "postTakeoffMeasurements", reason: "Posting takes ids of shapes picked on the sheet; the picking is the decision and it happens on the drawing." },
   // createBidInvitation left this list in phase 4c: registered as
   // log_bid_invitation in commands/bids.ts, DIRECT over the lifted core
   // in lib/estimating/bid-invitation.ts.
