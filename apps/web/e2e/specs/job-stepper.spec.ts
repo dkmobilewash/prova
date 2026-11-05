@@ -137,7 +137,12 @@ test.describe("the job stepper", () => {
   test("5. something taken off: Takeoff and Review done, Estimate current", async () => {
     await onJob();
     expect(await states()).toBe("job:done plans:done scale:done takeoff:done review:done estimate:current send:todo");
-    await expect(next()).toHaveText(/^Next: /);
+    // The quantities go on from the workspace's item panel, so that is where Next goes.
+    await expect(next()).toContainText("Next: Put the takeoff on the estimate");
+    await expect(next()).toHaveAttribute("href", `/takeoff/${jobId}`);
+    await expect(next()).toHaveAttribute("target", "_blank");
+    // The step itself is still the estimate tab, where a person prices by hand.
+    await expect(step("estimate")).toHaveAttribute("href", `/jobs/${jobId}/estimate`);
     await bar().screenshot({ path: path.join(SHOTS, "stepper-estimate-current.png") });
     await page.screenshot({ path: path.join(SHOTS, "job-page-estimate-current-1440.png") });
   });

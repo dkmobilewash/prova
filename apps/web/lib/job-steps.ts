@@ -100,8 +100,13 @@ export function jobSteps(facts: JobStepFacts): { steps: JobStep[]; next: JobNext
       facts.wallsToConfirm > 0
         ? `Review ${facts.wallsToConfirm} ${facts.wallsToConfirm === 1 ? "wall" : "walls"} to confirm`
         : "Review the takeoff",
-    estimate: "Send the takeoff to the estimate",
+    // Estimate is only ever current once something is taken off (Review needs
+    // it), and those quantities go on from the workspace's item panel ("Send to
+    // estimate") — so its Next opens the workspace, while the step itself still
+    // links to the estimate tab, where pricing by hand happens.
+    estimate: "Put the takeoff on the estimate",
     send: "Send the proposal",
   };
-  return { steps, next: { label: NEXT[key], ...where[key] } };
+  const goes = key === "estimate" ? { href: workspace, newTab: true } : where[key];
+  return { steps, next: { label: NEXT[key], ...goes } };
 }

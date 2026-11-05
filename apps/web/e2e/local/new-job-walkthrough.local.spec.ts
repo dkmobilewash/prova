@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { signInAs } from "../lib/signIn";
@@ -103,7 +103,13 @@ test.describe.configure({ mode: "serial", timeout: 300_000 });
 
 test.beforeAll(async ({ browser }) => {
   mkdirSync(OUT, { recursive: true });
-  page = await (await browser.newContext({ viewport: SIZE })).newPage();
+  const context = await browser.newContext({ viewport: SIZE });
+  // The upload is stubbed (no blob store here), so the plan route has no real
+  // file behind it: answer it with the same drawing that was "uploaded", as
+  // takeoff-workspace.spec.ts does. Everything after the bytes is the app's.
+  const pdf = readFileSync(S02);
+  await context.route("**/api/takeoff/plan/**", (route) => route.fulfill({ status: 200, contentType: "application/pdf", body: pdf }));
+  page = await context.newPage();
   new HealthMonitor(page);
 });
 test.afterAll(async () => {
