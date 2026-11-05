@@ -4222,7 +4222,7 @@ export function TakeoffPlanViewer({
     const itemId = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? group.itemId ?? null;
     const item = wallItems.find((one) => one.id === itemId);
     if (item === undefined) return null;
-    const options = [ceilingOption(group.runs, ceilingRooms), wallTypes.find((t) => t.id === item.wallTypeId)?.legendHeight ?? null].filter((o): o is HeightOption => o !== null);
+    const options = [ceilingOption(group.runs, ceilingRooms), ...(wallTypes.find((t) => t.id === item.wallTypeId)?.legendHeights ?? [])].filter((o): o is HeightOption => o !== null);
     const mine = new Set(keys);
     const openings = item.measurements.filter((m) => m.pageNumber === pageNumber && m.xs.length === 2 && mine.has(runKey(m.xs, m.ys))).flatMap((m) => m.openings ?? []);
     const sqFt = wallSquareFeet({ linearFt: group.feet, heightFt: item.heightFt, sides: item.sides, openings, thresholdSqFt: openingThresholdSqFt });

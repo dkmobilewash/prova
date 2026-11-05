@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { areaLine, ceilingOption, heightFrom, legendOption, wallSquareFeet } from "./wallHeight";
+import { areaLine, ceilingOption, heightFrom, legendOption, legendOptions, wallSquareFeet } from "./wallHeight";
+import { heightOptionLines } from "./legendHeights";
 
 const box = (x0: number, y0: number, x1: number, y1: number) => ({ xs: [x0, x1, x1, x0], ys: [y0, y0, y1, y1] });
 
@@ -41,5 +42,17 @@ describe("a wall group's height and square feet", () => {
     expect(heightFrom(10, options)).toBe("ceiling plan, room 104: 10'-0\"");
     expect(heightFrom(12, options)).toBe(`typed: 12'-0"`);
     expect(heightFrom(null, options)).toBeNull();
+  });
+});
+
+describe("a type's height options by part of the building, kept in its notes (round 14)", () => {
+  it("reads back each option the legend add wrote, with what printed it, and picks none", () => {
+    const lines = heightOptionLines({ heightFt: null, confidence: null, generalNoteOnly: false, sentence: "No height read: …", options: [{ feet: 12, from: "A-512 LOWER BOD 112' 0\"" }, { feet: 16 + 8 / 12, from: "A-422 CENTRAL TOW 116' 8\"" }] });
+    const options = legendOptions({ code: "A", defaultHeightFt: null, notes: ["Read off p5 of the plan set.", "No height read: …", ...lines].join("\n") });
+    expect(options.map((o) => [o.kind, Math.round(o.feet * 12)])).toEqual([["legend", 144], ["legend", 200]]);
+    expect(options[1]!.from).toContain("A-422 CENTRAL TOW");
+    // A type with one height keeps it, and no option repeats it.
+    expect(legendOptions({ code: "S6A", defaultHeightFt: 15, notes: "Height 15 ft (MEDIUM): A301 prints T.O. ROOF FRAMING 15' 0\"\nHeight option 15 ft: A301 T.O. ROOF FRAMING" }).map((o) => o.feet)).toEqual([15]);
+    expect(legendOptions(null)).toEqual([]);
   });
 });

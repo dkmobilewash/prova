@@ -37,6 +37,23 @@ export function legendOption(type: { code: string; defaultHeightFt: number | nul
   return { kind: "legend", feet, from: why ? `legend ${type.code}: ${why} → ${feetLabel(feet)}` : `${type.code} in your library: ${feetLabel(feet)}` };
 }
 
+/**
+ * The legend's height and, where the drawing gives one per part of the
+ * building, each of those — Joplin's 12'-0" lower roofs, 12'-4" admin, 16'-8"
+ * central tower — as options with what printed them, read back from the
+ * notes the legend add wrote (`heightOptionLines`). Nothing is picked.
+ */
+export function legendOptions(type: { code: string; defaultHeightFt: number | null; notes?: string | null } | null | undefined): HeightOption[] {
+  if (!type) return [];
+  const one = legendOption(type);
+  const more = (type.notes ?? "")
+    .split("\n")
+    .map((l) => l.match(/^Height option ([\d.]+) ft: (.+)$/))
+    .filter((m): m is RegExpMatchArray => m !== null && Number(m[1]) > 0)
+    .map((m): HeightOption => ({ kind: "legend", feet: Number(m[1]), from: `legend ${type.code}: ${m[2]} → ${feetLabel(Number(m[1]))}` }));
+  return [...(one === null ? [] : [one]), ...more.filter((o) => one === null || !same(o.feet, one.feet))];
+}
+
 export type CeilingRoom = { xs: number[]; ys: number[]; heightFeet: number | null; name: string; from: string | null };
 
 /**
