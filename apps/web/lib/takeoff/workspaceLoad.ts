@@ -424,9 +424,15 @@ export async function loadTakeoffWorkspace(
   // The sheet that counts instead, for a sheet the whole set leaves to another
   // of its level: "It is a wall" there saves nothing, and the viewer says why.
   const notCountedByPage: Record<number, string> = {};
-  for (const [pageNumber, skip] of wallsPlan(await wallsSheetsFor(plan.id, company.id))) {
+  const wallsSheets = await wallsSheetsFor(plan.id, company.id);
+  for (const [pageNumber, skip] of wallsPlan(wallsSheets)) {
     if (skip?.startsWith("same level as ")) notCountedByPage[pageNumber] = skip.slice("same level as ".length);
   }
+  // The floor plans of the work: what the whole-set run would count if every
+  // sheet had its scale, so the workspace opens on them before the scales too.
+  const theWork = [...wallsPlan(wallsSheets.map((sheet) => ({ ...sheet, hasScale: true })))]
+    .filter(([, skip]) => skip === null || skip === "already found")
+    .map(([pageNumber]) => pageNumber);
   /**
    * WHAT EACH SHEET IS CALLED, so the pager can be jumped to one.
    *
@@ -468,10 +474,11 @@ export async function loadTakeoffWorkspace(
     plan.pages.map((page) => ({
       pageNumber: page.pageNumber,
       scaled: page.calibrations.length > 0,
-      lastMeasuredAt: page.measurements.length > 0 ? page.measurements[page.measurements.length - 1]!.createdAt.getTime() : null,
+      lastMeasuredAt: page.measurements.filter((m) => m.source === "MANUAL").at(-1)?.createdAt.getTime() ?? null,
       held: page.measurements.filter((m) => m.label === HELD_LABEL).length,
       score: scoreByPage.get(page.pageNumber) ?? 0,
     })),
+    theWork,
   );
 
   const earlierVersionByPage = Object.fromEntries(

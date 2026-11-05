@@ -29,7 +29,10 @@ import { detectWallsForCalibration, type DetectTarget } from "./detectWallsForCa
 type Line = { x1: number; y1: number; x2: number; y2: number };
 const lineOf = (m: { xs: number[]; ys: number[] }): Line => ({ x1: m.xs[0] ?? NaN, y1: m.ys[0] ?? NaN, x2: m.xs[1] ?? NaN, y2: m.ys[1] ?? NaN });
 
-export type RefreshOutcome = { kind: "replaced" | "emptied" | "proposals-only" | "posted-left-alone" | "failed" };
+export type RefreshOutcome =
+  | { kind: "replaced" | "emptied" | "posted-left-alone" | "failed" }
+  /** Found again, and nothing of the sheet's is on the job yet: the run posts it, with the runs held to confirm. */
+  | { kind: "proposals-only"; held?: readonly Line[] };
 
 export async function refreshSheetWalls(target: DetectTarget & { jobId: string; userId: string | null }): Promise<RefreshOutcome> {
   let held: readonly Line[] = [];
@@ -39,7 +42,7 @@ export async function refreshSheetWalls(target: DetectTarget & { jobId: string; 
   if (outcome === "nothing-found") await prisma.takeoffWallProposal.deleteMany({ where: { pageId: target.pageId, calibrationId: target.calibrationId } });
   const detected = { pageId: target.pageId, source: "DETECTED" as const, kind: "LINEAR" as const };
   const total = await prisma.takeoffMeasurement.count({ where: detected });
-  if (total === 0) return { kind: "proposals-only" };
+  if (total === 0) return { kind: "proposals-only", held };
   const posted = await prisma.takeoffMeasurement.count({ where: { ...detected, postedAt: { not: null } } });
   if (posted > 0) return { kind: "posted-left-alone" };
   const before = await prisma.takeoffMeasurement.findMany({ where: detected, select: { xs: true, ys: true, itemId: true, label: true } });

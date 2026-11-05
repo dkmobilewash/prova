@@ -12,7 +12,11 @@ describe("doubted walls reach the hold", () => {
     expect(detect).toMatch(/runsHeldOffEstimate\(config\.model, offered\.offeredRuns, scored, target\.feetPerUnit, raster !== null\)/);
   });
   it("the walls stage hands them to the wall items", () => {
-    expect(read("../plan-ingest/walls.ts")).toMatch(/writeWallItems\(\{[^}]*held: boundary\?\.held \?\? \[\],/);
+    // Through the one posting step a fresh detection and a found-again sheet share.
+    const walls = read("../plan-ingest/walls.ts");
+    expect(walls).toMatch(/postAndRooms\(task\.pageNumber, boundary\?\.held \?\? \[\],/);
+    expect(walls).toMatch(/postAndRooms\(task\.pageNumber, again\.held \?\? \[\],/);
+    expect(walls).toMatch(/writeWallItems\(\{[^}]*pageNumber, held,/);
   });
   it("the viewer lists them, outside the Quantities panel, with one click to include", () => {
     const viewer = read("../../components/TakeoffPlanViewer.tsx");
