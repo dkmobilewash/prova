@@ -13,12 +13,15 @@ export function TakeoffHeldWalls({
   walls,
   onConfirm,
   asRow = false,
+  defaultOpen = false,
   onHover,
   onShow,
 }: {
   walls: readonly HeldWall[];
   /** The workspace's layer panel: one "Needs review" row that opens in place. */
   asRow?: boolean;
+  /** Starts open: opened from the job stepper's Review. */
+  defaultOpen?: boolean;
   /** Pointing at a run picks it out on the plan; null when the pointer leaves. */
   onHover?: (id: string | null) => void;
   /** Takes the plan to the run: zoomed in and centred. */
@@ -37,6 +40,7 @@ export function TakeoffHeldWalls({
   }
   return (
     <details
+      open={defaultOpen || undefined}
       className={`shrink-0 text-xs text-ink-muted${asRow ? " rounded-md px-1.5 py-1.5 hover:bg-rail" : ""}`}
       data-takeoff="held-walls"
     >

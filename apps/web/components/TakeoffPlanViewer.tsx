@@ -332,6 +332,7 @@ export function TakeoffPlanViewer({
   onPageChange,
   fill = false,
   panelOpen = true,
+  openReview = false,
   onResults,
   readOnly = false,
   roomFinder = false,
@@ -418,6 +419,8 @@ export function TakeoffPlanViewer({
    * canvas takes the space it gives up.
    */
   panelOpen?: boolean;
+  /** Needs review starts open (the job stepper's Review). */
+  openReview?: boolean;
   /**
    * A Find the estimator pressed has come back. The workspace opens its rail on
    * this: results live in that rail and it starts closed, so without it a Find
@@ -4773,6 +4776,7 @@ export function TakeoffPlanViewer({
       {slot(panelOpen ? reviewSlot : noticeTarget, answerKey === undefined && !readOnly && feetPerUnit !== null && (
         <TakeoffHeldWalls
           asRow={fill && panelOpen}
+          defaultOpen={openReview}
           onHover={setHeldHover}
           onShow={(id) => setHeldShown({ id, at: Date.now() })}
           walls={(sheet?.measurements ?? [])

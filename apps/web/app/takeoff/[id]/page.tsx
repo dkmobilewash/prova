@@ -33,10 +33,10 @@ export default async function TakeoffWorkspacePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ page?: string; key?: string }>;
+  searchParams: Promise<{ page?: string; key?: string; open?: string }>;
 }) {
   const { id } = await params;
-  const { page, key } = await searchParams;
+  const { page, key, open } = await searchParams;
   const { context, allowed } = await requireCapability("VIEW_JOB_COSTS");
   if (!allowed) return <NoAccess capability="VIEW_JOB_COSTS" />;
   const { company, job } = await requireJobGivenContext(id, context);
@@ -83,7 +83,20 @@ export default async function TakeoffWorkspacePage({
       // A page number nobody has a sheet for opens the first sheet rather than
       // an empty canvas: a stale link in somebody's notes should still show a
       // drawing.
-      openPage={sheetPages.has(openPage) ? openPage : (data.sheets[0]?.pageNumber ?? 1)}
+      // No page asked for: the sheet `startPage` chooses — the last one worked
+      // on or the best floor plan, never a cover; for the job stepper's Scale
+      // (`?open=scale`) the first sheet with no scale, and for its Review
+      // (`?open=review`) the first sheet holding a wall to confirm.
+      openPage={
+        sheetPages.has(openPage)
+          ? openPage
+          : open === "scale"
+            ? data.startPage.scale
+            : open === "review"
+              ? data.startPage.review
+              : data.startPage.work
+      }
+      openReview={open === "review"}
       /* ── ANSWER-KEY MODE FROM THE URL ──
          So a review session can be opened on the right sheet in one link,
          rather than remembering to press a toggle that changes what every

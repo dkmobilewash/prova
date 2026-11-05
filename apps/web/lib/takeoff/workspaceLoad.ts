@@ -16,7 +16,8 @@ import { isScannedSheet } from "@/lib/plan-ingest/scannedSheet";
 import { cutoutsFromJson, type ItemMeasurement, type TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
 import { scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery";
 import { effectiveSheetNumber, effectiveTitle, sheetPickerLabel } from "@/lib/plan-ingest/sheetIndex";
-import { sheetSuitability, duplicateWallsCaution } from "@/lib/takeoff/sheetSuitability";
+import { sheetSuitability, duplicateWallsCaution, takeoffRank } from "@/lib/takeoff/sheetSuitability";
+import { startPages } from "@/lib/takeoff/startPage";
 import { levelsByPage } from "@/lib/plan-ingest/sheetLevel";
 import {
   printedScalesFromProposals,
@@ -456,6 +457,18 @@ export async function loadTakeoffWorkspace(
     if (label !== null) sheetLabelByPage[row.pageNumber] = label;
   }
 
+  // Which sheet to open on, for work, for Scale and for Review (`startPage.ts`).
+  const scoreByPage = new Map(sheetRows.map((row) => [row.pageNumber, takeoffRank(effectiveSheetNumber(row), effectiveTitle(row)).score]));
+  const startPage = startPages(
+    plan.pages.map((page) => ({
+      pageNumber: page.pageNumber,
+      scaled: page.calibrations.length > 0,
+      lastMeasuredAt: page.measurements.length > 0 ? page.measurements[page.measurements.length - 1]!.createdAt.getTime() : null,
+      held: page.measurements.filter((m) => m.label === HELD_LABEL).length,
+      score: scoreByPage.get(page.pageNumber) ?? 0,
+    })),
+  );
+
   const earlierVersionByPage = Object.fromEntries(
     Object.entries(await earlierVersionsFor(job.id, company.id, plan.id)).map(([page, v]) => [Number(page), v.label]),
   );
@@ -689,6 +702,7 @@ export async function loadTakeoffWorkspace(
     duplicateWallsByPage,
     notCountedByPage,
     sheetLabelByPage,
+    startPage,
     earlierVersionByPage,
     sheetRows,
     items,

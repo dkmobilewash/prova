@@ -86,6 +86,8 @@ type Props = {
   openPage: number;
   /** Open straight into answer-key review, from `?key=1`. */
   openAnswerKey?: boolean;
+  /** Opened from the job stepper's Review: Needs review starts open. */
+  openReview?: boolean;
   /** Whether this server can label at all (`labellingAllowed`). False on every
    *  deployment, so neither the mode nor its button exists for a customer. */
   labellingAvailable?: boolean;
@@ -182,6 +184,7 @@ export function TakeoffWorkspace({
   savedAt,
   openPage,
   openAnswerKey,
+  openReview = false,
   labellingAvailable = false,
   finderVersion = "unknown",
 }: Props) {
@@ -1509,6 +1512,7 @@ export function TakeoffWorkspace({
               />
             )}
             <TakeoffPlanViewer
+              openReview={openReview}
               jobId={jobId}
               planId={data.plan.id}
               onSheetNumber={onSheetNumber}
