@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { heightBasis, heightFactsFromText, lettersNotesFromLines, resolveHeight, type HeightFact } from "./wallHeights";
+import { heightBasis, heightFactsFromText, lettersNotesFromLines, relativeToFloor, resolveHeight, type HeightFact } from "./wallHeights";
 
 /** Invented phrases in every SHAPE the sixteen training legends print (measured 2026-10-22); no real line is quoted. */
 describe("the words a legend uses for a wall's height", () => {
@@ -164,5 +164,50 @@ describe("facts read off a sheet's text", () => {
     expect(notes).toHaveLength(1);
     expect(notes[0]).toMatchObject({ label: "A", sheet: "A601" });
     expect(heightBasis(notes[0].text ?? "")?.kind).toBe("to-structure");
+  });
+});
+
+describe("levels printed as absolute elevations, measured from the floor (Joplin's sections and roof framing)", () => {
+  // A section's level markers: a zone word, an abbreviation, and the figure
+  // split into three items; a framing plan's "B/DECK EL = …" in one item.
+  const section = heightFactsFromText({
+    sheet: "A-301",
+    items: [
+      { str: "FIRST FLOOR", x: 100, y: 900, height: 8 },
+      { str: "100'", x: 100, y: 912, height: 8 },
+      { str: "-", x: 120, y: 912, height: 8 },
+      { str: "0\"", x: 128, y: 912, height: 8 },
+      { str: "LOWER BOD", x: 100, y: 500, height: 8 },
+      { str: "112'", x: 100, y: 512, height: 8 },
+      { str: "-", x: 120, y: 512, height: 8 },
+      { str: "0\"", x: 128, y: 512, height: 8 },
+      { str: "ADMIN JBE", x: 100, y: 460, height: 8 },
+      { str: "112'-4\"", x: 100, y: 472, height: 8 },
+      { str: "CENTRAL TOW", x: 100, y: 300, height: 8 },
+      { str: "116'-8\"", x: 100, y: 312, height: 8 },
+    ],
+  });
+  const framing = heightFactsFromText({ sheet: "S-102", items: [{ str: "B/DECK EL = 110' - 9 7/8\"", x: 400, y: 400, height: 8 }] });
+  const notes = heightFactsFromText({ sheet: "C-101", items: [{ str: "ARCHITECTURAL FFE = 100'-0\"", x: 50, y: 50, height: 8 }] });
+
+  it("reads the abbreviations a section uses, with the zone word in front, and the floor as a datum", () => {
+    expect(section.find((f) => f.phrase.startsWith("LOWER BOD"))).toMatchObject({ kind: "structure-elevation", feet: 112 });
+    expect(section.find((f) => f.phrase.startsWith("ADMIN JBE"))?.kind).toBe("bearing-elevation");
+    expect(section.find((f) => f.phrase.startsWith("CENTRAL TOW"))?.kind).toBe("bearing-elevation");
+    expect(section.find((f) => f.kind === "floor-datum")?.feet).toBe(100);
+    expect(framing[0]).toMatchObject({ kind: "structure-elevation" });
+    expect(framing[0]!.feet).toBeCloseTo(110 + (9 + 7 / 8) / 12, 6);
+    expect(notes[0]).toMatchObject({ kind: "floor-datum", feet: 100 });
+  });
+
+  it("turns an elevation into a height above its sheet's floor, else the set's, and drops one with no floor", () => {
+    const heights = relativeToFloor([...section, ...framing, ...notes]);
+    expect(heights.find((f) => f.phrase.startsWith("LOWER BOD"))?.feet).toBe(12);
+    expect(heights.find((f) => f.sheet === "S-102")?.feet).toBeCloseTo(10 + (9 + 7 / 8) / 12, 3);
+    expect(heights.some((f) => f.kind === "floor-datum")).toBe(false);
+    expect(relativeToFloor(framing)).toEqual([]);
+    // A figure already above the floor is left as it is.
+    const plain: HeightFact = { kind: "structure-elevation", feet: 15, sheet: "A301", phrase: "T.O. ROOF FRAMING 15' 0\"" };
+    expect(relativeToFloor([plain])).toEqual([plain]);
   });
 });

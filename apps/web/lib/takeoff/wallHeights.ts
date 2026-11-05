@@ -102,7 +102,7 @@ function fixedFeet(phrase: string): number | null {
 
 /** A figure read off another sheet, with where it came from. */
 export type HeightFact = {
-  kind: "structure-elevation" | "bearing-elevation" | "ceiling-height" | "general-note" | "note";
+  kind: "structure-elevation" | "bearing-elevation" | "ceiling-height" | "general-note" | "note" | "floor-datum";
   /** Feet above finished floor, where the fact is a figure. */
   feet: number | null;
   /** For a note: its letter or number, so "SEE NOTE A" can find it. */
@@ -235,36 +235,55 @@ export function resolveHeight(input: {
   }
 }
 
-/** The figures printed as elevations and ceiling tags, read off a sheet's text items. */
+/**
+ * The figures printed as elevations and ceiling tags, read off a sheet's text items.
+ *
+ * ── AND THE SPELLINGS A SECTION ACTUALLY USES ──
+ *
+ * Joplin's sections mark levels "LOWER BOD 112'-0"" (bottom of deck),
+ * "ADMIN JBE 112'-4"" (joist bearing), "CENTRAL TOW 116'-8"" (top of wall)
+ * over "FIRST FLOOR 100'-0"", and its roof framing plan prints
+ * "B/DECK EL = 112' - 6"". A zone word may lead the label, the figure may be
+ * an absolute elevation split across three items ("112'", "-", "0""), and a
+ * floor level is read as a `floor-datum` so `relativeToFloor` can turn the
+ * absolute figures into heights.
+ */
 export function heightFactsFromText(input: {
   sheet: string;
   items: readonly { str: string; x: number; y: number; height: number }[];
 }): HeightFact[] {
   const out: HeightFact[] = [];
   const items = input.items.map((i) => ({ ...i, str: i.str.trim() })).filter((i) => i.str !== "");
-  const FEET = /^(\d{1,2})'\s*-?\s*(\d{1,2})?\s*(?:"|'')?(?:\s*A\.?F\.?F\.?)?$/i;
-  const INCHES = /^-?\s*(\d{1,2})"$/;
-  const STRUCTURE = /^(?:\(E\)\s*)?(?:(?:T\.?O\.?|TOP\s+OF)\s+(?:ROOF\s+)?(?:FRAMING|DECK(?:ING)?|STEEL|STRUCT(?:URE)?\.?|JOISTS?|SLAB)|(?:B\.?O\.?|BOTTOM\s+OF|U\/S|UNDERSIDE\s+OF)\s+(?:ROOF\s+)?(?:DECK(?:ING)?|STEEL|STRUCT(?:URE)?\.?|JOISTS?|SLAB|BEAM))\b/i;
-  const BEARING = /^(?:\(E\)\s*)?(?:T\.?O\.?|TOP\s+OF)\s+(?:WALL|PLATE|BEARING|BRG\.?|MASONRY|CMU)\b/i;
+  const FEET = /^=?\s*(\d{1,4})\s*'\s*(?:[-–]\s*)?(?:(\d{1,2})(?:\s+(\d{1,2})\/(\d{1,2}))?)?\s*(?:"|''|”)?(?:\s*A\.?F\.?F\.?)?$/i;
+  const INCHES = /^[-–]?\s*(\d{1,2})(?:\s+(\d{1,2})\/(\d{1,2}))?\s*(?:"|''|”)$/;
+  const ZONE = String.raw`(?:\(E\)\s*)?(?:[A-Z]{2,}\s+){0,2}`;
+  const STRUCTURE = new RegExp(String.raw`^${ZONE}(?:(?:T\.?O\.?|TOP\s+OF)\s+(?:ROOF\s+)?(?:FRAMING|DECK(?:ING)?|STEEL|STRUCT(?:URE)?\.?|JOISTS?|SLAB)|(?:B\.?O\.?|BOTTOM\s+OF|U\/S|UNDERSIDE\s+OF)\s+(?:ROOF\s+)?(?:DECK(?:ING)?|STEEL|STRUCT(?:URE)?\.?|JOISTS?|SLAB|BEAM)|B\/(?:HIGH\s+|LOW\s+)?DECK(?:\s+EL\.?)?|B\.?O\.?D\.?)(?=\s|=|$)`, "i");
+  const BEARING = new RegExp(String.raw`^${ZONE}(?:(?:T\.?O\.?|TOP\s+OF)\s+(?:WALL|PLATE|BEARING|BRG\.?|MASONRY|CMU)|T\.?O\.?W\.?|J\.?B\.?E\.?)(?=\s|=|$)`, "i");
   const CEILING_LABEL = /^(?:B\.?O\.?\s+)?(?:CLG|CEILING)\.?(?:\s*(?:HT|HEIGHT)\.?)?$/i;
+  const DATUM = /^(?:(?:FIRST|1ST|GROUND|MAIN)\s+FLOOR|(?:FIN(?:ISH(?:ED)?)?\.?\s+)?(?:FIRST\s+)?FL(?:OO)?R\.?(?:\s+EL(?:EV(?:ATION)?)?\.?)?|(?:ARCHITECTURAL\s+)?F\.?F\.?E\.?|LEVEL\s+(?:1|ONE)|T\.?O\.?\s+(?:CONC(?:RETE)?\.?\s+)?SLAB(?:\s+EL(?:EV(?:ATION)?)?\.?)?)\s*(?:=|:)?\s*/i;
   const feetOf = (s: string): number | null => {
     const m = FEET.exec(s);
-    return m === null ? null : Number(m[1]) + (m[2] === undefined ? 0 : Number(m[2])) / 12;
+    if (m === null) return null;
+    const inches = (m[2] === undefined ? 0 : Number(m[2])) + (m[3] === undefined ? 0 : Number(m[3]) / Number(m[4]));
+    return Number(m[1]) + inches / 12;
   };
-  /** The figure beside a label — one item, or `15'` with its `0"` printed as the next item. */
+  /** The figure beside a label — one item, or `112'` with its `0"` (and a lone `-`) printed as the next items. */
   const figureBeside = (label: (typeof items)[number]) => {
     const row = items.filter((o) => o !== label && Math.abs(o.y - label.y) < 2.5 * label.height && Math.abs(o.x - label.x) < 260);
     // "CLG. 1'-0" BELOW JOISTS" is an offset, not a height.
     if (row.some((o) => /\b(?:BELOW|ABOVE)\b/i.test(o.str))) return null;
+    // Nearest first: a section prints several levels one under the other.
+    row.sort((a, b) => Math.hypot(a.x - label.x, a.y - label.y) - Math.hypot(b.x - label.x, b.y - label.y));
     for (const o of row) {
       const feet = feetOf(o.str);
-      if (feet === null || feet < 1 || feet > 60) continue;
+      if (feet === null || feet < 1 || feet > 400) continue;
       let text = o.str;
       let value = feet;
-      if (/^\d{1,2}'$/.test(o.str)) {
+      if (/^=?\s*\d{1,4}\s*'$/.test(o.str)) {
         const inch = row.find((p) => p !== o && Math.abs(p.y - o.y) < label.height && p.x > o.x && p.x - o.x < 40 && INCHES.test(p.str));
         if (inch !== undefined) {
-          value += Number(INCHES.exec(inch.str)?.[1] ?? 0) / 12;
+          const m = INCHES.exec(inch.str)!;
+          value += (Number(m[1]) + (m[2] === undefined ? 0 : Number(m[2]) / Number(m[3]))) / 12;
           text = `${o.str} ${inch.str}`;
         }
       }
@@ -276,15 +295,66 @@ export function heightFactsFromText(input: {
     // "10'-0" A.F.F." in one item: a ceiling height tag.
     if (/A\.?F\.?F\.?$/i.test(i.str)) {
       const feet = feetOf(i.str);
-      if (feet !== null) out.push({ kind: "ceiling-height", feet, sheet: input.sheet, phrase: i.str });
+      if (feet !== null && feet <= 60) out.push({ kind: "ceiling-height", feet, sheet: input.sheet, phrase: i.str });
+      continue;
+    }
+    // A floor level with its figure in the same item: "ARCHITECTURAL FFE = 100'-0"".
+    const datumHere = DATUM.exec(i.str);
+    if (datumHere !== null && datumHere[0].trim() !== "") {
+      const rest = i.str.slice(datumHere[0].length).replace(/\.?\s*U\.?N\.?O\.?$/i, "").trim();
+      const inline = rest === "" ? null : feetOf(rest);
+      const beside = rest === "" ? figureBeside(i) : null;
+      const feet = inline ?? beside?.value ?? null;
+      if (feet !== null) out.push({ kind: "floor-datum", feet, sheet: input.sheet, phrase: rest === "" ? `${i.str} ${beside!.text}` : i.str });
       continue;
     }
     const kind: HeightFact["kind"] | null = STRUCTURE.test(i.str) ? "structure-elevation" : BEARING.test(i.str) ? "bearing-elevation" : CEILING_LABEL.test(i.str) ? "ceiling-height" : null;
     if (kind === null) continue;
-    const beside = figureBeside(i);
-    if (beside !== null) out.push({ kind, feet: beside.value, sheet: input.sheet, phrase: `${i.str} ${beside.text}` });
+    // "B/DECK EL = 112' - 6"" can be one item.
+    const after = i.str.replace(kind === "structure-elevation" ? STRUCTURE : kind === "bearing-elevation" ? BEARING : CEILING_LABEL, "").trim();
+    const inline = after === "" ? null : feetOf(after);
+    const beside = inline !== null ? { value: inline, text: after } : figureBeside(i);
+    if (beside !== null && (kind !== "ceiling-height" || beside.value <= 60)) out.push({ kind, feet: beside.value, sheet: input.sheet, phrase: inline !== null ? i.str : `${i.str} ${beside.text}` });
   }
   return out;
+}
+
+/** A figure this high is an elevation above a datum (Joplin's 100'-0"), not a height above the floor. */
+export const ABSOLUTE_FEET = 40;
+
+/**
+ * Absolute elevations as heights above the floor: each sheet's own floor
+ * level first ("FIRST FLOOR 100'-0""), else the set's commonest
+ * ("ARCHITECTURAL FFE = 100'-0""). An absolute figure with no floor to
+ * measure from says nothing about height and is dropped; the datums go too.
+ */
+export function relativeToFloor(facts: readonly HeightFact[]): HeightFact[] {
+  const datums = facts.filter((f) => f.kind === "floor-datum" && f.feet !== null && f.feet >= ABSOLUTE_FEET);
+  const commonest = (list: readonly HeightFact[]) => {
+    const n = new Map<number, number>();
+    for (const f of list) n.set(f.feet as number, (n.get(f.feet as number) ?? 0) + 1);
+    return [...n].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  };
+  const setDatum = commonest(datums);
+  const out: HeightFact[] = [];
+  for (const f of facts) {
+    if (f.kind === "floor-datum") continue;
+    if (f.feet === null || f.feet < ABSOLUTE_FEET) {
+      out.push(f);
+      continue;
+    }
+    const floor = commonest(datums.filter((d) => d.sheet === f.sheet)) ?? setDatum;
+    if (floor === null || f.feet <= floor) continue;
+    const feet = Math.round((f.feet - floor) * 1200) / 1200;
+    if (feet > 60) continue;
+    out.push({ ...f, feet, phrase: `${f.phrase} (floor ${floorLabel(floor)})` });
+  }
+  return out;
+}
+
+function floorLabel(feet: number): string {
+  const whole = Math.floor(feet);
+  return `${whole}'-${Math.round((feet - whole) * 12)}"`;
 }
 
 /** Lettered general notes on a sheet — "A. ALL WALLS WILL BE TO DECK ABOVE U.N.O." — by letter. */

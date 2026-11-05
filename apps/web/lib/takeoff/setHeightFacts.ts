@@ -2,7 +2,7 @@ import type { PlanPdf } from "@/lib/plan-ingest/planPdf";
 import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
 import { pageLines } from "./planTextRead";
 import { sheetViews } from "./sheetViews";
-import { heightFactsFromText, lettersNotesFromLines, resolveHeight, type HeightFact, type HeightReading } from "./wallHeights";
+import { heightFactsFromText, lettersNotesFromLines, relativeToFloor, resolveHeight, type HeightFact, type HeightReading } from "./wallHeights";
 
 /**
  * ── THE HEIGHT FACTS A WHOLE SET PRINTS, gathered once per set ──
@@ -51,6 +51,9 @@ export async function setHeightFacts(doc: PlanPdf, input: { legendPage: number; 
     const sheet = r.sheetNumber ?? `p${page}`;
     const isSection = /\bSECTION\b/i.test(views) || /\bSECTION\b/i.test(r.regionText);
     const isCeiling = /CEILING PLAN|RCP/i.test(views) || /CEILING PLAN/i.test(r.regionText);
+    // A roof framing plan prints the deck by zone (Joplin S-sheets: "B/DECK EL = 112' - 6""), and an
+    // exterior elevation its levels; any sheet may print the floor's datum ("ARCHITECTURAL FFE = 100'-0"").
+    const isFraming = /FRAMING PLAN|\bELEVATIONS?\b/i.test(views) || /FRAMING PLAN/i.test(r.regionText);
     if (page === input.legendPage || /GENERAL NOTES/i.test(items.map((i) => i.str).join(" "))) {
       try {
         const notes = lettersNotesFromLines(sheet, await pageLines(doc, page)).map((f) => ({ ...f, sheet: page === input.legendPage ? sheet : `${sheet} (p${page})` }));
@@ -59,17 +62,19 @@ export async function setHeightFacts(doc: PlanPdf, input: { legendPage: number; 
         // the lines did not read; the elevations below still can
       }
     }
-    if (!isSection && !isCeiling) continue;
-    const read = heightFactsFromText({ sheet, items }).filter((f) =>
-      isSection ? f.kind === "structure-elevation" || f.kind === "bearing-elevation" : f.kind === "ceiling-height",
+    const all = heightFactsFromText({ sheet, items });
+    facts.push(...all.filter((f) => f.kind === "floor-datum"));
+    if (!isSection && !isCeiling && !isFraming) continue;
+    const read = all.filter((f) =>
+      isSection || isFraming ? f.kind === "structure-elevation" || f.kind === "bearing-elevation" : f.kind === "ceiling-height",
     );
     if (read.length > 0) {
-      factSheets.push(`${sheet} (${isSection ? "section" : "ceiling plan"}): ${[...new Set(read.map((f) => f.phrase))].slice(0, 4).join("; ")}`);
+      factSheets.push(`${sheet} (${isSection ? "section" : isFraming ? "framing plan / elevation" : "ceiling plan"}): ${[...new Set(read.map((f) => f.phrase))].slice(0, 4).join("; ")}`);
       facts.push(...read);
     }
   }
   const generalNote = facts.find((f) => GENERAL(f) && !f.sheet.includes("(p")) ?? facts.find(GENERAL) ?? null;
-  return { facts, generalNote, factSheets };
+  return { facts: relativeToFloor(facts), generalNote, factSheets };
 }
 
 /** One legend type's height from the set's facts — `resolveHeight` with the set's general note in place. */
