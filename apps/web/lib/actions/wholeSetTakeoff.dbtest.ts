@@ -89,6 +89,9 @@ afterAll(async () => {
   await prisma.planIngestJob.deleteMany({ where: { planId } });
   await prisma.planSheetText.deleteMany({ where: { planId } });
   await prisma.takeoffPlan.deleteMany({ where: { id: planId } });
+  // Posting the walls (the last cases) gives the job items and estimate lines.
+  await prisma.jobLineItem.deleteMany({ where: { jobId } });
+  await prisma.takeoffItem.deleteMany({ where: { jobId } });
   await prisma.job.deleteMany({ where: { id: jobId } });
   await prisma.contact.deleteMany({ where: { companyId } });
   await prisma.user.deleteMany({ where: { companyId } });

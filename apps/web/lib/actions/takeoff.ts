@@ -1101,10 +1101,11 @@ async function saveTakeoffMeasurementsFor(
   // Run takeoff and the whole-set run post a sheet's found walls by themselves
   // (`postSheetWalls`, `walls.ts`), and the group list still offers "Add
   // these" on those groups: writing the same runs again would count the walls
-  // twice. A run that lies on one of the sheet's measured runs is left out;
+  // twice. A run that lies on one of the sheet's posted runs is left out;
   // its type is set with Set type or in the review queue.
   if (kind === "LINEAR") {
-    const existing = await prisma.takeoffMeasurement.findMany({ where: { pageId: page.id, kind: "LINEAR" }, select: { xs: true, ys: true } });
+    // The posted runs only: those are what a press of "Add these" duplicates.
+    const existing = await prisma.takeoffMeasurement.findMany({ where: { pageId: page.id, kind: "LINEAR", source: "DETECTED" }, select: { xs: true, ys: true } });
     const near = (a: number, b: number) => Math.abs(a - b) < 1e-4;
     const same = (s: { xs: number[]; ys: number[] }, m: { xs: number[]; ys: number[] }) =>
       s.xs.length === 2 && m.xs.length === 2 &&
