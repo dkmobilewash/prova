@@ -4,21 +4,21 @@ import type { TagSymbol } from "./tagSymbols";
 import type { WallCandidate } from "./wallVectors";
 
 /**
- * ── WINDOWS COUNTED BY THEIR TAGS, THE WAY DOORS ARE NAMED BY THEIR MARKS ──
+ * ── WINDOWS COUNTED BY THEIR OPENINGS, TYPED BY THE NEAREST TAG ──
  *
- * A window on a floor plan carries a tag in a symbol beside it — W1, W2 —
- * and the window schedule (or the window-type elevations) says what each tag
- * is. So the count is the drawing's own lettering: every window tag drawn in
- * a symbol near a wall is one window of that type. The frame finder
- * (`windowSymbols`) only backs a tag up: it places the window where a frame
- * is drawn near the tag, and never counts a window by itself — three
- * parallel lines across a wall are also casework, a storefront mullion, or
- * the line between new and existing (Baker A101: 32 frames, none a window).
+ * One tag often names several windows: Topeka draws an "A" hexagon by each
+ * group of units' windows, 24 of them read against 50–61 windows a sheet, so
+ * counting tags undercounted by half. A window is an OPENING — the frame the
+ * finder draws in an exterior wall (`windowSymbols`) — and the tag is what it
+ * is: the nearest tag of the sheet's vocabulary within `WINDOW_TAG_TYPES_FEET`
+ * of the frame gives its type. A frame with no tag that near is not counted
+ * (casework, a porch's sliding door, a section bubble: on training the false
+ * frames sat 3 ft and more from any tag, the windows within 2.8 ft).
  *
- * The tags' vocabulary is the window schedule's marks where the set has one
- * read; else W-numbered tags, when the sheet carries enough of them to mean
- * it tags its windows (`tagsNameEveryWindow`). With neither, nothing is
- * counted and windows stay "to check".
+ * The vocabulary is the window schedule's marks where the set has one read,
+ * else W-numbered tags when the sheet carries enough to mean it tags its
+ * windows (`tagsNameEveryWindow`). With neither, or no frame tagged, nothing
+ * is counted and windows stay "to check".
  */
 export type TaggedWindow = {
   tag: string;
@@ -44,8 +44,8 @@ export type TaggedWindows = {
 export const WINDOW_TAG_WALL_FEET = 6;
 /** A frame within this of a tag is that tag's window. */
 export const WINDOW_FRAME_REACH_FEET = 6;
-/** Two of the same tag closer than this are one symbol read twice. */
-const SAME_TAG_FEET = 0.5;
+/** A tag within this of a frame's line gives that frame its type; farther, the frame is not counted. Training: windows ≤ 2.8 ft, false frames ≥ 3. */
+export const WINDOW_TAG_TYPES_FEET = 3;
 const W_TAG = /^W\d{1,2}[A-Z]?$/;
 
 /** "W-1", "w 1" and "W1" are one tag. */
@@ -85,43 +85,28 @@ export function windowsByTag(input: {
   // A schedule's mark, or a W-numbered tag even where the schedule read has no
   // such row: the tag is the drawing's own statement, and a row the reader
   // missed (Baker's W5) shows as a window with no row rather than vanishing.
-  const isTag = (s: TagSymbol) => (rowOf.has(normaliseTag(s.text)) && (s.rejected === null || s.rejected === "sheet-reference")) || isWTag(s);
-  const reachWall = WINDOW_TAG_WALL_FEET / input.feetPerUnit;
-  const reachFrame = WINDOW_FRAME_REACH_FEET / input.feetPerUnit;
-  const same = SAME_TAG_FEET / input.feetPerUnit;
-  const usedFrames = new Set<number>();
+  const scheduled = (s: TagSymbol) => rowOf.has(normaliseTag(s.text)) && (s.rejected === null || s.rejected === "sheet-reference");
+  // ── A TAG SHAPED LIKE THE SCHEDULE'S IS ONE, WHERE THE READ MISSED ITS ROW ──
+  // Topeka's schedule read has A, D, E and F; its plans tag B and C windows in
+  // the same hexagons. Where every mark is a single letter, a single letter in a
+  // symbol of a scheduled mark's shape is a window tag too (never a wall code).
+  const letters = rows.length > 0 && rows.every((r) => /^[A-Z]$/.test(normaliseTag(r.mark)));
+  const shapes = new Set(input.symbols.filter(scheduled).map((s) => s.shape));
+  const likeScheduled = (s: TagSymbol) => letters && s.rejected === null && /^[A-Z]$/.test(normaliseTag(s.text)) && shapes.has(s.shape) && !wallCodes.has(normaliseTag(s.text));
+  const isTag = (s: TagSymbol) => scheduled(s) || isWTag(s) || likeScheduled(s);
+  // Every tag of the vocabulary, where it was read and where its leader points.
+  const tags = input.symbols.filter(isTag).map((s) => ({ tag: normaliseTag(s.text), points: [{ x: s.x / W, y: s.y / W }, ...(s.leader ? [{ x: s.leader.x / W, y: s.leader.y / W }] : [])] }));
+  const reach = WINDOW_TAG_TYPES_FEET / input.feetPerUnit;
   const windows: TaggedWindow[] = [];
-  // Where each counted tag was READ — not where its window was placed, which
-  // is a frame's middle and says nothing about a second reading of the symbol.
-  const read: { tag: string; x: number; y: number; cx: number; cy: number; r: number }[] = [];
-  for (const s of input.symbols.filter(isTag)) {
-    const tag = normaliseTag(s.text);
-    // Where the tag points: its leader's end when it has one, else its centre.
-    const at = s.leader ? { x: s.leader.x / W, y: s.leader.y / W } : { x: s.x / W, y: s.y / W };
-    // One symbol read twice — Bunkie's W2, once with its leader and once
-    // without — points to two places but has one centre.
-    const c = { cx: s.x / W, cy: s.y / W, r: s.radius / W };
-    if (read.some((r) => r.tag === tag && (Math.hypot(r.x - at.x, r.y - at.y) <= same || Math.hypot(r.cx - c.cx, r.cy - c.cy) <= Math.max(r.r, c.r)))) continue;
-    read.push({ tag, ...at, ...c });
-    let frame: number | null = null, best = reachFrame;
-    input.frames.forEach((f, i) => {
-      if (usedFrames.has(i)) return;
-      const d = nearestOnRun(at, f).d;
-      if (d <= best) { best = d; frame = i; }
-    });
-    let place: { x: number; y: number } | null = null;
-    if (frame !== null) {
-      usedFrames.add(frame);
-      const f = input.frames[frame]!;
-      place = { x: (f.x1 + f.x2) / 2, y: (f.y1 + f.y2) / 2 };
-    } else {
-      const near = input.walls.map((w) => nearestOnRun(at, w)).sort((a, b) => a.d - b.d)[0];
-      if (near !== undefined && near.d <= reachWall) place = { x: near.x, y: near.y };
+  input.frames.forEach((f, i) => {
+    let tag: string | null = null, best = reach;
+    for (const t of tags) for (const p of t.points) {
+      const d = nearestOnRun(p, f).d;
+      if (d <= best) { best = d; tag = t.tag; }
     }
-    // Near no wall and no frame: a legend, an elevation or a note, not a window.
-    if (place === null) continue;
-    windows.push({ tag, ...place, row: rowOf.get(tag) ?? null, frame });
-  }
+    if (tag === null) return;
+    windows.push({ tag, x: (f.x1 + f.x2) / 2, y: (f.y1 + f.y2) / 2, row: rowOf.get(tag) ?? null, frame: i });
+  });
   // A schedule with no tag read on this sheet is not a count of zero windows.
   if (windows.length === 0) return { counted: false, vocabulary: null, windows: [], byTag: [] };
   const order = [...new Set([...rowOf.keys(), ...windows.map((w) => w.tag)])].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
