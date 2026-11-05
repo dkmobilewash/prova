@@ -13,7 +13,7 @@ import { aiGate } from "@/lib/ai/settings";
 import { wallTypeSummary } from "@/lib/takeoff/wallTypeMatch";
 
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
-import { wallsPlan, wallsSheetsFor } from "@/lib/plan-ingest/walls";
+import { floorPlansOfTheWork, wallsPlan, wallsSheetsFor } from "@/lib/plan-ingest/walls";
 import { earlierVersionsFor } from "@/lib/takeoff/sheetRevisions";
 import { isScannedSheet } from "@/lib/plan-ingest/scannedSheet";
 import { cutoutsFromJson, type ItemMeasurement, type TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
@@ -428,11 +428,8 @@ export async function loadTakeoffWorkspace(
   for (const [pageNumber, skip] of wallsPlan(wallsSheets)) {
     if (skip?.startsWith("same level as ")) notCountedByPage[pageNumber] = skip.slice("same level as ".length);
   }
-  // The floor plans of the work: what the whole-set run would count if every
-  // sheet had its scale, so the workspace opens on them before the scales too.
-  const theWork = [...wallsPlan(wallsSheets.map((sheet) => ({ ...sheet, hasScale: true })))]
-    .filter(([, skip]) => skip === null || skip === "already found")
-    .map(([pageNumber]) => pageNumber);
+  // The floor plans of the work, where the workspace opens (`floorPlansOfTheWork`).
+  const theWork = floorPlansOfTheWork(wallsSheets);
   /**
    * WHAT EACH SHEET IS CALLED, so the pager can be jumped to one.
    *
