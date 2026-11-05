@@ -1,4 +1,5 @@
 import { isDimensionString } from "./dimensionStrings";
+import { onPriorPlan, type PriorLine } from "./planCompare";
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { bothFacesDashedInPoints } from "./dashedFaces";
 import { existingSentence, existingWalls, type ExistingWall } from "./existingWalls";
@@ -89,6 +90,13 @@ export type DetectedSheet = {
    * passes the page's own.
    */
   user?: { excludeLike?: readonly Line[]; workArea?: readonly Polygon[] };
+  /**
+   * This level's demolition or existing plan, its walls already aligned onto
+   * this sheet in page-width units, and its sheet number for the sentence —
+   * see `planCompare.ts` and `priorPlan.ts`. Given only on a paired sheet,
+   * with the company's plan comparison on.
+   */
+  priorPlan?: { lines: readonly PriorLine[]; sheet: string };
 };
 
 export type OfferedResult = {
@@ -335,9 +343,20 @@ export function offeredCandidates(
   // the other walls. Vector sheets only: it was priced on those.
   const words = scanned ? [] : (sheet.textItems ?? []).map((t) => ({ str: t.str.trim(), x: (t.x + t.width / 2) / sheet.widthPt, y: (t.y - t.height / 2) / sheet.widthPt }));
   const dimensionRuns = pastScans.filter((w) => isDimensionString(w, pastScans, words, sheet.feetPerUnit));
-  const survivors = dimensionRuns.length === 0 ? pastScans : pastScans.filter((w) => !dimensionRuns.includes(w));
+  const pastDimensions = dimensionRuns.length === 0 ? pastScans : pastScans.filter((w) => !dimensionRuns.includes(w));
   if (dimensionRuns.length > 0) {
     aside.set("dimension-string", { kind: "dimension-string", why: "several dimensions written between the two lines and little meeting them", n: dimensionRuns.length });
+  }
+  // ── ON THE DEMOLITION PLAN TOO: EXISTING TO REMAIN — see `planCompare.ts` ──
+  //
+  // Only where the caller paired this sheet with its level's demolition plan
+  // and the two lined up: a wall the demolition plan also draws, and does not
+  // remove, is the building as it stands, not new work.
+  const prior = sheet.priorPlan;
+  const onPrior = prior === undefined || prior.lines.length === 0 ? [] : pastDimensions.filter((w) => onPriorPlan(w, prior.lines, sheet.feetPerUnit));
+  const survivors = onPrior.length === 0 ? pastDimensions : pastDimensions.filter((w) => !onPrior.includes(w));
+  if (onPrior.length > 0) {
+    aside.set("on-prior-plan", { kind: "on-prior-plan", why: `also drawn on ${prior!.sheet}, this level's demolition plan, and not removed — existing to remain`, n: onPrior.length });
   }
   // ── WHAT THE USER EXCLUDED — see `userExclusions.ts` ──
   //
@@ -445,6 +464,7 @@ export function offeredCandidates(
       ...area.outside.map((w) => ({ kind: "outside-work-area", why: "outside the work area you drew", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...dashed.map((w) => ({ kind: "dashed-faces", why: "both faces are dashed lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...dimensionRuns.map((w) => ({ kind: "dimension-string", why: "several dimensions written between the two lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...onPrior.map((w) => ({ kind: "on-prior-plan", why: `also drawn on ${prior!.sheet}, the demolition plan`, lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...tables.map((w) => ({ kind: "table-rows", why: "rows of text between the lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...underlines.map((w) => ({ kind: "underlines", why: "ruled under a word, as long as the word", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...framedRuns.map((w) => ({ kind: "legend-box", why: framed.boxes[0]?.why ?? "inside a framed legend, schedule or notes block", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),

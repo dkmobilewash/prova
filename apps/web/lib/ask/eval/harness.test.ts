@@ -326,6 +326,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model and writes only its own report: scores the app's candidate list with filled bands OFF and ON against every labelled sheet's answer key, per building on training and TOTALS ONLY on the held-out buildings. Skips without ARMS_LABELS, ARMS_PLANS and ARMS_OUT, and asserts at least one sheet was scored, so an empty folder cannot read as two identical arms",
     "zzViewTriage.eval.ts":
       "calls no model and writes only its own report: one TRAINING set (VIEWS_PDF) through the product's inventory, whole-set planner and detectForSheet, recording per measured sheet the drawings found, kept and left out against the finder on the whole page, plus a per-set summary of why pages were skipped. Refuses a held-out set. Skips without VIEWS_PDF and VIEWS_OUT, and asserts the set had pages",
+    "zzPlanCompareApp.eval.ts":
+      "calls no model and writes only its own report: plan comparison exactly as the app runs it — the keyless inventory's sheet numbers and titles, `autoPairs`, `priorPlanFor` on the paired page — on every labelled sheet, with real and junk set aside and posted-vs-key at the shipped hold, off against on. Per building on training, TOTALS ONLY on held-out. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR, PCA_OUT and TAKEOFF_WALL_MODEL, and asserts a labelled sheet was read",
     "sheetTemplate.eval.ts":
       "calls no model: the template filter's recurrence histogram over a REAL set, guarded by a skip on REAL_PLAN_PDF plus a non-zero segment assertion — a sheet that parsed to nothing must not read as a sheet with no furniture on it",
   };

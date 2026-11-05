@@ -313,6 +313,11 @@ export const EXCLUSIONS: Exclusion[] = [
       "Naming, colouring, reordering and deleting the CONDITIONS an estimator draws with. Every one of these is a decision about a drawing somebody is looking at — which colour tells two wall types apart on this sheet, which order the rail reads in, whether this item is the 6in or the 8in partition. There is no sentence a person could say to Ask that carries the drawing, and an item created blind would be an empty condition in a list nobody asked for. Ask can already REPORT what a takeoff came to, because the quantities reach it as estimate lines; it has no business inventing the categories. assignMeasurementsToItem is the sharpest case: its argument is a list of measurement ids that only exist as shapes on a sheet, so there is nothing for a person to name.",
   },
   {
+    action: "planCompare.*",
+    reason:
+      "Plan comparison's owner switch and a sheet's demolition-plan pairing. The switch changes what every estimator's takeoff sets aside, so it is the owner's decision in Settings with the explanation beside it, never a sentence to the assistant. The pairing names one sheet of a set as another's demolition plan; which sheet is right is something a person decides by looking at the two drawings, and the takeoff shows both the pairing and what it set aside so they can — a pairing chosen blind would set the wrong walls aside.",
+  },
+  {
     action: "takeoffLayerNames.*",
     reason:
       "Names a layer — a group of detected walls on a sheet, keyed by thickness and tag — for the team. The group is something on the drawing that somebody is looking at, picked out by its colour on the plan; there is no sentence a person could say to Ask that identifies which group they mean without the sheet in front of them, and a name given blind would label the wrong walls.",

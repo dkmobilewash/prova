@@ -14,7 +14,7 @@ import { AI_FEATURE_LABEL } from "@/lib/ai/features";
  * tests read the rows.
  */
 
-export type TakeoffFeatureKey = "wallTypesFromDrawings" | "roomsAndCeilings" | "greyOut" | "wholeSet" | "scannedPlans" | "doorsWindows" | "symbolCount";
+export type TakeoffFeatureKey = "wallTypesFromDrawings" | "roomsAndCeilings" | "greyOut" | "wholeSet" | "scannedPlans" | "doorsWindows" | "symbolCount" | "planCompare";
 
 export type TakeoffFeatureStatus =
   /** On, and nothing else is needed. */
@@ -49,6 +49,7 @@ export type TakeoffFeatureInputs = {
   scannedPlansOn?: boolean | null;
   doorsWindowsOn?: boolean | null;
   symbolCountOn?: boolean | null;
+  planCompareOn?: boolean | null;
 };
 
 export const NEEDS_AI_ON = "Company AI must be on (Settings → Assistant)";
@@ -122,6 +123,15 @@ export function takeoffFeatureRows(input: TakeoffFeatureInputs): TakeoffFeatureR
       status: onOff(input.symbolCountOn),
       where: { href: "/settings?tab=estimating#symbol-count", label: "Settings → Estimating" },
       field: "symbolCountOff",
+    },
+    {
+      key: "planCompare",
+      title: "Compare with the demolition plan",
+      explain:
+        "On a renovation, each new floor plan is paired with its level's demolition plan by sheet number and title, and a wall the demolition plan also draws, and does not remove, is set aside as existing to remain. The pairing shows on the sheet and can be changed or removed. No model.",
+      status: onOff(input.planCompareOn),
+      where: { href: "/settings?tab=estimating#plan-compare", label: "Settings → Estimating" },
+      field: "planCompareOn",
     },
     {
       key: "scannedPlans",
