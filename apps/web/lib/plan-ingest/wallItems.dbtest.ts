@@ -91,7 +91,7 @@ describe("walls on the job by type", () => {
     expect(summary.unpriced.map((u) => u.name)).not.toContain(DROPPED_ITEM);
     expect(await prisma.jobLineItem.count({ where: { jobId, takeoffItemId: dropped.id } })).toBe(0);
   });
-  it("A TAG THAT IS A FAMILY'S VARIANT (B6 of B) goes on its own item under its full code, priced with B", async () => {
+  it("A TAG THAT IS A FAMILY'S VARIANT (B6 of B) is held for review on \"Walls — untyped\": variants are 77% right on training (`postingGate.ts`)", async () => {
     await prisma.takeoffMeasurement.deleteMany({ where: { pageId } });
     await prisma.takeoffWallProposal.deleteMany({ where: { pageId } });
     const b = await prisma.wallType.create({ data: { companyId, code: "B", name: "Partition B", thicknessIn: 8, defaultHeightFt: 10, sides: 2, components: { create: [{ description: "studs", basis: "LINEAR_FT", factor: 1 }] } } });
@@ -103,6 +103,6 @@ describe("walls on the job by type", () => {
     const outcome = await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 1, userId: null });
     expect(outcome.kind).toBe("written");
     const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId }, select: { label: true, item: { select: { name: true, wallTypeId: true } } } });
-    expect(rows.map((r) => [r.label, r.item?.name, r.item?.wallTypeId]).sort()).toEqual([["B wall", "B walls", b.id], ["B6 wall", "B6 walls", b.id]]);
+    expect(rows.map((r) => [r.label, r.item?.name, r.item?.wallTypeId]).sort()).toEqual([["B wall", "B walls", b.id], ["wall, untyped", UNTYPED_ITEM, null]]);
   });
 });
