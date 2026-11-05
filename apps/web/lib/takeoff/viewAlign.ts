@@ -1,3 +1,6 @@
+import { oneFacePerLine, type StrokeSegment } from "./wallVectors";
+
+
 /**
  * ── WHERE THE SAME PLAN SITS IN TWO VIEWS OF ONE SHEET ──
  *
@@ -47,4 +50,11 @@ export function alignViews(
   const best = [...votes.values()].sort((p, q) => q.n - p.n)[0];
   if (best === undefined || best.n < 3) return null;
   return { dx: best.dx / best.n, dy: best.dy / best.n, votes: best.n };
+}
+
+/** A page's long faces, page-width units: what the layout check votes with when the demolition plan pairs too few walls. */
+export function longFaces(segments: readonly StrokeSegment[], widthPt: number, feetPerUnit: number): Line[] {
+  return oneFacePerLine([...segments], feetPerUnit / widthPt)
+    .map((f) => ({ x1: f.x1 / widthPt, y1: f.y1 / widthPt, x2: f.x2 / widthPt, y2: f.y2 / widthPt }))
+    .filter((f) => Math.hypot(f.x2 - f.x1, f.y2 - f.y1) * feetPerUnit >= 3);
 }

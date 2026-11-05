@@ -118,9 +118,12 @@ export function jobSteps(facts: JobStepFacts): { steps: JobStep[]; next: JobNext
   const NEXT: Record<JobStepKey, string> = {
     job: "Open the job",
     plans: "Upload the plans",
+    // Names the floor plans whenever the set has any: "Confirm the scales"
+    // read as done once the sure sheets were confirmed and none of them was a
+    // floor plan (the new-customer run on Baker).
     scale:
-      facts.floorPlans > 0 && facts.floorPlansScaled > 0
-        ? `Scale ${facts.floorPlans - facts.floorPlansScaled} more floor plan${facts.floorPlans - facts.floorPlansScaled === 1 ? "" : "s"}`
+      facts.floorPlans > 0
+        ? `Scale ${facts.floorPlans - facts.floorPlansScaled} ${facts.floorPlansScaled > 0 ? "more " : ""}floor plan${facts.floorPlans - facts.floorPlansScaled === 1 ? "" : "s"}`
         : "Confirm the scales",
     takeoff: "Run the takeoff",
     review: facts.toReview > 0 ? reviewLabel(facts.toReview) : "Review the takeoff",

@@ -131,7 +131,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       // in, looking at a blank page (the card renders nothing once there is
       // a session). Found walking the contractor's first-day path, 2026-09-18.
       signInFallbackRedirectUrl="/dashboard"
-      signUpFallbackRedirectUrl="/dashboard"
+      // A sign-up goes straight to /welcome, which sends anyone it is not for
+      // (an invited member) on to /dashboard. Landing on /dashboard and being
+      // redirected raced Clerk's own refresh after sign-up: the redirect was
+      // dropped and a brand-new owner sat on a blank /dashboard, never asked
+      // their trade (new-job walkthrough v2, 2026-11-05).
+      signUpFallbackRedirectUrl="/welcome"
       appearance={{
         variables: {
           // The dark palette (2026-09-11, the approved dark mockups) —

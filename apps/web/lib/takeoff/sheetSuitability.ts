@@ -514,6 +514,13 @@ const NOT_WHAT_YOU_PRICE: ReadonlyArray<readonly [RegExp, number, string]> = [
   [/\bDIAGRAM(S)?\b/i, -200, "a diagram"],
   [/\bSITE\b/i, -200, "a site plan"],
   [/\bROOF\b/i, -200, "a roof plan"],
+  // ── A NOTES OR LEGEND SHEET, WHOSE TITLE NAMES NO PLAN ──
+  // Baker's A301 GENERAL NOTES and A601 WALL TAG LEGEND scored 0 here, and the
+  // title-block read calls nearly every architectural sheet a PLAN, so the plan
+  // set filed them as floor plans and the whole-set run took them off (new-
+  // customer run v2, M7). Only where PLAN is not in the title: the worst match
+  // wins, and "FLOOR PLAN NOTES" is still a floor plan.
+  [/^(?!.*\bPLANS?\b).*\b(NOTES|LEGENDS?|ABBREVIATIONS|SYMBOLS)\b/i, -150, "a notes or legend sheet"],
 ];
 
 /** The architectural discipline, which is where partitions are drawn. */

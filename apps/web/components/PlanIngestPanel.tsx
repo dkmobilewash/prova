@@ -91,6 +91,18 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
     };
   }, []);
 
+  /**
+   * What the last slice of each run had settled, for "did that slice move?".
+   *
+   * A REF, NOT THE `view` STATE. Every next slice is scheduled through the
+   * closure that started the loop, so `view` there is the screen from before
+   * the run began: starting the title blocks after a 65-page inventory
+   * compared each title-block slice with the inventory's 65 finished, saw
+   * nothing move, and stopped after three slices with the person still on the
+   * page (new-customer run v2, M6: "Keep reading" on every run).
+   */
+  const lastSettled = useRef<{ jobId: string; settled: number } | null>(null);
+
   const loadFailures = useCallback(async (jobId: string) => {
     const result = await planIngestFailures(jobId);
     if (!alive.current) return;
@@ -128,7 +140,10 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
 
       // Nothing settled this slice. Either every page is waiting out its
       // backoff, or another worker is doing them — both mean stop asking.
-      const moved = !view || next.finished + next.exhausted > view.finished + view.exhausted;
+      const settled = next.finished + next.exhausted;
+      const last = lastSettled.current;
+      const moved = last === null || last.jobId !== jobId || settled > last.settled;
+      lastSettled.current = { jobId, settled };
       const nextIdle = moved ? 0 : idle + 1;
       if (nextIdle >= MAX_IDLE_SLICES) {
         setRunning(false);
@@ -138,9 +153,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
 
       setTimeout(() => void pump(jobId, nextIdle), SLICE_GAP_MS);
     },
-    // `view` is read for the moved-or-not comparison; including it is correct
-    // and harmless, because `pump` is only ever called through a fresh closure.
-    [loadFailures, view],
+    [loadFailures],
   );
 
   function onStart() {

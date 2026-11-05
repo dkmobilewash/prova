@@ -95,6 +95,8 @@ export type WallTypeTag = {
   /** Centre of the text, in page-width units. */
   x: number;
   y: number;
+  /** Placed where a symbol's leader ends: it names a run it lands ON, never one it lands past the end of. */
+  leader?: boolean;
 };
 
 /** Text items as the page reports them, in POINTS. */
@@ -207,6 +209,23 @@ export function tagByRun(
   const named = (name: string): MatchableWallType | null =>
     wallTypes.find((type) => type.thicknessIn !== null && sameDesignation(type.code, name)) ?? null;
 
+  /**
+   * ── A LEADER THAT ENDS PAST A RUN'S END NAMES SOMETHING ELSE ──
+   *
+   * McAllen A3.2 draws IW-2's leader to a short stub at the end of an IW-4
+   * wall; the stub is too short to be a run, and the nearest run was the IW-4
+   * wall the leader stopped a foot beyond. A drafter ends a leader on the wall
+   * it names, so a leader-placed tag claims only runs whose span it lands
+   * within — half the wall's thickness or half a foot past an end at most.
+   */
+  const lands = (tag: WallTypeTag, wall: WallCandidate) => {
+    if (tag.leader !== true) return true;
+    const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, len = Math.hypot(dx, dy);
+    if (len === 0) return false;
+    const along = ((tag.x - wall.x1) * dx + (tag.y - wall.y1) * dy) / len;
+    const slack = Math.max(wall.thicknessFeet / 2, 0.5) / feetPerUnit;
+    return along >= -slack && along <= len + slack;
+  };
   const claims: { name: string; wall: WallCandidate; feet: number }[] = [];
   for (const tag of tags) {
     const type = named(tag.name);
@@ -217,7 +236,7 @@ export function tagByRun(
     const fitting =
       inches === null
         ? []
-        : walls.filter((wall) => Math.abs(wall.thicknessFeet * 12 - inches) <= THICKNESS_SLACK_IN);
+        : walls.filter((wall) => Math.abs(wall.thicknessFeet * 12 - inches) <= THICKNESS_SLACK_IN && lands(tag, wall));
 
     // WITHIN REACH, NOT ANYWHERE ON THE SHEET — and the first draft of this got
     // it wrong in a way its own probe caught. Asking "does a fitting run exist"
@@ -229,7 +248,7 @@ export function tagByRun(
     const chosen =
       fromFitting.wall !== null && fromFitting.best <= TAG_REACH_FEET
         ? fromFitting
-        : nearest(tag, walls, feetPerUnit);
+        : nearest(tag, tag.leader === true ? walls.filter((wall) => lands(tag, wall)) : walls, feetPerUnit);
 
     const { best, second, wall: bestWall } = chosen;
     if (bestWall === null || best > TAG_REACH_FEET || second < best * TAG_CLEAR_MARGIN) continue;

@@ -373,6 +373,16 @@ export function labelRows(
 const typeOf = (v: { verdict: string; wallType?: string }): string | undefined =>
   (v.verdict === "wall" || v.verdict === "traced") && typeof v.wallType === "string" && v.wallType.trim() !== "" ? v.wallType.trim().toUpperCase() : undefined;
 
+/**
+ * The name a sheet's label file goes under: the sheet NUMBER, never its title.
+ * `sheetLabelByPage` carries "A101 · FLOOR PLAN" since sheet naming learned
+ * titles, and passing that through made A101's saved labels unreadable and a
+ * save write a second, near-empty file beside them.
+ */
+export function labelSheetKey(sheet: string): string {
+  return sheet.split(" · ")[0]!.trim();
+}
+
 export function labelFile(input: {
   set: string;
   sheet: string;

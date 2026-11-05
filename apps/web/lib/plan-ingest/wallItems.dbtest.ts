@@ -35,7 +35,7 @@ describe("walls on the job by type", () => {
   it("is skipped on a sheet with no walls found", async () => {
     expect(await ask()).toEqual({ kind: "skipped", why: "no walls found" });
   });
-  it("WRITES A TAGGED GROUP ON ITS TYPE'S ITEM and the rest on the untyped item, one measurement per run", async () => {
+  it("SUGGESTS, NEVER POSTS: even a printed tag's group goes on the untyped item, one measurement per run (`postingGate.ts`)", async () => {
     const tagged = [{ x1: 0.2, y1: 0.2, x2: 0.5, y2: 0.2, thicknessFeet: 0.5 }, { x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.4, thicknessFeet: 0.5 }];
     const loose = [{ x1: 0.5, y1: 0.4, x2: 0.2, y2: 0.4, thicknessFeet: 0.5 }];
     // One write, as the stage does it: the groups of one detection share a timestamp.
@@ -47,16 +47,16 @@ describe("walls on the job by type", () => {
     const outcome = await ask();
     expect(outcome.kind, JSON.stringify(outcome)).toBe("written");
     if (outcome.kind !== "written") return;
-    expect(Math.round(outcome.typedFeet)).toBe(50);
-    expect(Math.round(outcome.untypedFeet)).toBe(30);
-    expect(outcome.byType).toEqual([{ code: "A1", feet: expect.closeTo(50, 6) }]);
+    expect(Math.round(outcome.typedFeet)).toBe(0);
+    expect(Math.round(outcome.untypedFeet)).toBe(80);
+    expect(outcome.byType).toEqual([]);
     const items = await prisma.takeoffItem.findMany({ where: { jobId }, select: { name: true, wallTypeId: true, type: true, heightFt: true } });
-    expect(items.map((i) => [i.name, i.wallTypeId, i.type, i.heightFt === null ? null : Number(i.heightFt)]).sort()).toEqual([["A1 walls", typeId, "LINEAR", 10], [UNTYPED_ITEM, null, "LINEAR", null]]);
+    expect(items.map((i) => [i.name, i.wallTypeId, i.type, i.heightFt === null ? null : Number(i.heightFt)])).toEqual([[UNTYPED_ITEM, null, "LINEAR", null]]);
     const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId, source: "DETECTED" }, include: { item: true } });
     expect(rows).toHaveLength(3);
-    expect(rows.every((r) => r.kind === "LINEAR")).toBe(true);
-    expect(rows.filter((r) => r.item?.name === "A1 walls")).toHaveLength(2);
-    expect(rows.filter((r) => r.item?.name === UNTYPED_ITEM).map((r) => r.label)).toEqual(["wall, untyped"]);
+    expect(rows.every((r) => r.kind === "LINEAR" && r.item?.name === UNTYPED_ITEM && r.label === "wall, untyped")).toBe(true);
+    // The company HAS A1, with parts; the tag still only suggests it.
+    expect(await prisma.takeoffItem.count({ where: { jobId, wallTypeId: typeId } })).toBe(0);
   });
   it("never writes twice", async () => {
     expect(await ask()).toEqual({ kind: "skipped", why: "walls already on the job" });
@@ -91,10 +91,10 @@ describe("walls on the job by type", () => {
     expect(summary.unpriced.map((u) => u.name)).not.toContain(DROPPED_ITEM);
     expect(await prisma.jobLineItem.count({ where: { jobId, takeoffItemId: dropped.id } })).toBe(0);
   });
-  it("A TAG THAT IS A FAMILY'S VARIANT (B6 of B) goes on its own item under its full code, priced with B", async () => {
+  it("A PLAIN TAG (B) AND A FAMILY'S VARIANT (B6 of B) both wait on \"Walls — untyped\" for a person (`postingGate.ts`)", async () => {
     await prisma.takeoffMeasurement.deleteMany({ where: { pageId } });
     await prisma.takeoffWallProposal.deleteMany({ where: { pageId } });
-    const b = await prisma.wallType.create({ data: { companyId, code: "B", name: "Partition B", thicknessIn: 8, defaultHeightFt: 10, sides: 2, components: { create: [{ description: "studs", basis: "LINEAR_FT", factor: 1 }] } } });
+    await prisma.wallType.create({ data: { companyId, code: "B", name: "Partition B", thicknessIn: 8, defaultHeightFt: 10, sides: 2, components: { create: [{ description: "studs", basis: "LINEAR_FT", factor: 1 }] } } });
     const run = (y: number) => ({ x1: 0.2, y1: y, x2: 0.5, y2: y, thicknessFeet: 8 / 12 });
     await prisma.takeoffWallProposal.createMany({ data: [
       { pageId, calibrationId, thicknessInches: 8, source: "TAG", sourceLabel: "B", namedCode: "B", runs: [run(0.8)] },
@@ -103,6 +103,6 @@ describe("walls on the job by type", () => {
     const outcome = await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 1, userId: null });
     expect(outcome.kind).toBe("written");
     const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId }, select: { label: true, item: { select: { name: true, wallTypeId: true } } } });
-    expect(rows.map((r) => [r.label, r.item?.name, r.item?.wallTypeId]).sort()).toEqual([["B wall", "B walls", b.id], ["B6 wall", "B6 walls", b.id]]);
+    expect(rows.map((r) => [r.label, r.item?.name, r.item?.wallTypeId])).toEqual([["wall, untyped", UNTYPED_ITEM, null], ["wall, untyped", UNTYPED_ITEM, null]]);
   });
 });

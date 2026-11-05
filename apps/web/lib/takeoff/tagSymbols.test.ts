@@ -572,3 +572,40 @@ describe("when the only named shape in a family is a square", () => {
     expect(got[0].shape).toBe("square");
   });
 });
+
+describe("a wide box tag is measured by its own outline (McAllen A3.2)", () => {
+  // McAllen's tags are boxes three times as wide as they are tall, stacked
+  // edge to edge. Read as a circle of the half-width, a box took the lettering
+  // of the box above it and the leader of the tag beside it.
+  const box = (cx: number, cy: number, w: number, h: number): StrokeSegment[] => {
+    const c = [[cx - w / 2, cy - h / 2], [cx + w / 2, cy - h / 2], [cx + w / 2, cy + h / 2], [cx - w / 2, cy + h / 2]];
+    return c.map(([x1, y1], i) => ({ x1: x1!, y1: y1!, x2: c[(i + 1) % 4]![0]!, y2: c[(i + 1) % 4]![1]! }));
+  };
+
+  it("reads two stacked boxes as two tags, one code each", () => {
+    const got = tagSymbols({
+      segments: [...box(200, 100, 36, 11), ...box(200, 111, 36, 11)],
+      text: [label("IW-5", 200, 100), label("IW-4", 200, 111)],
+      unitsPerPaperInch: PER_INCH,
+    }).filter((s) => s.parts.length > 0);
+    expect(got.map((s) => s.parts).sort()).toEqual([["IW-4"], ["IW-5"]]);
+  });
+
+  it("takes a leader from its own edge, not a stroke ending past its side", () => {
+    // A stroke ending 4 pt off the box's left edge: inside the old circle's
+    // ring, so it was this box's leader. It belongs to whatever it touches.
+    const stray = tagSymbols({
+      segments: [...box(200, 200, 36, 11), { x1: 178, y1: 200, x2: 150, y2: 200 }],
+      text: [label("IW-3", 200, 200)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(stray[0]!.leader).toBeNull();
+    const own = tagSymbols({
+      segments: [...box(200, 200, 36, 11), { x1: 182, y1: 200, x2: 150, y2: 200 }],
+      text: [label("IW-3", 200, 200)],
+      unitsPerPaperInch: PER_INCH,
+    });
+    expect(own[0]!.leader).toEqual({ x: 150, y: 200 });
+  });
+
+});

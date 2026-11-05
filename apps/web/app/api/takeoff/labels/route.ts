@@ -1,6 +1,6 @@
 import { requireCompanyContext } from "@/lib/auth";
 import { LABEL_DIR_VAR, labellingAllowed, readLabels, writeLabels } from "@/lib/plan-ingest/labelStore";
-import { labelFile, type LabelCandidate, type LabelVerdict } from "@/lib/takeoff/labelRows";
+import { labelFile, labelSheetKey, type LabelCandidate, type LabelVerdict } from "@/lib/takeoff/labelRows";
 import type { SplitRecord } from "@/lib/takeoff/answerKeyReview";
 import { NextResponse } from "next/server";
 
@@ -40,6 +40,39 @@ import { NextResponse } from "next/server";
  *  deployment gives for an unknown route: labelling is not a thing here. The
  *  refusal's reason is logged by the store, never sent — a server's
  *  environment has no business in a response. */
+/**
+ * ── WHICH FILE A SHEET'S LABELS LIVE IN ──
+ *
+ * One answer for the read and the write, so a save goes back to the file the
+ * page loaded. Tried in order, first that exists wins:
+ *
+ *   1. the sheet NUMBER ("A-101") — the key every save since #990 writes;
+ *   2. the PAGE ("p74") — sheets labelled before any number was read for them
+ *      were saved under the page, and once the number appeared the page asked
+ *      for "A-101", opened with 0 walls, and a save forked a second file;
+ *   3. the raw title — legacy, read-only (the POST never writes one).
+ *
+ * Nothing exists: the number. `page` null (an older client that does not send
+ * it) skips step 2, which is #990's behaviour.
+ */
+async function resolveLabelKey(set: string, sheet: string, page: number | null) {
+  const number = labelSheetKey(sheet);
+  const keys = [number];
+  if (page !== null) keys.push(`p${page}`);
+  if (sheet.trim() !== number) keys.push(sheet);
+  for (const key of keys) {
+    const saved = await readLabels(set, key);
+    if (saved !== null) return { key, saved, number, isTitle: key === sheet && key !== number };
+  }
+  return { key: number, saved: null, number, isTitle: false };
+}
+
+/** A page number from a request, or null when absent or not a page. */
+function pageOf(value: unknown): number | null {
+  const n = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
+  return typeof n === "number" && Number.isInteger(n) && n > 0 ? n : null;
+}
+
 function notHere() {
   return NextResponse.json({ ok: false, error: "Labelling is off here." }, { status: 404 });
 }
@@ -58,7 +91,8 @@ export async function GET(request: Request) {
   }
   if (!labellingAllowed(process.env)) return notHere();
 
-  const saved = await readLabels(set, sheet);
+  // Number, then page, then legacy title — `resolveLabelKey` says why.
+  const { saved } = await resolveLabelKey(set, sheet, pageOf(url.searchParams.get("page")));
   if (saved === null) {
     // NOT an error: a sheet nobody has labelled is the ordinary case, and the
     // page needs to tell the two apart without reading a message.
@@ -170,9 +204,16 @@ export async function POST(request: Request) {
     /** Round 13: windows and doors marked on the sheet. */
     openings?: { x: number; y: number; kind: string; tag?: string }[];
   };
+  // Saved back to the file the page LOADED from (number, else page) — never a
+  // title-keyed one: a title here wrote "A101 · FLOOR PLAN" beside A101 and
+  // orphaned the real review, so a title-file hit writes the number instead.
+  const resolved = await resolveLabelKey(input.set, input.sheet, pageOf(input.page));
+  const sheet = resolved.isTitle ? resolved.number : resolved.key;
+  const had = resolved.saved as { sheet?: unknown } | null;
   const file = labelFile({
     set: input.set,
-    sheet: input.sheet,
+    // The file keeps the sheet name it already had; a new one gets the number.
+    sheet: !resolved.isTitle && typeof had?.sheet === "string" ? had.sheet : resolved.number,
     page: input.page ?? 1,
     reviewedBy: input.reviewedBy ?? "",
     secondsSpent: input.secondsSpent ?? 0,
@@ -201,7 +242,8 @@ export async function POST(request: Request) {
   // verdicts than the file already holds, whatever produced it. It does not refuse a smaller save outright — a reviewer may
   // legitimately redo a sheet — it refuses an UNACKNOWLEDGED one, and says
   // exactly what it is protecting so the answer is obvious.
-  const existing = await readLabels(parsed.set, parsed.sheet, process.env);
+  // The SAME file the resolution loaded, so the guard compares like with like.
+  const existing = resolved.saved;
   if (existing !== null) {
     const had = existing.verdicts?.length ?? 0;
     const now = file.verdicts.length;
@@ -221,7 +263,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const written = await writeLabels(parsed.set, parsed.sheet, file);
+  const written = await writeLabels(parsed.set, sheet, file);
   if (!written.ok) {
     return NextResponse.json({ ok: false, error: written.error }, { status: 400 });
   }

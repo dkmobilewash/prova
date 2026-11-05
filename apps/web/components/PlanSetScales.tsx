@@ -10,7 +10,10 @@ import { CATEGORY_LABEL, CATEGORY_ORDER, type PlanSetRow, type ScaleConfidence }
  * The guided flow's Phase 2. Every row is built from what the inventory and the
  * scale reader stored (`lib/takeoff/planSet.ts`). Confirm scales saves every
  * sheet the reader is sure of; the floor plans it is not sure of are listed
- * first, each with its one-click fix.
+ * first, each with its one-click fix — the printed scale one sheet at a time,
+ * because nothing on the sheet confirms it. Confirm scales never reaches those,
+ * so the panel says they are still to do rather than leaving a confirmed set
+ * with no floor plan in it.
  */
 const MARK: Record<ScaleConfidence, { word: string; className: string }> = {
   set: { word: "Confirmed", className: "bg-tag-green text-tag-green-ink" },
@@ -27,6 +30,7 @@ export function PlanSetScales({ jobId, planId, rows, reading }: { jobId: string;
   const floors = rows.filter((row) => row.category === "floor");
   const floorsSet = floors.filter((row) => row.confidence === "set").length;
   const toLookAt = floors.filter((row) => row.confidence === "printed" || row.confidence === "none");
+  const stillToDo = toLookAt.length === 0 ? "" : ` ${toLookAt.length} floor plan${toLookAt.length === 1 ? " is" : "s are"} still to do, below.`;
 
   function run(pages: number[], usePrinted: boolean) {
     setError(null);
@@ -35,7 +39,8 @@ export function PlanSetScales({ jobId, planId, rows, reading }: { jobId: string;
       const result = await confirmSheetScales(jobId, planId, pages, usePrinted);
       if (!result.ok) return setError(result.error);
       const { confirmed, skipped } = result.value;
-      setMessage(`${confirmed} scale${confirmed === 1 ? "" : "s"} confirmed${skipped > 0 ? `; ${skipped} left for you to set` : ""}.`);
+      const after = usePrinted ? "" : stillToDo;
+      setMessage(`${confirmed} scale${confirmed === 1 ? "" : "s"} confirmed${skipped > 0 ? `; ${skipped} left for you to set` : ""}.${after}`);
     });
   }
 
@@ -50,6 +55,13 @@ export function PlanSetScales({ jobId, planId, rows, reading }: { jobId: string;
             {reading ? " · still reading the set" : ""}
           </p>
         </div>
+        {/* Nothing sure left and floor plans to do: the header points at them
+            rather than a dead Confirm scales. */}
+        {sure.length === 0 && toLookAt.length > 0 ? (
+          <a href="#plan-set-look" data-takeoff="plan-set-to-do" className="inline-flex min-h-[40px] items-center rounded-md border border-brand px-4 text-sm font-semibold text-ink hover:bg-rail-hover">
+            {toLookAt.length} floor plan{toLookAt.length === 1 ? "" : "s"} still to do ↓
+          </a>
+        ) : (
         <button
           type="button"
           data-takeoff="confirm-scales"
@@ -59,12 +71,18 @@ export function PlanSetScales({ jobId, planId, rows, reading }: { jobId: string;
         >
           {pending ? "Confirming…" : sure.length > 0 ? `Confirm ${sure.length} scale${sure.length === 1 ? "" : "s"}` : "Confirm scales"}
         </button>
+        )}
       </div>
+      {sure.length > 0 && toLookAt.length > 0 && (
+        <p className="mt-1 text-xs text-ink-muted" data-takeoff="plan-set-covers">
+          Confirm covers the {sure.length} sheet{sure.length === 1 ? "" : "s"} the reader is sure of. The {toLookAt.length} floor plan{toLookAt.length === 1 ? "" : "s"} below need{toLookAt.length === 1 ? "s" : ""} their own.
+        </p>
+      )}
       {message && <p className="mt-2 text-sm text-tag-green-ink" data-takeoff="plan-set-message">{message}</p>}
       {error && <p className="mt-2 text-sm text-tag-rose-ink">{error}</p>}
 
       {toLookAt.length > 0 && (
-        <div className="mt-4 rounded-md border border-line-card p-3" data-takeoff="plan-set-look">
+        <div id="plan-set-look" className="mt-4 scroll-mt-4 rounded-md border border-line-card p-3" data-takeoff="plan-set-look">
           <h3 className="text-sm font-semibold text-ink">Floor plans that need a look ({toLookAt.length})</h3>
           <ul className="mt-2 flex flex-col gap-2">
             {toLookAt.map((row) => (

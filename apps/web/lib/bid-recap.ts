@@ -511,3 +511,36 @@ export function spreadTotal(lines: readonly RecapLine[], spread: readonly Spread
     }, 0),
   );
 }
+
+/* ------------------------------------------------------ pricing one line */
+
+/**
+ * Whether these rates carry the company's own markup: all four of
+ * `OWN_MARKUP_KEYS`. With them, an estimate line is priced from its COST
+ * (`unitPriceFromCost`) rather than typed as a sale price — Diego's call on
+ * the new-job walkthrough v2 (F2), where markup set at signup changed nothing
+ * in a bid whose lines had all been typed as prices.
+ */
+export function ownMarkupSet(rates: RecapRates): boolean {
+  return OWN_MARKUP_KEYS.every((key) => rates[key] != null);
+}
+
+/**
+ * ONE line's unit price from its unit cost, through the same steps as the
+ * whole recap: its category's markup, escalation, tax on material, overhead,
+ * profit, bond, contingency. Every step is proportional to cost, so pricing
+ * each line this way sums to `bidRecap` over all of them, to the cent per unit
+ * — the same rounding `spreadToLines` makes when Apply writes prices.
+ *
+ * Null when there is no quantity to divide by. A line with no category takes
+ * no category markup, exactly as the recap treats it — so the caller asks for
+ * the category first rather than price such a line low without saying.
+ */
+export function unitPriceFromCost(
+  line: { quantity: number; unitCost: number; costCategory: CostCategoryValue | null },
+  rates: RecapRates,
+): string | null {
+  if (!(line.quantity > 0)) return null;
+  const recap = bidRecap([{ id: "line", quantity: line.quantity, unitCost: line.unitCost, unitPrice: null, costCategory: line.costCategory }], rates);
+  return (recap.bidTotal / line.quantity).toFixed(2);
+}

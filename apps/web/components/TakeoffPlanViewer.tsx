@@ -26,7 +26,7 @@ import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 import { DISTINCT_MARKS, DOOR_COLOUR, LAYER_COLOURS, ROOM_COLOUR, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
 import { TakeoffLayerPanel, type Layer } from "@/components/TakeoffLayerPanel";
 import { defaultLayerName, layerKeyOf } from "@/lib/takeoff/layerKey";
-import { renameTakeoffLayer, setWallGroupHeight } from "@/lib/actions";
+import { postSheetWalls, renameTakeoffLayer, setWallGroupHeight } from "@/lib/actions";
 import { SetWallHeight } from "./SetWallHeight";
 import type { TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
 import { areaLine, ceilingOption, heightFrom, wallSquareFeet, type CeilingRoom, type HeightOption } from "@/lib/takeoff/wallHeight";
@@ -356,6 +356,7 @@ export function TakeoffPlanViewer({
   onSelect,
   onPanelOpen,
   focusRun = null,
+  focusRuns = null,
   activeItemId = null,
   earlierVersionByPage = {},
   wallItems = [],
@@ -521,6 +522,8 @@ export function TakeoffPlanViewer({
   onPanelOpen?: (open: boolean) => void;
   /** A run the workspace's set-wide review is on, shown and zoomed to on its page. */
   focusRun?: { pageNumber: number; x1: number; y1: number; x2: number; y2: number } | null;
+  /** A whole wall group the review queue is on: every run lit, the plan zoomed to all of them. */
+  focusRuns?: { pageNumber: number; runs: readonly { x1: number; y1: number; x2: number; y2: number }[] } | null;
   onMeasurementSaved?: (saved: { id: string; kind: MeasurementKind }) => void;
   /**
    * The takeoff item new measurements belong to, when a host has one selected.
@@ -1111,6 +1114,8 @@ export function TakeoffPlanViewer({
   const [scaleSlot, setScaleSlot] = useState<HTMLElement | null>(null);
   const [sideSlot, setSideSlot] = useState<HTMLElement | null>(null);
   const [foundSlot, setFoundSlot] = useState<HTMLElement | null>(null);
+  /** What Run takeoff put on the job, on the sheet it ran on. */
+  const [postedNote, setPostedNote] = useState<{ page: number; text: string; failed: boolean } | null>(null);
   const [reviewSlot, setReviewSlot] = useState<HTMLElement | null>(null);
   const [bannerSlot, setBannerSlot] = useState<HTMLElement | null>(null);
   /** The top of the layer panel, where messages and the draft card dock. */
@@ -2925,15 +2930,30 @@ export function TakeoffPlanViewer({
   // the set review's run, on its page.
   const reviewRun =
     sheetReviewRun ?? heldShownRun ?? (focusRun !== null && focusRun.pageNumber === pageNumber ? focusRun : null);
+  const groupRuns = focusRuns !== null && focusRuns.pageNumber === pageNumber && focusRuns.runs.length > 0 ? focusRuns.runs : null;
+  // The group's box, zoomed to as one run would be: its corners are the run.
+  const groupBox = useMemo(
+    () =>
+      groupRuns === null
+        ? null
+        : {
+            x1: Math.min(...groupRuns.flatMap((r) => [r.x1, r.x2])),
+            y1: Math.min(...groupRuns.flatMap((r) => [r.y1, r.y2])),
+            x2: Math.max(...groupRuns.flatMap((r) => [r.x1, r.x2])),
+            y2: Math.max(...groupRuns.flatMap((r) => [r.y1, r.y2])),
+          },
+    [groupRuns],
+  );
+  const zoomRun = reviewRun ?? groupBox;
   // Each run in turn, zoomed and centred, so the reviewer never has to look for it.
   useEffect(() => {
     const frame = frameRef.current;
-    if (reviewRun === null || frame === null || pageSize === null || feetPerUnit === null) return;
-    const view = viewOfRun(reviewRun, pageSize, { width: frame.clientWidth, height: frame.clientHeight }, feetPerUnit, BASE_SCALE);
+    if (zoomRun === null || frame === null || pageSize === null || feetPerUnit === null) return;
+    const view = viewOfRun(zoomRun, pageSize, { width: frame.clientWidth, height: frame.clientHeight }, feetPerUnit, BASE_SCALE);
     setZoom(view.zoom);
     const id = requestAnimationFrame(() => frame.scrollTo({ left: view.left, top: view.top }));
     return () => cancelAnimationFrame(id);
-  }, [reviewRun, pageSize, feetPerUnit, heldShown?.at]);
+  }, [zoomRun, pageSize, feetPerUnit, heldShown?.at]);
 
   /**
    * Taking a run back is its verdict becoming WALL, then the list rebuilt from
@@ -3922,6 +3942,14 @@ export function TakeoffPlanViewer({
       // is read here rather than at render, so a result can never be relabelled
       // by paging — see `wallsOnThisSheet`.
       setFoundOnPage(pageNumber);
+      // ── AND ONTO THE JOB: Run takeoff takes off ──
+      // The sheet's stored walls, posted by type as the whole-set run posts
+      // them, unless something of the sheet is on the job already
+      // (`postSheetWalls`). New-customer run v2, M3: it used to add nothing.
+      if (fill && !readOnly && answerKey === undefined) {
+        const posted = await postSheetWalls(jobId, planId, pageNumber);
+        setPostedNote(posted.ok ? (posted.value.note === null ? null : { page: pageNumber, text: posted.value.note, failed: false }) : { page: pageNumber, text: posted.error, failed: true });
+      }
     } catch (problem) {
       // The sheet is still on screen and the manual tools still work, so this
       // says what failed and stops — it does not take the page down.
@@ -5128,6 +5156,11 @@ export function TakeoffPlanViewer({
           }`}
           data-takeoff="found-walls"
         >
+          {postedNote !== null && postedNote.page === pageNumber && (
+            <p className={`mb-2 rounded-md px-2 py-1 text-xs ${postedNote.failed ? "bg-tag-rose text-tag-rose-ink" : "bg-tag-green text-tag-green-ink"}`} data-takeoff="posted-note">
+              {postedNote.failed ? `Not put on the job: ${postedNote.text}` : `Put on the job: ${postedNote.text}. Untyped walls wait in Review.`}
+            </p>
+          )}
           {/* ABOVE the groups, because a caution under the thing it is about is
               read after the decision has been made — `PlanSheetReview`'s
               convention and the one the quote reader's cautions follow. */}
@@ -6568,6 +6601,22 @@ export function TakeoffPlanViewer({
                   vectorEffect="non-scaling-stroke"
                 />
               )}
+              {reviewRun === null &&
+                groupRuns?.map((run, i) => (
+                  <line
+                    key={`focus-${i}`}
+                    data-takeoff="focus-run"
+                    x1={run.x1}
+                    y1={run.y1}
+                    x2={run.x2}
+                    y2={run.y2}
+                    stroke="#f59e0b"
+                    strokeWidth={STROKE_PX * 5}
+                    strokeOpacity={0.7}
+                    strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
               {/* The demoted runs: grey and dashed so nobody reads one as found. */}
               {reviewRun !== null && (
                 <line

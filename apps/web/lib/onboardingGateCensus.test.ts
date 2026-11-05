@@ -92,3 +92,22 @@ describe("the onboarding gate has exactly one door in and one door out", () => {
     expect(inSites.filter((f) => outSites.includes(f))).toEqual([]);
   });
 });
+
+describe("where a finished sign-up and sign-in land", () => {
+  // A sign-up lands on /welcome itself. Landing on /dashboard and being
+  // redirected raced Clerk's refresh after sign-up: the redirect was dropped
+  // and a new owner sat on a blank /dashboard, never asked their trade
+  // (new-job walkthrough v2, 2026-11-05). A sign-in still lands on /dashboard,
+  // where the gate above catches an owner who has not answered yet.
+  const read = (path: string) => readFileSync(join(appDir, path), "utf8");
+
+  it("sends a sign-up to /welcome, from the provider and from the sign-up card", () => {
+    expect(read("layout.tsx")).toMatch(/signUpFallbackRedirectUrl="\/welcome"/);
+    expect(read("sign-up/[[...sign-up]]/page.tsx")).toMatch(/<SignUp fallbackRedirectUrl="\/welcome" \/>/);
+  });
+
+  it("sends a sign-in to /dashboard, where the gate is", () => {
+    expect(read("layout.tsx")).toMatch(/signInFallbackRedirectUrl="\/dashboard"/);
+    expect(read("sign-in/[[...sign-in]]/page.tsx")).toMatch(/<SignIn fallbackRedirectUrl="\/dashboard" \/>/);
+  });
+});
