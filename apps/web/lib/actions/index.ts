@@ -123,4 +123,5 @@ export * from "./takeoffExclusions";
 export * from "./takeoffReadSheet";
 export * from "./planTextRead";
 export * from "./wallLegend";
+export * from "./wallGroupType";
 export * from "./takeoffOffer";

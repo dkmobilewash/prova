@@ -50,6 +50,7 @@ import {
   saveTakeoffMeasurements,
   updateMeasurementGeometry,
   setWallTypeThickness,
+  setWallGroupType,
 } from "@/lib/actions";
 import type {
   PlanSheet,
@@ -315,6 +316,7 @@ export function TakeoffPlanViewer({
   rasterPages = [],
   rasterUrl = null,
   storedWallsByPage,
+  legendCodes = [],
   takeoffItems = [],
   levelByPage,
   wallTypes,
@@ -568,6 +570,8 @@ export function TakeoffPlanViewer({
    * calibration, which is the same thing from the reader's side.
    */
   storedWallsByPage?: Record<number, WallGroup[]>;
+  /** The codes the set's legend read defines: the "Set type" picker on an untyped group. */
+  legendCodes?: string[];
   /**
    * The job's takeoff items, so detected groups can read under the condition
    * they propose into rather than as a flat list of thicknesses.
@@ -1128,6 +1132,10 @@ export function TakeoffPlanViewer({
   const [frameWidth, setFrameWidth] = useState(0);
   const [frameHeight, setFrameHeight] = useState(0);
   const [cssWidth, setCssWidth] = useState(0);
+  // One screen pixel in page units. The overlay's viewBox is the page, so a
+  // radius in page units grows with zoom; dots and handles are sized in these
+  // instead and stay the same on screen at any zoom.
+  const onePx = 1 / Math.max(cssWidth, 1);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
@@ -3996,6 +4004,27 @@ export function TakeoffPlanViewer({
   }
 
   /**
+   * "Set type": one press names an untyped group from the set's legend. Every
+   * run goes onto that type's item, saved with the job, and the group leaves
+   * the list exactly as "Add these" does — see `setWallGroupType`.
+   */
+  const [settingType, setSettingType] = useState<number | null>(null);
+  async function setTypeFor(index: number, group: WallGroup, code: string) {
+    setSettingType(index);
+    setFindError(null);
+    const result = await setWallGroupType(jobId, {
+      planId,
+      pageNumber,
+      code,
+      inches: group.inches,
+      runs: group.runs.map((run) => ({ x1: run.x1, y1: run.y1, x2: run.x2, y2: run.y2 })),
+    });
+    setSettingType(null);
+    if (!result.ok) return setFindError(result.error);
+    setFound((current) => (current ?? []).filter((_, i) => i !== index));
+  }
+
+  /**
    * The type a group would be POSTED as, or null for one that is not settled.
    *
    * ONE FUNCTION FOR THE BUTTON AND THE SUBMIT, deliberately. The button's
@@ -5268,6 +5297,24 @@ export function TakeoffPlanViewer({
                         is: a type (the verdict's candidates first, the sheet's
                         note before them), a new type from this group, or plain
                         measurements — last, and said in words. */}
+                    {priced === null && namedOnly === null && legendCodes.length > 0 && (
+                      <span className="flex flex-wrap items-center gap-1" data-takeoff="set-type">
+                        <span className="text-xs text-ink-muted">Set type</span>
+                        {legendCodes.map((code) => (
+                          <button
+                            key={code}
+                            type="button"
+                            data-takeoff="set-type-code"
+                            disabled={settingType !== null}
+                            onClick={() => void setTypeFor(index, group, code)}
+                            aria-label={`Set the ${inchLabel(group.inches)} walls to type ${code}`}
+                            className="min-h-[36px] min-w-[36px] rounded-md border border-line-card bg-surface px-2 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-50"
+                          >
+                            {code}
+                          </button>
+                        ))}
+                      </span>
+                    )}
                     {priced === null && namedOnly === null && (
                       <select
                         aria-label={`What are the ${inchLabel(group.inches)} walls?`}
@@ -6167,7 +6214,7 @@ export function TakeoffPlanViewer({
                           strokeWidth={lit ? STROKE_PX * 3 : STROKE_PX * 1.5}
                           vectorEffect="non-scaling-stroke"
                         />
-                        <circle cx={d.hinge.x} cy={d.hinge.y} r={lit ? 0.004 : 0.0025} fill={d.wall === null ? "#c026d3" : "#2563eb"} />
+                        <circle cx={d.hinge.x} cy={d.hinge.y} r={(lit ? 4 : 2.5) * onePx} fill={d.wall === null ? "#c026d3" : "#2563eb"} />
                       </g>
                     );
                   })}
@@ -6215,7 +6262,7 @@ export function TakeoffPlanViewer({
               {demo?.page === pageNumber && demo.read !== null && (
                 <g data-takeoff="demo-overlay">
                   {demo.read.runs.map((r, i) => !demoDropped.has(i) && <line key={`${r.x1}:${r.y1}`} x1={r.x1} y1={r.y1} x2={r.x2} y2={r.y2} stroke="#dc2626" strokeWidth={STROKE_PX + 1} vectorEffect="non-scaling-stroke" />)}
-                  {demo.read.doors.map((d) => <circle key={`${d.x}:${d.y}`} cx={d.x} cy={d.y} r={0.006} fill="none" stroke="#dc2626" strokeWidth={STROKE_PX} vectorEffect="non-scaling-stroke" />)}
+                  {demo.read.doors.map((d) => <circle key={`${d.x}:${d.y}`} cx={d.x} cy={d.y} r={6 * onePx} fill="none" stroke="#dc2626" strokeWidth={STROKE_PX} vectorEffect="non-scaling-stroke" />)}
                 </g>
               )}
               {symbols !== null && symbols.page === pageNumber && symbols.choices && (
@@ -6333,6 +6380,7 @@ export function TakeoffPlanViewer({
                       xs={xs}
                       ys={ys}
                       colour={editing ? "#f59e0b" : m.postedAt ? "#6b7280" : "#38bdf8"}
+                      onePx={onePx}
                     />
                     {/* ── OPENINGS TAKEN OFF THIS AREA ──
                         Drawn as their own outlines rather than as a hole in
@@ -6361,7 +6409,7 @@ export function TakeoffPlanViewer({
                           key={i}
                           cx={x}
                           cy={ys[i]}
-                          r={0.007}
+                          r={7 * onePx}
                           fill="#f59e0b"
                           stroke="#0f172a"
                           strokeWidth={STROKE_PX / 2}
@@ -6509,6 +6557,7 @@ export function TakeoffPlanViewer({
                   ys={draft.ys}
                   colour="#f0b429"
                   open
+                  onePx={onePx}
                 />
               )}
             </svg>
@@ -7248,19 +7297,22 @@ function Shape({
   ys,
   colour,
   open = false,
+  onePx,
 }: {
   kind: MeasurementKind;
   xs: number[];
   ys: number[];
   colour: string;
   open?: boolean;
+  /** One screen pixel in page units, so the dots do not grow with zoom. */
+  onePx: number;
 }) {
   const points = xs.map((x, i) => `${x},${ys[i]}`).join(" ");
   if (kind === "COUNT") {
     return (
       <g>
         {xs.map((x, i) => (
-          <circle key={i} cx={x} cy={ys[i]} r={0.006} fill={colour} fillOpacity={0.9} />
+          <circle key={i} cx={x} cy={ys[i]} r={6 * onePx} fill={colour} fillOpacity={0.9} />
         ))}
       </g>
     );
@@ -7288,7 +7340,7 @@ function Shape({
         vectorEffect="non-scaling-stroke"
       />
       {xs.map((x, i) => (
-        <circle key={i} cx={x} cy={ys[i]} r={0.004} fill={colour} />
+        <circle key={i} cx={x} cy={ys[i]} r={4 * onePx} fill={colour} />
       ))}
     </g>
   );
@@ -7531,8 +7583,8 @@ export function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: (
  * means that is the unit — and these lines were set to 0.002 of one.
  *
  * Found by a click-through of the prefill: the two end dots rendered on the
- * drawing and **the line between them did not**. The dots are plain circles
- * with `r={0.004}` in the viewBox's own units, so they scale and show. Every
+ * drawing and **the line between them did not**. The dots were plain circles
+ * then, with `r={0.004}` in the viewBox's own units, so they scaled and showed. Every
  * stroked line carries `non-scaling-stroke`, which makes its width a count of
  * device pixels rather than user units — so `0.002` asked for two thousandths
  * of a pixel.
