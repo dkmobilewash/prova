@@ -93,6 +93,8 @@ export type LabelVerdict = {
   thicknessFeet: number;
   /** What the reviewer said about this run. */
   verdict: "wall" | "not-wall" | "traced" | "unsure";
+  /** Round 12: the set's legend code a reviewer gave an accepted or traced wall, or "U" for can't tell. */
+  wallType?: string;
 };
 
 export type LabelRow = {
