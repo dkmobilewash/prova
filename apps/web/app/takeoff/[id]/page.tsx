@@ -97,6 +97,7 @@ export default async function TakeoffWorkspacePage({
               : data.startPage.work
       }
       openReview={open === "review"}
+      openScale={open === "scale"}
       /* ── ANSWER-KEY MODE FROM THE URL ──
          So a review session can be opened on the right sheet in one link,
          rather than remembering to press a toggle that changes what every

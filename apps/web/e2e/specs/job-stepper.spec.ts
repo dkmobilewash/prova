@@ -59,7 +59,7 @@ test.describe("the job stepper", () => {
     await expect(bar(), "no stepper on a brand-new estimate").toBeVisible();
     expect(await states()).toBe("job:done plans:current scale:todo takeoff:todo review:todo estimate:todo send:todo");
     await expect(next()).toHaveText("Next: Upload the plans");
-    await expect(next()).toHaveAttribute("href", `/jobs/${jobId}/takeoff`);
+    await expect(next()).toHaveAttribute("href", `/jobs/${jobId}/takeoff#plan-set`);
     // A step says its state in words too, not only by its mark.
     await expect(step("plans")).toContainText("current step");
     await expect(step("send")).toContainText("not started");
@@ -90,15 +90,12 @@ test.describe("the job stepper", () => {
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
     await page.reload();
     expect(await states()).toBe("job:done plans:done scale:current takeoff:todo review:todo estimate:todo send:todo");
-    await expect(next()).toHaveText("Next: Set the scale ↗");
-    // Scale opens the workspace on the first sheet with no scale, in its own tab.
-    await expect(next()).toHaveAttribute("href", `/takeoff/${jobId}?open=scale`);
-    await expect(next()).toHaveAttribute("target", "_blank");
-    const [tab] = await Promise.all([page.context().waitForEvent("page"), next().click()]);
-    await tab.waitForURL(new RegExp(`/takeoff/${jobId}\\?open=scale`));
-    await expect(tab.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 60_000 });
-    await expect(tab.getByRole("button", { name: "Set scale", exact: true })).toBeVisible();
-    await tab.close();
+    await expect(next()).toHaveText("Next: Confirm the scales");
+    // Scale lands on the plan set, in this tab (plan-set-scales.spec.ts walks it).
+    await expect(next()).toHaveAttribute("href", `/jobs/${jobId}/takeoff#plan-set`);
+    await next().click();
+    await page.waitForURL(new RegExp(`/jobs/${jobId}/takeoff#plan-set`));
+    await expect(page.locator('[data-takeoff="plan-set"]')).toBeVisible();
   });
 
   test("4. set the scale: Takeoff is current, and its Next opens the workspace in a NEW TAB", async () => {

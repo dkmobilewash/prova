@@ -18,6 +18,8 @@ import { aiGate } from "@/lib/ai/settings";
 import { PlanSheetReview } from "@/components/PlanSheetReview";
 import { levelsByPage } from "@/lib/plan-ingest/sheetLevel";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
+import { PlanSetScales } from "@/components/PlanSetScales";
+import { planSetFromLoaded } from "@/lib/takeoff/planSet";
 import { effectiveSheetNumber, effectiveTitle, sheetPickerLabel } from "@/lib/plan-ingest/sheetIndex";
 import { sheetSuitability, duplicateWallsCaution } from "@/lib/takeoff/sheetSuitability";
 import { latestIngestFor } from "@/lib/plan-ingest/claim";
@@ -225,6 +227,13 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           above the quotes: it decides whether the numbers below mean
           anything. */}
       <TakeoffCurrencyBanner jobId={job.id} currency={currency} />
+
+      {/* ── THE PLANS AND SCALE STEPS (guided flow, Phase 2) ──
+          The set sorted by kind, each sheet's scale and how sure the reader is,
+          and Confirm scales. Above the drawing: until the floor plans have a
+          scale, nothing below can be measured. The job stepper's Plans and
+          Scale steps land here. */}
+      {isEstimateStage && <PlanSetScales jobId={job.id} planId={plan.id} rows={planSetFromLoaded(loaded)} reading={sheetRows.length === 0} />}
 
       {/* ── THE DRAWING FIRST, 2026-10-16 ──
           It used to be LAST, under the revision form, the ingest panel, the
