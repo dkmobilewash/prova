@@ -18,8 +18,8 @@ import { estimateStage } from "@/lib/estimate-stage";
  *   - Takeoff  — something is measured on the job's plans.
  *   - Review   — something is measured AND no wall is left "to confirm".
  *   - Estimate — the estimate has a line (`estimateStage` past NEEDS_PRICING).
- *   - Send     — a signature request has gone to the client (OUT_FOR_SIGNATURE
- *                or SIGNED).
+ *   - Send     — a signing link has gone to the client (a signature request,
+ *                OUT_FOR_SIGNATURE or SIGNED), made on the job overview.
  *
  * CURRENT is the first step not done AFTER the furthest one that is, so a job
  * typed straight into the estimate is "on" Send, not sent back to Plans.
@@ -77,7 +77,11 @@ export function jobSteps(facts: JobStepFacts): { steps: JobStep[]; next: JobNext
     takeoff: { href: workspace, newTab: true },
     review: { href: workspace, newTab: true },
     estimate: { href: `${job}/estimate`, newTab: false },
-    send: { href: `${job}/proposal`, newTab: false },
+    // Where a job is SENT today: a signing link for the client, on the
+    // overview. The proposal page prints and packages the bid but has no send
+    // (the new-job walkthrough found it a dead end), and "sent" is read off the
+    // signature requests, so the step goes where one is made.
+    send: { href: `${job}#contract-signature`, newTab: false },
   };
   const order = Object.keys(LABELS) as JobStepKey[];
   const furthest = order.reduce((at, key, i) => (done[key] ? i : at), 0);
@@ -105,7 +109,7 @@ export function jobSteps(facts: JobStepFacts): { steps: JobStep[]; next: JobNext
     // estimate") — so its Next opens the workspace, while the step itself still
     // links to the estimate tab, where pricing by hand happens.
     estimate: "Put the takeoff on the estimate",
-    send: "Send the proposal",
+    send: "Send it for signature",
   };
   const goes = key === "estimate" ? { href: workspace, newTab: true } : where[key];
   return { steps, next: { label: NEXT[key], ...goes } };

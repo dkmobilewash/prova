@@ -14,7 +14,7 @@ describe("a job's estimating steps", () => {
     expect(jobSteps({ ...base, hasPlan: true }).next?.label).toBe("Set the scale");
     expect(jobSteps({ ...base, hasPlan: true, scaledSheets: 1 }).next).toEqual({ label: "Run the takeoff", href: "/takeoff/j1", newTab: true });
     expect(jobSteps({ ...base, hasPlan: true, scaledSheets: 1, measurements: 3 }).next).toEqual({ label: "Put the takeoff on the estimate", href: "/takeoff/j1", newTab: true });
-    expect(jobSteps({ ...base, hasPlan: true, scaledSheets: 1, measurements: 3, lineItemCount: 2 }).next).toEqual({ label: "Send the proposal", href: "/jobs/j1/proposal", newTab: false });
+    expect(jobSteps({ ...base, hasPlan: true, scaledSheets: 1, measurements: 3, lineItemCount: 2 }).next).toEqual({ label: "Send it for signature", href: "/jobs/j1#contract-signature", newTab: false });
     expect(jobSteps({ ...base, hasPlan: true, scaledSheets: 1, measurements: 3, lineItemCount: 2, signatureStatuses: ["PENDING"] }).next).toBeNull();
   });
 

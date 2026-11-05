@@ -129,8 +129,11 @@ export default async function JobTabsLayout({
         markContracted={isEstimateStage && showsJobMoney ? markJobContracted.bind(null, id) : undefined}
       />
       <JobStageNav stages={stages} />
-      {steps !== null && <JobStepper steps={steps.steps} next={steps.next} />}
       <JobSectionNav tabs={tabs} />
+      {/* The estimating steps under the tab row, not between it and the stage
+          boxes (jobTabs.test.ts keeps those two together): the steps belong to
+          the work on the page below them. */}
+      {steps !== null && <JobStepper steps={steps.steps} next={steps.next} />}
       {/* The open stage's page, with the job's paperwork beside it on a wide
           screen and below it on a narrow one. `min-w-0` lets a wide table
           inside a tab scroll in its own box instead of pushing the panel

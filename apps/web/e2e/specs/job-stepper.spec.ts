@@ -71,8 +71,9 @@ test.describe("the job stepper", () => {
 
   test("2. NOT A LOCKED WIZARD: a step not reached is still a link that goes there", async () => {
     await step("send").click();
-    await page.waitForURL(new RegExp(`/jobs/${jobId}/proposal`));
-    await expectHealthy(page, "the proposal, reached from a step not yet started", { monitor });
+    await page.waitForURL(new RegExp(`/jobs/${jobId}#contract-signature`));
+    await expect(page.getByRole("button", { name: /Create signing link/ }), "Send goes where a job can be sent").toBeVisible();
+    await expectHealthy(page, "the signing link, reached from a step not yet started", { monitor });
     await onJob();
     await step("estimate").click();
     await page.waitForURL(new RegExp(`/jobs/${jobId}/estimate`));
