@@ -2,6 +2,7 @@ import type { StrokeSegment, WallCandidate } from "./wallVectors";
 import { doorSymbols, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
 import { joinOpeningsToSchedule, widthAndHeight, type OpeningJoin, type PlacedMark, type ScheduledOpening } from "./openingMarks";
 import { tagSymbols, type TextForSymbol } from "./tagSymbols";
+import { windowsByTag, type TaggedWindows } from "./windowTags";
 
 /**
  * ── ONE SHEET'S DOORS AND WINDOWS, FROM ITS SYMBOLS, JOINED TO ITS SCHEDULE ──
@@ -30,6 +31,8 @@ export type DoorsWindowsResult = {
    * drawn with no swing and no readable tag. Empty when there is no schedule.
    */
   unplacedMarks: string[];
+  /** Windows counted by their tags (`windowsByTag`); `counted: false` leaves them to check. */
+  tagged: TaggedWindows;
 };
 
 /** The doors on the sheet: those drawn, plus those the schedule placed from a mark with no swing. */
@@ -62,6 +65,10 @@ export function doorsAndWindowsForSheet(input: {
   walls: readonly WallCandidate[];
   feetPerUnit: number;
   scheduleRows: readonly StoredScheduleRow[];
+  /** The set's WINDOW schedule rows, when its ingest read one. */
+  windowRows?: readonly StoredScheduleRow[];
+  /** The set's wall legend codes, so a wall tag shaped like W4 is not read as a window. */
+  wallCodes?: readonly string[];
 }): DoorsWindowsResult {
   const symbols = tagSymbols({ segments: input.segmentsPt, text: input.textPt, unitsPerPaperInch: 72 });
   const W = input.widthPt;
@@ -70,8 +77,9 @@ export function doorsAndWindowsForSheet(input: {
   const windowTags = symbols.filter((s) => s.rejected === null && WINDOW_TAG.test(s.text.trim().toUpperCase())).map((s) => ({ x: s.x / W, y: s.y / W }));
   const tagWords = symbols.filter((s) => s.rejected === null).map((s) => s.text);
   const windows = windowSymbols(input.segments, input.walls, input.feetPerUnit, windowTags, tagsNameEveryWindow(tagWords));
+  const tagged = windowsByTag({ symbols, widthPt: W, windowRows: input.windowRows ?? [], frames: windows, walls: input.walls, feetPerUnit: input.feetPerUnit, wallCodes: input.wallCodes ?? [] });
   const rows = scheduledOpenings(input.scheduleRows);
-  if (rows.length === 0) return { doors, windows, join: null, unplacedMarks: [] };
+  if (rows.length === 0) return { doors, windows, join: null, unplacedMarks: [], tagged };
   const scheduled = new Set(rows.map((r) => r.mark.toUpperCase()));
   const marks: PlacedMark[] = symbols
     .filter((s) => s.rejected === null || (s.rejected === "sheet-reference" && scheduled.has(s.text.trim().toUpperCase())))
@@ -99,5 +107,5 @@ export function doorsAndWindowsForSheet(input: {
   });
   const carried = new Set(join.openings.map((o) => (o.mark ?? "").trim().toUpperCase()));
   const unplacedMarks = [...new Set(rows.map((r) => r.mark.toUpperCase()))].filter((m) => !carried.has(m)).map((m) => rows.find((r) => r.mark.toUpperCase() === m)!.mark);
-  return { doors, windows, join, unplacedMarks };
+  return { doors, windows, join, unplacedMarks, tagged };
 }

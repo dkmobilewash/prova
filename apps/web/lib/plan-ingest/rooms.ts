@@ -1,4 +1,5 @@
-import { doorScheduleRowsOf } from "@/lib/takeoff/workspaceLoad";
+import { doorScheduleRowsOf, scheduleRowsOf } from "@/lib/takeoff/workspaceLoad";
+import { storedLegendCodes } from "@/lib/takeoff/planTextRead";
 import { splitLinesFrom } from "@/lib/takeoff/userExclusions";
 import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
@@ -140,7 +141,7 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
     const candidates = runs.map((r) => ({ ...r, lengthFeet: Math.hypot(r.x2 - r.x1, r.y2 - r.y1) * feetPerUnit })) as unknown as WallCandidate[];
     const inPoints = inUnits.map((s) => ({ ...s, x1: s.x1 * W, y1: s.y1 * W, x2: s.x2 * W, y2: s.y2 * W }));
     const openings = company.doorsWindowsOn
-      ? doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: inPoints as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: await doorScheduleRowsOf(input.planId) })
+      ? doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: inPoints as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: await doorScheduleRowsOf(input.planId), windowRows: await scheduleRowsOf(input.planId, "WINDOW"), wallCodes: await storedLegendCodes(input.planId) })
       : { doors: [], windows: [] };
     await writeWallOpenings(page.id, runs, openings.doors, openings.windows, "join" in openings && openings.join ? openings.join.openings : []);
     const found = sheetRooms({
