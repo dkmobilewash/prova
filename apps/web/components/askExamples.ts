@@ -1,3 +1,4 @@
+import type { CommandName } from "@/lib/ask/commands";
 /**
  * What the ask box offers before anybody types.
  *
@@ -55,3 +56,71 @@ export function isInstruction(example: string): boolean {
   const first = example.trim().toLowerCase().split(/[\s']/)[0];
   return !QUESTION_OPENERS.includes(first);
 }
+
+/**
+ * What you can SAY, by workflow — the empty panel's second half.
+ *
+ * The flat chips above say the box can act; these say WHAT it acts on, in
+ * the shop's own nouns. Each example names the command it is written to
+ * reach, typed as `CommandName`, so an example for a command that does not
+ * exist fails typecheck rather than reaching somebody as "I don't have
+ * that". Each phrasing is also a routing-eval case (`example-*` in
+ * lib/ask/eval/cases.ts), so "written to reach" is measured, not hoped.
+ *
+ * Unlike EXAMPLES, a tap FILLS the box rather than sending, so the person
+ * adds the job by voice or by typing, and edits the vendor or pay app
+ * number, which the PO and waiver chips must carry to route at all. Measured
+ * 2026-11-05: sent bare from the dashboard, all twelve came back as a prose
+ * "which job?" with no card; with a job added, the PO chips still did
+ * until they named a vendor, and "the last pay app" read pay app status
+ * first. Not wrong, but a dead-end-looking first tap.
+ * On a job's own page the route's page context supplies the job and Send
+ * works as filled. The eval cases add " on Riverside" for the same reason.
+ */
+export const WORKFLOW_EXAMPLES = [
+  {
+    workflow: "Change orders",
+    examples: [
+      { say: "Start a change order for extra door frames", command: "start_change_order" },
+      { say: "Open a CO for the added soffit at the lobby", command: "start_change_order" },
+    ],
+  },
+  {
+    workflow: "Purchase orders",
+    examples: [
+      { say: "Make a PO to ABC Supply for 200 sheets of 5/8 type X", command: "draft_purchase_order" },
+      { say: "Order 40 boxes of screws from L&W", command: "draft_purchase_order" },
+    ],
+  },
+  {
+    workflow: "Pay apps & retainage",
+    examples: [
+      { say: "Bill this month's pay application", command: "start_pay_application" },
+      { say: "Bill the retainage", command: "bill_retainage" },
+    ],
+  },
+  {
+    workflow: "Lien waivers",
+    examples: [
+      { say: "Prepare the lien waiver for pay app 4", command: "prepare_lien_waiver" },
+      { say: "The GC wants a conditional waiver for pay app 3", command: "prepare_lien_waiver" },
+    ],
+  },
+  {
+    workflow: "Takeoff",
+    examples: [
+      { say: "Run takeoff on the drawings", command: "run_takeoff" },
+      { say: "Find the walls on every floor plan", command: "run_takeoff" },
+    ],
+  },
+  {
+    workflow: "Estimate",
+    examples: [
+      { say: "Update the estimate from the takeoff", command: "post_takeoff_to_estimate" },
+      { say: "Draft the line items from the scope", command: "draft_estimate_lines" },
+    ],
+  },
+] as const satisfies readonly {
+  workflow: string;
+  examples: readonly { say: string; command: CommandName }[];
+}[];

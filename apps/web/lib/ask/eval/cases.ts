@@ -1,6 +1,7 @@
 import type { Principal } from "@/lib/permissions";
 import type { ToolName } from "../tools";
 import type { CommandName } from "../commands";
+import { WORKFLOW_EXAMPLES } from "@/components/askExamples";
 
 /**
  * The routing eval's cases: a question, who is asking, and what the model
@@ -343,6 +344,15 @@ export const EVAL_CASES: EvalCase[] = [
   command("cmd-post-takeoff-build", "build the estimate for Riverside from the takeoff", "post_takeoff_to_estimate", { jobName: "Riverside" }),
   command("cmd-post-takeoff-sheet", "put sheet A101 on the Riverside estimate", "post_takeoff_to_estimate", { jobName: "Riverside", sheet: "A101" }, ESTIMATOR),
   command("cmd-post-takeoff-dictated", "add the takeoff quantities to the hutto estimate", "post_takeoff_to_estimate", { jobName: "hutto" }),
+  // The empty panel's "what you can say" chips, one case each, so every
+  // chip is measured reaching the command it advertises — with a job added,
+  // because a chip fills the box and the person names the job before
+  // sending (see WORKFLOW_EXAMPLES for the bare measurement).
+  ...WORKFLOW_EXAMPLES.flatMap((group) =>
+    group.examples.map((example, n) =>
+      command(`example-${example.command}-${n + 1}`, `${example.say} on Riverside`, example.command, { jobName: "Riverside" }),
+    ),
+  ),
   noCommand("none-field-takeoff", "run takeoff on Washington Village", FIELD),
   noCommand("none-takeoff-retry", "retry the sheets that failed on the Hutto takeoff"),
   noCommand("none-poem", "write me a poem about drywall"),
