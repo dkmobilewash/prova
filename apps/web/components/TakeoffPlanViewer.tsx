@@ -356,6 +356,7 @@ export function TakeoffPlanViewer({
   onSelect,
   onPanelOpen,
   focusRun = null,
+  focusRuns = null,
   activeItemId = null,
   earlierVersionByPage = {},
   wallItems = [],
@@ -521,6 +522,8 @@ export function TakeoffPlanViewer({
   onPanelOpen?: (open: boolean) => void;
   /** A run the workspace's set-wide review is on, shown and zoomed to on its page. */
   focusRun?: { pageNumber: number; x1: number; y1: number; x2: number; y2: number } | null;
+  /** A whole wall group the review queue is on: every run lit, the plan zoomed to all of them. */
+  focusRuns?: { pageNumber: number; runs: readonly { x1: number; y1: number; x2: number; y2: number }[] } | null;
   onMeasurementSaved?: (saved: { id: string; kind: MeasurementKind }) => void;
   /**
    * The takeoff item new measurements belong to, when a host has one selected.
@@ -2925,15 +2928,30 @@ export function TakeoffPlanViewer({
   // the set review's run, on its page.
   const reviewRun =
     sheetReviewRun ?? heldShownRun ?? (focusRun !== null && focusRun.pageNumber === pageNumber ? focusRun : null);
+  const groupRuns = focusRuns !== null && focusRuns.pageNumber === pageNumber && focusRuns.runs.length > 0 ? focusRuns.runs : null;
+  // The group's box, zoomed to as one run would be: its corners are the run.
+  const groupBox = useMemo(
+    () =>
+      groupRuns === null
+        ? null
+        : {
+            x1: Math.min(...groupRuns.flatMap((r) => [r.x1, r.x2])),
+            y1: Math.min(...groupRuns.flatMap((r) => [r.y1, r.y2])),
+            x2: Math.max(...groupRuns.flatMap((r) => [r.x1, r.x2])),
+            y2: Math.max(...groupRuns.flatMap((r) => [r.y1, r.y2])),
+          },
+    [groupRuns],
+  );
+  const zoomRun = reviewRun ?? groupBox;
   // Each run in turn, zoomed and centred, so the reviewer never has to look for it.
   useEffect(() => {
     const frame = frameRef.current;
-    if (reviewRun === null || frame === null || pageSize === null || feetPerUnit === null) return;
-    const view = viewOfRun(reviewRun, pageSize, { width: frame.clientWidth, height: frame.clientHeight }, feetPerUnit, BASE_SCALE);
+    if (zoomRun === null || frame === null || pageSize === null || feetPerUnit === null) return;
+    const view = viewOfRun(zoomRun, pageSize, { width: frame.clientWidth, height: frame.clientHeight }, feetPerUnit, BASE_SCALE);
     setZoom(view.zoom);
     const id = requestAnimationFrame(() => frame.scrollTo({ left: view.left, top: view.top }));
     return () => cancelAnimationFrame(id);
-  }, [reviewRun, pageSize, feetPerUnit, heldShown?.at]);
+  }, [zoomRun, pageSize, feetPerUnit, heldShown?.at]);
 
   /**
    * Taking a run back is its verdict becoming WALL, then the list rebuilt from
@@ -6568,6 +6586,22 @@ export function TakeoffPlanViewer({
                   vectorEffect="non-scaling-stroke"
                 />
               )}
+              {reviewRun === null &&
+                groupRuns?.map((run, i) => (
+                  <line
+                    key={`focus-${i}`}
+                    data-takeoff="focus-run"
+                    x1={run.x1}
+                    y1={run.y1}
+                    x2={run.x2}
+                    y2={run.y2}
+                    stroke="#f59e0b"
+                    strokeWidth={STROKE_PX * 5}
+                    strokeOpacity={0.7}
+                    strokeLinecap="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
               {/* The demoted runs: grey and dashed so nobody reads one as found. */}
               {reviewRun !== null && (
                 <line

@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { confirmSheetScales, reviewWall, setWallGroupHeight, setWallGroupType } from "@/lib/actions";
-import { SetWallHeight } from "./SetWallHeight";
-import type { ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { confirmSheetScales, confirmWallGroup, reviewWall, setWallGroupHeight } from "@/lib/actions";
+import { QueueGroupConfirm } from "./QueueGroupConfirm";
+import { heightFor, type CodeHeight, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
 
@@ -13,16 +13,23 @@ import { inchLabel } from "@/lib/takeoff/wallVectors";
  *
  * What the stepper's Review opens (`?open=review`). The item on screen is
  * zoomed to on its sheet by the workspace (`onShow`); its buttons are the
- * pieces that already decide it — `reviewWall` for a held run, the "Set type"
- * codes for an untyped group, Set height for a group with none, the plan set's fixes for a sheet's scale, and
- * the estimate line itself for a price. Next skips without deciding; an item
- * leaves when the row behind it changes, and the queue is done when empty.
+ * pieces that already decide it — `reviewWall` for a held run, the plan set's
+ * fixes for a sheet's scale, and the estimate line itself for a price.
+ *
+ * A WALL GROUP IS CONFIRMED, NOT FILLED IN (`QueueGroupConfirm`): its walls lit
+ * on the plan, the suggested type and height already in place with where each
+ * came from, and Enter accepts both (`confirmWallGroup`; `setWallGroupHeight`
+ * for a group whose type is settled). The queue moves on at once and the save
+ * follows; one that fails comes back with its reason. Next (or N) skips
+ * without deciding; an item leaves when the row behind it changes, and the
+ * queue is done when empty.
  */
 export function TakeoffReviewQueue({
   jobId,
   planId,
   items,
   legendCodes,
+  heights = {},
   planSet,
   onShow,
   onClose,
@@ -31,6 +38,8 @@ export function TakeoffReviewQueue({
   planId: string;
   items: ReviewItem[];
   legendCodes: string[];
+  /** Each type's height by code (`loadReviewQueue`), for the pre-filled height. */
+  heights?: Readonly<Record<string, CodeHeight>>;
   planSet: PlanSetRow[];
   onShow: (item: ReviewItem | null) => void;
   onClose: () => void;
@@ -73,6 +82,25 @@ export function TakeoffReviewQueue({
     setDone((was) => new Set(was).add(current.key));
   }
 
+  /** Accept now, save behind: the next item is on screen before the server answers. */
+  function acceptNow(key: string, what: string, run: () => Promise<{ ok: true } | { ok: false; error: string }>) {
+    setError(null);
+    setCursor(after(key));
+    setDone((was) => new Set(was).add(key));
+    const back = (why: string) => {
+      setDone((was) => {
+        const next = new Set(was);
+        next.delete(key);
+        return next;
+      });
+      setError(`${what}: ${why}`);
+    };
+    void run().then(
+      (result) => (result.ok ? undefined : back(result.error)),
+      () => back("it did not save. Try it again."),
+    );
+  }
+
   const button = "min-h-[32px] rounded-md border border-line-card px-3 text-xs font-medium text-ink-body hover:bg-rail disabled:opacity-50";
   const row = current !== null && current.kind === "scale" ? planSet.find((r) => r.pageNumber === current.pageNumber) : undefined;
   return (
@@ -100,49 +128,46 @@ export function TakeoffReviewQueue({
               </button>
             </>
           )}
-          {current.kind === "type" && (
-            <>
-              <span>
-                Untyped walls · sheet {current.sheet} · {inchLabel(current.inches)}
-                {current.feet !== null && ` · ${Math.round(current.feet)} ft`}
-              </span>
-              {legendCodes.length === 0 ? (
+          {current.kind === "type" &&
+            (legendCodes.length === 0 && current.suggested === null ? (
+              <>
+                <span>
+                  Untyped walls · sheet {current.sheet} · {inchLabel(current.inches)}
+                </span>
                 <span className="text-ink-muted">This set&rsquo;s legend names no types: choose one in the sheet&rsquo;s group list.</span>
-              ) : (
-                <>
-                  <span className="text-ink-muted">Set type</span>
-                  {legendCodes.map((code) => (
-                    <button
-                      key={code}
-                      type="button"
-                      className={button}
-                      disabled={busy}
-                      onClick={() => void decide(() => setWallGroupType(jobId, { planId, pageNumber: current.pageNumber, code, inches: current.inches, runs: current.runs }))}
-                      data-takeoff="review-queue-type"
-                    >
-                      {code}
-                    </button>
-                  ))}
-                </>
-              )}
-            </>
-          )}
-          {current.kind === "height" && (
-            <>
-              <span>
-                No height · {current.name} · sheet {current.sheet}
-                {current.feet !== null && ` · ${Math.round(current.feet)} ft`}
-              </span>
-              <SetWallHeight
+              </>
+            ) : (
+              <QueueGroupConfirm
                 key={current.key}
-                name={current.name}
-                options={current.options}
-                onSet={async (feet) => {
-                  await decide(() => setWallGroupHeight(jobId, current.itemId, feet));
-                  return null;
-                }}
+                label={`Walls · sheet ${current.sheet} · ${inchLabel(current.inches)}${current.feet !== null ? ` · ${Math.round(current.feet)} ft` : ""}`}
+                codes={current.suggested === null || legendCodes.some((c) => c.toUpperCase() === current.suggested!.code.toUpperCase()) ? legendCodes : [...legendCodes, current.suggested.code]}
+                suggested={current.suggested}
+                heightOf={(code) => heightFor(code, heights, current.ceiling)}
+                onSkip={() => setCursor(after(current.key))}
+                onAccept={(code, heightFt) =>
+                  acceptNow(current.key, `${code} on sheet ${current.sheet}`, () =>
+                    confirmWallGroup(jobId, { planId, pageNumber: current.pageNumber, code: code!, inches: current.inches, runs: current.runs, heightFt }),
+                  )
+                }
               />
-            </>
+            ))}
+          {current.kind === "height" && (
+            <QueueGroupConfirm
+              key={current.key}
+              label={`No height · ${current.name} · sheet ${current.sheet}${current.feet !== null ? ` · ${Math.round(current.feet)} ft` : ""}`}
+              codes={[]}
+              suggested={null}
+              heightOf={() => {
+                // The type's own height first, as for a group being typed; else the ceiling.
+                const first = current.options.find((o) => o.kind === "legend") ?? current.options[0];
+                return first === undefined ? null : { feet: first.feet, from: first.from };
+              }}
+              onSkip={() => setCursor(after(current.key))}
+              onAccept={(_code, heightFt) => {
+                if (heightFt === null) return setError("Type a height first: H.");
+                acceptNow(current.key, current.name, () => setWallGroupHeight(jobId, current.itemId, heightFt));
+              }}
+            />
           )}
           {current.kind === "scale" && (
             <>
