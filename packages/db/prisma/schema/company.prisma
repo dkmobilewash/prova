@@ -79,6 +79,16 @@ model Company {
   /// three answer fields changing on their own, so clearing them from
   /// Settings does not make the prompt come back.
   businessScopeAskedAt DateTime?
+  /// When this company was asked its trade at signup (`/welcome`, guided
+  /// flow Phase 5). The trade preset it chose — starter wall types, the
+  /// takeoff switches' starting values, a starter estimate template — is in
+  /// `apps/web/lib/trade-presets.ts`.
+  ///
+  /// NULL FOR EVERY COMPANY THAT EXISTED BEFORE IT, and no backfill, which is
+  /// the whole point: the "Set your markup" banner and the Estimate step's
+  /// markup rule read this, so an existing company is unchanged by
+  /// construction rather than by a date somebody has to remember.
+  tradePresetAskedAt DateTime?
 
   /// Which Company is PROVA'S OWN operating company -- the only tenant that
   /// should ever see the internal sales CRM (SalesLead/SalesOpportunity,
