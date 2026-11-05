@@ -703,14 +703,45 @@ test.describe("the full-screen takeoff workspace", () => {
     await first.locator('[data-takeoff="layer-name"]').dblclick();
     const box = first.locator('[data-takeoff="layer-rename"]');
     await box.fill("ZZ-E2E walls");
-    await box.press("Enter");
+    // The save is a Server Action; wait for ITS answer, not the screen, which
+    // shows the typed name at once.
+    const saved = () =>
+      page.waitForResponse((r) => r.request().method() === "POST" && r.request().headers()["next-action"] !== undefined);
+    await Promise.all([saved(), box.press("Enter")]);
     await expect(first.locator('[data-takeoff="layer-name"]')).toHaveText("ZZ-E2E walls");
-    // One person's label, kept in this browser across a reload.
+    // ── THE TEAM'S NAME, SAVED WITH THE JOB ──
+    // A FRESH BROWSER, with nothing in its storage, signed in on the same
+    // company: if the name were kept in a browser this one could not see it.
+    // It shows on the layer row and on the group's Quantities detail.
+    const other = await page.context().browser()!.newContext({ viewport: DESKTOP });
+    const teammate = await other.newPage();
+    await teammate.route("**/api/takeoff/plan/**", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/pdf", body: servedPdf });
+    });
+    expect(await teammate.evaluate(() => window.localStorage.length).catch(() => 0)).toBe(0);
+    await signInAs(teammate, PERSONAS.takeoff.email);
+    await teammate.goto(`/takeoff/${jobTwo}`);
+    const find = teammate.locator('[data-takeoff="find-walls"]');
+    await expect(find).toBeEnabled({ timeout: 60_000 });
+    await find.click();
+    await expect(find).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 180_000 });
+    await expect(
+      teammate.locator('[data-takeoff="layer-row"]').first().locator('[data-takeoff="layer-name"]'),
+      "a teammate in another browser does not see the name",
+    ).toHaveText("ZZ-E2E walls");
+    await expect(teammate.locator('[data-takeoff="group-team-name"]').first()).toHaveText("ZZ-E2E walls");
+    await other.close();
+
+    // And clearing it puts the default back for everybody.
+    await first.locator('[data-takeoff="layer-name"]').dblclick();
+    await first.locator('[data-takeoff="layer-rename"]').fill("");
+    await Promise.all([saved(), first.locator('[data-takeoff="layer-rename"]').press("Enter")]);
     await page.reload();
-    await findTheWalls("S15 after the rename");
-    await expect(page.locator('[data-takeoff="layer-row"]').first().locator('[data-takeoff="layer-name"]')).toHaveText(
+    await findTheWalls("S15 after clearing the name");
+    await expect(page.locator('[data-takeoff="layer-row"]').first().locator('[data-takeoff="layer-name"]')).not.toHaveText(
       "ZZ-E2E walls",
     );
+    await expect(page.locator('[data-takeoff="group-team-name"]')).toHaveCount(0);
   });
 
   test("14. the phone gets a read-only canvas", async () => {

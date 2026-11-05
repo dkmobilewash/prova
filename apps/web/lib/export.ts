@@ -726,13 +726,18 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "`TakeoffItem` joins them for the same reason and one of its own: it is a NAME and a " +
       "COLOUR for a group of those coordinates. Its quantity is computed from them on every " +
       "read and stored nowhere, so a column of item names in a spreadsheet would carry no " +
-      "number at all — and the numbers it does produce reach the export as estimate lines.",
+      "number at all — and the numbers it does produce reach the export as estimate lines.\n\n" +
+      "`TakeoffLayerName` is the same kind of thing one step further out: the team's NAME for a " +
+      "group of detected walls, keyed by thickness and tag. The group itself is recomputed from " +
+      "the drawing and stored nowhere, so a name alone names nothing; the takeoff's own Excel " +
+      "download already lists the groups under these names, with their feet.",
     models: [
       "TakeoffPlan",
       "TakeoffPlanPage",
       "TakeoffScaleCalibration",
       "TakeoffMeasurement",
       "TakeoffItem",
+      "TakeoffLayerName",
     ],
   },
   {

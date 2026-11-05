@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exportCsv, exportTabs, takeoffExport, type ExportMeasurement } from "./takeoffExport";
+import { exportCsv, exportTabs, takeoffExport, wallGroupRows, type ExportMeasurement } from "./takeoffExport";
 
 const FPU = 100;
 const line = (page: number, source: ExportMeasurement["source"], openings: unknown = []): ExportMeasurement => ({ id: `${page}${source}`, pageNumber: page, kind: "LINEAR", xs: [0, 0.5], ys: [0, 0], feetPerPageWidth: FPU, source, label: null, openingsJson: openings });
@@ -55,5 +55,30 @@ describe("takeoffExport", () => {
     const csv = exportCsv([{ item: 'Wall "A", 2 hr', sheet: "A101", quantity: 5, unit: "lin ft", source: "found", note: "" }]);
     expect(csv).toBe('Item,Sheet,Quantity,Unit,Source,Note\n"Wall ""A"", 2 hr",A101,5,lin ft,found,\n');
     expect(exportTabs(result).map((t) => [t.name, t.rows.length])).toEqual([["Quantities", result.rows.length + 1], ["Sheets", 3]]);
+  });
+});
+
+describe("the Wall groups tab", () => {
+  const g = (inches: number, feet: number, tag?: string) =>
+    ({ inches, feet, runs: [1, 2], source: tag ? { kind: "TAG", tag } : { kind: "THICKNESS" }, itemId: null }) as never;
+  const input = {
+    groupsByPage: { 12: [g(6.5, 128.04)], 3: [g(4.875, 78, "A1")] },
+    sheetOf: new Map([[3, "A101 — FLOOR PLAN"]]),
+    names: { "wall:6.5:": "Corridor walls" },
+    itemNames: new Map<string, string>(),
+  };
+
+  it("names a group as the team named it, and the rest by the default the panel shows", () => {
+    expect(wallGroupRows(input)).toEqual([
+      { sheet: "A101 — FLOOR PLAN", group: "A1 · 4-7/8\"", named: false, runs: 2, feet: 78 },
+      { sheet: "Sheet 12", group: "Corridor walls", named: true, runs: 2, feet: 128.04 },
+    ]);
+  });
+
+  it("is a tab of its own, and only when there are groups", () => {
+    const tabs = exportTabs({ rows: [], sheets: [], wallGroups: wallGroupRows(input) });
+    expect(tabs.map((t) => t.name)).toEqual(["Quantities", "Sheets", "Wall groups"]);
+    expect(tabs[2]!.rows[2]).toEqual(["Sheet 12", "Corridor walls", 2, 128.04, "yes"]);
+    expect(exportTabs({ rows: [], sheets: [], wallGroups: [] }).map((t) => t.name)).toEqual(["Quantities", "Sheets"]);
   });
 });

@@ -1485,6 +1485,7 @@ export function TakeoffWorkspace({
               rasterPages={data.rasterPages}
               rasterUrl={data.rasterUrl}
               storedWallsByPage={data.storedWallsByPage}
+              layerNames={data.layerNames}
               takeoffItems={data.matchableItems}
               levelByPage={data.levelByPage}
               scalePrefillByPage={data.scalePrefillByPage}
