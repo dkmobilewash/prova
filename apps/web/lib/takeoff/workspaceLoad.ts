@@ -1,7 +1,7 @@
 import { ensureSheetNames, pairingsForPlan } from "./priorPlanLoad";
 import { openingsFromJson } from "@/lib/wall-assemblies";
 import { openingThresholdSqFt } from "@/lib/businessScope";
-import { legendOption } from "@/lib/takeoff/wallHeight";
+import { legendOption, legendOptions } from "@/lib/takeoff/wallHeight";
 import { storedLegendCodes } from "./planTextRead";
 import { setReviewItems, setReviewOrder, type SetReviewItem } from "@/lib/takeoff/wallReview";
 import { storedRunsOrNull } from "@/lib/takeoff/wallProposal";
@@ -770,6 +770,7 @@ export async function loadTakeoffWorkspace(
       summary: wallTypeSummary({ name: type.name, sides: type.sides, notes: type.notes, components: type.components.map((c) => ({ description: c.description, basis: c.basis, factor: Number(c.factor) })) }),
       defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt),
       legendHeight: legendOption({ code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes }),
+      legendHeights: legendOptions({ code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes }),
     })),
   };
 }

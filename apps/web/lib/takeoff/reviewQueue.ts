@@ -107,14 +107,15 @@ export function typeItems(
 export function heightItem(
   item: { id: string; name: string },
   sheets: readonly { sheet: QueueSheet; runs: readonly QueueRun[]; rooms: readonly CeilingRoom[] }[],
-  legend: HeightOption | null,
+  /** The legend's height, and its options by part of the building (`legendOptions`). */
+  legend: readonly HeightOption[],
 ): ReviewItem | null {
   const on = sheets.filter((s) => s.runs.length > 0);
   if (on.length === 0) return null;
   const span = (runs: readonly QueueRun[]) => runs.reduce((n, run) => n + length(run), 0);
   const most = on.reduce((best, s) => ((feetOf(s.runs, s.sheet.feetPerUnit) ?? span(s.runs)) > (feetOf(best.runs, best.sheet.feetPerUnit) ?? span(best.runs)) ? s : best));
   const feet = on.every((s) => s.sheet.feetPerUnit === null) ? null : on.reduce((n, s) => n + (feetOf(s.runs, s.sheet.feetPerUnit) ?? 0), 0);
-  const options = [ceilingOption(most.runs, most.rooms), legend].filter((o): o is HeightOption => o !== null);
+  const options = [ceilingOption(most.runs, most.rooms), ...legend].filter((o): o is HeightOption => o !== null);
   return { kind: "height", key: `height:${item.id}`, itemId: item.id, name: item.name, pageNumber: most.sheet.pageNumber, sheet: most.sheet.sheet, runs: [...most.runs], feet, options };
 }
 

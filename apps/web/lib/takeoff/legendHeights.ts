@@ -9,7 +9,14 @@ export type LegendHeightResult = {
   generalNoteOnly: boolean;
   /** The chain, or why there is none — the same sentence the notes keep. */
   sentence: string;
+  /** Where the drawing gives one height per part of the building: each, with what printed it, for a person to place. */
+  options: { feet: number; from: string }[];
 };
+
+/** The notes lines a type keeps for its height options — read back by `legendOptions` (`wallHeight.ts`). */
+export function heightOptionLines(result: LegendHeightResult): string[] {
+  return result.options.map((o) => `Height option ${Number(o.feet.toFixed(3))} ft: ${o.from}`);
+}
 
 export type LegendTypeForHeight = { code: string; lines: readonly string[]; heightNote: string | null };
 
@@ -20,7 +27,8 @@ export function legendHeightOf(type: LegendTypeForHeight, set: SetHeightFacts | 
     unread === null || reading.feet !== null
       ? heightSentence(reading)
       : `No height read: ${reading.why} The set could not be read for one (${unread.slice(0, 120)}). Type it on the wall type.`;
-  return { heightFt: reading.feet, confidence: reading.feet === null ? null : reading.confidence, generalNoteOnly: reading.generalNoteOnly, sentence };
+  const options = (reading.options ?? []).filter((f) => f.feet !== null).map((f) => ({ feet: f.feet as number, from: `${f.sheet} ${f.phrase}` }));
+  return { heightFt: reading.feet, confidence: reading.feet === null ? null : reading.confidence, generalNoteOnly: reading.generalNoteOnly, sentence, options };
 }
 
 /**

@@ -11,7 +11,7 @@ import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
 import { sheetCategory } from "@/lib/takeoff/planSet";
 import { heightItem, reviewQueue, suggestType, typeItems, wallItem, type CodeHeight, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
-import { feetLabel, legendOption, type CeilingRoom } from "@/lib/takeoff/wallHeight";
+import { feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/takeoff/wallHeight";
 
 /**
  * The job's review queue (`reviewQueue.ts`), plus the plan-set counts the
@@ -161,7 +161,7 @@ export async function loadReviewQueue(
       rooms: roomsOn(page.pageNumber),
     }));
     const type = item.wallType;
-    const legend = type === null ? null : legendOption({ code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes });
+    const legend = legendOptions(type === null ? null : { code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes });
     const queued = heightItem(item, sheets, legend);
     if (queued !== null) items.push(queued);
   }
