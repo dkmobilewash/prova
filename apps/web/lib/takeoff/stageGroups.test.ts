@@ -27,6 +27,22 @@ describe("a hatched band", () => {
     expect(hatchedRuns([wall], along, FPU).has(wall)).toBe(false);
   });
 
+  it("is one or two families of lines all along it — not dimension ticks, fixture crosses or fittings at mixed angles", () => {
+    // Cross-hatch: the same strokes plus their mirror, two families.
+    const mirror = hatch.map((s) => ({ ...s, x1: s.x2, x2: s.x1 }));
+    expect(hatchedRuns([wall], [...hatch, ...mirror], FPU).has(wall)).toBe(true);
+    // Joplin's false hatch: as many oblique strokes, at five different angles.
+    const slope = [0.6, 1, 1.7, -0.7, -1.3];
+    const mixed = Array.from({ length: 24 }, (_, i) => {
+      const dy = 0.0044, dx = dy / slope[i % slope.length]!;
+      return { x1: 0.105 + i * 0.008, y1: 0.4978, x2: 0.105 + i * 0.008 + dx, y2: 0.4978 + dy };
+    });
+    expect(hatchedRuns([wall], mixed, FPU).has(wall)).toBe(false);
+    // One family, but bunched in the first four feet where a dimension string lands.
+    const bunched = Array.from({ length: 24 }, (_, i) => ({ x1: 0.105 + i * 0.0015, y1: 0.4978, x2: 0.105 + i * 0.0015 + 0.0044, y2: 0.5022 }));
+    expect(hatchedRuns([wall], bunched, FPU).has(wall)).toBe(false);
+  });
+
   it("never takes a drywall default, and takes a masonry one the legend names", () => {
     const a = { id: "a", code: "A", name: "A", hasParts: true, thicknessIn: 6 };
     const b = { id: "b", code: "B", name: "B", hasParts: true, thicknessIn: 6 };
