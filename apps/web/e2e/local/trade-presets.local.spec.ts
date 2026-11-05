@@ -102,8 +102,11 @@ test("4. the estimate says Set your markup, and the Estimate step is not done", 
   await expect(page.locator("[data-job-step=estimate]")).toHaveAttribute("data-state", "done");
 });
 
-test("5. CONTROL: an established company's estimate shows no banner", async () => {
-  await page.context().clearCookies();
+test("5. CONTROL: an established company's estimate shows no banner", async ({ browser }) => {
+  // A fresh context: clearing cookies leaves Clerk's client thinking it is
+  // still signed in, and the second sign-in then refuses about half the time.
+  await page.context().close();
+  page = await (await browser.newContext()).newPage();
   await signInAs(page, PERSONAS.main.email);
   const company = await companyOf(PERSONAS.main.email);
   expect(company.tradePresetAskedAt).toBeNull();
