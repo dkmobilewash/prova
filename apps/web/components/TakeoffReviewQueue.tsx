@@ -110,7 +110,9 @@ export function TakeoffReviewQueue({
                 <span className="text-ink-muted">This set&rsquo;s legend names no types: choose one in the sheet&rsquo;s group list.</span>
               ) : (
                 <>
-                  <span className="text-ink-muted">{current.suggested === null ? "Set type" : "Set type · the drawing suggests"}</span>
+                  <span className="text-ink-muted" data-takeoff="review-queue-suggested">
+                    {current.suggested === null ? "Set type" : `Suggested ${current.suggested} · from the ${current.suggestedFrom ?? "drawing"} · confirm or pick another`}
+                  </span>
                   {orderedCodes(legendCodes, current.suggested).map((code) => (
                     <button
                       key={code}

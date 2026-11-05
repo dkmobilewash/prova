@@ -3,15 +3,17 @@ import { settledType, verdictFor, type WallGroup } from "./wallGroups";
 import type { MatchableWallType } from "./wallTypeMatch";
 
 /**
- * ── PRECISION FIRST: A TYPE IS POSTED ONLY FROM A SOURCE THAT IS RIGHT 95% OF THE TIME ──
+ * ── SUGGEST, DON'T POST: NO WALL TYPE IS PRICED WITHOUT A PERSON ──
  *
- * Diego, 2026-11-05: a wrong type misprices a bid silently, so the whole-set
- * run posts a type automatically only where its source's correct-of-typed rate
- * on the training keys is 95% or better. Every other group goes to "Walls —
- * untyped" and the review queue, with the type it would have had offered first
- * (`suggestedCode`), one press to accept.
+ * Diego, 2026-11-05: a wrong type misprices a bid silently. The first rule was
+ * to post only sources right 95% of the time on training; printed legend-code
+ * tags made it (95.6%) and were 47.6% right on held-out. So nothing posts.
+ * Every group goes to "Walls — untyped" and the review queue with the
+ * drawing's type pre-filled and where it came from (`suggestion`); the
+ * estimator confirms it per group.
  *
- * Each line of `POSTS` carries the rate it was set from.
+ * `POSTS` stays as the switch, each line with the rate it was measured at,
+ * so a source that earns it later is one line and its evidence.
  *
  * The eval (`wallTypes.eval.ts`) reads this same function, so what it scores is
  * what the stage posts. Change a line here only with a new measurement beside it.
@@ -20,11 +22,12 @@ export type PostSource = "tag" | "tag-variant" | "carried" | "sibling" | "note" 
 
 /**
  * Measured on the 7 training sheets with type keys (labels-snap-r12b), every
- * training sheet run, correct share of the keyed footage each source typed:
+ * training sheet run, correct share of the keyed footage each source typed.
+ * Held-out (measured once): printed legend-code tags 47.6%, carried 9.1%.
  */
 export const POSTS: Record<PostSource, boolean> = {
   /** A printed tag naming a code the legend defines: 1,022 ft, 95.6% (5 of 6 sheets 100%; Joplin 65%). */
-  tag: true,
+  tag: false,
   /** A printed tag the reader made a variant of a legend family (Joplin's A3 of A): 435 ft, 76.8%. */
   "tag-variant": false,
   /** A tag carried along the wall past where it was printed: 164 ft, 82.0%. */
@@ -63,7 +66,18 @@ export function postedType(group: WallGroup): MatchableWallType | null {
   return found !== null && POSTS[found.source] ? found.type : null;
 }
 
-/** The code the review queue offers first for a group it did not post. */
-export function suggestedCode(group: WallGroup): string | null {
-  return typeSource(group)?.type.code ?? null;
+/** How each source is named beside its suggestion. */
+export const SOURCE_WORDS: Record<PostSource, string> = {
+  tag: "printed tag",
+  "tag-variant": "printed tag, read as a variant",
+  carried: "tag carried along the wall",
+  sibling: "tag on another sheet of this floor",
+  note: "legend's \"unless noted otherwise\"",
+  thickness: "the only type that thick",
+};
+
+/** The type the review queue pre-fills for a group, and where it came from. */
+export function suggestion(group: WallGroup): { code: string; from: string } | null {
+  const found = typeSource(group);
+  return found === null ? null : { code: found.type.code, from: SOURCE_WORDS[found.source] };
 }

@@ -41,11 +41,11 @@ describe("the job's one review queue", () => {
   });
 });
 
-describe("a type the gate held back is offered first (precision first)", () => {
+describe("the drawing's type is pre-filled with its source (suggest, don't post)", () => {
   it("carries the group's suggestion onto its item, and none where the drawing named nothing", () => {
     const untyped = [{ xs: [0.1, 0.2], ys: [0.5, 0.5] }];
-    expect(typeItems(sheet, untyped, [{ id: "g", inches: 5, runs: [run(0.1, 0.2)], suggested: "IW-2" }])[0]).toMatchObject({ suggested: "IW-2" });
-    expect(typeItems(sheet, untyped, [{ id: "g", inches: 5, runs: [run(0.1, 0.2)] }])[0]).toMatchObject({ suggested: null });
+    expect(typeItems(sheet, untyped, [{ id: "g", inches: 5, runs: [run(0.1, 0.2)], suggested: { code: "IW-2", from: "printed tag" } }])[0]).toMatchObject({ suggested: "IW-2", suggestedFrom: "printed tag" });
+    expect(typeItems(sheet, untyped, [{ id: "g", inches: 5, runs: [run(0.1, 0.2)] }])[0]).toMatchObject({ suggested: null, suggestedFrom: null });
   });
 
   it("puts the suggestion first and does not repeat it", () => {

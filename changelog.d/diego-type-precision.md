@@ -1,23 +1,22 @@
-### Precision first on wall types: a type posts only from a source right 95% of the time (Diego)
+### Suggest, don't post: no wall type is priced without a person (Diego)
 `diego/type-precision`
 
-Diego's rule: a wrong type misprices a bid silently, so the whole-set run posts
-a type automatically only from a source that is 95% right on the training
-keys. Everything else goes to "Walls — untyped" and the review queue (#986),
-with the type the drawing gave offered first as a highlighted button.
-`postingGate.ts` holds the table, each line with the rate it was set from, and
-the eval scores through the same function.
+Diego's rule: a wrong type misprices a bid silently. A first version posted
+only sources right 95% of the time on training. Printed tags naming a legend
+code made it (95.6%), and on held-out they were right 47.6% of the time. So
+**nothing posts**. Every group goes to "Walls — untyped" and the review queue
+(#986). The drawing's type is pre-filled as the first, highlighted button,
+with where it came from ("Suggested IW-4 · from the printed tag"), and the
+estimator confirms it per group. `postingGate.ts` keeps one switch per source,
+all off, each with the rate it was measured at.
 
-| Source (7 training sheets, type keys) | Keyed ft | Correct | Posts |
-| --- | --- | --- | --- |
-| printed tag naming a legend code | 1,022 | 95.6% | yes |
-| printed variant tag (A3 of family A) | 435 | 76.8% | no |
-| tag carried along the wall | 164 | 82.0% | no |
-| legend / sheet "unless noted otherwise" | 1,086 | 90.6% | no |
-| tag read off a sibling sheet (new) | 278 | 71.9% | no |
-
-Printed tags are 100% on five of the six sheets that have them; Joplin's
-plain-code tags (65%) are the misses.
+| Source (7 training sheets, type keys) | Keyed ft | Correct on training |
+| --- | --- | --- |
+| printed tag naming a legend code | 1,022 | 95.6% (held-out 47.6%) |
+| printed variant tag (A3 of family A) | 435 | 76.8% |
+| tag carried along the wall | 164 | 82.0% (held-out 9.1%) |
+| legend / sheet "unless noted otherwise" | 1,086 | 90.6% |
+| tag read off a sibling sheet (new) | 278 | 71.9% |
 
 Two training bugs fixed on the way:
 - **Green Bay A3.1 typed nothing.** It prints no wall tags. Its "820 symbols"
@@ -34,19 +33,21 @@ Two training bugs fixed on the way:
   one whose end it stops past. McAllen 121 → 248 ft correct, 45 → 9 ft wrong.
   Baker 263 → 283 ft correct.
 
-Results (correct of what is POSTED):
+Suggestions, before (posted) and after these fixes:
 
 | | before | after |
 | --- | --- | --- |
-| training typed | 66.3% | 27.6% |
-| training correct-of-posted | 88.1% | 95.6% |
-| training walls to review (42 sheets) | 4,565 of 5,379 | 5,132 of 5,379 |
-| held-out typed | 52.5% | 12.2% |
-| held-out correct-of-posted | 49.5% | **47.6%** |
-| held-out walls to review (24 sheets) | 2,289 of 2,608 | 2,465 of 2,608 |
+| training: keyed footage with a type | 66.3% | 79.2% |
+| training: of it, the right type | 88.1% | 87.8% |
+| training: right type, ft | 2,147 | 2,553 |
+| held-out: keyed footage with a type | 52.5% | 53.1% |
+| held-out: of it, the right type | 49.5% | 49.0% |
+| auto-posted | all of the above | none |
 
-**Held-out does not hold.** Legend-code tags are 47.6% right there, so the
-95% bar set on training does not carry over. Measured once, not tuned.
+Every detected wall now waits in the review queue: 5,379 runs on the 42
+training sheets (855 with a suggestion) and 2,608 on the 24 held-out
+sheets (311 with a suggestion). The queue groups them, one item per
+detection group.
 
 Not fixed: Green Bay's IW-7 exterior tags end in a heavy bar drawn over the
 leader's last stretch; following it gained A3.1's sibling read and cost more

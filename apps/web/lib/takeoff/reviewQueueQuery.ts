@@ -2,7 +2,7 @@ import { prisma } from "@prova/db";
 import { HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 import { groupsFromProposals, storedRunsOrNull } from "@/lib/takeoff/wallProposal";
-import { suggestedCode } from "@/lib/takeoff/postingGate";
+import { suggestion } from "@/lib/takeoff/postingGate";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
@@ -81,7 +81,7 @@ export async function loadReviewQueue(
     const newest = mine[0]?.createdAt.getTime();
     const rows = mine.filter((row) => row.createdAt.getTime() === newest);
     const named = groupsFromProposals(rows, wallTypes, sheet.feetPerUnit ?? 1);
-    const groups = rows.map((row, at) => ({ id: row.id, inches: row.thicknessInches, runs: storedRunsOrNull(row.runs) ?? [], suggested: named === null ? null : suggestedCode(named[at]!) }));
+    const groups = rows.map((row, at) => ({ id: row.id, inches: row.thicknessInches, runs: storedRunsOrNull(row.runs) ?? [], suggested: named === null ? null : suggestion(named[at]!) }));
     items.push(...typeItems(sheet, page.measurements.filter((m) => m.label !== HELD_LABEL), groups));
   }
 
