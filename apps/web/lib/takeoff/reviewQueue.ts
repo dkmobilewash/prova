@@ -7,7 +7,8 @@
  *
  *   1. wall   — a run the model held off the estimate, "to confirm";
  *   2. type   — a found wall group posted to "Walls — untyped", which the
- *               "Set type" picker names (`setWallGroupType`);
+ *               "Set type" picker names (`setWallGroupType`), the type the
+ *               drawing suggests offered first (`postingGate.ts`);
  *   3. scale  — a floor plan with no scale saved;
  *   4. price  — an estimate line with neither a price nor a cost.
  *
@@ -18,7 +19,7 @@
 export type QueueRun = { x1: number; y1: number; x2: number; y2: number };
 export type ReviewItem =
   | ({ kind: "wall"; key: string; pageNumber: number; sheet: string; measurementId: string; feet: number | null } & QueueRun)
-  | { kind: "type"; key: string; pageNumber: number; sheet: string; inches: number; runs: QueueRun[]; feet: number | null }
+  | { kind: "type"; key: string; pageNumber: number; sheet: string; inches: number; runs: QueueRun[]; feet: number | null; suggested: string | null }
   | { kind: "scale"; key: string; pageNumber: number; sheet: string }
   | { kind: "price"; key: string; lineItemId: string; description: string; quantity: string; unit: string | null };
 
@@ -44,7 +45,7 @@ export function wallItem(sheet: QueueSheet, m: { id: string; xs: readonly number
 export function typeItems(
   sheet: QueueSheet,
   untyped: readonly { xs: readonly number[]; ys: readonly number[] }[],
-  groups: readonly { id: string; inches: number; runs: readonly QueueRun[] }[],
+  groups: readonly { id: string; inches: number; runs: readonly QueueRun[]; suggested?: string | null }[],
 ): ReviewItem[] {
   const out: ReviewItem[] = [];
   for (const group of groups) {
@@ -53,7 +54,7 @@ export function typeItems(
       untyped.some((m) => m.xs.length === 2 && m.xs[0] === run.x1 && m.xs[1] === run.x2 && m.ys[0] === run.y1 && m.ys[1] === run.y2),
     ).map((run) => ({ x1: run.x1, y1: run.y1, x2: run.x2, y2: run.y2 }));
     if (runs.length === 0) continue;
-    out.push({ kind: "type", key: `type:${sheet.pageNumber}:${group.id}`, pageNumber: sheet.pageNumber, sheet: sheet.sheet, inches: group.inches, runs, feet: feetOf(runs, sheet.feetPerUnit) });
+    out.push({ kind: "type", key: `type:${sheet.pageNumber}:${group.id}`, pageNumber: sheet.pageNumber, sheet: sheet.sheet, inches: group.inches, runs, feet: feetOf(runs, sheet.feetPerUnit), suggested: group.suggested ?? null });
   }
   return out;
 }
@@ -83,4 +84,10 @@ export function focusOf(item: ReviewItem): (QueueRun & { pageNumber: number }) |
 /** What the stepper's Next says for a queue of `n`. */
 export function reviewLabel(n: number): string {
   return `Review ${n} ${n === 1 ? "item" : "items"}`;
+}
+
+/** The legend's codes with the drawing's suggestion first; a suggestion the legend lacks is still offered. */
+export function orderedCodes(codes: readonly string[], suggested: string | null): string[] {
+  if (suggested === null) return [...codes];
+  return [suggested, ...codes.filter((code) => code.toUpperCase() !== suggested.toUpperCase())];
 }

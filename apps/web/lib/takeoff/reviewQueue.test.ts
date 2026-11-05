@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { focusOf, reviewQueue, typeItems, wallItem, type ReviewItem } from "./reviewQueue";
+import { focusOf, orderedCodes, reviewQueue, typeItems, wallItem, type ReviewItem } from "./reviewQueue";
 
 const sheet = { pageNumber: 3, sheet: "A101", feetPerUnit: 100 };
 const run = (x1: number, x2: number, y = 0.5) => ({ x1, y1: y, x2, y2: y });
@@ -38,5 +38,19 @@ describe("the job's one review queue", () => {
     ];
     expect(reviewQueue(items).map((i) => i.key)).toEqual(["wall:long", "wall:short", "wall:far", "type:3:g", "scale:2", "price:l1"]);
     expect(focusOf(items[0]!)).toBeNull();
+  });
+});
+
+describe("a type the gate held back is offered first (precision first)", () => {
+  it("carries the group's suggestion onto its item, and none where the drawing named nothing", () => {
+    const untyped = [{ xs: [0.1, 0.2], ys: [0.5, 0.5] }];
+    expect(typeItems(sheet, untyped, [{ id: "g", inches: 5, runs: [run(0.1, 0.2)], suggested: "IW-2" }])[0]).toMatchObject({ suggested: "IW-2" });
+    expect(typeItems(sheet, untyped, [{ id: "g", inches: 5, runs: [run(0.1, 0.2)] }])[0]).toMatchObject({ suggested: null });
+  });
+
+  it("puts the suggestion first and does not repeat it", () => {
+    expect(orderedCodes(["IW-1", "IW-2", "IW-4"], "IW-4")).toEqual(["IW-4", "IW-1", "IW-2"]);
+    expect(orderedCodes(["IW-1", "IW-2"], "C6")).toEqual(["C6", "IW-1", "IW-2"]);
+    expect(orderedCodes(["IW-1", "IW-2"], null)).toEqual(["IW-1", "IW-2"]);
   });
 });

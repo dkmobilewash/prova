@@ -1,7 +1,9 @@
 import { prisma } from "@prova/db";
 import { HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
-import { storedRunsOrNull } from "@/lib/takeoff/wallProposal";
+import { groupsFromProposals, storedRunsOrNull } from "@/lib/takeoff/wallProposal";
+import { suggestedCode } from "@/lib/takeoff/postingGate";
+import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
@@ -60,8 +62,13 @@ export async function loadReviewQueue(
     : await prisma.takeoffWallProposal.findMany({
         where: { pageId: { in: untypedPages.map((page) => page.id) } },
         orderBy: { createdAt: "desc" },
-        select: { id: true, pageId: true, thicknessInches: true, runs: true, createdAt: true },
+        select: { id: true, pageId: true, thicknessInches: true, runs: true, createdAt: true, calibrationId: true, source: true, sourceLabel: true, namedCode: true, itemId: true },
       });
+  // The company's types, for the type each untyped group would have had — offered first.
+  const wallTypes: MatchableWallType[] = proposals.length === 0
+    ? []
+    : (await prisma.wallType.findMany({ where: { companyId }, select: { id: true, code: true, name: true, thicknessIn: true, _count: { select: { components: true } } } }))
+        .map((t) => ({ id: t.id, code: t.code, name: t.name, hasParts: t._count.components > 0, thicknessIn: t.thicknessIn === null ? null : Number(t.thicknessIn) }));
   for (const page of pages) {
     const sheet = sheetOf(page.pageNumber, page.calibrations[0]);
     for (const m of page.measurements) {
@@ -72,9 +79,9 @@ export async function loadReviewQueue(
     const mine = proposals.filter((row) => row.pageId === page.id);
     // One detection run writes every row at one timestamp: the newest run.
     const newest = mine[0]?.createdAt.getTime();
-    const groups = mine
-      .filter((row) => row.createdAt.getTime() === newest)
-      .map((row) => ({ id: row.id, inches: row.thicknessInches, runs: storedRunsOrNull(row.runs) ?? [] }));
+    const rows = mine.filter((row) => row.createdAt.getTime() === newest);
+    const named = groupsFromProposals(rows, wallTypes, sheet.feetPerUnit ?? 1);
+    const groups = rows.map((row, at) => ({ id: row.id, inches: row.thicknessInches, runs: storedRunsOrNull(row.runs) ?? [], suggested: named === null ? null : suggestedCode(named[at]!) }));
     items.push(...typeItems(sheet, page.measurements.filter((m) => m.label !== HELD_LABEL), groups));
   }
 

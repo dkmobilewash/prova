@@ -2,9 +2,10 @@ import { prisma, type Prisma } from "@prova/db";
 import { nextItemColor } from "@/lib/takeoff/itemColors";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
-import { settledType, verdictFor, type WallGroup } from "@/lib/takeoff/wallGroups";
+import type { WallGroup } from "@/lib/takeoff/wallGroups";
+import { postedType } from "@/lib/takeoff/postingGate";
 import { familyOf, type MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
-import { isPropagatedTag, plainTag } from "@/lib/takeoff/planTextTags";
+import { isPropagatedTag, isSiblingTag, plainTag } from "@/lib/takeoff/planTextTags";
 
 /**
  * ── THE WALLS A SHEET WAS COUNTED WITH, ON THE JOB BY TYPE ──
@@ -63,15 +64,12 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
   const rememberedType = new Map(typedItems.map((i) => [i.id, i.wallTypeId!]));
   if (groups === null) return { kind: "skipped", why: "stored walls could not be read" };
 
-  // The type each group settles to: a tag's own type, or the note's default.
+  // The type each group is posted as: the drawing's, where its source is one
+  // that is right 95% of the time (`postingGate.ts`); everything else waits in
+  // the review queue with that type offered first.
   const typeOf = (group: WallGroup): MatchableWallType | null => {
-    const verdict = verdictFor(group);
-    const settled = settledType(verdict);
-    if (settled !== null) return settled;
-    // The note's default, only where it is the ONE type that thick: Joplin's
-    // 7-1/4 in bucket is its CMU default B and its 6 in stud partition A3 at
-    // once, and that is a question for the person, not a priced line.
-    if (verdict.state === "ASK" && group.source.kind === "GENERAL_NOTE" && verdict.suggested && group.candidates.length === 1) return verdict.suggested;
+    const posted = postedType(group);
+    if (posted !== null) return posted;
     // Remembered for the job: an estimator's "Set type" gave an item this
     // thickness and type, and detection matched the group to that item.
     // Never over a tag: a drawing's tag the library lacks is a question, not this.
@@ -98,7 +96,7 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
         type === null
           ? "wall, untyped"
           : group.source.kind === "TAG"
-            ? isPropagatedTag(group.source.tag) ? `${plainTag(group.source.tag)} wall (carried)` : `${type.code} wall`
+            ? isPropagatedTag(group.source.tag) ? `${plainTag(group.source.tag)} wall (carried)` : isSiblingTag(group.source.tag) ? `${type.code} wall (tag on another sheet)` : `${type.code} wall`
             : setForJob.has(group)
               ? `${type.code} wall (set for this job)`
               : group.source.kind === "GENERAL_NOTE"

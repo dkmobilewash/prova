@@ -333,3 +333,18 @@ describe("a tag's name narrowing which run it claims", () => {
     expect(got.get(fits)).toBe("EXT 2");
   });
 });
+
+describe("a leader names the wall it lands on (McAllen A3.2)", () => {
+  // IW-2's leader ends on a stub a foot past the end of an IW-4 wall; the stub
+  // is too short to be a run, so the nearest run was the wall it stopped beyond.
+  const run = wall({ x1: 0.2, y1: 0.5, x2: 0.3, y2: 0.5 });
+  it("does not claim a run whose end the leader stops past", () => {
+    const past = { ...tag("IW-2", 0.3 + FOOT, 0.5), leader: true };
+    expect(tagByRun([run], [past], feetPerUnit).size).toBe(0);
+    // The same point without a leader is a tag beside the run, as before.
+    expect(tagByRun([run], [tag("IW-2", 0.3 + FOOT, 0.5)], feetPerUnit).get(run)).toBe("IW-2");
+  });
+  it("still claims the run it lands on", () => {
+    expect(tagByRun([run], [{ ...tag("IW-4", 0.25, 0.5 + 0.2 * FOOT), leader: true }], feetPerUnit).get(run)).toBe("IW-4");
+  });
+});
