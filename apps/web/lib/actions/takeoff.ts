@@ -13,6 +13,7 @@ import { isBlank, labelFromKey, parseNumericInput } from "@/lib/numeric-input";
 import { effectiveSheetNumber, effectiveTitle, type SheetRow } from "@/lib/plan-ingest/sheetIndex";
 import { areaOfTitle, isWholeFloorTitle } from "@/lib/plan-ingest/walls";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
+import { takeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import { levelFromTitle } from "@/lib/plan-ingest/sheetLevel";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
@@ -769,7 +770,16 @@ async function writeCalibration(input: {
     y2: calibration.y2,
     declaredDistanceFeet: Number(calibration.declaredDistanceFeet),
   });
-  if (feetPerUnit !== null) {
+  // ── NOT ON A SHEET THAT IS NO FLOOR PLAN ──
+  //
+  // Confirm scales saves a scale on every sheet with a sure one, and the new-
+  // customer walk found walls on Baker's roof plan, foundation plan, roof
+  // framing plan and ceiling plan that way. The whole-set run has always
+  // skipped those by the same verdict (`takeoffSheetVerdict`); this trigger now
+  // does too. A person can still press Find walls on such a sheet.
+  const row = (await sheetIndexFor(planId, company.id)).find((r) => r.pageNumber === pageNumber);
+  const notAPlan = row !== undefined && takeoffSheetVerdict({ sheetNumber: effectiveSheetNumber(row), title: effectiveTitle(row) }).skipAutomatically;
+  if (feetPerUnit !== null && !notAPlan) {
     // THE COMPANY'S TYPES, SHAPED THE WAY THE VIEWER SHAPES THEM — the same
     // three uses: the partition schedule handed to the detector, the tag
     // matcher, and the general note. `thicknessIn` is nullable because a

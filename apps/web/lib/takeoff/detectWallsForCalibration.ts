@@ -85,6 +85,9 @@ export type DetectOutcome =
   | "failed";
 
 /** What the room step needs from a detection, so it need not detect again. */
+/** The kind of `takeoffPlanTextRead` row holding a sheet's dry-run plan comparison: `{ calibrationId, feet, against }`. */
+export const EXISTING_WALLS_READ = "existing-walls";
+
 export type DetectedBoundary = { pairings: WallCandidate[]; segments: readonly StrokeSegment[]; held: WallCandidate[] };
 
 export type DetectTarget = {
@@ -302,29 +305,43 @@ export async function detectWallsForCalibration(
         ...(priorPlan === undefined ? {} : { priorPlan }),
       });
     let offered = offer();
-    // ── PLAN COMPARISON, ON A PAIRED SHEET WITH THE COMPANY'S SWITCH ON — see `priorPlan.ts` ──
+    // ── PLAN COMPARISON, ON A PAIRED SHEET — see `priorPlan.ts` ──
     //
     // The demolition plan is read from this same document. One that does not
-    // line up sets nothing aside, which is the safe failure.
+    // line up sets nothing aside, which is the safe failure. With the company's
+    // switch ON the comparison is applied; OFF, it is run dry and the footage
+    // it WOULD set aside is kept beside the sheet (`EXISTING_WALLS_READ`), so
+    // the whole-set panel can say how much existing wall is in the count and
+    // offer the switch — the new-customer walk counted Baker's existing walls
+    // and nothing said how much that mattered. Only a paired sheet pays for it.
     if (raster === null) {
       try {
-        const company = await prisma.company.findUnique({ where: { id: target.companyId }, select: { planCompareOn: true } });
-        if (company?.planCompareOn === true) {
-          // Loaded only for a company that turned it on: the pairer reads every
-          // sheet's title, and nobody else's detection should pay for it.
-          const [{ priorPlanFor }, { pairingsForPlan, sheetName }] = await Promise.all([import("./priorPlan"), import("./priorPlanLoad")]);
-          const pairings = await pairingsForPlan(target.planId);
-          const pairing = pairings.byPage.get(target.pageNumber);
-          if (pairing !== undefined && pairing.demoPage >= 1 && pairing.demoPage <= doc.pageCount && pairing.demoPage !== target.pageNumber) {
-            const demoStrokes = await doc.pageStrokes(pairing.demoPage);
-            const demoText = (await doc.pageText(pairing.demoPage)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
-            const prior = priorPlanFor({
-              demo: { segments: demoStrokes.segments, textItems: demoText, widthPt: demoStrokes.widthPt, heightPt: demoStrokes.heightPt },
-              newPage: { segments: strokes.segments, widthPt: W },
-              newRuns: offered.offeredRuns,
-              feetPerUnit: target.feetPerUnit,
-            });
-            if (prior.lines !== null) offered = offer({ lines: prior.lines, sheet: sheetName(pairings.sheets, pairing.demoPage) });
+        const { pairingsForPlan, sheetName } = await import("./priorPlanLoad");
+        const pairings = await pairingsForPlan(target.planId);
+        const pairing = pairings.byPage.get(target.pageNumber);
+        if (pairing !== undefined && pairing.demoPage >= 1 && pairing.demoPage <= doc.pageCount && pairing.demoPage !== target.pageNumber) {
+          const [{ priorPlanFor }, company] = await Promise.all([import("./priorPlan"), prisma.company.findUnique({ where: { id: target.companyId }, select: { planCompareOn: true } })]);
+          const demoStrokes = await doc.pageStrokes(pairing.demoPage);
+          const demoText = (await doc.pageText(pairing.demoPage)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
+          const prior = priorPlanFor({
+            demo: { segments: demoStrokes.segments, textItems: demoText, widthPt: demoStrokes.widthPt, heightPt: demoStrokes.heightPt },
+            newPage: { segments: strokes.segments, widthPt: W },
+            newRuns: offered.offeredRuns,
+            feetPerUnit: target.feetPerUnit,
+          });
+          if (prior.lines !== null) {
+            const against = sheetName(pairings.sheets, pairing.demoPage);
+            const compared = offer({ lines: prior.lines, sheet: against });
+            const feet = (runs: readonly WallCandidate[]) => runs.reduce((n, r) => n + r.lengthFeet, 0);
+            if (company?.planCompareOn === true) offered = compared;
+            else {
+              const value = { calibrationId: target.calibrationId, feet: feet(offered.offeredRuns) - feet(compared.offeredRuns), against };
+              await prisma.takeoffPlanTextRead.upsert({
+                where: { planId_pageNumber_kind: { planId: target.planId, pageNumber: target.pageNumber, kind: EXISTING_WALLS_READ } },
+                create: { planId: target.planId, pageNumber: target.pageNumber, kind: EXISTING_WALLS_READ, value },
+                update: { value, computedAt: new Date() },
+              });
+            }
           }
         }
       } catch (error) {

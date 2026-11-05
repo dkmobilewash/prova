@@ -41,6 +41,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await prisma.takeoffScaleCalibration.deleteMany({ where: { page: { planId } } });
+  await prisma.planSheetProposal.deleteMany({ where: { planId } });
+  await prisma.planIngestJob.deleteMany({ where: { planId } });
   await prisma.takeoffPlanPage.deleteMany({ where: { planId } });
   await prisma.takeoffPlan.deleteMany({ where: { id: planId } });
   await prisma.job.deleteMany({ where: { companyId } });
@@ -72,6 +74,17 @@ describe("Confirm scales", () => {
     expect(await confirmSheetScales(jobId, planId, [3], true)).toEqual({ ok: true, value: { confirmed: 0, skipped: 1 } });
     expect(await confirmSheetScales(jobId, planId, [2], true)).toEqual({ ok: true, value: { confirmed: 1, skipped: 0 } });
     expect(await saved()).toEqual([[1, 72], [2, 144]]);
+  });
+
+  it("saves a roof plan's sure scale but finds no walls on it — the walk found walls on Baker's roof, foundation, framing and ceiling plans", async () => {
+    await prisma.planSheetText.create({ data: { planId, pageNumber: 4, hasTextLayer: true, widthPt: 2592, heightPt: 1728 } });
+    await prisma.planSheetScaleReading.create({ data: { planId, pageNumber: 4, scaleName: QUARTER, source: "DIMENSIONS", x1: 0.2, y1: 0.5, x2: 0.7, y2: 0.5, declaredDistanceFeet: "72", declaredText: "72'-0\"", agreedText: "72'-0\"\n24'-0\"", consideredCount: 3, inheritedError: 0.002 } });
+    const inventory = await prisma.planIngestJob.create({ data: { planId, companyId, stage: "PAGE_INVENTORY", pageCount: 4, finishedAt: new Date() } });
+    await prisma.planSheetProposal.create({ data: { ingestJobId: inventory.id, planId, pageNumber: 4, proposedSheetNumber: "A102", proposedTitle: "ROOF PLAN", proposedPageType: "PLAN", proposedReason: "test", proposedConfidence: "HIGH", model: "test", promptVersion: "test" } });
+    detected.length = 0;
+    expect(await confirmSheetScales(jobId, planId, [4])).toEqual({ ok: true, value: { confirmed: 1, skipped: 0 } });
+    expect((await saved()).map(([page]) => page)).toContain(4);
+    expect(detected).toEqual([]);
   });
 
   it("refuses a plan set that is not this job's newest", async () => {

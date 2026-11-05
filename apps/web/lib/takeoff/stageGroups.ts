@@ -109,6 +109,26 @@ export function hatchedRuns(walls: readonly WallCandidate[], strokes: readonly S
   return out;
 }
 
+/**
+ * ── HOW WIDE A GROUP THE ESTIMATOR CONFIRMS, NOT HOW FINE THE FINDER PAIRS ──
+ *
+ * The new-customer walk met Baker A101 as 20 groups by drawn thickness, 2-1/2"
+ * to 12-1/8", each one a question. The finder's 1/2" (`CLUSTER_INCHES`) is
+ * right for pairing faces and too fine for a person: drafted thickness wanders.
+ * Measured on the 42 training sheets against the type keys, with purity the
+ * share of each group's keyed footage that is its commonest type:
+ *
+ *   width   groups/sheet   purity
+ *   1/2"    21.0           92.0%
+ *   1"      15.7           90.7%
+ *   1-1/4"  14.4           90.7%   ← this
+ *   1-1/2"  13.0           89.6%
+ *
+ * Suggested types are unchanged at every width. Held-out, measured once:
+ * 17.7 → 12.1 groups a sheet, purity 89.3% → 86.9%. Baker A101: 16 → 8.
+ */
+export const STAGE_CLUSTER_INCHES = 1.25;
+
 export function groupsForStage(input: {
   found: FoundOnSheet;
   /** The sheet's strokes in POINTS, for the symbol pass. */
@@ -122,6 +142,8 @@ export function groupsForStage(input: {
   legendCodes: readonly string[] | null;
   /** Another sheet of the same floor at the same size, read for tags when this one prints none. */
   sibling?: SiblingSheet | null;
+  /** How wide a thickness group may be, in inches; `STAGE_CLUSTER_INCHES` unless an eval asks otherwise. */
+  clusterInches?: number;
 }): { groups: WallGroup[]; hatched: Set<WallCandidate> } {
   const { found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes } = input;
   const tags = wallTypeTags(textItems, widthPt);
@@ -134,7 +156,7 @@ export function groupsForStage(input: {
   const read = fromSibling ?? own;
   const hatched = hatchedRuns(found.walls, found.inUnits, feetPerUnit);
   // The types with the plan's tag variants (C6 of family C), so a variant tag names a type.
-  return { groups: wallGroups(clusterByThickness(found.walls), read.byRun, read.wallTypes, fromNote, hatched), hatched };
+  return { groups: wallGroups(clusterByThickness(found.walls, input.clusterInches ?? STAGE_CLUSTER_INCHES), read.byRun, read.wallTypes, fromNote, hatched), hatched };
 }
 
 export type SiblingSheet = { segmentsPt: readonly StrokeSegment[]; textItems: readonly PageTextItem[]; widthPt: number };
