@@ -415,7 +415,8 @@ test("X1 Download Excel: Quantities and Sheets tabs, ZZ Troffers as saved", asyn
   test.skip((await excel.count()) === 0, "the takeoff download is not on main yet (diego/takeoff-export-xlsx)");
   const [file] = await Promise.all([page.waitForEvent("download"), excel.click()]);
   const book = XLSX.read(readFileSync(await file.path()));
-  expect(book.SheetNames).toEqual(["Quantities", "Sheets"]);
+  // "Wall groups" since #961: the found groups under the team's names.
+  expect(book.SheetNames).toEqual(["Quantities", "Sheets", "Wall groups"]);
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(book.Sheets.Quantities!);
   // The file must agree with the item it was saved as (A7 says whether that was 26).
   const saved = num((await row.innerText()).match(/([\d,]+) ea/)?.[1] ?? "");
@@ -742,7 +743,7 @@ test("X2 the Takeoff tab downloads Excel and CSV, named after the job", async ()
   await expectHealthy(page, "baker takeoff tab", { monitor });
   const [xlsx] = await Promise.all([page.waitForEvent("download"), hook("export-xlsx").click()]);
   expect(xlsx.suggestedFilename()).toBe(`${stemOf(job.name)}.xlsx`);
-  expect(XLSX.read(readFileSync(await xlsx.path())).SheetNames).toEqual(["Quantities", "Sheets"]);
+  expect(XLSX.read(readFileSync(await xlsx.path())).SheetNames).toEqual(["Quantities", "Sheets", "Wall groups"]);
   const [csv] = await Promise.all([page.waitForEvent("download"), hook("export-csv").click()]);
   expect(csv.suggestedFilename()).toBe(`${stemOf(job.name)}.csv`);
   expect(readFileSync(await csv.path(), "utf8").split("\n")[0]).toBe("Item,Sheet,Quantity,Unit,Source,Note");
