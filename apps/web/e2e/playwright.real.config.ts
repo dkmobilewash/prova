@@ -27,5 +27,5 @@ export default {
   ...baseConfig,
   testDir: "./local",
   testMatch: "*.local.spec.ts",
-  projects: [{ ...chromium, testIgnore: ["billing-click.local.spec.ts", "takeoff-click.local.spec.ts", "ask-commands.local.spec.ts"] }],
+  projects: [{ ...chromium, testIgnore: ["billing-click.local.spec.ts", "takeoff-click.local.spec.ts", "ask-commands.local.spec.ts", "trade-presets.local.spec.ts"] }],
 };

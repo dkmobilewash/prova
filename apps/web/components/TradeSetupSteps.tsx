@@ -1,0 +1,165 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { applyTradePreset, saveStarterMarkup, skipBusinessScopeQuestions } from "@/lib/actions";
+import { CompanySetupGate } from "@/components/CompanySetupGate";
+import { Spinner } from "@/components/Spinner";
+import { RECAP_RATE_FIELDS } from "@/lib/bid-recap";
+import { MARKUP_FIELDS, TRADE_PRESETS } from "@/lib/trade-presets";
+
+export type SetupStep = "trade" | "markup" | "questions";
+
+/**
+ * `/welcome`, guided flow Phase 5: the trade in one tap, then the company's own
+ * markup, then the three questions `CompanySetupGate` has always asked (which
+ * finish onboarding). The page picks the starting step from what is stored, so
+ * a reload resumes rather than re-asks.
+ *
+ * The markup boxes are EMPTY and stay empty until the person types: Diego,
+ * 2026-11-05, never a pre-filled figure. Text inputs with a decimal keypad,
+ * not `type="number"`, which submits an empty string for a value the browser
+ * dislikes (CLAUDE.md, the openings-deduction entry).
+ */
+export function TradeSetupSteps({ initial }: { initial: SetupStep }) {
+  const [step, setStep] = useState<SetupStep>(initial);
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+
+  if (step === "questions") return <CompanySetupGate />;
+
+  const run = (work: () => Promise<{ ok: boolean; error?: string }>, next: SetupStep) => {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await work();
+        if (!result.ok) {
+          setError(result.error ?? "Couldn't save just now. Try again.");
+          return;
+        }
+        setStep(next);
+      } catch {
+        setError("Couldn't save just now. Nothing was changed — try again.");
+      }
+    });
+  };
+
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center bg-canvas px-4 py-10">
+      <div className="w-full max-w-lg rounded-lg border border-line-card bg-surface p-8">
+        {step === "trade" ? (
+          <>
+            <h1 className="text-xl font-semibold text-ink">What&apos;s your trade?</h1>
+            <p className="mt-2 text-sm text-ink-body">
+              We&apos;ll start you with that trade&apos;s wall types, takeoff tools and estimate lines. No prices — those are yours.
+            </p>
+            <ul className="mt-6 flex flex-col gap-2" data-setup="trades">
+              {TRADE_PRESETS.map((preset) => (
+                <li key={preset.choice}>
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => run(() => applyTradePreset(preset.choice), "markup")}
+                    className="flex min-h-12 w-full items-center rounded-md border border-line-card px-4 text-left text-sm font-medium text-ink hover:border-link hover:text-link disabled:opacity-50"
+                  >
+                    {preset.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-4 text-xs text-ink-muted">You can change any of it later in Settings and on the Wall types page.</p>
+            {/* Today's skip, unchanged: onboarding done, nothing preset, no
+                markup owed. Never a dead end (CompanySetupGate's own rule). */}
+            <button
+              type="button"
+              disabled={isPending}
+              onClick={() => {
+                setError(null);
+                startTransition(async () => {
+                  try {
+                    const result = await skipBusinessScopeQuestions();
+                    if (!result.ok) {
+                      setError(result.error);
+                      return;
+                    }
+                    router.replace("/dashboard");
+                  } catch {
+                    setError("Couldn't save just now. Nothing was changed — try again.");
+                  }
+                });
+              }}
+              className="mt-6 inline-flex min-h-11 items-center justify-center rounded-md px-3 text-sm text-ink-body hover:bg-rail-hover hover:text-ink disabled:opacity-50"
+            >
+              Skip for now
+            </button>
+          </>
+        ) : (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const formData = new FormData(event.currentTarget);
+              run(() => saveStarterMarkup(formData), "questions");
+            }}
+          >
+            <h1 className="text-xl font-semibold text-ink">Your markup</h1>
+            <p className="mt-2 text-sm text-ink-body">
+              Your own figures, as percentages. Every estimate starts from these, and you can change them in Settings.
+            </p>
+            <div className="mt-6 grid grid-cols-2 gap-4">
+              {MARKUP_FIELDS.map((field) => (
+                <label key={field} className="flex flex-col gap-1 text-sm text-ink-body">
+                  {RECAP_RATE_FIELDS[field].label}
+                  <span className="flex items-center gap-1">
+                    <input
+                      name={field}
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      className="min-h-11 w-full rounded-md border border-line-card bg-canvas px-3 text-ink"
+                    />
+                    <span aria-hidden="true">%</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            {error && (
+              <p role="alert" className="mt-4 rounded-md border border-red-700 bg-tag-rose px-3 py-2 text-sm text-danger">
+                {error}
+              </p>
+            )}
+            <div className="mt-8 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setStep("questions")}
+                disabled={isPending}
+                className="inline-flex min-h-11 items-center justify-center rounded-md px-3 text-sm text-ink-body hover:bg-rail-hover hover:text-ink disabled:opacity-50"
+              >
+                Later
+              </button>
+              <button
+                type="submit"
+                disabled={isPending}
+                className="inline-flex min-h-11 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
+              >
+                {isPending ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner />
+                    Saving…
+                  </span>
+                ) : (
+                  "Save"
+                )}
+              </button>
+            </div>
+          </form>
+        )}
+        {step === "trade" && error && (
+          <p role="alert" className="mt-4 rounded-md border border-red-700 bg-tag-rose px-3 py-2 text-sm text-danger">
+            {error}
+          </p>
+        )}
+      </div>
+    </main>
+  );
+}

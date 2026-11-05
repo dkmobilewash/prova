@@ -1,6 +1,8 @@
 import { requireCompanyContext } from "@/lib/auth";
 import { redirectAwayFromOnboardingIfAsked } from "@/lib/onboarding-gate";
-import { CompanySetupGate } from "@/components/CompanySetupGate";
+import { prisma } from "@prova/db";
+import { TradeSetupSteps } from "@/components/TradeSetupSteps";
+import { markupNeeded } from "@/lib/trade-presets";
 
 export const metadata = { title: "Welcome" };
 
@@ -38,5 +40,11 @@ export default async function WelcomePage() {
     businessScopeAskedAt: company.businessScopeAskedAt,
   });
 
-  return <CompanySetupGate />;
+  // Resume where they left off: the trade, then the markup, then the three
+  // questions. "Later" on the markup is not stored, so a reload offers it again
+  // until the three questions finish onboarding and this page is gone.
+  const asked = await prisma.company.findUniqueOrThrow({ where: { id: company.id }, select: { tradePresetAskedAt: true } });
+  const defaults = asked.tradePresetAskedAt === null ? null : await prisma.companyBidDefaults.findUnique({ where: { companyId: company.id } });
+  const initial = asked.tradePresetAskedAt === null ? "trade" : markupNeeded(asked, defaults) ? "markup" : "questions";
+  return <TradeSetupSteps initial={initial} />;
 }
