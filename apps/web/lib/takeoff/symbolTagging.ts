@@ -166,6 +166,7 @@ export function tagsFromSymbols(input: {
       // `tagByRun` works in page-width units, which is what the runs are in.
       x: widthPt > 0 ? at.x / widthPt : at.x,
       y: widthPt > 0 ? at.y / widthPt : at.y,
+      ...(symbol.leader === null ? {} : { leader: true }),
     };
     if (symbol.leader !== null) anchoredByLeader.add(tag);
     tags.push(tag);
