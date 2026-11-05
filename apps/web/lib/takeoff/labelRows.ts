@@ -209,11 +209,12 @@ export type LabelFile = {
     lengthFeet: number;
     thicknessFeet: number;
     verdict: "wall" | "not-wall" | "traced" | "unsure";
+    wallType?: string;
   }[];
   /** Walls the reviewer drew because nothing was offered. No feature vector
    *  exists for these — nothing proposed them — so they are kept apart rather
    *  than invented into rows. */
-  traced: { x1: number; y1: number; x2: number; y2: number; lengthFeet: number }[];
+  traced: { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; wallType?: string }[];
 };
 
 const lengthOf = (l: { x1: number; y1: number; x2: number; y2: number }) =>
@@ -364,6 +365,10 @@ export function labelRows(
 }
 
 /** The file as it is written, with the counts a reader needs to judge it. */
+/** A type only on an accepted or traced wall, as written; a rejected or unsure one never carries one. */
+const typeOf = (v: { verdict: string; wallType?: string }): string | undefined =>
+  (v.verdict === "wall" || v.verdict === "traced") && typeof v.wallType === "string" && v.wallType.trim() !== "" ? v.wallType.trim().toUpperCase() : undefined;
+
 export function labelFile(input: {
   set: string;
   sheet: string;
@@ -468,6 +473,7 @@ export function labelFile(input: {
         lengthFeet: v.lengthFeet,
         thicknessFeet: v.thicknessFeet,
         verdict: v.verdict,
+        ...(typeOf(v) === undefined ? {} : { wallType: typeOf(v) }),
       })),
       // ── CARRIED FROM AN EARLIER BUILD, TAGGED WITH IT ──
       //
@@ -484,6 +490,7 @@ export function labelFile(input: {
         thicknessFeet: v.thicknessFeet,
         verdict: v.verdict,
         finderVersion: v.finderVersion,
+        ...(typeOf(v) === undefined ? {} : { wallType: typeOf(v) }),
       })),
     ],
     traced: traced.map((t) => ({
@@ -492,6 +499,7 @@ export function labelFile(input: {
       x2: t.x2,
       y2: t.y2,
       lengthFeet: t.lengthFeet,
+      ...(typeOf(t) === undefined ? {} : { wallType: typeOf(t) }),
     })),
   };
 }
