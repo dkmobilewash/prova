@@ -1,5 +1,9 @@
 import type { CostCategoryValue } from "@/lib/bid-recap";
 import { ceilingOption, type CeilingRoom, type HeightOption } from "./wallHeight";
+import type { WallGroup } from "./wallGroups";
+import { plainTag } from "./planTextTags";
+import { SOURCE_WORDS, typeSource } from "./postingGate";
+import { inchLabel } from "./wallVectors";
 
 /**
  * ── ONE REVIEW QUEUE FOR THE WHOLE JOB ──
@@ -26,9 +30,25 @@ import { ceilingOption, type CeilingRoom, type HeightOption } from "./wallHeight
  * when the queue is empty (`job-steps.ts`).
  */
 export type QueueRun = { x1: number; y1: number; x2: number; y2: number };
+/** A pre-filled answer and where it came from, in words: `tag S6B on A101`. */
+export type Guess = { code: string; from: string };
+/** A type's height for the queue, by code: the job's item height, else its legend height. */
+export type CodeHeight = { feet: number; from: string };
 export type ReviewItem =
   | ({ kind: "wall"; key: string; pageNumber: number; sheet: string; measurementId: string; feet: number | null } & QueueRun)
-  | { kind: "type"; key: string; pageNumber: number; sheet: string; inches: number; runs: QueueRun[]; feet: number | null; suggested: string | null; suggestedFrom: string | null }
+  | {
+      kind: "type";
+      key: string;
+      pageNumber: number;
+      sheet: string;
+      inches: number;
+      runs: QueueRun[];
+      feet: number | null;
+      /** The type the drawing suggests and where that came from, pre-filled for Enter. */
+      suggested: Guess | null;
+      /** The ceiling over the rooms its walls bound, the height when its type has none. */
+      ceiling: HeightOption | null;
+    }
   | { kind: "height"; key: string; itemId: string; name: string; pageNumber: number; sheet: string; runs: QueueRun[]; feet: number | null; options: HeightOption[] }
   | { kind: "scale"; key: string; pageNumber: number; sheet: string }
   | { kind: "price"; key: string; lineItemId: string; description: string; quantity: string; unit: string | null; askCost: boolean; costCategory: CostCategoryValue | null };
@@ -55,7 +75,7 @@ export function wallItem(sheet: QueueSheet, m: { id: string; xs: readonly number
 export function typeItems(
   sheet: QueueSheet,
   untyped: readonly { xs: readonly number[]; ys: readonly number[] }[],
-  groups: readonly { id: string; inches: number; runs: readonly QueueRun[]; suggested?: { code: string; from: string } | null }[],
+  groups: readonly { id: string; inches: number; runs: readonly QueueRun[]; suggested?: Guess | null; rooms?: readonly CeilingRoom[] }[],
 ): ReviewItem[] {
   const out: ReviewItem[] = [];
   for (const group of groups) {
@@ -64,7 +84,17 @@ export function typeItems(
       untyped.some((m) => m.xs.length === 2 && m.xs[0] === run.x1 && m.xs[1] === run.x2 && m.ys[0] === run.y1 && m.ys[1] === run.y2),
     ).map((run) => ({ x1: run.x1, y1: run.y1, x2: run.x2, y2: run.y2 }));
     if (runs.length === 0) continue;
-    out.push({ kind: "type", key: `type:${sheet.pageNumber}:${group.id}`, pageNumber: sheet.pageNumber, sheet: sheet.sheet, inches: group.inches, runs, feet: feetOf(runs, sheet.feetPerUnit), suggested: group.suggested?.code ?? null, suggestedFrom: group.suggested?.from ?? null });
+    out.push({
+      kind: "type",
+      key: `type:${sheet.pageNumber}:${group.id}`,
+      pageNumber: sheet.pageNumber,
+      sheet: sheet.sheet,
+      inches: group.inches,
+      runs,
+      feet: feetOf(runs, sheet.feetPerUnit),
+      suggested: group.suggested ?? null,
+      ceiling: ceilingOption(runs, group.rooms ?? []),
+    });
   }
   return out;
 }
@@ -86,6 +116,45 @@ export function heightItem(
   const feet = on.every((s) => s.sheet.feetPerUnit === null) ? null : on.reduce((n, s) => n + (feetOf(s.runs, s.sheet.feetPerUnit) ?? 0), 0);
   const options = [ceilingOption(most.runs, most.rooms), legend].filter((o): o is HeightOption => o !== null);
   return { kind: "height", key: `height:${item.id}`, itemId: item.id, name: item.name, pageNumber: most.sheet.pageNumber, sheet: most.sheet.sheet, runs: [...most.runs], feet, options };
+}
+
+/**
+ * The type the drawing suggests for an untyped group, and why: #989's
+ * `typeSource` (the same reading the whole-set run posts from, where its
+ * source passes the gate), in `SOURCE_WORDS`, with the tag and the sheet.
+ *
+ *   printed tag: S6B on A101 · tag carried along the wall: S6B ·
+ *   tag on another sheet of this floor: S6B · the only type that thick: 4-7/8"
+ *
+ * Beyond it, a tag the library lacks is suggested where the set's legend
+ * defines it, since "Set type" adds it from there. A thickness several types
+ * share suggests nothing: that is the question, not an answer.
+ */
+export function suggestType(group: WallGroup, sheet: string, legendCodes: readonly string[]): Guess | null {
+  const tag = group.source.kind === "TAG" ? plainTag(group.source.tag) : null;
+  const found = typeSource(group);
+  if (found !== null) {
+    const detail =
+      found.source === "tag" || found.source === "tag-variant"
+        ? `: ${tag} on ${sheet}`
+        : found.source === "carried" || found.source === "sibling"
+          ? `: ${tag}`
+          : found.source === "thickness"
+            ? `: ${inchLabel(group.inches)}`
+            : "";
+    return { code: found.type.code, from: `${SOURCE_WORDS[found.source]}${detail}` };
+  }
+  if (tag !== null && group.candidates.length === 0) {
+    const code = legendCodes.find((c) => c.toUpperCase() === tag.toUpperCase());
+    if (code !== undefined) return { code, from: `printed tag: ${tag} on ${sheet}, in the legend but not yet your library` };
+  }
+  return null;
+}
+
+/** The height pre-filled for a type: its own (the job's item, else the legend's), else the ceiling. */
+export function heightFor(code: string | null, heights: Readonly<Record<string, CodeHeight>>, ceiling: HeightOption | null): CodeHeight | null {
+  const own = code === null ? undefined : heights[code.toUpperCase()];
+  return own ?? (ceiling === null ? null : { feet: ceiling.feet, from: ceiling.from });
 }
 
 const KIND_ORDER: ReviewItem["kind"][] = ["wall", "type", "height", "scale", "price"];

@@ -44,7 +44,7 @@ import { TOOL_KEYS } from "@/lib/takeoff-plan-view";
 import { TakeoffExportButtons } from "@/components/TakeoffExportButtons";
 import { TakeoffWallReview } from "@/components/TakeoffWallReview";
 import { TakeoffReviewQueue } from "@/components/TakeoffReviewQueue";
-import { focusOf, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { focusOf, type CodeHeight, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { reviewWall } from "@/lib/actions";
 import { setReviewProgress, type SetReviewItem } from "@/lib/takeoff/wallReview";
@@ -98,6 +98,8 @@ type Props = {
   reviewQueue?: ReviewItem[];
   /** The plan set's rows, for a queued sheet's scale fixes. */
   planSet?: PlanSetRow[];
+  /** Each type's height for the queue's pre-filled height, by code. */
+  reviewHeights?: Record<string, CodeHeight>;
   /** Whether this server can label at all (`labellingAllowed`). False on every
    *  deployment, so neither the mode nor its button exists for a customer. */
   labellingAvailable?: boolean;
@@ -202,6 +204,7 @@ export function TakeoffWorkspace({
   openScale = false,
   reviewQueue = [],
   planSet = [],
+  reviewHeights = {},
   labellingAvailable = false,
   finderVersion = "unknown",
 }: Props) {
@@ -237,7 +240,13 @@ export function TakeoffWorkspace({
   // ── THE JOB'S ONE REVIEW QUEUE (the stepper's Review). See `reviewQueue.ts`. ──
   const [queueOpen, setQueueOpen] = useState(openReview && reviewQueue.length > 0);
   const [queueItem, setQueueItem] = useState<ReviewItem | null>(null);
-  const queueFocus = queueOpen && queueItem !== null ? focusOf(queueItem) : null;
+  // A group is shown whole: every run lit and the plan zoomed to all of them.
+  const queueGroup = queueOpen && queueItem !== null && (queueItem.kind === "type" || queueItem.kind === "height");
+  const queueFocus = queueOpen && queueItem !== null && !queueGroup ? focusOf(queueItem) : null;
+  const queueRuns = useMemo(
+    () => (queueGroup && queueItem !== null && "runs" in queueItem ? { pageNumber: queueItem.pageNumber, runs: queueItem.runs } : null),
+    [queueGroup, queueItem],
+  );
   const onQueueShow = useCallback((item: ReviewItem | null) => {
     setQueueItem(item);
     if (item === null || !("pageNumber" in item)) return;
@@ -1528,6 +1537,7 @@ export function TakeoffWorkspace({
                 planId={data.plan.id}
                 items={reviewQueue}
                 legendCodes={data.legendCodes}
+                heights={reviewHeights}
                 planSet={planSet}
                 onShow={onQueueShow}
                 onClose={() => {
@@ -1793,6 +1803,7 @@ export function TakeoffWorkspace({
               onMeasurementSaved={onMeasurementSaved}
               onUndoable={onUndoable}
               focusRun={setCurrent ?? queueFocus}
+              focusRuns={setCurrent === null ? queueRuns : null}
               activeItemId={activeItemId}
             />
           </div>
