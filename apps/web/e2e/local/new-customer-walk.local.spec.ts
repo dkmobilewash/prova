@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { setupClerkTestingToken } from "@clerk/testing/playwright";
+import { createClerkClient } from "@clerk/backend";
 import { prisma } from "@prova/db";
 import { HealthMonitor } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
@@ -42,6 +43,22 @@ let shotN = 0;
 let page: Page;
 let jobId = "";
 let companyId = "";
+
+/**
+ * A Clerk test number (201-555-0100…0199, code 424242) nobody on the
+ * development instance holds yet. They stay taken once used, and after a
+ * "taken" refusal Clerk keeps the box disabled, so the number is checked
+ * against the instance BEFORE it is typed rather than retried on the form.
+ */
+async function freeTestPhone(): Promise<string> {
+  const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY ?? "" });
+  const candidates = Array.from({ length: 99 }, (_, i) => `20155501${String(i + 1).padStart(2, "0")}`).sort(() => Math.random() - 0.5);
+  for (const digits of candidates) {
+    const { totalCount } = await clerk.users.getUserList({ phoneNumber: [`+1${digits}`] });
+    if (totalCount === 0) return digits;
+  }
+  throw new Error("every Clerk test number 201-555-0100…0199 is taken on the development instance; delete some walk users");
+}
 
 test.describe.configure({ mode: "serial" });
 
@@ -127,7 +144,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       }
       const phone = page.locator('input[name="phoneNumber"]');
       if (await seen(phone, 300)) {
-        await phone.fill(`20155501${String(1 + Math.floor(Math.random() * 99)).padStart(2, "0")}`);
+        await phone.fill(await freeTestPhone());
         act();
         note("The sign-up form asks for a phone number.");
       }
@@ -135,11 +152,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       act();
       // Clerk's test numbers (555-0100…0199) stay taken in the development
       // instance; a collision is the harness's, so try another quietly.
-      for (let retry = 0; retry < 30 && (await seen(page.getByText(/phone number is taken/), 3000)); retry += 1) {
-        await expect(phone).toBeEnabled({ timeout: 30_000 });
-        await phone.fill(`20155501${String(1 + Math.floor(Math.random() * 99)).padStart(2, "0")}`);
-        await page.getByRole("button", { name: /^Continue/ }).first().click();
-      }
+      if (await seen(page.getByText(/phone number is taken/), 3000)) stuck("Clerk refused the test phone as taken after it was checked free");
       // The emailed code; Clerk's test addresses take 424242.
       const code = page.locator('input[autocomplete="one-time-code"], input[name="code"]').first();
       for (let round = 0; round < 2; round += 1) {
