@@ -1,4 +1,5 @@
 import type { WallComponentBasis } from "@/lib/wall-assemblies";
+import type { CostCategory } from "@/lib/cost-category";
 
 /**
  * The starter assemblies, as a PLAIN module. They lived inside
@@ -40,6 +41,9 @@ import type { WallComponentBasis } from "@/lib/wall-assemblies";
  */
 export type StarterPart = {
   description: string;
+  /** Required, so the bid recap marks a starter line up as what it is — a line
+   *  with no category takes no markup. The crew's work is LABOR, the rest MATERIAL. */
+  costCategory: CostCategory;
   unit: string;
   basis: WallComponentBasis;
   factor: string;
@@ -48,10 +52,10 @@ export type StarterPart = {
 };
 
 const STARTER_COMPONENTS: StarterPart[] = [
-  { description: "3⅝″ 20ga studs", unit: "ea", basis: "STUDS", factor: "1", roundUp: true },
-  { description: "3⅝″ 20ga track, top and bottom", unit: "lin ft", basis: "LINEAR_FT", factor: "2" },
-  { description: "⅝″ Type X board, 4x8 sheets", unit: "sheets", basis: "BOARDED_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true },
-  { description: "Hang, tape and finish ⅝″ board", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
+  { description: "3⅝″ 20ga studs", costCategory: "MATERIAL", unit: "ea", basis: "STUDS", factor: "1", roundUp: true },
+  { description: "3⅝″ 20ga track, top and bottom", costCategory: "MATERIAL", unit: "lin ft", basis: "LINEAR_FT", factor: "2" },
+  { description: "⅝″ Type X board, 4x8 sheets", costCategory: "MATERIAL", unit: "sheets", basis: "BOARDED_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true },
+  { description: "Hang, tape and finish ⅝″ board", costCategory: "LABOR", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
 ];
 
 export const STARTER_TYPES: StarterType[] = [
@@ -65,37 +69,37 @@ export const STARTER_TYPES: StarterType[] = [
     name: "3⅝″ 20ga steel studs at 16″ o.c., one layer ⅝″ Type X each side, R-13 batt",
     parts: [
       ...STARTER_COMPONENTS,
-      { description: "R-13 batt insulation", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
+      { description: "R-13 batt insulation", costCategory: "MATERIAL", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
     ],
   },
   {
     code: "W3",
     name: "2x4 wood studs at 16″ o.c., one layer ½″ board each side",
     parts: [
-      { description: "2x4 studs", unit: "ea", basis: "STUDS", factor: "1", roundUp: true },
-      { description: "2x4 plate, one bottom and two top", unit: "lin ft", basis: "LINEAR_FT", factor: "3" },
-      { description: "½″ board, 4x8 sheets", unit: "sheets", basis: "BOARDED_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true },
-      { description: "Hang, tape and finish ½″ board", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
+      { description: "2x4 studs", costCategory: "MATERIAL", unit: "ea", basis: "STUDS", factor: "1", roundUp: true },
+      { description: "2x4 plate, one bottom and two top", costCategory: "MATERIAL", unit: "lin ft", basis: "LINEAR_FT", factor: "3" },
+      { description: "½″ board, 4x8 sheets", costCategory: "MATERIAL", unit: "sheets", basis: "BOARDED_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true },
+      { description: "Hang, tape and finish ½″ board", costCategory: "LABOR", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
     ],
   },
   {
     code: "EW1",
     name: "Exterior 6″ 18ga stud wall, sheathed and insulated, board inside",
     parts: [
-      { description: "6″ 18ga studs", unit: "ea", basis: "STUDS", factor: "1", roundUp: true },
-      { description: "6″ 18ga track, top and bottom", unit: "lin ft", basis: "LINEAR_FT", factor: "2" },
-      { description: "½″ exterior sheathing", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10" },
-      { description: "R-21 batt insulation", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
-      { description: "⅝″ Type X board, inside face only", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10" },
-      { description: "Hang, tape and finish inside face", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
+      { description: "6″ 18ga studs", costCategory: "MATERIAL", unit: "ea", basis: "STUDS", factor: "1", roundUp: true },
+      { description: "6″ 18ga track, top and bottom", costCategory: "MATERIAL", unit: "lin ft", basis: "LINEAR_FT", factor: "2" },
+      { description: "½″ exterior sheathing", costCategory: "MATERIAL", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10" },
+      { description: "R-21 batt insulation", costCategory: "MATERIAL", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
+      { description: "⅝″ Type X board, inside face only", costCategory: "MATERIAL", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10" },
+      { description: "Hang, tape and finish inside face", costCategory: "LABOR", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
     ],
   },
   {
     code: "FIN5",
     name: "Drywall finish — Level 5 skim over board already hung",
     parts: [
-      { description: "Level 5 skim coat", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
-      { description: "Joint compound for skim", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1", wastePercent: "5" },
+      { description: "Level 5 skim coat", costCategory: "LABOR", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1" },
+      { description: "Joint compound for skim", costCategory: "MATERIAL", unit: "sq ft", basis: "BOARDED_SQFT", factor: "1", wastePercent: "5" },
     ],
   },
   {
@@ -104,10 +108,10 @@ export const STARTER_TYPES: StarterType[] = [
     parts: [
       // AREA_SQFT and PERIMETER_FT, which a wall run cannot produce at all —
       // this type exists for a TAKEOFF ITEM traced as an area.
-      { description: "2x4 acoustic tile", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "5" },
-      { description: "Main tee and cross tee", unit: "lin ft", basis: "AREA_SQFT", factor: "1.1" },
-      { description: "Wall angle", unit: "lin ft", basis: "PERIMETER_FT", factor: "1", wastePercent: "5" },
-      { description: "Hang grid and lay tile", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+      { description: "2x4 acoustic tile", costCategory: "MATERIAL", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "5" },
+      { description: "Main tee and cross tee", costCategory: "MATERIAL", unit: "lin ft", basis: "AREA_SQFT", factor: "1.1" },
+      { description: "Wall angle", costCategory: "MATERIAL", unit: "lin ft", basis: "PERIMETER_FT", factor: "1", wastePercent: "5" },
+      { description: "Hang grid and lay tile", costCategory: "LABOR", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
     ],
   },
   {
@@ -120,13 +124,13 @@ export const STARTER_TYPES: StarterType[] = [
       // one hanger wire per 4x4 (1/16 per sf). Wall angle is the room's
       // perimeter, which is why this prices a TAKEOFF ITEM traced as an
       // area WITH a perimeter — the Rooms panel saves ceilings that way.
-      { description: "2x2 acoustic tile", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "5" },
-      { description: "Main tee, 4' o.c.", unit: "lin ft", basis: "AREA_SQFT", factor: "0.25", wastePercent: "5" },
-      { description: "4' cross tee", unit: "lin ft", basis: "AREA_SQFT", factor: "0.5", wastePercent: "5" },
-      { description: "2' cross tee", unit: "lin ft", basis: "AREA_SQFT", factor: "0.25", wastePercent: "5" },
-      { description: "Hanger wire, one per 4x4", unit: "ea", basis: "AREA_SQFT", factor: "0.0625", roundUp: true },
-      { description: "Wall angle", unit: "lin ft", basis: "PERIMETER_FT", factor: "1", wastePercent: "5" },
-      { description: "Hang grid and lay tile", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+      { description: "2x2 acoustic tile", costCategory: "MATERIAL", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "5" },
+      { description: "Main tee, 4' o.c.", costCategory: "MATERIAL", unit: "lin ft", basis: "AREA_SQFT", factor: "0.25", wastePercent: "5" },
+      { description: "4' cross tee", costCategory: "MATERIAL", unit: "lin ft", basis: "AREA_SQFT", factor: "0.5", wastePercent: "5" },
+      { description: "2' cross tee", costCategory: "MATERIAL", unit: "lin ft", basis: "AREA_SQFT", factor: "0.25", wastePercent: "5" },
+      { description: "Hanger wire, one per 4x4", costCategory: "MATERIAL", unit: "ea", basis: "AREA_SQFT", factor: "0.0625", roundUp: true },
+      { description: "Wall angle", costCategory: "MATERIAL", unit: "lin ft", basis: "PERIMETER_FT", factor: "1", wastePercent: "5" },
+      { description: "Hang grid and lay tile", costCategory: "LABOR", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
     ],
   },
   {
@@ -135,30 +139,30 @@ export const STARTER_TYPES: StarterType[] = [
     parts: [
       // Priced off the item's AREA, not a boarded wall face: a ceiling item
       // has no height or sides, so BOARDED_SQFT would be zero on it.
-      { description: "⅝″ board, 4x8 sheets", unit: "sheets", basis: "AREA_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true },
-      { description: "⅞″ hat channel at 16″ o.c.", unit: "lin ft", basis: "AREA_SQFT", factor: "0.75", wastePercent: "5" },
-      { description: "1½″ carrying channel at 4' o.c.", unit: "lin ft", basis: "AREA_SQFT", factor: "0.25", wastePercent: "5" },
-      { description: "Hanger wire, one per 4x4", unit: "ea", basis: "AREA_SQFT", factor: "0.0625", roundUp: true },
-      { description: "Hang, tape and finish ⅝″ ceiling board", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+      { description: "⅝″ board, 4x8 sheets", costCategory: "MATERIAL", unit: "sheets", basis: "AREA_SQFT", factor: "0.03125", wastePercent: "10", roundUp: true },
+      { description: "⅞″ hat channel at 16″ o.c.", costCategory: "MATERIAL", unit: "lin ft", basis: "AREA_SQFT", factor: "0.75", wastePercent: "5" },
+      { description: "1½″ carrying channel at 4' o.c.", costCategory: "MATERIAL", unit: "lin ft", basis: "AREA_SQFT", factor: "0.25", wastePercent: "5" },
+      { description: "Hanger wire, one per 4x4", costCategory: "MATERIAL", unit: "ea", basis: "AREA_SQFT", factor: "0.0625", roundUp: true },
+      { description: "Hang, tape and finish ⅝″ ceiling board", costCategory: "LABOR", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
     ],
   },
   {
     code: "FLR1",
     name: "Flooring — underlayment, finish floor and base",
     parts: [
-      { description: "Finish flooring", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "10" },
-      { description: "Underlayment", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "5" },
-      { description: "Base", unit: "lin ft", basis: "PERIMETER_FT", factor: "1", wastePercent: "10" },
-      { description: "Install flooring", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+      { description: "Finish flooring", costCategory: "MATERIAL", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "10" },
+      { description: "Underlayment", costCategory: "MATERIAL", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "5" },
+      { description: "Base", costCategory: "MATERIAL", unit: "lin ft", basis: "PERIMETER_FT", factor: "1", wastePercent: "10" },
+      { description: "Install flooring", costCategory: "LABOR", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
     ],
   },
   {
     code: "PT1",
     name: "Painting — one prime and two finish coats",
     parts: [
-      { description: "Primer", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
-      { description: "Finish paint, two coats", unit: "sq ft", basis: "AREA_SQFT", factor: "2" },
-      { description: "Prime and paint", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+      { description: "Primer", costCategory: "MATERIAL", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+      { description: "Finish paint, two coats", costCategory: "MATERIAL", unit: "sq ft", basis: "AREA_SQFT", factor: "2" },
+      { description: "Prime and paint", costCategory: "LABOR", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
     ],
   },
   {
@@ -168,20 +172,20 @@ export const STARTER_TYPES: StarterType[] = [
       // VOLUME_CY reads the ITEM'S depth: `area × depth ÷ 27`. A slab with no
       // depth produces nothing rather than a guessed four inches, which is
       // the rule this whole codebase follows about numbers nobody supplied.
-      { description: "Concrete", unit: "cu yd", basis: "VOLUME_CY", factor: "1", wastePercent: "5", roundUp: true },
-      { description: "Welded wire mesh", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "10" },
-      { description: "Edge form", unit: "lin ft", basis: "PERIMETER_FT", factor: "1" },
-      { description: "Place and finish slab", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+      { description: "Concrete", costCategory: "MATERIAL", unit: "cu yd", basis: "VOLUME_CY", factor: "1", wastePercent: "5", roundUp: true },
+      { description: "Welded wire mesh", costCategory: "MATERIAL", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "10" },
+      { description: "Edge form", costCategory: "MATERIAL", unit: "lin ft", basis: "PERIMETER_FT", factor: "1" },
+      { description: "Place and finish slab", costCategory: "LABOR", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
     ],
   },
   {
     code: "FTG1",
     name: "Concrete footing — set the item's depth in inches",
     parts: [
-      { description: "Concrete", unit: "cu yd", basis: "VOLUME_CY", factor: "1", wastePercent: "5", roundUp: true },
-      { description: "Form both sides", unit: "sq ft", basis: "LINEAR_FT", factor: "2" },
-      { description: "Rebar", unit: "lin ft", basis: "LINEAR_FT", factor: "3" },
-      { description: "Place and finish footing", unit: "lin ft", basis: "LINEAR_FT", factor: "1" },
+      { description: "Concrete", costCategory: "MATERIAL", unit: "cu yd", basis: "VOLUME_CY", factor: "1", wastePercent: "5", roundUp: true },
+      { description: "Form both sides", costCategory: "LABOR", unit: "sq ft", basis: "LINEAR_FT", factor: "2" },
+      { description: "Rebar", costCategory: "MATERIAL", unit: "lin ft", basis: "LINEAR_FT", factor: "3" },
+      { description: "Place and finish footing", costCategory: "LABOR", unit: "lin ft", basis: "LINEAR_FT", factor: "1" },
     ],
   },
 ];
@@ -206,11 +210,11 @@ export const TRADE_ONLY_STARTERS: StarterType[] = [
     name: "Three-coat cement plaster on metal lath, one face",
     sides: 1,
     parts: [
-      { description: "Diamond metal lath", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10" },
-      { description: "Scratch and brown coats", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
-      { description: "Finish coat", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
-      { description: "Weep screed at the base", unit: "lin ft", basis: "LINEAR_FT", factor: "1", wastePercent: "5" },
-      { description: "Lath and plaster", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
+      { description: "Diamond metal lath", costCategory: "MATERIAL", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10" },
+      { description: "Scratch and brown coats", costCategory: "MATERIAL", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
+      { description: "Finish coat", costCategory: "MATERIAL", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
+      { description: "Weep screed at the base", costCategory: "MATERIAL", unit: "lin ft", basis: "LINEAR_FT", factor: "1", wastePercent: "5" },
+      { description: "Lath and plaster", costCategory: "LABOR", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
     ],
   },
   {
@@ -218,11 +222,11 @@ export const TRADE_ONLY_STARTERS: StarterType[] = [
     name: "EIFS on sheathing — insulation board, base coat and mesh, finish, one face",
     sides: 1,
     parts: [
-      { description: "EPS insulation board", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "5" },
-      { description: "Base coat with reinforcing mesh", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10" },
-      { description: "Finish coat", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "5" },
-      { description: "Starter track at the base", unit: "lin ft", basis: "LINEAR_FT", factor: "1", wastePercent: "5" },
-      { description: "Install EIFS", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
+      { description: "EPS insulation board", costCategory: "MATERIAL", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "5" },
+      { description: "Base coat with reinforcing mesh", costCategory: "MATERIAL", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "10" },
+      { description: "Finish coat", costCategory: "MATERIAL", unit: "sq ft", basis: "FACE_SQFT", factor: "1", wastePercent: "5" },
+      { description: "Starter track at the base", costCategory: "MATERIAL", unit: "lin ft", basis: "LINEAR_FT", factor: "1", wastePercent: "5" },
+      { description: "Install EIFS", costCategory: "LABOR", unit: "sq ft", basis: "FACE_SQFT", factor: "1" },
     ],
   },
   {
@@ -232,8 +236,8 @@ export const TRADE_ONLY_STARTERS: StarterType[] = [
       // AREA_SQFT: a room or traced area, which is why the fireproofing
       // preset keeps the room finder on. No thickness is assumed — it is the
       // rating's, and the estimator's.
-      { description: "Spray fireproofing material", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "10" },
-      { description: "Apply fireproofing to deck", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
+      { description: "Spray fireproofing material", costCategory: "MATERIAL", unit: "sq ft", basis: "AREA_SQFT", factor: "1", wastePercent: "10" },
+      { description: "Apply fireproofing to deck", costCategory: "LABOR", unit: "sq ft", basis: "AREA_SQFT", factor: "1" },
     ],
   },
   {
@@ -241,7 +245,7 @@ export const TRADE_ONLY_STARTERS: StarterType[] = [
     name: "Spray fireproofing on columns — counted",
     parts: [
       // COUNT_EACH: a "Count like this" count of the column symbol.
-      { description: "Fireproof one column", unit: "ea", basis: "COUNT_EACH", factor: "1" },
+      { description: "Fireproof one column", costCategory: "LABOR", unit: "ea", basis: "COUNT_EACH", factor: "1" },
     ],
   },
 ];
