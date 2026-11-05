@@ -312,6 +312,20 @@ export const PERSONAS = {
     // likely a persona on another branch. This table cannot see those.
     phone: "+15555550173",
   },
+  /**
+   * ── A COMPANY WITH ITS OWN MARKUP SET ──
+   *
+   * `cost-pricing.spec.ts` sets material, labor, overhead and profit, which
+   * switches the review queue's price item to asking for a COST. On any shared
+   * persona that would change what every other queue spec sees, so it has its
+   * own, unseeded like NEW_JOB.
+   */
+  markupCost: {
+    email: "e2e-markupcost+clerk_test@example.com",
+    label: "MARKUP_COST",
+    username: "e2e_markupcost",
+    phone: "+15555550186",
+  },
 } as const;
 
 export type PersonaKey = keyof typeof PERSONAS;

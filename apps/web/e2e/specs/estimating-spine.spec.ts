@@ -284,9 +284,11 @@ test.describe("the estimating desk", () => {
     // extension — 1,000 x $2.00, arithmetic this file supplied itself rather
     // than a figure read off the screen and blessed.
     await expect(recap.getByText(DIRECT_COST).first()).toBeVisible();
-    // The four derived lines have no cost type yet, and the panel says so
-    // rather than marking them up at some default.
-    await expect(recap.getByText(/have no cost type/)).toBeVisible();
+    // W1's four derived lines arrive with their cost type — starter parts
+    // carry one (studs, track and board MATERIAL, hang-and-finish LABOR) since
+    // the review queue started pricing from cost (#994). The typed line has
+    // none yet, and the panel says so rather than marking it up at some default.
+    await expect(recap.getByText(/^1 line has no cost type/)).toBeVisible();
 
     // Each of these posts a Server Action. `settleAction` waits for the answer,
     // so the reload below cannot race the write it is about to read back.

@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { confirmSheetScales, confirmWallGroup, reviewWall, setWallGroupHeight } from "@/lib/actions";
+import { confirmSheetScales, confirmWallGroup, priceLineFromCost, reviewWall, setWallGroupHeight } from "@/lib/actions";
+import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { heightFor, type CodeHeight, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
@@ -14,7 +15,9 @@ import { inchLabel } from "@/lib/takeoff/wallVectors";
  * What the stepper's Review opens (`?open=review`). The item on screen is
  * zoomed to on its sheet by the workspace (`onShow`); its buttons are the
  * pieces that already decide it — `reviewWall` for a held run, the plan set's
- * fixes for a sheet's scale, and the estimate line itself for a price.
+ * fixes for a sheet's scale, and for a price either the line's cost (once the
+ * company's markup is set — the price is worked from it, `priceLineFromCost`)
+ * or the estimate line itself.
  *
  * A WALL GROUP IS CONFIRMED, NOT FILLED IN (`QueueGroupConfirm`): its walls lit
  * on the plan, the suggested type and height already in place with where each
@@ -49,6 +52,7 @@ export function TakeoffReviewQueue({
   const [cursor, setCursor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [priced, setPriced] = useState<string | null>(null);
   const left = items.filter((item) => !done.has(item.key));
   const current = left.find((item) => item.key === cursor) ?? left[0] ?? null;
   const after = (key: string) => {
@@ -105,6 +109,7 @@ export function TakeoffReviewQueue({
   }
 
   const button = "min-h-[32px] rounded-md border border-line-card px-3 text-xs font-medium text-ink-body hover:bg-rail disabled:opacity-50";
+  const primaryButton = "min-h-[32px] rounded-md border border-brand bg-brand px-3 text-xs font-semibold text-neutral-900 disabled:opacity-50";
   const row = current !== null && current.kind === "scale" ? planSet.find((r) => r.pageNumber === current.pageNumber) : undefined;
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-card bg-surface px-3 py-1.5 text-xs text-ink-body" data-takeoff="review-queue">
@@ -195,7 +200,49 @@ export function TakeoffReviewQueue({
               </button>
             </>
           )}
-          {current.kind === "price" && (
+          {current.kind === "price" && current.askCost && (
+            <form
+              key={current.key}
+              className="contents"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const form = new FormData(event.currentTarget);
+                const line = current;
+                void decide(async () => {
+                  const result = await priceLineFromCost(jobId, line.lineItemId, form);
+                  if (!result.ok) return result;
+                  setPriced(`${line.description}: $${result.value.unitPrice} per ${line.unit ?? "unit"}, with your markup`);
+                  router.refresh();
+                  return { ok: true };
+                });
+              }}
+              data-takeoff="review-queue-cost"
+            >
+              <span>
+                No price · {current.description} · {current.quantity} {current.unit ?? ""}
+              </span>
+              <label className="inline-flex items-center gap-1">
+                Your cost per {current.unit ?? "unit"} $
+                <input name="unitCost" inputMode="decimal" autoComplete="off" required className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-xs text-ink" data-takeoff="review-queue-cost-input" />
+              </label>
+              {current.costCategory === null && (
+                <select name="costCategory" required defaultValue="" className="rounded-md border border-line-card bg-canvas px-2 py-1 text-xs text-ink" aria-label="What kind of cost" data-takeoff="review-queue-cost-category">
+                  <option value="" disabled>
+                    Material or labor?
+                  </option>
+                  {COST_CATEGORY_VALUES.map((value) => (
+                    <option key={value} value={value}>
+                      {COST_CATEGORY_LONG_LABEL[value]}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button type="submit" className={primaryButton} disabled={busy} data-takeoff="review-queue-cost-save">
+                Price it
+              </button>
+            </form>
+          )}
+          {current.kind === "price" && !current.askCost && (
             <>
               <span>
                 No price · {current.description} · {current.quantity} {current.unit ?? ""}
@@ -215,6 +262,11 @@ export function TakeoffReviewQueue({
       <button type="button" className="underline" onClick={onClose} data-takeoff="review-queue-close">
         Close
       </button>
+      {priced !== null && error === null && (
+        <span className="text-ink-muted" data-takeoff="review-queue-priced">
+          {priced}
+        </span>
+      )}
       {error !== null && <span className="text-tag-amber-ink">{error}</span>}
     </div>
   );
