@@ -42,6 +42,9 @@ import type { TakeoffWorkspaceClientData } from "@/lib/takeoff/workspaceLoad";
 import { TOOL_KEYS } from "@/lib/takeoff-plan-view";
 import { TakeoffExportButtons } from "@/components/TakeoffExportButtons";
 import { TakeoffWallReview } from "@/components/TakeoffWallReview";
+import { TakeoffReviewQueue } from "@/components/TakeoffReviewQueue";
+import { focusOf, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { reviewWall } from "@/lib/actions";
 import { setReviewProgress, type SetReviewItem } from "@/lib/takeoff/wallReview";
 
@@ -90,6 +93,10 @@ type Props = {
   openReview?: boolean;
   /** Opened to set a scale (the plan set's "Set it by two clicks"): Set scale starts armed. */
   openScale?: boolean;
+  /** The job's one review queue (`reviewQueue.ts`); opens by itself with `openReview`. */
+  reviewQueue?: ReviewItem[];
+  /** The plan set's rows, for a queued sheet's scale fixes. */
+  planSet?: PlanSetRow[];
   /** Whether this server can label at all (`labellingAllowed`). False on every
    *  deployment, so neither the mode nor its button exists for a customer. */
   labellingAvailable?: boolean;
@@ -192,6 +199,8 @@ export function TakeoffWorkspace({
   openAnswerKey,
   openReview = false,
   openScale = false,
+  reviewQueue = [],
+  planSet = [],
   labellingAvailable = false,
   finderVersion = "unknown",
 }: Props) {
@@ -224,6 +233,16 @@ export function TakeoffWorkspace({
   const [setReviewBusy, setSetReviewBusy] = useState(false);
   const [setReviewError, setSetReviewError] = useState<string | null>(null);
   const setCurrent = setReview === null ? null : (setReview.queue.find((item) => !setReview.decided.has(item.measurementId)) ?? null);
+  // ── THE JOB'S ONE REVIEW QUEUE (the stepper's Review). See `reviewQueue.ts`. ──
+  const [queueOpen, setQueueOpen] = useState(openReview && reviewQueue.length > 0);
+  const [queueItem, setQueueItem] = useState<ReviewItem | null>(null);
+  const queueFocus = queueOpen && queueItem !== null ? focusOf(queueItem) : null;
+  const onQueueShow = useCallback((item: ReviewItem | null) => {
+    setQueueItem(item);
+    if (item === null || !("pageNumber" in item)) return;
+    setPage(item.pageNumber);
+    document.dispatchEvent(new CustomEvent("takeoff-goto", { detail: { page: item.pageNumber } }));
+  }, []);
   // Each run's own sheet, so the set review jumps between sheets by itself. The
   // viewer owns the page on screen and hears about it only through the event,
   // as from the rail and the overview; `setPage` alone moved the rail's
@@ -1305,10 +1324,26 @@ export function TakeoffWorkspace({
             className="flex shrink-0 items-center gap-1.5"
             data-takeoff="bar-actions"
           />
+          {!phone && reviewQueue.length > 0 && !queueOpen && (
+            <button
+              type="button"
+              onClick={() => {
+                setSetReview(null);
+                setQueueOpen(true);
+              }}
+              className={BAR_BUTTON}
+              data-takeoff="review-queue-open"
+            >
+              To review · {reviewQueue.length}
+            </button>
+          )}
           {!phone && data.wallReviewQueue.length > 0 && setReview === null && (
             <button
               type="button"
-              onClick={() => setSetReview({ queue: data.wallReviewQueue, decided: new Map(), history: [] })}
+              onClick={() => {
+                setQueueOpen(false);
+                setSetReview({ queue: data.wallReviewQueue, decided: new Map(), history: [] });
+              }}
               className={BAR_BUTTON}
               data-takeoff="review-set"
             >
@@ -1486,6 +1521,20 @@ export function TakeoffWorkspace({
           data-takeoff="canvas-region"
         >
           <div className="relative flex min-h-0 flex-1 flex-col">
+            {queueOpen && !phone && (
+              <TakeoffReviewQueue
+                jobId={jobId}
+                planId={data.plan.id}
+                items={reviewQueue}
+                legendCodes={data.legendCodes}
+                planSet={planSet}
+                onShow={onQueueShow}
+                onClose={() => {
+                  setQueueOpen(false);
+                  setQueueItem(null);
+                }}
+              />
+            )}
             {setReview !== null && (
               <TakeoffWallReview
                 counter={setReviewProgress(setReview.queue, setReview.decided)}
@@ -1740,7 +1789,7 @@ export function TakeoffWorkspace({
               readOnly={phone}
               onMeasurementSaved={onMeasurementSaved}
               onUndoable={onUndoable}
-              focusRun={setCurrent}
+              focusRun={setCurrent ?? queueFocus}
               activeItemId={activeItemId}
             />
           </div>

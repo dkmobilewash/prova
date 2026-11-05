@@ -1,4 +1,5 @@
 import { estimateStage } from "@/lib/estimate-stage";
+import { reviewLabel } from "@/lib/takeoff/reviewQueue";
 
 /**
  * ── THE ESTIMATING STEPS OF ONE JOB: Job → Plans → Scale → Takeoff → Review →
@@ -17,7 +18,9 @@ import { estimateStage } from "@/lib/estimate-stage";
  *   - Scale    — every FLOOR PLAN has a scale (the plan set's sort,
  *                `lib/takeoff/planSet.ts`); with none recognised yet, any sheet.
  *   - Takeoff  — something is measured on the job's plans.
- *   - Review   — something is measured AND no wall is left "to confirm".
+ *   - Review   — something is measured AND the job's one review queue is
+ *                empty: no wall to confirm, no untyped wall group, no floor
+ *                plan without a scale, no unpriced line (`reviewQueue.ts`).
  *   - Estimate — the estimate has lines (`estimateStage` past NEEDS_PRICING)
  *                and NONE is unpriced: a line with neither a price nor a
  *                cost is not an estimate, it is footage (Diego, Chrome's
@@ -29,7 +32,7 @@ import { estimateStage } from "@/lib/estimate-stage";
  * typed straight into the estimate is "on" Send, not sent back to Plans.
  * Steps before it that were skipped read "not started", which is the truth.
  * EXCEPT REVIEW: once something is taken off, Review comes before Estimate
- * and Send, so walls left to confirm are never jumped over.
+ * and Send, so what is left to review is never jumped over.
  *
  * Scale, Takeoff and Review open the workspace on the right sheet
  * (`?open=scale` / `?open=review`, chosen in `startPage.ts`), never a cover.
@@ -52,8 +55,8 @@ export type JobStepFacts = {
   floorPlans: number;
   floorPlansScaled: number;
   measurements: number;
-  /** Walls the model held off the estimate, still waiting for a person. */
-  wallsToConfirm: number;
+  /** Items left in the job's review queue (`reviewQueue.ts`). */
+  toReview: number;
   lineItemCount: number;
   /** Lines with neither a price nor a cost. */
   unpricedLines: number;
@@ -82,7 +85,7 @@ export function jobSteps(facts: JobStepFacts): { steps: JobStep[]; next: JobNext
     plans: facts.hasPlan,
     scale: facts.floorPlans > 0 ? facts.floorPlansScaled === facts.floorPlans : facts.scaledSheets > 0,
     takeoff: facts.measurements > 0,
-    review: facts.measurements > 0 && facts.wallsToConfirm === 0,
+    review: facts.measurements > 0 && facts.toReview === 0,
     estimate: stage !== "NEEDS_PRICING" && facts.unpricedLines === 0 && !facts.markupNeeded,
     send: stage === "OUT_FOR_SIGNATURE" || stage === "SIGNED",
   };
@@ -120,10 +123,7 @@ export function jobSteps(facts: JobStepFacts): { steps: JobStep[]; next: JobNext
         ? `Scale ${facts.floorPlans - facts.floorPlansScaled} more floor plan${facts.floorPlans - facts.floorPlansScaled === 1 ? "" : "s"}`
         : "Confirm the scales",
     takeoff: "Run the takeoff",
-    review:
-      facts.wallsToConfirm > 0
-        ? `Review ${facts.wallsToConfirm} ${facts.wallsToConfirm === 1 ? "wall" : "walls"} to confirm`
-        : "Review the takeoff",
+    review: facts.toReview > 0 ? reviewLabel(facts.toReview) : "Review the takeoff",
     // Estimate is only ever current once something is taken off (Review needs
     // it), and those quantities go on from the workspace's item panel ("Send to
     // estimate") — so its Next opens the workspace, while the step itself still

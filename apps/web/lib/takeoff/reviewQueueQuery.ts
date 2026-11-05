@@ -1,0 +1,94 @@
+import { prisma } from "@prova/db";
+import { HELD_LABEL } from "@/lib/takeoff/estimateHold";
+import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
+import { storedRunsOrNull } from "@/lib/takeoff/wallProposal";
+import { feetPerPageWidth } from "@/lib/takeoff-plan";
+import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
+import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
+import { sheetCategory } from "@/lib/takeoff/planSet";
+import { reviewQueue, typeItems, wallItem, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+
+/**
+ * The job's review queue (`reviewQueue.ts`), plus the plan-set counts the
+ * stepper reads beside it, from the job's NEWEST plan set — the one the
+ * workspace opens. Select-only; the job layout runs it on every tab of an
+ * estimate.
+ */
+export async function loadReviewQueue(
+  companyId: string,
+  jobId: string,
+): Promise<{ planId: string | null; items: ReviewItem[]; scaledSheets: number; floorPlans: number; floorPlansScaled: number }> {
+  const plan = await prisma.takeoffPlan.findFirst({ where: { jobId, companyId }, orderBy: { createdAt: "desc" }, select: { id: true } });
+  const unpriced = await prisma.jobLineItem.findMany({
+    where: { jobId, job: { companyId }, isDeleted: false, unitPrice: null, budgetedUnitCost: null },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, description: true, quantity: true, unit: true },
+  });
+  const prices: ReviewItem[] = unpriced.map((line) => ({ kind: "price", key: `price:${line.id}`, lineItemId: line.id, description: line.description, quantity: line.quantity.toString(), unit: line.unit }));
+  if (plan === null) return { planId: null, items: prices, scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0 };
+
+  const [pages, sheetRows] = await Promise.all([
+    prisma.takeoffPlanPage.findMany({
+      where: { planId: plan.id },
+      select: {
+        id: true,
+        pageNumber: true,
+        calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } },
+        measurements: {
+          where: { kind: "LINEAR", source: "DETECTED", OR: [{ label: HELD_LABEL }, { item: { name: UNTYPED_ITEM } }] },
+          select: { id: true, xs: true, ys: true, label: true },
+        },
+      },
+    }),
+    sheetIndexFor(plan.id, companyId),
+  ]);
+  const rowByPage = new Map(sheetRows.map((row) => [row.pageNumber, row]));
+  const sheetOf = (pageNumber: number, calibration?: { x1: number; y1: number; x2: number; y2: number; declaredDistanceFeet: { toNumber(): number } }): QueueSheet => {
+    const row = rowByPage.get(pageNumber);
+    return {
+      pageNumber,
+      sheet: (row && effectiveSheetNumber(row)) ?? `p${pageNumber}`,
+      feetPerUnit: calibration === undefined ? null : feetPerPageWidth({ ...calibration, declaredDistanceFeet: calibration.declaredDistanceFeet.toNumber() }),
+    };
+  };
+
+  const items: ReviewItem[] = [...prices];
+  const untypedPages = pages.filter((page) => page.measurements.some((m) => m.label !== HELD_LABEL));
+  // Only the sheets with untyped walls need their stored groups, which are big.
+  const proposals = untypedPages.length === 0
+    ? []
+    : await prisma.takeoffWallProposal.findMany({
+        where: { pageId: { in: untypedPages.map((page) => page.id) } },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, pageId: true, thicknessInches: true, runs: true, createdAt: true },
+      });
+  for (const page of pages) {
+    const sheet = sheetOf(page.pageNumber, page.calibrations[0]);
+    for (const m of page.measurements) {
+      if (m.label !== HELD_LABEL) continue;
+      const item = wallItem(sheet, m);
+      if (item !== null) items.push(item);
+    }
+    const mine = proposals.filter((row) => row.pageId === page.id);
+    // One detection run writes every row at one timestamp: the newest run.
+    const newest = mine[0]?.createdAt.getTime();
+    const groups = mine
+      .filter((row) => row.createdAt.getTime() === newest)
+      .map((row) => ({ id: row.id, inches: row.thicknessInches, runs: storedRunsOrNull(row.runs) ?? [] }));
+    items.push(...typeItems(sheet, page.measurements.filter((m) => m.label !== HELD_LABEL), groups));
+  }
+
+  const scaled = new Set(pages.filter((page) => page.calibrations.length > 0).map((page) => page.pageNumber));
+  const floors = sheetRows
+    .filter((row) => sheetCategory(effectiveSheetNumber(row), effectiveTitle(row), row.proposal?.pageType ?? null) === "floor")
+    .map((row) => row.pageNumber);
+  for (const pageNumber of floors) if (!scaled.has(pageNumber)) items.push({ kind: "scale", key: `scale:${pageNumber}`, pageNumber, sheet: sheetOf(pageNumber).sheet });
+
+  return {
+    planId: plan.id,
+    items: reviewQueue(items),
+    scaledSheets: scaled.size,
+    floorPlans: floors.length,
+    floorPlansScaled: floors.filter((page) => scaled.has(page)).length,
+  };
+}

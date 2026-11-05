@@ -142,17 +142,19 @@ test.describe("the job stepper", () => {
     await tab.close();
   });
 
-  test("5. something taken off: the walls are ALREADY on the estimate, with real feet, and Estimate stays current until they are priced", async () => {
+  test("5. something taken off: the walls are ALREADY on the estimate, with real feet, and Review holds until they are typed and priced", async () => {
     await onJob();
     // An unpriced footage line is not an estimate: no "Send" on a $0.00 bid.
-    expect(await states()).toBe("job:done plans:done scale:done takeoff:done review:done estimate:current send:todo");
-    await expect(next()).toContainText("Next: Price 1 line on the estimate");
-    await expect(next()).toHaveAttribute("href", `/jobs/${jobId}/estimate`);
+    // The untyped walls and their unpriced line are in the review queue
+    // (review-queue.spec.ts walks it), so Review is current, not Send.
+    expect(await states()).toBe("job:done plans:done scale:done takeoff:done review:current estimate:todo send:todo");
+    await expect(next()).toContainText(/^Next: Review \d+ items?/);
+    await expect(next()).toHaveAttribute("href", `/takeoff/${jobId}?open=review`);
     await bar().screenshot({ path: path.join(SHOTS, "stepper-estimate-current.png") });
     await page.screenshot({ path: path.join(SHOTS, "job-page-estimate-current-1440.png") });
     // No hidden setup between the takeoff and the estimate: the footage is a
     // line on the estimate tab, unpriced and saying so.
-    await next().click();
+    await step("estimate").click();
     await page.waitForURL(new RegExp(`/jobs/${jobId}/estimate`));
     const line = page.getByText(/Walls — untyped \(no type: check\)/).first();
     await expect(line).toBeVisible({ timeout: 30_000 });
