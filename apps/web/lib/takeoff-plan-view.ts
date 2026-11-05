@@ -331,7 +331,7 @@ export function printedScalesFromProposals(
   return byPage;
 }
 
-export type ToolId = "pan" | "calibrate" | "linear" | "area" | "rect" | "count" | "cutout" | "edit" | "symbol" | "split" | "exclude" | "workarea";
+export type ToolId = "pan" | "hand" | "calibrate" | "linear" | "area" | "rect" | "count" | "cutout" | "edit" | "symbol" | "split" | "exclude" | "workarea";
 
 /**
  * The measuring vocabulary, and it is deliberately the same three primitives
@@ -344,7 +344,11 @@ export type ToolId = "pan" | "calibrate" | "linear" | "area" | "rect" | "count" 
  * takeoff form, and the page says so.
  */
 export const TOOLS: { id: ToolId; label: string; hint: string }[] = [
-  { id: "pan", label: "Move", hint: "Scroll and zoom the sheet without drawing on it." },
+  // `pan` keeps its id (it is stored nowhere, but every branch reads it) and is
+  // the arrow: it SELECTS what it is clicked on. Moving around is the wheel,
+  // the Hand, Space+drag or a middle-button drag.
+  { id: "pan", label: "Select", hint: "Click a wall, a run or a shape to select it. Scroll to move up and down, Shift+scroll to move sideways, Ctrl or ⌘+scroll to zoom." },
+  { id: "hand", label: "Hand", hint: "Drag the sheet to move around it. Space+drag or a middle-button drag does the same with any tool." },
   {
     id: "calibrate",
     label: "Set scale",
@@ -389,12 +393,23 @@ export const TOOLS: { id: ToolId; label: string; hint: string }[] = [
  * entry in `TOOLS` is in one place or the other, and `toolRail.test.ts` says
  * so. There is no separate "measure" tool: Line IS the measurement.
  */
-export const RAIL_TOOLS: readonly ToolId[] = ["pan", "area", "rect", "linear", "count", "edit", "calibrate"];
+export const RAIL_TOOLS: readonly ToolId[] = ["pan", "hand", "area", "rect", "linear", "count", "edit", "calibrate"];
+
+/**
+ * A hint, in the full-screen workspace's words. The shared hints name the
+ * takeoff tab's buttons ("Find the walls"); the workspace calls that one Run
+ * takeoff and keeps the rooms behind its arrow, so a hint read there must say
+ * so or it sends somebody looking for a button that is not on the screen.
+ */
+export function inWorkspaceWords(text: string): string {
+  return text.replace(/Find the walls/g, "Run takeoff").replace(/Find the rooms/g, "▾ Find the rooms");
+}
 
 /** One key per rail tool, shown in its tooltip. Not in answer-key mode, where
  *  A and R already decide candidates. */
 export const TOOL_KEYS: Partial<Record<ToolId, string>> = {
   pan: "v",
+  hand: "h",
   area: "a",
   rect: "r",
   linear: "l",
@@ -406,6 +421,7 @@ export const TOOL_KEYS: Partial<Record<ToolId, string>> = {
 /** A 24-unit outline icon per tool, drawn with `currentColor`. */
 export const TOOL_ICONS: Record<ToolId, string> = {
   pan: "M5 3l6.5 17 2.4-7.1L21 10.5z",
+  hand: "M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11.5V4a1.5 1.5 0 0 1 3 0v7.5M14 11.5V6a1.5 1.5 0 0 1 3 0v8c0 4-2.5 7-6.5 7S5 18 4 15.5l-1-3a1.5 1.5 0 0 1 2.7-1.2L8 15",
   area: "M12 3l8.5 6.2-3.2 10.8H6.7L3.5 9.2z",
   rect: "M4 6h16v12H4z",
   linear: "M5 19L19 5M3 17l4 4M17 3l4 4",

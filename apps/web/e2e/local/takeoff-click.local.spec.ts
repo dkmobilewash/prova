@@ -512,6 +512,23 @@ let joplinWalls = NaN;
 let wholeSf = NaN;
 let wholeFloor = NaN;
 
+// ── CHROME'S CLICK TEST, 2026-11-05: rooms off STORED walls came out unnamed ──
+// Baker A101's walls are stored by the whole-set run (R5-1), so a fresh visit
+// shows them without the finder having read the sheet in this browser, and
+// Find the rooms named none of its rooms though the sheet prints them.
+test("C0 Baker A101, straight from the stored walls: Find the rooms names the rooms the sheet prints", async () => {
+  await sheet("baker", 13);
+  await expect(hook("found-walls").or(hook("layer-row")).first(), "no stored walls on Baker A101 to start from").toBeVisible({ timeout: 60_000 });
+  await openFinders(page);
+  await hook("find-rooms").click();
+  await expect(hook("rooms-panel")).toBeVisible({ timeout: 180_000 });
+  const rows = await roomRows();
+  const named = rows.filter((r) => r.name.trim() !== "");
+  expect(rows.length, "no rooms at all").toBeGreaterThan(0);
+  expect(named.length, `named ${named.length} of ${rows.length}: ${rows.map((r) => r.name || "·").join(", ")}`).toBeGreaterThanOrEqual(Math.min(6, rows.length));
+  expect(named.map((r) => r.name).join(" | ")).toMatch(/CONFERENCE|CALL CENTER|STORAGE|JANITOR/);
+});
+
 test("C1 Find the walls then the rooms: the panel opens itself, about 70 rooms, no renovation prompt", async () => {
   await sheet("joplin", 46);
   await findWalls();

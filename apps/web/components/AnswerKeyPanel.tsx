@@ -1083,7 +1083,7 @@ export function AnswerKeyPanel({
         )}
         <p className="mt-1.5 text-[11px] text-ink-muted">
           {pairings === undefined || pairings.length === 0
-            ? "No pairings captured yet — run Find the walls first."
+            ? "No pairings captured yet — press Run takeoff first."
             : `${pairings.length} pairings captured · ${progress.reviewed} of ${progress.total} reviewed` +
               (progress.unsure > 0 ? ` · ${progress.unsure} not sure` : "")}
         </p>
