@@ -91,11 +91,15 @@ export function windowsByTag(input: {
   const same = SAME_TAG_FEET / input.feetPerUnit;
   const usedFrames = new Set<number>();
   const windows: TaggedWindow[] = [];
+  // Where each counted tag was READ — not where its window was placed, which
+  // is a frame's middle and says nothing about a second reading of the symbol.
+  const read: { tag: string; x: number; y: number }[] = [];
   for (const s of input.symbols.filter(isTag)) {
     const tag = normaliseTag(s.text);
     // Where the tag points: its leader's end when it has one, else its centre.
     const at = s.leader ? { x: s.leader.x / W, y: s.leader.y / W } : { x: s.x / W, y: s.y / W };
-    if (windows.some((w) => w.tag === tag && Math.hypot(w.x - at.x, w.y - at.y) <= same)) continue;
+    if (read.some((r) => r.tag === tag && Math.hypot(r.x - at.x, r.y - at.y) <= same)) continue;
+    read.push({ tag, ...at });
     let frame: number | null = null, best = reachFrame;
     input.frames.forEach((f, i) => {
       if (usedFrames.has(i)) return;

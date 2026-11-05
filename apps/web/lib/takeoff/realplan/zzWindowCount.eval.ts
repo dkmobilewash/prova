@@ -10,6 +10,8 @@ import { doorsAndWindowsForSheet } from "../doorsWindows";
 import { findWallsOnSheet, inPageWidthUnits } from "../findWallsOnSheet";
 import { sheetStrokes } from "../sheetStrokes";
 import { tagSymbols } from "../tagSymbols";
+import { keyFromLabels, scoreOpenings, type KeyPoint } from "../heldOutScore";
+import { readdirSync } from "node:fs";
 
 /**
  * ── WINDOWS COUNTED BY TAG ON ONE SHEET, WITH THE SET'S WINDOW SCHEDULE ──
@@ -27,6 +29,23 @@ const DIR = process.env.REAL_PLAN_DIR ?? "";
 const SPEC = process.env.WC_SPEC ?? "";
 const CACHE = process.env.WC_CACHE ?? "";
 const OUT = process.env.WC_OUT ?? "";
+/** A labels snapshot: when it holds this sheet with window marks, both counts are scored against them. */
+const LABELS = process.env.WC_LABELS ?? "";
+
+/** The round-13 window marks for one sheet, from a labels snapshot, or null when none were made. */
+function windowKey(set: string, page: number): KeyPoint[] | null {
+  if (LABELS === "" || !existsSync(LABELS)) return null;
+  const flat = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const dir = readdirSync(LABELS).find((d) => flat(d) === flat(set));
+  if (dir === undefined) return null;
+  for (const f of readdirSync(join(LABELS, dir)).filter((f) => f.endsWith(".json"))) {
+    const saved = JSON.parse(readFileSync(join(LABELS, dir, f), "utf8")) as { page?: number; verdicts?: never[]; openings?: { x: number; y: number; kind: string; tag?: string }[] };
+    if (saved.page !== page) continue;
+    const marks = keyFromLabels({ verdicts: saved.verdicts ?? [], openings: saved.openings ?? [] }).openings.filter((o) => o.kind === "window");
+    return marks.length > 0 ? marks : null;
+  }
+  return null;
+}
 
 describe.skipIf(DIR === "" || SPEC === "" || CACHE === "" || OUT === "")("windows counted by tag on one sheet", () => {
   requireEvalApiKey("window-count eval");
@@ -62,6 +81,9 @@ describe.skipIf(DIR === "" || SPEC === "" || CACHE === "" || OUT === "")("window
     const walls = findWallsOnSheet({ segments: strokes.segments, textItems: items, pageSize: { widthPt: W, heightPt: strokes.heightPt }, feetPerUnit: fpu, wallTypes: [], sampledSheets: null }).walls;
     const result = doorsAndWindowsForSheet({ segments: strokes.segments.map(inPageWidthUnits(W)), segmentsPt: strokes.segments, textPt: items, widthPt: W, walls, feetPerUnit: fpu, scheduleRows: [], windowRows });
     await doc.close();
+    const key = windowKey(basename(set!), page);
+    const tagged: KeyPoint[] = result.tagged.windows.map((w) => ({ x: w.x, y: w.y, kind: "window", tag: w.tag }));
+    const frames: KeyPoint[] = result.windows.map((f) => ({ x: (f.x1 + f.x2) / 2, y: (f.y1 + f.y2) / 2, kind: "window" }));
     appendFileSync(
       OUT,
       JSON.stringify({
@@ -78,7 +100,10 @@ describe.skipIf(DIR === "" || SPEC === "" || CACHE === "" || OUT === "")("window
         counted: result.tagged.counted,
         byTag: result.tagged.byTag.map((t) => ({ tag: t.tag, count: t.count })),
         tagged: result.tagged.windows.map((w) => ({ x: w.x, y: w.y, kind: "window", tag: w.tag, framed: w.frame !== null })),
-        frames: result.windows.map((f) => ({ x: (f.x1 + f.x2) / 2, y: (f.y1 + f.y2) / 2, kind: "window" })),
+        countedByTag: result.tagged.counted,
+        frames,
+        // Against the reviewer's marks, when the sheet has them: windows counted by tag, and the frames alone as before.
+        score: key === null ? null : { byTag: scoreOpenings(key, result.tagged.counted ? tagged : [], "window", fpu), framesOnly: scoreOpenings(key, frames, "window", fpu) },
       }) + "\n",
     );
     expect(walls.length, "no walls were found, so no tag could be placed").toBeGreaterThan(0);
