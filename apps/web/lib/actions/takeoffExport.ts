@@ -7,7 +7,8 @@ import { finishTakeoffFrom } from "@/lib/estimating/takeoff-item-lines";
 import { wallsSheetsFor, wholeSetSummary } from "@/lib/plan-ingest/walls";
 import { MAX_ATTEMPTS } from "@/lib/plan-ingest/runner";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
-import { takeoffExport, type ExportRow, type ExportSheetRow } from "@/lib/takeoff/takeoffExport";
+import { takeoffExport, wallGroupRows, type ExportRow, type ExportSheetRow, type ExportWallGroupRow } from "@/lib/takeoff/takeoffExport";
+import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
 import { actionFail, type ActionResultWith } from "./shared";
 
 const JOB_COSTS_ONLY =
@@ -18,11 +19,11 @@ const JOB_COSTS_ONLY =
  * Reads only; nothing is stored. The newest plan set, the one the takeoff
  * tab shows, and every item on the job.
  */
-export async function loadTakeoffExport(jobId: string): Promise<ActionResultWith<{ rows: ExportRow[]; sheets: ExportSheetRow[]; jobName: string }>> {
+export async function loadTakeoffExport(jobId: string): Promise<ActionResultWith<{ rows: ExportRow[]; sheets: ExportSheetRow[]; wallGroups: ExportWallGroupRow[]; jobName: string }>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const companyId = context.company.id;
-  const job = await prisma.job.findFirst({ where: { id: jobId, companyId }, select: { name: true } });
+  const job = await prisma.job.findFirst({ where: { id: jobId, companyId }, select: { name: true, status: true } });
   if (!job) return actionFail("That job is no longer here. Reload the page.");
   const plan = await prisma.takeoffPlan.findFirst({ where: { jobId, companyId }, orderBy: { createdAt: "desc" }, select: { id: true } });
   const [items, sheets, pages, fallback, summary] = await Promise.all([
@@ -75,5 +76,17 @@ export async function loadTakeoffExport(jobId: string): Promise<ActionResultWith
     defaultPartition: fallback?.code ?? null,
     summary,
   });
-  return { ok: true, value: { ...result, jobName: job.name } };
+  // The groups exactly as the workspace loads them, so the tab lists what the
+  // layer panel lists, under the same keys the team's names were saved by.
+  const workspace = plan ? await loadTakeoffWorkspace({ id: companyId }, { id: jobId, status: job.status }) : null;
+  const wallGroups =
+    workspace === null
+      ? []
+      : wallGroupRows({
+          groupsByPage: workspace.storedWallsByPage,
+          sheetOf,
+          names: workspace.layerNames,
+          itemNames: new Map(workspace.matchableItems.map((item) => [item.id, item.name])),
+        });
+  return { ok: true, value: { ...result, wallGroups, jobName: job.name } };
 }

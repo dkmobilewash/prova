@@ -25,6 +25,8 @@ import { canvasPlan } from "@/lib/takeoff/canvasPlan";
 import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 import { DISTINCT_MARKS, DOOR_COLOUR, LAYER_COLOURS, ROOM_COLOUR, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
 import { TakeoffLayerPanel, type Layer } from "@/components/TakeoffLayerPanel";
+import { defaultLayerName, layerKeyOf } from "@/lib/takeoff/layerKey";
+import { renameTakeoffLayer } from "@/lib/actions";
 import { formatFeetInches, parseFeetInches } from "@/lib/feet-inches";
 import {
   calibrationNotices,
@@ -337,6 +339,7 @@ export function TakeoffPlanViewer({
   bar,
   rail,
   panelDrawer = false,
+  layerNames = {},
   focusRun = null,
   activeItemId = null,
   earlierVersionByPage = {},
@@ -483,6 +486,8 @@ export function TakeoffPlanViewer({
   rail?: { undo?: React.ReactNode; foot?: React.ReactNode };
   /** `fill` only: below 1280 the layer panel is a drawer over the canvas. */
   panelDrawer?: boolean;
+  /** `fill` only: the team's names for this job's layers, by `layerKeyOf`. */
+  layerNames?: Record<string, string>;
   /** A run the workspace's set-wide review is on, shown and zoomed to on its page. */
   focusRun?: { pageNumber: number; x1: number; y1: number; x2: number; y2: number } | null;
   onMeasurementSaved?: (saved: { id: string; kind: MeasurementKind }) => void;
@@ -3311,7 +3316,7 @@ export function TakeoffPlanViewer({
       //
       // Digests of every input (segments in value and in order, text, the
       // template sample, the page size, the scale) and the stage counts,
-      // written to the plan port so `e2e/specs/takeoff-app-equals-eval.spec.ts`
+      // written to the plan port so `e2e/local/takeoff-app-equals-eval.local.spec.ts`
       // can hold the app against `realplan/zzAppEquals.eval.ts` number for
       // number. That comparison is what found that the finder's answer
       // depends on whether an answer-key hook is set. Customers never pay
@@ -3739,8 +3744,7 @@ export function TakeoffPlanViewer({
     const id = (Object.keys(TOOL_KEYS) as ToolId[]).find((one) => TOOL_KEYS[one] === key);
     if (id !== undefined && !toolDisabled(id)) setTool(id);
   };
-  const layerKey = (group: WallGroup) =>
-    `wall:${toEighth(group.inches)}:${group.source.kind === "TAG" ? group.source.tag : ""}`;
+  const layerKey = layerKeyOf;
   const itemNames = new Map((takeoffItems ?? []).map((item) => [item.id, item.name]));
   const layers: Layer[] = !fill
     ? []
@@ -3749,13 +3753,7 @@ export function TakeoffPlanViewer({
           const key = layerKey(group);
           return {
             key,
-            name: [
-              group.itemId ? itemNames.get(group.itemId) : null,
-              group.source.kind === "TAG" ? plainTag(group.source.tag) : null,
-              inchLabel(group.inches),
-            ]
-              .filter(Boolean)
-              .join(" · "),
+            name: defaultLayerName(group, itemNames),
             kind: "line" as const,
             colour: markFor(index, 2, LAYER_COLOURS).stroke,
             dash: markFor(index, 2, LAYER_COLOURS).dash,
@@ -4781,6 +4779,12 @@ export function TakeoffPlanViewer({
                         exists to end, so the swatch draws what the overlay
                         draws: same colour, same dash, same function. */}
                     <ClusterMark index={index} palette={fill ? LAYER_COLOURS : undefined} />
+                    {/* The team's name for this group, where somebody gave it one. */}
+                    {fill && layerNames[layerKeyOf(group)] !== undefined && (
+                      <span className="text-sm font-semibold text-ink" data-takeoff="group-team-name">
+                        {layerNames[layerKeyOf(group)]}
+                      </span>
+                    )}
                     {/* ── THE LABEL IS ROUNDED; THE MEASUREMENT IS NOT ──
                         What is shown is the nearest eighth, because that is
                         how partitions are drawn and how a wall type is typed
@@ -5999,6 +6003,11 @@ export function TakeoffPlanViewer({
             <TakeoffLayerPanel
               jobId={jobId}
               layers={layers}
+              names={layerNames}
+              onRename={async (key, name) => {
+                const saved = await renameTakeoffLayer(jobId, key, name);
+                return saved.ok ? null : saved.error;
+              }}
               lit={litLayer}
               onLit={setLitLayer}
               onToggle={(key) =>

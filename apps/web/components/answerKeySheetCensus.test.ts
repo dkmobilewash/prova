@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
  * happy-dom. No DOM test can put the viewer on page 2, so no DOM test can
  * watch it tell anybody.
  *
- * `e2e/specs/takeoff-key-one-sheet.spec.ts` is where the behaviour is proved,
+ * `e2e/local/takeoff-key-one-sheet.local.spec.ts` is where the behaviour is proved,
  * in a real browser on a real set. This is the cheap guard that the wiring it
  * depends on is still there — a census can see that a prop is passed, and
  * CLAUDE.md is clear that it can never see that the prop does anything. The

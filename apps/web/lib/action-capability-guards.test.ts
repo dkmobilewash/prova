@@ -1992,6 +1992,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   takeoffFeatures: () => import("./actions/takeoffFeatures"),
   doorsWindows: () => import("./actions/doorsWindows"),
   takeoffItems: () => import("./actions/takeoffItems"),
+  takeoffLayerNames: () => import("./actions/takeoffLayerNames"),
   takeoffExport: () => import("./actions/takeoffExport"),
   takeoffRevisions: () => import("./actions/takeoffRevisions"),
   takeoffClassify: () => import("./actions/takeoffClassify"),

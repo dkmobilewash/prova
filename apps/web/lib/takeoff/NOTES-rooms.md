@@ -263,7 +263,7 @@ printed above.
 | the save | `saveRoomMeasurements`: one transaction of AREA rows, `source: ROOM_FINDER`, `roomName`/`roomNumber`, label = the edited tag |
 | migration | `20261022000000_rooms_from_walls`, applied + read back on a throwaway Postgres only |
 | draw the missing wall | no new tool: draw a Line where the wall is missing, Find the rooms again (the boundary includes LINEAR measurements) |
-| tests | `roomsFromWalls`, `roomTags`, `roomBoundary`, `takeoffRoomFinder.test.tsx` (off → absent; on → present, waiting), `e2e/specs/takeoff-rooms.spec.ts` on S05, `takeoff-rooms-real.spec.ts` for screenshots from a real sheet, gated on env |
+| tests | `roomsFromWalls`, `roomTags`, `roomBoundary`, `takeoffRoomFinder.test.tsx` (off → absent; on → present, waiting), `e2e/specs/takeoff-rooms.spec.ts` on S05, `takeoff-rooms-real.local.spec.ts` for screenshots from a real sheet, gated on env |
 
 Not built, on purpose: leak hints as dashed lines (the probe is seconds per
 tag; it belongs on the server or in a worker, not on a click), the
@@ -279,7 +279,7 @@ to learn, and the line is a measurement the estimator can keep.
   16-ft overhead door is wider than anything the seal calls a door); rename,
   save → 7 Unassigned measurements after a reload. Screenshots in
   `apps/web/e2e/artifacts/rooms/` (gitignored).
-- `takeoff-rooms-real.spec.ts` on **Baker A101** (page 13 of the set,
+- `takeoff-rooms-real.local.spec.ts` on **Baker A101** (page 13 of the set,
   pulled out with pdf-lib into `~/Claude Folder/takeoff/shots/rooms-app/`,
   never under the tree), port 3120: Find the walls, Find the rooms →
   **7 rows, 6 named**; 254, 126, 190, 162, 432, 439, 70 sf against the code
@@ -743,7 +743,7 @@ estimator's edit replaces it with "typed by you" and clears the guess.
 fixture (no ceiling information, so every row reads "nothing read"): a
 type and a height typed in move the sheet summary at once; saving stores
 them; after a reload and a fresh find, "Saved on this job" reads them back
-within 2% of the room's square feet. `takeoff-ceilings-real.spec.ts` uploads
+within 2% of the room's square feet. `takeoff-ceilings-real.local.spec.ts` uploads
 Baker's A101 and A111 as one two-page PDF and reads the ceilings off page
 2 for the rooms closed on page 1 — see §17's run notes below.
 
@@ -804,7 +804,7 @@ main) as PR B — `20261023000000_demoted_walls` then
 
 ## 19. What the Baker walkthrough showed, and the six fixes (2026-10-22)
 
-`e2e/specs/estimator-baker.spec.ts` walks the whole takeoff on a real set in
+`e2e/local/estimator-baker.local.spec.ts` walks the whole takeoff on a real set in
 a throwaway stack (set read from disk, inventory real, legend from the cached
 read) and writes every panel's sentences beside the screenshots. The first
 run's ranked findings are in `shots/estimator-baker/FINDINGS.md`; the six
@@ -846,7 +846,7 @@ unplaced rows print under the groups. Nothing new deducts anything: the rule
 and the arithmetic are the ones the wall schedule has always used.
 
 Baker (A101, schedule on p26, 18 rows, every door 3'-0" or 6'-0" × 7'-0"):
-see `shots/doors-baker/` — three runs of `takeoff-doors-real.spec.ts`, no
+see `shots/doors-baker/` — three runs of `takeoff-doors-real.local.spec.ts`, no
 doors / doors at the default rule / doors with ALL, and the board square feet
 on the estimate from each.
 ## 21. Sheet names and scales from the list (2026-10-26) — diego/sheet-scale off diego/customer-features
@@ -896,7 +896,7 @@ the two floor plans first, "2 floor plans to scale, listed first", and six
 buttons; one press set 18 sheets from their own 1/8" readings and the floor
 plan opened already scaled, at the same scale the per-sheet offer gave on
 the previous run — same 12 groups, same first-group footage. The walkthrough
-spec (`estimator-baker.spec.ts`) no longer seeds proposals; it reads what the
+spec (`estimator-baker.local.spec.ts`) no longer seeds proposals; it reads what the
 inventory wrote, presses the first offer, and skips the scale form when the
 sheet's own line (`data-takeoff="sheet-scale-state"`) already says set.
 Known soft spots: a title repeated on two sheets (the RCP reads as its keynote
@@ -983,7 +983,7 @@ next person does not trust "held-out excluded" on the strength of the
 shared list alone.
 
 **E2E to run when Clerk is quiet** (not run here, by instruction):
-`takeoff-wall-legend.spec.ts` and `estimator-baker.spec.ts` steps 4–5 with
+`takeoff-wall-legend.spec.ts` and `estimator-baker.local.spec.ts` steps 4–5 with
 the plan-text read OFF — the found groups must carry the drawing's tags, a
 TAG_DISAGREES group must show "Add as <code> — priced" and the
 `data-takeoff="update-thickness"` button, and pressing it must change the

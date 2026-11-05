@@ -703,14 +703,45 @@ test.describe("the full-screen takeoff workspace", () => {
     await first.locator('[data-takeoff="layer-name"]').dblclick();
     const box = first.locator('[data-takeoff="layer-rename"]');
     await box.fill("ZZ-E2E walls");
-    await box.press("Enter");
+    // The save is a Server Action; wait for ITS answer, not the screen, which
+    // shows the typed name at once.
+    const saved = () =>
+      page.waitForResponse((r) => r.request().method() === "POST" && r.request().headers()["next-action"] !== undefined);
+    await Promise.all([saved(), box.press("Enter")]);
     await expect(first.locator('[data-takeoff="layer-name"]')).toHaveText("ZZ-E2E walls");
-    // One person's label, kept in this browser across a reload.
+    // ── THE TEAM'S NAME, SAVED WITH THE JOB ──
+    // A FRESH BROWSER, with nothing in its storage, signed in on the same
+    // company: if the name were kept in a browser this one could not see it.
+    // It shows on the layer row and on the group's Quantities detail.
+    const other = await page.context().browser()!.newContext({ viewport: DESKTOP });
+    const teammate = await other.newPage();
+    await teammate.route("**/api/takeoff/plan/**", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/pdf", body: servedPdf });
+    });
+    expect(await teammate.evaluate(() => window.localStorage.length).catch(() => 0)).toBe(0);
+    await signInAs(teammate, PERSONAS.takeoff.email);
+    await teammate.goto(`/takeoff/${jobTwo}`);
+    const find = teammate.locator('[data-takeoff="find-walls"]');
+    await expect(find).toBeEnabled({ timeout: 60_000 });
+    await find.click();
+    await expect(find).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 180_000 });
+    await expect(
+      teammate.locator('[data-takeoff="layer-row"]').first().locator('[data-takeoff="layer-name"]'),
+      "a teammate in another browser does not see the name",
+    ).toHaveText("ZZ-E2E walls");
+    await expect(teammate.locator('[data-takeoff="group-team-name"]').first()).toHaveText("ZZ-E2E walls");
+    await other.close();
+
+    // And clearing it puts the default back for everybody.
+    await first.locator('[data-takeoff="layer-name"]').dblclick();
+    await first.locator('[data-takeoff="layer-rename"]').fill("");
+    await Promise.all([saved(), first.locator('[data-takeoff="layer-rename"]').press("Enter")]);
     await page.reload();
-    await findTheWalls("S15 after the rename");
-    await expect(page.locator('[data-takeoff="layer-row"]').first().locator('[data-takeoff="layer-name"]')).toHaveText(
+    await findTheWalls("S15 after clearing the name");
+    await expect(page.locator('[data-takeoff="layer-row"]').first().locator('[data-takeoff="layer-name"]')).not.toHaveText(
       "ZZ-E2E walls",
     );
+    await expect(page.locator('[data-takeoff="group-team-name"]')).toHaveCount(0);
   });
 
   test("14. the phone gets a read-only canvas", async () => {
@@ -1293,100 +1324,6 @@ test.describe("the full-screen takeoff workspace", () => {
 
     await expectHealthy(page, "workspace with sectioned proposals", { monitor, signedIn: false });
     await page.screenshot({ path: path.join(SHOTS, "workspace-proposal-sections.png") });
-  });
-
-  test("22. ANSWER-KEY MODE: candidates, not answers", async () => {
-    // ── THE ONE THING THIS MODE MUST NOT DO ──
-    //
-    // Pre-accept the detection. A key that agrees with the detector by
-    // construction is not a key, and the way it would happen is exactly this:
-    // load the findings, mark them accepted, let the reviewer delete what is
-    // wrong. Nobody deletes a hundred rows one at a time.
-    //
-    // `answerKeyReview.ts` holds that rule and is tested at every transition.
-    // What no unit test can see is whether the SCREEN honours it — this repo
-    // has shipped three fixes that were green and never rendered — so this
-    // walks it in a real browser.
-    await page.setViewportSize(DESKTOP);
-    await onWorkspace(jobOne);
-    await findTheWalls("S02 for the answer key");
-
-    // ── SKIPS WHERE LABELLING IS NOT ALLOWED, WHICH IS THIS SUITE ──
-    //
-    // `labellingRefusal` hides answer-key mode entirely unless a label
-    // folder, the local-plans opt-in, a loopback bind and no Vercel all hold.
-    // This suite's server satisfies NONE of that ON PURPOSE —
-    // `answer-key-gate.spec.ts` says so in its header and exists to prove a
-    // customer gets nothing — so the toggle is correctly absent and this test
-    // spent 30 seconds waiting for it.
-    //
-    // I first "fixed" that by giving the suite's server the labelling
-    // environment. That made this test pass and defeated the gate everywhere,
-    // including in the spec written to guard it: the suite stopped resembling
-    // a customer's deployment, which is the one property it has to keep. The
-    // revert is `b6d66318`.
-    //
-    // So this skips instead, and says which condition is missing rather than
-    // vanishing quietly. Answer-key mode is covered on a real labelling
-    // server by `e2e/smoke-labeling.mjs`, which has the environment because
-    // it IS one.
-    const toggle = page.locator('[data-takeoff="toggle-answer-key"]');
-    if ((await toggle.count()) === 0) {
-      test.skip(
-        true,
-        "labelling is not allowed on this server (by design — see answer-key-gate.spec.ts); " +
-          "answer-key mode is covered by e2e/smoke-labeling.mjs",
-      );
-    }
-    await toggle.click();
-    const rail = page.locator('[data-takeoff="answer-key-rail"]');
-    await expect(rail, "the answer-key rail never opened").toBeVisible({ timeout: 20_000 });
-
-    // The rules are ON SCREEN, because a key made under one definition and
-    // graded under another is worse than no key.
-    await expect(rail).toContainText(/CENTRELINE/i);
-    await expect(rail).toContainText(/furniture/i);
-
-    // ── NOTHING IS ACCEPTED YET ──
-    const progress = rail.locator('[data-takeoff="key-progress"]');
-    await expect(progress).toContainText(/\b0 of \d+\b/);
-    const candidates = rail.locator('[data-takeoff="key-candidate"]');
-    const total = await candidates.count();
-    expect(total, "no candidates loaded, so this step proves nothing").toBeGreaterThan(0);
-    // Every one of them is undecided. A single accepted row here would mean
-    // the mode had pre-answered the question it exists to ask.
-    const verdicts = await candidates.evaluateAll((nodes) =>
-      nodes.map((node) => node.getAttribute("data-verdict")),
-    );
-    expect(new Set(verdicts), "something was already decided").toEqual(new Set(["unreviewed"]));
-
-    // ── AND SAVING IS REFUSED UNTIL IT IS SOMEBODY'S JUDGEMENT ──
-    await expect(rail.locator('[data-takeoff="key-save"]')).toBeDisabled();
-
-    // ── ONE DECISION, BY KEYBOARD ──
-    await candidates.first().click();
-    await page.keyboard.press("a");
-    await expect(progress, "accepting a candidate did not move the count").toContainText(
-      /\b1 of \d+\b/,
-    );
-
-    // …and the focus moved on by itself, which is what makes a hundred
-    // decisions bearable.
-    await page.keyboard.press("r");
-    await expect(progress).toContainText(/\b2 of \d+\b/);
-
-    // ── THE RAW DRAWING, WITH EVERYTHING OFF ──
-    await page.locator('[data-takeoff="key-overlays"]').click();
-    await expect(page.locator('[data-takeoff="key-overlay"]')).toHaveCount(0);
-    await page.locator('[data-takeoff="key-overlays"]').click();
-    await expect(page.locator('[data-takeoff="key-overlay"]')).toHaveCount(1);
-
-    // ── AND WITH A NAME, IT CAN BE SAVED ──
-    await rail.locator('[data-takeoff="key-reviewer"]').fill("e2e");
-    await expect(rail.locator('[data-takeoff="key-save"]')).toBeEnabled();
-
-    await expectHealthy(page, "answer-key mode", { monitor, signedIn: false });
-    await page.screenshot({ path: path.join(SHOTS, "workspace-answer-key.png") });
   });
 
 });

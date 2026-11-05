@@ -3,6 +3,7 @@ import type { WallsSummaryRow } from "@/lib/plan-ingest/walls";
 import { UNTYPED_ITEM } from "./untypedItem";
 import { HELD_ITEM } from "./estimateHold";
 import { ROOMS_ITEM } from "./roomItems";
+import { defaultLayerName, layerKeyOf, type LayerGroup } from "./layerKey";
 
 /**
  * ── THE TAKEOFF AS ROWS, FOR SOMEBODY WHO ESTIMATES IN EXCEL ──
@@ -117,10 +118,58 @@ export function exportCsv(rows: readonly ExportRow[]): string {
   return [HEAD, ...rows.map((r) => [r.item, r.sheet, r.quantity, r.unit, r.source, r.note])].map((line) => line.map(cell).join(",")).join("\n") + "\n";
 }
 
-/** The two tabs as arrays of rows, for the spreadsheet. */
-export function exportTabs(result: { rows: readonly ExportRow[]; sheets: readonly ExportSheetRow[] }): { name: string; rows: (string | number | null)[][] }[] {
+/**
+ * ── THE WALL GROUPS, UNDER THE NAMES THE TEAM GAVE THEM ──
+ *
+ * One row per sheet and group the finder stored, as the workspace's layer
+ * panel lists them, named as the team named them (`TakeoffLayerName`) or by
+ * the default the panel shows. Its own tab, not the Quantities one: a group's
+ * feet also reach Quantities through whichever item it was added to, and one
+ * figure in two rows of one table would read as double.
+ */
+export type ExportWallGroupRow = { sheet: string; group: string; named: boolean; runs: number; feet: number };
+
+export function wallGroupRows(input: {
+  groupsByPage: Readonly<Record<number, readonly (LayerGroup & { runs: readonly unknown[]; feet: number })[]>>;
+  sheetOf: ReadonlyMap<number, string>;
+  names: Readonly<Record<string, string>>;
+  itemNames: ReadonlyMap<string, string>;
+}): ExportWallGroupRow[] {
+  return Object.entries(input.groupsByPage)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .flatMap(([page, groups]) =>
+      groups.map((group) => {
+        const named = input.names[layerKeyOf(group)];
+        return {
+          sheet: input.sheetOf.get(Number(page)) ?? `Sheet ${page}`,
+          group: named ?? defaultLayerName(group, input.itemNames),
+          named: named !== undefined,
+          runs: group.runs.length,
+          feet: round(group.feet),
+        };
+      }),
+    );
+}
+
+/** The tabs as arrays of rows, for the spreadsheet. */
+export function exportTabs(result: {
+  rows: readonly ExportRow[];
+  sheets: readonly ExportSheetRow[];
+  wallGroups?: readonly ExportWallGroupRow[];
+}): { name: string; rows: (string | number | null)[][] }[] {
   return [
     { name: "Quantities", rows: [HEAD, ...result.rows.map((r) => [r.item, r.sheet, r.quantity, r.unit, r.source, r.note])] },
     { name: "Sheets", rows: [["Sheet", "Status", "Why", "Wall ft", "Rooms", "Shows existing work"], ...result.sheets.map((s) => [s.sheet, s.status, s.why, s.wallFeet, s.rooms, s.existingWork])] },
+    ...(result.wallGroups && result.wallGroups.length > 0
+      ? [
+          {
+            name: "Wall groups",
+            rows: [
+              ["Sheet", "Wall group", "Runs", "Lin ft", "Named by the team"],
+              ...result.wallGroups.map((g) => [g.sheet, g.group, g.runs, g.feet, g.named ? "yes" : ""]),
+            ],
+          },
+        ]
+      : []),
   ];
 }
