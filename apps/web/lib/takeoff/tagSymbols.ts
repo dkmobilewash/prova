@@ -326,10 +326,11 @@ function extent(outline: readonly Point[]): { w: number; h: number } {
   return { w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
 }
 
+/** A box at least `ELONGATED` times as WIDE as it is tall. Upright shapes keep the ring: their lettering is often rotated. */
 function elongated(outline: readonly Point[]): boolean {
   if (outline.length < 3) return false;
   const { w, h } = extent(outline);
-  return Math.min(w, h) > 0 && Math.max(w, h) / Math.min(w, h) >= ELONGATED;
+  return h > 0 && w / h >= ELONGATED;
 }
 
 /** Half the outline's shorter extent; the radius when the outline is degenerate. */
@@ -502,6 +503,9 @@ export function tagSymbols(input: {
     return null;
   };
 
+  // Every closed loop first: a wide box's lettering is judged against its
+  // NEIGHBOURS' outlines (below), so all of them have to be known.
+  const cycles: Point[][] = [];
   for (let n = 0; n < short.length; n += 1) {
     if (walked.has(n)) continue;
     // One direction is enough: a loop through this stroke closes either way.
@@ -511,8 +515,10 @@ export function tagSymbols(input: {
     walked.add(n);
     if (loop === null) continue;
     for (const used of loop.used) walked.add(used);
-    const points: Point[] = loop.cycle;
-    if (points.length < 3) continue;
+    if (loop.cycle.length >= 3) cycles.push(loop.cycle);
+  }
+
+  for (const points of cycles) {
 
     // ── A CHAMFERED CORNER IS ONE CORNER ──
     //
@@ -592,7 +598,29 @@ export function tagSymbols(input: {
         // edge to edge, and the circle of a box's half-width reached the
         // lettering of the box above, reading "IW-5" as "IW-5/IW-4".
         const c = centreOf(item);
-        return Math.hypot(c.x - cx, c.y - cy) <= radius && (!elongated(points) || insideOutline(c, points));
+        // ── A WIDE BOX DOES NOT READ ITS NEIGHBOUR'S LETTERING ──
+        // McAllen stacks its boxes edge to edge, and the ring of one box's
+        // half-width reached the code of the box above: "IW-5/IW-4". Text
+        // inside ANOTHER outline that does not hold this symbol's centre is
+        // that neighbour's (a mask drawn round the tag holds the centre, so
+        // the tag still reads). Text in no outline stays: Baker's room box
+        // reads "SUPERVISOR 112", the name printed over it, and is no door
+        // tag — but only lettering over or under the box, within its width and
+        // not level with it:
+        // Green Bay's IW-4 box has a rotated dimension beside it whose centre
+        // falls in the ring, and reading it made the tag a dimension.
+        // Only a WIDE box: an upright hexagon's lettering is rotated, its
+        // centre is computed as if it were not, and the ring is what reads it.
+        if (Math.hypot(c.x - cx, c.y - cy) > radius) return false;
+        if (!elongated(points)) return true;
+        if (insideOutline(c, points)) return true;
+        if (cycles.some((other) => other !== points && insideOutline(c, other) && !insideOutline({ x: cx, y: cy }, other))) return false;
+        const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+        const over = c.x >= Math.min(...xs) && c.x <= Math.max(...xs);
+        // The whole line clear of the box, not just its centre: the rotated
+        // dimension's computed centre sat 0.3 pt above the IW-4 box's top.
+        const level = c.y + item.height / 2 >= Math.min(...ys) && c.y - item.height / 2 <= Math.max(...ys);
+        return over && !level;
       })
       .sort((a, b) => a.y - b.y || a.x - b.x);
 
