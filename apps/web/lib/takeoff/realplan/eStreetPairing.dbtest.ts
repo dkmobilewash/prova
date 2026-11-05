@@ -5,6 +5,7 @@ import { prisma } from "@prova/db";
 import { pageInventoryWork, realDeps } from "@/lib/plan-ingest/pageInventory";
 import { pdfPageCount } from "@/lib/ask/pageCount";
 import { ensureSheetNames, pairingsForPlan } from "@/lib/takeoff/priorPlanLoad";
+import { detectWallsForCalibration, EXISTING_WALLS_READ } from "@/lib/takeoff/detectWallsForCalibration";
 
 /**
  * E Street 421 in the app: "No demolition plan is paired" on A2.1 and an
@@ -63,4 +64,28 @@ describe.skipIf(PDF === "")("E Street 421: A2.1 is paired with its demolition pl
     expect(a21).toBeDefined();
     expect(pairing).toBeDefined();
   }, 600_000);
+
+  // The new-customer walk counted existing walls and nothing said how much.
+  // With plan comparison OFF, detection on A2.1 runs it dry and keeps the
+  // footage it would set aside, for the whole-set panel; ON, it applies it
+  // and keeps nothing.
+  it("plan comparison off: A2.1's detection keeps how much existing wall is in its count, against its demolition plan", async () => {
+    for (const on of [false, true]) {
+      // Named, as a set is once the owner turns plan reading or plan comparison on.
+      const { companyId, planId } = await inventoried(`E Street existing ${on}`, on, async () => true);
+      const { a21, sheets, pairing } = await a21Pairing(planId);
+      const page = await prisma.takeoffPlanPage.create({ data: { planId, pageNumber: a21!.pageNumber } });
+      const cal = await prisma.takeoffScaleCalibration.create({ data: { pageId: page.id, x1: 0, y1: 0, x2: 1, y2: 0, declaredDistanceFeet: "144" } });
+      await detectWallsForCalibration({ pageId: page.id, calibrationId: cal.id, planId, companyId, pageNumber: a21!.pageNumber, feetPerUnit: 144, wallTypes: [] });
+      const read = await prisma.takeoffPlanTextRead.findUnique({ where: { planId_pageNumber_kind: { planId, pageNumber: a21!.pageNumber, kind: EXISTING_WALLS_READ } } });
+      if (on) {
+        expect(read).toBeNull();
+        continue;
+      }
+      const value = read?.value as { calibrationId: string; feet: number; against: string } | undefined;
+      expect(value?.calibrationId).toBe(cal.id);
+      expect(value?.feet).toBeGreaterThan(20);
+      expect(value?.against).toBe(sheets.find((s) => s.pageNumber === pairing!.demoPage)?.sheetNumber);
+    }
+  }, 900_000);
 });

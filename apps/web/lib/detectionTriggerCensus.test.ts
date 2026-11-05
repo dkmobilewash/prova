@@ -74,7 +74,11 @@ describe("the calibration save is what starts wall detection", () => {
     // is no detection to attempt then, as opposed to a sheet where there is
     // nothing to find.
     expect(code()).toMatch(/feetPerUnit = feetPerPageWidth\(/);
-    expect(code()).toMatch(/if \(feetPerUnit !== null\)/);
+    expect(code()).toMatch(/if \(feetPerUnit !== null && !notAPlan\)/);
+  });
+
+  it("and NOT ON A SHEET THE WHOLE-SET RUN WOULD SKIP — the walk found walls on a roof plan this way", () => {
+    expect(code()).toMatch(/const notAPlan = [^;]*takeoffSheetVerdict\([^;]*\)\.skipAutomatically;/);
   });
 
   it("USES THE APP'S ONE SCALE READER, so detection measures what the screen measures", () => {

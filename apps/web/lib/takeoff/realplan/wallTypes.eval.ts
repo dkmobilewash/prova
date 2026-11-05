@@ -135,7 +135,7 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
       const siblingPage = (process.env.WT_SIBLING ?? "").split(";").map((p) => p.trim().split(">")).find(([at]) => at === `${set}:${page}`)?.[1];
       const siblingRead = siblingPage === undefined ? null : await sheetStrokes(Buffer.from(readFileSync(join(DIR, set!))), Number(siblingPage));
       const sibling = siblingRead === null ? null : { segmentsPt: siblingRead.segments, widthPt: siblingRead.widthPt, textItems: (await doc.pageText(Number(siblingPage))).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height })) };
-      const staged = groupsForStage({ found, segmentsPt: read.segments, textItems: items, widthPt: W, feetPerUnit: fpu, wallTypes, legendCodes: planText?.legendCodes ?? null, sibling });
+      const staged = groupsForStage({ found, segmentsPt: read.segments, textItems: items, widthPt: W, feetPerUnit: fpu, wallTypes, legendCodes: planText?.legendCodes ?? null, sibling, ...(process.env.WT_CLUSTER ? { clusterInches: Number(process.env.WT_CLUSTER) } : {}) });
       const groups: WallGroup[] = staged.groups;
       const total = groups.reduce((s, g) => s + g.feet, 0);
       const by: Record<Source | "untyped" | "tagNoType", number> = { tag: 0, "tag-variant": 0, carried: 0, sibling: 0, note: 0, thickness: 0, untyped: 0, tagNoType: 0 };
@@ -186,7 +186,7 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
           JSON.stringify({
             set, page, feetPerUnit: fpu, heldOut, legend: legend === null ? null : legendCodes, units: "page-width",
             totalFt: total, typedFt: typed, by,
-            runs: [...posted].map(([r, as]) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFt: r.lengthFeet, thicknessIn: r.thicknessFeet * 12, type: as?.code ?? null, source: as?.source ?? null, posted: as?.posted ?? false, hatched: staged.hatched.has(r) })),
+            runs: [...posted].map(([r, as]) => ({ group: groups.findIndex((g) => g.runs.includes(r)), x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFt: r.lengthFeet, thicknessIn: r.thicknessFeet * 12, type: as?.code ?? null, source: as?.source ?? null, posted: as?.posted ?? false, hatched: staged.hatched.has(r) })),
           }),
         );
       }

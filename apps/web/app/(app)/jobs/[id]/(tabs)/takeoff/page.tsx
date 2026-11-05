@@ -342,6 +342,7 @@ export default async function JobTakeoffPage({
           planId={plan.id}
           existing={await latestIngestFor(plan.id, "WALLS")}
           summary={await wholeSetSummary(plan.id, company.id, MAX_ATTEMPTS)}
+          planCompareOn={(await prisma.company.findUnique({ where: { id: company.id }, select: { planCompareOn: true } }))?.planCompareOn === true}
         />
       )}
       {isEstimateStage && (

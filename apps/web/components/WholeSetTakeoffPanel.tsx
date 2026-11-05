@@ -23,10 +23,13 @@ export function WholeSetTakeoffPanel({
   planId,
   existing,
   summary: initialSummary,
+  planCompareOn = false,
 }: {
   planId: string;
   existing: IngestView | null;
   summary: WallsSummaryRow[];
+  /** The company's plan comparison switch: off, a renovation sheet's line offers it. */
+  planCompareOn?: boolean;
 }) {
   const router = useRouter();
   const [view, setView] = useState<IngestView | null>(existing);
@@ -133,7 +136,25 @@ export function WholeSetTakeoffPanel({
           {summary.some((row) => row.renovation && row.status.kind === "walls") && (
             <p className="mt-2 font-medium text-tag-amber-ink" data-takeoff="whole-set-renovation">
               Shows existing work, so draw the work area or exclude existing walls before sending:{" "}
-              {summary.filter((row) => row.renovation && row.status.kind === "walls").map((row) => `${row.label} (${row.renovation!.join(", ")})`).join("; ")}.
+              {summary
+                .filter((row) => row.renovation && row.status.kind === "walls")
+                .map((row) => {
+                  const existing = row.status.kind === "walls" ? row.status.existing : undefined;
+                  return existing === undefined
+                    ? `${row.label} (${row.renovation!.join(", ")})`
+                    : `${row.label}: about ${formatFeetInches(existing.feet)} of the ${formatFeetInches(row.status.kind === "walls" ? row.status.feet : 0)} counted is existing wall, by comparing with ${existing.against}`;
+                })
+                .join("; ")}
+              .
+              {!planCompareOn && (
+                <>
+                  {" "}
+                  <a href="/settings#plan-compare" className="underline" data-takeoff="whole-set-plan-compare">
+                    Turn on plan comparison
+                  </a>{" "}
+                  to leave existing walls out of the count.
+                </>
+              )}
             </p>
           )}
           <ul className="mt-2 grid gap-1 sm:grid-cols-2">

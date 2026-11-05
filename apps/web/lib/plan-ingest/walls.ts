@@ -1,7 +1,7 @@
 import { showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
-import { detectWallsForCalibration, type DetectedBoundary, type DetectOutcome, type DetectTarget } from "@/lib/takeoff/detectWallsForCalibration";
+import { detectWallsForCalibration, EXISTING_WALLS_READ, type DetectedBoundary, type DetectOutcome, type DetectTarget } from "@/lib/takeoff/detectWallsForCalibration";
 import { takeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
 import { wallItemsForSheet, wallItemsNoteFor, type WallItemsOutcome } from "./wallItems";
@@ -489,7 +489,7 @@ export type WallsSummaryRow = {
   /** Present when the sheet's words say it shows existing work. */
   renovation?: string[];
   status:
-    | { kind: "walls"; groups: number; feet: number; typedFeet?: number; rooms?: number; ceilingSqFt?: number; notCounted?: WallsSkip }
+    | { kind: "walls"; groups: number; feet: number; typedFeet?: number; rooms?: number; ceilingSqFt?: number; notCounted?: WallsSkip; existing?: { feet: number; against: string } }
     | { kind: "skipped"; why: WallsSkip }
     | { kind: "looked"; note: string }
     | { kind: "failed"; error: string }
@@ -500,8 +500,8 @@ export function wallsSummaryRows(input: {
   sheets: WallsSheet[];
   /** Rooms the run wrote per page, and the ceiling area it read, derived from the ROOM_FINDER rows. */
   rooms?: Map<number, { rooms: number; ceilingSqFt: number }>;
-  /** Found walls per page, for its current scale: group count and feet. */
-  walls: Map<number, { groups: number; feet: number; typedFeet?: number }>;
+  /** Found walls per page, for its current scale: group count and feet, and the existing wall a dry-run plan comparison found in them. */
+  walls: Map<number, { groups: number; feet: number; typedFeet?: number; existing?: { feet: number; against: string } }>;
   /** The newest WALLS run's tasks, by page. */
   tasks: Map<number, { finishedAt: Date | null; note: string | null; error: string | null; attempts: number }>;
   maxAttempts: number;
@@ -530,7 +530,7 @@ export function wallsSummaryRows(input: {
 }
 
 export async function wholeSetSummary(planId: string, companyId: string, maxAttempts: number): Promise<WallsSummaryRow[]> {
-  const [sheets, pages, types, run] = await Promise.all([
+  const [sheets, pages, types, run, existingReads] = await Promise.all([
     wallsSheetsFor(planId, companyId),
     prisma.takeoffPlanPage.findMany({
       where: { planId },
@@ -550,7 +550,9 @@ export async function wholeSetSummary(planId: string, companyId: string, maxAtte
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       select: { tasks: { select: { pageNumber: true, finishedAt: true, note: true, error: true, attempts: true } } },
     }),
+    prisma.takeoffPlanTextRead.findMany({ where: { planId, kind: EXISTING_WALLS_READ }, select: { pageNumber: true, value: true } }),
   ]);
+  const existingOn = new Map(existingReads.map((row) => [row.pageNumber, row.value as { calibrationId?: string; feet?: number; against?: string }]));
   const wallTypes: MatchableWallType[] = types.map((type) => ({
     id: type.id,
     code: type.code,
@@ -594,6 +596,11 @@ export async function wholeSetSummary(planId: string, companyId: string, maxAtte
         feet: groups.reduce((sum, group) => sum + group.feet, 0),
         // Feet the drawing named — by a tag or its U.N.O. note; the rest is a thickness and a question.
         typedFeet: groups.filter((group) => group.source.kind !== "REMAINDER").reduce((sum, group) => sum + group.feet, 0),
+        // Read at this scale only: a dry run against an older scale measured other feet.
+        ...((): { existing?: { feet: number; against: string } } => {
+          const read = existingOn.get(page.pageNumber);
+          return read?.calibrationId === current.id && typeof read.feet === "number" && read.feet >= 1 && typeof read.against === "string" ? { existing: { feet: read.feet, against: read.against } } : {};
+        })(),
       });
     }
   }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { hatchedRuns, siblingPages, tagsFromSibling } from "./stageGroups";
+import { groupsForStage, hatchedRuns, siblingPages, STAGE_CLUSTER_INCHES, tagsFromSibling } from "./stageGroups";
+import { clusterByThickness, CLUSTER_INCHES } from "./wallVectors";
 import { isSiblingTag, siblingTag } from "./planTextTags";
 import { wallGroups } from "./wallGroups";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
@@ -93,5 +94,15 @@ describe("a floor plan with no wall tags reads them off its sibling sheet (Green
     ];
     expect(siblingPages(sheets, 9)).toEqual([10]);
     expect(siblingPages(sheets, 13)).toEqual([]);
+  });
+});
+
+describe("the groups an estimator confirms are wider than the finder's (the new-customer walk's 20 groups on A101)", () => {
+  it("puts walls drawn 4.6\" and 5.6\" thick in one group to confirm, where the finder keeps them apart", () => {
+    const walls = [run(0.1, 0.1, 0.3, 0.1, 4.6 / 12), run(0.1, 0.2, 0.3, 0.2, 5.6 / 12), run(0.1, 0.3, 0.3, 0.3, 8 / 12)];
+    expect(clusterByThickness(walls, CLUSTER_INCHES)).toHaveLength(3);
+    const staged = groupsForStage({ found: { walls, inUnits: [] } as never, segmentsPt: [], textItems: [], widthPt: 1000, feetPerUnit: FPU, wallTypes: [], legendCodes: null });
+    expect(staged.groups.map((g) => g.runs.length).sort()).toEqual([1, 2]);
+    expect(STAGE_CLUSTER_INCHES).toBeGreaterThan(CLUSTER_INCHES);
   });
 });
