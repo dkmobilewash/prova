@@ -32,7 +32,7 @@ import { reportUsage, type ModelUsageReporter } from "./anthropic";
  * model that returns the phrase has read a drawing.
  */
 
-export const WALL_LEGEND_PROMPT_VERSION = "wall-legend.2";
+export const WALL_LEGEND_PROMPT_VERSION = "wall-legend.3";
 
 const TOOL_NAME = "record_wall_types";
 
@@ -63,6 +63,13 @@ export type WallLegendRead = {
   types: WallTypeRead[];
   /** The legend's U.N.O. defaults; empty when the sheet states none. */
   uno: WallLegendDefault[];
+  /**
+   * How the legend says a tag's suffix is read, verbatim — Hutto's "LETTER
+   * INDICATES PARTITION TYPE / NUMBER INDICATES WOOD STUD THICKNESS" beside
+   * its example tag A3 — or null when it states none. The plan then tags C6
+   * and D6 where the legend draws C and D, and the tag is the code.
+   */
+  suffixKey?: string | null;
   /** Which part of the page these came from, in words somebody can check. */
   reason: string;
   confidence: "HIGH" | "MEDIUM" | "LOW";
@@ -85,6 +92,8 @@ Record what you find through the ${TOOL_NAME} tool.
 5. IGNORE WHAT IS NOT A WALL TYPE. Title blocks, revision tables, drawing indexes, sheet numbers, copyright notices, and the detail callouts that reference other sheets.
 
 7. THE DEFAULTS, VERBATIM. A partition sheet often says which type applies where the floor plan tags nothing — "UNLESS NOTED OTHERWISE, ALL INTERIOR PARTITIONS ARE TYPE 'A'", "ALL INTERIOR MASONRY PARTITIONS ARE TYPE 'B' U.N.O.", "ALL PARTITIONS TYPE P1 UNLESS NOTED". Record each such sentence in "uno" with the code it names, copied as printed. A sentence that sets a DIMENSION or a MATERIAL for everything ("all studs are 3 5/8\" unless noted", "all gypsum board is 5/8\" type X") names no type and is not a default. A sheet may state none, one, or one per family (drywall, masonry).
+
+8. THE TAG'S SUFFIX, AND THE VARIANTS. Some legends say how a tag is built — an example tag "A3" with "LETTER INDICATES PARTITION TYPE, NUMBER INDICATES WOOD STUD THICKNESS" — and the floor plans then tag C6, D4, E6 where the legend draws C, D, E once each. Copy that key verbatim into "suffixKey" (null when the sheet states none), and give the types as the legend DRAWS them: one per detail, coded as printed ("C", not "C6"). But where the legend draws variants as details of their own — "S6A" and "S8A", "A3" and "A6" — each is its own type with its own code and lines; never collapse them into one, and never drop the suffix from a code the legend prints with one.
 
 6. CONFIDENCE is HIGH when each type's code and lines are unambiguous, MEDIUM when you had to judge which detail a line belonged to, LOW when the page may not be a partition legend at all. REASON says in one sentence where on the sheet you read these and what made it hard.
 
@@ -137,10 +146,11 @@ export async function extractWallLegend(params: {
                 required: ["code", "note"],
               },
             },
+            suffixKey: { type: ["string", "null"] },
             reason: { type: "string" },
             confidence: { type: "string", enum: ["HIGH", "MEDIUM", "LOW"] },
           },
-          required: ["types", "uno", "reason", "confidence"],
+          required: ["types", "uno", "suffixKey", "reason", "confidence"],
         },
       },
     ],
@@ -176,6 +186,7 @@ export function wallLegendReadFrom(input: unknown): WallLegendRead {
   const raw = input as {
     types?: { code?: unknown; name?: unknown; lines?: unknown }[];
     uno?: { code?: unknown; note?: unknown }[];
+    suffixKey?: unknown;
     reason?: unknown;
     confidence?: unknown;
   };
@@ -200,6 +211,7 @@ export function wallLegendReadFrom(input: unknown): WallLegendRead {
   return {
     types,
     uno,
+    suffixKey: typeof raw.suffixKey === "string" && raw.suffixKey.trim() !== "" ? raw.suffixKey.replace(/\s+/g, " ").trim() : null,
     reason: typeof raw.reason === "string" ? raw.reason : "",
     confidence:
       raw.confidence === "HIGH" || raw.confidence === "MEDIUM" || raw.confidence === "LOW"
