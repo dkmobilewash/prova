@@ -95,7 +95,7 @@ export const WORKFLOW_EXAMPLES = [
   {
     workflow: "Pay apps & retainage",
     examples: [
-      { say: "Start this month's pay application", command: "start_pay_application" },
+      { say: "Bill this month's pay application", command: "start_pay_application" },
       { say: "Bill the retainage", command: "bill_retainage" },
     ],
   },

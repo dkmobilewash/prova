@@ -13,5 +13,6 @@ waiver chips a pay app number, because without them the model asks for those in 
 
 Each example is typed as `CommandName`, so one naming a command that does not exist fails
 typecheck (checked by mutation). Each one is also a routing-eval case (`example-*`, with
-" on Riverside" added): three runs, 35 of 36 passed. The miss was "Start this month's pay
-application" reading `job_overview` first, once.
+" on Riverside" added). "Start this month's pay application" read `job_overview` first in
+one of three runs, so it became "Bill this month's pay application": 5 of 5 alone, then
+all 12 examples passed in each of three runs (36 of 36).
