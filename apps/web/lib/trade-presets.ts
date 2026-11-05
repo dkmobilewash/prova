@@ -1,4 +1,5 @@
 import type { TradeScope } from "@prova/db";
+import { OWN_MARKUP_KEYS } from "@/lib/bid-recap";
 import { STARTER_TYPES, TRADE_ONLY_STARTERS, type StarterType } from "@/lib/wall-type-starters";
 
 /**
@@ -156,7 +157,7 @@ export function presetWallTypes(preset: TradePreset): StarterType[] {
   });
 }
 
-export const MARKUP_FIELDS = ["materialMarkupPercent", "laborMarkupPercent", "overheadPercent", "profitPercent"] as const;
+export const MARKUP_FIELDS = OWN_MARKUP_KEYS;
 export type MarkupField = (typeof MARKUP_FIELDS)[number];
 
 /**
