@@ -176,3 +176,34 @@ describe("the answer-key panel, round 10b", () => {
     expect(host.textContent).toContain("They are walls");
   });
 });
+
+describe("round 12: the type picker", () => {
+  it("types the focused accepted wall from a number key and moves to the next untyped one", async () => {
+    const { setVerdict } = await import("@/lib/takeoff/answerKeyReview");
+    const state = setVerdict(startReview([cand("w0", 0.1), cand("w1", 0.2)]), ["w0", "w1"], "wall");
+    const { host, onState, onFocus } = paint({ state, focusedId: "w0", legendCodes: ["A", "A3", "B"] });
+    expect(q(host, "key-type")?.textContent).toContain("A3 (2)");
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "2" })); });
+    expect(onState.mock.calls.at(-1)![0].types).toEqual({ w0: "A3" });
+    expect(onFocus).toHaveBeenLastCalledWith("w1");
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "0" })); });
+    expect(onState.mock.calls.at(-1)![0].types).toEqual({ w0: "U" });
+  });
+
+  it("offers no picker on a wall that is not accepted", () => {
+    const { host } = paint({ focusedId: "w0", legendCodes: ["A"] });
+    expect(q(host, "key-type")).toBeNull();
+  });
+
+  it("saves the type with the verdict", async () => {
+    window.localStorage.setItem(REVIEWER_KEY, "Diego");
+    const { setVerdict, setWallType } = await import("@/lib/takeoff/answerKeyReview");
+    const state = setWallType(setVerdict(startReview([cand("w0", 0.1)]), ["w0"], "wall"), ["w0"], "C8B");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ ok: true, path: "labels/S/A1.json" })));
+    const { host } = paint({ state, pairings: [] });
+    await act(async () => { (q(host, "key-save-labels") as HTMLButtonElement).click(); });
+    const body = JSON.parse(String(fetchMock.mock.calls[0]![1]!.body));
+    expect(body.verdicts[0].wallType).toBe("C8B");
+    fetchMock.mockRestore();
+  });
+});

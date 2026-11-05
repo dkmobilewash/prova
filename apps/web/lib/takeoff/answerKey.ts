@@ -52,6 +52,8 @@ export type KeyWall = {
    * say what the rest are.
    */
   from: "pair" | "single";
+  /** The set's legend code the reviewer gave it, or "U" for can't tell; absent when nobody typed it. */
+  wallType?: string;
 };
 
 export type AnswerKey = {
