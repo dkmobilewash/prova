@@ -162,7 +162,8 @@ test.describe("the job's one review queue", () => {
 
   test("5b. the W1 walls have no height: a typed one sets the whole group", async () => {
     await expect(item(tab)).toHaveAttribute("data-kind", "height");
-    await expect(item(tab)).toContainText(/No height · .+ · sheet A101 · 65 ft/);
+    // By name: until the server's re-render lands, "Walls — untyped" is still the height item on show.
+    await expect(item(tab)).toContainText("No height · W1 walls · sheet A101 · 65 ft");
     await item(tab).locator('[data-takeoff="set-height-typed"]').fill("10");
     await item(tab).locator('[data-takeoff="set-height-save"]').click();
     await expect(left(tab)).toHaveText("2 left to review");
