@@ -3,7 +3,7 @@ import { prisma } from "@prova/db";
 import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
-import { TRADE_PRESETS } from "../../lib/trade-presets";
+import { MARKUP_FIELDS, TRADE_PRESETS } from "../../lib/trade-presets";
 
 /**
  * GUIDED FLOW PHASE 5, CLICKED. LOCAL ONLY: `pnpm test:e2e -- --welcome-click`.
@@ -56,8 +56,9 @@ test("1. a new company is asked its trade first, one tap each, with a way past i
 test("2. Fireproofing leads to the markup step, every box EMPTY", async () => {
   await page.getByRole("button", { name: "Fireproofing" }).click();
   await expect(page.getByRole("heading", { name: "Your markup" })).toBeVisible();
-  for (const label of ["Material markup", "Labor markup", "Overhead", "Profit"]) {
-    await expect(page.getByLabel(label, { exact: true }), label).toHaveValue("");
+  for (const [field, label] of MARKUP_FIELDS.map((f, i) => [f, ["Material markup", "Labor markup", "Overhead", "Profit"][i]!] as const)) {
+    await expect(page.getByLabel(label), label).toBeVisible();
+    await expect(page.locator(`input[name="${field}"]`), label).toHaveValue("");
   }
   await page.screenshot({ path: shots("welcome-markup") });
   await page.getByRole("button", { name: "Later" }).click();
@@ -86,7 +87,7 @@ test("4. the estimate says Set your markup, and the Estimate step is not done", 
   await page.screenshot({ path: shots("estimate-set-markup") });
 
   await banner.getByRole("link", { name: "Set your markup →" }).click();
-  await expect(page).toHaveURL(/\/settings#bid-defaults/);
+  await expect(page).toHaveURL(/\/settings\?tab=estimating#bid-defaults/);
   const form = page.locator("#bid-defaults");
   await form.locator('input[name="materialMarkupPercent"]').fill("10");
   await form.locator('input[name="laborMarkupPercent"]').fill("12");

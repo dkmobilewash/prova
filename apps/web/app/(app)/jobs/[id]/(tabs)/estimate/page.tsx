@@ -857,7 +857,7 @@ export default async function JobEstimatePage({
               <p className="text-sm text-ink">
                 <span className="font-semibold">Set your markup.</span> Material, labor, overhead and profit aren&apos;t all set, so this estimate&apos;s price carries none of them yet.
               </p>
-              <Link href="/settings#bid-defaults" className="text-sm font-semibold text-link hover:underline">
+              <Link href="/settings?tab=estimating#bid-defaults" className="text-sm font-semibold text-link hover:underline">
                 Set your markup →
               </Link>
             </div>
