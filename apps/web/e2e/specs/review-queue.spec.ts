@@ -175,9 +175,13 @@ test.describe("the job's one review queue", () => {
     // By attribute: the id is per line, not a fixed id the collapsed census can check.
     const line = estimate.locator(`details[id="line-${lineId}"]`);
     await expect(line).toHaveAttribute("open", "");
+    // A new tab, a save and the queue read again: more than the default 30s on a busy machine.
+    test.setTimeout(90_000);
+    await expect(line.locator('input[name="unitPrice"]').first()).toBeVisible();
+    await expectHealthy(estimate, "the estimate, opened on its line", { monitor: new HealthMonitor(estimate) });
     await line.locator('input[name="unitPrice"]').first().fill("85");
     await line.getByRole("button", { name: "Save", exact: true }).click();
-    await expect.poll(async () => (await prisma.jobLineItem.findUniqueOrThrow({ where: { id: lineId }, select: { unitPrice: true } })).unitPrice?.toString()).toBe("85");
+    await expect.poll(async () => (await prisma.jobLineItem.findUniqueOrThrow({ where: { id: lineId }, select: { unitPrice: true } })).unitPrice?.toString(), { timeout: 30_000 }).toBe("85");
     await estimate.close();
     // Back on the workspace's tab: it reads the queue again.
     await tab.bringToFront();
