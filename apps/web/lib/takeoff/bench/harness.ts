@@ -59,7 +59,7 @@ export async function runScale(bytes: Buffer): Promise<ScaleResult> {
     readPlanBytes: async () => ({ ok: true, bytes: Buffer.from(bytes) }),
     openPdf: openPlanPdf,
     saveSheetProposal: async () => {},
-    planTextReadOn: async () => false,
+    sheetNamesOn: async () => false,
     saveSheetText: async (r) => {
       text = r;
     },
