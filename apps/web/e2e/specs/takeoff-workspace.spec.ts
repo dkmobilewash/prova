@@ -880,6 +880,28 @@ test.describe("the full-screen takeoff workspace", () => {
     await expect(page.locator('[data-takeoff="rail-more"]')).toHaveText("⋯");
   });
 
+  test("13g. ENDPOINT DOTS STAY ONE SIZE ON SCREEN at any zoom", async () => {
+    // They were sized in page units, so at high zoom each end of a run was a
+    // disc tens of pixels across, covering the drawing it marked.
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+    await fitAndSettle();
+    const p = await canvasBox();
+    await tool("Rectangle").click();
+    await page.mouse.click(p.x + p.width * 0.4, p.y + p.height * 0.4);
+    const dot = overlay().locator("circle").first();
+    await expect(dot).toBeAttached();
+    const across = async () => (await dot.boundingBox())!.width;
+    const atFit = await across();
+    for (let i = 0; i < 4; i++) await page.getByRole("button", { name: "Zoom in" }).click();
+    await settledOverlayBox();
+    const zoomed = await across();
+    expect(atFit, "the dot is not drawn at a usable size").toBeGreaterThan(4);
+    expect(Math.abs(zoomed - atFit), `the dot grew with zoom: ${atFit.toFixed(1)}px at fit, ${zoomed.toFixed(1)}px zoomed in`).toBeLessThanOrEqual(1);
+    await page.keyboard.press("Escape");
+    await tool("Select").click();
+  });
+
   test("13f. A BOX DRAGGED TO THE EDGE KEEPS GOING: auto-pan, and the box follows the wheel", async () => {
     // Diego's report: a rectangle dragged toward the edge of the visible plan
     // stopped at what was showing.
