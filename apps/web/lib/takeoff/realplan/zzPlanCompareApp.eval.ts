@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { pageInventoryWork, type SheetProposalRow } from "../../plan-ingest/pageInventory";
@@ -69,6 +69,8 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     const rows: Row[] = [];
     for (const dir of readdirSync(LABELS).sort()) {
       if (!existsSync(join(LABELS, dir)) || (heldOutReason(dir) !== null) !== HELD) continue;
+      // One set per process when a big set's inventory would outlast one run.
+      if (process.env.PCA_ONLY !== undefined && !dir.includes(process.env.PCA_ONLY)) continue;
       let names: string[] = [];
       try { names = readdirSync(join(LABELS, dir)).filter((n) => n.endsWith(".json")); } catch { continue; }
       const pdf = findPdf(dir);
@@ -117,6 +119,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       }
     }
     expect(rows.length, "no labelled sheet was read").toBeGreaterThan(0);
+    if (process.env.PCA_ROWS !== undefined) for (const r of rows) appendFileSync(process.env.PCA_ROWS, JSON.stringify(r) + "\n");
     const f = (n: number) => n.toFixed(0);
     const pct = (p: number, k: number) => `${p >= k ? "+" : ""}${((100 * (p - k)) / k).toFixed(1)}%`;
     const lines: string[] = [];
