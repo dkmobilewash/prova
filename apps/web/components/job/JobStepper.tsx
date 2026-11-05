@@ -26,7 +26,11 @@ export function JobStepper({ steps, next }: { steps: JobStep[]; next: JobNext })
       data-job-stepper=""
       className="mb-3 flex items-center gap-3 max-sm:flex-wrap max-sm:gap-1.5 rounded-lg border border-line-card bg-surface px-2 py-1.5 print:hidden"
     >
-      <ol className="flex min-w-0 flex-1 max-sm:basis-full items-center gap-0.5 overflow-x-auto max-sm:[mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)]">
+      {/* `relative`: each step's screen-reader word is `sr-only`, which is
+          position: absolute — without a positioned row to belong to it escaped
+          this row's sideways scroll and widened the whole page by 260px on a
+          phone (job-stepper.spec.ts, step 6). */}
+      <ol className="relative flex min-w-0 flex-1 max-sm:basis-full items-center gap-0.5 overflow-x-auto max-sm:[mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)]">
         {steps.map((step, i) => (
           <li key={step.key} className="flex shrink-0 items-center">
             {i > 0 && (

@@ -130,8 +130,10 @@ test.describe("the job stepper", () => {
     const choice = tab.locator('[data-takeoff="group-choice"]').first();
     await choice.selectOption({ index: (await choice.locator("option").allInnerTexts()).findIndex((o) => /plain measurements/i.test(o)) });
     await tab.locator('[data-takeoff="add-group"]').first().click();
+    // Plain measurements on a company with no wall types file under
+    // Unassigned, not an item (the walkthrough's step 15) — saved either way.
     await openItems(tab);
-    await expect(tab.locator('[data-takeoff="item-row"]').first()).toBeVisible({ timeout: 30_000 });
+    await expect(tab.getByRole("button", { name: /^Unassigned\s*\d+ measurements?$/ })).toBeVisible({ timeout: 30_000 });
     await tab.close();
   });
 
@@ -152,7 +154,15 @@ test.describe("the job stepper", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await onJob();
     const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    expect(sideways, "the stepper made the page scroll sideways").toBeLessThanOrEqual(1);
+    // Name what runs past the right edge, outermost first, so a failure says where.
+    const past = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("body *"))
+        .filter((node) => node.getBoundingClientRect().right > document.documentElement.clientWidth + 1)
+        .filter((node) => !node.parentElement || node.parentElement.getBoundingClientRect().right <= document.documentElement.clientWidth + 1)
+        .slice(0, 6)
+        .map((node) => `${node.tagName.toLowerCase()}${node.getAttribute("data-job-stepper") !== null ? "[stepper]" : ""}.${String((node as HTMLElement).className).slice(0, 60)} → ${Math.round(node.getBoundingClientRect().right)}`),
+    );
+    expect(sideways, `the page scrolls sideways; past the edge: ${past.join(" | ")}`).toBeLessThanOrEqual(1);
     await expect(next()).toBeVisible();
     await page.screenshot({ path: path.join(SHOTS, "job-page-390.png") });
     await page.setViewportSize(SIZE);
