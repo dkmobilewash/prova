@@ -29,7 +29,7 @@ describe("the job's one review queue", () => {
 
   it("orders walls, then types, then scales, then prices; by sheet, longest first", () => {
     const items: ReviewItem[] = [
-      { kind: "price", key: "price:l1", lineItemId: "l1", description: "Walls — untyped", quantity: "40", unit: "LF" },
+      { kind: "price", key: "price:l1", lineItemId: "l1", description: "Walls — untyped", quantity: "40", unit: "LF", askCost: false, costCategory: null },
       { kind: "scale", key: "scale:2", pageNumber: 2, sheet: "A102" },
       wallItem({ ...sheet, pageNumber: 5 }, { id: "far", xs: [0, 0.9], ys: [0, 0] })!,
       wallItem(sheet, { id: "short", xs: [0, 0.1], ys: [0, 0] })!,

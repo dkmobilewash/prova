@@ -1,3 +1,4 @@
+import type { CostCategoryValue } from "@/lib/bid-recap";
 import { ceilingOption, type CeilingRoom, type HeightOption } from "./wallHeight";
 
 /**
@@ -14,7 +15,11 @@ import { ceilingOption, type CeilingRoom, type HeightOption } from "./wallHeight
  *   3. height — a wall group (its takeoff item) with no height, which "Set
  *               height" gives one (`setWallGroupHeight`, `wallHeight.ts`);
  *   4. scale  — a floor plan with no scale saved;
- *   5. price  — an estimate line with neither a price nor a cost.
+ *   5. price  — an estimate line with neither a price nor a cost. Once the
+ *               company's own markup is set (`pricingRatesFor`) it asks for
+ *               the line's COST and the price is worked from it
+ *               (`priceLineFromCost`); before that, the estimate opens on the
+ *               line for a price.
  *
  * Built from rows that already exist, on every render, and never stored: an
  * item leaves the queue because the row behind it changed. Review is done
@@ -26,7 +31,7 @@ export type ReviewItem =
   | { kind: "type"; key: string; pageNumber: number; sheet: string; inches: number; runs: QueueRun[]; feet: number | null; suggested: string | null; suggestedFrom: string | null }
   | { kind: "height"; key: string; itemId: string; name: string; pageNumber: number; sheet: string; runs: QueueRun[]; feet: number | null; options: HeightOption[] }
   | { kind: "scale"; key: string; pageNumber: number; sheet: string }
-  | { kind: "price"; key: string; lineItemId: string; description: string; quantity: string; unit: string | null };
+  | { kind: "price"; key: string; lineItemId: string; description: string; quantity: string; unit: string | null; askCost: boolean; costCategory: CostCategoryValue | null };
 
 const length = (run: QueueRun) => Math.hypot(run.x2 - run.x1, run.y2 - run.y1);
 const feetOf = (runs: readonly QueueRun[], feetPerUnit: number | null) =>

@@ -1,4 +1,6 @@
 import { prisma } from "@prova/db";
+import { asCostCategory } from "@/lib/cost-category";
+import { pricingRatesFor } from "@/lib/estimating/pricing-rates";
 import { HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 import { groupsFromProposals, storedRunsOrNull } from "@/lib/takeoff/wallProposal";
@@ -25,9 +27,20 @@ export async function loadReviewQueue(
   const unpriced = await prisma.jobLineItem.findMany({
     where: { jobId, job: { companyId }, isDeleted: false, unitPrice: null, budgetedUnitCost: null },
     orderBy: { createdAt: "asc" },
-    select: { id: true, description: true, quantity: true, unit: true },
+    select: { id: true, description: true, quantity: true, unit: true, costCategory: true },
   });
-  const prices: ReviewItem[] = unpriced.map((line) => ({ kind: "price", key: `price:${line.id}`, lineItemId: line.id, description: line.description, quantity: line.quantity.toString(), unit: line.unit }));
+  // With the company's own markup set, a price item asks for the line's cost.
+  const askCost = unpriced.length > 0 && (await pricingRatesFor(companyId, jobId)) !== null;
+  const prices: ReviewItem[] = unpriced.map((line) => ({
+    kind: "price",
+    key: `price:${line.id}`,
+    lineItemId: line.id,
+    description: line.description,
+    quantity: line.quantity.toString(),
+    unit: line.unit,
+    askCost,
+    costCategory: asCostCategory(line.costCategory),
+  }));
   if (plan === null) return { planId: null, items: prices, scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0 };
 
   const [pages, sheetRows] = await Promise.all([

@@ -2,7 +2,7 @@
 
 import { useState, useTransition, type FormEvent } from "react";
 import { saveCompanyBidDefaults } from "@/lib/actions";
-import { RECAP_RATE_FIELDS, RECAP_RATE_KEYS } from "@/lib/bid-recap";
+import { OWN_MARKUP_KEYS, RECAP_RATE_FIELDS, RECAP_RATE_KEYS } from "@/lib/bid-recap";
 import { Spinner } from "@/components/Spinner";
 
 /**
@@ -29,6 +29,18 @@ export type BidDefaultsView = Record<string, string | null>;
  * that had not been looked at.
  */
 const FIELDS = RECAP_RATE_KEYS.map((key) => ({ key: key as string, ...RECAP_RATE_FIELDS[key] }));
+
+/**
+ * THE FOUR FIRST, THE REST UNDER "MORE" (new-job walkthrough v2, F3). The
+ * estimate's "Set your markup" banner names material, labor, overhead and
+ * profit and lands here — on a grid of eleven boxes that said nothing about
+ * which four it meant. They lead now, marked while any is blank; the others
+ * and waste sit under More, open by themselves when one already holds a value
+ * so nothing a company set is hidden.
+ */
+const OWN = new Set<string>(OWN_MARKUP_KEYS);
+const NEEDED = FIELDS.filter((f) => OWN.has(f.key)).sort((a, b) => OWN_MARKUP_KEYS.indexOf(a.key as never) - OWN_MARKUP_KEYS.indexOf(b.key as never));
+const MORE = FIELDS.filter((f) => !OWN.has(f.key));
 
 export function BidDefaultsForm({
   defaults,
@@ -60,50 +72,67 @@ export function BidDefaultsForm({
     });
   }
 
+  const filled = (key: string) => (defaults?.[key] ?? "") !== "";
+  const waiting = NEEDED.some((f) => !filled(f.key));
+  const moreSet = MORE.some((f) => filled(f.key)) || (wastePercent ?? "") !== "";
+  const rateInput = (f: (typeof FIELDS)[number]) => (
+    <label key={f.key} className="flex flex-col gap-1 text-xs text-ink-label">
+      {f.label}
+      <span className="flex w-fit items-center gap-1">
+        <input
+          name={f.key}
+          defaultValue={defaults?.[f.key] ?? ""}
+          inputMode="decimal"
+          placeholder="—"
+          className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+        />
+        <span className="text-ink-muted">%</span>
+      </span>
+    </label>
+  );
+
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        {FIELDS.map((f) => (
-          <label key={f.key} className="flex flex-col gap-1 text-xs text-ink-label">
-            {f.label}
-            <span className="flex w-fit items-center gap-1">
-              <input
-                name={f.key}
-                defaultValue={defaults?.[f.key] ?? ""}
-                inputMode="decimal"
-                placeholder="—"
-                className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-              />
-              <span className="text-ink-muted">%</span>
-            </span>
-          </label>
-        ))}
+      <div
+        className={`flex flex-col gap-2 rounded-md p-3 ${waiting ? "border border-brand" : "border border-line-card"}`}
+        data-markup="needed"
+        data-waiting={waiting ? "true" : "false"}
+      >
+        {waiting && <p className="text-sm text-ink">Your estimates are waiting on these four.</p>}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{NEEDED.map(rateInput)}</div>
       </div>
 
-      {/* BELOW THE RATES AND VISIBLY NOT ONE OF THEM. Same row shape so it is
-          not a special case to fill in, its own heading so nobody reads it as
-          a markup. Blank means nobody has decided and the takeoff falls back
-          to 10 — which is what the takeoff form already prefilled, so leaving
-          it blank changes nothing. */}
-      <div className="border-t border-line-card pt-3">
-        <label className="flex flex-col gap-1 text-xs text-ink-label">
-          Material waste
-          <span className="flex w-fit items-center gap-1">
-            <input
-              name="defaultWastePercent"
-              defaultValue={wastePercent ?? ""}
-              inputMode="decimal"
-              placeholder="10"
-              className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
-            />
-            <span className="text-ink-muted">%</span>
-          </span>
-          <span className="text-ink-muted">
-            What a takeoff adds for cuts and offcuts. Blank uses 10%. This is not a markup — it buys more material, it
-            does not charge more for it.
-          </span>
-        </label>
-      </div>
+      <details className="rounded-md border border-line-card" open={moreSet} data-markup="more">
+        <summary className="cursor-pointer px-3 py-2 text-sm text-ink-label">More</summary>
+        <div className="flex flex-col gap-3 px-3 pb-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{MORE.map(rateInput)}</div>
+
+          {/* BELOW THE RATES AND VISIBLY NOT ONE OF THEM. Same row shape so it is
+              not a special case to fill in, its own heading so nobody reads it as
+              a markup. Blank means nobody has decided and the takeoff falls back
+              to 10 — which is what the takeoff form already prefilled, so leaving
+              it blank changes nothing. */}
+          <div className="border-t border-line-card pt-3">
+            <label className="flex flex-col gap-1 text-xs text-ink-label">
+              Material waste
+              <span className="flex w-fit items-center gap-1">
+                <input
+                  name="defaultWastePercent"
+                  defaultValue={wastePercent ?? ""}
+                  inputMode="decimal"
+                  placeholder="10"
+                  className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink placeholder:text-ink-muted focus:border-link focus:outline-none"
+                />
+                <span className="text-ink-muted">%</span>
+              </span>
+              <span className="text-ink-muted">
+                What a takeoff adds for cuts and offcuts. Blank uses 10%. This is not a markup — it buys more material, it
+                does not charge more for it.
+              </span>
+            </label>
+          </div>
+        </div>
+      </details>
 
       <div className="flex flex-wrap items-center gap-3">
         <button

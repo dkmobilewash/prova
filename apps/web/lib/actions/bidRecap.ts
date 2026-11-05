@@ -13,7 +13,9 @@ import {
   type CostCategoryValue,
   type RecapLine,
   type RecapRates,
+  unitPriceFromCost,
 } from "@/lib/bid-recap";
+import { pricingRatesFor } from "@/lib/estimating/pricing-rates";
 import { asCostCategory, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { laborCostApplyDecision } from "@/lib/estimating/labor-cost-apply";
 import { laborRateDateFor } from "@/lib/estimate-labor-cost";
@@ -235,6 +237,67 @@ export async function setLineBudgetedCost(jobId: string, lineItemId: string, cos
     revalidateJob(jobId);
     return actionOk;
   });
+}
+
+/**
+ * ONE line's cost, and its price worked from it — the review queue's price item
+ * once the company's own markup is set (Diego, new-job walkthrough v2, F2).
+ *
+ * Before this the queue asked for a sale price, the bid was the sum of those
+ * prices, and the markup asked for at signup changed nothing in it. Now the
+ * estimator types what the line COSTS and the price is the recap's arithmetic
+ * on that cost (`unitPriceFromCost`): category markup, overhead, profit and the
+ * rest, from the job's recap or the company's defaults (`pricingRatesFor`).
+ *
+ * The category is asked for when the line has none, because the recap marks up
+ * nothing on an uncategorised line and a price quietly missing its markup is
+ * the defect this exists to end. Refused outright until all four rates are set:
+ * then there is no markup to work a price from, and the queue still asks for a
+ * price instead.
+ *
+ * `currentEstimatedUnitCost` is left alone for the reason `setLineBudgetedCost`
+ * gives. Nothing about the price comes from the request: the server re-reads
+ * the rates and the quantity.
+ */
+export async function priceLineFromCost(
+  jobId: string,
+  lineItemId: string,
+  formData: FormData,
+): Promise<ActionResultWith<{ unitPrice: string }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return { ok: false, error: JOB_COSTS_ONLY };
+  const companyId = context.company.id;
+  const gate = await estimateJob(jobId, companyId);
+  if (!gate.ok) return { ok: false, error: gate.error };
+
+  try {
+    const cost = nullableDecimalFromForm(formData, "unitCost", { label: "Cost", min: 0 });
+    if (cost === null) throw new InputError("Type what one unit of this line costs you.");
+    const line = await prisma.jobLineItem.findFirst({
+      where: { id: lineItemId, jobId, isDeleted: false },
+      select: { quantity: true, costCategory: true },
+    });
+    if (!line) throw new InputError("That line is no longer on the estimate.");
+    const picked = asCostCategory(String(formData.get("costCategory") ?? ""));
+    const category = asCostCategory(line.costCategory) ?? picked;
+    if (category === null) throw new InputError("Say whether this line is material, labor or something else, so it gets the right markup.");
+    const rates = await pricingRatesFor(companyId, jobId);
+    if (rates === null) throw new InputError("Set your markup first: material, labor, overhead and profit.");
+    const unitPrice = unitPriceFromCost({ quantity: Number(line.quantity), unitCost: Number(cost), costCategory: category }, rates);
+    if (unitPrice === null) throw new InputError("This line has no quantity, so there is nothing to price.");
+
+    const updated = await prisma.jobLineItem.updateMany({
+      where: { id: lineItemId, jobId, isDeleted: false },
+      data: { budgetedUnitCost: cost, costCategory: category, unitPrice },
+    });
+    if (updated.count === 0) throw new InputError("That line is no longer on the estimate.");
+
+    revalidateJob(jobId);
+    return { ok: true, value: { unitPrice } };
+  } catch (err) {
+    if (err instanceof InputError) return { ok: false, error: err.message };
+    throw err;
+  }
 }
 
 /**
