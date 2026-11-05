@@ -1,4 +1,4 @@
-import { pairingsForPlan } from "./priorPlanLoad";
+import { ensureSheetNames, pairingsForPlan } from "./priorPlanLoad";
 import { storedLegendCodes } from "./planTextRead";
 import { setReviewItems, setReviewOrder, type SetReviewItem } from "@/lib/takeoff/wallReview";
 import { storedRunsOrNull } from "@/lib/takeoff/wallProposal";
@@ -635,6 +635,9 @@ export async function loadTakeoffWorkspace(
   // plan's demolition plan, derived from sheet numbers and titles with a
   // person's change on top, and the sheet list the picker offers. Plain
   // objects, because this payload crosses to the client.
+  // A set inventoried before its sheets were named gets its names once, here,
+  // or there is nothing to pair by (`ensureSheetNames`). Never fails the page.
+  if (roomFinder?.planCompareOn) await ensureSheetNames(plan.id, company.id).catch((err) => console.error("[plan-compare] sheet names", err));
   const planCompare = roomFinder?.planCompareOn
     ? await pairingsForPlan(plan.id).then((p) => ({ pairs: Object.fromEntries(p.byPage), sheets: p.sheets }))
     : null;

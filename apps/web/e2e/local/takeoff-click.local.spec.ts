@@ -189,7 +189,7 @@ test.beforeAll(async ({ browser }) => {
     const bytes = readFileSync(join(PLANS, set.file));
     const inventory = pageInventoryWork(
       { planId: plan.id, companyId, ingestJobId: ingest.id, jobId: set.id, startedByUserId: user.id },
-      { ...realDeps, readPlanBytes: async () => ({ ok: true as const, bytes: Buffer.from(bytes) }), planTextReadOn: async () => true },
+      { ...realDeps, readPlanBytes: async () => ({ ok: true as const, bytes: Buffer.from(bytes) }), sheetNamesOn: async () => true },
     );
     for (const [n, [, , fpu]] of Object.entries(PAGES[key])) {
       const pageNumber = Number(n);
@@ -212,7 +212,7 @@ test.beforeAll(async ({ browser }) => {
       const bytes = readFileSync(join(PLANS, file));
       const inventory = pageInventoryWork(
         { planId: plan.id, companyId, ingestJobId: ingest.id, jobId: REV_JOB, startedByUserId: user.id },
-        { ...realDeps, readPlanBytes: async () => ({ ok: true as const, bytes: Buffer.from(bytes) }), planTextReadOn: async () => true },
+        { ...realDeps, readPlanBytes: async () => ({ ok: true as const, bytes: Buffer.from(bytes) }), sheetNamesOn: async () => true },
       );
       const read = await inventory({ id: `seed-${REV_JOB}-${key}`, pageNumber, stage: "PAGE_INVENTORY", attempts: 1 });
       if (!read.ok) throw new Error(`inventory of ${file} p${pageNumber}: ${JSON.stringify(read)}`);

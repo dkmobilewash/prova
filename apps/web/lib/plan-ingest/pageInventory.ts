@@ -86,12 +86,13 @@ export type PageInventoryDeps = {
   /** Record the keyless reader's sheet number and title. Idempotent per ingest job and page. */
   saveSheetProposal: (row: SheetProposalRow) => Promise<void>;
   /**
-   * Whether this company has opted into reading its drawings' text
-   * (PLAN_TEXT_READ). The keyless names are customer-visible — the rail, the
-   * picker, the scale form's label — so they stay behind the same switch the
-   * rest of plan-text reading sits behind, OFF until the owner turns it on.
+   * Whether to record the keyless sheet names: with the company's plan-text
+   * reading on (PLAN_TEXT_READ), or with plan comparison on, which pairs a
+   * sheet with its demolition plan by these names and pairs nothing without
+   * them. The names are customer-visible — the rail, the picker, the scale
+   * form's label — so they stay behind an owner's switch either way.
    */
-  planTextReadOn: (companyId: string) => Promise<boolean>;
+  sheetNamesOn: (companyId: string) => Promise<boolean>;
 };
 
 export type ScaleReadingRow = {
@@ -250,24 +251,9 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
     await deps.saveScaleReading(scaleRow);
 
     // ── THE SHEET'S OWN NAME, WITH NO MODEL ──
-    if (readable && (await deps.planTextReadOn(ctx.companyId))) {
-      const read = sheetNumberFrom(page);
-      if (read.sheetNumber !== null && read.source !== "none") {
-        const named = nameSheet(page.items, { widthPt: page.widthPt, heightPt: page.heightPt });
-        await deps.saveSheetProposal({
-          planId: ctx.planId,
-          ingestJobId: ctx.ingestJobId,
-          pageNumber: task.pageNumber,
-          sheetNumber: read.sheetNumber,
-          title: named.distinct ? named.title.trim() || null : null,
-          printedScale: scaleRow.source === "PRINTED" || scaleRow.source === "DIMENSIONS" ? scaleRow.scaleName : null,
-          confidence: read.source === "corner" ? "HIGH" : "MEDIUM",
-          reason:
-            read.source === "corner"
-              ? "the designation printed in the title block's corner, read without a model"
-              : "the designation found in the title-block region, read without a model — check it",
-        });
-      }
+    if (readable && (await deps.sheetNamesOn(ctx.companyId))) {
+      const named = keylessSheetName(page, scaleRow.source === "PRINTED" || scaleRow.source === "DIMENSIONS" ? scaleRow.scaleName : null);
+      if (named !== null) await deps.saveSheetProposal({ planId: ctx.planId, ingestJobId: ctx.ingestJobId, pageNumber: task.pageNumber, ...named });
     }
 
     // SUCCESS EVEN WITH NO TEXT LAYER. A scanned sheet is a fact this stage has
@@ -487,7 +473,9 @@ export const realDeps: PageInventoryDeps = {
     });
   },
 
-  planTextReadOn: async (companyId) => (await aiGate(companyId, "PLAN_TEXT_READ")).ok,
+  sheetNamesOn: async (companyId) =>
+    (await aiGate(companyId, "PLAN_TEXT_READ")).ok ||
+    (await prisma.company.findUnique({ where: { id: companyId }, select: { planCompareOn: true } }))?.planCompareOn === true,
 
   saveSheetProposal: async (row) => {
     const proposal = {
@@ -506,6 +494,26 @@ export const realDeps: PageInventoryDeps = {
     });
   },
 };
+
+/** A page's sheet number and title, read without a model; null when no designation can be read. */
+export function keylessSheetName(
+  page: Parameters<typeof sheetNumberFrom>[0] & { items: Parameters<typeof nameSheet>[0]; widthPt: number; heightPt: number },
+  printedScale: string | null,
+): Omit<SheetProposalRow, "planId" | "ingestJobId" | "pageNumber"> | null {
+  const read = sheetNumberFrom(page);
+  if (read.sheetNumber === null || read.source === "none") return null;
+  const named = nameSheet(page.items, { widthPt: page.widthPt, heightPt: page.heightPt });
+  return {
+    sheetNumber: read.sheetNumber,
+    title: named.distinct ? named.title.trim() || null : null,
+    printedScale,
+    confidence: read.source === "corner" ? "HIGH" : "MEDIUM",
+    reason:
+      read.source === "corner"
+        ? "the designation printed in the title block's corner, read without a model"
+        : "the designation found in the title-block region, read without a model — check it",
+  };
+}
 
 /** What the keyless proposals are filed under — not a model, and said so. */
 export const KEYLESS_MODEL = "keyless title-block reader";

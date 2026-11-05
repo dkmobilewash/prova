@@ -48,7 +48,7 @@ async function sheetsOf(pdf: string): Promise<{ pageNumber: number; sheetNumber:
       saveSheetText: async () => {},
       saveScaleReading: async () => {},
       saveSheetProposal: async (r) => void proposals.set(r.pageNumber, r),
-      planTextReadOn: async () => true,
+      sheetNamesOn: async () => true,
     },
   );
   for (let page = 1; page <= doc.pageCount; page += 1) {
