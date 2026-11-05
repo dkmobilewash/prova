@@ -83,7 +83,6 @@ const text = async (target: Locator) => ((await target.first().innerText({ timeo
 function flush(): void {
   writeFileSync(path.join(OUT, "walk.json"), JSON.stringify({ email: EMAIL, jobId, total: (Date.now() - started) / 1000, rows }, null, 2));
 }
-const stepper = (on: Page) => on.locator("[data-job-stepper]");
 const next = (on: Page) => on.locator("[data-job-next]");
 async function states(on: Page): Promise<string> {
   return on.locator("[data-job-step]").evaluateAll((links) => links.map((a) => `${a.getAttribute("data-job-step")}:${a.getAttribute("data-state")}`).join(" ")).catch(() => "(no stepper)");
@@ -135,7 +134,8 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       act();
       // Clerk's test numbers (555-0100…0199) stay taken in the development
       // instance; a collision is the harness's, so try another quietly.
-      for (let retry = 0; retry < 10 && (await seen(page.getByText(/phone number is taken/), 3000)); retry += 1) {
+      for (let retry = 0; retry < 30 && (await seen(page.getByText(/phone number is taken/), 3000)); retry += 1) {
+        await expect(phone).toBeEnabled({ timeout: 30_000 });
         await phone.fill(`20155501${String(1 + Math.floor(Math.random() * 99)).padStart(2, "0")}`);
         await page.getByRole("button", { name: /^Continue/ }).first().click();
       }
@@ -355,6 +355,75 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
 
     // ── 6. RUN TAKEOFF ──
     let tab!: Page;
+    /** A101 in the workspace, every found group added from the sheet's group list. */
+    async function typeGroupsOnA101(): Promise<number> {
+      // What is left to a person: open the floor plan of the work in the
+      // workspace and add each group. A100 is the overall plan of the same
+      // floor, so the walk works A101.
+      tab = await page.context().newPage();
+      new HealthMonitor(tab);
+      await tab.setViewportSize(SIZE);
+      await tab.goto(`/takeoff/${jobId}`);
+      act();
+      const picker = tab.locator('[data-takeoff="sheet-picker"]');
+      await expect(picker).toBeVisible({ timeout: 120_000 });
+      const a101 = await picker.locator("option").evaluateAll((os) => os.map((o) => ({ v: (o as HTMLOptionElement).value, t: o.textContent ?? "" })));
+      const target = a101.find((o) => /^A101\b/.test(o.t.trim()))?.v ?? "13";
+      await picker.selectOption(target);
+      act();
+      const port = tab.locator('[data-testid="takeoff-plan-port"]');
+      await expect(port).toHaveAttribute("data-sheet-ready", "true", { timeout: 300_000 });
+      await tab.waitForTimeout(3000);
+      if (!(await seen(tab.locator('[data-takeoff="found-group"]'), 10_000))) {
+        note("A101's found walls are not shown on opening it; pressed Run takeoff again on this sheet.");
+        const run = tab.locator('[data-takeoff="find-walls"]');
+        await expect(run).toBeEnabled({ timeout: 120_000 });
+        await run.click();
+        act();
+        await expect(tab.locator('[data-takeoff="found-group"]').first()).toBeVisible({ timeout: 600_000 });
+      }
+      await shot("a101-groups", tab);
+      let added = 0;
+      let plain = 0;
+      for (let round = 0; round < 40; round += 1) {
+        const row = tab.locator('[data-takeoff="found-group"]').first();
+        if ((await row.count()) === 0) break;
+        const headline = (await text(row)).slice(0, 40);
+        const chooser = row.locator('[data-takeoff="group-choice"]');
+        if ((await chooser.count()) === 1) {
+          const values = await chooser.locator("option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
+          const firstType = values.find((v) => v !== "" && v !== "create" && v !== "plain");
+          await chooser.selectOption(firstType ?? "plain");
+          act();
+          if (!firstType) plain += 1;
+        }
+        const height = row.locator('[data-takeoff="group-height"]');
+        if ((await height.count()) === 1) {
+          await height.fill("15");
+          act();
+        }
+        const add = row.locator('[data-takeoff="add-group"]');
+        if (!(await add.isEnabled())) {
+          stuck(`Add these stayed disabled on: ${headline}`);
+          break;
+        }
+        await add.click();
+        act();
+        const gone = await expect
+          .poll(async () => !(await text(tab.locator('[data-takeoff="found-group"]').first())).startsWith(headline), { timeout: 20_000 })
+          .toBe(true)
+          .then(() => true, () => false);
+        if (!gone) {
+          stuck(`a group would not add: ${headline} — ${await text(tab.locator('[data-takeoff="find-error"]'))}`);
+          break;
+        }
+        added += 1;
+      }
+      await shot("a101-added", tab);
+      note(`On A101: added ${added} groups by hand (${plain} as plain measurements, the rest to a starter type), ${await tab.locator('[data-takeoff="found-group"]').count()} left.`);
+      await tab.close();
+      return prisma.takeoffMeasurement.count({ where: { page: { plan: { jobId } } } });
+    }
     await step("Run takeoff", async () => {
       const nextText = await text(next(page));
       if (!/Run the takeoff/.test(nextText)) stuck(`Next says "${nextText}", not Run the takeoff`);
@@ -364,6 +433,15 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       await tab.setViewportSize(SIZE);
       await expect(tab.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 120_000 });
       const run = tab.locator('[data-takeoff="find-walls"]');
+      if (!(await expect(run).toBeEnabled({ timeout: 30_000 }).then(() => true, () => false))) {
+        // Opened on a sheet with no scale: a person picks the floor plan.
+        stuck(`the workspace opened on "${(await text(tab.locator("header").first())).slice(0, 80)}", where Run takeoff is off ("${await run.getAttribute("title")}"); picked A101`);
+        await shot("workspace-opened-unscaled", tab);
+        const picker = tab.locator('[data-takeoff="sheet-picker"]');
+        const options = await picker.locator("option").evaluateAll((os) => os.map((o) => ({ v: (o as HTMLOptionElement).value, t: o.textContent ?? "" })));
+        await picker.selectOption(options.find((o) => /^A101\b/.test(o.t.trim()))?.v ?? "13");
+        act(2);
+      }
       await expect(run).toBeEnabled({ timeout: 300_000 });
       await shot("workspace", tab);
       note(`Run button: "${await text(run)}"`);
@@ -415,72 +493,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       }
       if (measured === 0) {
         stuck("neither button put a wall on the job: the whole-set run skipped every sheet as \"already found\" (the workspace's Run takeoff had stored them as proposals)");
-        // What is left to a person: open the floor plan of the work in the
-        // workspace and add each group. A100 is the overall plan of the same
-        // floor, so the walk works A101.
-        tab = await page.context().newPage();
-        new HealthMonitor(tab);
-        await tab.setViewportSize(SIZE);
-        await tab.goto(`/takeoff/${jobId}`);
-        act();
-        const picker = tab.locator('[data-takeoff="sheet-picker"]');
-        await expect(picker).toBeVisible({ timeout: 120_000 });
-        const a101 = await picker.locator("option").evaluateAll((os) => os.map((o) => ({ v: (o as HTMLOptionElement).value, t: o.textContent ?? "" })));
-        const target = a101.find((o) => /^A101\b/.test(o.t.trim()))?.v ?? "13";
-        await picker.selectOption(target);
-        act();
-        const port = tab.locator('[data-testid="takeoff-plan-port"]');
-        await expect(port).toHaveAttribute("data-sheet-ready", "true", { timeout: 300_000 });
-        await tab.waitForTimeout(3000);
-        if (!(await seen(tab.locator('[data-takeoff="found-group"]'), 10_000))) {
-          note("A101's found walls are not shown on opening it; pressed Run takeoff again on this sheet.");
-          const run = tab.locator('[data-takeoff="find-walls"]');
-          await expect(run).toBeEnabled({ timeout: 120_000 });
-          await run.click();
-          act();
-          await expect(tab.locator('[data-takeoff="found-group"]').first()).toBeVisible({ timeout: 600_000 });
-        }
-        await shot("a101-groups", tab);
-        let added = 0;
-        let plain = 0;
-        for (let round = 0; round < 40; round += 1) {
-          const row = tab.locator('[data-takeoff="found-group"]').first();
-          if ((await row.count()) === 0) break;
-          const headline = (await text(row)).slice(0, 40);
-          const chooser = row.locator('[data-takeoff="group-choice"]');
-          if ((await chooser.count()) === 1) {
-            const values = await chooser.locator("option").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
-            const firstType = values.find((v) => v !== "" && v !== "create" && v !== "plain");
-            await chooser.selectOption(firstType ?? "plain");
-            act();
-            if (!firstType) plain += 1;
-          }
-          const height = row.locator('[data-takeoff="group-height"]');
-          if ((await height.count()) === 1) {
-            await height.fill("15");
-            act();
-          }
-          const add = row.locator('[data-takeoff="add-group"]');
-          if (!(await add.isEnabled())) {
-            stuck(`Add these stayed disabled on: ${headline}`);
-            break;
-          }
-          await add.click();
-          act();
-          const gone = await expect
-            .poll(async () => !(await text(tab.locator('[data-takeoff="found-group"]').first())).startsWith(headline), { timeout: 20_000 })
-            .toBe(true)
-            .then(() => true, () => false);
-          if (!gone) {
-            stuck(`a group would not add: ${headline} — ${await text(tab.locator('[data-takeoff="find-error"]'))}`);
-            break;
-          }
-          added += 1;
-        }
-        await shot("a101-added", tab);
-        measured = await prisma.takeoffMeasurement.count({ where: { page: { plan: { jobId } } } });
-        note(`On A101: added ${added} groups by hand (${plain} as plain measurements, the rest to a starter type), ${await tab.locator('[data-takeoff="found-group"]').count()} left.`);
-        await tab.close();
+        measured = await typeGroupsOnA101();
       }
       const lines = await prisma.jobLineItem.count({ where: { jobId, isDeleted: false } });
       note(`After the takeoff: ${measured} measurements, ${lines} estimate lines.`);
@@ -508,8 +521,25 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const left = queue.locator('[data-takeoff="review-queue-left"]');
       note(`Queue opens: "${await text(left)}"`);
       await shot("review-queue", tab);
-      const item = queue.locator('[data-takeoff="review-queue-item"]');
       const seenKinds: Record<string, number> = {};
+      let noTypes = false;
+      for (let pass = 0; pass < 2; pass += 1) {
+      if (pass === 1) {
+        if (!noTypes) break;
+        // What the item says to do: type the groups in the sheet's group list.
+        await tab.close();
+        note(`On A101's group list: ${await typeGroupsOnA101()} measurements on the job; back to the queue.`);
+        noTypes = false;
+        tab = await page.context().newPage();
+        new HealthMonitor(tab);
+        await tab.setViewportSize(SIZE);
+        await tab.goto(`/takeoff/${jobId}?open=review`);
+        act();
+        await expect(tab.locator('[data-takeoff="review-queue"]')).toBeVisible({ timeout: 120_000 });
+      }
+      const queue = tab.locator('[data-takeoff="review-queue"]');
+      const left = queue.locator('[data-takeoff="review-queue-left"]');
+      const item = queue.locator('[data-takeoff="review-queue-item"]');
       for (let round = 0; round < 400; round += 1) {
         if (/Nothing left/.test(await text(left))) break;
         if (!(await seen(item, 10_000))) break;
@@ -529,9 +559,8 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           const row = item.locator('[data-takeoff="queue-group"]');
           if ((await row.count()) === 0) {
             stuck(`an untyped group offers no type to set: "${(await text(item)).slice(0, 200)}"`);
-            await item.locator('[data-takeoff="review-queue-next"]').click();
-            act();
-            continue;
+            noTypes = true;
+            break;
           }
           await tab.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
           if (kind === "type" && (await text(row.locator('[data-takeoff="queue-type"]'))) === "—") {
@@ -591,7 +620,8 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
         act();
         await expect.poll(async () => text(left), { timeout: 30_000 }).not.toBe(before).catch(() => note(`the count did not move after answering a ${kind}`));
       }
-      note(`Answered: ${Object.entries(seenKinds).map(([k, n]) => `${n} ${k}`).join(", ")}. Queue ends: "${await text(left)}"`);
+      }
+      note(`Answered: ${Object.entries(seenKinds).map(([k, n]) => `${n} ${k}`).join(", ")}. Queue ends: "${await text(tab.locator('[data-takeoff="review-queue-left"]'))}"`);
       await shot("review-done", tab);
     });
 
