@@ -1128,6 +1128,7 @@ export function TakeoffPlanViewer({
   const [cssWidth, setCssWidth] = useState(0);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
   // ── DRAGGING PAST WHAT IS SHOWING ──
   // The overlay, so a scroll can replay the last pointer position into it; the
   // last position itself; whether the button is down on the drawing; and
@@ -1519,39 +1520,67 @@ export function TakeoffPlanViewer({
   const zoomFactorRef = useRef(zoomFactor);
   zoomFactorRef.current = zoomFactor;
 
-  // ── THE WHEEL SCROLLS; CTRL/⌘+WHEEL AND A PINCH ZOOM ──
+  // ── THE WHEEL ZOOMS ABOUT THE POINTER, SMOOTHLY; A TRACKPAD PANS AND PINCHES ──
   //
-  // A plain wheel moves the sheet up and down and Shift+wheel sideways — the
-  // frame's own scrolling, which every browser already does. Ctrl or ⌘ with the
-  // wheel, and a trackpad pinch (which arrives as a wheel event with ctrlKey
-  // set), zoom about the pointer. A wheel notch (deltaY about 100) is a step of
-  // about 11%; a pinch's small deltas make small steps. Throttled, because
-  // every step re-renders the sheet.
-  const wheelAnchor = useRef<{ fx: number; fy: number; px: number; py: number } | null>(null);
+  // Chrome's re-test and Diego, Togal/Bluebeam style: a mouse wheel zooms about
+  // the cursor; a trackpad's two-finger scroll pans (the frame's own scrolling)
+  // and a pinch — a wheel event with ctrlKey set — zooms. Ctrl/⌘ with a wheel
+  // zooms too. A mouse is told from a trackpad by its notches: a line-mode
+  // delta, or wheelDeltaY a whole multiple of 120 with no sideways part.
+  //
+  // SMOOTH because nothing re-renders mid-gesture: the sheet is scaled with a
+  // CSS transform about the point under the pointer, which keeps that point
+  // still. 160ms after the wheel stops, the zoom is committed; the sheet is
+  // rendered off-screen and swapped in, and the transform is taken off in the
+  // same frame as the scroll is set — so there is no blank canvas and no jump.
+  const previewRef = useRef<{ scale: number; fx: number; fy: number; px: number; py: number; zoomAtStart: number; widthAtStart: number; timer: number } | null>(null);
   useEffect(() => {
     const frame = frameRef.current;
     if (!fill || frame === null) return;
-    let last = 0;
     const onWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return;
+      const sheet = sheetRef.current;
+      if (sheet === null) return;
+      const legacy = (event as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY ?? 0;
+      // ponytail: a heuristic. A trackpad stroke that happens to land on an
+      // exact multiple of 120 with no sideways part reads as one mouse notch;
+      // add a per-device setting if anyone meets it.
+      const mouse = event.deltaMode !== 0 || (event.deltaX === 0 && legacy !== 0 && legacy % 120 === 0);
+      const pinch = event.ctrlKey || event.metaKey;
+      if (!mouse && !pinch) return;
       event.preventDefault();
-      const now = performance.now();
-      if (now - last < 40) return;
-      last = now;
-      const box = frame.getBoundingClientRect();
-      const px = event.clientX - box.left;
-      const py = event.clientY - box.top;
-      wheelAnchor.current = {
-        fx: (frame.scrollLeft + px) / Math.max(1, frame.scrollWidth),
-        fy: (frame.scrollTop + py) / Math.max(1, frame.scrollHeight),
-        px,
-        py,
-      };
+      let live = previewRef.current;
+      if (live === null) {
+        const sb = sheet.getBoundingClientRect();
+        const fb = frame.getBoundingClientRect();
+        const width = Math.max(1, sb.width);
+        live = {
+          scale: 1,
+          fx: (event.clientX - sb.left) / width,
+          fy: (event.clientY - sb.top) / width,
+          px: event.clientX - fb.left,
+          py: event.clientY - fb.top,
+          zoomAtStart: zoomFactorRef.current,
+          widthAtStart: width,
+          timer: 0,
+        };
+        previewRef.current = live;
+        sheet.style.transformOrigin = `${live.fx * width}px ${live.fy * width}px`;
+      }
       const lines = event.deltaMode === 1 ? event.deltaY * 33 : event.deltaY;
-      const factor = Math.min(1.15, Math.max(1 / 1.15, Math.exp(-lines * 0.0012)));
       const lowest = ZOOM_STEPS[0]!;
       const highest = ZOOM_STEPS[ZOOM_STEPS.length - 1]!;
-      setZoom(Math.min(highest, Math.max(lowest, zoomFactorRef.current * factor)));
+      live.scale = Math.min(highest / live.zoomAtStart, Math.max(lowest / live.zoomAtStart, live.scale * Math.min(1.25, Math.max(0.8, Math.exp(-lines * (Math.abs(lines) < 50 ? 0.01 : 0.0015))))));
+      sheet.style.transform = `scale(${live.scale})`;
+      window.clearTimeout(live.timer);
+      const settling = live;
+      live.timer = window.setTimeout(() => {
+        if (Math.abs(settling.scale - 1) < 0.001) {
+          previewRef.current = null;
+          sheet.style.transform = "";
+          return;
+        }
+        setZoom(settling.zoomAtStart * settling.scale);
+      }, 160);
     };
     frame.addEventListener("wheel", onWheel, { passive: false });
     return () => frame.removeEventListener("wheel", onWheel);
@@ -1638,13 +1667,27 @@ export function TakeoffPlanViewer({
   }, []);
   // Once the sheet has its new size, put the point that was under the pointer
   // back under it — so a wheel zooms INTO what you are looking at.
+  // What the new render did not cover of the gesture stays as a transform.
   useLayoutEffect(() => {
-    const anchor = wheelAnchor.current;
+    const live = previewRef.current;
     const frame = frameRef.current;
-    if (anchor === null || frame === null) return;
-    wheelAnchor.current = null;
-    frame.scrollLeft = anchor.fx * frame.scrollWidth - anchor.px;
-    frame.scrollTop = anchor.fy * frame.scrollHeight - anchor.py;
+    const sheet = sheetRef.current;
+    if (live === null || frame === null || sheet === null || cssWidth === 0) return;
+    const applied = cssWidth / live.widthAtStart;
+    live.scale /= applied;
+    live.zoomAtStart *= applied;
+    live.widthAtStart = cssWidth;
+    sheet.style.transform = "";
+    const sb = sheet.getBoundingClientRect();
+    const fb = frame.getBoundingClientRect();
+    frame.scrollLeft += sb.left + live.fx * cssWidth - (fb.left + live.px);
+    frame.scrollTop += sb.top + live.fy * cssWidth - (fb.top + live.py);
+    if (Math.abs(live.scale - 1) < 0.01) {
+      previewRef.current = null;
+      return;
+    }
+    sheet.style.transformOrigin = `${live.fx * cssWidth}px ${live.fy * cssWidth}px`;
+    sheet.style.transform = `scale(${live.scale})`;
   }, [cssWidth]);
 
   // ── Render the current page at the current zoom ───────────────────────
@@ -1688,19 +1731,28 @@ export function TakeoffPlanViewer({
           devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
         });
         const viewport = page.getViewport({ scale: plan.renderScale });
+        // ── DRAWN OFF-SCREEN, THEN SWAPPED IN ──
+        // Resizing the visible canvas clears it, so every zoom step showed a
+        // blank sheet until pdf.js finished — the flicker in Chrome's re-test.
+        // The old picture stays up until the new one is whole.
+        const off = document.createElement("canvas");
+        off.width = plan.canvasWidth;
+        off.height = plan.canvasHeight;
+        const offContext = off.getContext("2d");
+        if (!offContext) return;
+        const task = page.render({ canvasContext: offContext, viewport });
+        renderTaskRef.current = task;
+        await task.promise;
+        if (cancelled) return;
         canvas.width = plan.canvasWidth;
         canvas.height = plan.canvasHeight;
         // The CSS size is what was asked for and is never reduced, so the
         // overlay's coordinates and the scroll position do not move.
         canvas.style.width = `${plan.cssWidth}px`;
         canvas.style.height = `${plan.cssHeight}px`;
+        canvas.getContext("2d")?.drawImage(off, 0, 0);
+        off.width = 0;
         setCssWidth(plan.cssWidth);
-
-        const canvasContext = canvas.getContext("2d");
-        if (!canvasContext) return;
-        const task = page.render({ canvasContext, viewport });
-        renderTaskRef.current = task;
-        await task.promise;
         // THE SHEET IS ON SCREEN NOW, so "Drawing…" goes. The words below are
         // read for the demolition check only; holding the indicator through
         // them made a word-heavy sheet read as still drawing (round 10b).
@@ -5571,7 +5623,7 @@ export function TakeoffPlanViewer({
           // is room to spare, and when there is not it leaves the overflow at
           // the end where the scrollbar can reach it.
           <div className={fill ? "flex min-h-full min-w-full" : ""}>
-          <div className={`relative w-fit${fill ? " m-auto" : ""}`}>
+          <div ref={sheetRef} className={`relative w-fit${fill ? " m-auto" : ""}`}>
             <canvas ref={canvasRef} className="block" />
             {/* The lit layer's length, on the drawing beside the run it names. */}
             {litReadout !== null && cssWidth > 0 && (

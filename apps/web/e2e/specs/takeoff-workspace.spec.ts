@@ -794,24 +794,57 @@ test.describe("the full-screen takeoff workspace", () => {
     await expect(readout, "hiding the lit layer left its length on the plan").toHaveCount(0);
     await page.locator('[data-takeoff="layer-eye"][aria-pressed="false"]').first().click();
 
-    // 3. THE WHEEL: plain scrolls, Ctrl+wheel zooms by about a tenth.
+    // 3. THE WHEEL (Chrome's re-test, Togal/Bluebeam style): a mouse wheel
+    // zooms ABOUT THE CURSOR with no blank frame; a trackpad's two-finger
+    // scroll pans; a pinch (ctrl + small deltas) zooms. Real wheel events.
     const zoomPct = async () => Number((await page.locator('[data-takeoff="zoom"]').innerText()).replace("%", ""));
     await page.getByRole("button", { name: "Zoom in" }).click();
     await settledOverlayBox();
-    const before = await zoomPct();
     const b = await canvasBox();
-    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
-    await page.mouse.wheel(0, 300);
-    await page.waitForTimeout(300);
-    expect(await zoomPct(), "a plain wheel zoomed").toBe(before);
-    expect(await port().evaluate((n) => n.scrollTop), "a plain wheel did not scroll").toBeGreaterThan(0);
+    const at = { x: b.x + b.width * 0.3, y: b.y + b.height * 0.35 };
+    await page.mouse.move(at.x, at.y);
+    const o0 = (await overlay().boundingBox())!;
+    const under = { fx: (at.x - o0.x) / o0.width, fy: (at.y - o0.y) / o0.width };
+    // A blank frame is a sheet with no pixels: sample the canvas every frame.
+    await port().evaluate((frame) => {
+      const w = window as unknown as { __blank: number; __sampling: boolean };
+      w.__blank = 0;
+      w.__sampling = true;
+      const tick = () => {
+        const c = frame.querySelector("canvas") as HTMLCanvasElement;
+        const px = c.width > 0 ? c.getContext("2d")!.getImageData(Math.floor(c.width / 2), Math.floor(c.height / 2), 1, 1).data[3] : 0;
+        if (px === 0) w.__blank += 1;
+        if (w.__sampling) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    const before = await zoomPct();
+    for (let i = 0; i < 3; i++) {
+      await page.mouse.wheel(0, -100);
+      await page.waitForTimeout(40);
+    }
+    await expect.poll(zoomPct).toBeGreaterThan(before * 1.3);
+    await page.waitForTimeout(800);
+    expect(await page.evaluate(() => { const w = window as unknown as { __blank: number; __sampling: boolean }; w.__sampling = false; return w.__blank; }), "the sheet went blank while zooming").toBe(0);
+    const o1 = (await overlay().boundingBox())!;
+    const drift = Math.hypot(o1.x + under.fx * o1.width - at.x, o1.y + under.fy * o1.width - at.y);
+    expect(drift, `the point under the cursor moved ${drift.toFixed(1)}px`).toBeLessThanOrEqual(3);
+    // A trackpad's two-finger scroll pans and does not zoom.
+    const zoomed = await zoomPct();
+    const top0 = await port().evaluate((n) => n.scrollTop);
+    // Chromium gives every synthetic wheel a notch's wheelDeltaY; a real
+    // two-finger stroke carries a sideways part, which is what marks this one.
+    await page.mouse.wheel(1, 37.5);
+    await page.waitForTimeout(400);
+    expect(await zoomPct(), "a two-finger scroll zoomed").toBe(zoomed);
+    expect(await port().evaluate((n) => n.scrollTop), "a two-finger scroll did not pan").toBeGreaterThan(top0);
+    // A pinch is a wheel with ctrl held and small deltas: a small step.
     await page.keyboard.down("Control");
-    await page.mouse.wheel(0, -100);
+    await page.mouse.wheel(0, -8);
     await page.keyboard.up("Control");
-    await expect.poll(zoomPct).not.toBe(before);
-    const step = (await zoomPct()) / before;
-    expect(step, `one Ctrl+wheel notch zoomed by ${step}`).toBeGreaterThan(1.05);
-    expect(step).toBeLessThan(1.2);
+    await expect.poll(zoomPct).toBeGreaterThan(zoomed);
+    const step = (await zoomPct()) / zoomed;
+    expect(step, `one pinch tick zoomed by ${step}`).toBeLessThan(1.2);
 
     // 4. SPACE+DRAG PANS, and there is a Hand (H).
     const left0 = await port().evaluate((n) => n.scrollLeft);
@@ -917,14 +950,14 @@ test.describe("the full-screen takeoff workspace", () => {
     expect((await draftCorners()).right, "the box stopped at what was showing").toBeGreaterThan(before.right + 0.01);
     await page.getByRole("button", { name: "Clear", exact: true }).click();
 
-    // 2. A wheel mid-drag scrolls, and the box's far corner follows the sheet.
+    // 2. A two-finger scroll mid-drag pans, and the box's far corner follows the sheet.
     await port().evaluate((n) => n.scrollTo(0, 0));
     await page.waitForTimeout(200);
     const atTop = await visibleEdge();
     await page.mouse.move(p.x + p.width * 0.3, p.y + p.height * 0.3);
     await page.mouse.down();
     await page.mouse.move(p.x + p.width * 0.4, p.y + p.height * 0.7, { steps: 4 });
-    await page.mouse.wheel(0, 400);
+    for (let i = 0; i < 8; i++) await page.mouse.wheel(1, 50.5);
     await page.waitForTimeout(300);
     await page.mouse.up();
     expect((await draftCorners()).bottom, "the box did not follow the wheel").toBeGreaterThan(atTop.bottom * 0.7 + 0.02);
