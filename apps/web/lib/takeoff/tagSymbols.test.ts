@@ -591,6 +591,27 @@ describe("a wide box tag is measured by its own outline (McAllen A3.2)", () => {
     expect(got.map((s) => s.parts).sort()).toEqual([["IW-4"], ["IW-5"]]);
   });
 
+  it("still reads a room box's name above it, so Baker's 'SUPERVISOR 112' is no door tag", () => {
+    const got = tagSymbols({ segments: box(200, 300, 36, 11), text: [label("SUPERVISOR", 200, 290), label("112", 200, 300)], unitsPerPaperInch: PER_INCH }).filter((s) => s.parts.length > 0);
+    expect(got[0]!.text).toBe("SUPERVISOR 112");
+  });
+
+  it("does not read lettering level with the box beside it — Green Bay's IW-4 and a rotated dimension", () => {
+    // The dimension's computed centre lands in the ring, within the box's
+    // width, a hair above its top edge: level with it, not over it.
+    const dim = { str: "7' - 9 1/2\"", x: 186, y: 298.95, width: 40, height: 9.5 };
+    const got = tagSymbols({ segments: box(200, 300, 36, 11), text: [label("IW-4", 200, 300), dim], unitsPerPaperInch: PER_INCH }).filter((s) => s.parts.length > 0);
+    expect(got[0]!.text).toBe("IW-4");
+    expect(got[0]!.rejected).toBeNull();
+  });
+
+  it("keeps the ring for an upright tag, whose lettering may sit outside its outline as computed", () => {
+    // Tall, narrow: the outline rule is for WIDE boxes. Baker's upright door
+    // hexagons carry rotated text whose computed centre lands beside them.
+    const got = tagSymbols({ segments: box(200, 400, 11, 36), text: [label("100A", 209, 400)], unitsPerPaperInch: PER_INCH });
+    expect(got[0]!.text).toBe("100A");
+  });
+
   it("takes a leader from its own edge, not a stroke ending past its side", () => {
     // A stroke ending 4 pt off the box's left edge: inside the old circle's
     // ring, so it was this box's leader. It belongs to whatever it touches.
