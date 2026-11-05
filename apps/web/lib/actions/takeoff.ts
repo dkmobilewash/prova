@@ -434,6 +434,8 @@ export async function applyPrintedScales(
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
+  // Every tab of the job: its stepper's Scale step counts these sheets (Chrome's re-test).
+  revalidatePath(`/jobs/${jobId}`, "layout");
   return { ok: true, value: { applied, skipped } };
 }
 
@@ -645,6 +647,8 @@ export async function saveTakeoffCalibration(jobId: string, formData: FormData):
     await writeCalibration({ planId, pageNumber, pageLabel, pageWidthPt, line, declared: declared.value, note, userId, company });
 
     revalidatePath(`/jobs/${jobId}/takeoff`);
+  // Every tab of the job: its stepper's Scale step counts these sheets (Chrome's re-test).
+  revalidatePath(`/jobs/${jobId}`, "layout");
     return actionOk;
   });
 }
@@ -698,7 +702,8 @@ export async function confirmSheetScales(
     confirmed += 1;
   }
   revalidatePath(`/jobs/${jobId}/takeoff`);
-  revalidatePath(`/jobs/${jobId}`);
+  // Every tab of the job: its stepper's Scale step counts these sheets (Chrome's re-test).
+  revalidatePath(`/jobs/${jobId}`, "layout");
   return { ok: true, value: { confirmed, skipped } };
 }
 
