@@ -29,6 +29,8 @@ describe("a job's estimating steps", () => {
     const facts = { ...base, hasPlan: true, scaledSheets: 2, floorPlans: 3, floorPlansScaled: 2 };
     expect(states(facts)).toBe("job:done plans:done scale:current takeoff:todo review:todo estimate:todo send:todo");
     expect(jobSteps(facts).next?.label).toBe("Scale 1 more floor plan");
+    // None scaled yet, though the sure sheets may be: still the floor plans by name.
+    expect(jobSteps({ ...facts, floorPlans: 4, floorPlansScaled: 0 }).next?.label).toBe("Scale 4 floor plans");
     expect(states({ ...facts, floorPlansScaled: 3 })).toBe("job:done plans:done scale:done takeoff:current review:todo estimate:todo send:todo");
     // A set nothing has sorted yet falls back to any sheet with a scale.
     expect(states({ ...base, hasPlan: true, scaledSheets: 1 })).toContain("scale:done");
