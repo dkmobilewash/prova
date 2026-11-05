@@ -217,6 +217,8 @@ export type LabelFile = {
    *  exists for these — nothing proposed them — so they are kept apart rather
    *  than invented into rows. */
   traced: { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; wallType?: string }[];
+  /** Round 13: windows and doors a person marked, one point each, with the tag the drawing shows. */
+  openings?: { x: number; y: number; kind: "window" | "door"; tag?: string }[];
 };
 
 const lengthOf = (l: { x1: number; y1: number; x2: number; y2: number }) =>
@@ -422,7 +424,14 @@ export function labelFile(input: {
   candidates: readonly LabelCandidate[];
   verdicts: readonly LabelVerdict[];
   unreviewed: number;
+  openings?: readonly { x: number; y: number; kind: string; tag?: string }[];
 }): LabelFile {
+  const openings = (input.openings ?? [])
+    .filter((o) => Number.isFinite(o.x) && Number.isFinite(o.y) && (o.kind === "window" || o.kind === "door"))
+    .map((o) => {
+      const tag = typeof o.tag === "string" ? o.tag.trim().toUpperCase() : "";
+      return { x: o.x, y: o.y, kind: o.kind as "window" | "door", ...(tag === "" ? {} : { tag }) };
+    });
   const rows = labelRows(input.candidates, input.verdicts, input.feetPerUnit, input.reviewComplete);
   const traced = input.verdicts.filter((v) => v.verdict === "traced");
   // Carried verdicts go in beside the new work. They are NOT given to
@@ -503,6 +512,7 @@ export function labelFile(input: {
       lengthFeet: t.lengthFeet,
       ...(typeOf(t) === undefined ? {} : { wallType: typeOf(t) }),
     })),
+    ...(openings.length === 0 ? {} : { openings }),
   };
 }
 
