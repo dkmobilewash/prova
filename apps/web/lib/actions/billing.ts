@@ -1,5 +1,6 @@
 "use server";
 
+import { loadGcProposal } from "@/lib/estimating/gc-proposal";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { deleteDocument } from "@/lib/blob";
@@ -304,6 +305,10 @@ export async function signRequest(token: string, formData: FormData) {
       unit: item.unit,
       unitPrice: item.unitPrice?.toString() ?? null,
     })),
+    // The scope by wall type, the clauses and the terms the GC read above the
+    // signature (`gc-proposal.ts`), frozen with the lines so the signed copy
+    // keeps showing what was agreed.
+    proposal: await loadGcProposal(request.job.companyId, request.jobId),
   };
 
   // `updateMany` with `status: "PENDING"` in the WHERE, not a separate

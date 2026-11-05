@@ -312,6 +312,19 @@ export const PERSONAS = {
     // likely a persona on another branch. This table cannot see those.
     phone: "+15555550173",
   },
+  /**
+   * ── A COMPANY SENDING ITS FIRST PROPOSAL ──
+   *
+   * `gc-proposal.spec.ts` adds clauses and terms and signs a proposal as the
+   * GC. Its own so no other spec's job or clause count moves, unseeded like
+   * NEW_JOB.
+   */
+  gcProposal: {
+    email: "e2e-gcproposal+clerk_test@example.com",
+    label: "GC_PROPOSAL",
+    username: "e2e_gcproposal",
+    phone: "+15555550187",
+  },
 } as const;
 
 export type PersonaKey = keyof typeof PERSONAS;
