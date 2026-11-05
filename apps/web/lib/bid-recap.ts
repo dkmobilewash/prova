@@ -187,6 +187,14 @@ export const RECAP_RATE_FIELDS: Record<keyof RecapRates, { label: string; hint?:
 
 export const RECAP_RATE_KEYS = Object.keys(RECAP_RATE_FIELDS) as (keyof RecapRates)[];
 
+/**
+ * The four a company is asked for at signup (guided flow Phase 5,
+ * `lib/trade-presets.ts`) and must have set before the estimate stops saying
+ * "Set your markup". Written HERE, beside the canonical list, because
+ * `cost-category.test.ts` allows rate names in this file and nowhere else.
+ */
+export const OWN_MARKUP_KEYS = ["materialMarkupPercent", "laborMarkupPercent", "overheadPercent", "profitPercent"] as const satisfies readonly (keyof RecapRates)[];
+
 export type DirectCost = {
   byCategory: Record<CostCategoryValue, number>;
   /** Lines carrying no cost type, and their total. Marked up at nothing. */

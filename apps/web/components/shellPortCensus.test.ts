@@ -196,6 +196,13 @@ const KNOWN: Record<string, { count: number; because: string }> = {
       "(the card it replaced painted over whatever page the person was on). " +
       "No shell renders behind it, so there is no port to size against.",
   },
+  "apps/web/components/TradeSetupSteps.tsx": {
+    count: 1,
+    because:
+      "`<main class=\"flex min-h-screen …\">`, the trade and markup steps that " +
+      "come before CompanySetupGate's questions on `app/welcome/page.tsx` — " +
+      "outside the `(app)` shell for the same reason, so there is no port.",
+  },
   // `components/SearchLauncher.tsx` (count 2, a fixed panel) was here until
   // Concept G deleted the file on 2026-10-10 for the ⌘K palette.
   "apps/web/app/sign-in/[[...sign-in]]/page.tsx": {

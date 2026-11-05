@@ -192,7 +192,10 @@ export async function landOnDashboard(page: Page, monitor: HealthMonitor): Promi
   // and what settles the question is whichever first screen arrives — the
   // welcome questions or the home page's greeting. (#748's first run read
   // the skeleton here, twelve characters, on every brand-new persona.)
-  const welcome = page.getByRole("heading", { name: "A few questions about how you work" });
+  // The trade question (guided flow Phase 5) comes first now; its Skip for
+  // now is today's skip — onboarding done, no preset applied — so every
+  // persona that passes through here lands in the same world as before.
+  const welcome = page.getByRole("heading", { name: /^(A few questions about how you work|What's your trade\?)$/ });
   await expect(welcome.or(homeHeading(page))).toBeVisible();
 
   if (/\/welcome/.test(page.url())) {

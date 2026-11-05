@@ -12,6 +12,8 @@
  *                              runs it.
  *   pnpm test:e2e -- --ask-click           LOCAL ONLY: Ask commands typed, confirmed
  *                              and read back (e2e/playwright.ask.config.ts).
+ *   pnpm test:e2e -- --welcome-click       LOCAL ONLY: a brand-new company picks its
+ *                              trade and markup on /welcome (e2e/playwright.welcome.config.ts).
  *   pnpm test:e2e -- --takeoff-click       LOCAL ONLY: the takeoff click list
  *                              over training sheets named by TAKEOFF_CLICK_PLANS
  *                              (e2e/playwright.takeoff.config.ts). No CI job
@@ -120,6 +122,7 @@ const publicOnly = argv.includes("--public") || process.env.E2E_PUBLIC_ONLY === 
  * Local only: they live outside `specs/`, so the `e2e` CI job never reaches them. */
 const billingClick = argv.includes("--billing-click");
 const askClick = argv.includes("--ask-click");
+const welcomeClick = argv.includes("--welcome-click");
 const takeoffClick = argv.includes("--takeoff-click");
 const realPlans = argv.includes("--real-plans");
 const playwrightArgs = argv.filter(
@@ -129,7 +132,8 @@ const playwrightArgs = argv.filter(
     arg !== "--billing-click" &&
     arg !== "--takeoff-click" &&
     arg !== "--real-plans" &&
-    arg !== "--ask-click",
+    arg !== "--ask-click" &&
+    arg !== "--welcome-click",
 );
 
 // ------------------------------------------------------------- Clerk keys
@@ -341,7 +345,9 @@ try {
         ? "e2e/playwright.takeoff.config.ts"
         : askClick
           ? "e2e/playwright.ask.config.ts"
-          : realPlans
+          : welcomeClick
+            ? "e2e/playwright.welcome.config.ts"
+            : realPlans
             ? "e2e/playwright.real.config.ts"
             : "e2e/playwright.config.ts";
   log(`playwright: driving the browser (${config})…`);
