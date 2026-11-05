@@ -2,6 +2,9 @@
 
 import { syncReviewedItems, syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
 import { namedItem, untypedItem } from "@/lib/plan-ingest/wallItems";
+import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
+import { requireJobGivenContext } from "@/lib/jobs/job-access";
+import { planSetFromLoaded } from "@/lib/takeoff/planSet";
 import { DROPPED_ITEM, DROPPED_LABEL, HELD_LABEL, KEPT_LABEL } from "@/lib/takeoff/estimateHold";
 import { countItemFor } from "@/lib/takeoff/countItem";
 import { revalidatePath } from "next/cache";
@@ -639,94 +642,168 @@ export async function saveTakeoffCalibration(jobId: string, formData: FormData):
     const refusal = calibrationRefusal(calibrationNotices(line, pageWidthPt, null, null));
     if (refusal) return actionFail(refusal);
 
-    const page = await prisma.takeoffPlanPage.upsert({
-      where: { planId_pageNumber: { planId, pageNumber } },
-      create: {
-        planId,
-        pageNumber,
-        label: pageLabel || null,
-        pageWidthPt,
-      },
-      update: {
-        ...(pageLabel ? { label: pageLabel } : {}),
-        ...(pageWidthPt === null ? {} : { pageWidthPt }),
-      },
-    });
-
-    const calibration = await prisma.takeoffScaleCalibration.create({
-      data: {
-        pageId: page.id,
-        x1: line.x1,
-        y1: line.y1,
-        x2: line.x2,
-        y2: line.y2,
-        declaredDistanceFeet: declared.value,
-        note: note || null,
-        createdByUserId: userId,
-      },
-      select: { id: true, x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true },
-    });
-
-    // ── AND NOW FIND THE WALLS, WITHOUT ANYBODY ASKING ──
-    //
-    // The sheet has a scale, so its geometry is finally measurable; and
-    // somebody has just said which sheet they care about. Those two facts
-    // arrive together exactly once, which is why this is the only trigger.
-    //
-    // AFTER THE RESPONSE, AND IT CANNOT FAIL THIS SAVE. Everything below the
-    // call is caught inside it — see `detectWallsForCalibration`. A calibration
-    // that stored correctly and then reported failure because a courtesy job
-    // threw would have the estimator retyping a scale that is already on file.
-    //
-    // `feetPerPageWidth` is the app's one reader for the scale, so detection
-    // measures with exactly what the screen measures with. Null is possible —
-    // a span too short to divide by — and is the one case where there is
-    // nothing to detect WITH rather than nothing to detect.
-    const feetPerUnit = feetPerPageWidth({
-      x1: calibration.x1,
-      y1: calibration.y1,
-      x2: calibration.x2,
-      y2: calibration.y2,
-      declaredDistanceFeet: Number(calibration.declaredDistanceFeet),
-    });
-    if (feetPerUnit !== null) {
-      // THE COMPANY'S TYPES, SHAPED THE WAY THE VIEWER SHAPES THEM — the same
-      // three uses: the partition schedule handed to the detector, the tag
-      // matcher, and the general note. `thicknessIn` is nullable because a
-      // company can name an assembly before measuring it, and the matcher
-      // reads null as "cannot be matched by thickness".
-      const wallTypes = await prisma.wallType.findMany({
-        where: { companyId: company.id },
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          thicknessIn: true,
-          _count: { select: { components: true } },
-        },
-        orderBy: { sortOrder: "asc" },
-      });
-
-      detectWallsAfterResponse({
-        pageId: page.id,
-        calibrationId: calibration.id,
-        planId,
-        companyId: company.id,
-        pageNumber,
-        feetPerUnit,
-        wallTypes: wallTypes.map((type) => ({
-          id: type.id,
-          code: type.code,
-          name: type.name,
-          hasParts: type._count.components > 0,
-          thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
-        })),
-      });
-    }
+    await writeCalibration({ planId, pageNumber, pageLabel, pageWidthPt, line, declared: declared.value, note, userId, company });
 
     revalidatePath(`/jobs/${jobId}/takeoff`);
     return actionOk;
   });
+}
+
+/**
+ * ── CONFIRM SCALES: every sheet whose scale the reader is sure of, in one press ──
+ *
+ * The guided flow's Scale step (Phase 2). Nothing is taken from the browser but
+ * page numbers: the rows are rebuilt here from what the scale reader STORED,
+ * exactly as the takeoff tab built them, and a page is saved only if it is
+ * still "high" (or, with `usePrinted`, one page whose title block is all there
+ * is). Each is saved as a hand-set scale would be, with the provenance in the
+ * note, and the dialog's refusals re-run. No model is asked anything.
+ */
+export async function confirmSheetScales(
+  jobId: string,
+  planId: string,
+  pages: number[],
+  usePrinted = false,
+): Promise<ActionResultWith<{ confirmed: number; skipped: number }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  if (usePrinted && pages.length !== 1) return actionFail("Use the printed scale one sheet at a time.");
+  const { company, job } = await requireJobGivenContext(jobId, context);
+  const data = await loadTakeoffWorkspace(company, job);
+  if (data === null || data.plan.id !== planId) return actionFail("That plan set has changed. Reload the page.");
+  const rows = new Map(planSetFromLoaded(data).map((row) => [row.pageNumber, row]));
+  const widths = new Map(
+    (await prisma.planSheetText.findMany({ where: { planId }, select: { pageNumber: true, widthPt: true } })).map((row) => [row.pageNumber, row.widthPt]),
+  );
+  let confirmed = 0;
+  let skipped = 0;
+  for (const pageNumber of new Set(pages)) {
+    const row = rows.get(pageNumber);
+    const offer = data.scalePrefillByPage[pageNumber];
+    const allowed = row !== undefined && offer !== undefined && (usePrinted ? row.printedFix : row.confidence === "high");
+    if (!allowed) {
+      skipped += 1;
+      continue;
+    }
+    const line = { x1: offer.xs[0], y1: offer.ys[0], x2: offer.xs[1], y2: offer.ys[1], declaredDistanceFeet: offer.declaredFeet };
+    const pageWidthPt = widths.get(pageNumber) ?? null;
+    if (calibrationRefusal(calibrationNotices(line, pageWidthPt, null, null))) {
+      skipped += 1;
+      continue;
+    }
+    const note = offer.unconfirmed
+      ? `From the ${offer.scaleName} printed on this sheet. Nothing measurable on the sheet confirmed it.`
+      : `Matched ${offer.agreed.length} printed dimension${offer.agreed.length === 1 ? "" : "s"} on this sheet (${offer.agreed.slice(0, 3).join(", ")}), within ${(offer.inheritedError * 100).toFixed(2)}%. Confirmed with Confirm scales.`;
+    await writeCalibration({ planId, pageNumber, pageLabel: "", pageWidthPt, line, declared: offer.declaredFeet, note, userId: context.id, company });
+    confirmed += 1;
+  }
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/jobs/${jobId}`);
+  return { ok: true, value: { confirmed, skipped } };
+}
+
+/**
+ * Writes one sheet's calibration and starts the wall finder on it, for a hand
+ * set scale and for Confirm scales alike, so the two cannot drift apart.
+ * Not exported: a "use server" file's exports are actions.
+ */
+async function writeCalibration(input: {
+  planId: string;
+  pageNumber: number;
+  pageLabel: string;
+  pageWidthPt: number | null;
+  line: { x1: number; y1: number; x2: number; y2: number };
+  declared: number | string;
+  note: string;
+  userId: string;
+  company: { id: string };
+}): Promise<void> {
+  const { planId, pageNumber, pageLabel, pageWidthPt, line, note, userId, company } = input;
+  const page = await prisma.takeoffPlanPage.upsert({
+    where: { planId_pageNumber: { planId, pageNumber } },
+    create: {
+      planId,
+      pageNumber,
+      label: pageLabel || null,
+      pageWidthPt,
+    },
+    update: {
+      ...(pageLabel ? { label: pageLabel } : {}),
+      ...(pageWidthPt === null ? {} : { pageWidthPt }),
+    },
+  });
+
+  const calibration = await prisma.takeoffScaleCalibration.create({
+    data: {
+      pageId: page.id,
+      x1: line.x1,
+      y1: line.y1,
+      x2: line.x2,
+      y2: line.y2,
+      declaredDistanceFeet: input.declared,
+      note: note || null,
+      createdByUserId: userId,
+    },
+    select: { id: true, x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true },
+  });
+
+  // ── AND NOW FIND THE WALLS, WITHOUT ANYBODY ASKING ──
+  //
+  // The sheet has a scale, so its geometry is finally measurable; and
+  // somebody has just said which sheet they care about. Those two facts
+  // arrive together exactly once, which is why this is the only trigger.
+  //
+  // AFTER THE RESPONSE, AND IT CANNOT FAIL THIS SAVE. Everything below the
+  // call is caught inside it — see `detectWallsForCalibration`. A calibration
+  // that stored correctly and then reported failure because a courtesy job
+  // threw would have the estimator retyping a scale that is already on file.
+  //
+  // `feetPerPageWidth` is the app's one reader for the scale, so detection
+  // measures with exactly what the screen measures with. Null is possible —
+  // a span too short to divide by — and is the one case where there is
+  // nothing to detect WITH rather than nothing to detect.
+  const feetPerUnit = feetPerPageWidth({
+    x1: calibration.x1,
+    y1: calibration.y1,
+    x2: calibration.x2,
+    y2: calibration.y2,
+    declaredDistanceFeet: Number(calibration.declaredDistanceFeet),
+  });
+  if (feetPerUnit !== null) {
+    // THE COMPANY'S TYPES, SHAPED THE WAY THE VIEWER SHAPES THEM — the same
+    // three uses: the partition schedule handed to the detector, the tag
+    // matcher, and the general note. `thicknessIn` is nullable because a
+    // company can name an assembly before measuring it, and the matcher
+    // reads null as "cannot be matched by thickness".
+    const wallTypes = await prisma.wallType.findMany({
+      where: { companyId: company.id },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        thicknessIn: true,
+        _count: { select: { components: true } },
+      },
+      orderBy: { sortOrder: "asc" },
+    });
+
+    detectWallsAfterResponse({
+      pageId: page.id,
+      calibrationId: calibration.id,
+      planId,
+      companyId: company.id,
+      pageNumber,
+      feetPerUnit,
+      wallTypes: wallTypes.map((type) => ({
+        id: type.id,
+        code: type.code,
+        name: type.name,
+        hasParts: type._count.components > 0,
+        thicknessIn: type.thicknessIn === null ? null : Number(type.thicknessIn),
+      })),
+    });
+  }
+
 }
 
 /** Saves one traced shape against the sheet's current scale. */

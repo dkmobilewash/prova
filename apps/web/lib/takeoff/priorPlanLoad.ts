@@ -1,6 +1,56 @@
 import { prisma } from "@prova/db";
 import { pairDemoWithNewPlan, type SheetForPairing } from "./pairDemoPlans";
 import type { PairChoice, Pairing } from "./priorPlan";
+import { KEYLESS_MODEL, KEYLESS_PROMPT_VERSION, keylessSheetName } from "@/lib/plan-ingest/pageInventory";
+import { hasTextLayer, openPlanPdf } from "@/lib/plan-ingest/planPdf";
+import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
+
+/**
+ * ── A SET INVENTORIED BEFORE ITS SHEETS WERE NAMED ──
+ *
+ * Plan comparison pairs sheets by the keyless sheet numbers and titles the
+ * inventory records, and the inventory used to record them only with
+ * plan-text reading on. A set inventoried without it — E Street 421 — had no
+ * names at all: "No demolition plan is paired", and a "Compare with" list with
+ * nothing in it. So, once, for a plan whose inventory finished and named no
+ * sheet, the names are read now, with the same reader and no model, and filed
+ * under that inventory run. Returns how many pages were named.
+ */
+export async function ensureSheetNames(planId: string, companyId: string): Promise<number> {
+  if ((await prisma.planSheetProposal.count({ where: { planId } })) > 0) return 0;
+  const inventory = await prisma.planIngestJob.findFirst({
+    where: { planId, stage: "PAGE_INVENTORY", finishedAt: { not: null } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  if (inventory === null) return 0;
+  const bytes = await readPlanBytes(planId, companyId);
+  if (!bytes.ok) return 0;
+  const scales = new Map(
+    (await prisma.planSheetScaleReading.findMany({ where: { planId }, select: { pageNumber: true, source: true, scaleName: true } }))
+      .map((r) => [r.pageNumber, r.source === "PRINTED" || r.source === "DIMENSIONS" ? r.scaleName : null]),
+  );
+  const doc = await openPlanPdf(bytes.bytes);
+  let named = 0;
+  try {
+    for (let pageNumber = 1; pageNumber <= doc.pageCount; pageNumber += 1) {
+      const page = await doc.pageText(pageNumber);
+      if (!hasTextLayer(page)) continue;
+      const name = keylessSheetName(page, scales.get(pageNumber) ?? null);
+      if (name === null) continue;
+      const proposal = { proposedSheetNumber: name.sheetNumber, proposedTitle: name.title, proposedScale: name.printedScale, proposedReason: name.reason, proposedConfidence: name.confidence, model: KEYLESS_MODEL, promptVersion: KEYLESS_PROMPT_VERSION };
+      await prisma.planSheetProposal.upsert({
+        where: { ingestJobId_pageNumber: { ingestJobId: inventory.id, pageNumber } },
+        create: { ingestJobId: inventory.id, planId, pageNumber, ...proposal },
+        update: proposal,
+      });
+      named += 1;
+    }
+  } finally {
+    await doc.close();
+  }
+  return named;
+}
 
 /**
  * Every page's demolition-plan pairing for one plan: derived from the newest

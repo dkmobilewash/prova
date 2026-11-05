@@ -102,4 +102,32 @@ describe("a detail callout is not a wall tag", () => {
     const section = planTextTagByRun({ segments: [], text: marker, widthPt: W, walls, feetPerUnit: 100, legendCodes: ["B4"], textTags: wallTypeTags(marker, W), wallTypes: [{ ...types[0]!, code: "B4" }] });
     expect(section.byRun.size).toBe(0);
   });
+
+  it("drops a bare legend code with a sheet number under it, where no symbol closed around them", () => {
+    // Grand Junction's section bubble: "A3" over "A112" in a circle whose
+    // pointer keeps it from closing, so only the bare-text pass sees the "A3".
+    const W = 1000;
+    const walls = [{ x1: 0.1, y1: 0.1, x2: 0.2, y2: 0.1, thicknessFeet: 0.4, lengthFeet: 10 }];
+    const types = [{ id: "a3", code: "A3", name: "A3", hasParts: true, thicknessIn: null }];
+    const bubble = [{ str: "A3", x: 144, y: 118, width: 12, height: 6 }, { str: "A112", x: 142, y: 128, width: 16, height: 6 }];
+    const got = planTextTagByRun({ segments: [], text: bubble, widthPt: W, walls, feetPerUnit: 100, legendCodes: ["A3"], textTags: [], wallTypes: types });
+    expect(got.byRun.size).toBe(0);
+    // Without the sheet number it is a bare tag beside the wall.
+    const tag = planTextTagByRun({ segments: [], text: [bubble[0]!], widthPt: W, walls, feetPerUnit: 100, legendCodes: ["A3"], textTags: [], wallTypes: types });
+    expect(tag.byRun.get(walls[0]!)).toBe("A3");
+  });
+});
+
+describe("a window mark is not a wall tag", () => {
+  it("never types a wall from W2 beside it when the legend's codes are wall types", () => {
+    // Bunkie: window marks W2 sit beside the exterior walls; the legend is P06-P09 and EXT.
+    const W = 1000;
+    const walls = [{ x1: 0.1, y1: 0.1, x2: 0.2, y2: 0.1, thicknessFeet: 0.6, lengthFeet: 10 }];
+    const text = [{ str: "W2", x: 144, y: 118, width: 12, height: 6 }];
+    const codes = ["P08", "EXT", "P09", "P07", "P06"];
+    const types = codes.map((c) => ({ id: c, code: c, name: c, hasParts: true, thicknessIn: null }));
+    expect(wallTypeTags(text, W)).toEqual([]);
+    const got = planTextTagByRun({ segments: square(150, 120, 9), text, widthPt: W, walls, feetPerUnit: 100, legendCodes: codes, textTags: wallTypeTags(text, W), wallTypes: types });
+    expect(got.byRun.size).toBe(0);
+  });
 });

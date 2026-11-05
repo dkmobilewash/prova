@@ -1,6 +1,6 @@
 import type { WallCandidate } from "./wallVectors";
 import { type WallGroup, typesAtThickness } from "./wallGroups";
-import { type MatchableWallType, sameDesignation } from "./wallTypeMatch";
+import { type MatchableWallType, sameDesignation, withVariantTypes } from "./wallTypeMatch";
 
 /**
  * STORING WHAT THE GEOMETRY FOUND, AND READING IT BACK AS THE SAME GROUPS.
@@ -249,6 +249,8 @@ export function groupsFromProposals(
   feetPerUnit: number,
 ): WallGroup[] | null {
   const groups: WallGroup[] = [];
+  // A stored TAG of C6 where the library has family C names C's variant, as the first read did.
+  const tagTypes = withVariantTypes(wallTypes, rows.filter((r) => r.source === "TAG" && r.namedCode).map((r) => r.namedCode as string));
   for (const row of rows) {
     const runs = storedRunsOrNull(row.runs);
     if (runs === null) return null;
@@ -292,7 +294,7 @@ export function groupsFromProposals(
         feet,
         itemId: row.itemId ?? null,
         source: { kind: "TAG", tag },
-        candidates: wallTypes.filter((type) => sameDesignation(type.code, code)),
+        candidates: tagTypes.filter((type) => sameDesignation(type.code, code)),
       });
       continue;
     }

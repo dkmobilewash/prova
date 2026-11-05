@@ -43,6 +43,26 @@ export const HATCH_MAX_DEGREES = 65;
 /** Cross strokes per foot of run that make a band hatched, and the floor on the count. */
 export const HATCH_PER_FOOT = 1;
 export const HATCH_MIN_STROKES = 4;
+/**
+ * ── HATCH IS ONE OR TWO FAMILIES OF LINES, ALL ALONG THE WALL ──
+ *
+ * Round 12's key called every hatched run on Joplin A-101 drywall, and the
+ * crops agree: the oblique strokes were dimension ticks (slashes where a
+ * dimension string meets the wall), the little crosses marking plumbing
+ * fixtures along a wet wall, and pipe fittings — 117 ft of partition typed B
+ * by "all interior masonry partitions". Those strokes run every which way and
+ * bunch where the dimensions land.
+ *
+ * A drafted hatch is one angle repeated, or two crossed (Bunkie's
+ * cross-hatched masonry), and it fills the band end to end. So the two
+ * commonest angle families (`HATCH_FAMILY_DEGREES` wide) must hold this share
+ * of the strokes, and the strokes must fall in `HATCH_COVER` of the run's
+ * one-foot lengths. Bunkie's: 92-100% and 75-100%. Joplin's ticks and
+ * fittings: 38-84% and 6-69%.
+ */
+export const HATCH_FAMILY_SHARE = 0.8;
+export const HATCH_COVER = 0.7;
+export const HATCH_FAMILY_DEGREES = 5;
 
 /** The runs whose band holds hatch strokes: short strokes across the run, both ends inside it. */
 export function hatchedRuns(walls: readonly WallCandidate[], strokes: readonly StrokeSegment[], feetPerUnit: number): Set<WallCandidate> {
@@ -61,16 +81,28 @@ export function hatchedRuns(walls: readonly WallCandidate[], strokes: readonly S
       const along = px * ux + py * uy, across = Math.abs(px * -uy + py * ux);
       return along >= -slack && along <= len + slack && across <= half;
     };
-    let count = 0;
+    const angles: number[] = [], along: number[] = [];
     for (const s of strokes) {
       if (s.curved) continue;
       const sx = s.x2 - s.x1, sy = s.y2 - s.y1, sl = Math.hypot(sx, sy);
       if (sl === 0 || sl > 4 * half) continue;
       const cos = Math.abs((sx * ux + sy * uy) / sl);
       if (cos > shallowest || cos < steepest) continue;
-      if (inside(s.x1, s.y1) && inside(s.x2, s.y2)) count += 1;
+      // Direction without sense, 0–180°.
+      if (!inside(s.x1, s.y1) || !inside(s.x2, s.y2)) continue;
+      // Direction without sense, 0–180°, and how far along the run.
+      angles.push((((Math.atan2(sy, sx) * 180) / Math.PI) % 180 + 180) % 180);
+      along.push(((s.x1 + s.x2) / 2 - w.x1) * ux + ((s.y1 + s.y2) / 2 - w.y1) * uy);
     }
-    if (count >= Math.max(HATCH_MIN_STROKES, HATCH_PER_FOOT * w.lengthFeet)) out.add(w);
+    if (angles.length < Math.max(HATCH_MIN_STROKES, HATCH_PER_FOOT * w.lengthFeet)) continue;
+    const near = (a: number, b: number) => Math.min(Math.abs(a - b), 180 - Math.abs(a - b)) <= HATCH_FAMILY_DEGREES;
+    const commonest = (pool: number[]) => pool.reduce((best, a) => { const n = pool.filter((b) => near(a, b)).length; return n > best.n ? { n, at: a } : best; }, { n: 0, at: 0 });
+    const first = commonest(angles);
+    const second = commonest(angles.filter((a) => !near(a, first.at)));
+    if (first.n + second.n < HATCH_FAMILY_SHARE * angles.length) continue;
+    const feet = Math.max(1, Math.round(w.lengthFeet));
+    const filled = new Set(along.map((p) => Math.min(feet - 1, Math.max(0, Math.floor((p / len) * feet))))).size;
+    if (filled >= HATCH_COVER * feet) out.add(w);
   }
   return out;
 }
@@ -90,10 +122,11 @@ export function groupsForStage(input: {
   const { found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes } = input;
   const tags = wallTypeTags(textItems, widthPt);
   const fromNote = defaultWallTypeFromNotes(textItems, wallTypes);
-  const byRun =
+  const read =
     legendCodes === null
-      ? tagByRun(found.walls, tags, feetPerUnit, wallTypes)
-      : planTextTagByRun({ segments: segmentsPt, text: textItems, widthPt, walls: found.walls, feetPerUnit, legendCodes, textTags: tags, wallTypes }).byRun;
+      ? { byRun: tagByRun(found.walls, tags, feetPerUnit, wallTypes), wallTypes: [...wallTypes] }
+      : planTextTagByRun({ segments: segmentsPt, text: textItems, widthPt, walls: found.walls, feetPerUnit, legendCodes, textTags: tags, wallTypes });
   const hatched = hatchedRuns(found.walls, found.inUnits, feetPerUnit);
-  return { groups: wallGroups(clusterByThickness(found.walls), byRun, wallTypes, fromNote, hatched), hatched };
+  // The types with the plan's tag variants (C6 of family C), so a variant tag names a type.
+  return { groups: wallGroups(clusterByThickness(found.walls), read.byRun, read.wallTypes, fromNote, hatched), hatched };
 }

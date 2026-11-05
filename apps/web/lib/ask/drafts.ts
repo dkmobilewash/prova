@@ -237,3 +237,21 @@ export async function loadBillingDraft(
   }
   return { kind: "gone" };
 }
+
+export type TakeoffPostDraft = { proposalId: string; pageId: string; measurementIds: string[] };
+
+/** The takeoff tab's prefill: which sheet's list, and which of its rows start
+ * ticked. The ids are the ones `resolve` counted; the list ticks only those
+ * still unposted, and the person can untick any before adding. */
+export async function loadTakeoffPostDraft(
+  viewer: Viewer,
+  proposalId: string | undefined,
+  jobId: string,
+): Promise<DraftLookup<TakeoffPostDraft>> {
+  const found = await loadDraftRow(viewer, proposalId, "post_takeoff_to_estimate");
+  if (found.kind !== "draft" || !proposalId) return found as DraftLookup<TakeoffPostDraft>;
+  const pageId = str(found.draft, "pageId");
+  const ids = found.draft.measurementIds;
+  if (str(found.draft, "jobId") !== jobId || !pageId || !Array.isArray(ids)) return { kind: "gone" };
+  return { kind: "draft", draft: { proposalId, pageId, measurementIds: ids.filter((id): id is string => typeof id === "string") } };
+}

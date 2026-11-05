@@ -35,7 +35,7 @@ describe.skipIf(PDF === "")("Baker A100 is not counted, on the real set", () => 
     const plan = await prisma.takeoffPlan.create({ data: { companyId: company.id, jobId: job.id, fileUrl: `local:${basename(PDF)}`, fileName: basename(PDF) } });
     const pages = pdfPageCount(readFileSync(PDF)) ?? 0;
     const ingest = await prisma.planIngestJob.create({ data: { planId: plan.id, companyId: company.id, stage: "PAGE_INVENTORY", pageCount: pages, finishedAt: new Date() } });
-    const inventory = pageInventoryWork({ planId: plan.id, companyId: company.id, ingestJobId: ingest.id, jobId: job.id, startedByUserId: null }, { ...realDeps, planTextReadOn: async () => true });
+    const inventory = pageInventoryWork({ planId: plan.id, companyId: company.id, ingestJobId: ingest.id, jobId: job.id, startedByUserId: null }, { ...realDeps, sheetNamesOn: async () => true });
     // Every sheet the inventory reads at 1/8", scaled the way the one-press printed scale does.
     const scaled: Record<number, { pageId: string; calibrationId: string }> = {};
     for (let n = 1; n <= pages; n++) {

@@ -168,6 +168,18 @@ the default's own sentence names masonry (MASONRY, CMU, CONCRETE, BLOCK,
 BRICK), a hollow run never takes a masonry one, and otherwise the run is
 untyped. Joplin A-101: 27 of 190 runs hatched (every cross-hatched CMU wall, and no plain partition — the first cut, anything 20° off axis, had flagged 150 of 190, every partition with two doors in it, before the rule was made oblique and dense). Note-typed feet 1,029 → 598 in the measurement; in the pilot the drywall note types 723 ft of A instead of 1,105, and the two hatched walls read at 4.3 and 5.0 in are now untyped, since the masonry note covers 7-5/8 in only.
 
+**Corrected 2026-11-05: those 27 were not CMU.** Round 12's type key calls
+every hatched run on Joplin A-101 drywall (A), and crops agree: the oblique
+strokes were dimension ticks, the crosses marking plumbing fixtures along a
+wet wall, and pipe fittings. The masonry note then typed 117 ft of partition
+B. A hatch is now one or two families of lines (`HATCH_FAMILY_SHARE` 0.8 of
+the strokes within 5° of the two commonest angles) present along most of the
+run (`HATCH_COVER` 0.7 of its one-foot lengths). Bunkie's cross-hatched
+masonry: 92-100% and 75-100%; Joplin's: 38-84% and 6-69%. Training hatched
+runs 1,042 → 396; the only typing it changes is Joplin B → A by the note
+(p4, p46, p49, 503 ft); on the keyed sheets typed-correct 1,739 → 1,841 ft,
+wrong 343 → 244.
+
 ## 3d. The legend read on the real product path, without the stand-ins
 
 What the pilot used: the second session's cached model reads for Baker

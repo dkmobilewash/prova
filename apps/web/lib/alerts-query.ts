@@ -10,6 +10,8 @@ import {
   delayNoticeAlerts,
   drawingRevisionAlerts,
   equipmentOutAlerts,
+  takeoffRunDoneAlerts,
+  TAKEOFF_RUN_DONE_DAYS,
   lienDeadlineAlerts,
   materialDeliveryAlerts,
   partitionAlerts,
@@ -172,6 +174,32 @@ async function loadAlertJobs(companyId: string) {
       lineItems: rowsFor(lineItemsByJob, job.id),
     };
   });
+}
+
+/** The whole-set runs THIS person started from an Ask card, finished inside
+ * the alert's window. The card's own row (command run_takeoff, outcome OK)
+ * names the run it started as its target, so no column marks a run's
+ * origin. Two small reads, after the main batch: neither depends on it. */
+async function takeoffRunsStartedFromAsk(companyId: string, userId: string, todayIso: string) {
+  const since = new Date(`${todayIso}T00:00:00.000Z`);
+  since.setUTCDate(since.getUTCDate() - TAKEOFF_RUN_DONE_DAYS - 1);
+  const cards = await prisma.askProposal.findMany({
+    where: { companyId, createdByUserId: userId, command: "run_takeoff", outcome: "OK", targetType: "PlanIngestJob", createdAt: { gte: since } },
+    select: { targetId: true },
+  });
+  const ids = cards.map((card) => card.targetId).filter((id): id is string => Boolean(id));
+  if (ids.length === 0) return [];
+  const runs = await prisma.planIngestJob.findMany({
+    where: { id: { in: ids }, companyId, finishedAt: { not: null } },
+    select: { id: true, pageCount: true, finishedAt: true, plan: { select: { jobId: true, job: { select: { name: true } } } } },
+  });
+  return runs.map((run) => ({
+    runId: run.id,
+    jobId: run.plan.jobId,
+    jobName: run.plan.job.name,
+    sheets: run.pageCount,
+    finishedOn: isoDate(run.finishedAt) ?? todayIso,
+  }));
 }
 
 export async function loadAlerts(
@@ -756,6 +784,8 @@ export async function loadAlerts(
       todayIso,
     ),
   );
+
+  alerts.push(...takeoffRunDoneAlerts(await takeoffRunsStartedFromAsk(companyId, userId, todayIso), todayIso));
 
   alerts.push(
     ...equipmentOutAlerts(

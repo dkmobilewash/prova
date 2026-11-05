@@ -9,7 +9,9 @@ import { startChangeOrderCommand } from "../../lib/ask/commands/changeOrders";
 import { draftPurchaseOrderCommand } from "../../lib/ask/commands/purchaseOrders";
 import { prepareLienWaiverCommand } from "../../lib/ask/commands/lienWaivers";
 import { startPayApplicationCommand } from "../../lib/ask/commands/payApplications";
+import { postTakeoffToEstimateCommand } from "../../lib/ask/commands/takeoff";
 import type { CommandInput, HandoffCommandDefinition } from "../../lib/ask/commands";
+import { WORKFLOW_EXAMPLES } from "../../components/askExamples";
 
 /**
  * ASK COMMANDS, TYPED, CONFIRMED, AND CHECKED IN THE DATABASE. LOCAL ONLY:
@@ -164,4 +166,54 @@ test("bill for a month: the pay application form opens on that month's last day"
   await expect(page.locator('form input[name="periodTo"]').first()).toHaveValue("2026-11-30");
   // Submitting needs per-line work the card deliberately does not carry; the
   // record half of this command is the person's typing, so it stops here.
+});
+
+test("update the estimate from takeoff: the takeoff tab opens with that sheet's unposted measurements ticked", async () => {
+  // A sheet with two counts (a count needs no scale), neither on the estimate. The PDF is never
+  // fetched: the list is rows, and this checks the list.
+  const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: { companyId: true } });
+  const plan = await prisma.takeoffPlan.create({ data: { companyId: job.companyId, jobId, fileUrl: "https://example.test/ask-click.pdf", fileName: "ask-click.pdf" } });
+  const page2 = await prisma.takeoffPlanPage.create({ data: { planId: plan.id, pageNumber: 1, label: "A101" } });
+  for (const label of ["Corridor wall", "Unit demising"]) {
+    await prisma.takeoffMeasurement.create({ data: { pageId: page2.id, kind: "COUNT", label, xs: [10], ys: [10] } });
+  }
+  await ask("update the ZZ Click Billing estimate from the takeoff", postTakeoffToEstimateCommand, { jobName: "ZZ Click Billing" });
+  await expect(page).toHaveURL(new RegExp(`/jobs/${jobId}/takeoff\\?draft=`));
+  for (const label of ["Corridor wall", "Unit demising"]) {
+    await expect(page.locator("li", { hasText: label }).locator('input[type="checkbox"]')).toBeChecked();
+  }
+  // The control: without the card the same rows start unticked, so the ticks
+  // above came from the draft and not from the list's default.
+  await page.goto(`/jobs/${jobId}/takeoff`);
+  await expect(page.locator("li", { hasText: "Corridor wall" }).locator('input[type="checkbox"]')).not.toBeChecked();
+  // Adding them needs a wall type and a scale picked on the page; the card
+  // stops at the ticks, which is the decision it hands over.
+});
+
+test("the empty panel lists what you can say by workflow, and a tap fills the box without sending", async () => {
+  await page.goto("/ai");
+  await expectHealthy(page, "/ai", { monitor });
+  const panel = page.locator("[data-tour=ai-chat]");
+  const say = panel.locator("[data-ask=what-you-can-say]");
+  await expect(say.getByText("What you can say")).toBeVisible();
+  for (const group of WORKFLOW_EXAMPLES) {
+    const section = say.getByRole("region", { name: group.workflow });
+    await expect(section.getByRole("button"), group.workflow).toHaveCount(2);
+    for (const example of group.examples) await expect(section.getByRole("button", { name: example.say })).toBeVisible();
+  }
+  await say.screenshot({ path: test.info().outputPath("ask-what-you-can-say.png") });
+
+  // Control first: nothing has asked yet, so a request seen after the tap
+  // can only be the tap's.
+  let asks = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/api/ask") && request.method() === "POST") asks += 1;
+  });
+  const box = panel.getByLabel("Ask about your jobs");
+  await expect(box).toHaveValue("");
+  await say.getByRole("button", { name: "Bill the retainage" }).click();
+  await expect(box).toHaveValue("Bill the retainage ");
+  await expect(box).toBeFocused();
+  await page.waitForTimeout(1_000);
+  expect(asks, "a workflow chip must fill the box, never send").toBe(0);
 });
