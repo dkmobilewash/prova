@@ -143,13 +143,31 @@ test.describe("the plan set and its scales", () => {
     await expect(panel().locator('[data-takeoff="plan-set-to-do"]')).toHaveAttribute("href", "#plan-set-look");
   });
 
-  test("5. the printed-scale fix, in one click a sheet, and the count still to do follows", async () => {
+  test("5. the printed scale on all the floor plans that have only one: listed first, then each set once", async () => {
+    const calibrations = (pageNumber: number) => prisma.takeoffScaleCalibration.count({ where: { page: { planId, pageNumber } } });
+    const all = panel().locator('[data-takeoff="plan-set-printed-all"]');
+    await expect(all).toHaveText("Use the printed scale on all 2 floor plans");
+    // The press lists them, with their scale, and changes nothing yet.
+    await all.click();
+    const list = panel().locator('[data-takeoff="plan-set-printed-list"]');
+    await expect(list.locator('[data-takeoff="plan-set-printed-sheet"]')).toHaveText([/A102 · SECOND FLOOR PLAN\s*1\/4" = 1'-0"/, /A104 · FOURTH FLOOR PLAN\s*1\/4" = 1'-0"/]);
+    await panel().screenshot({ path: path.join(SHOTS, "plan-set-printed-list.png") });
+    expect([await calibrations(2), await calibrations(6)]).toEqual([0, 0]);
+    // Cancel is a way out, and still nothing changed.
+    await panel().locator('[data-takeoff="plan-set-printed-cancel"]').click();
+    await expect(list).toHaveCount(0);
+    expect([await calibrations(2), await calibrations(6)]).toEqual([0, 0]);
+    // The second press sets them.
+    await all.click();
+    await panel().locator('[data-takeoff="plan-set-printed-apply"]').click();
+    await expect(panel().locator('[data-takeoff="plan-set-message"]')).toHaveText("2 scales confirmed.");
     for (const pageNumber of [2, 6]) {
-      await fix(pageNumber).getByRole("button", { name: /Use the printed scale/ }).click();
       await expect(row(pageNumber)).toHaveAttribute("data-confidence", "set");
       await expect(fix(pageNumber)).toHaveCount(0);
+      expect(await calibrations(pageNumber), `page ${pageNumber} set once`).toBe(1);
     }
-    await expect(panel().locator('[data-takeoff="plan-set-message"]')).toHaveText("1 scale confirmed.");
+    // Nothing printed-only is left to offer, and the one with no scale is still to do.
+    await expect(all).toHaveCount(0);
     await expect(panel().locator('[data-takeoff="plan-set-to-do"]')).toHaveText("1 floor plan still to do ↓");
     const note = (await prisma.takeoffScaleCalibration.findFirstOrThrow({ where: { page: { planId, pageNumber: 2 } }, select: { note: true } })).note;
     expect(note).toMatch(/^From the 1\/4" = 1'-0" printed on this sheet/);
