@@ -66,7 +66,7 @@ test.describe("the plan set and its scales", () => {
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
     const plan = await prisma.takeoffPlan.findFirstOrThrow({ where: { jobId }, orderBy: { createdAt: "desc" }, select: { id: true, companyId: true } });
     planId = plan.id;
-    const ingest = await prisma.planIngestJob.create({ data: { planId, companyId: plan.companyId, stage: "TITLE_BLOCK", pageCount: 6, startedAt: new Date(), finishedAt: new Date() }, select: { id: true } });
+    const ingest = await prisma.planIngestJob.create({ data: { planId, companyId: plan.companyId, stage: "TITLE_BLOCK", pageCount: 7, startedAt: new Date(), finishedAt: new Date() }, select: { id: true } });
     const sheets: [number, string, string, string][] = [
       [1, "A101", "FIRST FLOOR PLAN", "PLAN"],
       [2, "A102", "SECOND FLOOR PLAN", "PLAN"],
@@ -74,6 +74,8 @@ test.describe("the plan set and its scales", () => {
       [4, "G001", "COVER SHEET", "COVER"],
       [5, "A201", "EXTERIOR ELEVATIONS", "ELEVATION"],
       [6, "A104", "FOURTH FLOOR PLAN", "PLAN"],
+      // The read calls nearly every architectural sheet a PLAN; this one is notes (new-customer run v2, M7).
+      [7, "A301", "GENERAL NOTES", "PLAN"],
     ];
     for (const [pageNumber, number, title, pageType] of sheets) {
       await prisma.planSheetText.create({ data: { planId, pageNumber, hasTextLayer: true, widthPt: WIDTH_PT, heightPt: 1728 } });
@@ -103,9 +105,13 @@ test.describe("the plan set and its scales", () => {
     await page.reload();
     await expectHealthy(page, "the plan set", { monitor });
     await expect(panel()).toBeVisible();
-    await expect(panel().locator('[data-takeoff="plan-set-summary"]')).toHaveText(/^6 sheets · 0 of 4 floor plans scaled/);
-    expect(await panel().locator('[data-takeoff="plan-set-group"]').evaluateAll((g) => g.map((n) => n.getAttribute("data-category")))).toEqual(["floor", "elevations", "cover"]);
+    await expect(panel().locator('[data-takeoff="plan-set-summary"]')).toHaveText(/^7 sheets · 0 of 4 floor plans scaled/);
+    expect(await panel().locator('[data-takeoff="plan-set-group"]').evaluateAll((g) => g.map((n) => n.getAttribute("data-category")))).toEqual(["floor", "elevations", "cover", "other"]);
     expect(await panel().locator('[data-takeoff="plan-set-group"][data-category="floor"] [data-takeoff="plan-set-row"]').evaluateAll((r) => r.map((n) => n.getAttribute("data-page")))).toEqual(["1", "2", "3", "6"]);
+    // The notes sheet is not a floor plan, so it is not one more scale to set.
+    await expect(row(7)).toHaveCount(1);
+    expect(await panel().locator('[data-takeoff="plan-set-group"][data-category="floor"] [data-takeoff="plan-set-row"][data-page="7"]').count()).toBe(0);
+    await expect(fix(7)).toHaveCount(0);
     await expect(row(1)).toHaveAttribute("data-confidence", "high");
     await expect(row(1)).toContainText("Sure");
     await expect(row(2)).toContainText("Printed only");
