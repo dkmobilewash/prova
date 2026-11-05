@@ -288,9 +288,11 @@ test.describe("the full-screen takeoff workspace", () => {
 
     const layers = page.locator('[data-takeoff="layers-rail"]');
     await expect(layers, "the layer panel is not open on arrival").toBeVisible();
-    await page.locator('[data-takeoff="toggle-panel"]').click();
+    // It collapses from its own header and comes back from the canvas's edge;
+    // the top bar's Quantities never closes it (Chrome's click test).
+    await page.locator('[data-takeoff="collapse-panel"]').click();
     await expect(layers, "the layer panel did not collapse").toHaveCount(0);
-    await page.locator('[data-takeoff="toggle-panel"]').click();
+    await page.locator('[data-takeoff="expand-panel"]').click();
     await expect(layers).toBeVisible();
   });
 
@@ -409,6 +411,13 @@ test.describe("the full-screen takeoff workspace", () => {
   }
 
   /** Put a top-bar panel toggle into a known state. */
+  /** The layer panel open or collapsed, from its own controls. */
+  async function setPanel(open: boolean): Promise<void> {
+    const isOpen = (await page.locator('[data-takeoff="collapse-panel"]').count()) > 0;
+    if (isOpen === open) return;
+    await page.locator(open ? '[data-takeoff="expand-panel"]' : '[data-takeoff="collapse-panel"]').click();
+    await page.waitForTimeout(250);
+  }
   async function setRail(handle: string, open: boolean): Promise<void> {
     const toggle = page.locator(`[data-takeoff="${handle}"]`);
     if ((await toggle.count()) === 0) return;
@@ -455,7 +464,7 @@ test.describe("the full-screen takeoff workspace", () => {
         for (const itemsOpen of [false, true]) {
           await page.setViewportSize(size);
           await onWorkspace(jobTwo);
-          await setRail("toggle-panel", railOpen);
+          await setPanel(railOpen);
           await setRail("toggle-items", itemsOpen);
           await fitAndSettle();
 
@@ -744,6 +753,133 @@ test.describe("the full-screen takeoff workspace", () => {
     await expect(page.locator('[data-takeoff="group-team-name"]')).toHaveCount(0);
   });
 
+  test("13e. CHROME'S CLICK TEST: select, let go, pan, zoom, rectangle, panel, export, PDF, scale line", async () => {
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+    await findTheWalls("S15 for the click-test fixes");
+    await fitAndSettle();
+    const box = async () => (await overlay().boundingBox())!;
+    const runMid = async () =>
+      overlay()
+        .locator("[data-found-wall]")
+        .first()
+        .evaluate((line) => {
+          const n = (a: string) => Number(line.getAttribute(a));
+          return { x: (n("x1") + n("x2")) / 2, y: (n("y1") + n("y2")) / 2 };
+        });
+    const clickSheet = async (x: number, y: number) => {
+      const b = await box();
+      await page.mouse.click(b.x + x * b.width, b.y + y * b.width);
+    };
+    const readout = page.locator('[data-takeoff="layer-readout"]');
+    const strip = page.locator('[data-takeoff="sheet-facts"]');
+
+    // 1. THE ARROW SELECTS: a run lights its layer, pins its length, fills the strip.
+    await expect(tool("Select")).toHaveAttribute("aria-pressed", "true");
+    await expect(strip, "the bottom strip is there with nothing selected").toHaveCount(0);
+    const mid = await runMid();
+    await clickSheet(mid.x, mid.y);
+    await expect(readout, "clicking a run with the arrow selected nothing").toBeVisible();
+    await expect(page.locator('[data-takeoff="layer-row"][data-lit="true"]')).toHaveCount(1);
+    await expect(page.locator('[data-takeoff="selection-facts"]')).toBeVisible();
+
+    // 2. AND LETS GO: Esc, and hiding the lit layer with its eye.
+    await page.keyboard.press("Escape");
+    await expect(readout).toHaveCount(0);
+    await expect(page.locator('[data-takeoff="layer-row"][data-lit="true"]')).toHaveCount(0);
+    await expect(strip).toHaveCount(0);
+    await clickSheet(mid.x, mid.y);
+    await expect(readout).toBeVisible();
+    await page.locator('[data-takeoff="layer-row"][data-lit="true"] [data-takeoff="layer-eye"]').click();
+    await expect(readout, "hiding the lit layer left its length on the plan").toHaveCount(0);
+    await page.locator('[data-takeoff="layer-eye"][aria-pressed="false"]').first().click();
+
+    // 3. THE WHEEL: plain scrolls, Ctrl+wheel zooms by about a tenth.
+    const zoomPct = async () => Number((await page.locator('[data-takeoff="zoom"]').innerText()).replace("%", ""));
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await settledOverlayBox();
+    const before = await zoomPct();
+    const b = await canvasBox();
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.wheel(0, 300);
+    await page.waitForTimeout(300);
+    expect(await zoomPct(), "a plain wheel zoomed").toBe(before);
+    expect(await port().evaluate((n) => n.scrollTop), "a plain wheel did not scroll").toBeGreaterThan(0);
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, -100);
+    await page.keyboard.up("Control");
+    await expect.poll(zoomPct).not.toBe(before);
+    const step = (await zoomPct()) / before;
+    expect(step, `one Ctrl+wheel notch zoomed by ${step}`).toBeGreaterThan(1.05);
+    expect(step).toBeLessThan(1.2);
+
+    // 4. SPACE+DRAG PANS, and there is a Hand (H).
+    const left0 = await port().evaluate((n) => n.scrollLeft);
+    // Off any button first: Space on a focused button presses it.
+    await page.locator('[data-takeoff="workspace-job"]').click();
+    await page.keyboard.down("Space");
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 - 120, b.y + b.height / 2, { steps: 4 });
+    await page.mouse.up();
+    await page.keyboard.up("Space");
+    expect(await port().evaluate((n) => n.scrollLeft), "Space+drag did not pan").toBeGreaterThan(left0);
+    await expect(tool("Hand")).toBeVisible();
+    await fitAndSettle();
+
+    // 5. A RECTANGLE BY DRAGGING, read in square feet in its own words.
+    await tool("Rectangle").click();
+    const r = await box();
+    await page.mouse.move(r.x + 0.25 * r.width, r.y + 0.3 * r.width);
+    await page.mouse.down();
+    await page.mouse.move(r.x + 0.45 * r.width, r.y + 0.42 * r.width, { steps: 5 });
+    await page.mouse.up();
+    await expect(page.getByText(/^Rectangle · [\d,]+ sq ft$/)).toBeVisible();
+    await expect(page.getByText(/needs at least 3 points/)).toHaveCount(0);
+    await page.getByRole("button", { name: "Clear", exact: true }).click();
+    await tool("Select").click();
+
+    // 6. QUANTITIES KEEPS THE PANEL, AND THE PLAN DOES NOT MOVE.
+    const canvasBefore = await canvasBox();
+    await page.locator('[data-takeoff="toggle-panel"]').click();
+    await expect(page.locator('[data-takeoff="layers-rail"]')).toBeVisible();
+    await expect(page.locator('[data-takeoff="quantities-section"]')).toBeInViewport();
+    const canvasAfter = await canvasBox();
+    expect(Math.abs(canvasAfter.x - canvasBefore.x) + Math.abs(canvasAfter.width - canvasBefore.width), "the plan moved").toBeLessThan(2);
+
+    // 7. EXPORT CLOSES ON ESC AND ON A CLICK OUTSIDE.
+    const exportMenu = page.getByText("The job’s takeoff, every sheet, as a file.");
+    await page.locator('[data-takeoff="toggle-export"]').click();
+    await expect(exportMenu).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(exportMenu).toHaveCount(0);
+    await page.locator('[data-takeoff="toggle-export"]').click();
+    await expect(exportMenu).toBeVisible();
+    await page.locator('[data-takeoff="workspace-job"]').click();
+    await expect(exportMenu).toHaveCount(0);
+
+    // 8. THE PDF'S TAB IS NAMED FOR THE JOB AND THE SHEET.
+    const pdf = page.locator('[data-takeoff="open-pdf"]');
+    await expect(pdf).toHaveAttribute("href", new RegExp(`^/takeoff/${jobTwo}/pdf\\?page=\\d+$`));
+    const viewer = await page.context().newPage();
+    await viewer.goto((await pdf.getAttribute("href"))!);
+    expect(await viewer.title()).toMatch(new RegExp(`^${JOB_TWO} – `));
+    await viewer.close();
+
+    // 9. THE SCALE LINE SAYS WHAT IT IS, AND HAS A ROW.
+    await expect(overlay().locator('[data-takeoff="scale-line"] title')).toContainText("Scale line");
+    await expect(page.locator('[data-takeoff="layer-row"][data-layer="scale"]')).toHaveCount(1);
+
+    // 10. HINTS IN THE WORKSPACE'S WORDS, AND 11. THE ⋯ SHOWS THE TOOL THAT IS ON.
+    await page.locator('[data-takeoff="rail-more"]').click();
+    await expect(page.getByRole("button", { name: "Exclude like this", exact: true })).toHaveAttribute("title", /^After Run takeoff/);
+    await page.getByRole("button", { name: "Work area", exact: true }).click();
+    await expect(page.locator('[data-takeoff="rail-more"]')).toHaveClass(/bg-brand/);
+    await expect(page.locator('[data-takeoff="rail-more"] svg')).toHaveCount(1);
+    await tool("Select").click();
+    await expect(page.locator('[data-takeoff="rail-more"]')).toHaveText("⋯");
+  });
+
   test("14. the phone gets a read-only canvas", async () => {
     await page.setViewportSize(PHONE);
     await onWorkspace(jobTwo);
@@ -1003,16 +1139,20 @@ test.describe("the full-screen takeoff workspace", () => {
     await page.getByRole("button", { name: "Rectangle", exact: true }).click();
     await click(0.25, 0.3);
     await click(0.45, 0.42);
-    // The draft reports four points, not two — the second click builds the
-    // corners rather than storing the drag.
-    await expect(page.getByText(/4 points/)).toBeVisible();
+    // The second click builds the four corners rather than storing two
+    // points, so the draft reads as a RECTANGLE with its square feet — its own
+    // words since Chrome's click test, not a point count.
+    await expect(page.getByText(/^Rectangle · [\d,]+ sq ft$/)).toBeVisible();
+    const corners = async () => (await overlay.locator("polygon, polyline").last().getAttribute("points"))?.trim().split(/\s+/).length;
+    expect(await corners(), "the rectangle is not four corners").toBe(4);
 
     // A THIRD click RE-DRAGS the far corner. It must never make a pentagon:
     // the shape is rebuilt from the first click every time, so four points
     // is four points however many times somebody clicks.
     await click(0.5, 0.5);
-    await expect(page.getByText(/4 points/)).toBeVisible();
-    await page.getByRole("button", { name: "Clear" }).click();
+    await expect(page.getByText(/^Rectangle · [\d,]+ sq ft$/)).toBeVisible();
+    expect(await corners(), "a third click made a pentagon").toBe(4);
+    await page.getByRole("button", { name: "Clear", exact: true }).click();
 
     // ── SHIFT LOCKS A LINE STRAIGHT ──
     //
@@ -1049,7 +1189,7 @@ test.describe("the full-screen takeoff workspace", () => {
     const span = Math.abs(Number(b?.split(",")[0]) - Number(a?.split(",")[0]));
     expect(span, `the segment spans ${span} of the page width, not 40/144`).toBeCloseTo(40 / 144, 3);
 
-    await page.getByRole("button", { name: "Clear" }).click();
+    await page.getByRole("button", { name: "Clear", exact: true }).click();
 
     // ── EDIT SELECTS A SAVED SHAPE, AND DELETE REMOVES IT ──
     //
@@ -1242,7 +1382,7 @@ test.describe("the full-screen takeoff workspace", () => {
     // The quantities panel is a RAIL here, not always-on furniture — step 5
     // saw it open because nothing had opened Items over it yet. Opening it
     // explicitly is what makes this step independent of the twenty before it.
-    await setRail("toggle-panel", true);
+    await setPanel(true);
 
     const panel = page.locator('[data-takeoff="found-walls"]');
     await expect(panel, "no quantities panel on S02").toBeVisible({ timeout: 20_000 });
@@ -1305,7 +1445,7 @@ test.describe("the full-screen takeoff workspace", () => {
 
     // ── AND THE GROUPS SORT THEMSELVES UNDER IT ──
     await findTheWalls("S02 with a condition named");
-    await setRail("toggle-panel", true);
+    await setPanel(true);
     await expect(panel).toBeVisible({ timeout: 20_000 });
     await expect(
       panel.getByText("ZZ Detected partition"),

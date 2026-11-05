@@ -64,6 +64,7 @@ import {
   fitZoom,
   fitWidthZoom,
   stepZoom,
+  inWorkspaceWords,
   RAIL_TOOLS,
   TOOL_ICONS,
   TOOL_KEYS,
@@ -295,6 +296,11 @@ async function pageTextItems(
  */
 const HATCH_PITCH_RULE = process.env.NEXT_PUBLIC_TAKEOFF_HATCH_PITCH === "1";
 
+/** What the full-screen workspace's Select arrow can pick out. */
+export type ViewerSelection =
+  | { kind: "group"; key: string; name: string; runs: number; feet: number }
+  | { kind: "shape"; id: string; itemId: string | null; label: string | null; measure: string };
+
 export function TakeoffPlanViewer({
   jobId,
   planId,
@@ -340,6 +346,8 @@ export function TakeoffPlanViewer({
   rail,
   panelDrawer = false,
   layerNames = {},
+  onSelect,
+  onPanelOpen,
   focusRun = null,
   activeItemId = null,
   earlierVersionByPage = {},
@@ -488,6 +496,11 @@ export function TakeoffPlanViewer({
   panelDrawer?: boolean;
   /** `fill` only: the team's names for this job's layers, by `layerKeyOf`. */
   layerNames?: Record<string, string>;
+  /** `fill` only: what the Select arrow picked on the drawing, or null when a
+   *  click on nothing, Esc or a hidden layer let go of it. */
+  onSelect?: (selection: ViewerSelection | null) => void;
+  /** `fill` only: collapse or expand the layer panel (the workspace remembers it). */
+  onPanelOpen?: (open: boolean) => void;
   /** A run the workspace's set-wide review is on, shown and zoomed to on its page. */
   focusRun?: { pageNumber: number; x1: number; y1: number; x2: number; y2: number } | null;
   onMeasurementSaved?: (saved: { id: string; kind: MeasurementKind }) => void;
@@ -743,6 +756,8 @@ export function TakeoffPlanViewer({
   // somebody opening a drawing wants to see first; they zoom IN to measure.
   const [zoom, setZoom] = useState<Zoom>(FIT);
   const [tool, setTool] = useState<ToolId>("pan");
+  /** A message in the workspace's own button names ("Run takeoff"), or the tab's. */
+  const say = (text: string) => (fill ? inWorkspaceWords(text) : text);
 
   /**
    * ── THE HOST'S KEYBOARD REACHES THE CANVAS HERE ──
@@ -1043,6 +1058,18 @@ export function TakeoffPlanViewer({
   const [hiddenLayers, setHiddenLayers] = useState<ReadonlySet<string>>(new Set());
   const [railMore, setRailMore] = useState(false);
   const pickToolRef = useRef<(key: string) => void>(() => {});
+  // ── MOVING AROUND WITH A MOUSE ──
+  // A drag pans with the Hand, with Space held, or with the middle button; it
+  // moves the frame's own scroll, so the overlay never parts from the sheet.
+  const panRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  // Read by the window's Esc listener, which is set up once.
+  const draftLengthRef = useRef(0);
+  const onSelectRef = useRef(onSelect);
+  const spaceRef = useRef(false);
+  const [panning, setPanning] = useState(false);
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  /** A rectangle's first corner while the button is down, so a drag draws it. */
+  const rectDragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const [zoomSlot, setZoomSlot] = useState<HTMLElement | null>(null);
   const [noticeSlot, setNoticeSlot] = useState<HTMLElement | null>(null);
   const [scaleSlot, setScaleSlot] = useState<HTMLElement | null>(null);
@@ -1050,6 +1077,8 @@ export function TakeoffPlanViewer({
   const [foundSlot, setFoundSlot] = useState<HTMLElement | null>(null);
   const [reviewSlot, setReviewSlot] = useState<HTMLElement | null>(null);
   const [bannerSlot, setBannerSlot] = useState<HTMLElement | null>(null);
+  /** The top of the layer panel, where messages and the draft card dock. */
+  const [dockSlot, setDockSlot] = useState<HTMLElement | null>(null);
   const [menuSlot, setMenuSlot] = useState<HTMLElement | null>(null);
   const [runMenu, setRunMenu] = useState(false);
   // The finder menu closes on the next click anywhere — an item, the drawing,
@@ -1468,12 +1497,13 @@ export function TakeoffPlanViewer({
   const zoomFactorRef = useRef(zoomFactor);
   zoomFactorRef.current = zoomFactor;
 
-  // ── THE WHEEL ZOOMS, IN THE FULL-SCREEN SHELL ──
+  // ── THE WHEEL SCROLLS; CTRL/⌘+WHEEL AND A PINCH ZOOM ──
   //
-  // A trackpad pinch arrives as a wheel event with ctrlKey set; a mouse wheel
-  // moves in lines, or in whole steps of 50 or more with no sideways part. Both
-  // zoom, about the pointer. A two-finger trackpad scroll is neither, and is
-  // left to the frame's own scrolling, which is the pan. Throttled, because
+  // A plain wheel moves the sheet up and down and Shift+wheel sideways — the
+  // frame's own scrolling, which every browser already does. Ctrl or ⌘ with the
+  // wheel, and a trackpad pinch (which arrives as a wheel event with ctrlKey
+  // set), zoom about the pointer. A wheel notch (deltaY about 100) is a step of
+  // about 11%; a pinch's small deltas make small steps. Throttled, because
   // every step re-renders the sheet.
   const wheelAnchor = useRef<{ fx: number; fy: number; px: number; py: number } | null>(null);
   useEffect(() => {
@@ -1481,13 +1511,10 @@ export function TakeoffPlanViewer({
     if (!fill || frame === null) return;
     let last = 0;
     const onWheel = (event: WheelEvent) => {
-      const mouse =
-        event.deltaMode !== 0 ||
-        (event.deltaX === 0 && Math.abs(event.deltaY) >= 50 && Number.isInteger(event.deltaY));
-      if (!event.ctrlKey && !event.metaKey && !mouse) return;
+      if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
       const now = performance.now();
-      if (now - last < 60) return;
+      if (now - last < 40) return;
       last = now;
       const box = frame.getBoundingClientRect();
       const px = event.clientX - box.left;
@@ -1498,10 +1525,46 @@ export function TakeoffPlanViewer({
         px,
         py,
       };
-      setZoom(stepZoom(zoomFactorRef.current, event.deltaY < 0 ? 1 : -1));
+      const lines = event.deltaMode === 1 ? event.deltaY * 33 : event.deltaY;
+      const factor = Math.min(1.15, Math.max(1 / 1.15, Math.exp(-lines * 0.0012)));
+      const lowest = ZOOM_STEPS[0]!;
+      const highest = ZOOM_STEPS[ZOOM_STEPS.length - 1]!;
+      setZoom(Math.min(highest, Math.max(lowest, zoomFactorRef.current * factor)));
     };
     frame.addEventListener("wheel", onWheel, { passive: false });
     return () => frame.removeEventListener("wheel", onWheel);
+  }, [fill]);
+  useEffect(() => {
+    if (!fill) return;
+    const typing = (target: EventTarget | null) => {
+      const node = target as HTMLElement | null;
+      return node !== null && (node.tagName === "INPUT" || node.tagName === "TEXTAREA" || node.tagName === "SELECT" || node.isContentEditable);
+    };
+    const down = (event: KeyboardEvent) => {
+      if (typing(event.target)) return;
+      if (event.key === " " && !event.repeat) {
+        event.preventDefault();
+        spaceRef.current = true;
+        setSpaceHeld(true);
+      }
+      // Esc lets go of what the arrow picked, when nothing is being drawn.
+      if (event.key === "Escape" && draftLengthRef.current === 0) {
+        setLitLayer(null);
+        onSelectRef.current?.(null);
+      }
+    };
+    const up = (event: KeyboardEvent) => {
+      if (event.key === " ") {
+        spaceRef.current = false;
+        setSpaceHeld(false);
+      }
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
   }, [fill]);
   // Once the sheet has its new size, put the point that was under the pointer
   // back under it — so a wheel zooms INTO what you are looking at.
@@ -1620,7 +1683,8 @@ export function TakeoffPlanViewer({
     [],
   );
 
-  const drawing = tool !== "pan";
+  // The Select arrow and the Hand place nothing on the drawing.
+  const drawing = tool !== "pan" && tool !== "hand";
 
   /**
    * ── ONE PAGE'S RASTER READ, FETCHED WHEN IT IS WANTED ──
@@ -1895,6 +1959,34 @@ export function TakeoffPlanViewer({
     return snapToGeometry(raw, snapTargets, radius);
   };
 
+  /** The drawn shape a click is on, by its edge, a corner or (an area) its inside. */
+  function measurementAt(raw: { x: number; y: number }) {
+    return (
+      (sheet?.measurements ?? []).find((m) => {
+        if (vertexAt(raw, m.xs, m.ys, PICK_RADIUS) !== null) return true;
+        for (let i = 1; i < m.xs.length; i += 1) {
+          const near = nearestOnSegment(raw, m.xs[i - 1], m.ys[i - 1], m.xs[i], m.ys[i]);
+          if (Math.hypot(near.x - raw.x, near.y - raw.y) <= PICK_RADIUS) return true;
+        }
+        // An AREA is pickable by its INSIDE as well as its edge: a room is a
+        // big obvious target and making somebody find its outline would be
+        // the same game one step harder.
+        if (m.kind === "AREA" && pointInRing(raw.x, raw.y, m.xs, m.ys)) return true;
+        return false;
+      }) ?? null
+    );
+  }
+  /** A drawn shape's quantity, in words, at this sheet's scale. */
+  function measureOf(m: { kind: MeasurementKind; xs: number[]; ys: number[] }): string {
+    if (m.kind === "COUNT") return `${m.xs.length} ea`;
+    if (feetPerUnit === null) return "no scale on this sheet";
+    if (m.kind === "AREA") {
+      const area = ringArea(m.xs, m.ys);
+      return area === null ? "area" : `${Math.round(area * feetPerUnit * feetPerUnit).toLocaleString()} sq ft`;
+    }
+    return formatFeetInches(polylineLength(m.xs, m.ys) * feetPerUnit);
+  }
+
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     // ── CLICKING THE PLAN TAKES THE KEYBOARD WITH IT ──
     //
@@ -1944,6 +2036,8 @@ export function TakeoffPlanViewer({
       }
       return;
     }
+    // A pan in progress (Hand, Space or the middle button) is not a click.
+    if (panRef.current !== null || spaceRef.current || event.button === 1) return;
     if (answerKey !== undefined && !drawing) {
       const raw = pointAt(event);
       if (!raw) return;
@@ -1952,10 +2046,51 @@ export function TakeoffPlanViewer({
       setKeyBox({ x1: raw.x, y1: raw.y, x2: raw.x, y2: raw.y });
       return;
     }
+    // ── THE SELECT ARROW PICKS WHAT IT IS CLICKED ON ──
+    //
+    // A drawn shape first (it is what somebody made), then the nearest found
+    // run, which lights its whole layer; a click on nothing lets go of both.
+    // The reach is ten SCREEN pixels, so it is the same at every zoom.
+    if (fill && tool === "pan") {
+      const raw = pointAt(event);
+      if (!raw) return;
+      const width = (event.currentTarget as Element).getBoundingClientRect().width;
+      const reach = width > 0 ? 10 / width : PICK_RADIUS;
+      const shape = measurementAt(raw);
+      if (shape !== null) {
+        setLitLayer(null);
+        onSelect?.({ kind: "shape", id: shape.id, itemId: shape.itemId ?? null, label: shape.label, measure: measureOf(shape) });
+        return;
+      }
+      let best: { group: WallGroup; distance: number } | null = null;
+      for (const { group } of ordered) {
+        if (hiddenLayers.has(layerKeyOf(group))) continue;
+        for (const run of group.runs) {
+          const near = nearestOnSegment(raw, run.x1, run.y1, run.x2, run.y2);
+          const distance = Math.hypot(near.x - raw.x, near.y - raw.y);
+          if (distance <= reach && (best === null || distance < best.distance)) best = { group, distance };
+        }
+      }
+      if (best !== null) {
+        const key = layerKeyOf(best.group);
+        setLitLayer(key);
+        onSelect?.({
+          kind: "group",
+          key,
+          name: layerNames[key] ?? defaultLayerName(best.group, new Map((takeoffItems ?? []).map((item) => [item.id, item.name]))),
+          runs: best.group.runs.length,
+          feet: best.group.feet,
+        });
+        return;
+      }
+      setLitLayer(null);
+      onSelect?.(null);
+      return;
+    }
     // ── "SPLIT AREA" DRAGS A LINE ACROSS A ROOM ──
     if (tool === "split") {
       if (rooms === null || roomsOnPage !== pageNumber) {
-        setFindError("Find the rooms on this sheet first, then drag a line across one.");
+        setFindError(say("Find the rooms on this sheet first, then drag a line across one."));
         return;
       }
       const raw = pointAt(event);
@@ -2001,18 +2136,7 @@ export function TakeoffPlanViewer({
       //
       // It does not scale with zoom: at 400% a shape is already easy to hit,
       // and a pick radius that grew would start claiming the shape next to it.
-      const hit = (sheet?.measurements ?? []).find((m) => {
-        if (vertexAt(raw, m.xs, m.ys, PICK_RADIUS) !== null) return true;
-        for (let i = 1; i < m.xs.length; i += 1) {
-          const near = nearestOnSegment(raw, m.xs[i - 1], m.ys[i - 1], m.xs[i], m.ys[i]);
-          if (Math.hypot(near.x - raw.x, near.y - raw.y) <= PICK_RADIUS) return true;
-        }
-        // An AREA is pickable by its INSIDE as well as its edge: a room is a
-        // big obvious target and making somebody find its outline would be
-        // the same game one step harder.
-        if (m.kind === "AREA" && pointInRing(raw.x, raw.y, m.xs, m.ys)) return true;
-        return false;
-      });
+      const hit = measurementAt(raw);
       setEditError(null);
       setEditingId(hit?.id ?? null);
       setEditDraft(hit ? { xs: [...hit.xs], ys: [...hit.ys] } : null);
@@ -2045,7 +2169,13 @@ export function TakeoffPlanViewer({
       // new rectangle" — and the e2e walk written from it failed against the
       // code. The code was the better behaviour; the sentence was wrong.)
       if (tool === "rect") {
-        if (current.xs.length === 0) return { xs: [point.x], ys: [point.y] };
+        if (current.xs.length === 0) {
+          // The button is down on the first corner: moving it draws the
+          // rectangle (a drag), and letting go without moving waits for a
+          // second click (click-click). Both end at the same four points.
+          rectDragRef.current = { x: point.x, y: point.y, moved: false };
+          return { xs: [point.x], ys: [point.y] };
+        }
         return rectanglePoints({ x: current.xs[0], y: current.ys[0] }, point);
       }
 
@@ -2914,6 +3044,23 @@ export function TakeoffPlanViewer({
   const [roomCeilings, setRoomCeilings] = useState<Map<number, RoomCeiling> | null>(null);
   async function onFindRooms() {
     if (!pageSize || feetPerUnit === null) return;
+    // ── WALLS SHOWN FROM A STORED RUN HAVE NOT BEEN READ IN THIS BROWSER ──
+    //
+    // A sheet whose walls the whole-set run stored opens with them drawn, and
+    // nothing has read its lines or its WORDS here: the runs, the pairings and
+    // the text all live in refs that only Run takeoff fills. Find the rooms
+    // then worked from nothing, closed rooms out of whatever was drawn, and
+    // named none — all 8 on Baker A101 read "unnamed", though the sheet prints
+    // CALL CENTER 111, CONFERENCE 105 and twelve more that `readRoomTags`
+    // reads off it. So it reads the sheet first, quietly, as a re-find does.
+    if (lastDetect.current?.page !== pageNumber || wordsRef.current.length === 0) {
+      quietFind.current = true;
+      try {
+        await findRef.current();
+      } finally {
+        quietFind.current = false;
+      }
+    }
     // The doors on the sheet close the rooms, and its lines split what leaked, once a Find has read them.
     const detected = lastDetect.current?.page === pageNumber && lastDetect.current.widthPt > 0 ? lastDetect.current : null;
     const result = sheetRooms({
@@ -3069,7 +3216,7 @@ export function TakeoffPlanViewer({
   async function onExcludeAt(at: { x: number; y: number }) {
     const feet = feetAcrossRef.current;
     if (!sheet || feet === null || runsRef.current.length === 0) {
-      setFindError("Find the walls on this sheet first, then click one to exclude.");
+      setFindError(say("Find the walls on this sheet first, then click one to exclude."));
       return;
     }
     // `runAt` takes a line, so a click is a short nudge along each axis.
@@ -3702,7 +3849,7 @@ export function TakeoffPlanViewer({
     if (tool === "linear" && draft.xs.length >= 2) {
       return `${(polylineLength(draft.xs, draft.ys) * scale).toFixed(1)} ft`;
     }
-    if (tool === "area" && draft.xs.length >= 3) {
+    if ((tool === "area" || tool === "rect") && draft.xs.length >= 3) {
       if (ringSelfIntersects(draft.xs, draft.ys)) return "crosses itself";
       const area = ringArea(draft.xs, draft.ys);
       return area === null ? null : `${Math.round(area * scale * scale)} sq ft`;
@@ -3726,6 +3873,8 @@ export function TakeoffPlanViewer({
   }
 
   findRef.current = onFindWalls;
+  draftLengthRef.current = draft.xs.length;
+  onSelectRef.current = onSelect;
 
   // ── THE FULL-SCREEN SHELL'S PIECES ─────────────────────────────────────
   /** In the shell, a piece of the toolbar goes where the shell made a place
@@ -3733,6 +3882,9 @@ export function TakeoffPlanViewer({
    *  is written. */
   const slot = (target: HTMLElement | null | undefined, node: React.ReactNode) =>
     fill && target ? createPortal(node, target) : node;
+  /** Messages and the draft card dock in the panel, never over the drawing;
+   *  with the panel collapsed, small at the canvas's bottom-left. */
+  const noticeTarget = panelOpen ? dockSlot : noticeSlot;
   /** The measuring tools need a scale; the rest do not. */
   function toolDisabled(id: ToolId): boolean {
     return !calibration && (id === "linear" || id === "area" || id === "rect" || id === "cutout");
@@ -3772,6 +3924,23 @@ export function TakeoffPlanViewer({
                 count: rooms.rooms.length,
                 total: `${Math.round(rooms.rooms.reduce((n, room) => n + room.squareFeet, 0)).toLocaleString()} sf`,
                 hidden: hiddenLayers.has("rooms"),
+              },
+            ]
+          : []),
+        // The scale line somebody set by clicking: a reference, not a quantity,
+        // with an eye like the rest. A printed scale has no line (see the
+        // overlay), so it has no row either; the badge says it.
+        ...(calibration && !(calibration.x1 === 0 && calibration.x2 === 1)
+          ? [
+              {
+                key: "scale",
+                name: "Scale line",
+                kind: "line" as const,
+                colour: "#f0b429",
+                dash: "7 3 1 3",
+                count: 1,
+                total: scaleReading?.name ?? "set",
+                hidden: hiddenLayers.has("scale"),
               },
             ]
           : []),
@@ -4097,7 +4266,7 @@ export function TakeoffPlanViewer({
             onClick={onFindRooms}
             disabled={finding || found === null || found.length === 0 || foundOnPage !== pageNumber}
             data-takeoff="find-rooms"
-            title={found === null ? "Find the walls first — rooms are what they enclose." : undefined}
+            title={found === null ? say("Find the walls first — rooms are what they enclose.") : undefined}
             className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-40"
           >
             Find the rooms
@@ -4113,7 +4282,7 @@ export function TakeoffPlanViewer({
           <>
             {/* The reason is a sentence, so in the shell it goes with the
                 messages; the way past it stays beside Run takeoff. */}
-            {slot(noticeSlot, <span className="text-[11px] text-ink-muted" data-takeoff="not-a-takeoff-sheet">
+            {slot(noticeTarget, <span className="text-[11px] text-ink-muted" data-takeoff="not-a-takeoff-sheet">
               {takeoffVerdict?.why}
             </span>)}
             {/* Beside Run takeoff in the shell, not in its menu: it is what
@@ -4155,7 +4324,7 @@ export function TakeoffPlanViewer({
             had by reading the picture, and this is the thing that reads it —
             so gating on it made the feature unreachable on every sheet it was
             built for. See `scannedPages`. */}
-        {slot(noticeSlot, (rasterByPage[pageNumber] !== undefined || rasterPages.includes(pageNumber)) && (
+        {slot(noticeTarget, (rasterByPage[pageNumber] !== undefined || rasterPages.includes(pageNumber)) && (
           <p data-takeoff="scanned-caution" className="w-full text-xs text-ink-muted">
             Scanned sheet: the lines were read from an image, not from the drawing. Check each group against the sheet
             more carefully than usual.
@@ -4173,7 +4342,7 @@ export function TakeoffPlanViewer({
             {reading ? (readProgress ?? "Reading the sheet…") : "Read this sheet"}
           </button>
         ))}
-        {slot(noticeSlot, (
+        {slot(noticeTarget, (
         <>
         {readError !== null && (
           <p data-takeoff="read-error" className="text-xs text-ink-muted">
@@ -4389,7 +4558,7 @@ export function TakeoffPlanViewer({
       </div>
       )}
 
-      {slot(noticeSlot, findError && (
+      {slot(noticeTarget, findError && (
         <p
           data-takeoff="find-error"
           data-missing={missingToFind || undefined}
@@ -4419,7 +4588,7 @@ export function TakeoffPlanViewer({
           honest than "it does your takeoff": the biggest wall types come for
           free. Accepting one group on one real sheet replaced ninety-nine hand
           traces. Whatever it missed is still traced the way it always was. */}
-      {slot(noticeSlot, (
+      {slot(noticeTarget, (
       <>
       {scaleSuggestion !== null && (
         <TakeoffScaleSuggestion
@@ -4458,7 +4627,7 @@ export function TakeoffPlanViewer({
       )}
       </>
       ))}
-      {slot(panelOpen ? reviewSlot : noticeSlot, answerKey === undefined && !readOnly && feetPerUnit !== null && (
+      {slot(panelOpen ? reviewSlot : noticeTarget, answerKey === undefined && !readOnly && feetPerUnit !== null && (
         <TakeoffHeldWalls
           asRow={fill && panelOpen}
           walls={(sheet?.measurements ?? [])
@@ -4471,12 +4640,13 @@ export function TakeoffPlanViewer({
         />
       ))}
       {/* On load, beside the walls total: nothing kept on this sheet reaches the estimate (Chrome round 7). */}
-      {slot(noticeSlot, answerKey === undefined && notCounted !== null && (
+      {slot(noticeTarget, answerKey === undefined && notCounted !== null && (
         <p data-takeoff="not-counted-sheet" className="shrink-0 text-xs font-medium text-tag-amber-ink">
           {notCounted}
         </p>
       ))}
-      {slot(panelOpen ? sideSlot : noticeSlot, answerKey === undefined && (
+      {/* In the panel, never over the plan ("This sheet shows existing work…"). */}
+      {slot(sideSlot, answerKey === undefined && (
         <TakeoffExclusionBar
           feet={found === null ? null : found.reduce((sum, group) => sum + group.feet, 0)}
           aside={userAside}
@@ -4554,7 +4724,7 @@ export function TakeoffPlanViewer({
               key={entry.id}
               id={entry.id}
               label={entry.label}
-              hint={toolDisabled(entry.id) ? "Set the scale on this sheet first." : entry.hint}
+              hint={toolDisabled(entry.id) ? "Set the scale on this sheet first." : inWorkspaceWords(entry.hint)}
               active={tool === entry.id}
               disabled={toolDisabled(entry.id)}
               onPick={() => setTool(entry.id)}
@@ -4567,16 +4737,22 @@ export function TakeoffPlanViewer({
           <div className="relative">
             <button
               type="button"
-              aria-label="More tools"
+              aria-label={RAIL_TOOLS.includes(tool) ? "More tools" : `More tools (${TOOLS.find((t) => t.id === tool)?.label} is on)`}
               aria-expanded={railMore}
               title="More tools"
               onClick={() => setRailMore((open) => !open)}
               data-takeoff="rail-more"
               className={`flex h-9 w-9 items-center justify-center rounded-md text-base ${
-                railMore || (!RAIL_TOOLS.includes(tool) && tool !== "pan") ? "bg-rail-hover text-ink" : "text-ink-label hover:bg-rail-hover"
+                !RAIL_TOOLS.includes(tool)
+                  ? "bg-brand text-neutral-900"
+                  : railMore
+                    ? "bg-rail-hover text-ink"
+                    : "text-ink-label hover:bg-rail-hover"
               }`}
             >
-              ⋯
+              {/* A tool from this menu that is ON wears its own icon here,
+                  highlighted, so the rail always shows what the pointer does. */}
+              {RAIL_TOOLS.includes(tool) ? "⋯" : <ToolIcon id={tool} />}
             </button>
             {railMore && (
               <div
@@ -4592,7 +4768,7 @@ export function TakeoffPlanViewer({
                       setRailMore(false);
                     }}
                     disabled={toolDisabled(entry.id)}
-                    title={toolDisabled(entry.id) ? "Set the scale on this sheet first." : entry.hint}
+                    title={toolDisabled(entry.id) ? "Set the scale on this sheet first." : inWorkspaceWords(entry.hint)}
                     className={`flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs ${
                       tool === entry.id ? "bg-brand text-neutral-900" : "text-ink-body hover:bg-rail-hover"
                     } disabled:cursor-not-allowed disabled:opacity-40`}
@@ -5170,6 +5346,32 @@ export function TakeoffPlanViewer({
           code shaped like a safeguard is worse than none. */}
       <div
         ref={frameRef}
+        onPointerDownCapture={(event) => {
+          if (!(event.button === 1 || spaceRef.current || tool === "hand")) return;
+          const frame = frameRef.current;
+          if (frame === null) return;
+          // Captured here, before the drawing sees it: a pan is never a point.
+          event.preventDefault();
+          event.stopPropagation();
+          panRef.current = { x: event.clientX, y: event.clientY, left: frame.scrollLeft, top: frame.scrollTop };
+          setPanning(true);
+          const move = (e: PointerEvent) => {
+            const from = panRef.current;
+            if (from === null) return;
+            frame.scrollLeft = from.left - (e.clientX - from.x);
+            frame.scrollTop = from.top - (e.clientY - from.y);
+          };
+          const end = () => {
+            panRef.current = null;
+            setPanning(false);
+            window.removeEventListener("pointermove", move);
+            window.removeEventListener("pointerup", end);
+          };
+          window.addEventListener("pointermove", move);
+          window.addEventListener("pointerup", end);
+        }}
+        onAuxClick={(event) => event.preventDefault()}
+        style={panning ? { cursor: "grabbing" } : spaceHeld || tool === "hand" ? { cursor: "grab" } : undefined}
         className={
           fill
             ? // The host has decided the height; take all of it. No max-h and
@@ -5270,13 +5472,26 @@ export function TakeoffPlanViewer({
               preserveAspectRatio="none"
               style={{ width: cssWidth ? `${cssWidth}px` : "100%", height: cssWidth ? `${cssWidth * aspect}px` : "100%" }}
               className={`absolute left-0 top-0 ${
-                drawing || answerKey !== undefined
-                  ? "cursor-crosshair touch-none"
-                  : "pointer-events-none"
+                spaceHeld || panning || tool === "hand"
+                  ? "pointer-events-none"
+                  : drawing || answerKey !== undefined
+                    ? "cursor-crosshair touch-none"
+                    : fill && tool === "pan"
+                      ? "cursor-default"
+                      : "pointer-events-none"
               }`}
               data-takeoff={answerKey?.tracing === true ? "tracing-surface" : undefined}
               onPointerDown={onPointerDown}
               onPointerMove={(event) => {
+                const corner = rectDragRef.current;
+                if (corner !== null && tool === "rect" && (event.buttons & 1) === 1) {
+                  const raw = pointAt(event);
+                  if (raw && Math.hypot(raw.x - corner.x, raw.y - corner.y) > 0.002) {
+                    corner.moved = true;
+                    setDraft(rectanglePoints(corner, placePoint(raw, null, false)));
+                  }
+                  return;
+                }
                 // ── WHERE THE NEXT CLICK WOULD GO ──
                 //
                 // Before the first click this is the only thing on screen, and
@@ -5317,6 +5532,7 @@ export function TakeoffPlanViewer({
                 setEditDraft(moveVertex(editDraft.xs, editDraft.ys, draggingVertex, point));
               }}
               onPointerUp={(event) => {
+                rectDragRef.current = null;
                 if (splitLine !== null) {
                   const line = splitLine;
                   setSplitLine(null);
@@ -5771,7 +5987,16 @@ export function TakeoffPlanViewer({
                   building a key has to decide about every mark they can see,
                   and this one is not theirs to decide about. The scale is
                   already stated in words in the panel. */}
-              {calibration && answerKey === undefined && (
+              {/* ── A PRINTED SCALE HAS NO LINE ON THE DRAWING ──
+                  "Use the printed scale" stores the title block's scale as a
+                  line the full width of the sheet at mid-height
+                  (`scaleFromPrinted`): a number, not two points anybody chose.
+                  Drawn, it was an orange dash-dot across the plan at the same
+                  height on every such sheet — Baker A001-A101, from Chrome's
+                  click test. So it is not drawn; the badge says the scale. A
+                  scale somebody set by clicking IS drawn, says what it is on
+                  hover, and has a row in the layer panel to switch it off. */}
+              {calibration && answerKey === undefined && !(calibration.x1 === 0 && calibration.x2 === 1) && !hiddenLayers.has("scale") && (
                 <line
                   x1={calibration.x1}
                   y1={calibration.y1}
@@ -5802,7 +6027,13 @@ export function TakeoffPlanViewer({
                      this. Pinned by `calibrationMark.test.ts`. */
                   strokeDasharray={CALIBRATION_DASH}
                   vectorEffect="non-scaling-stroke"
-                />
+                  data-takeoff="scale-line"
+                  style={fill ? { pointerEvents: "stroke" } : undefined}
+                >
+                  <title>
+                    {`Scale line: the two points the scale was set from${scaleReading?.name ? ` (${scaleReading.name})` : ""}. Not a wall and not measured.`}
+                  </title>
+                </line>
               )}
 
               {(sheet?.measurements ?? []).map((m) => {
@@ -5966,20 +6197,32 @@ export function TakeoffPlanViewer({
           when nothing is in it, so an empty corner covers no drawing. */}
       {fill && (
         <>
+          {/* Only when the panel is collapsed: the messages and the draft
+              card's dock, small and above the scale, at the bottom-left. */}
           <div
             ref={setNoticeSlot}
             data-hud="notices"
-            // Top CENTRE: a sheet's corners are where a drag starts (the click
-            // list's split-in-no-room step begins at 2% of the page), and its
-            // top edge is usually margin.
-            className="absolute left-1/2 top-2 z-20 flex max-h-[45%] w-[min(28rem,calc(100%-1rem))] -translate-x-1/2 flex-col gap-2 overflow-y-auto rounded-md border border-line-card bg-surface/95 p-2 shadow-lg empty:hidden"
+            className="absolute bottom-12 left-2 z-20 flex max-h-[40%] w-[min(22rem,calc(100%-1rem))] flex-col gap-2 overflow-y-auto rounded-md border border-line-card bg-surface/95 p-2 text-xs shadow-lg empty:hidden"
           />
-          <div ref={setScaleSlot} data-hud="scale" className="absolute bottom-2 left-2 z-20 flex flex-wrap items-center gap-2 empty:hidden" />
-          <div
-            ref={setZoomSlot}
-            data-hud="zoom"
-            className="absolute bottom-2 right-2 z-20 rounded-md border border-line-card bg-surface/95 p-1 shadow-lg empty:hidden"
-          />
+          {/* BOTTOM-LEFT, both: a sheet's title block is bottom-right, and the
+              zoom buttons sat on it (Chrome's click test). */}
+          <div data-hud="corner" className="absolute bottom-2 left-2 z-20 flex max-w-[calc(100%-1rem)] flex-wrap items-center gap-2">
+            <div ref={setZoomSlot} className="rounded-md border border-line-card bg-surface/95 p-1 shadow-lg empty:hidden" />
+            <div ref={setScaleSlot} className="flex flex-wrap items-center gap-2 empty:hidden" />
+          </div>
+          {!panelOpen && (
+            <button
+              type="button"
+              onClick={() => onPanelOpen?.(true)}
+              data-hud="expand"
+              data-takeoff="expand-panel"
+              aria-label="Show the layers panel"
+              title="Show the layers panel (])"
+              className="absolute right-0 top-2 z-20 rounded-l-md border border-r-0 border-line-card bg-surface/95 px-1.5 py-2 text-xs text-ink-label shadow"
+            >
+              ‹ Layers
+            </button>
+          )}
         </>
       )}
       </div>
@@ -6000,6 +6243,23 @@ export function TakeoffPlanViewer({
           }
         >
           {panelOpen && (
+            <div className="flex items-center justify-between border-b border-line-card px-2 py-1">
+              <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Layers</span>
+              <button
+                type="button"
+                onClick={() => onPanelOpen?.(false)}
+                aria-expanded
+                aria-label="Collapse the layers panel"
+                title="Collapse (])"
+                data-takeoff="collapse-panel"
+                className="rounded px-1.5 text-sm text-ink-muted hover:bg-rail-hover hover:text-ink-body"
+              >
+                ›
+              </button>
+            </div>
+          )}
+          <div ref={setDockSlot} data-takeoff="panel-dock" className="flex flex-col gap-2 border-b border-line-card p-2 text-xs empty:hidden" />
+          {panelOpen && (
             <TakeoffLayerPanel
               jobId={jobId}
               layers={layers}
@@ -6009,18 +6269,32 @@ export function TakeoffPlanViewer({
                 return saved.ok ? null : saved.error;
               }}
               lit={litLayer}
-              onLit={setLitLayer}
-              onToggle={(key) =>
+              onToggle={(key) => {
+                // Hiding the lit layer lets go of it, and of its length label.
+                if (!hiddenLayers.has(key) && litLayer === key) {
+                  setLitLayer(null);
+                  onSelect?.(null);
+                }
                 setHiddenLayers((was) => {
                   const next = new Set(was);
                   if (!next.delete(key)) next.add(key);
                   return next;
-                })
-              }
+                });
+              }}
+              onLit={(key) => {
+                setLitLayer(key);
+                if (key === null) onSelect?.(null);
+              }}
               banner={<div ref={setBannerSlot} className="empty:hidden" />}
               review={<div ref={setReviewSlot} className="empty:hidden" />}
             >
-              <div ref={setFoundSlot} className="min-w-0 break-words empty:hidden" />
+              {/* QUANTITIES IS A SECTION OF THIS PANEL, not a second panel:
+                  the top bar's Quantities button scrolls here and never
+                  closes the layers, so the plan does not move sideways. */}
+              <section id="takeoff-quantities" data-takeoff="quantities-section" className="min-w-0 scroll-mt-2">
+                <h3 className="px-1 pt-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">Quantities</h3>
+                <div ref={setFoundSlot} className="min-w-0 break-words empty:hidden" />
+              </section>
             </TakeoffLayerPanel>
           )}
           <div ref={setSideSlot} className="flex flex-col gap-2 p-2 empty:hidden" />
@@ -6030,13 +6304,15 @@ export function TakeoffPlanViewer({
       </div>
 
       {/* ── What the draft reads, and what to do with it ──────────── */}
-      {drawing && (
+      {drawing && slot(noticeTarget, (
         <div
           className={
             fill
-              ? // Floating over the bottom of the canvas, since the canvas is
-                // the whole height: in the flow it would push the drawing up.
-                "absolute bottom-12 left-1/2 z-30 w-[min(40rem,calc(100%-24rem))] min-w-[20rem] -translate-x-1/2 rounded-lg border border-line-card bg-surface p-3 shadow-xl"
+              ? // DOCKED, not floating: in the panel, or small at the canvas's
+                // bottom-left when the panel is collapsed. Floating over the
+                // canvas it covered the very part of the plan the set-scale
+                // prompt asks somebody to click (Chrome's click test).
+                "rounded-lg border border-line-card bg-surface p-2"
               : "relative z-20 rounded-lg border border-line-card bg-surface-card p-3"
           }
         >
@@ -6046,8 +6322,15 @@ export function TakeoffPlanViewer({
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs text-ink-body">
               {draft.xs.length === 0
-                ? TOOLS.find((t) => t.id === tool)?.hint
-                : `${draft.xs.length} point${draft.xs.length === 1 ? "" : "s"}${draftReading ? ` · ${draftReading}` : ""}`}
+                ? fill
+                  ? inWorkspaceWords(TOOLS.find((t) => t.id === tool)?.hint ?? "")
+                  : TOOLS.find((t) => t.id === tool)?.hint
+                : tool === "rect"
+                  ? // A rectangle's own words: it is two corners, not a point count.
+                    draft.xs.length < 4
+                    ? "Now the opposite corner: drag to it, or click it."
+                    : `Rectangle${draftReading ? ` · ${draftReading}` : ""}`
+                  : `${draft.xs.length} point${draft.xs.length === 1 ? "" : "s"}${draftReading ? ` · ${draftReading}` : ""}`}
             </p>
             {draft.xs.length > 0 && (
               <button
@@ -6163,7 +6446,7 @@ export function TakeoffPlanViewer({
             </button>
           )}
 
-          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && tool !== "exclude" && tool !== "workarea" && (sheet || tool === "count") && draft.xs.length > 0 && (
+          {tool !== "calibrate" && tool !== "cutout" && tool !== "edit" && tool !== "exclude" && tool !== "workarea" && (sheet || tool === "count") && draft.xs.length > 0 && (tool !== "rect" || draft.xs.length >= 4) && (
             <MeasurementForm
               jobId={jobId}
               pageId={sheet?.id ?? null}
@@ -6306,7 +6589,7 @@ export function TakeoffPlanViewer({
             <p className="mt-2 text-xs text-tag-amber-ink">Set the scale on this sheet before measuring it.</p>
           )}
         </div>
-      )}
+      ))}
     </div>
   );
 }

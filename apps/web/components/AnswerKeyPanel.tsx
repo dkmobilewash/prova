@@ -3,14 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KEY_RULES } from "@/lib/takeoff/answerKey";
 import {
+  CANT_TELL,
   REVIEWER_KEY,
   candidatesInBox,
   isTypingTarget,
   keyFromReview,
   nextUnreviewed,
+  nextUntyped,
   progressOf,
   removeTraced,
   setVerdict,
+  setWallType,
   type ReviewState,
   type Verdict,
 } from "@/lib/takeoff/answerKeyReview";
@@ -92,6 +95,12 @@ export type AnswerKeyPanelProps = {
   sheet: { set: string; page: number; number: string; feetPerUnit: number };
   /** What the classifier set aside, by its own reason — see `onSetAside`. */
   setAside?: { kind: string; why: string; n: number }[];
+  /**
+   * The set's legend codes, as stored (`storedLegendCodes`), for round 12's
+   * type picker. Empty when the set's legend has never been read: the
+   * reviewer then types the code the drawing prints.
+   */
+  legendCodes?: readonly string[];
   /** Whether every unpaired line is being offered, and how to change it. */
   offerAll?: boolean;
   onOfferAll?: (next: boolean) => void;
@@ -146,6 +155,7 @@ export function AnswerKeyPanel({
   splitNote,
   pairings,
   setAside,
+  legendCodes = [],
   offerAll,
   onOfferAll,
   tracing,
@@ -351,6 +361,19 @@ export function AnswerKeyPanel({
       // routes it to the last trace; a second listener for the same key is
       // two ideas of undo on one screen.
       if (typing || event.metaKey || event.ctrlKey || event.altKey) return;
+      // ── ROUND 12: A NUMBER IS A TYPE ──
+      //
+      // 1–9 give the focused accepted or traced wall the legend's nth code,
+      // 0 says the drawing does not say ("U"), and the panel moves on to the
+      // next wall with no type, so a sheet is typed wall to wall from the keys.
+      if (/^[0-9]$/.test(key) && focusedId !== null && typeable(focusedId)) {
+        const code = key === "0" ? CANT_TELL : legendCodes[Number(key) - 1];
+        if (code !== undefined) {
+          event.preventDefault();
+          giveType(focusedId, code);
+        }
+        return;
+      }
       if (key === "a") {
         event.preventDefault();
         decide(focusedId, "wall");
@@ -420,6 +443,19 @@ export function AnswerKeyPanel({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   });
+
+  /** An accepted candidate or a trace: the only walls a type belongs to. */
+  function typeable(id: string): boolean {
+    return state.verdicts[id] === "wall" || state.traced.some((t) => t.id === id);
+  }
+
+  function giveType(id: string, code: string) {
+    noteActivity();
+    const next = setWallType(state, [id], code);
+    onState(next);
+    const after = nextUntyped(next, id);
+    if (after !== null) onFocus(after);
+  }
 
   function save() {
     const key = keyFromReview(state, {
@@ -510,6 +546,7 @@ export function AnswerKeyPanel({
             // so every unsure run's pairings reached the file as confident
             // negatives — 483 of them on one sheet.
             verdict: x.v === "wall" ? "wall" : x.v === "unsure" ? "unsure" : "not-wall",
+            ...(x.v === "wall" && (state.types ?? {})[x.c.id] !== undefined ? { wallType: state.types![x.c.id] } : {}),
           })),
         ...state.traced.map((t) => ({
           x1: t.x1,
@@ -519,6 +556,7 @@ export function AnswerKeyPanel({
           lengthFeet: t.lengthFeet,
           thicknessFeet: 0,
           verdict: "traced" as const,
+          ...((state.types ?? {})[t.id] !== undefined ? { wallType: state.types![t.id] } : {}),
         })),
       ];
       const response = await fetch("/api/takeoff/labels", {
@@ -969,6 +1007,57 @@ export function AnswerKeyPanel({
         </button>
       </div>
 
+      {/* ── ROUND 12: WHICH TYPE THIS WALL IS ──
+          Only for an accepted or traced wall: the set's legend codes (keys
+          1–9), "can't tell" (0), or a code typed in when the legend has not
+          been read. Saved with the verdict; see `setWallType`. */}
+      {focusedId !== null && typeable(focusedId) ? (
+        <div data-takeoff="key-type" className="flex flex-wrap items-center gap-1 text-xs">
+          <span className="text-ink-muted">Type</span>
+          {legendCodes.map((code, at) => (
+            <button
+              key={code}
+              type="button"
+              data-takeoff="key-type-code"
+              aria-pressed={(state.types ?? {})[focusedId] === code}
+              onClick={() => giveType(focusedId, code)}
+              className={`rounded-md border px-2 py-1 ${(state.types ?? {})[focusedId] === code ? "border-link text-ink" : "border-line-card text-ink-label"} hover:bg-rail-hover`}
+            >
+              {at < 9 ? `${code} (${at + 1})` : code}
+            </button>
+          ))}
+          <button
+            type="button"
+            data-takeoff="key-type-unknown"
+            aria-pressed={(state.types ?? {})[focusedId] === CANT_TELL}
+            onClick={() => giveType(focusedId, CANT_TELL)}
+            className={`rounded-md border px-2 py-1 ${(state.types ?? {})[focusedId] === CANT_TELL ? "border-link text-ink" : "border-line-card text-ink-label"} hover:bg-rail-hover`}
+          >
+            Can&apos;t tell (0)
+          </button>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const input = event.currentTarget.elements.namedItem("code") as HTMLInputElement | null;
+              if (input !== null && input.value.trim() !== "") {
+                giveType(focusedId, input.value);
+                input.value = "";
+              }
+            }}
+          >
+            <input
+              name="code"
+              data-takeoff="key-type-other"
+              placeholder={legendCodes.length === 0 ? "type the code" : "other"}
+              className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-ink"
+            />
+          </form>
+          {(state.types ?? {})[focusedId] !== undefined ? (
+            <span data-takeoff="key-type-set" className="text-ink-muted">set: {(state.types ?? {})[focusedId]}</span>
+          ) : null}
+        </div>
+      ) : null}
+
       {/*
         * ── THE INSTRUCTIONS, IN WORDS HERE AND IN PICTURES OUTSIDE THE REPO ──
         *
@@ -1083,7 +1172,7 @@ export function AnswerKeyPanel({
         )}
         <p className="mt-1.5 text-[11px] text-ink-muted">
           {pairings === undefined || pairings.length === 0
-            ? "No pairings captured yet — run Find the walls first."
+            ? "No pairings captured yet — press Run takeoff first."
             : `${pairings.length} pairings captured · ${progress.reviewed} of ${progress.total} reviewed` +
               (progress.unsure > 0 ? ` · ${progress.unsure} not sure` : "")}
         </p>

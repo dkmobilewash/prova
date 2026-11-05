@@ -1,4 +1,5 @@
 import { pairingsForPlan } from "./priorPlanLoad";
+import { storedLegendCodes } from "./planTextRead";
 import { setReviewItems, setReviewOrder, type SetReviewItem } from "@/lib/takeoff/wallReview";
 import { storedRunsOrNull } from "@/lib/takeoff/wallProposal";
 import { DROPPED_LABEL, HELD_LABEL } from "@/lib/takeoff/estimateHold";
@@ -657,6 +658,9 @@ export async function loadTakeoffWorkspace(
     // has turned plan-text reading on, the same switch the keyless sheet
     // names sit behind.
     planTextReadOn: (await aiGate(company.id, "PLAN_TEXT_READ")).ok,
+    // The set's legend codes as stored, for the answer-key type picker (round
+    // 12). No model call: empty until the set's legend has been read.
+    legendCodes: await storedLegendCodes(plan.id),
     // The trained wall model, only for a company whose switch is on: ~80 KB
     // of trees that nobody else's page should carry.
     wallModel: (roomFinder?.demotedWallsOff ?? false) ? null : loadWallModel(process.env),
