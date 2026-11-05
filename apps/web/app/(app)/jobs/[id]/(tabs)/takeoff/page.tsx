@@ -175,6 +175,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
     rasterUrl,
     scannedPlansOn,
     storedWallsByPage,
+    legendCodes,
     levelByPage,
     scalePrefillByPage,
     viewScalesByPage,
@@ -235,6 +236,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
         rasterPages={rasterPages}
         rasterUrl={rasterUrl}
         storedWallsByPage={storedWallsByPage}
+        legendCodes={legendCodes}
         scalePrefillByPage={scalePrefillByPage}
         viewScalesByPage={viewScalesByPage}
         scaleDeclineByPage={scaleDeclineByPage}

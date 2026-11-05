@@ -1522,6 +1522,7 @@ export function TakeoffWorkspace({
               scannedPages={data.scannedPages}
               rasterPages={data.rasterPages}
               rasterUrl={data.rasterUrl}
+              legendCodes={data.legendCodes}
               storedWallsByPage={data.storedWallsByPage}
               layerNames={data.layerNames}
               takeoffItems={data.matchableItems}
