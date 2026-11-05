@@ -56,6 +56,8 @@ export type ReviewDraft = {
    * fresh read (34). Optional: a draft written before this has none.
    */
   splits?: SplitRecord[];
+  /** Round 12's wall types, by candidate or trace id. Optional: a draft written before this has none. */
+  types?: Record<string, string>;
   /** For the restore offer, so it can say what is in there before restoring. */
   counts: { decided: number; traced: number };
 };
@@ -119,6 +121,7 @@ export function draftFrom(input: {
     verdicts: { ...input.state.verdicts },
     traced: input.state.traced.map((t) => ({ ...t })),
     splits: [...(input.state.splits ?? [])],
+    types: { ...(input.state.types ?? {}) },
     counts: { decided, traced },
   };
 }
@@ -163,9 +166,12 @@ export function restoreDraft(draft: ReviewDraft, start: ReviewState, feetPerUnit
     // nearly impossible, and "nearly" is not a reason to write one in.
     if (id in verdicts) verdicts[id] = verdict;
   }
+  const withTraced = withTraces({ ...fresh, verdicts }, draft.traced);
+  // Types only for walls the restored state still accepts or traces.
+  const types = Object.fromEntries(Object.entries(draft.types ?? {}).filter(([id]) => withTraced.verdicts[id] === "wall" || withTraced.traced.some((t) => t.id === id)));
   return {
     ok: true,
-    state: withTraces({ ...fresh, verdicts }, draft.traced),
+    state: Object.keys(types).length === 0 ? withTraced : { ...withTraced, types },
   };
 }
 
@@ -200,7 +206,11 @@ export function reviewSignature(state: ReviewState | null): string {
     .map((t) => `${round(t.x1)},${round(t.y1)},${round(t.x2)},${round(t.y2)}`)
     .sort()
     .join(";");
-  return `${verdicts}|${traced}`;
+  const types = Object.entries(state.types ?? {})
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([id, t]) => `${id}=${t}`)
+    .join(",");
+  return `${verdicts}|${traced}${types === "" ? "" : `|${types}`}`;
 }
 
 /**

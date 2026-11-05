@@ -98,7 +98,40 @@ export type ReviewState = {
    * where it happens and re-applied from the record, never guessed.
    */
   splits: SplitRecord[];
+  /**
+   * ── WHICH WALL TYPE EACH ACCEPTED OR TRACED WALL IS — round 12 ──
+   *
+   * Keyed by candidate or trace id: the set's legend code, or `CANT_TELL`.
+   * Optional so every state built before this exists still is one; only an
+   * accepted or traced wall carries a type (`setWallType`).
+   */
+  types?: Record<string, string>;
 };
+
+/** "U": the reviewer looked and the drawing does not say which type. Saved, and left out of the score. */
+export const CANT_TELL = "U";
+
+/** Sets (or, with null, clears) the type of accepted candidates and traces. Anything else is left alone. */
+export function setWallType(state: ReviewState, ids: readonly string[], code: string | null): ReviewState {
+  const types = { ...(state.types ?? {}) };
+  for (const id of ids) {
+    const accepted = state.verdicts[id] === "wall" || state.traced.some((t) => t.id === id);
+    if (!accepted) continue;
+    const clean = code?.trim().toUpperCase() ?? "";
+    if (clean === "") delete types[id];
+    else types[id] = clean;
+  }
+  return { ...state, types };
+}
+
+/** The next accepted or traced wall with no type yet, after `from` in the panel's order, wrapping. */
+export function nextUntyped(state: ReviewState, from: string | null): string | null {
+  const order = [...state.candidates.filter((c) => state.verdicts[c.id] === "wall").map((c) => c.id), ...state.traced.map((t) => t.id)];
+  const todo = order.filter((id) => (state.types ?? {})[id] === undefined);
+  if (todo.length === 0) return null;
+  const at = from === null ? -1 : order.indexOf(from);
+  return todo.find((id) => order.indexOf(id) > at) ?? todo[0]!;
+}
 
 /** One split, as the geometry it was made on. */
 export type SplitRecord = {
@@ -154,7 +187,13 @@ export function setVerdict(state: ReviewState, ids: readonly string[], verdict: 
     // nothing must not invent rows.
     if (id in next) next[id] = verdict;
   }
-  return { ...state, verdicts: next };
+  // A wall that is no longer accepted has no type.
+  let types = state.types;
+  if (verdict !== "wall" && types !== undefined && ids.some((id) => id in types!)) {
+    types = { ...types };
+    for (const id of ids) delete types[id];
+  }
+  return { ...state, verdicts: next, ...(types === undefined ? {} : { types }) };
 }
 
 /** A wall the reviewer drew because the detector missed it entirely. */
@@ -231,7 +270,8 @@ export function withTraces(state: ReviewState, traced: readonly Candidate[]): Re
 }
 
 export function removeTraced(state: ReviewState, id: string): ReviewState {
-  return { ...state, traced: state.traced.filter((w) => w.id !== id) };
+  const types = state.types === undefined || !(id in state.types) ? state.types : Object.fromEntries(Object.entries(state.types).filter(([k]) => k !== id));
+  return { ...state, traced: state.traced.filter((w) => w.id !== id), ...(types === undefined ? {} : { types }) };
 }
 
 export type Progress = {
@@ -336,6 +376,7 @@ export function keyFromReview(
       lengthFeet: one.lengthFeet,
       thicknessIn: one.thicknessIn,
       from: one.from,
+      ...((state.types ?? {})[one.id] === undefined ? {} : { wallType: state.types![one.id] }),
     });
   }
   for (const one of state.traced) {
@@ -347,6 +388,7 @@ export function keyFromReview(
       lengthFeet: one.lengthFeet,
       thicknessIn: one.thicknessIn,
       from: one.from,
+      ...((state.types ?? {})[one.id] === undefined ? {} : { wallType: state.types![one.id] }),
     });
   }
   return {

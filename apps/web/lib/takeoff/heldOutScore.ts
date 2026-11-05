@@ -39,6 +39,12 @@ export type ScoredRun = {
    * So the band below is driven by whichever of the pair knows.
    */
   thicknessFeet?: number;
+  /**
+   * The wall type a reviewer gave this key wall in round 12 — a legend code, or
+   * "U" for can't tell — so a scorecard can grade the finder's type against it.
+   * Absent on a key wall nobody typed.
+   */
+  wallType?: string;
 };
 
 export type SheetScore = {
@@ -288,6 +294,7 @@ export function keyFromLabels(
       lengthFeet: number;
       thicknessFeet?: number;
       verdict: string;
+      wallType?: string;
     }>;
   },
   /**
@@ -312,6 +319,7 @@ export function keyFromLabels(
       // Carried through so the band can be derived. A traced wall's is zero,
       // which is honest: the reviewer drew a line, not a pair of faces.
       thicknessFeet: v.thicknessFeet,
+      ...(typeof v.wallType === "string" && v.wallType !== "" ? { wallType: v.wallType } : {}),
     };
     (v.verdict === "wall" ? offered : traces).push(run);
   }

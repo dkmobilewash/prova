@@ -1773,6 +1773,7 @@ export function TakeoffWorkspace({
                 }
                 traceReady={traceReady}
                 setAside={onThisSheet(setAsideByPage, page) ?? undefined}
+                legendCodes={data.legendCodes}
                 offerAll={onThisSheet(offerAllByPage, page) ?? false}
                 onOfferAll={(next) =>
                   setOfferAllByPage((prev) => setOnThisSheet(prev, page, next ? true : null))
