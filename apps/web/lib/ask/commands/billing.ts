@@ -329,10 +329,6 @@ export const billingCommands: DirectCommandDefinition[] = [draftInvoiceCommand, 
 
 /** The rest of lib/actions/billing.ts, each with its reason. */
 export const billingExclusions: Exclusion[] = [
-  {
-    action: "draftPurchaseOrderLine",
-    reason: "Choosing a vendor's price against a line's budget is done on the Buyout page, in front of the comparison; page only.",
-  },
   { action: "removePurchaseOrderLine", reason: "T5: deletes are never commands." },
   {
     action: "issuePurchaseOrder",

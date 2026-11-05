@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { closePurchaseOrder, draftPurchaseOrderLine, issuePurchaseOrder, removePurchaseOrderLine } from "@/lib/actions";
+import { closePurchaseOrder, draftPurchaseOrderLine, issuePurchaseOrder, removePurchaseOrderLine, settleAskDraft } from "@/lib/actions";
+import type { PurchaseOrderDraft } from "@/lib/ask/drafts";
 import type { PurchaseOrderDocument } from "@/lib/purchase-order-pdf";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { Disclosure } from "@/components/Disclosure";
@@ -76,15 +77,19 @@ export function BuyoutRow({
   row,
   vendors,
   findings = [],
+  askDraft,
 }: {
   jobId: string;
   row: BuyoutRowData;
   vendors: { id: string; name: string }[];
   findings?: BuyoutFinding[];
+  /** A card from the Ask box for THIS line: quantity and vendor filled in,
+   * the row scrolled to, and a saved line tells the card (lib/ask/drafts.ts). */
+  askDraft?: PurchaseOrderDraft;
 }) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [quantity, setQuantity] = useState(String(row.quantityLeft || row.line.quantity));
+  const [quantity, setQuantity] = useState(askDraft?.quantity ?? String(row.quantityLeft || row.line.quantity));
   const boughtOut = row.quantityLeft === 0 && row.line.quantity > 0;
   const sources = rowSources(row);
   const tally = specHintTally(findings.map((finding) => specHint(finding, sources)));
@@ -99,6 +104,7 @@ export function BuyoutRow({
       try {
         const result = await draftPurchaseOrderLine(jobId, form);
         if (!result.ok) setError(result.error);
+        else if (askDraft) void settleAskDraft(askDraft.proposalId);
       } catch {
         setError("That did not go through. Reload the page and check before trying again.");
       }
@@ -106,7 +112,10 @@ export function BuyoutRow({
   }
 
   return (
-    <li className="flex flex-col gap-2 p-4">
+    <li
+      className={`flex flex-col gap-2 p-4 ${askDraft ? "bg-rail-hover" : ""}`}
+      ref={askDraft ? (el) => el?.scrollIntoView({ block: "center" }) : undefined}
+    >
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <p className="text-sm text-ink">{row.line.description}</p>
         <p className="flex flex-wrap gap-x-4 text-sm text-ink-body">
@@ -172,7 +181,7 @@ export function BuyoutRow({
       >
         <label className="flex flex-col gap-1 text-xs text-ink-muted">
           Vendor or lower-tier sub
-          <select name="vendorId" required defaultValue="" className={`${inputClass} w-52`}>
+          <select name="vendorId" required defaultValue={askDraft?.vendorId ?? ""} className={`${inputClass} w-52`}>
             <option value="" disabled>
               Pick one
             </option>

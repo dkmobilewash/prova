@@ -28,7 +28,7 @@ describe("raise_rfi", () => {
     expect(raiseRfiCommand.mode).toBe("HANDOFF");
     expect(raiseRfiCommand.execute).toBeUndefined();
     expect(raiseRfiCommand.core).toBeUndefined();
-    expect(raiseRfiCommand.handoffHref!("abc")).toBe("/rfis?draft=abc");
+    expect(raiseRfiCommand.handoffHref!("abc", {})).toBe("/rfis?draft=abc");
     expect(raiseRfiCommand.capability).toBe("MANAGE_JOBS");
   });
 

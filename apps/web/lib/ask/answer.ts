@@ -633,7 +633,7 @@ async function runCommand(
             title: command.title,
             button: command.button,
             mode: command.mode,
-            handoffHref: command.handoffHref?.(id),
+            handoffHref: command.handoffHref?.(id, resolution.resolved),
             preview: resolution.preview,
             ...(resolution.suggestions && resolution.suggestions.length > 0
               ? { suggestions: resolution.suggestions }

@@ -105,6 +105,7 @@ export * from "./takeoff";
 export * from "./roomFinder";
 export * from "./demotedWalls";
 export * from "./symbolCount";
+export * from "./planCompare";
 export * from "./demoTakeoff";
 export * from "./wholeSetTakeoff";
 export * from "./scannedSheets";

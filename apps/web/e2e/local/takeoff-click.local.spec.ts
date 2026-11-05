@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, expect, type Dialog, type Page } from "@playwright/test";
 import * as XLSX from "xlsx";
@@ -275,6 +275,34 @@ test("R5-3 the sheet with runs to confirm says they are not on the estimate", as
   const held = await prisma.takeoffMeasurement.findFirstOrThrow({ where: { label: "wall, to confirm", page: { plan: { jobId: SETS.baker.id } } }, select: { page: { select: { pageNumber: true } } } });
   await on("baker", held.page.pageNumber);
   await expect(hook("held-walls")).toContainText(/\d+ runs? to confirm, [\d,]+ ft: not on the estimate/);
+});
+
+// ── CHROME'S CLICK TEST, ITEM 12: point at a held run to see it, click to go there ──
+const NEEDS_REVIEW_SHOTS = join(__dirname, "../artifacts/needs-review");
+test("R5-3b Needs review: pointing at a run picks it out on the plan, and its length zooms there", async () => {
+  const held = await prisma.takeoffMeasurement.findFirstOrThrow({ where: { label: "wall, to confirm", page: { plan: { jobId: SETS.baker.id } } }, select: { page: { select: { pageNumber: true } } } });
+  await on("baker", held.page.pageNumber);
+  await button("Fit").click();
+  const list = hook("held-walls");
+  if ((await list.getAttribute("open")) === null) await list.locator("summary").click();
+  await expect(hook("held-highlight")).toHaveCount(0);
+  await hook("held-wall").first().hover();
+  await expect(hook("held-highlight"), "pointing at a held run picked nothing out").toHaveCount(1);
+  const atFit = await hook("zoom").innerText();
+  await hook("show-held-wall").first().click();
+  await expect(hook("zoom"), "clicking the run's length did not zoom to it").not.toHaveText(atFit);
+  await expect(hook("review-run")).toHaveCount(1);
+  // On screen, centred: the run's middle is inside the canvas.
+  const port = await page.locator('[data-testid="takeoff-plan-port"]').boundingBox();
+  const mid = await hook("review-run").boundingBox();
+  expect(mid!.x + mid!.width / 2).toBeGreaterThan(port!.x);
+  expect(mid!.x + mid!.width / 2).toBeLessThan(port!.x + port!.width);
+  // The picture for the PR: zoomed to the run, with the pointer back on its row.
+  await hook("held-wall").first().hover();
+  mkdirSync(NEEDS_REVIEW_SHOTS, { recursive: true });
+  await page.screenshot({ path: join(NEEDS_REVIEW_SHOTS, "needs-review-hover-and-zoom.png") });
+  await page.mouse.move(0, 0);
+  await expect(hook("held-highlight")).toHaveCount(0);
 });
 
 test("R5-4 the estimate has no line for 'Walls — to confirm'", async () => {

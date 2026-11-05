@@ -141,6 +141,11 @@ model Company {
   /// in Settings — an OFF switch, so flipping the default never needs an
   /// UPDATE over customer rows. `false` means on.
   symbolCountOff Boolean @default(false)
+  /// Plan comparison: on a renovation sheet paired with its level's demolition
+  /// plan, a wall that plan also draws (and does not remove) is set aside as
+  /// existing to remain. OFF until the owner turns it on in Settings — see
+  /// `lib/takeoff/priorPlan.ts`.
+  planCompareOn Boolean @default(false)
 
   /// The unguessable half of this company's inbound intake address:
   /// `docs-<token>@<INTAKE_INBOUND_DOMAIN>`. The token IS the routing — an

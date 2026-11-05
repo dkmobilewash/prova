@@ -71,7 +71,7 @@ describe("ask_who_would_know", () => {
     expect(askWhoWouldKnowCommand.tier).toBe("T4_OUTWARD");
     expect(askWhoWouldKnowCommand.execute).toBeUndefined();
     expect(askWhoWouldKnowCommand.core).toBeUndefined();
-    expect(askWhoWouldKnowCommand.handoffHref!("abc")).toBe("/messages?draft=abc");
+    expect(askWhoWouldKnowCommand.handoffHref!("abc", {})).toBe("/messages?draft=abc");
     expect(askWhoWouldKnowCommand.capability).toBe("MANAGE_JOBS");
     expect(askWhoWouldKnowCommand.action).toBe("sendOutboundEmail");
     expect(COMPOSER_COMMANDS).toContain("ask_who_would_know");

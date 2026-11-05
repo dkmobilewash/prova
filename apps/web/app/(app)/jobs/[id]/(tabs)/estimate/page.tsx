@@ -24,6 +24,7 @@ import {
   reopenBlockers,
 } from "@/lib/change-order";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
+import { loadChangeOrderDraft } from "@/lib/ask/drafts";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { todayInZone } from "@/lib/viewer-timezone";
 import { formatInstant } from "@/lib/render-date";
@@ -119,8 +120,15 @@ const rowConfirmClass =
  * for a layout PR, and the issue's own detail is held privately since it
  * names exactly what is unguarded on a public repo.
  */
-export default async function JobEstimatePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobEstimatePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ draft?: string }>;
+}) {
   const { id } = await params;
+  const { draft } = (await searchParams) ?? {};
   const { company, currentUser, principal, job: jobRef } = await requireJob(id);
   const { showsJobMoney } = jobCapabilities(principal);
   if (!showsJobMoney) {
@@ -128,6 +136,10 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
       <p className="text-sm text-ink-muted">This tab isn&rsquo;t part of your access.</p>
     );
   }
+
+  // A card from the Ask box: the change order form opens filled in, and its
+  // own Start draft is the write (lib/ask/commands/changeOrders.ts).
+  const askDraft = await loadChangeOrderDraft({ company, id: currentUser.id }, draft, jobRef.id);
 
   const job = await prisma.job.findUnique({
     where: { id: jobRef.id },
@@ -1407,6 +1419,7 @@ export default async function JobEstimatePage({ params }: { params: Promise<{ id
       ) : (
         <ChangeOrders
           jobId={job.id}
+          draft={askDraft.kind === "draft" ? askDraft.draft : undefined}
           // The reader's calendar day, resolved on the SERVER from the
           // same zone the DocuSign panel above already uses. It is a prop
           // rather than something the component works out because those

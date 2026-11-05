@@ -1637,6 +1637,7 @@ export function TakeoffWorkspace({
               wallTypes={data.viewerWallTypes}
               roomFinder={data.roomFinderOn}
               doorsWindows={data.doorsWindowsOn}
+              planCompare={data.planCompare}
               doorScheduleRows={data.doorScheduleRows}
               symbolCount={data.symbolCountOn}
               demotedWalls={data.demotedWallsOn}

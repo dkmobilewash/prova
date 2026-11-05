@@ -1,3 +1,4 @@
+import { pairingsForPlan } from "./priorPlanLoad";
 import { storedLegendCodes } from "./planTextRead";
 import { setReviewItems, setReviewOrder, type SetReviewItem } from "@/lib/takeoff/wallReview";
 import { storedRunsOrNull } from "@/lib/takeoff/wallProposal";
@@ -628,14 +629,22 @@ export async function loadTakeoffWorkspace(
   // same load that decides everything else on the screen.
   const roomFinder = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOff: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOff: true },
+    select: { roomFinderOn: true, demotedWallsOff: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOff: true, planCompareOn: true },
   });
+  // Plan comparison's pairings, only for a company that turned it on: each new
+  // plan's demolition plan, derived from sheet numbers and titles with a
+  // person's change on top, and the sheet list the picker offers. Plain
+  // objects, because this payload crosses to the client.
+  const planCompare = roomFinder?.planCompareOn
+    ? await pairingsForPlan(plan.id).then((p) => ({ pairs: Object.fromEntries(p.byPage), sheets: p.sheets }))
+    : null;
   // The door schedule rows the ingest read, newest per page, for the doors
   // panel's join — only for a company whose switch is on.
   const doorScheduleRows = roomFinder?.doorsWindowsOn ? await doorScheduleRowsOf(plan.id) : [];
 
   return {
     doorsWindowsOn: roomFinder?.doorsWindowsOn ?? false,
+    planCompare,
     doorScheduleRows,
     plan,
     sheets,
