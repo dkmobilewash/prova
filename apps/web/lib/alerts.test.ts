@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  takeoffRunDoneAlerts,
   ALERT_CAPABILITY,
   ALERT_HORIZON_DAYS,
   CLOSEOUT_CHASE_DAYS,
@@ -2013,5 +2014,19 @@ describe("every horizon this table holds clears notification-milestones' floor",
     // Absence is a decision here. A horizon in front of a date nobody can
     // meet would be a deadline this app invented.
     expect(ALERT_HORIZON_DAYS.DRAWING_REVISION_UNRECEIVED).toBeUndefined();
+  });
+});
+
+describe("takeoffRunDoneAlerts — the 'I'll tell you when it's done'", () => {
+  const run = { runId: "run-9", jobId: "job-1", jobName: "Washington Village", sheets: 4, finishedOn: "2026-11-03" };
+
+  it("says it finished, links to the takeoff, and is STANDING news rather than a deadline", () => {
+    const [alert] = takeoffRunDoneAlerts([run], "2026-11-04");
+    expect(alert).toMatchObject({ kind: "TAKEOFF_RUN_DONE", severity: "STANDING", href: "/jobs/job-1/takeoff", title: "Takeoff finished on Washington Village" });
+    expect(alert.detail).toMatch(/4 sheets/);
+  });
+
+  it("leaves the list after TAKEOFF_RUN_DONE_DAYS", () => {
+    expect(takeoffRunDoneAlerts([{ ...run, finishedOn: "2026-10-01" }], "2026-11-04")).toEqual([]);
   });
 });

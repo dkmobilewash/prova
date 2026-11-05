@@ -88,7 +88,8 @@ export type AlertKind =
   // correctly on one screen each and reached nobody who was not already
   // looking at that job's compliance tab -- see das140Alerts.
   | "DAS140_NOTICE"
-  | "DAS142_DISPATCH";
+  | "DAS142_DISPATCH"
+  | "TAKEOFF_RUN_DONE";
 
 /** Three levels, not five. OVERDUE is "a date has passed"; DUE_SOON is "a
  * date is coming"; STANDING is a condition with no deadline attached to
@@ -189,6 +190,8 @@ export const ALERT_CAPABILITY: Record<AlertKind, Capability> = {
   // person who sends these forms.
   DAS140_NOTICE: "MANAGE_COMPLIANCE",
   DAS142_DISPATCH: "MANAGE_COMPLIANCE",
+  // The takeoff tab and startPlanIngest are both VIEW_JOB_COSTS.
+  TAKEOFF_RUN_DONE: "VIEW_JOB_COSTS",
 };
 
 /**
@@ -286,6 +289,8 @@ export const ALERT_HORIZON_DAYS: Partial<Record<AlertKind, number>> = {
   // ten days' notice that a dispatch request has to go out -- enough to
   // decide whether the apprentice is still needed at all.
   DAS142_DISPATCH: 7,
+  // TAKEOFF_RUN_DONE has none either: it is news, not a deadline, and it
+  // leaves the list TAKEOFF_RUN_DONE_DAYS after the run finished.
   // EQUIPMENT_OUT_LONG and DELAY_GC_NOT_TOLD get no horizon ON PURPOSE —
   // neither has a date to be early against, so both are STANDING and a
   // horizon here would imply a deadline this app has never been told.
@@ -2371,5 +2376,44 @@ export function das142Alerts(sources: Das142AlertSource[], todayIso: string): Al
     }
   }
 
+  return alerts;
+}
+
+export type TakeoffRunDoneSource = {
+  runId: string;
+  jobId: string;
+  jobName: string;
+  sheets: number;
+  finishedOn: string;
+};
+
+/** How long a finished run stays on the list unless dismissed. */
+export const TAKEOFF_RUN_DONE_DAYS = 14;
+
+/**
+ * "Started, I'll tell you when it's done" — the telling. A whole-set takeoff
+ * run started from Ask (lib/ask/commands/takeoff.ts) runs in the background
+ * with nobody watching; this is the alert that it finished, to the person
+ * who asked, with the takeoff tab one tap away. Derived from the run's own
+ * finishedAt and never stored; dismissing it is the ordinary acknowledgement.
+ * Only runs started from Ask — a run started on the page was watched.
+ */
+export function takeoffRunDoneAlerts(sources: TakeoffRunDoneSource[], todayIso: string): Alert[] {
+  const alerts: Alert[] = [];
+  for (const run of sources) {
+    const ago = -daysUntilIso(run.finishedOn, todayIso);
+    if (ago > TAKEOFF_RUN_DONE_DAYS) continue;
+    alerts.push({
+      key: alertKey("TAKEOFF_RUN_DONE", run.runId, run.finishedOn),
+      kind: "TAKEOFF_RUN_DONE",
+      severity: "STANDING",
+      title: `Takeoff finished on ${run.jobName}`,
+      detail: `The wall finder you started from Ask has been through its ${run.sheets} sheet${run.sheets === 1 ? "" : "s"}. Open the takeoff to keep or drop what it found.`,
+      href: `/jobs/${run.jobId}/takeoff`,
+      dueOn: run.finishedOn,
+      daysUntil: -ago,
+      amount: null,
+    });
+  }
   return alerts;
 }

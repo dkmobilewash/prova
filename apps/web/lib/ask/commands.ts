@@ -23,6 +23,7 @@ import { changeOrderCommands, changeOrderExclusions } from "./commands/changeOrd
 import { purchaseOrderCommands } from "./commands/purchaseOrders";
 import { payApplicationCommands } from "./commands/payApplications";
 import { lienWaiverCommands } from "./commands/lienWaivers";
+import { takeoffCommands } from "./commands/takeoff";
 
 /**
  * The commands: what Ask can DO, as distinct from what it can answer.
@@ -83,7 +84,9 @@ export type CommandName =
   | "draft_purchase_order"
   | "start_pay_application"
   | "bill_retainage"
-  | "prepare_lien_waiver";
+  | "prepare_lien_waiver"
+  | "run_takeoff"
+  | "post_takeoff_to_estimate";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
  * composer) has no member on purpose: it cannot be registered. T4 is an
@@ -311,6 +314,7 @@ export const COMMANDS: CommandDefinition[] = [
   ...purchaseOrderCommands,
   ...payApplicationCommands,
   ...lienWaiverCommands,
+  ...takeoffCommands,
 ];
 
 export const EXCLUSIONS: Exclusion[] = [
