@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { heightBasis, heightFactsFromText, lettersNotesFromLines, relativeToFloor, resolveHeight, type HeightFact } from "./wallHeights";
+import { heightBasis, heightFactsFromText, labelledWallHeights, lettersNotesFromLines, relativeToFloor, resolveHeight, type HeightFact } from "./wallHeights";
 
 /** Invented phrases in every SHAPE the sixteen training legends print (measured 2026-10-22); no real line is quoted. */
 describe("the words a legend uses for a wall's height", () => {
@@ -209,5 +209,36 @@ describe("levels printed as absolute elevations, measured from the floor (Joplin
     // A figure already above the floor is left as it is.
     const plain: HeightFact = { kind: "structure-elevation", feet: 15, sheet: "A301", phrase: "T.O. ROOF FRAMING 15' 0\"" };
     expect(relativeToFloor([plain])).toEqual([plain]);
+  });
+});
+
+describe("\"see sheet X\" is followed (Grand Junction's types send every height to its interior elevations)", () => {
+  const elevations = labelledWallHeights({
+    sheet: "A300",
+    items: [
+      { str: "8'-0\"", x: 600, y: 1000, height: 8 },
+      { str: "\"T\" WALL", x: 615, y: 1012, height: 8 },
+      { str: "12'-0\"", x: 700, y: 950, height: 8 },
+      { str: "AT SALES", x: 715, y: 960, height: 8 },
+      // an opening's dimension, with nothing named beside it
+      { str: "7'-0\"", x: 900, y: 1400, height: 8 },
+      { str: "SEE WALL TYPES", x: 905, y: 1405, height: 8 },
+    ],
+  });
+
+  it("reads a dimension only where a wall is named beside it", () => {
+    expect(elevations.map((f) => [f.feet, f.phrase])).toEqual([[8, "8'-0\" \"T\" WALL"], [12, "12'-0\" AT SALES"]]);
+  });
+
+  it("gives the named sheet's heights as options to pick, and one height when it prints one", () => {
+    const many = resolveHeight({ code: "A1", ownPhrases: ["SEE SHEET A300 FOR WALL HEIGHTS"], generalNote: null, facts: elevations });
+    expect(many.feet).toBeNull();
+    expect(many.options?.map((f) => f.feet)).toEqual([8, 12]);
+    const one = resolveHeight({ code: "A1", ownPhrases: ["SEE SHEET A-300 FOR WALL HEIGHTS"], generalNote: null, facts: elevations.slice(0, 1) });
+    expect(one).toMatchObject({ feet: 8, confidence: "MEDIUM" });
+    expect(one.why).toContain("A300 prints 8'-0\" \"T\" WALL");
+    const elsewhere = resolveHeight({ code: "A1", ownPhrases: ["SEE SHEET A400 FOR WALL HEIGHTS"], generalNote: null, facts: elevations });
+    expect(elsewhere.feet).toBeNull();
+    expect(elsewhere.options).toBeUndefined();
   });
 });

@@ -102,7 +102,7 @@ function fixedFeet(phrase: string): number | null {
 
 /** A figure read off another sheet, with where it came from. */
 export type HeightFact = {
-  kind: "structure-elevation" | "bearing-elevation" | "ceiling-height" | "general-note" | "note" | "floor-datum";
+  kind: "structure-elevation" | "bearing-elevation" | "ceiling-height" | "general-note" | "note" | "floor-datum" | "wall-height";
   /** Feet above finished floor, where the fact is a figure. */
   feet: number | null;
   /** For a note: its letter or number, so "SEE NOTE A" can find it. */
@@ -125,6 +125,8 @@ export type HeightReading = {
   /** True when nothing on the type itself says a height and only a sheet-wide note applies. */
   generalNoteOnly: boolean;
   why: string;
+  /** Where the drawing gives more than one height for the type: each, with its sheet and words, for a person to pick. */
+  options?: HeightFact[];
 };
 
 /**
@@ -228,8 +230,23 @@ export function resolveHeight(input: {
       const feet = (ceiling.feet as number) + basis.inches / 12;
       return { code: input.code, basis, feet, from: ceiling, confidence: grade(false), generalNoteOnly, why: `${chain}"${basis.phrase}"; ${ceiling.sheet} prints ${ceiling.phrase}, plus ${basis.inches}"` };
     }
-    case "see":
-      return unresolved(`the legend says "${basis.phrase}" and that was not read`);
+    case "see": {
+      // ── FOLLOW "SEE SHEET A300" — Grand Junction's types send every height there ──
+      // The named sheet's own figures, by its number; "SEE ELEVATIONS" takes every
+      // interior elevation's. One figure answers; several are options, never averaged.
+      const target = basis.target.replace(/^SHEET\s+/, "").replace(/[-.\s]/g, "");
+      const there = input.facts.filter(
+        (f) => f.feet !== null && f.kind !== "note" && f.kind !== "general-note" && f.kind !== "floor-datum" &&
+          (/^ELEVATIONS?$/.test(target) ? f.kind === "wall-height" : f.sheet.replace(/[-.\s]/g, "").toUpperCase() === target),
+      );
+      const distinct = [...new Map(there.map((f) => [f.feet as number, f])).values()].sort((a, b) => (a.feet as number) - (b.feet as number));
+      if (distinct.length === 0) return unresolved(`the legend says "${basis.phrase}", and no height was read there`);
+      if (distinct.length === 1) {
+        const only = distinct[0]!;
+        return { code: input.code, basis, feet: only.feet, from: only, confidence: "MEDIUM", generalNoteOnly, why: `"${basis.phrase}"; ${only.sheet} prints ${only.phrase}` };
+      }
+      return { ...unresolved(`"${basis.phrase}": ${distinct[0]!.sheet} gives ${distinct.length} heights — ${distinct.map((f) => f.phrase).join("; ")} — one per wall, to pick`), options: distinct };
+    }
     case "mixed":
       return unresolved(`the legend gives more than one height — "${basis.phrase}" — which is two quantities, not one`);
   }
@@ -315,6 +332,30 @@ export function heightFactsFromText(input: {
     const inline = after === "" ? null : feetOf(after);
     const beside = inline !== null ? { value: inline, text: after } : figureBeside(i);
     if (beside !== null && (kind !== "ceiling-height" || beside.value <= 60)) out.push({ kind, feet: beside.value, sheet: input.sheet, phrase: inline !== null ? i.str : `${i.str} ${beside.text}` });
+  }
+  return out;
+}
+
+/**
+ * Heights an interior elevation dimensions and names: Grand Junction's A300
+ * prints `8'-0"` beside `"T" WALL`, `12'-0"` beside `AT SALES`. A dimension
+ * with no wall named beside it is an opening, a sill or trim, and is left.
+ */
+export function labelledWallHeights(input: { sheet: string; items: readonly { str: string; x: number; y: number; height: number }[] }): HeightFact[] {
+  const FIGURE = /^(\d{1,2})\s*'\s*[-–]?\s*(\d{1,2})?(?:\s+(\d{1,2})\/(\d{1,2}))?\s*(?:"|”)?$/;
+  const LABEL = /\bWALL\b|^AT\s+[A-Z]|\bBULKHEAD\b|\bPARTITION\b|\bSOFFIT\b/i;
+  const items = input.items.map((i) => ({ ...i, str: i.str.trim() })).filter((i) => i.str !== "");
+  const out: HeightFact[] = [];
+  for (const i of items) {
+    const m = FIGURE.exec(i.str);
+    if (m === null) continue;
+    const feet = Number(m[1]) + ((m[2] === undefined ? 0 : Number(m[2])) + (m[3] === undefined ? 0 : Number(m[3]) / Number(m[4]))) / 12;
+    if (feet < 6 || feet > 30) continue;
+    // ponytail: 24 pt either way; the PDF's rotation is not carried, so a rotated label is found by distance alone.
+    const label = items
+      .filter((o) => o !== i && Math.abs(o.x - i.x) < 24 && Math.abs(o.y - i.y) < 24 && LABEL.test(o.str) && !/^SEE\b/i.test(o.str))
+      .sort((a, b) => Math.hypot(a.x - i.x, a.y - i.y) - Math.hypot(b.x - i.x, b.y - i.y))[0];
+    if (label !== undefined) out.push({ kind: "wall-height", feet, sheet: input.sheet, phrase: `${i.str} ${label.str}` });
   }
   return out;
 }

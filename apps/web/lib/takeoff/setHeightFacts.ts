@@ -2,7 +2,7 @@ import type { PlanPdf } from "@/lib/plan-ingest/planPdf";
 import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
 import { pageLines } from "./planTextRead";
 import { sheetViews } from "./sheetViews";
-import { heightFactsFromText, lettersNotesFromLines, relativeToFloor, resolveHeight, type HeightFact, type HeightReading } from "./wallHeights";
+import { heightFactsFromText, labelledWallHeights, lettersNotesFromLines, relativeToFloor, resolveHeight, type HeightFact, type HeightReading } from "./wallHeights";
 
 /**
  * ── THE HEIGHT FACTS A WHOLE SET PRINTS, gathered once per set ──
@@ -64,6 +64,14 @@ export async function setHeightFacts(doc: PlanPdf, input: { legendPage: number; 
     }
     const all = heightFactsFromText({ sheet, items });
     facts.push(...all.filter((f) => f.kind === "floor-datum"));
+    // An interior elevation names its walls' heights; "SEE SHEET A300" goes there.
+    if (/INTERIOR\s+ELEVATIONS?/i.test(views) || /INTERIOR\s+ELEVATIONS?/i.test(r.regionText)) {
+      const named = labelledWallHeights({ sheet, items });
+      if (named.length > 0) {
+        factSheets.push(`${sheet} (interior elevations): ${[...new Set(named.map((f) => f.phrase))].slice(0, 4).join("; ")}`);
+        facts.push(...named);
+      }
+    }
     if (!isSection && !isCeiling && !isFraming) continue;
     const read = all.filter((f) =>
       isSection || isFraming ? f.kind === "structure-elevation" || f.kind === "bearing-elevation" : f.kind === "ceiling-height",
