@@ -13,10 +13,16 @@ export function TakeoffHeldWalls({
   walls,
   onConfirm,
   asRow = false,
+  onHover,
+  onShow,
 }: {
   walls: readonly HeldWall[];
   /** The workspace's layer panel: one "Needs review" row that opens in place. */
   asRow?: boolean;
+  /** Pointing at a run picks it out on the plan; null when the pointer leaves. */
+  onHover?: (id: string | null) => void;
+  /** Takes the plan to the run: zoomed in and centred. */
+  onShow?: (id: string) => void;
   /** Resolves to a sentence when it did not save. */
   onConfirm: (id: string) => Promise<string | null>;
 }) {
@@ -51,8 +57,27 @@ export function TakeoffHeldWalls({
       {error !== null && <p className="text-tag-amber-ink">{error}</p>}
       <ul className="mt-1 flex max-h-40 flex-col gap-1 overflow-auto">
         {walls.map((wall) => (
-          <li key={wall.id} className="flex items-center gap-2" data-takeoff="held-wall">
-            <span>{Math.round(wall.feet)} ft</span>
+          <li
+            key={wall.id}
+            className="flex items-center gap-2 rounded px-1 hover:bg-rail-hover"
+            data-takeoff="held-wall"
+            onMouseEnter={() => onHover?.(wall.id)}
+            onMouseLeave={() => onHover?.(null)}
+          >
+            {onShow ? (
+              <button
+                type="button"
+                onClick={() => onShow(wall.id)}
+                aria-label={`Show the ${Math.round(wall.feet)} ft run on the plan`}
+                title="Zoom to it on the plan"
+                className="tabular-nums text-ink-body underline decoration-dotted hover:text-ink"
+                data-takeoff="show-held-wall"
+              >
+                {Math.round(wall.feet)} ft
+              </button>
+            ) : (
+              <span>{Math.round(wall.feet)} ft</span>
+            )}
             <button type="button" disabled={saving !== null} onClick={() => void confirm(wall.id)} className="underline hover:text-ink-body" data-takeoff="confirm-held-wall">
               {saving === wall.id ? (
                 <>

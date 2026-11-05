@@ -2678,8 +2678,25 @@ export function TakeoffPlanViewer({
   }
   const reviewAt = review === null ? null : currentRun(review);
   const sheetReviewRun = reviewAt === null ? null : (runsRef.current[reviewAt] ?? null);
-  // The sheet's own review first; else the set review's run, on its page.
-  const reviewRun = sheetReviewRun ?? (focusRun !== null && focusRun.pageNumber === pageNumber ? focusRun : null);
+  // ── NEEDS REVIEW: POINT AT A HELD RUN TO SEE IT, CLICK ITS LENGTH TO GO THERE ──
+  // A held wall is a two-point measurement on this sheet; the id is the row's.
+  const [heldHover, setHeldHover] = useState<string | null>(null);
+  const [heldShown, setHeldShown] = useState<{ id: string; at: number } | null>(null);
+  useEffect(() => {
+    setHeldHover(null);
+    setHeldShown(null);
+  }, [pageNumber]);
+  const heldRunOf = (id: string | null) => {
+    const m = id === null ? undefined : (sheet?.measurements ?? []).find((row) => row.id === id && row.label === HELD_LABEL);
+    return m === undefined || m.xs.length < 2 ? null : { x1: m.xs[0]!, y1: m.ys[0]!, x2: m.xs[1]!, y2: m.ys[1]! };
+  };
+  const heldHoverRun = heldRunOf(heldHover);
+  // `at` makes a second click on the same run go there again after a pan.
+  const heldShownRun = useMemo(() => heldRunOf(heldShown?.id ?? null), [heldShown, sheet]); // eslint-disable-line react-hooks/exhaustive-deps -- heldRunOf reads sheet, listed
+  // The sheet's own review first; then a held run somebody asked to see; else
+  // the set review's run, on its page.
+  const reviewRun =
+    sheetReviewRun ?? heldShownRun ?? (focusRun !== null && focusRun.pageNumber === pageNumber ? focusRun : null);
   // Each run in turn, zoomed and centred, so the reviewer never has to look for it.
   useEffect(() => {
     const frame = frameRef.current;
@@ -2688,7 +2705,7 @@ export function TakeoffPlanViewer({
     setZoom(view.zoom);
     const id = requestAnimationFrame(() => frame.scrollTo({ left: view.left, top: view.top }));
     return () => cancelAnimationFrame(id);
-  }, [reviewRun, pageSize, feetPerUnit]);
+  }, [reviewRun, pageSize, feetPerUnit, heldShown?.at]);
 
   /**
    * Taking a run back is its verdict becoming WALL, then the list rebuilt from
@@ -4587,6 +4604,8 @@ export function TakeoffPlanViewer({
       {slot(panelOpen ? reviewSlot : noticeTarget, answerKey === undefined && !readOnly && feetPerUnit !== null && (
         <TakeoffHeldWalls
           asRow={fill && panelOpen}
+          onHover={setHeldHover}
+          onShow={(id) => setHeldShown({ id, at: Date.now() })}
           walls={(sheet?.measurements ?? [])
             .filter((m) => m.label === HELD_LABEL)
             .map((m) => ({ id: m.id, feet: Math.hypot(m.xs[1]! - m.xs[0]!, m.ys[1]! - m.ys[0]!) * feetPerUnit }))}
@@ -6071,6 +6090,22 @@ export function TakeoffPlanViewer({
                 strokePx={fill ? STROKE_PX * 1.5 : STROKE_PX}
                 hidden={hiddenGroups}
               />
+              {/* The held run under the pointer in Needs review: amber and wide,
+                  so it stands out of everything else on the sheet. */}
+              {heldHoverRun !== null && (
+                <line
+                  data-takeoff="held-highlight"
+                  x1={heldHoverRun.x1}
+                  y1={heldHoverRun.y1}
+                  x2={heldHoverRun.x2}
+                  y2={heldHoverRun.y2}
+                  stroke="#f59e0b"
+                  strokeWidth={STROKE_PX * 5}
+                  strokeOpacity={0.75}
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
               {/* The demoted runs: grey and dashed so nobody reads one as found. */}
               {reviewRun !== null && (
                 <line
