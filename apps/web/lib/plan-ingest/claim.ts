@@ -241,7 +241,24 @@ export async function closeIfSettled(jobId: string, at: Date = new Date()): Prom
     where: { id: jobId, finishedAt: null },
     data: { finishedAt: at },
   });
+  if (closed.count === 1) await afterClose(jobId);
   return closed.count === 1;
+}
+
+/**
+ * The free pass just finished: queue the set's legend read (`legendAutoStart.ts`).
+ * Never allowed to fail the close — a run that read every page has finished
+ * whatever happens next.
+ */
+async function afterClose(jobId: string): Promise<void> {
+  try {
+    const job = await prisma.planIngestJob.findUnique({ where: { id: jobId }, select: { stage: true, planId: true, companyId: true, startedByUserId: true } });
+    if (job?.stage !== "PAGE_INVENTORY") return;
+    const { queueLegendRead } = await import("./legendAutoStart");
+    await queueLegendRead({ planId: job.planId, companyId: job.companyId, startedByUserId: job.startedByUserId });
+  } catch (error) {
+    console.error("[plan-ingest] could not queue the legend read after the inventory", { jobId }, error);
+  }
 }
 
 /**
