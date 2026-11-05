@@ -6,7 +6,8 @@ import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
 import { sheetCategory } from "@/lib/takeoff/planSet";
-import { reviewQueue, typeItems, wallItem, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { heightItem, reviewQueue, typeItems, wallItem, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { legendOption } from "@/lib/takeoff/wallHeight";
 
 /**
  * The job's review queue (`reviewQueue.ts`), plus the plan-set counts the
@@ -76,6 +77,41 @@ export async function loadReviewQueue(
       .filter((row) => row.createdAt.getTime() === newest)
       .map((row) => ({ id: row.id, inches: row.thicknessInches, runs: storedRunsOrNull(row.runs) ?? [] }));
     items.push(...typeItems(sheet, page.measurements.filter((m) => m.label !== HELD_LABEL), groups));
+  }
+
+  // ── WALL GROUPS WITH NO HEIGHT ──
+  // A typed wall item, or "Walls — untyped", on this plan with no height of
+  // its own: the figure the estimate prices square feet at.
+  const [heightless, rooms] = await Promise.all([
+    prisma.takeoffItem.findMany({
+      where: { jobId, companyId, heightFt: null, OR: [{ wallTypeId: { not: null } }, { name: UNTYPED_ITEM }], measurements: { some: { kind: "LINEAR", page: { planId: plan.id } } } },
+      orderBy: { sortOrder: "asc" },
+      select: {
+        id: true,
+        name: true,
+        wallType: { select: { code: true, defaultHeightFt: true, notes: true } },
+        measurements: { where: { kind: "LINEAR", page: { planId: plan.id } }, select: { xs: true, ys: true, label: true, page: { select: { pageNumber: true } } } },
+      },
+    }),
+    prisma.takeoffMeasurement.findMany({
+      where: { kind: "AREA", ceilingHeightFeet: { not: null }, page: { planId: plan.id } },
+      select: { xs: true, ys: true, roomNumber: true, roomName: true, label: true, ceilingHeightFeet: true, ceilingFrom: true, page: { select: { pageNumber: true } } },
+    }),
+  ]);
+  for (const item of heightless) {
+    const sheets = pages.map((page) => ({
+      sheet: sheetOf(page.pageNumber, page.calibrations[0]),
+      runs: item.measurements
+        .filter((m) => m.page.pageNumber === page.pageNumber && m.xs.length === 2 && m.label !== HELD_LABEL)
+        .map((m) => ({ x1: m.xs[0]!, y1: m.ys[0]!, x2: m.xs[1]!, y2: m.ys[1]! })),
+      rooms: rooms
+        .filter((r) => r.page.pageNumber === page.pageNumber)
+        .map((r) => ({ xs: r.xs, ys: r.ys, heightFeet: r.ceilingHeightFeet, name: [r.roomNumber, r.roomName].filter(Boolean).join(" ") || (r.label ?? "room"), from: r.ceilingFrom })),
+    }));
+    const type = item.wallType;
+    const legend = type === null ? null : legendOption({ code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes });
+    const queued = heightItem(item, sheets, legend);
+    if (queued !== null) items.push(queued);
   }
 
   const scaled = new Set(pages.filter((page) => page.calibrations.length > 0).map((page) => page.pageNumber));

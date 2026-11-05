@@ -8,7 +8,7 @@ import { parseNumericInput } from "@/lib/numeric-input";
 import { ringArea, ringSelfIntersects } from "@/lib/sheet-geometry";
 import { cutoutInside } from "@/lib/takeoff/drawTools";
 import { cutoutsFromJson } from "@/lib/takeoff/itemQuantities";
-import { syncTakeoffItemLines, type ItemLineSummary } from "@/lib/estimating/takeoff-item-lines";
+import { syncReviewedItems, syncTakeoffItemLines, type ItemLineSummary } from "@/lib/estimating/takeoff-item-lines";
 import { can } from "@/lib/permissions";
 import { colorProblem, nextItemColor } from "@/lib/takeoff/itemColors";
 import {
@@ -245,6 +245,35 @@ export async function updateTakeoffItem(
   if (Object.keys(data).length === 0) return actionOk;
 
   await prisma.takeoffItem.update({ where: { id: itemId }, data });
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
+  return actionOk;
+}
+
+/**
+ * ── "SET HEIGHT": ONE PRESS FOR A WHOLE WALL GROUP ──
+ *
+ * The height goes on the group's takeoff item, which is the figure the
+ * estimate prices at, so it is saved with the job and every run of the group
+ * takes it. An item with no sides yet takes 2, the same assumption the
+ * screen's square feet showed. Once takeoff lines are on the estimate, this
+ * item's lines follow at once (`syncReviewedItems`); before that, Send to
+ * estimate picks it up.
+ */
+export async function setWallGroupHeight(jobId: string, itemId: string, heightFt: number): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
+  if (!Number.isFinite(heightFt) || heightFt <= 0 || heightFt >= 100) return actionFail("A wall height is a number of feet between 0 and 100.");
+  const item = await itemInJob(itemId, jobId, company.id);
+  if (!item) return actionFail(GONE);
+  await prisma.$transaction(async (tx) => {
+    await tx.takeoffItem.update({ where: { id: itemId }, data: { heightFt: heightFt.toFixed(2) } });
+    await tx.takeoffItem.updateMany({ where: { id: itemId, sides: null }, data: { sides: 2 } });
+    await syncReviewedItems(tx, company.id, jobId, [itemId]);
+  });
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
   return actionOk;

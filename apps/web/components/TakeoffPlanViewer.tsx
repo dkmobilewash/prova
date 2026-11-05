@@ -26,7 +26,10 @@ import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 import { DISTINCT_MARKS, DOOR_COLOUR, LAYER_COLOURS, ROOM_COLOUR, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
 import { TakeoffLayerPanel, type Layer } from "@/components/TakeoffLayerPanel";
 import { defaultLayerName, layerKeyOf } from "@/lib/takeoff/layerKey";
-import { renameTakeoffLayer } from "@/lib/actions";
+import { renameTakeoffLayer, setWallGroupHeight } from "@/lib/actions";
+import { SetWallHeight } from "./SetWallHeight";
+import type { TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
+import { areaLine, ceilingOption, heightFrom, wallSquareFeet, type CeilingRoom, type HeightOption } from "@/lib/takeoff/wallHeight";
 import { formatFeetInches, parseFeetInches } from "@/lib/feet-inches";
 import {
   calibrationNotices,
@@ -355,6 +358,8 @@ export function TakeoffPlanViewer({
   focusRun = null,
   activeItemId = null,
   earlierVersionByPage = {},
+  wallItems = [],
+  openingThresholdSqFt = 0,
 }: {
   jobId: string;
   planId: string;
@@ -504,6 +509,11 @@ export function TakeoffPlanViewer({
   panelDrawer?: boolean;
   /** `fill` only: the team's names for this job's layers, by `layerKeyOf`. */
   layerNames?: Record<string, string>;
+  /** `fill` only: the job's takeoff items with their height, sides and runs, so a
+   *  wall group reads its square feet and can be given a height (`wallHeight.ts`). */
+  wallItems?: readonly TakeoffItemRow[];
+  /** The company's opening rule, as the estimate applies it. */
+  openingThresholdSqFt?: number;
   /** `fill` only: what the Select arrow picked on the drawing, or null when a
    *  click on nothing, Esc or a hidden layer let go of it. */
   onSelect?: (selection: ViewerSelection | null) => void;
@@ -4161,6 +4171,56 @@ export function TakeoffPlanViewer({
   };
   const layerKey = layerKeyOf;
   const itemNames = new Map((takeoffItems ?? []).map((item) => [item.id, item.name]));
+  // ── EACH WALL GROUP'S HEIGHT AND SQUARE FEET (`wallHeight.ts`) ──
+  // A group's item is the one holding its runs on this sheet (the walls stage
+  // posts them there), else the one detection matched it to.
+  const runKey = (xs: readonly number[], ys: readonly number[]) => `${xs[0]},${ys[0]},${xs[1]},${ys[1]}`;
+  const runItem = new Map<string, string>();
+  for (const m of sheet?.measurements ?? []) if (m.kind === "LINEAR" && m.itemId && m.xs.length === 2) runItem.set(runKey(m.xs, m.ys), m.itemId);
+  const ceilingRooms: CeilingRoom[] = (sheet?.measurements ?? [])
+    .filter((m) => m.kind === "AREA" && m.ceiling?.heightFeet != null)
+    .map((m) => ({ xs: m.xs, ys: m.ys, heightFeet: m.ceiling!.heightFeet, name: [m.roomNumber, m.roomName].filter(Boolean).join(" ") || (m.label ?? "room"), from: m.ceiling!.from }));
+  function wallFactsOf(group: WallGroup) {
+    const keys = group.runs.map((r) => runKey([r.x1, r.x2], [r.y1, r.y2]));
+    const counts = new Map<string, number>();
+    for (const key of keys) {
+      const id = runItem.get(key);
+      if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    const itemId = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? group.itemId ?? null;
+    const item = wallItems.find((one) => one.id === itemId);
+    if (item === undefined) return null;
+    const options = [ceilingOption(group.runs, ceilingRooms), wallTypes.find((t) => t.id === item.wallTypeId)?.legendHeight ?? null].filter((o): o is HeightOption => o !== null);
+    const mine = new Set(keys);
+    const openings = item.measurements.filter((m) => m.pageNumber === pageNumber && m.xs.length === 2 && mine.has(runKey(m.xs, m.ys))).flatMap((m) => m.openings ?? []);
+    const sqFt = wallSquareFeet({ linearFt: group.feet, heightFt: item.heightFt, sides: item.sides, openings, thresholdSqFt: openingThresholdSqFt });
+    return { item, options, line: areaLine({ linearFt: group.feet, heightFt: item.heightFt, sides: item.sides, sqFt }), from: heightFrom(item.heightFt, options) };
+  }
+  /** The area line, where the height came from, and Set height when it has none. */
+  function wallHeightDetail(group: WallGroup) {
+    const facts = wallFactsOf(group);
+    if (facts === null) return null;
+    return (
+      <span className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 text-xs" data-takeoff="wall-area" data-item={facts.item.id}>
+        <span className="tabular-nums text-ink-body" data-takeoff="wall-area-line">{facts.line}</span>
+        {facts.from !== null && (
+          <span className="text-ink-muted" data-takeoff="wall-height-from">
+            {facts.from}
+          </span>
+        )}
+        {facts.item.heightFt === null && !readOnly && (
+          <SetWallHeight
+            name={facts.item.name}
+            options={facts.options}
+            onSet={async (feet) => {
+              const saved = await setWallGroupHeight(jobId, facts.item.id, feet);
+              return saved.ok ? null : saved.error;
+            }}
+          />
+        )}
+      </span>
+    );
+  }
   const layers: Layer[] = !fill
     ? []
     : [
@@ -4175,6 +4235,7 @@ export function TakeoffPlanViewer({
             count: group.runs.length,
             total: `${Math.round(group.feet).toLocaleString()} ft`,
             hidden: hiddenLayers.has(key),
+            detail: wallHeightDetail(group),
           };
         }),
         ...(rooms !== null && roomsOnPage === pageNumber
@@ -5289,6 +5350,8 @@ export function TakeoffPlanViewer({
                       })()}
                     </span>
 
+                    {/* Its area at its height, and where the height came from. */}
+                    {fill && wallHeightDetail(group)}
                     {/* ── THE ONE QUESTION THIS FEATURE IS ALLOWED TO ASK ──
                         Two of the company's types are this thick and nothing on
                         the drawing says which — A1 and A2 on School-01, which
