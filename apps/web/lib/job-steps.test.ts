@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { jobSteps, type JobStepFacts } from "./job-steps";
 
-const base: JobStepFacts = { jobId: "j1", hasPlan: false, scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0, measurements: 0, wallsToConfirm: 0, lineItemCount: 0, unpricedLines: 0, signatureStatuses: [] };
+const base: JobStepFacts = { jobId: "j1", hasPlan: false, scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0, measurements: 0, toReview: 0, lineItemCount: 0, unpricedLines: 0, signatureStatuses: [] };
 const states = (facts: Partial<JobStepFacts>) => jobSteps({ ...base, ...facts }).steps.map((s) => `${s.key}:${s.state}`).join(" ");
 
 describe("a job's estimating steps", () => {
@@ -18,11 +18,11 @@ describe("a job's estimating steps", () => {
     expect(jobSteps({ ...base, hasPlan: true, scaledSheets: 1, measurements: 3, lineItemCount: 2, signatureStatuses: ["PENDING"] }).next).toBeNull();
   });
 
-  it("holds Review open while walls wait to be confirmed, and counts them", () => {
-    const facts = { ...base, hasPlan: true, scaledSheets: 1, measurements: 3, wallsToConfirm: 2 };
+  it("holds Review open while the review queue has items, and counts them", () => {
+    const facts = { ...base, hasPlan: true, scaledSheets: 1, measurements: 3, toReview: 2 };
     expect(states(facts)).toBe("job:done plans:done scale:done takeoff:done review:current estimate:todo send:todo");
-    expect(jobSteps(facts).next).toEqual({ label: "Review 2 walls to confirm", href: "/takeoff/j1?open=review", newTab: true });
-    expect(jobSteps({ ...facts, wallsToConfirm: 1 }).next?.label).toBe("Review 1 wall to confirm");
+    expect(jobSteps(facts).next).toEqual({ label: "Review 2 items", href: "/takeoff/j1?open=review", newTab: true });
+    expect(jobSteps({ ...facts, toReview: 1 }).next?.label).toBe("Review 1 item");
   });
 
   it("SCALE IS DONE WHEN EVERY FLOOR PLAN HAS A SCALE, not when one sheet does", () => {
@@ -34,12 +34,12 @@ describe("a job's estimating steps", () => {
     expect(states({ ...base, hasPlan: true, scaledSheets: 1 })).toContain("scale:done");
   });
 
-  it("REVIEW COMES BEFORE ESTIMATE AND SEND: walls to confirm are never jumped over", () => {
+  it("REVIEW COMES BEFORE ESTIMATE AND SEND: what is left to review is never jumped over", () => {
     // Plain walls now reach the estimate on their own, so a line can exist
     // while walls still wait — that job is on Review, not on Send.
-    const facts = { ...base, hasPlan: true, scaledSheets: 1, measurements: 3, wallsToConfirm: 2, lineItemCount: 1 };
+    const facts = { ...base, hasPlan: true, scaledSheets: 1, measurements: 3, toReview: 2, lineItemCount: 1 };
     expect(states(facts)).toBe("job:done plans:done scale:done takeoff:done review:current estimate:done send:todo");
-    expect(jobSteps({ ...facts, signatureStatuses: ["PENDING"] }).next?.label).toBe("Review 2 walls to confirm");
+    expect(jobSteps({ ...facts, signatureStatuses: ["PENDING"] }).next?.label).toBe("Review 2 items");
   });
 
   it("AN UNPRICED LINE IS NOT AN ESTIMATE: Estimate stays current and Next says what to price", () => {

@@ -7,6 +7,8 @@ import { requireJobGivenContext } from "@/lib/jobs/job-access";
 import { NoAccess } from "@/components/NoAccess";
 import { TakeoffWorkspace } from "@/components/TakeoffWorkspace";
 import { loadTakeoffWorkspace, takeoffSavedSignature, workspaceForClient } from "@/lib/takeoff/workspaceLoad";
+import { loadReviewQueue } from "@/lib/takeoff/reviewQueueQuery";
+import { planSetFromLoaded } from "@/lib/takeoff/planSet";
 
 /**
  * ── THE FULL-SCREEN TAKEOFF WORKSPACE ──
@@ -43,6 +45,7 @@ export default async function TakeoffWorkspacePage({
 
   const data = await loadTakeoffWorkspace(company, job);
   const savedAt = await takeoffSavedSignature(company.id, job.id);
+  const queue = await loadReviewQueue(company.id, job.id);
 
   if (data === null) {
     // No drawing on this job. The tab offers an uploader because that is where
@@ -98,6 +101,8 @@ export default async function TakeoffWorkspacePage({
       }
       openReview={open === "review"}
       openScale={open === "scale"}
+      reviewQueue={queue.items}
+      planSet={planSetFromLoaded(data)}
       /* ── ANSWER-KEY MODE FROM THE URL ──
          So a review session can be opened on the right sheet in one link,
          rather than remembering to press a toggle that changes what every
