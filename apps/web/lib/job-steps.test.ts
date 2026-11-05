@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { jobSteps, type JobStepFacts } from "./job-steps";
 
-const base: JobStepFacts = { jobId: "j1", hasPlan: false, scaledSheets: 0, measurements: 0, wallsToConfirm: 0, lineItemCount: 0, unpricedLines: 0, signatureStatuses: [] };
+const base: JobStepFacts = { jobId: "j1", hasPlan: false, scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0, measurements: 0, wallsToConfirm: 0, lineItemCount: 0, unpricedLines: 0, signatureStatuses: [] };
 const states = (facts: Partial<JobStepFacts>) => jobSteps({ ...base, ...facts }).steps.map((s) => `${s.key}:${s.state}`).join(" ");
 
 describe("a job's estimating steps", () => {
   it("a new job: Job done, Plans current, the rest not started, and Next says upload", () => {
     expect(states({})).toBe("job:done plans:current scale:todo takeoff:todo review:todo estimate:todo send:todo");
-    expect(jobSteps(base).next).toEqual({ label: "Upload the plans", href: "/jobs/j1/takeoff", newTab: false });
+    expect(jobSteps(base).next).toEqual({ label: "Upload the plans", href: "/jobs/j1/takeoff#plan-set", newTab: false });
   });
 
   it("walks forward one fact at a time", () => {
-    expect(jobSteps({ ...base, hasPlan: true }).next).toEqual({ label: "Set the scale", href: "/takeoff/j1?open=scale", newTab: true });
+    expect(jobSteps({ ...base, hasPlan: true }).next).toEqual({ label: "Confirm the scales", href: "/jobs/j1/takeoff#plan-set", newTab: false });
     expect(jobSteps({ ...base, hasPlan: true, scaledSheets: 1 }).next).toEqual({ label: "Run the takeoff", href: "/takeoff/j1", newTab: true });
     expect(jobSteps({ ...base, hasPlan: true, scaledSheets: 1, measurements: 3 }).next).toEqual({ label: "Put the takeoff on the estimate", href: "/takeoff/j1", newTab: true });
     expect(jobSteps({ ...base, hasPlan: true, scaledSheets: 1, measurements: 3, lineItemCount: 2 }).next).toEqual({ label: "Send it for signature", href: "/jobs/j1#contract-signature", newTab: false });
@@ -23,6 +23,15 @@ describe("a job's estimating steps", () => {
     expect(states(facts)).toBe("job:done plans:done scale:done takeoff:done review:current estimate:todo send:todo");
     expect(jobSteps(facts).next).toEqual({ label: "Review 2 walls to confirm", href: "/takeoff/j1?open=review", newTab: true });
     expect(jobSteps({ ...facts, wallsToConfirm: 1 }).next?.label).toBe("Review 1 wall to confirm");
+  });
+
+  it("SCALE IS DONE WHEN EVERY FLOOR PLAN HAS A SCALE, not when one sheet does", () => {
+    const facts = { ...base, hasPlan: true, scaledSheets: 2, floorPlans: 3, floorPlansScaled: 2 };
+    expect(states(facts)).toBe("job:done plans:done scale:current takeoff:todo review:todo estimate:todo send:todo");
+    expect(jobSteps(facts).next?.label).toBe("Scale 1 more floor plan");
+    expect(states({ ...facts, floorPlansScaled: 3 })).toBe("job:done plans:done scale:done takeoff:current review:todo estimate:todo send:todo");
+    // A set nothing has sorted yet falls back to any sheet with a scale.
+    expect(states({ ...base, hasPlan: true, scaledSheets: 1 })).toContain("scale:done");
   });
 
   it("REVIEW COMES BEFORE ESTIMATE AND SEND: walls to confirm are never jumped over", () => {
@@ -49,10 +58,9 @@ describe("a job's estimating steps", () => {
     expect(jobSteps({ ...base, lineItemCount: 1, signatureStatuses: ["DECLINED"] }).steps.at(-1)?.state).toBe("current");
   });
 
-  it("scale, takeoff and review open the full-screen workspace in its own tab, on their own sheet; nothing else does", () => {
+  it("takeoff and review open the full-screen workspace in its own tab, on their own sheet; nothing else does", () => {
     const steps = jobSteps(base).steps.filter((s) => s.newTab);
     expect(steps.map((s) => [s.key, s.href])).toEqual([
-      ["scale", "/takeoff/j1?open=scale"],
       ["takeoff", "/takeoff/j1"],
       ["review", "/takeoff/j1?open=review"],
     ]);

@@ -630,6 +630,7 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "recordTakeoffPlanRevision", reason: "The revision label and date are read off a title block the assistant cannot see, and a wrong date makes superseded quantities read as current forever." },
   { action: "deleteTakeoffPlan", reason: "Deletes are never commands (T5)." },
   { action: "saveTakeoffCalibration", reason: "A scale is set by dragging along a dimension on the drawing; a model has not seen the drawing." },
+  { action: "confirmSheetScales", reason: "Confirming a set's scales is a person accepting what the plan set screen shows them, sheet by sheet; every quantity on the job is measured at those scales, so the press stays theirs." },
   { action: "applyPrintedScales", reason: "Setting every sheet's printed scale in one press is decided from the sheet list, by somebody who can see which sheets print it; it writes a calibration per sheet, the same scale write a model never makes." },
   { action: "confirmHeldWall", reason: "Putting a doubted wall on the estimate is a click on that run on the drawing, by someone looking at it." },
   { action: "reviewWall", reason: "Keeping or dropping a wall is decided by looking at that run on the drawing, one at a time." },

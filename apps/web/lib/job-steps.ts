@@ -14,7 +14,8 @@ import { estimateStage } from "@/lib/estimate-stage";
  * What each step's DONE means, in the facts it reads:
  *   - Job      — the job exists (always).
  *   - Plans    — a plan set is uploaded.
- *   - Scale    — at least one sheet has a scale.
+ *   - Scale    — every FLOOR PLAN has a scale (the plan set's sort,
+ *                `lib/takeoff/planSet.ts`); with none recognised yet, any sheet.
  *   - Takeoff  — something is measured on the job's plans.
  *   - Review   — something is measured AND no wall is left "to confirm".
  *   - Estimate — the estimate has lines (`estimateStage` past NEEDS_PRICING)
@@ -47,6 +48,9 @@ export type JobStepFacts = {
   jobId: string;
   hasPlan: boolean;
   scaledSheets: number;
+  /** Sheets the plan set sorts as floor plans, and how many of them have a scale. */
+  floorPlans: number;
+  floorPlansScaled: number;
   measurements: number;
   /** Walls the model held off the estimate, still waiting for a person. */
   wallsToConfirm: number;
@@ -74,7 +78,7 @@ export function jobSteps(facts: JobStepFacts): { steps: JobStep[]; next: JobNext
   const done: Record<JobStepKey, boolean> = {
     job: true,
     plans: facts.hasPlan,
-    scale: facts.scaledSheets > 0,
+    scale: facts.floorPlans > 0 ? facts.floorPlansScaled === facts.floorPlans : facts.scaledSheets > 0,
     takeoff: facts.measurements > 0,
     review: facts.measurements > 0 && facts.wallsToConfirm === 0,
     estimate: stage !== "NEEDS_PRICING" && facts.unpricedLines === 0,
@@ -82,8 +86,9 @@ export function jobSteps(facts: JobStepFacts): { steps: JobStep[]; next: JobNext
   };
   const where: Record<JobStepKey, { href: string; newTab: boolean }> = {
     job: { href: job, newTab: false },
-    plans: { href: `${job}/takeoff`, newTab: false },
-    scale: { href: `${workspace}?open=scale`, newTab: true },
+    // Both land on the plan set: the sheets sorted, their scales, Confirm scales.
+    plans: { href: `${job}/takeoff#plan-set`, newTab: false },
+    scale: { href: `${job}/takeoff#plan-set`, newTab: false },
     takeoff: { href: workspace, newTab: true },
     review: { href: `${workspace}?open=review`, newTab: true },
     estimate: { href: `${job}/estimate`, newTab: false },
@@ -108,7 +113,10 @@ export function jobSteps(facts: JobStepFacts): { steps: JobStep[]; next: JobNext
   const NEXT: Record<JobStepKey, string> = {
     job: "Open the job",
     plans: "Upload the plans",
-    scale: "Set the scale",
+    scale:
+      facts.floorPlans > 0 && facts.floorPlansScaled > 0
+        ? `Scale ${facts.floorPlans - facts.floorPlansScaled} more floor plan${facts.floorPlans - facts.floorPlansScaled === 1 ? "" : "s"}`
+        : "Confirm the scales",
     takeoff: "Run the takeoff",
     review:
       facts.wallsToConfirm > 0

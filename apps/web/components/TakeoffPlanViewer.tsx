@@ -333,6 +333,7 @@ export function TakeoffPlanViewer({
   fill = false,
   panelOpen = true,
   openReview = false,
+  openScale = false,
   onResults,
   readOnly = false,
   roomFinder = false,
@@ -421,6 +422,8 @@ export function TakeoffPlanViewer({
   panelOpen?: boolean;
   /** Needs review starts open (the job stepper's Review). */
   openReview?: boolean;
+  /** Set scale starts armed on a sheet with no scale: two clicks and a distance. */
+  openScale?: boolean;
   /**
    * A Find the estimator pressed has come back. The workspace opens its rail on
    * this: results live in that rail and it starts closed, so without it a Find
@@ -776,7 +779,7 @@ export function TakeoffPlanViewer({
   // FIT by default. A sheet opens showing all of itself, which is what
   // somebody opening a drawing wants to see first; they zoom IN to measure.
   const [zoom, setZoom] = useState<Zoom>(FIT);
-  const [tool, setTool] = useState<ToolId>("pan");
+  const [tool, setTool] = useState<ToolId>(openScale ? "calibrate" : "pan");
   /** A message in the workspace's own button names ("Run takeoff"), or the tab's. */
   const say = (text: string) => (fill ? inWorkspaceWords(text) : text);
 

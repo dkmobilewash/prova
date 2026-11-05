@@ -88,6 +88,8 @@ type Props = {
   openAnswerKey?: boolean;
   /** Opened from the job stepper's Review: Needs review starts open. */
   openReview?: boolean;
+  /** Opened to set a scale (the plan set's "Set it by two clicks"): Set scale starts armed. */
+  openScale?: boolean;
   /** Whether this server can label at all (`labellingAllowed`). False on every
    *  deployment, so neither the mode nor its button exists for a customer. */
   labellingAvailable?: boolean;
@@ -189,6 +191,7 @@ export function TakeoffWorkspace({
   openPage,
   openAnswerKey,
   openReview = false,
+  openScale = false,
   labellingAvailable = false,
   finderVersion = "unknown",
 }: Props) {
@@ -1517,6 +1520,7 @@ export function TakeoffWorkspace({
             )}
             <TakeoffPlanViewer
               openReview={openReview}
+              openScale={openScale}
               jobId={jobId}
               planId={data.plan.id}
               onSheetNumber={onSheetNumber}
