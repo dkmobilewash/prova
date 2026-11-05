@@ -134,7 +134,7 @@ async function executeDraftInvoice(ctx: CommandContext, payload: ResolvedPayload
 export const draftInvoiceCommand: DirectCommandDefinition = {
   name: "draft_invoice",
   description:
-    "Bills the client on a job: creates the next-numbered invoice for an amount the person stated, with an optional description of what it covers. Needs the job and the amount as the person said it; ask if either is missing, and never work out an amount yourself. Retainage is withheld at the job's own rate and the due date follows the GC's payment terms, both computed by the app and shown on the card. Does NOT submit a per-line AIA pay application (that is done on the job page), does not send anything to the GC, does not mark anything paid, and refuses while the job is still an estimate.",
+    "Bills the client on a job: creates the next-numbered invoice for an amount the person stated, with an optional description of what it covers. Needs the job and the amount as the person said it; ask if either is missing, and never work out an amount yourself. A pay application for a PERIOD with no amount said ('bill Fulton for October') is start_pay_application, not this. Retainage is withheld at the job's own rate and the due date follows the GC's payment terms, both computed by the app and shown on the card. Does NOT submit a per-line AIA pay application (that is done on the job page), does not send anything to the GC, does not mark anything paid, and refuses while the job is still an estimate.",
   capability: "MANAGE_BILLING",
   tier: "T3_MONEY_EVIDENCE",
   mode: "DIRECT",
@@ -340,11 +340,9 @@ export const billingExclusions: Exclusion[] = [
   { action: "revokeSignatureRequest", reason: "Voids a live e-sign link the client may be holding (T5); one deliberate tap on the job page, never a command." },
   { action: "revokeClientPortalAccess", reason: "Kills the GC's portal link (T5 owner administration of an outward token); one deliberate tap on the contact, never a command." },
   { action: "enablePortalAccess", reason: "Mints the GC's portal link (T4 outward); one owner tap on the contact, never a command." },
-  { action: "submitPayApplication", reason: "A per-line AIA document composed on the job page from the schedule of values; a card cannot carry a continuation sheet." },
   { action: "updateJobRetainageTerms", reason: "Contract terms that every later invoice snapshots; edited on the job, deliberately not by prompt." },
   { action: "updateInvoiceStatus", reason: "Where a pay application stands with the GC is evidence set from the row, not proposed." },
   { action: "deletePayment", reason: "T5: deletes are never commands." },
-  { action: "billRetainage", reason: "Creates a pay application a GC is sent, from a form showing the balance held; a person enters the amount and period on the Billing tab." },
   // createRetainageRelease left this list in phase 4d: commands/retainage.ts.
   { action: "deleteRetainageRelease", reason: "T5: deletes are never commands." },
   { action: "disconnectQuickBooks", reason: "Owner administration (T5): a connection an assistant could sever is not a connection." },

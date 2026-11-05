@@ -361,6 +361,9 @@ export const CAN_DO: readonly CanDoGroup[] = [
       { text: "release retainage", commands: ["release_retainage"] },
       { text: "start a change order", commands: ["start_change_order"] },
       { text: "start a purchase order", commands: ["draft_purchase_order"] },
+      { text: "start a pay application", commands: ["start_pay_application"] },
+      { text: "bill the retainage", commands: ["bill_retainage"] },
+      { text: "prepare a lien waiver", commands: ["prepare_lien_waiver"] },
     ],
   },
   {

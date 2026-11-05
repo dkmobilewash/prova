@@ -58,7 +58,9 @@ describe("the plan takes the keyboard when it is clicked", () => {
   it("is on the SVG itself, where a click on a candidate line reaches it", () => {
     // Candidate lines do not stop pointer-down, so it bubbles. Only the
     // vertex handle stops it, and that is shape editing rather than review.
-    expect(CODE).toContain("onPointerDown={onPointerDown}");
+    // Through a wrapper since the drag auto-pan: it captures the pointer and
+    // then hands the SAME event to `onPointerDown`, which does the blur.
+    expect(CODE).toMatch(/ref=\{overlayRef\}\s*onPointerDown=\{\(event\) => \{[\s\S]{0,900}?onPointerDown\(event\);\s*\}\}/);
     const stoppers = CODE.match(/onPointerDown=\{\(event\) => \{\s*event\.stopPropagation\(\)/g) ?? [];
     expect(
       stoppers.length,

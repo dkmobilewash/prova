@@ -1128,6 +1128,14 @@ export function TakeoffPlanViewer({
   const [cssWidth, setCssWidth] = useState(0);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // ── DRAGGING PAST WHAT IS SHOWING ──
+  // The overlay, so a scroll can replay the last pointer position into it; the
+  // last position itself; whether the button is down on the drawing; and
+  // whether a drag that follows the pointer is under way (set each render).
+  const overlayRef = useRef<SVGSVGElement | null>(null);
+  const lastPointerRef = useRef<{ x: number; y: number; id: number } | null>(null);
+  const pressedRef = useRef(false);
+  const dragOnRef = useRef(false);
   const docRef = useRef<{ numPages: number; getPage: (n: number) => Promise<unknown> } | null>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
 
@@ -1580,6 +1588,54 @@ export function TakeoffPlanViewer({
       window.removeEventListener("keyup", up);
     };
   }, [fill]);
+  // ── AUTO-PAN WHILE DRAGGING NEAR AN EDGE, AND THE BOX FOLLOWS A SCROLL ──
+  //
+  // Diego's report: a rectangle, an area or a highlight box dragged toward the
+  // edge of the visible plan stopped there — the pointer cannot leave the
+  // frame, so nothing past it could be reached. Now, while the button is down
+  // on a drag, the frame scrolls toward any edge the pointer is within EDGE px
+  // of (or past), faster the closer it gets; and after ANY scroll — this one,
+  // the wheel, a Space-pan between clicks — the last pointer position is played
+  // back into the overlay, so the box's far corner stays under the pointer
+  // instead of being left behind on the part of the sheet that scrolled away.
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (frame === null) return;
+    const EDGE = 40;
+    const FASTEST = 18;
+    const replay = () => {
+      const svg = overlayRef.current;
+      const at = lastPointerRef.current;
+      if (svg === null || at === null || !pressedRef.current || !dragOnRef.current) return;
+      svg.dispatchEvent(
+        new PointerEvent("pointermove", { clientX: at.x, clientY: at.y, buttons: 1, bubbles: true, pointerId: at.id, isPrimary: true }),
+      );
+    };
+    let raf = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const at = lastPointerRef.current;
+      if (!pressedRef.current || !dragOnRef.current || at === null) return;
+      const box = frame.getBoundingClientRect();
+      const speed = (inside: number) => (inside >= EDGE ? 0 : Math.ceil(((EDGE - Math.max(-EDGE, inside)) / EDGE) * (FASTEST / 2)));
+      const dx = speed(box.right - at.x) - speed(at.x - box.left);
+      const dy = speed(box.bottom - at.y) - speed(at.y - box.top);
+      if (dx !== 0 || dy !== 0) frame.scrollBy(dx, dy);
+    };
+    raf = requestAnimationFrame(tick);
+    const release = () => {
+      pressedRef.current = false;
+    };
+    frame.addEventListener("scroll", replay);
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+    return () => {
+      cancelAnimationFrame(raf);
+      frame.removeEventListener("scroll", replay);
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+    };
+  }, []);
   // Once the sheet has its new size, put the point that was under the pointer
   // back under it — so a wheel zooms INTO what you are looking at.
   useLayoutEffect(() => {
@@ -3925,6 +3981,13 @@ export function TakeoffPlanViewer({
 
   findRef.current = onFindWalls;
   draftLengthRef.current = draft.xs.length;
+  dragOnRef.current =
+    rectDragRef.current !== null ||
+    symbolBox !== null ||
+    keyBox !== null ||
+    splitLine !== null ||
+    draggingVertex !== null ||
+    (drawing && draft.xs.length > 0);
   onSelectRef.current = onSelect;
 
   // ── THE FULL-SCREEN SHELL'S PIECES ─────────────────────────────────────
@@ -5534,8 +5597,23 @@ export function TakeoffPlanViewer({
                       : "pointer-events-none"
               }`}
               data-takeoff={answerKey?.tracing === true ? "tracing-surface" : undefined}
-              onPointerDown={onPointerDown}
+              ref={overlayRef}
+              onPointerDown={(event) => {
+                // HOLD THE POINTER for the whole drag, so leaving the visible
+                // plan (where the auto-pan is) does not drop the box.
+                if (event.button === 0 && !spaceRef.current) {
+                  pressedRef.current = true;
+                  lastPointerRef.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
+                  try {
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                  } catch {
+                    // A synthetic event has no real pointer to capture.
+                  }
+                }
+                onPointerDown(event);
+              }}
               onPointerMove={(event) => {
+                if (event.isTrusted) lastPointerRef.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
                 const corner = rectDragRef.current;
                 if (corner !== null && tool === "rect" && (event.buttons & 1) === 1) {
                   const raw = pointAt(event);

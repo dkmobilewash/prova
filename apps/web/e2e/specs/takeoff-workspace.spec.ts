@@ -880,6 +880,59 @@ test.describe("the full-screen takeoff workspace", () => {
     await expect(page.locator('[data-takeoff="rail-more"]')).toHaveText("⋯");
   });
 
+  test("13f. A BOX DRAGGED TO THE EDGE KEEPS GOING: auto-pan, and the box follows the wheel", async () => {
+    // Diego's report: a rectangle dragged toward the edge of the visible plan
+    // stopped at what was showing.
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+    await fitAndSettle();
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await settledOverlayBox();
+    await port().evaluate((n) => n.scrollTo(0, 0));
+    await page.waitForTimeout(200);
+    /** The visible part of the sheet's right and bottom edges, in page-width units. */
+    const visibleEdge = async () => {
+      const p = await canvasBox();
+      const o = (await overlay().boundingBox())!;
+      return { right: (p.x + p.width - o.x) / o.width, bottom: (p.y + p.height - o.y) / o.width };
+    };
+    const draftCorners = async () => {
+      const pts = ((await overlay().locator("polygon, polyline").last().getAttribute("points")) ?? "").trim().split(/\s+/);
+      const xy = pts.map((p) => p.split(",").map(Number));
+      return { right: Math.max(...xy.map((q) => q[0]!)), bottom: Math.max(...xy.map((q) => q[1]!)) };
+    };
+    const p = await canvasBox();
+
+    // 1. Held at the right edge, the plan scrolls and the box goes with it.
+    const before = await visibleEdge();
+    await tool("Rectangle").click();
+    await page.mouse.move(p.x + p.width * 0.5, p.y + p.height * 0.5);
+    await page.mouse.down();
+    await page.mouse.move(p.x + p.width - 8, p.y + p.height * 0.55, { steps: 6 });
+    await page.waitForTimeout(900);
+    expect(await port().evaluate((n) => n.scrollLeft), "holding the box at the edge did not scroll the plan").toBeGreaterThan(50);
+    await page.mouse.up();
+    await expect(page.getByText(/^Rectangle · [\d,]+ sq ft$/)).toBeVisible();
+    expect((await draftCorners()).right, "the box stopped at what was showing").toBeGreaterThan(before.right + 0.01);
+    await page.getByRole("button", { name: "Clear", exact: true }).click();
+
+    // 2. A wheel mid-drag scrolls, and the box's far corner follows the sheet.
+    await port().evaluate((n) => n.scrollTo(0, 0));
+    await page.waitForTimeout(200);
+    const atTop = await visibleEdge();
+    await page.mouse.move(p.x + p.width * 0.3, p.y + p.height * 0.3);
+    await page.mouse.down();
+    await page.mouse.move(p.x + p.width * 0.4, p.y + p.height * 0.7, { steps: 4 });
+    await page.mouse.wheel(0, 400);
+    await page.waitForTimeout(300);
+    await page.mouse.up();
+    expect((await draftCorners()).bottom, "the box did not follow the wheel").toBeGreaterThan(atTop.bottom * 0.7 + 0.02);
+    expect(await port().evaluate((n) => n.scrollTop)).toBeGreaterThan(0);
+    await page.getByRole("button", { name: "Clear", exact: true }).click();
+    await tool("Select").click();
+  });
+
   test("14. the phone gets a read-only canvas", async () => {
     await page.setViewportSize(PHONE);
     await onWorkspace(jobTwo);

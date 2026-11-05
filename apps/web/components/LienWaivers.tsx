@@ -6,7 +6,8 @@ import { Disclosure } from "@/components/Disclosure";
 import { secondaryActionClass } from "@/components/emptyStateStyles";
 import { SubmitButton } from "@/components/SubmitButton";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
-import { createLienWaiver, markLienWaiverSigned, revokeLienWaiver, updateLienWaiver } from "@/lib/actions";
+import { createLienWaiver, markLienWaiverSigned, revokeLienWaiver, settleAskDraft, updateLienWaiver } from "@/lib/actions";
+import type { BillingDraft } from "@/lib/ask/drafts";
 import { money } from "@/lib/money";
 import { formatCalendarDate } from "@/lib/render-date";
 import {
@@ -53,10 +54,14 @@ export function LienWaivers({
   section,
   canManage,
   offer = null,
+  draft,
 }: {
   jobId: string;
   section: LienWaiverSection;
   canManage: boolean;
+  /** A card from the Ask box: the same prefill the offer gives, for the
+   * application the person named. Never carries an exception. */
+  draft?: Extract<BillingDraft, { form: "waiver" }>;
   /** The matching waiver for the newest pay application with none yet —
    * `waiverOfferFor` on the Billing tab. Null when there is nothing to
    * offer. */
@@ -70,6 +75,12 @@ export function LienWaivers({
   // nothing to read. So that hash opens it. The section carrying the id is
   // always rendered, so HashLanding still finds it to scroll to.
   const [listOpen, setListOpen] = useState(false);
+  useEffect(() => {
+    if (!draft) return;
+    setPrefill({ invoiceId: draft.invoiceId, amount: draft.amount, throughDate: draft.throughDate, stage: draft.stage });
+    setOpen(true);
+    document.getElementById("lien-waivers")?.scrollIntoView?.({ block: "start" });
+  }, [draft]);
   useEffect(() => {
     const check = () => {
       if (window.location.hash === "#lien-waivers") setListOpen(true);
@@ -122,7 +133,15 @@ export function LienWaivers({
       )}
 
       {open && canManage && (
-        <IssueWaiverForm jobId={jobId} section={section} prefill={prefill} onDone={() => setOpen(false)} />
+        <IssueWaiverForm
+          jobId={jobId}
+          section={section}
+          prefill={prefill}
+          onDone={() => {
+            setOpen(false);
+            if (draft) void settleAskDraft(draft.proposalId);
+          }}
+        />
       )}
 
       {section.waivers.length === 0 ? (
