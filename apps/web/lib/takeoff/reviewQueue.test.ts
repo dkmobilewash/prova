@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { focusOf, heightItem, orderedCodes, reviewQueue, typeItems, wallItem, type ReviewItem } from "./reviewQueue";
+import { focusOf, heightFor, heightItem, orderedCodes, reviewQueue, suggestType, typeItems, wallItem, type ReviewItem } from "./reviewQueue";
+import type { WallGroup } from "./wallGroups";
+import { propagatedTag } from "./planTextTags";
 
 const sheet = { pageNumber: 3, sheet: "A101", feetPerUnit: 100 };
 const run = (x1: number, x2: number, y = 0.5) => ({ x1, y1: y, x2, y2: y });
@@ -56,13 +58,37 @@ describe("the job's one review queue", () => {
     expect(focusOf(item)).toEqual({ pageNumber: 4, ...run(0.2, 0.8) });
     expect(heightItem({ id: "i2", name: "W2" }, [{ sheet, runs: [], rooms: [] }], legend)).toBeNull();
   });
+
+  it("SUGGESTS THE TYPE THE DRAWING GIVES, and says where it came from", () => {
+    const type = (code: string, thicknessIn: number | null = null) => ({ id: code, code, name: code, hasParts: true, thicknessIn });
+    const group = (source: WallGroup["source"], candidates: ReturnType<typeof type>[], inches = 4.875): WallGroup => ({ inches, runs: [], feet: 0, source, candidates });
+    expect(suggestType(group({ kind: "TAG", tag: "S6B" }, [type("S6B")]), "A101", [])).toEqual({ code: "S6B", from: "printed tag: S6B on A101" });
+    expect(suggestType(group({ kind: "TAG", tag: propagatedTag("S6B") }, [type("S6B")]), "A101", [])?.from).toBe("tag carried along the wall: S6B");
+    // A tag the library lacks is suggested only where the legend defines it ("Set type" adds it from there).
+    expect(suggestType(group({ kind: "TAG", tag: "S9" }, []), "A101", ["S6B", "S9"])).toEqual({ code: "S9", from: "printed tag: S9 on A101, in the legend but not yet your library" });
+    expect(suggestType(group({ kind: "TAG", tag: "S9" }, []), "A101", ["S6B"])).toBeNull();
+    expect(suggestType(group({ kind: "REMAINDER" }, [type("W1", 4.875)]), "A101", [])).toEqual({ code: "W1", from: `the only type that thick: 4-7/8"` });
+    // The note's default, only where it is the one type that thick (#989's rule).
+    expect(suggestType(group({ kind: "GENERAL_NOTE", note: "ALL WALLS TYPE A U.N.O." }, [type("A")]), "A101", [])).toEqual({ code: "A", from: `legend's "unless noted otherwise"` });
+    expect(suggestType(group({ kind: "GENERAL_NOTE", note: "ALL WALLS TYPE A U.N.O." }, [type("A"), type("B")]), "A101", [])).toBeNull();
+    // Two types this thick and nothing naming one: the question, not an answer.
+    expect(suggestType(group({ kind: "REMAINDER" }, [type("A"), type("B")]), "A101", [])).toBeNull();
+  });
+
+  it("pre-fills the type's own height, else the ceiling", () => {
+    const heights = { S6B: { feet: 15, from: "legend S6B: TO DECK → 15'-0\"" } };
+    const ceiling = { kind: "ceiling" as const, feet: 10, from: "ceiling plan, room 104: 10'-0\"" };
+    expect(heightFor("s6b", heights, ceiling)).toEqual(heights.S6B);
+    expect(heightFor("W1", heights, ceiling)).toEqual({ feet: 10, from: ceiling.from });
+    expect(heightFor(null, heights, null)).toBeNull();
+  });
 });
 
 describe("the drawing's type is pre-filled with its source (suggest, don't post)", () => {
   it("carries the group's suggestion onto its item, and none where the drawing named nothing", () => {
     const untyped = [{ xs: [0.1, 0.2], ys: [0.5, 0.5] }];
-    expect(typeItems(sheet, untyped, [{ id: "g", inches: 5, runs: [run(0.1, 0.2)], suggested: { code: "IW-2", from: "printed tag" } }])[0]).toMatchObject({ suggested: "IW-2", suggestedFrom: "printed tag" });
-    expect(typeItems(sheet, untyped, [{ id: "g", inches: 5, runs: [run(0.1, 0.2)] }])[0]).toMatchObject({ suggested: null, suggestedFrom: null });
+    expect(typeItems(sheet, untyped, [{ id: "g", inches: 5, runs: [run(0.1, 0.2)], suggested: { code: "IW-2", from: "printed tag" } }])[0]).toMatchObject({ suggested: { code: "IW-2", from: "printed tag" } });
+    expect(typeItems(sheet, untyped, [{ id: "g", inches: 5, runs: [run(0.1, 0.2)] }])[0]).toMatchObject({ suggested: null });
   });
 
   it("puts the suggestion first and does not repeat it", () => {

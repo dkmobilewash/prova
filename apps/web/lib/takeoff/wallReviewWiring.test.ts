@@ -18,7 +18,9 @@ describe("Review walls in the viewer", () => {
   });
   it("a dropped run leaves the found list, and each run is zoomed to", () => {
     expect(viewer).toMatch(/rebuildFound\(droppedRuns\(next\)\)/);
-    expect(viewer).toMatch(/viewOfRun\(reviewRun, pageSize/);
+    // The run, or a whole group's box from the review queue (`focusRuns`), zoomed the same way.
+    expect(viewer).toMatch(/const zoomRun = reviewRun \?\? groupBox;/);
+    expect(viewer).toMatch(/viewOfRun\(zoomRun, pageSize/);
   });
 });
 
