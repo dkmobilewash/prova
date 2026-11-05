@@ -31,11 +31,13 @@ vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 const { saveTakeoffMeasurements } = await import("./takeoff");
+const { UNTYPED_ITEM } = await import("@/lib/takeoff/untypedItem");
 
 let companyId = "";
 let jobId = "";
 let pageId = "";
 let calibrationId = "";
+let contractedJobId = "";
 
 beforeAll(async () => {
   const company = await prisma.company.create({ data: { name: "Found Walls Test Co" } });
@@ -83,10 +85,12 @@ afterAll(async () => {
   // is the same shape CLAUDE.md records for `InvoiceCounter` and the reason
   // both cleanup scripts keep an explicit delete order rather than trusting a
   // parent delete to reach everything under it.
-  await prisma.takeoffMeasurement.deleteMany({ where: { page: { plan: { jobId } } } });
-  await prisma.takeoffScaleCalibration.deleteMany({ where: { page: { plan: { jobId } } } });
-  await prisma.takeoffPlanPage.deleteMany({ where: { plan: { jobId } } });
-  await prisma.takeoffPlan.deleteMany({ where: { jobId } });
+  await prisma.jobLineItem.deleteMany({ where: { jobId: { in: [jobId, contractedJobId] } } });
+  await prisma.takeoffMeasurement.deleteMany({ where: { page: { plan: { jobId: { in: [jobId, contractedJobId] } } } } });
+  await prisma.takeoffItem.deleteMany({ where: { jobId: { in: [jobId, contractedJobId] } } });
+  await prisma.takeoffScaleCalibration.deleteMany({ where: { page: { plan: { jobId: { in: [jobId, contractedJobId] } } } } });
+  await prisma.takeoffPlanPage.deleteMany({ where: { plan: { jobId: { in: [jobId, contractedJobId] } } } });
+  await prisma.takeoffPlan.deleteMany({ where: { jobId: { in: [jobId, contractedJobId] } } });
   await prisma.job.deleteMany({ where: { companyId } });
   await prisma.contact.deleteMany({ where: { companyId } });
   await prisma.user.deleteMany({ where: { companyId } });
@@ -104,6 +108,49 @@ function body(shapes: { xs: number[]; ys: number[] }[], label = '4-7/8" wall', k
 }
 
 const run = (y: number) => ({ xs: [0.1, 0.3], ys: [y, y] });
+
+describe("PLAIN walls reach the estimate (the new-job walkthrough's step 15)", () => {
+  it("files them under Walls — untyped and writes that item's footage line in the same add", async () => {
+    // A brand-new company has no wall types, so every group it adds is plain.
+    // These used to be written with no item, under Unassigned, and Send to
+    // estimate exists only on an item — the takeoff never reached the estimate.
+    const result = await saveTakeoffMeasurements(jobId, body([run(0.7), run(0.8), run(0.9)]));
+    expect(result).toEqual({ ok: true });
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId }, include: { item: true } });
+    expect(rows).toHaveLength(3);
+    expect(rows.map((r) => r.item?.name)).toEqual([UNTYPED_ITEM, UNTYPED_ITEM, UNTYPED_ITEM]);
+    // 3 runs x 0.2 of a 100 ft page = 60 lin ft, on the estimate, unpriced.
+    const lines = await prisma.jobLineItem.findMany({ where: { jobId, takeoffItemId: rows[0]!.itemId } });
+    expect(lines.map((l) => [Number(l.quantity), l.unit, l.unitPrice])).toEqual([[60, "lin ft", null]]);
+    expect(lines[0]!.description).toContain(UNTYPED_ITEM);
+
+    // A second group adds to the same item and the same line, not a second one.
+    expect(await saveTakeoffMeasurements(jobId, body([run(0.95)]))).toEqual({ ok: true });
+    const again = await prisma.jobLineItem.findMany({ where: { jobId, takeoffItem: { name: UNTYPED_ITEM } } });
+    expect(again.map((l) => Number(l.quantity))).toEqual([80]);
+    expect(await prisma.takeoffItem.count({ where: { jobId, name: UNTYPED_ITEM } })).toBe(1);
+
+    await prisma.jobLineItem.deleteMany({ where: { jobId } });
+    await prisma.takeoffMeasurement.deleteMany({ where: { pageId } });
+    await prisma.takeoffItem.deleteMany({ where: { jobId } });
+  });
+
+  it("on a CONTRACTED job files them but leaves the estimate alone", async () => {
+    // A signed estimate changes by change order, never by a takeoff click.
+    const contactId = (await prisma.contact.findFirstOrThrow({ where: { companyId } })).id;
+    const job = await prisma.job.create({ data: { companyId, contactId, name: "Contracted", status: "CONTRACTED" } });
+    contractedJobId = job.id;
+    const plan = await prisma.takeoffPlan.create({ data: { companyId, jobId: job.id, fileUrl: "https://example.test/c.pdf" } });
+    const page = await prisma.takeoffPlanPage.create({ data: { planId: plan.id, pageNumber: 1 } });
+    await prisma.takeoffScaleCalibration.create({ data: { pageId: page.id, x1: 0, y1: 0, x2: 1, y2: 0, declaredDistanceFeet: "100" } });
+    const form = body([run(0.1)]);
+    form.set("pageId", page.id);
+    expect(await saveTakeoffMeasurements(job.id, form)).toEqual({ ok: true });
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId: page.id }, include: { item: true } });
+    expect(rows.map((r) => r.item?.name)).toEqual([UNTYPED_ITEM]);
+    expect(await prisma.jobLineItem.count({ where: { jobId: job.id } })).toBe(0);
+  });
+});
 
 describe("adding a group of found walls", () => {
   it("writes every run in the group, with the sheet's calibration", async () => {
