@@ -125,10 +125,11 @@ export default async function JobEstimatePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ draft?: string }>;
+  searchParams?: Promise<{ draft?: string; line?: string }>;
 }) {
   const { id } = await params;
-  const { draft } = (await searchParams) ?? {};
+  // `line`: the review queue's "Open the line" — that line opens, scrolled to.
+  const { draft, line } = (await searchParams) ?? {};
   const { company, currentUser, principal, job: jobRef } = await requireJob(id);
   const { showsJobMoney } = jobCapabilities(principal);
   if (!showsJobMoney) {
@@ -879,6 +880,9 @@ export default async function JobEstimatePage({
               {lineItemWip.map(({ item, wip }) => (
                 <Disclosure
                   key={item.id}
+                  id={`line-${item.id}`}
+                  open={line === item.id || undefined}
+                  className="scroll-mt-4"
                   variant="row"
                   name="estimate-line"
                   summary={
