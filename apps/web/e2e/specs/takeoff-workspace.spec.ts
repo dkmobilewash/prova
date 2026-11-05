@@ -787,6 +787,7 @@ test.describe("the full-screen takeoff workspace", () => {
     await expect(page.locator('[data-takeoff="selection-facts"]')).toContainText(/1 of \d+ runs?/);
     const firstRun = await overlay().locator("[data-found-wall]").first().evaluate((l) => ["x1", "y1", "x2", "y2"].map((a) => Number(l.getAttribute(a))));
     expect(await outline.evaluate((l) => ["x1", "y1", "x2", "y2"].map((a) => Number(l.getAttribute(a)))), "the outline is not the run clicked").toEqual(firstRun);
+    await page.screenshot({ path: path.join(SHOTS, "select-one-run.png") });
 
     // 2. AND LETS GO: Esc, a click on nothing, another sheet.
     await page.keyboard.press("Escape");
@@ -903,6 +904,12 @@ test.describe("the full-screen takeoff workspace", () => {
     const viewer = await page.context().newPage();
     await viewer.goto((await pdf.getAttribute("href"))!);
     expect(await viewer.title()).toMatch(new RegExp(`^${JOB_TWO} – `));
+    // And the header on the page says it too: the viewer's own toolbar, which
+    // printed the file's Title ("ESC1" on Baker), is switched off.
+    await expect(viewer.locator('[data-takeoff="pdf-header"] h1')).toHaveText(new RegExp(`^${JOB_TWO} – `));
+    expect(await viewer.locator('[data-takeoff="pdf-frame"]').getAttribute("src")).toMatch(/#page=\d+&toolbar=0/);
+    await expect(viewer.getByRole("link", { name: "Download" })).toHaveAttribute("download", new RegExp(`^${JOB_TWO} – .*\\.pdf$`));
+    await viewer.screenshot({ path: path.join(SHOTS, "pdf-page-header.png") });
     await viewer.close();
 
     // 9. THE SCALE LINE SAYS WHAT IT IS, AND HAS A ROW.

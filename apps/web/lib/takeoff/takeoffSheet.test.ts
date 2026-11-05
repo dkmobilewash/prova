@@ -5,6 +5,15 @@ const verdict = (title: string, viewNames?: string[], sheetNumber = "A101") =>
   takeoffSheetVerdict({ sheetNumber, title, viewNames });
 
 describe("whether a sheet is worth taking off", () => {
+  it("CALLS A DEMOLITION SHEET ONE, not by the first view's kind (Baker A001)", () => {
+    // A demolition plan beside an exterior demolition elevation read "an
+    // elevations sheet". Captions invented, same shape.
+    const verdict = takeoffSheetVerdict({ sheetNumber: "A001", title: "", viewNames: ["EAST DEMOLITION ELEVATION", "DEMO PLAN"] });
+    expect(verdict.worthMeasuring).toBe(false);
+    expect(verdict.why).toMatch(/demolition/);
+    expect(verdict.why).not.toMatch(/elevation/i);
+  });
+
   it("offers a floor plan", () => {
     const got = verdict("LEVEL 1 FLOOR PLAN");
     expect(got.worthMeasuring).toBe(true);
