@@ -74,20 +74,20 @@ export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
 /**
  * ── THE FLOOR PLANS OF THE WORK: where the workspace opens (`startPage.ts`) ──
  *
- * The sheets this run counts, and only floor plans among them. Before any
- * floor plan has its scale the run counts none, so the same question is asked
- * as if every sheet had one: the workspace opens on A101 before its scale is
- * set. Floor plans only, in both cases: forcing a scale made Baker's numberless
- * COVER (page 5) count, since the run skips it only for having no scale, and
- * "Run the takeoff" opened on it with the takeoff disabled (#996, found by the
- * new-customer walk).
+ * The sheets this run would count if every sheet had its scale, and only the
+ * floor plans among them. As if scaled, because a sheet's scale says nothing
+ * about whether it is the work: with only Baker's A100 scaled the run counts
+ * A100, the overall plan that repeats A101, and A101 is still where the work
+ * is — the workspace opens there and offers Set scale. Floor plans only,
+ * because forcing a scale made Baker's numberless COVER (page 5) count — the
+ * run skips it only for having no scale — and "Run the takeoff" opened on it
+ * with the takeoff disabled (#996, found by the new-customer walk).
  */
 export function floorPlansOfTheWork(sheets: readonly WallsSheet[]): number[] {
-  const counted = (list: readonly WallsSheet[]) =>
-    [...wallsPlan(list)].filter(([, skip]) => skip === null || skip === "already found").map(([pageNumber]) => pageNumber);
   const floor = new Set(sheets.filter((s) => sheetCategory(s.sheetNumber, s.title, null) === "floor").map((s) => s.pageNumber));
-  const real = counted(sheets).filter((page) => floor.has(page));
-  return real.length > 0 ? real : counted(sheets.map((sheet) => ({ ...sheet, hasScale: true }))).filter((page) => floor.has(page));
+  return [...wallsPlan(sheets.map((sheet) => ({ ...sheet, hasScale: true })))]
+    .filter(([pageNumber, skip]) => (skip === null || skip === "already found") && floor.has(pageNumber))
+    .map(([pageNumber]) => pageNumber);
 }
 
 /**

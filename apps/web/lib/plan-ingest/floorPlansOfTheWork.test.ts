@@ -12,6 +12,9 @@ describe("the floor plan the workspace opens on (#996, the cover found by the ne
   it("once the floor plans are scaled: the one the run takes", () => {
     expect(floorPlansOfTheWork([sheet(5, null, "COVER SHEET", false), sheet(12, "A100", "OVERALL FLOOR PLAN", true), sheet(13, "A101", "FLOOR PLAN", true)])).toEqual([13]);
   });
+  it("with only the overall plan scaled, still A101: a scale does not say which sheet is the work", () => {
+    expect(floorPlansOfTheWork([sheet(5, null, null, false), sheet(12, "A100", "OVERALL FLOOR PLAN", true), sheet(13, "A101", "FLOOR PLAN", false)])).toEqual([13]);
+  });
   it("and a scaled cover is still not where the work is", () => {
     expect(floorPlansOfTheWork([sheet(5, null, null, true), sheet(12, "A100", "OVERALL FLOOR PLAN", true), sheet(13, "A101", "FLOOR PLAN", true)])).toEqual([13]);
   });
