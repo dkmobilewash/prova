@@ -167,13 +167,20 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       await shot("welcome-trade");
       await trades.getByRole("button", { name: /Framing and drywall/ }).click();
       act();
-      // The markup question. The goal path sets markup at the estimate, so
-      // this walk says Later here and measures the banner path.
+      // The markup question, answered here: with the four rates set the review
+      // queue asks each line's COST and prices it with the markup (#994), so
+      // the price the GC sees carries it. Later would leave the queue asking
+      // for sale prices and the markup out of the bid.
       const later = page.getByRole("button", { name: "Later" });
       await expect(later).toBeVisible({ timeout: 30_000 });
       await shot("welcome-markup");
-      await later.click();
+      for (const [name, value] of [["materialMarkupPercent", "10"], ["laborMarkupPercent", "10"], ["overheadPercent", "8"], ["profitPercent", "10"]] as const) {
+        await page.locator(`input[name="${name}"]`).fill(value);
+        act();
+      }
+      await page.getByRole("button", { name: "Save", exact: true }).click();
       act();
+      note("Markup set at signup: 10% material, 10% labor, 8% overhead, 10% profit.");
       const skip = page.getByRole("button", { name: "Skip for now" });
       if (await seen(skip, 15_000)) {
         await shot("welcome-questions");
@@ -545,6 +552,22 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
             continue;
           }
           await printed.first().click();
+        } else if (kind === "price" && (await item.locator('[data-takeoff="review-queue-cost"]').count()) > 0) {
+          // With markup set the queue asks the line's cost (#994). What a
+          // framing sub pays, roughly, by what the line is.
+          const costForm = item.locator('[data-takeoff="review-queue-cost"]');
+          const said = (await text(item)).toLowerCase();
+          const cost = /hang|tape|finish/.test(said) ? "1.10" : /stud/.test(said) ? "4.10" : /track|plate/.test(said) ? "0.95" : /sheet|board/.test(said) ? "14.00" : /insulation|batt/.test(said) ? "0.60" : "1.00";
+          const picker = costForm.locator('[data-takeoff="review-queue-cost-category"]');
+          if ((await picker.count()) > 0) {
+            await picker.selectOption(/hang|tape|finish|install/.test(said) ? "LABOR" : "MATERIAL");
+            act();
+          }
+          if (seenKinds.price === 1) await shot("review-cost", tab);
+          await costForm.locator('[data-takeoff="review-queue-cost-input"]').fill(cost);
+          await costForm.locator('[data-takeoff="review-queue-cost-save"]').click();
+          act(2);
+          if (seenKinds.price === 1) note(`First price from cost: ${await text(queue.locator('[data-takeoff="review-queue-priced"]'))}`);
         } else if (kind === "price") {
           // Pricing opens the estimate on that line, in another tab.
           const link = item.locator('[data-takeoff="review-queue-line"]');
@@ -592,8 +615,9 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
     await step("Set markup", async () => {
       const banner = page.locator("[data-estimate=set-markup]");
       if (!(await seen(banner, 10_000))) {
-        stuck("no Set your markup banner on the estimate");
-        await page.goto("/settings?tab=estimating#bid-defaults");
+        note("No Set your markup banner: the markup was set at signup, so this step costs nothing.");
+        await shot("estimate-markup-already-set");
+        return;
       } else {
         await banner.getByRole("link").first().click();
         act();
@@ -619,6 +643,43 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
 
     // ── 10. SEND ──
     await step("Send", async () => {
+      await page.goto(`/jobs/${jobId}`);
+      if (/Add inclusions and exclusions/.test(await text(next(page)))) {
+        note("Next asks for inclusions and exclusions before sending.");
+        await next(page).click();
+        act();
+        await page.waitForURL(new RegExp(`/jobs/${jobId}/proposal`), { timeout: 30_000 });
+        await shot("proposal-before-clauses");
+        for (const [kind, words] of [
+          ["INCLUSION", "Metal stud framing, Type X board, hang, tape and finish per the wall types listed"],
+          ["EXCLUSION", "Fire caulking, insulation not listed, paint, and work on existing walls to remain"],
+        ] as const) {
+          const form = page.locator("form").filter({ has: page.locator('input[name="text"]') }).last();
+          await hydrated(page, 'input[name="text"]');
+          await form.locator('select[name="kind"]').selectOption(kind);
+          await form.locator('input[name="text"]').fill(words);
+          await form.getByRole("button", { name: "Add", exact: true }).click();
+          act(3);
+          await expect(page.getByText(words)).toBeVisible({ timeout: 30_000 });
+        }
+        // The GC added in the job wizard has no terms; the proposal says so.
+        const missing = page.locator('[data-proposal="terms-missing"]');
+        if (await seen(missing, 3000)) {
+          note(`Proposal: "${await text(missing)}"`);
+          await missing.getByRole("link").click();
+          act();
+          await page.waitForURL(/\/contacts\//, { timeout: 30_000 });
+          await hydrated(page, 'input[name="paymentTermsDays"]');
+          await page.locator('input[name="paymentTermsDays"]').fill("30");
+          await page.locator('input[name="defaultRetainagePercent"]').fill("10");
+          await page.getByRole("button", { name: "Save", exact: true }).first().click();
+          act(3);
+          const gcId = (await prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: { contactId: true } })).contactId;
+          await expect.poll(async () => (await prisma.contact.findUniqueOrThrow({ where: { id: gcId }, select: { paymentTermsDays: true } })).paymentTermsDays, { timeout: 30_000 }).toBe(30);
+          await shot("gc-terms-set");
+        }
+        await page.goto(`/jobs/${jobId}`);
+      }
       const nextText = await text(next(page));
       if (!/Send/.test(nextText)) stuck(`Next says "${nextText}", not Send`);
       await (/Send/.test(nextText) ? next(page) : page.locator('[data-job-step="send"]')).click();
@@ -643,6 +704,23 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const made = await expect.poll(async () => prisma.signatureRequest.count({ where: { jobId } }), { timeout: 30_000 }).toBeGreaterThan(0).then(() => true, () => false);
       await shot("sent");
       if (!made) stuck(`Create signing link made nothing: "${(await text(form)).slice(0, 300)}"`);
+      // What the GC gets: the link, opened signed out in their own browser.
+      const token = (await prisma.signatureRequest.findFirstOrThrow({ where: { jobId }, orderBy: { createdAt: "desc" }, select: { token: true } })).token;
+      const gc = await (await page.context().browser()!.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+      await gc.goto(`/esign/${token}`);
+      await expect(gc.getByRole("button", { name: "Sign contract" })).toBeVisible({ timeout: 60_000 });
+      const scopeRows = await gc.locator('[data-proposal="scope-row"]').allInnerTexts();
+      note(`The GC's page — scope by wall type: ${scopeRows.map((r) => r.replace(/\s+/g, " ")).join(" | ") || "NONE"}`);
+      for (const [what, selector] of [["Inclusions", '[data-proposal="clauses-inclusion"]'], ["Exclusions", '[data-proposal="clauses-exclusion"]'], ["Terms", '[data-proposal="terms"]']] as const) {
+        const found = await text(gc.locator(selector));
+        if (found === "") stuck(`the GC's page has no ${what}`);
+        else note(`${what}: ${found.slice(0, 200)}`);
+      }
+      note(`Price: ${await text(gc.getByText(/^Total: /))}`);
+      if (scopeRows.length === 0) stuck("the GC's page has no scope by wall type");
+      await gc.screenshot({ path: path.join(OUT, "proposal-the-gc-gets.png"), fullPage: true });
+      current?.shots.push("proposal-the-gc-gets.png");
+      await gc.context().close();
       await page.goto(`/jobs/${jobId}`);
       note(`Stepper: ${await states(page)} · ${await text(next(page))}`);
       await shot("job-end");

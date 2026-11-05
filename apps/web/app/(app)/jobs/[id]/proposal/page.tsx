@@ -298,6 +298,14 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
       {/* What the GC also reads on the signing link: the scope by wall type and
           the terms. The clauses below carry their own edit controls here. */}
       <GcProposalSections proposal={gcProposal} showClauses={false} />
+      {gcProposal.terms.paymentTermsDays === null && gcProposal.terms.retainagePercent === null && (
+        <p className="mt-3 text-sm text-ink-body print:hidden" data-proposal="terms-missing">
+          No payment terms or retainage on file for {job.contact.name}, so the GC&rsquo;s copy shows no terms.{" "}
+          <Link href={`/contacts/${job.contactId}`} className="font-medium text-link hover:underline">
+            Set them on {job.contact.name}&rsquo;s record &rarr;
+          </Link>
+        </p>
+      )}
 
       <div id="clauses" className="scroll-mt-4" />
       {groups.map((group) => (
