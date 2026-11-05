@@ -1,4 +1,4 @@
-import type { Candidate, ReviewState, SplitRecord, Verdict } from "./answerKeyReview";
+import type { Candidate, Opening, ReviewState, SplitRecord, Verdict } from "./answerKeyReview";
 import { withTraces } from "./answerKeyReview";
 import { reapplySplits } from "./restoreSaved";
 
@@ -58,6 +58,8 @@ export type ReviewDraft = {
   splits?: SplitRecord[];
   /** Round 12's wall types, by candidate or trace id. Optional: a draft written before this has none. */
   types?: Record<string, string>;
+  /** Round 13's marked openings. Optional: a draft written before this has none. */
+  openings?: Opening[];
   /** For the restore offer, so it can say what is in there before restoring. */
   counts: { decided: number; traced: number };
 };
@@ -110,7 +112,7 @@ export function draftFrom(input: {
   //
   // A traced wall ALWAYS counts, even one, because it is the expensive thing:
   // the reviewer found a wall the finder missed and drew it by hand.
-  if (decided === 0 && traced === 0) return null;
+  if (decided === 0 && traced === 0 && (input.state.openings ?? []).length === 0) return null;
   return {
     format: DRAFT_FORMAT,
     set: input.set,
@@ -122,6 +124,7 @@ export function draftFrom(input: {
     traced: input.state.traced.map((t) => ({ ...t })),
     splits: [...(input.state.splits ?? [])],
     types: { ...(input.state.types ?? {}) },
+    openings: (input.state.openings ?? []).map((o) => ({ ...o })),
     counts: { decided, traced },
   };
 }
@@ -169,9 +172,10 @@ export function restoreDraft(draft: ReviewDraft, start: ReviewState, feetPerUnit
   const withTraced = withTraces({ ...fresh, verdicts }, draft.traced);
   // Types only for walls the restored state still accepts or traces.
   const types = Object.fromEntries(Object.entries(draft.types ?? {}).filter(([id]) => withTraced.verdicts[id] === "wall" || withTraced.traced.some((t) => t.id === id)));
+  const typed = Object.keys(types).length === 0 ? withTraced : { ...withTraced, types };
   return {
     ok: true,
-    state: Object.keys(types).length === 0 ? withTraced : { ...withTraced, types },
+    state: (draft.openings ?? []).length === 0 ? typed : { ...typed, openings: draft.openings!.map((o) => ({ ...o })) },
   };
 }
 
@@ -184,6 +188,8 @@ export function restoreOffer(draft: ReviewDraft): string {
   if (draft.counts.traced > 0) {
     bits.push(`${draft.counts.traced} trace${draft.counts.traced === 1 ? "" : "s"}`);
   }
+  const openings = draft.openings?.length ?? 0;
+  if (openings > 0) bits.push(`${openings} opening${openings === 1 ? "" : "s"}`);
   return `Restore unsaved review (${bits.join(", ")})`;
 }
 
@@ -210,7 +216,11 @@ export function reviewSignature(state: ReviewState | null): string {
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([id, t]) => `${id}=${t}`)
     .join(",");
-  return `${verdicts}|${traced}${types === "" ? "" : `|${types}`}`;
+  const openings = (state.openings ?? [])
+    .map((o) => `${o.kind[0]}${round(o.x)},${round(o.y)}=${o.tag ?? ""}`)
+    .sort()
+    .join(";");
+  return `${verdicts}|${traced}${types === "" ? "" : `|${types}`}${openings === "" ? "" : `|o:${openings}`}`;
 }
 
 /**
@@ -240,6 +250,7 @@ export function hasUnsavedWork(state: ReviewState, savedSignature?: string): boo
   if (savedSignature !== undefined && savedSignature === reviewSignature(state)) return false;
   return (
     state.traced.length > 0 ||
+    (state.openings ?? []).length > 0 ||
     Object.values(state.verdicts).some((v) => v !== "unreviewed")
   );
 }
@@ -282,7 +293,9 @@ export function keepReview(existing: ReviewState | null, fresh: ReviewState): Re
   // whether the reviewer pressed a button or the finder re-read the page, so
   // the growth case is `mergeOffered` below and this function went back to
   // doing one thing.
-  if (fingerprint(existing.candidates) !== fingerprint(fresh.candidates)) return fresh;
+  // Openings are points a person placed on the drawing, not judgements of
+  // candidates, so a re-read of the walls keeps them.
+  if (fingerprint(existing.candidates) !== fingerprint(fresh.candidates)) return existing.openings === undefined ? fresh : { ...fresh, openings: existing.openings };
   // The duplicate pre-marking comes from `fresh`, and the reviewer's verdicts
   // sit on top — their decision outranks the rule's, which is the same order
   // `restoreDraft` uses.
@@ -290,7 +303,8 @@ export function keepReview(existing: ReviewState | null, fresh: ReviewState): Re
   for (const [id, verdict] of Object.entries(existing.verdicts)) {
     if (id in verdicts && verdict !== "unreviewed") verdicts[id] = verdict;
   }
-  return withTraces({ ...fresh, verdicts }, existing.traced);
+  const kept = withTraces({ ...fresh, verdicts }, existing.traced);
+  return existing.openings === undefined ? kept : { ...kept, openings: existing.openings };
 }
 
 /**

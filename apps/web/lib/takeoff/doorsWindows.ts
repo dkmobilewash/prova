@@ -43,6 +43,13 @@ export function doorCount(result: DoorsWindowsResult): number {
 /** A window tag is a short code in a symbol: W1, W2, A, 1. A door mark (101) is not one. */
 const WINDOW_TAG = /^W?\d{1,2}[A-Z]?$|^[A-Z]$/;
 
+/** The window tags read in symbols on a sheet (W1, W2…), each once, in reading order of first appearance. */
+export function windowTagsOnSheet(segmentsPt: readonly StrokeSegment[], textPt: readonly TextForSymbol[]): string[] {
+  const symbols = tagSymbols({ segments: segmentsPt, text: textPt, unitsPerPaperInch: 72 });
+  const tags = symbols.filter((s) => s.rejected === null && WINDOW_TAG.test(s.text.trim().toUpperCase())).map((s) => s.text.trim().toUpperCase());
+  return [...new Set(tags)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
 /** A door schedule row as the ingest stores it (`PlanScheduleProposal.rows`). */
 export type StoredScheduleRow = { mark: string; size?: string | null; description?: string | null };
 

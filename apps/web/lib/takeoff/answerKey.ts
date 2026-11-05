@@ -65,7 +65,11 @@ export type AnswerKey = {
   /** The scale it was reviewed at, so a re-scaled re-export is detectable. */
   feetPerUnit: number;
   walls: KeyWall[];
+  /** Round 13: the windows and doors a person marked, each with the tag shown beside it. */
+  openings?: KeyOpening[];
 };
+
+export type KeyOpening = { x: number; y: number; kind: "window" | "door"; tag?: string };
 
 /**
  * Reads a key file, refusing anything that is not the shape it wrote.

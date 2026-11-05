@@ -296,6 +296,7 @@ export function keyFromLabels(
       verdict: string;
       wallType?: string;
     }>;
+    openings?: ReadonlyArray<{ x: number; y: number; kind: string; tag?: string }>;
   },
   /**
    * Needed to tell whether a trace and an accepted wall are the same wall.
@@ -305,7 +306,7 @@ export function keyFromLabels(
    * score. Callers that have it should pass it.
    */
   feetPerUnit?: number,
-): { key: ScoredRun[]; fromTracedFeet: number; tracesFoldedIn: number; acceptedFoldedIn: number } {
+): { key: ScoredRun[]; fromTracedFeet: number; tracesFoldedIn: number; acceptedFoldedIn: number; openings: KeyPoint[] } {
   const offered: ScoredRun[] = [];
   const traces: ScoredRun[] = [];
   for (const v of saved.verdicts) {
@@ -374,5 +375,54 @@ export function keyFromLabels(
     key.push(trace);
     fromTracedFeet += left;
   }
-  return { key, fromTracedFeet, tracesFoldedIn, acceptedFoldedIn };
+  const openings: KeyPoint[] = (saved.openings ?? [])
+    .filter((o) => o.kind === "window" || o.kind === "door")
+    .map((o) => ({ x: o.x, y: o.y, kind: o.kind as KeyPoint["kind"], ...(typeof o.tag === "string" && o.tag !== "" ? { tag: o.tag } : {}) }));
+  return { key, fromTracedFeet, tracesFoldedIn, acceptedFoldedIn, openings };
+}
+
+/** A window or door, as a point on the page (page-width units) with the tag shown beside it. */
+export type KeyPoint = { x: number; y: number; kind: "window" | "door"; tag?: string };
+
+/** How far a found opening may sit from a marked one and still be it. */
+export const OPENING_MATCH_FEET = 2;
+
+/**
+ * ── OPENINGS, SCORED AS POINTS ──
+ *
+ * Each found opening of the kind is matched to the nearest unclaimed key point
+ * within `OPENING_MATCH_FEET`, closest pairs first, so one found mark cannot
+ * claim two windows. Found = matched, missed = key points left over, false =
+ * found ones left over. Tag-correct counts matched pairs whose key carries a
+ * real tag (not "-", no tag shown) and whose found tag equals it; `tagged` is
+ * how many matched pairs could be graded.
+ */
+export function scoreOpenings(
+  key: readonly KeyPoint[],
+  found: readonly KeyPoint[],
+  kind: KeyPoint["kind"],
+  feetPerUnit: number,
+): { key: number; found: number; missed: number; false: number; tagged: number; tagCorrect: number } {
+  const k = key.filter((p) => p.kind === kind);
+  const f = found.filter((p) => p.kind === kind);
+  const reach = OPENING_MATCH_FEET / feetPerUnit;
+  const pairs: { i: number; j: number; d: number }[] = [];
+  k.forEach((a, i) => f.forEach((b, j) => {
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (d <= reach) pairs.push({ i, j, d });
+  }));
+  pairs.sort((a, b) => a.d - b.d);
+  const usedK = new Set<number>(), usedF = new Set<number>();
+  let tagged = 0, tagCorrect = 0;
+  for (const { i, j } of pairs) {
+    if (usedK.has(i) || usedF.has(j)) continue;
+    usedK.add(i);
+    usedF.add(j);
+    const want = k[i]!.tag;
+    if (want !== undefined && want !== "-") {
+      tagged += 1;
+      if ((f[j]!.tag ?? "").toUpperCase() === want.toUpperCase()) tagCorrect += 1;
+    }
+  }
+  return { key: k.length, found: usedK.size, missed: k.length - usedK.size, false: f.length - usedF.size, tagged, tagCorrect };
 }

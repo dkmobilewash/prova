@@ -127,6 +127,8 @@ afterAll(async () => {
   await prisma.jobLineItem.deleteMany({ where: { jobId } });
   await prisma.wallRun.deleteMany({ where: { jobId } });
   await prisma.takeoffMeasurement.deleteMany({ where: { page: { plan: { jobId } } } });
+  // A plain add files its walls under "Walls — untyped", a RESTRICT child of Job.
+  await prisma.takeoffItem.deleteMany({ where: { jobId } });
   await prisma.takeoffScaleCalibration.deleteMany({ where: { page: { plan: { jobId } } } });
   await prisma.takeoffPlanPage.deleteMany({ where: { plan: { jobId } } });
   await prisma.takeoffPlan.deleteMany({ where: { jobId } });

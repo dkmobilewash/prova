@@ -4,14 +4,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { KEY_RULES } from "@/lib/takeoff/answerKey";
 import {
   CANT_TELL,
+  NO_TAG,
   REVIEWER_KEY,
   candidatesInBox,
   isTypingTarget,
   keyFromReview,
   nextUnreviewed,
   nextUntyped,
+  openingsForSave,
   progressOf,
   removeTraced,
+  setOpeningTag,
   setVerdict,
   setWallType,
   type ReviewState,
@@ -110,6 +113,18 @@ export type AnswerKeyPanelProps = {
   onTracing?: (next: boolean) => void;
   /** Both ends are down, so Enter will commit. */
   traceReady?: boolean;
+  /**
+   * ── ROUND 13: WINDOWS ──
+   *
+   * Marking armed (a click on the sheet drops a window, a click on one
+   * removes it — the viewer does both), the opening the tag picker is on,
+   * and the window tags read on this sheet for the picker's 1–9.
+   */
+  marking?: boolean;
+  onMarking?: (next: boolean) => void;
+  focusedOpening?: string | null;
+  onFocusOpening?: (id: string | null) => void;
+  windowTags?: readonly string[];
   /** Split the focused candidate where an accepted wall crosses it. The
    *  workspace owns this because the split needs the sheet's scale. */
   onSplit?: (id: string) => void;
@@ -161,6 +176,11 @@ export function AnswerKeyPanel({
   tracing,
   onTracing,
   traceReady,
+  marking = false,
+  onMarking,
+  focusedOpening = null,
+  onFocusOpening,
+  windowTags = [],
   state,
   onState,
   focusedId,
@@ -366,6 +386,16 @@ export function AnswerKeyPanel({
       // 1–9 give the focused accepted or traced wall the legend's nth code,
       // 0 says the drawing does not say ("U"), and the panel moves on to the
       // next wall with no type, so a sheet is typed wall to wall from the keys.
+      // ── ROUND 13: WHILE MARKING, A NUMBER IS THE WINDOW'S TAG ──
+      // 1–9 the sheet's nth window tag, 0 "no tag shown".
+      if (/^[0-9]$/.test(key) && marking && focusedOpening !== null) {
+        const tag = key === "0" ? NO_TAG : windowTags[Number(key) - 1];
+        if (tag !== undefined) {
+          event.preventDefault();
+          giveTag(focusedOpening, tag);
+        }
+        return;
+      }
       if (/^[0-9]$/.test(key) && focusedId !== null && typeable(focusedId)) {
         const code = key === "0" ? CANT_TELL : legendCodes[Number(key) - 1];
         if (code !== undefined) {
@@ -449,6 +479,12 @@ export function AnswerKeyPanel({
     return state.verdicts[id] === "wall" || state.traced.some((t) => t.id === id);
   }
 
+  function giveTag(id: string, tag: string) {
+    noteActivity();
+    onState(setOpeningTag(state, id, tag));
+    onFocusOpening?.(null);
+  }
+
   function giveType(id: string, code: string) {
     noteActivity();
     const next = setWallType(state, [id], code);
@@ -522,7 +558,7 @@ export function AnswerKeyPanel({
     // pairings, but a save must not throw the review away. Refused only when
     // there is nothing at all to write.
     const anyDecision = Object.values(state.verdicts).some((v) => v !== "unreviewed");
-    if ((pairings ?? []).length === 0 && state.traced.length === 0 && !anyDecision) {
+    if ((pairings ?? []).length === 0 && state.traced.length === 0 && !anyDecision && (state.openings ?? []).length === 0) {
       setLabelsResult({ ok: false, text: "Not saved: nothing on this sheet has been decided or traced yet." });
       return;
     }
@@ -569,6 +605,8 @@ export function AnswerKeyPanel({
           reviewedBy: reviewer.trim(),
           feetPerUnit: sheet.feetPerUnit,
           secondsSpent: spent.current.seconds,
+          // Round 13: the windows marked, with their tags.
+          openings: openingsForSave(state),
           // Only a sheet the reviewer finished can say that an unproposed
           // place is NOT a wall — see `labelRows`.
           reviewComplete: progress.reviewed >= progress.total,
@@ -680,6 +718,70 @@ export function AnswerKeyPanel({
               ? "Press Enter to add it as an accepted wall. Escape to start over."
               : "Click the start of the wall, then its end."}
           </p>
+        )}
+      </div>
+
+      {/* ── ROUND 13: WINDOWS, ONE CLICK EACH ──
+
+          Armed, a click on the sheet marks a window and a click on a mark
+          removes it. The newest mark takes its tag from the keys: 1–9 the
+          window tags read on this sheet, 0 when no tag is shown, or typed. */}
+      <div className="rounded-md border border-line-card bg-surface p-2" data-takeoff="key-windows">
+        <button
+          type="button"
+          onClick={() => onMarking?.(!marking)}
+          data-takeoff="key-mark-windows"
+          aria-pressed={marking}
+          className={marking ? "text-[11px] font-medium text-ink" : "text-[11px] text-link hover:text-link-hover"}
+        >
+          {marking ? "Marking windows — click each one" : "Mark windows"}
+        </button>
+        <span className="ml-2 text-[11px] text-ink-muted" data-takeoff="key-window-count">
+          {(() => {
+            const n = (state.openings ?? []).filter((o) => o.kind === "window").length;
+            return `${n} window${n === 1 ? "" : "s"} marked`;
+          })()}
+        </span>
+        {marking && focusedOpening !== null && (state.openings ?? []).some((o) => o.id === focusedOpening) && (
+          <div data-takeoff="key-window-tag" className="mt-1 flex flex-wrap items-center gap-1 text-xs">
+            <span className="text-ink-muted">Tag</span>
+            {windowTags.map((tag, at) => (
+              <button
+                key={tag}
+                type="button"
+                data-takeoff="key-window-tag-code"
+                onClick={() => giveTag(focusedOpening, tag)}
+                className="rounded-md border border-line-card px-2 py-1 text-ink-label hover:bg-rail-hover"
+              >
+                {at < 9 ? `${tag} (${at + 1})` : tag}
+              </button>
+            ))}
+            <button
+              type="button"
+              data-takeoff="key-window-no-tag"
+              onClick={() => giveTag(focusedOpening, NO_TAG)}
+              className="rounded-md border border-line-card px-2 py-1 text-ink-label hover:bg-rail-hover"
+            >
+              No tag shown (0)
+            </button>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                const input = event.currentTarget.elements.namedItem("tag") as HTMLInputElement | null;
+                if (input !== null && input.value.trim() !== "") {
+                  giveTag(focusedOpening, input.value);
+                  input.value = "";
+                }
+              }}
+            >
+              <input
+                name="tag"
+                data-takeoff="key-window-tag-other"
+                placeholder={windowTags.length === 0 ? "type the tag" : "other"}
+                className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-ink"
+              />
+            </form>
+          </div>
         )}
       </div>
 

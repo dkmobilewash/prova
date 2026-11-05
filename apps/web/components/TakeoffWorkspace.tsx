@@ -16,7 +16,7 @@ import { Spinner } from "@/components/Spinner";
 import { AnswerKeyPanel } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
 import { restoreSaved, type SavedSheet } from "@/lib/takeoff/restoreSaved";
-import { addTraced, removeTraced, startReview, tracedWall, type ReviewState } from "@/lib/takeoff/answerKeyReview";
+import { addOpening, addTraced, removeOpening, removeTraced, startReview, tracedWall, type ReviewState } from "@/lib/takeoff/answerKeyReview";
 import { crossingPoint, splitCandidate } from "@/lib/takeoff/splitCandidate";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { TakeoffPlanViewer, type ViewerSelection } from "@/components/TakeoffPlanViewer";
@@ -804,6 +804,10 @@ export function TakeoffWorkspace({
    *  of this mode's state. */
   const [tracingByPage, setTracingByPage] = useState<Record<number, true>>({});
   const [traceReady, setTraceReady] = useState(false);
+  /** Round 13: window marking armed, the mark the tag picker is on, and the window tags read — per sheet. */
+  const [markingByPage, setMarkingByPage] = useState<Record<number, true>>({});
+  const [openingFocus, setOpeningFocus] = useState<string | null>(null);
+  const [windowTagsByPage, setWindowTagsByPage] = useState<Record<number, string[]>>({});
   const [keyStateByPage, setKeyStateByPage] = useState<Record<number, ReviewState>>({});
   const keyState = onThisSheet(keyStateByPage, page);
   const setKeyState = useCallback(
@@ -1522,6 +1526,7 @@ export function TakeoffWorkspace({
               scannedPages={data.scannedPages}
               rasterPages={data.rasterPages}
               rasterUrl={data.rasterUrl}
+              legendCodes={data.legendCodes}
               storedWallsByPage={data.storedWallsByPage}
               layerNames={data.layerNames}
               takeoffItems={data.matchableItems}
@@ -1541,9 +1546,24 @@ export function TakeoffWorkspace({
                       // `t` is handled in the viewer, because the panel that
                       // used to own it is not mounted until candidates exist —
                       // so before a find, the key did nothing and said nothing.
-                      onTracing: (next) =>
-                        setTracingByPage((prev) => setOnThisSheet(prev, page, next ? true : null)),
+                      onTracing: (next) => {
+                        if (next) setMarkingByPage((prev) => setOnThisSheet<true>(prev, page, null));
+                        setTracingByPage((prev) => setOnThisSheet(prev, page, next ? true : null));
+                      },
                       onTraceReady: setTraceReady,
+                      marking: onThisSheet(markingByPage, page) ?? false,
+                      focusedOpening: openingFocus,
+                      onWindowTags: (tags) => setWindowTagsByPage((prev) => setOnThisSheet(prev, page, tags)),
+                      onPoint: (at) =>
+                        setKeyStateByPage((prev) => {
+                          const next = addOpening(onThisSheet(prev, page) ?? startReview([]), { ...at, kind: "window" });
+                          setOpeningFocus(next.openings![next.openings!.length - 1]!.id);
+                          return setOnThisSheet(prev, page, next);
+                        }),
+                      onRemoveOpening: (id) => {
+                        setOpeningFocus((current) => (current === id ? null : current));
+                        setKeyStateByPage((prev) => setOnThisSheet(prev, page, removeOpening(onThisSheet(prev, page) ?? startReview([]), id)));
+                      },
                       // ── THE TRACED WALL GOES IN ACCEPTED ──
                       //
                       // `addTraced` has existed since this mode shipped and
@@ -1770,10 +1790,20 @@ export function TakeoffWorkspace({
                 }}
                 draftNote={draftNote}
                 tracing={onThisSheet(tracingByPage, page) ?? false}
-                onTracing={(next) =>
-                  setTracingByPage((prev) => setOnThisSheet(prev, page, next ? true : null))
-                }
+                onTracing={(next) => {
+                  if (next) setMarkingByPage((prev) => setOnThisSheet<true>(prev, page, null));
+                  setTracingByPage((prev) => setOnThisSheet(prev, page, next ? true : null));
+                }}
                 traceReady={traceReady}
+                marking={onThisSheet(markingByPage, page) ?? false}
+                onMarking={(next) => {
+                  // Marking and tracing both take the next click; one at a time.
+                  if (next) setTracingByPage((prev) => setOnThisSheet<true>(prev, page, null));
+                  setMarkingByPage((prev) => setOnThisSheet(prev, page, next ? true : null));
+                }}
+                focusedOpening={openingFocus}
+                onFocusOpening={setOpeningFocus}
+                windowTags={onThisSheet(windowTagsByPage, page) ?? []}
                 setAside={onThisSheet(setAsideByPage, page) ?? undefined}
                 legendCodes={data.legendCodes}
                 offerAll={onThisSheet(offerAllByPage, page) ?? false}
