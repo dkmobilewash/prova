@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, expect, type Dialog, type Page } from "@playwright/test";
 import * as XLSX from "xlsx";
@@ -278,6 +278,7 @@ test("R5-3 the sheet with runs to confirm says they are not on the estimate", as
 });
 
 // ── CHROME'S CLICK TEST, ITEM 12: point at a held run to see it, click to go there ──
+const NEEDS_REVIEW_SHOTS = join(__dirname, "../artifacts/needs-review");
 test("R5-3b Needs review: pointing at a run picks it out on the plan, and its length zooms there", async () => {
   const held = await prisma.takeoffMeasurement.findFirstOrThrow({ where: { label: "wall, to confirm", page: { plan: { jobId: SETS.baker.id } } }, select: { page: { select: { pageNumber: true } } } });
   await on("baker", held.page.pageNumber);
@@ -296,6 +297,10 @@ test("R5-3b Needs review: pointing at a run picks it out on the plan, and its le
   const mid = await hook("review-run").boundingBox();
   expect(mid!.x + mid!.width / 2).toBeGreaterThan(port!.x);
   expect(mid!.x + mid!.width / 2).toBeLessThan(port!.x + port!.width);
+  // The picture for the PR: zoomed to the run, with the pointer back on its row.
+  await hook("held-wall").first().hover();
+  mkdirSync(NEEDS_REVIEW_SHOTS, { recursive: true });
+  await page.screenshot({ path: join(NEEDS_REVIEW_SHOTS, "needs-review-hover-and-zoom.png") });
   await page.mouse.move(0, 0);
   await expect(hook("held-highlight")).toHaveCount(0);
 });
