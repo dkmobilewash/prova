@@ -50,6 +50,7 @@ import {
   saveTakeoffMeasurements,
   updateMeasurementGeometry,
   setWallTypeThickness,
+  setWallGroupType,
 } from "@/lib/actions";
 import type {
   PlanSheet,
@@ -315,6 +316,7 @@ export function TakeoffPlanViewer({
   rasterPages = [],
   rasterUrl = null,
   storedWallsByPage,
+  legendCodes = [],
   takeoffItems = [],
   levelByPage,
   wallTypes,
@@ -568,6 +570,8 @@ export function TakeoffPlanViewer({
    * calibration, which is the same thing from the reader's side.
    */
   storedWallsByPage?: Record<number, WallGroup[]>;
+  /** The codes the set's legend read defines: the "Set type" picker on an untyped group. */
+  legendCodes?: string[];
   /**
    * The job's takeoff items, so detected groups can read under the condition
    * they propose into rather than as a flat list of thicknesses.
@@ -3888,6 +3892,27 @@ export function TakeoffPlanViewer({
   }
 
   /**
+   * "Set type": one press names an untyped group from the set's legend. Every
+   * run goes onto that type's item, saved with the job, and the group leaves
+   * the list exactly as "Add these" does — see `setWallGroupType`.
+   */
+  const [settingType, setSettingType] = useState<number | null>(null);
+  async function setTypeFor(index: number, group: WallGroup, code: string) {
+    setSettingType(index);
+    setFindError(null);
+    const result = await setWallGroupType(jobId, {
+      planId,
+      pageNumber,
+      code,
+      inches: group.inches,
+      runs: group.runs.map((run) => ({ x1: run.x1, y1: run.y1, x2: run.x2, y2: run.y2 })),
+    });
+    setSettingType(null);
+    if (!result.ok) return setFindError(result.error);
+    setFound((current) => (current ?? []).filter((_, i) => i !== index));
+  }
+
+  /**
    * The type a group would be POSTED as, or null for one that is not settled.
    *
    * ONE FUNCTION FOR THE BUTTON AND THE SUBMIT, deliberately. The button's
@@ -5152,6 +5177,24 @@ export function TakeoffPlanViewer({
                         is: a type (the verdict's candidates first, the sheet's
                         note before them), a new type from this group, or plain
                         measurements — last, and said in words. */}
+                    {priced === null && namedOnly === null && legendCodes.length > 0 && (
+                      <span className="flex flex-wrap items-center gap-1" data-takeoff="set-type">
+                        <span className="text-xs text-ink-muted">Set type</span>
+                        {legendCodes.map((code) => (
+                          <button
+                            key={code}
+                            type="button"
+                            data-takeoff="set-type-code"
+                            disabled={settingType !== null}
+                            onClick={() => void setTypeFor(index, group, code)}
+                            aria-label={`Set the ${inchLabel(group.inches)} walls to type ${code}`}
+                            className="min-h-[36px] min-w-[36px] rounded-md border border-line-card bg-surface px-2 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-50"
+                          >
+                            {code}
+                          </button>
+                        ))}
+                      </span>
+                    )}
                     {priced === null && namedOnly === null && (
                       <select
                         aria-label={`What are the ${inchLabel(group.inches)} walls?`}

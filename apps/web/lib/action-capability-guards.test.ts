@@ -2102,6 +2102,8 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // it as a principal without its capability.
   wallTypes: () => import("./actions/wallTypes"),
   wallLegend: () => import("./actions/wallLegend"),
+  // "Set type" on the takeoff tab, which withholds on VIEW_JOB_COSTS.
+  wallGroupType: () => import("./actions/wallGroupType"),
   // The bid recap. The rates, the cost types and a line's budgeted cost are
   // reachable only from the Estimate tab, which withholds on VIEW_JOB_COSTS;
   // the company defaults only from /settings. Each is executed below as a
