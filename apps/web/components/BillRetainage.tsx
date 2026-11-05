@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { billRetainage } from "@/lib/actions";
+import { useEffect, useState, useTransition } from "react";
+import { billRetainage, settleAskDraft } from "@/lib/actions";
+import type { BillingDraft } from "@/lib/ask/drafts";
 import { localToday } from "@/components/localToday";
 import { monthEnd } from "@/lib/month-end";
 import { money } from "@/lib/money";
@@ -14,8 +15,22 @@ const btn =
 
 /** Bills the retainage held as its own pay application. Opened by a click, so
  * today's date is safe to read here. */
-export function BillRetainage({ jobId, held }: { jobId: string; held: number }) {
+export function BillRetainage({
+  jobId,
+  held,
+  draft,
+}: {
+  jobId: string;
+  held: number;
+  /** A card from the Ask box: the form opens with its amount and period. */
+  draft?: Extract<BillingDraft, { form: "retainage" }>;
+}) {
   const [open, setOpen] = useState(false);
+  // A draft opens the form AFTER mount, never in server markup: the period
+  // default below reads the browser's today (components/localToday.ts).
+  useEffect(() => {
+    if (draft) setOpen(true);
+  }, [draft]);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -36,8 +51,10 @@ export function BillRetainage({ jobId, held }: { jobId: string; held: number }) 
         setError(null);
         startTransition(async () => {
           const result = await billRetainage(jobId, form);
-          if (result.ok) setOpen(false);
-          else setError(result.error);
+          if (result.ok) {
+            setOpen(false);
+            if (draft) void settleAskDraft(draft.proposalId);
+          } else setError(result.error);
         });
       }}
     >
@@ -52,11 +69,11 @@ export function BillRetainage({ jobId, held }: { jobId: string; held: number }) 
       <div className="flex flex-wrap gap-3">
         <label className="flex flex-col gap-1 text-sm text-ink-label">
           Amount to bill
-          <input name="amount" inputMode="decimal" required defaultValue={held.toFixed(2)} className={inputClass} />
+          <input name="amount" inputMode="decimal" required defaultValue={draft?.amount ?? held.toFixed(2)} className={inputClass} />
         </label>
         <label className="flex flex-col gap-1 text-sm text-ink-label">
           Period to
-          <input name="periodTo" type="date" defaultValue={monthEnd(localToday())} className={inputClass} />
+          <input name="periodTo" type="date" defaultValue={draft?.periodTo ?? monthEnd(localToday())} className={inputClass} />
         </label>
         <label className="flex flex-col gap-1 text-sm text-ink-label">
           Description

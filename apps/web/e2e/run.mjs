@@ -10,6 +10,8 @@
  *   pnpm test:e2e -- --billing-click       LOCAL ONLY: the billing click list
  *                              (e2e/playwright.billing.config.ts). No CI job
  *                              runs it.
+ *   pnpm test:e2e -- --ask-click           LOCAL ONLY: Ask commands typed, confirmed
+ *                              and read back (e2e/playwright.ask.config.ts).
  *   pnpm test:e2e -- --takeoff-click       LOCAL ONLY: the takeoff click list
  *                              over training sheets named by TAKEOFF_CLICK_PLANS
  *                              (e2e/playwright.takeoff.config.ts). No CI job
@@ -113,14 +115,21 @@ const skipBuild = argv.includes("--skip-build") || process.env.E2E_SKIP_BUILD ==
  * this is the mode CI runs with no secrets at all.
  */
 const publicOnly = argv.includes("--public") || process.env.E2E_PUBLIC_ONLY === "1";
-/** `--billing-click` and `--takeoff-click` each run their one spec in e2e/local/ and nothing else;
+/** `--billing-click`, `--takeoff-click` and `--ask-click` each run their one spec in e2e/local/ and nothing else;
  * `--real-plans` runs the rest of e2e/local/, the specs that need real client drawings.
  * Local only: they live outside `specs/`, so the `e2e` CI job never reaches them. */
 const billingClick = argv.includes("--billing-click");
+const askClick = argv.includes("--ask-click");
 const takeoffClick = argv.includes("--takeoff-click");
 const realPlans = argv.includes("--real-plans");
 const playwrightArgs = argv.filter(
-  (arg) => arg !== "--skip-build" && arg !== "--public" && arg !== "--billing-click" && arg !== "--takeoff-click" && arg !== "--real-plans",
+  (arg) =>
+    arg !== "--skip-build" &&
+    arg !== "--public" &&
+    arg !== "--billing-click" &&
+    arg !== "--takeoff-click" &&
+    arg !== "--real-plans" &&
+    arg !== "--ask-click",
 );
 
 // ------------------------------------------------------------- Clerk keys
@@ -330,9 +339,11 @@ try {
       ? "e2e/playwright.billing.config.ts"
       : takeoffClick
         ? "e2e/playwright.takeoff.config.ts"
-        : realPlans
-          ? "e2e/playwright.real.config.ts"
-          : "e2e/playwright.config.ts";
+        : askClick
+          ? "e2e/playwright.ask.config.ts"
+          : realPlans
+            ? "e2e/playwright.real.config.ts"
+            : "e2e/playwright.config.ts";
   log(`playwright: driving the browser (${config})…`);
   exitCode = await run("pnpm", ["exec", "playwright", "test", "--config", config, ...playwrightArgs], {
     cwd: webRoot,

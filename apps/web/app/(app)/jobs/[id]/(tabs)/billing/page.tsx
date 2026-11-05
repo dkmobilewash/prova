@@ -12,6 +12,7 @@ import { pushBlockers } from "@/lib/quickbooks-sync";
 import { paymentPushBlockers } from "@/lib/quickbooks-payment-sync";
 import { accountPurpose } from "@/lib/quickbooks-constants";
 import { requireJob, jobCapabilities } from "@/lib/jobs/job-access";
+import { loadBillingDraft } from "@/lib/ask/drafts";
 import { viewerAsOf, viewerTimeZone } from "@/lib/viewerToday";
 import { dueStatus } from "@/lib/due-date";
 import { formatCalendarDate, formatInstant } from "@/lib/render-date";
@@ -65,14 +66,19 @@ export default async function JobBillingPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams?: Promise<{ all?: string }>;
+  searchParams?: Promise<{ all?: string; draft?: string }>;
 }) {
   const { id } = await params;
-  const { company, principal, job: jobRef } = await requireJob(id);
+  const { company, currentUser, principal, job: jobRef } = await requireJob(id);
   const { showsBilling } = jobCapabilities(principal);
   if (!showsBilling) {
     return <p className="text-sm text-ink-muted">This tab isn&rsquo;t part of your access.</p>;
   }
+  // A card from the Ask box (lib/ask/drafts.ts): the pay application, the
+  // retainage application or the waiver form opens filled in; each form's
+  // own button is the write.
+  const askLookup = await loadBillingDraft({ company, id: currentUser.id }, (await searchParams)?.draft, jobRef.id);
+  const askDraft = askLookup.kind === "draft" ? askLookup.draft : undefined;
 
   if (jobRef.status === "ESTIMATE") {
     return (
@@ -562,7 +568,7 @@ export default async function JobBillingPage({
         {/* Anchor for older links here. The summary's "Start pay app" uses
             NEW_PAY_APP_HASH, which PayApplications opens and focuses itself. */}
         <div id="pay-applications" className="mt-4 flex scroll-mt-6 flex-col gap-3">
-          <PayApplications jobId={job.id} lineItems={payApplicationLineItemOptions} />
+          <PayApplications jobId={job.id} lineItems={payApplicationLineItemOptions} draft={askDraft?.form === "pay_application" ? askDraft : undefined} />
           <CollapsedForm label="Create invoice" tone="secondary">
             <ActionForm action={createInvoiceWithId} className="flex flex-wrap items-end gap-3 rounded-lg border border-line-card bg-surface p-4">
               <label className="flex flex-col gap-1 text-sm text-ink-label">
@@ -601,14 +607,14 @@ export default async function JobBillingPage({
 
       {showsBilling && retainageHeld.balanceCents > 0 && (
         <div className="mt-6">
-          <BillRetainage jobId={job.id} held={retainageHeld.balanceCents / 100} />
+          <BillRetainage jobId={job.id} held={retainageHeld.balanceCents / 100} draft={askDraft?.form === "retainage" ? askDraft : undefined} />
         </div>
       )}
       <div className="mt-6">
         <CloseoutStatus items={closeoutItems} />
       </div>
 
-      <LienWaivers jobId={job.id} section={lienWaiverSection} canManage={showsBilling} offer={waiverOffer} />
+      <LienWaivers jobId={job.id} section={lienWaiverSection} canManage={showsBilling} offer={waiverOffer} draft={askDraft?.form === "waiver" ? askDraft : undefined} />
     </div>
   );
 }

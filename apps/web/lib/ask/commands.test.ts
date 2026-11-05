@@ -38,10 +38,15 @@ const OPEN_HANDOFF_PAGES: Record<string, string> = {
  * Job tabs a HANDOFF may open, with where that tab's guard lives. The
  * buyout page is a hard `requireCapability`; the estimate tab is the soft
  * `showsJobMoney` gate its own doc comment explains, which IS
- * `can(principal, "VIEW_JOB_COSTS")` (lib/jobs/job-access.ts).
+ * `can(principal, "VIEW_JOB_COSTS")`, and billing's `showsBilling` is
+ * `can(principal, "MANAGE_BILLING")` (lib/jobs/job-access.ts).
  */
 const JOB_TAB_GUARDS: Record<string, { file: string; guard: (cap: string) => RegExp }> = {
   buyout: { file: "../../app/(app)/jobs/[id]/buyout/page.tsx", guard: (cap) => new RegExp(`requireCapability\\("${cap}"\\)`) },
+  billing: {
+    file: "../../app/(app)/jobs/[id]/(tabs)/billing/page.tsx",
+    guard: (cap) => (cap === "MANAGE_BILLING" ? /if \(!showsBilling\)/ : /$^/),
+  },
   estimate: {
     file: "../../app/(app)/jobs/[id]/(tabs)/estimate/page.tsx",
     guard: (cap) => (cap === "VIEW_JOB_COSTS" ? /if \(!showsJobMoney\)/ : /$^/),
@@ -210,7 +215,7 @@ describe("who is offered what", () => {
     expect(commandsFor({ role: "MEMBER", jobFunction: "PROJECT_MANAGER" }).map((c) => c.name)).toContain("log_bid_invitation");
   });
 
-  it("offers accounting exactly the three money commands and the two job-cost drafts, and nothing that touches the field or writes to a GC", () => {
+  it("offers accounting the money commands, the billing-tab hand-offs and the two job-cost drafts, and nothing that touches the field or writes to a GC", () => {
     // The change order and PO drafts are offered on VIEW_JOB_COSTS, the gate
     // accounting already passes on the Estimate tab and Buyout; both are
     // HANDOFFs that send nothing.
@@ -220,6 +225,9 @@ describe("who is offered what", () => {
       "release_retainage",
       "start_change_order",
       "draft_purchase_order",
+      "start_pay_application",
+      "bill_retainage",
+      "prepare_lien_waiver",
     ]);
     for (const command of commandsFor(ACCOUNTING)) {
       expect(["MANAGE_BILLING", "VIEW_JOB_COSTS"], command.name).toContain(command.capability);

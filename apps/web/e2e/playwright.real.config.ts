@@ -17,8 +17,8 @@ import baseConfig from "./playwright.config";
  * retries, and its Desktop Chrome project — the conditions they ran under when
  * they sat in `specs/`.
  *
- * Every `*.local.spec.ts` here except the two click lists, which have their own
- * configs and flags. A new real-drawing spec dropped into `local/` is picked up
+ * Every `*.local.spec.ts` here except the two click lists and the Ask commands
+ * spec, which have their own configs and flags and need no real drawing. A new real-drawing spec dropped into `local/` is picked up
  * with no edit to this file.
  */
 const chromium = baseConfig.projects!.find((project) => project.name === "chromium")!;
@@ -27,5 +27,5 @@ export default {
   ...baseConfig,
   testDir: "./local",
   testMatch: "*.local.spec.ts",
-  projects: [{ ...chromium, testIgnore: ["billing-click.local.spec.ts", "takeoff-click.local.spec.ts"] }],
+  projects: [{ ...chromium, testIgnore: ["billing-click.local.spec.ts", "takeoff-click.local.spec.ts", "ask-commands.local.spec.ts"] }],
 };
