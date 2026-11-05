@@ -167,6 +167,8 @@ export async function POST(request: Request) {
     splits?: SplitRecord[];
     /** The previous file's rows, kept whole for one generation. */
     carriedRows?: { finderVersion: string | null; rows: readonly unknown[] } | null;
+    /** Round 13: windows and doors marked on the sheet. */
+    openings?: { x: number; y: number; kind: string; tag?: string }[];
   };
   const file = labelFile({
     set: input.set,
@@ -182,6 +184,7 @@ export async function POST(request: Request) {
     carried: input.carried ?? [],
     splits: input.splits ?? [],
     carriedRows: input.carriedRows ?? null,
+    openings: Array.isArray(input.openings) ? input.openings : [],
   });
   // ── A SAVE MUST NOT QUIETLY REPLACE A BIGGER REVIEW ──
   //

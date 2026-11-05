@@ -1,6 +1,6 @@
 import { duplicatePairs, type DuplicatePair } from "./duplicateCandidates";
 import type { StrokeSegment } from "./wallVectors";
-import { type AnswerKey, type KeyWall } from "@/lib/takeoff/answerKey";
+import { type AnswerKey, type KeyOpening, type KeyWall } from "@/lib/takeoff/answerKey";
 
 /**
  * ── THE STATE OF REVIEWING ONE SHEET ──
@@ -106,7 +106,50 @@ export type ReviewState = {
    * accepted or traced wall carries a type (`setWallType`).
    */
   types?: Record<string, string>;
+  /**
+   * ── WINDOWS (AND DOORS) A PERSON MARKED — round 13 ──
+   *
+   * One point per opening, where it sits on the plan, with the tag the drawing
+   * shows beside it (`setOpeningTag`). Independent of the wall candidates, so
+   * a re-read of the walls never moves one. Optional: a state built before
+   * this has none.
+   */
+  openings?: Opening[];
 };
+
+export type Opening = { id: string; x: number; y: number; kind: "window" | "door"; tag?: string };
+
+/** "-": the reviewer looked and no tag is shown beside this opening. */
+export const NO_TAG = "-";
+
+/** A new opening at a point. Its id never repeats on a sheet, removals included. */
+export function addOpening(state: ReviewState, at: { x: number; y: number; kind: Opening["kind"] }): ReviewState {
+  const openings = state.openings ?? [];
+  const next = openings.reduce((n, o) => Math.max(n, Number(o.id.slice(1)) || 0), 0) + 1;
+  return { ...state, openings: [...openings, { id: `o${next}`, x: at.x, y: at.y, kind: at.kind }] };
+}
+
+export function removeOpening(state: ReviewState, id: string): ReviewState {
+  return { ...state, openings: (state.openings ?? []).filter((o) => o.id !== id) };
+}
+
+/** Sets (or, with null or blank, clears) an opening's tag, upper-cased like a wall type. */
+export function setOpeningTag(state: ReviewState, id: string, tag: string | null): ReviewState {
+  const clean = tag?.trim().toUpperCase() ?? "";
+  return {
+    ...state,
+    openings: (state.openings ?? []).map((o) => {
+      if (o.id !== id) return o;
+      const { tag: _old, ...rest } = o;
+      return clean === "" ? rest : { ...rest, tag: clean };
+    }),
+  };
+}
+
+/** The openings as a file holds them: no ids, the tag only where one was given. */
+export function openingsForSave(state: ReviewState): KeyOpening[] {
+  return (state.openings ?? []).map((o) => ({ x: o.x, y: o.y, kind: o.kind, ...(o.tag === undefined ? {} : { tag: o.tag }) }));
+}
 
 /** "U": the reviewer looked and the drawing does not say which type. Saved, and left out of the score. */
 export const CANT_TELL = "U";
@@ -397,6 +440,7 @@ export function keyFromReview(
     reviewedAt: about.reviewedAt,
     feetPerUnit: about.feetPerUnit,
     walls,
+    ...((state.openings ?? []).length === 0 ? {} : { openings: openingsForSave(state) }),
   };
 }
 

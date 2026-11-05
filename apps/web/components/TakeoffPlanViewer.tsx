@@ -162,7 +162,7 @@ import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
 import { TakeoffFinishPanel } from "./TakeoffFinishPanel";
 import { readFinishSchedule, type FinishSchedule } from "@/lib/takeoff/finishSchedule";
 import { TakeoffDoorsPanel } from "./TakeoffDoorsPanel";
-import { doorsAndWindowsForSheet, type DoorsWindowsResult, type StoredScheduleRow } from "@/lib/takeoff/doorsWindows";
+import { doorsAndWindowsForSheet, windowTagsOnSheet, type DoorsWindowsResult, type StoredScheduleRow } from "@/lib/takeoff/doorsWindows";
 import { TakeoffDemoPanel } from "./TakeoffDemoPanel";
 import { demoEvidence, demoForSheet, demoSheetTitle, notWallDemoSheet, type DemoSheet } from "@/lib/takeoff/demoWalls";
 import { TakeoffSymbolPanel, type AcrossRow, type AcrossState } from "./TakeoffSymbolPanel";
@@ -702,6 +702,20 @@ export function TakeoffPlanViewer({
     onTraced?: (from: { x: number; y: number }, to: { x: number; y: number }) => void;
     /** Both ends are down and Enter will commit — for the panel's prompt. */
     onTraceReady?: (ready: boolean) => void;
+    /**
+     * ── MARKING WINDOWS — round 13 ──
+     *
+     * Armed, a click on the sheet is a window at that point (`onPoint`), and a
+     * click within reach of one already marked removes it (`onRemoveOpening`).
+     * The panel owns the arming, as it does tracing.
+     */
+    marking?: boolean;
+    onPoint?: (at: { x: number; y: number }) => void;
+    onRemoveOpening?: (id: string) => void;
+    /** The opening the panel's tag picker is on. */
+    focusedOpening?: string | null;
+    /** The window tags read on this sheet, for the picker. */
+    onWindowTags?: (tags: string[]) => void;
   };
   scaleDeclineByPage?: ScaleDeclineByPage;
   /**
@@ -2077,6 +2091,20 @@ export function TakeoffPlanViewer({
     // A drag in review mode selects; a click while tracing is armed is one end
     // of a wall. Tracing is checked first because it is an explicit mode the
     // reviewer turned on, and a selection box is the default.
+    if (answerKey?.marking === true && !drawing) {
+      const raw = pointAt(event);
+      if (!raw) return;
+      event.preventDefault();
+      const width = (event.currentTarget as Element).getBoundingClientRect().width;
+      const reach = width > 0 ? 10 / width : PICK_RADIUS;
+      const hit = (answerKey.state.openings ?? [])
+        .map((o) => ({ o, d: Math.hypot(o.x - raw.x, o.y - raw.y) }))
+        .filter(({ d }) => d <= reach)
+        .sort((a, b) => a.d - b.d)[0];
+      if (hit) answerKey.onRemoveOpening?.(hit.o.id);
+      else answerKey.onPoint?.(raw);
+      return;
+    }
     if (answerKey?.tracing === true && !drawing) {
       const raw = pointAt(event);
       if (!raw) return;
@@ -3704,6 +3732,12 @@ export function TakeoffPlanViewer({
         setOpenings({ page: pageNumber, walls: runs, result });
       } else {
         setOpenings(null);
+        if (answerKey !== undefined) {
+          const W = pageSize.widthPt;
+          answerKeyRef.current?.onWindowTags?.(
+            windowTagsOnSheet(found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })), textItems),
+          );
+        }
       }
       if (!quietFind.current) onResults?.();
       setFound(
@@ -5941,6 +5975,36 @@ export function TakeoffPlanViewer({
                         answerKey.onFocus(one.id);
                       }}
                     />
+                    </g>
+                  ))}
+                  {(answerKey.state.openings ?? []).map((one) => (
+                    <g key={one.id} data-takeoff="key-opening" data-id={one.id} pointerEvents="none">
+                      <circle
+                        cx={one.x}
+                        cy={one.y}
+                        r={(answerKey.focusedOpening === one.id ? 9 : 6) / Math.max(cssWidth, 1)}
+                        fill="none"
+                        stroke="#0ea5e9"
+                        strokeWidth={STROKE_PX * 2}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                      {one.tag !== undefined && (
+                        <text
+                          x={one.x}
+                          y={one.y}
+                          dy={-11 / Math.max(cssWidth, 1)}
+                          textAnchor="middle"
+                          fontSize={11 / Math.max(cssWidth, 1)}
+                          fontWeight={700}
+                          fontFamily="ui-sans-serif, system-ui, sans-serif"
+                          fill="#ffffff"
+                          stroke="#0f0f0f"
+                          strokeWidth={2.5 / Math.max(cssWidth, 1)}
+                          paintOrder="stroke"
+                        >
+                          {one.tag}
+                        </text>
+                      )}
                     </g>
                   ))}
                 </g>
