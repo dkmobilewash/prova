@@ -5,6 +5,7 @@ import { setupClerkTestingToken } from "@clerk/testing/playwright";
 import { prisma } from "@prova/db";
 import { HealthMonitor } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
+import { openItems } from "../lib/finders";
 
 /**
  * ── ONE NEW CUSTOMER, SIGN-UP TO A SENDABLE ESTIMATE, TIMED ──
@@ -499,8 +500,8 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       note(`After the takeoff: ${measured} measurements, ${lines} estimate lines.`);
     });
 
-    // ── 7. THE REVIEW QUEUE ──
-    await step("Review queue", async () => {
+    /** The stepper's Review, opened from its Next, answered item by item until empty. */
+    async function answerQueue(): Promise<void> {
       await page.goto(`/jobs/${jobId}`);
       note(`Stepper: ${await states(page)} · ${await text(next(page))}`);
       await shot("job-after-takeoff");
@@ -623,12 +624,37 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       }
       note(`Answered: ${Object.entries(seenKinds).map(([k, n]) => `${n} ${k}`).join(", ")}. Queue ends: "${await text(tab.locator('[data-takeoff="review-queue-left"]'))}"`);
       await shot("review-done", tab);
-    });
+    }
+
+    // ── 7. THE REVIEW QUEUE ──
+    await step("Review queue", answerQueue);
 
     // ── 8. THE ESTIMATE ──
     await step("Estimate", async () => {
       await page.goto(`/jobs/${jobId}`);
       note(`Stepper: ${await states(page)} · ${await text(next(page))}`);
+      if (/Put the takeoff on the estimate/.test(await text(next(page)))) {
+        // Typed walls are not lines until the item panel sends them.
+        const [work] = await Promise.all([page.context().waitForEvent("page"), next(page).click()]);
+        act();
+        await work.setViewportSize(SIZE);
+        await expect(work.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 120_000 });
+        await openItems(work);
+        await work.locator('[data-takeoff="pick-item"]').first().click();
+        const send = work.locator('[data-takeoff="send-to-estimate"]');
+        await expect(send).toBeVisible({ timeout: 30_000 });
+        await shot("send-to-estimate", work);
+        await send.click();
+        act(3);
+        await expect(work.locator('[data-takeoff="send-result"]')).toBeVisible({ timeout: 60_000 });
+        note(`Send takeoff to the estimate: "${(await text(work.locator('[data-takeoff="send-result"]'))).slice(0, 300)}"`);
+        await work.close();
+        await page.goto(`/jobs/${jobId}`);
+        note(`After sending: ${await states(page)} · ${await text(next(page))}`);
+        if (/Review/.test(await text(next(page)))) await answerQueue();
+        await page.goto(`/jobs/${jobId}`);
+        note(`Stepper: ${await states(page)} · ${await text(next(page))}`);
+      }
       await page.locator('[data-job-step="estimate"]').click();
       act();
       await page.waitForURL(new RegExp(`/jobs/${jobId}/estimate`));
