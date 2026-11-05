@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { confirmSheetScales, reviewWall, setWallGroupType } from "@/lib/actions";
+import { confirmSheetScales, reviewWall, setWallGroupHeight, setWallGroupType } from "@/lib/actions";
+import { SetWallHeight } from "./SetWallHeight";
 import { orderedCodes, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
@@ -13,7 +14,7 @@ import { inchLabel } from "@/lib/takeoff/wallVectors";
  * What the stepper's Review opens (`?open=review`). The item on screen is
  * zoomed to on its sheet by the workspace (`onShow`); its buttons are the
  * pieces that already decide it — `reviewWall` for a held run, the "Set type"
- * codes for an untyped group, the plan set's fixes for a sheet's scale, and
+ * codes for an untyped group, Set height for a group with none, the plan set's fixes for a sheet's scale, and
  * the estimate line itself for a price. Next skips without deciding; an item
  * leaves when the row behind it changes, and the queue is done when empty.
  */
@@ -127,6 +128,23 @@ export function TakeoffReviewQueue({
                   ))}
                 </>
               )}
+            </>
+          )}
+          {current.kind === "height" && (
+            <>
+              <span>
+                No height · {current.name} · sheet {current.sheet}
+                {current.feet !== null && ` · ${Math.round(current.feet)} ft`}
+              </span>
+              <SetWallHeight
+                key={current.key}
+                name={current.name}
+                options={current.options}
+                onSet={async (feet) => {
+                  await decide(() => setWallGroupHeight(jobId, current.itemId, feet));
+                  return null;
+                }}
+              />
             </>
           )}
           {current.kind === "scale" && (
