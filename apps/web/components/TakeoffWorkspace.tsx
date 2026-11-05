@@ -154,6 +154,10 @@ const RAIL_MIN = 180;
 const RAIL_MAX = 420;
 const RAIL_DEFAULT = 232;
 
+function formatRunFeet(feet: number): string {
+  return feet > 0 ? `${feet.toFixed(1)} ft` : "no scale on this sheet";
+}
+
 /** Height of the sheet-facts strip, in rem, when it is open. */
 const FACTS_REM = 6.5;
 
@@ -1902,13 +1906,13 @@ export function TakeoffWorkspace({
             /* A found wall group, or a drawn shape in no item, picked with the arrow. */
             <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-xs" data-takeoff="selection-facts">
               <span className="font-semibold text-ink">
-                {selection.kind === "group" ? selection.name : (selection.label ?? "A drawn shape")}
+                {selection.kind === "run" ? `A run in ${selection.layer}` : (selection.label ?? "A drawn shape")}
               </span>
-              {selection.kind === "group" ? (
+              {selection.kind === "run" ? (
                 <>
-                  <Fact label="Runs">{selection.runs}</Fact>
-                  <Fact label="Length">{Math.round(selection.feet).toLocaleString()} ft</Fact>
-                  <span className="text-ink-muted">Found by Run takeoff. Add it to the job from Quantities in the panel.</span>
+                  <Fact label="Length">{formatRunFeet(selection.feet)}</Fact>
+                  <Fact label="Layer">{`${selection.layer}, 1 of ${selection.ofRuns} ${selection.ofRuns === 1 ? "run" : "runs"}`}</Fact>
+                  <span className="text-ink-muted">Found by Run takeoff. Add its layer to the job from Quantities in the panel.</span>
                 </>
               ) : (
                 <>

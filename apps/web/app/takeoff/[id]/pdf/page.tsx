@@ -4,6 +4,7 @@ import { requireCapability } from "@/lib/authz";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
 import { NoAccess } from "@/components/NoAccess";
 import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
+import { PdfPrintButton } from "./PdfPrintButton";
 
 /**
  * ── THE DRAWING AS ISSUED, IN A TAB NAMED FOR WHAT IT IS ──
@@ -14,6 +15,13 @@ import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
  * page instead: the same file, at the same sheet, full window, in a tab titled
  * "<job> – <sheet>". The bytes still come from the plan route, with its own
  * checks; this page adds a name and nothing else.
+ *
+ * ── AND THE VIEWER'S OWN HEADER, WHICH SAID "ESC1" TOO ──
+ * Chrome's PDF viewer prints the file's Title in its toolbar, and the tab
+ * title cannot reach that. Rewriting the Title means re-encoding the whole
+ * set on every open, so its toolbar is switched off (`#toolbar=0`) and this
+ * page draws the header instead: the name, Download (saved under the name)
+ * and Print. Zoom stays on the keyboard and Ctrl+wheel, inside the viewer.
  */
 async function load(params: Promise<{ id: string }>, searchParams: Promise<{ page?: string }>) {
   const { id } = await params;
@@ -25,7 +33,8 @@ async function load(params: Promise<{ id: string }>, searchParams: Promise<{ pag
   if (data === null) notFound();
   const pageNumber = Math.max(1, Number.parseInt(page ?? "", 10) || 1);
   const sheet = data.sheetLabelByPage[pageNumber] ?? `Sheet ${pageNumber}`;
-  return { allowed: true as const, title: `${job.name} – ${sheet}`, src: `/api/takeoff/plan/${data.plan.id}#page=${pageNumber}` };
+  const file = `/api/takeoff/plan/${data.plan.id}`;
+  return { allowed: true as const, title: `${job.name} – ${sheet}`, file, src: `${file}#page=${pageNumber}&toolbar=0&navpanes=0` };
 }
 
 export async function generateMetadata({
@@ -49,5 +58,20 @@ export default async function TakeoffPdfPage({
 }) {
   const loaded = await load(params, searchParams);
   if (!loaded.allowed) return <NoAccess capability="VIEW_JOB_COSTS" />;
-  return <iframe src={loaded.src} title={loaded.title} className="fixed inset-0 h-full w-full border-0" data-takeoff="pdf-frame" />;
+  return (
+    <div className="fixed inset-0 flex flex-col bg-canvas">
+      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-line-card bg-surface px-4" data-takeoff="pdf-header">
+        <h1 className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{loaded.title}</h1>
+        <a
+          href={loaded.file}
+          download={`${loaded.title.replace(/[\\/:*?"<>|]+/g, " ")}.pdf`}
+          className="rounded-md border border-line-card px-3 py-1.5 text-xs font-medium text-ink-body hover:bg-rail-hover"
+        >
+          Download
+        </a>
+        <PdfPrintButton />
+      </header>
+      <iframe src={loaded.src} title={loaded.title} className="min-h-0 w-full flex-1 border-0" data-takeoff="pdf-frame" />
+    </div>
+  );
 }

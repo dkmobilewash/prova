@@ -774,44 +774,84 @@ test.describe("the full-screen takeoff workspace", () => {
     const readout = page.locator('[data-takeoff="layer-readout"]');
     const strip = page.locator('[data-takeoff="sheet-facts"]');
 
-    // 1. THE ARROW SELECTS: a run lights its layer, pins its length, fills the strip.
+    // 1. THE ARROW SELECTS ONE RUN (Chrome's re-test): one outline on the plan,
+    // that run's length pinned beside it, and the strip saying which run.
     await expect(tool("Select")).toHaveAttribute("aria-pressed", "true");
     await expect(strip, "the bottom strip is there with nothing selected").toHaveCount(0);
     const mid = await runMid();
     await clickSheet(mid.x, mid.y);
     await expect(readout, "clicking a run with the arrow selected nothing").toBeVisible();
-    await expect(page.locator('[data-takeoff="layer-row"][data-lit="true"]')).toHaveCount(1);
-    await expect(page.locator('[data-takeoff="selection-facts"]')).toBeVisible();
+    const outline = overlay().locator('[data-takeoff="picked-outline"]');
+    await expect(outline, "a click picked more, or less, than one thing").toHaveCount(1);
+    await expect(page.locator('[data-takeoff="layer-row"][data-lit="true"]'), "the click lit a whole layer, not one run").toHaveCount(0);
+    await expect(page.locator('[data-takeoff="selection-facts"]')).toContainText(/1 of \d+ runs?/);
+    const firstRun = await overlay().locator("[data-found-wall]").first().evaluate((l) => ["x1", "y1", "x2", "y2"].map((a) => Number(l.getAttribute(a))));
+    expect(await outline.evaluate((l) => ["x1", "y1", "x2", "y2"].map((a) => Number(l.getAttribute(a)))), "the outline is not the run clicked").toEqual(firstRun);
+    await page.screenshot({ path: path.join(SHOTS, "select-one-run.png") });
 
-    // 2. AND LETS GO: Esc, and hiding the lit layer with its eye.
+    // 2. AND LETS GO: Esc, a click on nothing, another sheet.
     await page.keyboard.press("Escape");
     await expect(readout).toHaveCount(0);
-    await expect(page.locator('[data-takeoff="layer-row"][data-lit="true"]')).toHaveCount(0);
+    await expect(outline).toHaveCount(0);
     await expect(strip).toHaveCount(0);
     await clickSheet(mid.x, mid.y);
-    await expect(readout).toBeVisible();
-    await page.locator('[data-takeoff="layer-row"][data-lit="true"] [data-takeoff="layer-eye"]').click();
-    await expect(readout, "hiding the lit layer left its length on the plan").toHaveCount(0);
-    await page.locator('[data-takeoff="layer-eye"][aria-pressed="false"]').first().click();
+    await expect(outline).toHaveCount(1);
+    await clickSheet(0.01, 0.01);
+    await expect(outline, "a click on nothing kept the pick").toHaveCount(0);
+    await expect(strip).toHaveCount(0);
+    // (Another sheet letting go is in the two-sheet test, which has a second sheet.)
 
-    // 3. THE WHEEL: plain scrolls, Ctrl+wheel zooms by about a tenth.
+    // 3. THE WHEEL (Chrome's re-test, Togal/Bluebeam style): a mouse wheel
+    // zooms ABOUT THE CURSOR with no blank frame; a trackpad's two-finger
+    // scroll pans; a pinch (ctrl + small deltas) zooms. Real wheel events.
     const zoomPct = async () => Number((await page.locator('[data-takeoff="zoom"]').innerText()).replace("%", ""));
     await page.getByRole("button", { name: "Zoom in" }).click();
     await settledOverlayBox();
-    const before = await zoomPct();
     const b = await canvasBox();
-    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
-    await page.mouse.wheel(0, 300);
-    await page.waitForTimeout(300);
-    expect(await zoomPct(), "a plain wheel zoomed").toBe(before);
-    expect(await port().evaluate((n) => n.scrollTop), "a plain wheel did not scroll").toBeGreaterThan(0);
+    const at = { x: b.x + b.width * 0.3, y: b.y + b.height * 0.35 };
+    await page.mouse.move(at.x, at.y);
+    const o0 = (await overlay().boundingBox())!;
+    const under = { fx: (at.x - o0.x) / o0.width, fy: (at.y - o0.y) / o0.width };
+    // A blank frame is a sheet with no pixels: sample the canvas every frame.
+    await port().evaluate((frame) => {
+      const w = window as unknown as { __blank: number; __sampling: boolean };
+      w.__blank = 0;
+      w.__sampling = true;
+      const tick = () => {
+        const c = frame.querySelector("canvas") as HTMLCanvasElement;
+        const px = c.width > 0 ? c.getContext("2d")!.getImageData(Math.floor(c.width / 2), Math.floor(c.height / 2), 1, 1).data[3] : 0;
+        if (px === 0) w.__blank += 1;
+        if (w.__sampling) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    const before = await zoomPct();
+    for (let i = 0; i < 3; i++) {
+      await page.mouse.wheel(0, -100);
+      await page.waitForTimeout(40);
+    }
+    await expect.poll(zoomPct).toBeGreaterThan(before * 1.3);
+    await page.waitForTimeout(800);
+    expect(await page.evaluate(() => { const w = window as unknown as { __blank: number; __sampling: boolean }; w.__sampling = false; return w.__blank; }), "the sheet went blank while zooming").toBe(0);
+    const o1 = (await overlay().boundingBox())!;
+    const drift = Math.hypot(o1.x + under.fx * o1.width - at.x, o1.y + under.fy * o1.width - at.y);
+    expect(drift, `the point under the cursor moved ${drift.toFixed(1)}px`).toBeLessThanOrEqual(3);
+    // A trackpad's two-finger scroll pans and does not zoom.
+    const zoomed = await zoomPct();
+    const top0 = await port().evaluate((n) => n.scrollTop);
+    // Chromium gives every synthetic wheel a notch's wheelDeltaY; a real
+    // two-finger stroke carries a sideways part, which is what marks this one.
+    await page.mouse.wheel(1, 37.5);
+    await page.waitForTimeout(400);
+    expect(await zoomPct(), "a two-finger scroll zoomed").toBe(zoomed);
+    expect(await port().evaluate((n) => n.scrollTop), "a two-finger scroll did not pan").toBeGreaterThan(top0);
+    // A pinch is a wheel with ctrl held and small deltas: a small step.
     await page.keyboard.down("Control");
-    await page.mouse.wheel(0, -100);
+    await page.mouse.wheel(0, -8);
     await page.keyboard.up("Control");
-    await expect.poll(zoomPct).not.toBe(before);
-    const step = (await zoomPct()) / before;
-    expect(step, `one Ctrl+wheel notch zoomed by ${step}`).toBeGreaterThan(1.05);
-    expect(step).toBeLessThan(1.2);
+    await expect.poll(zoomPct).toBeGreaterThan(zoomed);
+    const step = (await zoomPct()) / zoomed;
+    expect(step, `one pinch tick zoomed by ${step}`).toBeLessThan(1.2);
 
     // 4. SPACE+DRAG PANS, and there is a Hand (H).
     const left0 = await port().evaluate((n) => n.scrollLeft);
@@ -862,8 +902,17 @@ test.describe("the full-screen takeoff workspace", () => {
     const pdf = page.locator('[data-takeoff="open-pdf"]');
     await expect(pdf).toHaveAttribute("href", new RegExp(`^/takeoff/${jobTwo}/pdf\\?page=\\d+$`));
     const viewer = await page.context().newPage();
+    // The upload is stubbed, so this tab is served the same file as the workspace.
+    await viewer.route("**/api/takeoff/plan/**", (route) => route.fulfill({ status: 200, contentType: "application/pdf", body: servedPdf }));
     await viewer.goto((await pdf.getAttribute("href"))!);
     expect(await viewer.title()).toMatch(new RegExp(`^${JOB_TWO} – `));
+    // And the header on the page says it too: the viewer's own toolbar, which
+    // printed the file's Title ("ESC1" on Baker), is switched off.
+    await expect(viewer.locator('[data-takeoff="pdf-header"] h1')).toHaveText(new RegExp(`^${JOB_TWO} – `));
+    expect(await viewer.locator('[data-takeoff="pdf-frame"]').getAttribute("src")).toMatch(/#page=\d+&toolbar=0/);
+    await expect(viewer.getByRole("link", { name: "Download" })).toHaveAttribute("download", new RegExp(`^${JOB_TWO} – .*\\.pdf$`));
+    await viewer.waitForTimeout(1500);
+    await viewer.screenshot({ path: path.join(SHOTS, "pdf-page-header.png") });
     await viewer.close();
 
     // 9. THE SCALE LINE SAYS WHAT IT IS, AND HAS A ROW.
@@ -939,20 +988,63 @@ test.describe("the full-screen takeoff workspace", () => {
     expect((await draftCorners()).right, "the box stopped at what was showing").toBeGreaterThan(before.right + 0.01);
     await page.getByRole("button", { name: "Clear", exact: true }).click();
 
-    // 2. A wheel mid-drag scrolls, and the box's far corner follows the sheet.
+    // 2. A two-finger scroll mid-drag pans, and the box's far corner follows the sheet.
     await port().evaluate((n) => n.scrollTo(0, 0));
     await page.waitForTimeout(200);
     const atTop = await visibleEdge();
     await page.mouse.move(p.x + p.width * 0.3, p.y + p.height * 0.3);
     await page.mouse.down();
     await page.mouse.move(p.x + p.width * 0.4, p.y + p.height * 0.7, { steps: 4 });
-    await page.mouse.wheel(0, 400);
+    for (let i = 0; i < 8; i++) await page.mouse.wheel(1, 50.5);
     await page.waitForTimeout(300);
     await page.mouse.up();
     expect((await draftCorners()).bottom, "the box did not follow the wheel").toBeGreaterThan(atTop.bottom * 0.7 + 0.02);
     expect(await port().evaluate((n) => n.scrollTop)).toBeGreaterThan(0);
     await page.getByRole("button", { name: "Clear", exact: true }).click();
     await tool("Select").click();
+  });
+
+  test("13h. THE WALL TOTAL STAYS DOCKED, a new hint is scrolled to, and Esc puts a tool down", async () => {
+    // Chrome's re-test: a bare "Walls on this sheet: 698 ft" at the plan's
+    // top-left; a hint arriving above a scrolled panel; Esc not leaving Set
+    // scale or the "⋯" tools.
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+    await findTheWalls("S15 for 13h");
+    await fitAndSettle();
+    const total = page.locator('[data-takeoff="wall-total"]');
+    const undocked = () => total.evaluateAll((nodes) => nodes.filter((n) => n.closest('[data-takeoff="layers-rail"], [data-hud="notices"]') === null).length);
+    await expect(total.first(), "found walls and no total anywhere").toBeAttached();
+    expect(await undocked(), "the wall total is loose on the page").toBe(0);
+    await page.locator('[data-takeoff="collapse-panel"]').click();
+    await page.waitForTimeout(300);
+    expect(await undocked(), "with the panel collapsed, the wall total fell onto the plan").toBe(0);
+    await page.locator('[data-takeoff="expand-panel"]').click();
+
+    // A hint docked at the panel's top, with the panel scrolled down, is scrolled to.
+    const rail = page.locator('[data-takeoff="layers-rail"]');
+    await rail.evaluate((n) => (n.scrollTop = n.scrollHeight));
+    expect(await rail.evaluate((n) => n.scrollTop), "the panel was too short to scroll, so this proves nothing").toBeGreaterThan(0);
+    await page.locator('[data-takeoff="rail-more"]').click();
+    await tool("Split area").click();
+    const b = await canvasBox();
+    await page.mouse.click(b.x + b.width * 0.4, b.y + b.height * 0.5);
+    const hint = page.locator('[data-takeoff="find-error"]');
+    await expect(hint).toBeVisible();
+    await page.waitForTimeout(300);
+    const r = (await rail.boundingBox())!;
+    const h = (await hint.boundingBox())!;
+    expect(h.y >= r.y - 1 && h.y + h.height <= r.y + r.height + 1, "the new hint arrived out of sight").toBe(true);
+
+    // Esc puts a "⋯" tool down, and Set scale, even mid-line.
+    await expect(page.locator('[data-takeoff="rail-more"]')).toHaveAttribute("aria-label", /is on/);
+    await page.keyboard.press("Escape");
+    await expect(tool("Select"), "Esc left Split area on").toHaveAttribute("aria-pressed", "true");
+    await tool("Set scale").click();
+    await expect(tool("Set scale")).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.click(b.x + b.width * 0.3, b.y + b.height * 0.3);
+    await page.keyboard.press("Escape");
+    await expect(tool("Select"), "Esc left Set scale on").toHaveAttribute("aria-pressed", "true");
   });
 
   test("14. the phone gets a read-only canvas", async () => {
@@ -1055,6 +1147,24 @@ test.describe("the full-screen takeoff workspace", () => {
     await expect(picker, "pressing j did not move to the next sheet").not.toHaveValue(startedOn);
     await page.keyboard.press("k");
     await expect(picker, "pressing k did not come back").toHaveValue(startedOn);
+
+    // A pick belongs to its sheet: moving to the next one lets go of it.
+    await findTheWalls("the two-sheet set");
+    const run = await overlay().locator("[data-found-wall]").first().evaluate((l) => {
+      const n = (a: string) => Number(l.getAttribute(a));
+      return { x: (n("x1") + n("x2")) / 2, y: (n("y1") + n("y2")) / 2 };
+    });
+    const o = (await overlay().boundingBox())!;
+    await page.mouse.click(o.x + run.x * o.width, o.y + run.y * o.width);
+    const outline = overlay().locator('[data-takeoff="picked-outline"]');
+    await expect(outline).toHaveCount(1);
+    await expect(page.locator('[data-takeoff="sheet-facts"]')).toHaveCount(1);
+    await page.locator('[data-takeoff="workspace"]').click({ position: { x: 5, y: 5 } });
+    await expect(outline, "the focus click itself let go, so the next line would prove nothing").toHaveCount(1);
+    await page.keyboard.press("j");
+    await expect(picker).not.toHaveValue(startedOn);
+    await expect(outline, "another sheet kept the pick").toHaveCount(0);
+    await expect(page.locator('[data-takeoff="sheet-facts"]'), "another sheet kept the strip").toHaveCount(0);
   });
 
   test("17. overview, sheet facts and undo are present and honest", async () => {
