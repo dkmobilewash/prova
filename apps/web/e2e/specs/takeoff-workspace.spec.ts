@@ -774,25 +774,31 @@ test.describe("the full-screen takeoff workspace", () => {
     const readout = page.locator('[data-takeoff="layer-readout"]');
     const strip = page.locator('[data-takeoff="sheet-facts"]');
 
-    // 1. THE ARROW SELECTS: a run lights its layer, pins its length, fills the strip.
+    // 1. THE ARROW SELECTS ONE RUN (Chrome's re-test): one outline on the plan,
+    // that run's length pinned beside it, and the strip saying which run.
     await expect(tool("Select")).toHaveAttribute("aria-pressed", "true");
     await expect(strip, "the bottom strip is there with nothing selected").toHaveCount(0);
     const mid = await runMid();
     await clickSheet(mid.x, mid.y);
     await expect(readout, "clicking a run with the arrow selected nothing").toBeVisible();
-    await expect(page.locator('[data-takeoff="layer-row"][data-lit="true"]')).toHaveCount(1);
-    await expect(page.locator('[data-takeoff="selection-facts"]')).toBeVisible();
+    const outline = overlay().locator('[data-takeoff="picked-outline"]');
+    await expect(outline, "a click picked more, or less, than one thing").toHaveCount(1);
+    await expect(page.locator('[data-takeoff="layer-row"][data-lit="true"]'), "the click lit a whole layer, not one run").toHaveCount(0);
+    await expect(page.locator('[data-takeoff="selection-facts"]')).toContainText(/1 of \d+ runs?/);
+    const firstRun = await overlay().locator("[data-found-wall]").first().evaluate((l) => ["x1", "y1", "x2", "y2"].map((a) => Number(l.getAttribute(a))));
+    expect(await outline.evaluate((l) => ["x1", "y1", "x2", "y2"].map((a) => Number(l.getAttribute(a)))), "the outline is not the run clicked").toEqual(firstRun);
 
-    // 2. AND LETS GO: Esc, and hiding the lit layer with its eye.
+    // 2. AND LETS GO: Esc, a click on nothing, another sheet.
     await page.keyboard.press("Escape");
     await expect(readout).toHaveCount(0);
-    await expect(page.locator('[data-takeoff="layer-row"][data-lit="true"]')).toHaveCount(0);
+    await expect(outline).toHaveCount(0);
     await expect(strip).toHaveCount(0);
     await clickSheet(mid.x, mid.y);
-    await expect(readout).toBeVisible();
-    await page.locator('[data-takeoff="layer-row"][data-lit="true"] [data-takeoff="layer-eye"]').click();
-    await expect(readout, "hiding the lit layer left its length on the plan").toHaveCount(0);
-    await page.locator('[data-takeoff="layer-eye"][aria-pressed="false"]').first().click();
+    await expect(outline).toHaveCount(1);
+    await clickSheet(0.01, 0.01);
+    await expect(outline, "a click on nothing kept the pick").toHaveCount(0);
+    await expect(strip).toHaveCount(0);
+    // (Another sheet letting go is in the two-sheet test, which has a second sheet.)
 
     // 3. THE WHEEL (Chrome's re-test, Togal/Bluebeam style): a mouse wheel
     // zooms ABOUT THE CURSOR with no blank frame; a trackpad's two-finger
@@ -966,6 +972,49 @@ test.describe("the full-screen takeoff workspace", () => {
     await tool("Select").click();
   });
 
+  test("13h. THE WALL TOTAL STAYS DOCKED, a new hint is scrolled to, and Esc puts a tool down", async () => {
+    // Chrome's re-test: a bare "Walls on this sheet: 698 ft" at the plan's
+    // top-left; a hint arriving above a scrolled panel; Esc not leaving Set
+    // scale or the "⋯" tools.
+    await page.setViewportSize(DESKTOP);
+    await onWorkspace(jobTwo);
+    await findTheWalls("S15 for 13h");
+    await fitAndSettle();
+    const total = page.locator('[data-takeoff="wall-total"]');
+    const undocked = () => total.evaluateAll((nodes) => nodes.filter((n) => n.closest('[data-takeoff="layers-rail"], [data-hud="notices"]') === null).length);
+    await expect(total.first(), "found walls and no total anywhere").toBeAttached();
+    expect(await undocked(), "the wall total is loose on the page").toBe(0);
+    await page.locator('[data-takeoff="collapse-panel"]').click();
+    await page.waitForTimeout(300);
+    expect(await undocked(), "with the panel collapsed, the wall total fell onto the plan").toBe(0);
+    await page.locator('[data-takeoff="expand-panel"]').click();
+
+    // A hint docked at the panel's top, with the panel scrolled down, is scrolled to.
+    const rail = page.locator('[data-takeoff="layers-rail"]');
+    await rail.evaluate((n) => (n.scrollTop = n.scrollHeight));
+    expect(await rail.evaluate((n) => n.scrollTop), "the panel was too short to scroll, so this proves nothing").toBeGreaterThan(0);
+    await page.locator('[data-takeoff="rail-more"]').click();
+    await tool("Split area").click();
+    const b = await canvasBox();
+    await page.mouse.click(b.x + b.width * 0.4, b.y + b.height * 0.5);
+    const hint = page.locator('[data-takeoff="find-error"]');
+    await expect(hint).toBeVisible();
+    await page.waitForTimeout(300);
+    const r = (await rail.boundingBox())!;
+    const h = (await hint.boundingBox())!;
+    expect(h.y >= r.y - 1 && h.y + h.height <= r.y + r.height + 1, "the new hint arrived out of sight").toBe(true);
+
+    // Esc puts a "⋯" tool down, and Set scale, even mid-line.
+    await expect(page.locator('[data-takeoff="rail-more"]')).toHaveAttribute("aria-label", /is on/);
+    await page.keyboard.press("Escape");
+    await expect(tool("Select"), "Esc left Split area on").toHaveAttribute("aria-pressed", "true");
+    await tool("Set scale").click();
+    await expect(tool("Set scale")).toHaveAttribute("aria-pressed", "true");
+    await page.mouse.click(b.x + b.width * 0.3, b.y + b.height * 0.3);
+    await page.keyboard.press("Escape");
+    await expect(tool("Select"), "Esc left Set scale on").toHaveAttribute("aria-pressed", "true");
+  });
+
   test("14. the phone gets a read-only canvas", async () => {
     await page.setViewportSize(PHONE);
     await onWorkspace(jobTwo);
@@ -1066,6 +1115,24 @@ test.describe("the full-screen takeoff workspace", () => {
     await expect(picker, "pressing j did not move to the next sheet").not.toHaveValue(startedOn);
     await page.keyboard.press("k");
     await expect(picker, "pressing k did not come back").toHaveValue(startedOn);
+
+    // A pick belongs to its sheet: moving to the next one lets go of it.
+    await findTheWalls("the two-sheet set");
+    const run = await overlay().locator("[data-found-wall]").first().evaluate((l) => {
+      const n = (a: string) => Number(l.getAttribute(a));
+      return { x: (n("x1") + n("x2")) / 2, y: (n("y1") + n("y2")) / 2 };
+    });
+    const o = (await overlay().boundingBox())!;
+    await page.mouse.click(o.x + run.x * o.width, o.y + run.y * o.width);
+    const outline = overlay().locator('[data-takeoff="picked-outline"]');
+    await expect(outline).toHaveCount(1);
+    await expect(page.locator('[data-takeoff="sheet-facts"]')).toHaveCount(1);
+    await page.locator('[data-takeoff="workspace"]').click({ position: { x: 5, y: 5 } });
+    await expect(outline, "the focus click itself let go, so the next line would prove nothing").toHaveCount(1);
+    await page.keyboard.press("j");
+    await expect(picker).not.toHaveValue(startedOn);
+    await expect(outline, "another sheet kept the pick").toHaveCount(0);
+    await expect(page.locator('[data-takeoff="sheet-facts"]'), "another sheet kept the strip").toHaveCount(0);
   });
 
   test("17. overview, sheet facts and undo are present and honest", async () => {

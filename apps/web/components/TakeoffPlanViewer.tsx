@@ -298,7 +298,7 @@ const HATCH_PITCH_RULE = process.env.NEXT_PUBLIC_TAKEOFF_HATCH_PITCH === "1";
 
 /** What the full-screen workspace's Select arrow can pick out. */
 export type ViewerSelection =
-  | { kind: "group"; key: string; name: string; runs: number; feet: number }
+  | { kind: "run"; layer: string; feet: number; ofRuns: number }
   | { kind: "shape"; id: string; itemId: string | null; label: string | null; measure: string };
 
 export function TakeoffPlanViewer({
@@ -1069,6 +1069,8 @@ export function TakeoffPlanViewer({
   // are left off the drawing; and the slots are where the shell's pieces of
   // the old toolbar are portalled to, set by ref once they exist.
   const [litLayer, setLitLayer] = useState<string | null>(null);
+  /** What the Select arrow picked on the plan: ONE run, or one drawn shape. */
+  const [picked, setPicked] = useState<{ kind: "run"; x1: number; y1: number; x2: number; y2: number; feet: number } | { kind: "shape"; id: string } | null>(null);
   const [hiddenLayers, setHiddenLayers] = useState<ReadonlySet<string>>(new Set());
   const [railMore, setRailMore] = useState(false);
   const pickToolRef = useRef<(key: string) => void>(() => {});
@@ -1137,6 +1139,7 @@ export function TakeoffPlanViewer({
   const lastPointerRef = useRef<{ x: number; y: number; id: number } | null>(null);
   const pressedRef = useRef(false);
   const dragOnRef = useRef(false);
+  const toolRef = useRef<ToolId>("pan");
   const docRef = useRef<{ numPages: number; getPage: (n: number) => Promise<unknown> } | null>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
 
@@ -1592,16 +1595,32 @@ export function TakeoffPlanViewer({
       return node !== null && (node.tagName === "INPUT" || node.tagName === "TEXTAREA" || node.tagName === "SELECT" || node.isContentEditable);
     };
     const down = (event: KeyboardEvent) => {
-      if (typing(event.target)) return;
+      // Esc leaves Set scale from its own distance box too: that box is where
+      // the cursor is once both ends are down.
+      if (typing(event.target) && !(event.key === "Escape" && toolRef.current === "calibrate")) return;
       if (event.key === " " && !event.repeat) {
         event.preventDefault();
         spaceRef.current = true;
         setSpaceHeld(true);
       }
-      // Esc lets go of what the arrow picked, when nothing is being drawn.
-      if (event.key === "Escape" && draftLengthRef.current === 0) {
-        setLitLayer(null);
-        onSelectRef.current?.(null);
+      // ── ESC STEPS BACK TO SELECT (Chrome's re-test) ──
+      // A half-drawn shape goes first; with none, a tool other than Select —
+      // Set scale, or anything from "⋯" — is put down; with Select already
+      // in hand, what it picked is let go. Set scale is left in one press even
+      // mid-line, because a half-set scale is never worth keeping.
+      if (event.key === "Escape") {
+        const current = toolRef.current;
+        if (draftLengthRef.current > 0 && current !== "calibrate") {
+          setDraft(EMPTY);
+        } else if (current !== "pan") {
+          setDraft(EMPTY);
+          setTool("pan");
+          setRailMore(false);
+        } else {
+          setLitLayer(null);
+          setPicked(null);
+          onSelectRef.current?.(null);
+        }
       }
     };
     const up = (event: KeyboardEvent) => {
@@ -1787,6 +1806,28 @@ export function TakeoffPlanViewer({
   useEffect(() => {
     setDraft(EMPTY);
   }, [pageNumber, tool]);
+  // ── A NEW HINT IN THE PANEL IS SCROLLED TO ──
+  // With the panel scrolled down, a message docked at its top arrived out of
+  // sight and read as a button that did nothing (Chrome's re-test).
+  useEffect(() => {
+    const targets = [dockSlot, sideSlot].filter((node): node is HTMLElement => node !== null);
+    if (targets.length === 0) return;
+    const observer = new MutationObserver((changes) => {
+      for (const change of changes) {
+        for (const node of change.addedNodes) {
+          if (node instanceof HTMLElement) node.scrollIntoView({ block: "nearest" });
+        }
+      }
+    });
+    for (const target of targets) observer.observe(target, { childList: true });
+    return () => observer.disconnect();
+  }, [dockSlot, sideSlot]);
+  // A pick belongs to its sheet: another sheet lets go of it, and of the strip.
+  useEffect(() => {
+    setPicked(null);
+    setLitLayer(null);
+    onSelectRef.current?.(null);
+  }, [pageNumber]);
 
 
   const aspect = pageSize ? pageSize.heightPt / pageSize.widthPt : 1.294;
@@ -2098,6 +2139,14 @@ export function TakeoffPlanViewer({
       }) ?? null
     );
   }
+  function nearEdge(raw: { x: number; y: number }, m: { xs: number[]; ys: number[] }, reach: number) {
+    for (let i = 0; i < m.xs.length; i += 1) {
+      const j = (i + 1) % m.xs.length;
+      const near = nearestOnSegment(raw, m.xs[i]!, m.ys[i]!, m.xs[j]!, m.ys[j]!);
+      if (Math.hypot(near.x - raw.x, near.y - raw.y) <= reach) return true;
+    }
+    return false;
+  }
   /** A drawn shape's quantity, in words, at this sheet's scale. */
   function measureOf(m: { kind: MeasurementKind; xs: number[]; ys: number[] }): string {
     if (m.kind === "COUNT") return `${m.xs.length} ea`;
@@ -2182,44 +2231,50 @@ export function TakeoffPlanViewer({
       setKeyBox({ x1: raw.x, y1: raw.y, x2: raw.x, y2: raw.y });
       return;
     }
-    // ── THE SELECT ARROW PICKS WHAT IT IS CLICKED ON ──
+    // ── THE SELECT ARROW PICKS ONE THING: THE RUN OR SHAPE UNDER IT ──
     //
-    // A drawn shape first (it is what somebody made), then the nearest found
-    // run, which lights its whole layer; a click on nothing lets go of both.
-    // The reach is ten SCREEN pixels, so it is the same at every zoom.
+    // Chrome's re-test: a click lit the whole group, or the room drawn under
+    // the run. Now the order is what the pointer is ON: a drawn shape's own
+    // line, then the nearest single found run, and only then the inside of a
+    // room. A click on nothing lets go. The reach is ten SCREEN pixels.
     if (fill && tool === "pan") {
       const raw = pointAt(event);
       if (!raw) return;
       const width = (event.currentTarget as Element).getBoundingClientRect().width;
       const reach = width > 0 ? 10 / width : PICK_RADIUS;
       const shape = measurementAt(raw);
-      if (shape !== null) {
+      const onEdge = shape !== null && !(shape.kind === "AREA" && pointInRing(raw.x, raw.y, shape.xs, shape.ys) && !nearEdge(raw, shape, reach));
+      const pickShape = (m: NonNullable<typeof shape>) => {
         setLitLayer(null);
-        onSelect?.({ kind: "shape", id: shape.id, itemId: shape.itemId ?? null, label: shape.label, measure: measureOf(shape) });
-        return;
-      }
-      let best: { group: WallGroup; distance: number } | null = null;
+        setPicked({ kind: "shape", id: m.id });
+        onSelect?.({ kind: "shape", id: m.id, itemId: m.itemId ?? null, label: m.label, measure: measureOf(m) });
+      };
+      if (shape !== null && onEdge) return pickShape(shape);
+      let best: { group: WallGroup; run: WallGroup["runs"][number]; distance: number } | null = null;
       for (const { group } of ordered) {
         if (hiddenLayers.has(layerKeyOf(group))) continue;
         for (const run of group.runs) {
           const near = nearestOnSegment(raw, run.x1, run.y1, run.x2, run.y2);
           const distance = Math.hypot(near.x - raw.x, near.y - raw.y);
-          if (distance <= reach && (best === null || distance < best.distance)) best = { group, distance };
+          if (distance <= reach && (best === null || distance < best.distance)) best = { group, run, distance };
         }
       }
       if (best !== null) {
         const key = layerKeyOf(best.group);
-        setLitLayer(key);
+        const feet = Math.hypot(best.run.x2 - best.run.x1, best.run.y2 - best.run.y1) * (feetPerUnit ?? 0);
+        setLitLayer(null);
+        setPicked({ kind: "run", x1: best.run.x1, y1: best.run.y1, x2: best.run.x2, y2: best.run.y2, feet });
         onSelect?.({
-          kind: "group",
-          key,
-          name: layerNames[key] ?? defaultLayerName(best.group, new Map((takeoffItems ?? []).map((item) => [item.id, item.name]))),
-          runs: best.group.runs.length,
-          feet: best.group.feet,
+          kind: "run",
+          layer: layerNames[key] ?? defaultLayerName(best.group, new Map((takeoffItems ?? []).map((item) => [item.id, item.name]))),
+          feet,
+          ofRuns: best.group.runs.length,
         });
         return;
       }
+      if (shape !== null) return pickShape(shape);
       setLitLayer(null);
+      setPicked(null);
       onSelect?.(null);
       return;
     }
@@ -4033,6 +4088,7 @@ export function TakeoffPlanViewer({
 
   findRef.current = onFindWalls;
   draftLengthRef.current = draft.xs.length;
+  toolRef.current = tool;
   dragOnRef.current =
     rectDragRef.current !== null ||
     symbolBox !== null ||
@@ -4048,6 +4104,11 @@ export function TakeoffPlanViewer({
    *  is written. */
   const slot = (target: HTMLElement | null | undefined, node: React.ReactNode) =>
     fill && target ? createPortal(node, target) : node;
+  /** Like `slot`, but in the shell it is ONLY ever docked: with no place made
+   *  for it yet, it waits rather than landing unstyled at the plan's top-left
+   *  (Chrome's re-test: a bare "Walls on this sheet: 698 ft" up there). */
+  const dock = (target: HTMLElement | null | undefined, node: React.ReactNode) =>
+    fill ? (target ? createPortal(node, target) : null) : node;
   /** Messages and the draft card dock in the panel, never over the drawing;
    *  with the panel collapsed, small at the canvas's bottom-left. */
   const noticeTarget = panelOpen ? dockSlot : noticeSlot;
@@ -4129,8 +4190,10 @@ export function TakeoffPlanViewer({
     fill ? ordered.filter(({ group }) => hiddenLayers.has(layerKey(group))).map(({ index }) => index) : [],
   );
   const litGroup = fill ? (ordered.find(({ group }) => layerKey(group) === litLayer) ?? null) : null;
-  /** The lit layer's readout, pinned to the middle of its longest run. */
+  /** The lit layer's readout, pinned to the middle of its longest run — or the
+   *  one picked run's own length. */
   const litReadout = (() => {
+    if (picked?.kind === "run") return { x: (picked.x1 + picked.x2) / 2, y: (picked.y1 + picked.y2) / 2, text: formatFeetInches(picked.feet) };
     if (litGroup === null || litGroup.group.runs.length === 0) return null;
     const run = litGroup.group.runs.reduce((a, b) =>
       Math.hypot(b.x2 - b.x1, b.y2 - b.y1) > Math.hypot(a.x2 - a.x1, a.y2 - a.y1) ? b : a,
@@ -4814,7 +4877,7 @@ export function TakeoffPlanViewer({
         </p>
       ))}
       {/* In the panel, never over the plan ("This sheet shows existing work…"). */}
-      {slot(sideSlot, answerKey === undefined && (
+      {dock(panelOpen ? sideSlot : noticeSlot, answerKey === undefined && (
         <TakeoffExclusionBar
           feet={found === null ? null : found.reduce((sum, group) => sum + group.feet, 0)}
           aside={userAside}
@@ -6332,6 +6395,37 @@ export function TakeoffPlanViewer({
               />
               {/* The held run under the pointer in Needs review: amber and wide,
                   so it stands out of everything else on the sheet. */}
+              {/* What the Select arrow picked: one run or one shape, outlined. */}
+              {picked?.kind === "run" && (
+                <line
+                  data-takeoff="picked-outline"
+                  x1={picked.x1}
+                  y1={picked.y1}
+                  x2={picked.x2}
+                  y2={picked.y2}
+                  stroke="#2563eb"
+                  strokeWidth={STROKE_PX * 4}
+                  strokeOpacity={0.6}
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+              {picked?.kind === "shape" &&
+                (sheet?.measurements ?? [])
+                  .filter((m) => m.id === picked.id)
+                  .map((m) => (
+                    <polyline
+                      key={m.id}
+                      data-takeoff="picked-outline"
+                      points={[...m.xs.map((x, i) => `${x},${m.ys[i]}`), ...(m.kind === "AREA" ? [`${m.xs[0]},${m.ys[0]}`] : [])].join(" ")}
+                      fill="none"
+                      stroke="#2563eb"
+                      strokeWidth={STROKE_PX * 3}
+                      strokeOpacity={0.7}
+                      strokeLinejoin="round"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
               {heldHoverRun !== null && (
                 <line
                   data-takeoff="held-highlight"
@@ -6504,6 +6598,10 @@ export function TakeoffPlanViewer({
                   setLitLayer(null);
                   onSelect?.(null);
                 }
+                if (!hiddenLayers.has(key) && picked !== null) {
+                  setPicked(null);
+                  onSelect?.(null);
+                }
                 setHiddenLayers((was) => {
                   const next = new Set(was);
                   if (!next.delete(key)) next.add(key);
@@ -6512,6 +6610,7 @@ export function TakeoffPlanViewer({
               }}
               onLit={(key) => {
                 setLitLayer(key);
+                setPicked(null);
                 if (key === null) onSelect?.(null);
               }}
               banner={<div ref={setBannerSlot} className="empty:hidden" />}
