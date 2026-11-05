@@ -31,10 +31,13 @@ export function shouldGateToOnboarding(subject: { role: string; businessScopeAsk
 
 /**
  * The ONE call site that sends a person to `/welcome`: `app/(app)/dashboard
- * /page.tsx`, and nowhere else. `/dashboard` is the only page a fresh
- * signup or sign-in ever lands on by default — `ClerkProvider`'s
- * `signUpFallbackRedirectUrl`/`signInFallbackRedirectUrl` and both auth
- * pages' own `fallbackRedirectUrl` all say so — and Clerk's own
+ * /page.tsx`, and nowhere else. `/dashboard` is the only page a sign-in
+ * ever lands on by default — `ClerkProvider`'s `signInFallbackRedirectUrl`
+ * and the sign-in page's own `fallbackRedirectUrl` say so. A SIGN-UP lands
+ * on `/welcome` itself, whose own check below sends anyone it is not for to
+ * `/dashboard`: a redirect from `/dashboard` right after sign-up raced
+ * Clerk's refresh and was dropped, leaving a new owner on a blank page. And
+ * Clerk's own
  * `redirect_url` mechanism takes precedence over the fallback whenever one
  * is present, which is exactly what carries a signed-out visitor who
  * followed a link straight to a job or an invoice past this page entirely.
