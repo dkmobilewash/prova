@@ -1,5 +1,3 @@
-import { priorPlanFor } from "./priorPlan";
-import { pairingsForPlan, sheetName } from "./priorPlanLoad";
 import type { PriorLine } from "./planCompare";
 import { after } from "next/server";
 import { prisma } from "@prova/db";
@@ -309,9 +307,12 @@ export async function detectWallsForCalibration(
     // The demolition plan is read from this same document. One that does not
     // line up sets nothing aside, which is the safe failure.
     if (raster === null) {
-      const company = await prisma.company.findUnique({ where: { id: target.companyId }, select: { planCompareOn: true } });
-      if (company?.planCompareOn === true) {
-        try {
+      try {
+        const company = await prisma.company.findUnique({ where: { id: target.companyId }, select: { planCompareOn: true } });
+        if (company?.planCompareOn === true) {
+          // Loaded only for a company that turned it on: the pairer reads every
+          // sheet's title, and nobody else's detection should pay for it.
+          const [{ priorPlanFor }, { pairingsForPlan, sheetName }] = await Promise.all([import("./priorPlan"), import("./priorPlanLoad")]);
           const pairings = await pairingsForPlan(target.planId);
           const pairing = pairings.byPage.get(target.pageNumber);
           if (pairing !== undefined && pairing.demoPage >= 1 && pairing.demoPage <= doc.pageCount && pairing.demoPage !== target.pageNumber) {
@@ -325,9 +326,9 @@ export async function detectWallsForCalibration(
             });
             if (prior.lines !== null) offered = offer({ lines: prior.lines, sheet: sheetName(pairings.sheets, pairing.demoPage) });
           }
-        } catch (error) {
-          console.error("[takeoff] plan comparison failed; offering without it", { planId: target.planId, page: target.pageNumber }, error);
         }
+      } catch (error) {
+        console.error("[takeoff] plan comparison failed; offering without it", { planId: target.planId, page: target.pageNumber }, error);
       }
     }
     if (target.onBoundary !== undefined) {

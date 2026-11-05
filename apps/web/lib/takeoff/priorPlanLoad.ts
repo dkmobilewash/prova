@@ -1,5 +1,6 @@
 import { prisma } from "@prova/db";
-import { autoPairs, pairingFor, type PairChoice, type Pairing } from "./priorPlan";
+import { pairDemoWithNewPlan, type SheetForPairing } from "./pairDemoPlans";
+import type { PairChoice, Pairing } from "./priorPlan";
 
 /**
  * Every page's demolition-plan pairing for one plan: derived from the newest
@@ -51,3 +52,22 @@ export async function pairingsForPlan(planId: string): Promise<PlanPairings> {
 export function sheetName(sheets: PlanPairings["sheets"], page: number): string {
   return sheets.find((s) => s.pageNumber === page)?.sheetNumber ?? `page ${page}`;
 }
+
+/** New page → its demolition plan, from sheet numbers and titles alone. Only a pair the pairer is sure of. */
+export function autoPairs(sheets: readonly SheetForPairing[]): Map<number, { demoPage: number; basis: string }> {
+  const out = new Map<number, { demoPage: number; basis: string }>();
+  for (const pair of pairDemoWithNewPlan(sheets)) {
+    if (pair.newPage === null || pair.primary === false || out.has(pair.newPage)) continue;
+    out.set(pair.newPage, { demoPage: pair.demoPage, basis: pair.basis });
+  }
+  return out;
+}
+
+/** A person's choice wins: a page they picked, or "none" for a pair they removed. */
+export function pairingFor(newPage: number, auto: ReadonlyMap<number, { demoPage: number; basis: string }>, saved: PairChoice | null): Pairing | null {
+  if (saved?.choice === "none") return null;
+  if (saved?.choice === "user" && saved.priorPage !== null && saved.priorPage !== newPage) return { demoPage: saved.priorPage, source: "user", basis: "chosen" };
+  const a = auto.get(newPage);
+  return a === undefined ? null : { demoPage: a.demoPage, source: "auto", basis: a.basis };
+}
+

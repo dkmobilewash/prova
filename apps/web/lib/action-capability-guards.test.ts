@@ -1979,6 +1979,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // "Demote, don't hide": the owner's switch (behind /settings).
   demotedWalls: () => import("./actions/demotedWalls"),
   symbolCount: () => import("./actions/symbolCount"),
+  planCompare: () => import("./actions/planCompare"),
   // Find demolition's save, behind the takeoff's job-costs gate.
   demoTakeoff: () => import("./actions/demoTakeoff"),
   // Whole-set takeoff: the owner's switch (behind /settings) and the per-sheet

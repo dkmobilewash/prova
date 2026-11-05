@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { findWallsOnSheet } from "./findWallsOnSheet";
 import { offeredCandidates } from "./offeredCandidates";
-import { autoPairs, pairingFor, priorPlanFor } from "./priorPlan";
+import { priorPlanFor } from "./priorPlan";
+import { autoPairs, pairingFor } from "./priorPlanLoad";
 import { takeoffFeatureRows } from "./features";
 import type { StrokeSegment } from "./wallVectors";
 
@@ -78,6 +79,14 @@ describe("what the demolition plan sets aside", () => {
     const prior = priorPlanFor({ demo: demo([...elsewhere, ...Array.from({ length: 60 }, () => elsewhere).flat()]), newPage: { segments: newSegments, widthPt: W }, newRuns, feetPerUnit });
     expect(prior.lines).toBeNull();
     if (prior.lines === null) expect(prior.why).toMatch(/does not line up|no drawing/);
+  });
+
+  it("a demolition plan sharing one wall is not the same layout: under the vote floor, nothing is compared", () => {
+    // One of the eight walls in common — a shared corridor wall, not this floor.
+    const few = wall(20, 20, 100, 20);
+    const prior = priorPlanFor({ demo: demo([...few, ...ticks]), newPage: { segments: newSegments, widthPt: W }, newRuns, feetPerUnit });
+    expect(prior.lines).toBeNull();
+    if (prior.lines === null) expect(prior.why).toMatch(/of 5 walls agree/);
   });
 
   it("a wall the demolition plan removes is not existing to remain", () => {

@@ -1,7 +1,6 @@
 import { demoRuns } from "./demoWalls";
 import { existingWallSet } from "./existingWallSet";
 import { findWallsOnSheet } from "./findWallsOnSheet";
-import { pairDemoWithNewPlan, type SheetForPairing } from "./pairDemoPlans";
 import { FEW_WALLS_SHARE, MIN_VOTES, onPriorPlan, type PriorLine } from "./planCompare";
 import { alignViews, type Line } from "./viewAlign";
 import { oneFacePerLine, type StrokeSegment, type WallCandidate } from "./wallVectors";
@@ -17,7 +16,8 @@ import { oneFacePerLine, type StrokeSegment, type WallCandidate } from "./wallVe
  *
  * Two questions, kept apart because they are answered in different places:
  *
- *   WHICH PAGE  `autoPairs` from the sheet numbers and titles the inventory
+ *   WHICH PAGE  `autoPairs` (`priorPlanLoad.ts`, server only — the pairer
+ *               reaches the database) from the sheet numbers and titles the inventory
  *               stored (AD1.0 → A3.1, D100 → A100). Derived, never stored; a
  *               person's change or removal is the only thing saved, and
  *               `pairingFor` lets it win.
@@ -30,24 +30,6 @@ import { oneFacePerLine, type StrokeSegment, type WallCandidate } from "./wallVe
 
 export type PairChoice = { priorPage: number | null; choice: "user" | "none" | null };
 export type Pairing = { demoPage: number; source: "auto" | "user"; basis: string };
-
-/** New page → its demolition plan, from sheet numbers and titles alone. Only a pair the pairer is sure of. */
-export function autoPairs(sheets: readonly SheetForPairing[]): Map<number, { demoPage: number; basis: string }> {
-  const out = new Map<number, { demoPage: number; basis: string }>();
-  for (const pair of pairDemoWithNewPlan(sheets)) {
-    if (pair.newPage === null || pair.primary === false || out.has(pair.newPage)) continue;
-    out.set(pair.newPage, { demoPage: pair.demoPage, basis: pair.basis });
-  }
-  return out;
-}
-
-/** A person's choice wins: a page they picked, or "none" for a pair they removed. */
-export function pairingFor(newPage: number, auto: ReadonlyMap<number, { demoPage: number; basis: string }>, saved: PairChoice | null): Pairing | null {
-  if (saved?.choice === "none") return null;
-  if (saved?.choice === "user" && saved.priorPage !== null && saved.priorPage !== newPage) return { demoPage: saved.priorPage, source: "user", basis: "chosen" };
-  const a = auto.get(newPage);
-  return a === undefined ? null : { demoPage: a.demoPage, source: "auto", basis: a.basis };
-}
 
 /** A page's long faces, page-width units: what the layout check votes with when the demolition plan pairs too few walls. */
 export function longFaces(segments: readonly StrokeSegment[], widthPt: number, feetPerUnit: number): Line[] {
