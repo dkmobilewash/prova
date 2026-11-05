@@ -902,6 +902,8 @@ test.describe("the full-screen takeoff workspace", () => {
     const pdf = page.locator('[data-takeoff="open-pdf"]');
     await expect(pdf).toHaveAttribute("href", new RegExp(`^/takeoff/${jobTwo}/pdf\\?page=\\d+$`));
     const viewer = await page.context().newPage();
+    // The upload is stubbed, so this tab is served the same file as the workspace.
+    await viewer.route("**/api/takeoff/plan/**", (route) => route.fulfill({ status: 200, contentType: "application/pdf", body: servedPdf }));
     await viewer.goto((await pdf.getAttribute("href"))!);
     expect(await viewer.title()).toMatch(new RegExp(`^${JOB_TWO} – `));
     // And the header on the page says it too: the viewer's own toolbar, which
@@ -909,6 +911,7 @@ test.describe("the full-screen takeoff workspace", () => {
     await expect(viewer.locator('[data-takeoff="pdf-header"] h1')).toHaveText(new RegExp(`^${JOB_TWO} – `));
     expect(await viewer.locator('[data-takeoff="pdf-frame"]').getAttribute("src")).toMatch(/#page=\d+&toolbar=0/);
     await expect(viewer.getByRole("link", { name: "Download" })).toHaveAttribute("download", new RegExp(`^${JOB_TWO} – .*\\.pdf$`));
+    await viewer.waitForTimeout(1500);
     await viewer.screenshot({ path: path.join(SHOTS, "pdf-page-header.png") });
     await viewer.close();
 

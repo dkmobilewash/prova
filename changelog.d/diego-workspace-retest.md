@@ -18,10 +18,12 @@
   - Set scale is left in one press, even mid-line or from its distance box.
 - **Baker A001 is "a demolition drawing", not "an elevations sheet".** `takeoffRank` had ELEVATION and not DEMO, and the sheet was named after its first view, "…DEMO ELEVATION". DEMO now ranks below every other kind.
 - **The PDF page's header says "<job> – <sheet>"**, with Download (saved under that name) and Print. Chrome's viewer printed the file's own Title ("ESC1") in its toolbar, which is now switched off (`#toolbar=0`). Rewriting the Title would mean re-encoding the whole set on every open.
+- **A plain click reaches what is under it again (a regression from #971, mine).** The drag auto-pan captured the pointer on every press, so a click on a count's mark landed on the overlay and the mark no longer dropped (click list A5). The pointer is now captured only once it has moved 4px into a drag.
 
 Check: `takeoff-workspace.spec.ts`, real wheel events in real Chromium.
 - 13e: three mouse notches zoom past 1.3×. The point under the cursor stays within 3px, and a per-frame canvas sampler sees no blank frame. A sideways-carrying stroke pans without zooming; a ctrl + small-delta pinch zooms by less than 1.2×. One click outlines exactly the run clicked, with no layer lit; Esc and an empty click let go. The PDF page's header, toolbar-off frame and Download name are checked.
 - The two-sheet test: j lets go of a pick and the strip.
 - 13h: the walls total is never outside the panel or notices, with the panel open or collapsed. A Split-area hint arrives in view in a panel scrolled down. Esc leaves Split area, and Set scale mid-line.
 - Mutations, each red with its message: drawing onto the visible canvas ("the sheet went blank while zooming"), Select lighting the layer ("a click picked more, or less, than one thing"), and Esc not putting the tool down ("Esc left Split area on").
+- Local click list: 73/73 (A5 was red before the capture fix).
 - `takeoffSheet.test.ts`: a demolition plan beside a demolition elevation is a demolition drawing.

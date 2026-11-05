@@ -1138,6 +1138,7 @@ export function TakeoffPlanViewer({
   const overlayRef = useRef<SVGSVGElement | null>(null);
   const lastPointerRef = useRef<{ x: number; y: number; id: number } | null>(null);
   const pressedRef = useRef(false);
+  const pressStartRef = useRef<{ x: number; y: number } | null>(null);
   const dragOnRef = useRef(false);
   const toolRef = useRef<ToolId>("pan");
   const docRef = useRef<{ numPages: number; getPage: (n: number) => Promise<unknown> } | null>(null);
@@ -5714,21 +5715,30 @@ export function TakeoffPlanViewer({
               data-takeoff={answerKey?.tracing === true ? "tracing-surface" : undefined}
               ref={overlayRef}
               onPointerDown={(event) => {
-                // HOLD THE POINTER for the whole drag, so leaving the visible
-                // plan (where the auto-pan is) does not drop the box.
+                // The pointer is HELD once a drag is under way (see the move
+                // handler), so leaving the visible plan does not drop the box.
                 if (event.button === 0 && !spaceRef.current) {
                   pressedRef.current = true;
                   lastPointerRef.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
-                  try {
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                  } catch {
-                    // A synthetic event has no real pointer to capture.
-                  }
+                  pressStartRef.current = { x: event.clientX, y: event.clientY };
                 }
                 onPointerDown(event);
               }}
               onPointerMove={(event) => {
                 if (event.isTrusted) lastPointerRef.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
+                // ── CAPTURED ONLY ONCE IT IS A DRAG ──
+                // Capturing on the press sent every plain click to the overlay
+                // instead of what is under it, so a count's mark stopped
+                // dropping when clicked (click list A5, a regression from #971).
+                const start = pressStartRef.current;
+                if (event.isTrusted && start !== null && pressedRef.current && (event.buttons & 1) === 1 && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) {
+                  pressStartRef.current = null;
+                  try {
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                  } catch {
+                    // Nothing to capture on a pointer that has gone.
+                  }
+                }
                 const corner = rectDragRef.current;
                 if (corner !== null && tool === "rect" && (event.buttons & 1) === 1) {
                   const raw = pointAt(event);
