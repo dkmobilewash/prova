@@ -659,9 +659,15 @@ export async function saveTakeoffCalibration(jobId: string, formData: FormData):
  * The guided flow's Scale step (Phase 2). Nothing is taken from the browser but
  * page numbers: the rows are rebuilt here from what the scale reader STORED,
  * exactly as the takeoff tab built them, and a page is saved only if it is
- * still "high" (or, with `usePrinted`, one page whose title block is all there
+ * still "high" (or, with `usePrinted`, a page whose title block is all there
  * is). Each is saved as a hand-set scale would be, with the provenance in the
  * note, and the dialog's refusals re-run. No model is asked anything.
+ *
+ * `usePrinted` TAKES SEVERAL PAGES NOW, and still only what the person was
+ * shown: the plan set panel lists every floor plan it will set, with its
+ * scale, before "Use the printed scale on all N" applies (Diego, M1's last
+ * piece). A page that already has a scale is not printed-only any more, so it
+ * is skipped — each sheet is set once, never changed under somebody.
  */
 export async function confirmSheetScales(
   jobId: string,
@@ -671,7 +677,6 @@ export async function confirmSheetScales(
 ): Promise<ActionResultWith<{ confirmed: number; skipped: number }>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
-  if (usePrinted && pages.length !== 1) return actionFail("Use the printed scale one sheet at a time.");
   const { company, job } = await requireJobGivenContext(jobId, context);
   const data = await loadTakeoffWorkspace(company, job);
   if (data === null || data.plan.id !== planId) return actionFail("That plan set has changed. Reload the page.");
