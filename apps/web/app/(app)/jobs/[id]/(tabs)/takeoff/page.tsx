@@ -21,6 +21,7 @@ import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber, effectiveTitle, sheetPickerLabel } from "@/lib/plan-ingest/sheetIndex";
 import { sheetSuitability, duplicateWallsCaution } from "@/lib/takeoff/sheetSuitability";
 import { latestIngestFor } from "@/lib/plan-ingest/claim";
+import { queueLegendRead } from "@/lib/plan-ingest/legendAutoStart";
 import { MAX_ATTEMPTS } from "@/lib/plan-ingest/runner";
 import { wholeSetSummary } from "@/lib/plan-ingest/walls";
 import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
@@ -185,6 +186,15 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
     sheetRows,
     scheduleSheetCount,
   } = loaded;
+
+  // A set inventoried before the legend read started itself: queue it now,
+  // the same once-per-set rule `legendAutoStart.ts` applies when an inventory
+  // closes. The cron drain reads it; nothing here waits for it.
+  if (isEstimateStage) {
+    await queueLegendRead({ planId: plan.id, companyId: company.id, startedByUserId: context.id }).catch((error) =>
+      console.error("[takeoff] could not queue the legend read", { planId: plan.id }, error),
+    );
+  }
 
 
   /**

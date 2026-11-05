@@ -61,22 +61,35 @@ async function writeStored(planId: string, pageNumber: number, kind: string, val
 
 /** The legend the ingest stored for review, as the detection's legend — or null when none has been read. */
 async function legendFromProposal(planId: string): Promise<PlanTextLegend | null> {
-  const proposal = await prisma.planLegendProposal.findFirst({
-    where: { planId },
-    orderBy: { createdAt: "desc" },
+  // A legend often spans pages (one per partition family), and the stage
+  // saves one proposal per page: the legend is every page of the newest read,
+  // merged by code, lowest page first.
+  const newest = await prisma.planLegendProposal.findFirst({ where: { planId }, orderBy: { createdAt: "desc" }, select: { ingestJobId: true } });
+  if (newest === null) return null;
+  const pages = await prisma.planLegendProposal.findMany({
+    where: { planId, ingestJobId: newest.ingestJobId },
+    orderBy: { pageNumber: "asc" },
     select: { pageNumber: true, sheetTitle: true, merged: true, textRead: true, reason: true, confidence: true },
   });
-  if (proposal === null) return null;
-  const types = storedLegendTypesFromJson(proposal.merged);
-  if (types.length === 0) return null;
-  const uno = unoFromJson(proposal.textRead);
+  const types = new Map<string, ReturnType<typeof storedLegendTypesFromJson>[number]>();
+  const uno: ReturnType<typeof unoFromJson> = [];
+  let first: (typeof pages)[number] | null = null;
+  for (const page of pages) {
+    const read = storedLegendTypesFromJson(page.merged);
+    if (read.length === 0) continue;
+    first ??= page;
+    for (const t of read) if (!types.has(t.code.toUpperCase())) types.set(t.code.toUpperCase(), t);
+    uno.push(...unoFromJson(page.textRead));
+  }
+  if (first === null) return null;
+  const all = [...types.values()];
   return {
-    page: proposal.pageNumber,
-    title: proposal.sheetTitle,
-    codes: types.map((t) => t.code.toUpperCase()),
-    proposals: types.map((t) => ({ code: t.code, name: t.name, lines: t.lines, assembly: t.assembly })),
-    reason: proposal.reason,
-    confidence: proposal.confidence,
+    page: first.pageNumber,
+    title: first.sheetTitle,
+    codes: all.map((t) => t.code.toUpperCase()),
+    proposals: all.map((t) => ({ code: t.code, name: t.name, lines: t.lines, assembly: t.assembly })),
+    reason: first.reason,
+    confidence: first.confidence,
     ...(uno.length > 0 ? { uno } : {}),
   };
 }
