@@ -77,8 +77,9 @@ export default async function JobBillingPage({
   // A card from the Ask box (lib/ask/drafts.ts): the pay application, the
   // retainage application or the waiver form opens filled in; each form's
   // own button is the write.
-  const askLookup = await loadBillingDraft({ company, id: currentUser.id }, (await searchParams)?.draft, jobRef.id);
-  const askDraft = askLookup.kind === "draft" ? askLookup.draft : undefined;
+  const draftId = (await searchParams)?.draft;
+  const askLookup = draftId ? await loadBillingDraft({ company, id: currentUser.id }, draftId, jobRef.id) : null;
+  const askDraft = askLookup?.kind === "draft" ? askLookup.draft : undefined;
 
   if (jobRef.status === "ESTIMATE") {
     return (
