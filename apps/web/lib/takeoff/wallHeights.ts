@@ -48,7 +48,8 @@ export type HeightBasis =
 
 const TO_STRUCTURE =
   /\b(?:TO|THRU|THROUGH)\s+(?:THE\s+)?(?:ROOF\s+)?(?:DECK(?:ING)?|STRUCTURE|SLAB|JOISTS?|ROOF)\b|\bFULL\s+HEIGHT\b|\b(?:BOTTOM|UNDERSIDE|U\/S|B\.O\.)\s+OF\s+(?:THE\s+)?(?:STRUCTURE|STRUCTURAL|DECK|SLAB|JOISTS?|ROOF|CONCRETE|EXISTING\s+BEAM|BEAM|FLOOR)\b|\bCONT(?:INUOUS|\.)?\s+TO\s+(?:ROOF\s+)?DECK/i;
-const ABOVE_CEILING = /(\d+(?:\s*[-–]\s*\d+\/\d+|\s+\d+\/\d+|\/\d+)?)\s*(?:"|''|IN(?:CH(?:ES)?)?\.?)\s*(?:ABOVE|A\.?F\.?C\.?|OVER)\s+(?:THE\s+)?(?:FINISHED\s+)?(?:CEILING|CLG)/i;
+// "8" ABOVE HIGHEST ADJACENT CEILING" (Green Bay A4.0 note 9): up to two words between.
+const ABOVE_CEILING = /(\d+(?:\s*[-–]\s*\d+\/\d+|\s+\d+\/\d+|\/\d+)?)\s*(?:"|''|IN(?:CH(?:ES)?)?\.?)\s*(?:ABOVE|A\.?F\.?C\.?|OVER)\s+(?:THE\s+)?(?:[A-Z]+\s+){0,2}?(?:FINISHED\s+)?(?:CEILING|CLG)/i;
 const TO_CEILING = /\b(?:TO|AT)\s+(?:THE\s+)?(?:UNDERSIDE\s+OF\s+)?(?:FINISHED\s+)?(?:CEILING|CLG)\b|\bBOTTOM\s+OF\s+(?:THE\s+)?CEILING\b|\bCEILING\s+HEIGHT\b/i;
 const SEE = /\bSEE\s+(NOTE\s+[A-Z0-9]+|SHEET\s+[A-Z]{1,3}[-.]?\d[\dA-Z.\-]*|[A-Z]{1,3}[-.]?\d{2,4}[A-Z]?|ELEVATIONS?|CEILING\s+PLANS?|RCP|STRUCTURAL|SECTIONS?)/i;
 const FIXED = /(\d{1,2})\s*'\s*(?:-\s*)?(\d{1,2})?\s*(?:"|'')?(?!\s*(?:O\.?C|ON\s+CENTER))|(\d{1,2})\s*(?:FT|FEET|')\s*(?:HIGH|TALL|HT\.?|HEIGHT)/i;
@@ -111,7 +112,33 @@ export type HeightFact = {
   text?: string;
   sheet: string;
   phrase: string;
+  /**
+   * For a level line, the part of the building it is drawn for — the words
+   * round the abbreviation: Joplin's "LOWER" BOD, "ADMIN" JBE, "CENTRAL" TOW;
+   * Bunkie's T.O. WALL "2". Empty for a line that names none.
+   */
+  zone?: string;
+  /** For a level line read off a roof framing plan rather than a section or elevation: a spot elevation, used only when no section prints one. */
+  framing?: boolean;
+  /** The buildings its sheet's drawings name — Bunkie's "EAST ELEVATION - WAREHOUSE" → WAREHOUSE (`buildingsOf`). */
+  buildings?: string[];
 };
+
+/**
+ * The building a drawing's caption names: what follows its last " - " or
+ * sits in its closing brackets — "FLOOR PLAN - WAREHOUSE", "FINISH FLOOR
+ * (ADDITION)". A number ("ELEVATION 1") or a drawing word is no building.
+ */
+export function buildingsOf(captions: readonly string[]): string[] {
+  const out = new Set<string>();
+  for (const c of captions) {
+    const tail = /\(([^()]+)\)\s*$/.exec(c)?.[1] ?? /\s[-–]\s+([^-–]+)$/.exec(c)?.[1];
+    const word = tail?.trim().toUpperCase().replace(/\s+/g, " ");
+    // A phase is not a building: Bunkie's AD101 is captioned "- DEMOLITION".
+    if (word && !/^\d+$/.test(word) && !/\b(?:TYP(?:ICAL)?|PLAN|SECTION|ELEVATION|DETAIL|N\.?T\.?S\.?|DEMO(?:LITION)?|EXISTING|NEW|PHASE)\b/.test(word)) out.add(word);
+  }
+  return [...out];
+}
 
 export type HeightConfidence = "HIGH" | "MEDIUM" | "LOW";
 
@@ -144,6 +171,8 @@ export function resolveHeight(input: {
   ownPhrases: readonly string[];
   generalNote: HeightFact | null;
   facts: readonly HeightFact[];
+  /** The buildings the plan sheet asking names (`buildingsOf` on its captions): picks the zone drawn for that building. */
+  buildings?: readonly string[];
 }): HeightReading {
   const HEIGHT_WORD = /HEIGHT|HIGH|TALL|\bHT\b|A\.?F\.?F|TOP OF WALL|EXTEND/i;
   const fromNote = input.heightNote ? heightBasis(input.heightNote) : null;
@@ -177,6 +206,9 @@ export function resolveHeight(input: {
   // The ceiling plan prints many tags; a soffit at 1'-0" must not stand in
   // for the room height. The commonest figure is the one a wall meets.
   const ceilingFact = ((): HeightFact | undefined => {
+    // A ceiling plan's own "ALL DROPPED CEILINGS ARE 8'-0" … U.N.O." is the answer it gives; the tags only tally.
+    const stated = input.facts.find((f) => f.kind === "ceiling-height" && f.feet !== null && f.label === "U.N.O.");
+    if (stated !== undefined) return stated;
     const tally = new Map<number, { n: number; fact: HeightFact }>();
     for (const f of input.facts) {
       if (f.kind !== "ceiling-height" || f.feet === null) continue;
@@ -194,30 +226,46 @@ export function resolveHeight(input: {
     case "fixed":
       return { code: input.code, basis, feet: basis.feet, from: via, confidence: grade(true), generalNoteOnly, why: `the legend prints ${basis.phrase}` };
     case "to-structure": {
-      // Sections that print two different deck heights are two zones, and
-      // which one a wall is under is a room question nobody has answered —
-      // so both are named and nothing is picked.
-      const distinct = (kind: HeightFact["kind"]) => {
-        const seen = new Map<number, HeightFact>();
-        for (const f of input.facts) if (f.kind === kind && f.feet !== null && !seen.has(f.feet)) seen.set(f.feet, f);
-        return [...seen.values()];
-      };
-      const decks = distinct("structure-elevation");
-      if (decks.length > 1) return unresolved(`"${basis.phrase}", but the sections print more than one structure height — ${decks.map((d) => `${d.sheet} ${d.phrase}`).join("; ")} — and which applies depends on the room`);
-      if (decks.length === 1) {
-        const deck = decks[0];
-        return { code: input.code, basis, feet: deck.feet, from: deck, confidence: grade(true), generalNoteOnly, why: `${chain}${generalNoteOnly ? "general note " : ""}"${basis.phrase}"; ${deck.sheet} prints ${deck.phrase}` };
+      // ── ONE LEVEL PER PART OF THE BUILDING, AND THE PARTS AS OPTIONS ──
+      //
+      // Round 14's key: Joplin's A, B and L run to 12'-0" under the lower
+      // roofs, 12'-4" in admin and 16'-8" in the central tower — the sections'
+      // LOWER BOD, ADMIN JBE and CENTRAL TOW; Bunkie's to 10'-0" in the main
+      // building and 14'-4" in the warehouses — T.O. WALL and T.O. WALL 2.
+      // Each zone takes its deck where it prints one, else its bearing line;
+      // a roof framing plan's spot elevations count only where no section or
+      // elevation prints a level at all. One height answers; several are
+      // options, one per part of the building, for the estimator to place.
+      const levels = input.facts.filter((f) => (f.kind === "structure-elevation" || f.kind === "bearing-elevation") && f.feet !== null);
+      const drawn = levels.some((f) => !f.framing) ? levels.filter((f) => !f.framing) : levels;
+      const byZone = new Map<string, HeightFact[]>();
+      for (const f of drawn) byZone.set(f.zone ?? "", [...(byZone.get(f.zone ?? "") ?? []), f]);
+      const perZone: HeightFact[] = [];
+      for (const facts of byZone.values()) {
+        const decks = facts.filter((f) => f.kind === "structure-elevation");
+        const pool = decks.length > 0 ? decks : facts;
+        // Two decks in one zone are both offered; nothing is picked between them.
+        perZone.push(...pool);
       }
-      // "T.O. WALL" / "TOP OF PLATE" is where the roof framing BEARS; the deck
-      // is higher by the joist depth, which nothing here reads. Offered as a
-      // floor on the height, at LOW, never as the height itself.
-      const bearings = distinct("bearing-elevation");
-      if (bearings.length > 1) return unresolved(`"${basis.phrase}", and the only elevations printed are bearing lines that disagree — ${bearings.map((d) => `${d.sheet} ${d.phrase}`).join("; ")}`);
-      if (bearings.length === 1) {
-        const b = bearings[0];
-        return { code: input.code, basis, feet: b.feet, from: b, confidence: "LOW", generalNoteOnly, why: `${chain}"${basis.phrase}"; ${b.sheet} prints ${b.phrase}, a BEARING line — the deck sits above it by the joist depth, which was not read` };
+      let distinct = [...new Map(perZone.sort((a, b) => (a.feet as number) - (b.feet as number)).map((f) => [Math.round((f.feet as number) * 12), f])).values()];
+      // ── THE PLAN SHEET'S OWN BUILDING ──
+      // Bunkie: T.O. WALL 2 14'-4" is printed on the "- WAREHOUSE" elevations,
+      // so a "FLOOR PLAN - WAREHOUSE" takes it; the addition's plan names a
+      // building no level sheet does, and takes the one zone that names none.
+      if (distinct.length > 1 && input.buildings !== undefined && input.buildings.length > 0) {
+        const named = (f: HeightFact) => levels.filter((g) => (g.zone ?? "") === (f.zone ?? "")).flatMap((g) => g.buildings ?? []);
+        const mine = distinct.filter((f) => named(f).some((b) => input.buildings!.includes(b)));
+        const unnamed = distinct.filter((f) => named(f).length === 0);
+        if (mine.length > 0) distinct = mine;
+        else if (unnamed.length === 1) distinct = unnamed;
       }
-      return unresolved(`"${basis.phrase}" needs the structure's elevation from a section, and none was read`);
+      if (distinct.length === 0) return unresolved(`"${basis.phrase}" needs the structure's elevation from a section, and none was read`);
+      const only = distinct.length === 1 ? distinct[0]! : null;
+      if (only !== null) {
+        const bearing = only.kind === "bearing-elevation";
+        return { code: input.code, basis, feet: only.feet, from: only, confidence: bearing ? "LOW" : grade(true), generalNoteOnly, why: `${chain}${generalNoteOnly ? "general note " : ""}"${basis.phrase}"; ${only.sheet} prints ${only.phrase}${bearing ? " (a bearing line: the deck may sit above it)" : ""}` };
+      }
+      return { ...unresolved(`"${basis.phrase}": the sections print ${distinct.length} levels by part of the building — ${distinct.map((d) => `${d.sheet} ${d.phrase}`).join("; ")} — one per zone, to place`), options: distinct };
     }
     case "to-ceiling": {
       const ceiling = ceilingFact;
@@ -274,8 +322,9 @@ export function heightFactsFromText(input: {
   const FEET = /^=?\s*(\d{1,4})\s*'\s*(?:[-–]\s*)?(?:(\d{1,2})(?:\s+(\d{1,2})\/(\d{1,2}))?)?\s*(?:"|''|”)?(?:\s*A\.?F\.?F\.?)?$/i;
   const INCHES = /^[-–]?\s*(\d{1,2})(?:\s+(\d{1,2})\/(\d{1,2}))?\s*(?:"|''|”)$/;
   const ZONE = String.raw`(?:\(E\)\s*)?(?:[A-Z]{2,}\s+){0,2}`;
-  const STRUCTURE = new RegExp(String.raw`^${ZONE}(?:(?:T\.?O\.?|TOP\s+OF)\s+(?:ROOF\s+)?(?:FRAMING|DECK(?:ING)?|STEEL|STRUCT(?:URE)?\.?|JOISTS?|SLAB)|(?:B\.?O\.?|BOTTOM\s+OF|U\/S|UNDERSIDE\s+OF)\s+(?:ROOF\s+)?(?:DECK(?:ING)?|STEEL|STRUCT(?:URE)?\.?|JOISTS?|SLAB|BEAM)|B\/(?:HIGH\s+|LOW\s+)?DECK(?:\s+EL\.?)?|B\.?O\.?D\.?)(?=\s|=|$)`, "i");
-  const BEARING = new RegExp(String.raw`^${ZONE}(?:(?:T\.?O\.?|TOP\s+OF)\s+(?:WALL|PLATE|BEARING|BRG\.?|MASONRY|CMU)|T\.?O\.?W\.?|J\.?B\.?E\.?)(?=\s|=|$)`, "i");
+  // T.O. and B.O. with their dots: "ANGLE ATTACHMENT TO JOIST" is not a top of joist (Joplin S-202).
+  const STRUCTURE = new RegExp(String.raw`^${ZONE}(?:(?:T\.\s?O\.?|T\/O|TOP\s+OF)\s+(?:ROOF\s+)?(?:FRAMING|DECK(?:ING)?|STEEL|STRUCT(?:URE)?\.?|JOISTS?|SLAB)|(?:B\.\s?O\.?|B\/O|BOTTOM\s+OF|U\/S|UNDERSIDE\s+OF)\s+(?:ROOF\s+)?(?:DECK(?:ING)?|STEEL|STRUCT(?:URE)?\.?|JOISTS?|SLAB|BEAM)|B\/(?:HIGH\s+|LOW\s+)?DECK(?:\s+EL\.?)?|B\.?O\.?D\.?)(?=\s|=|$)`, "i");
+  const BEARING = new RegExp(String.raw`^${ZONE}(?:(?:T\.\s?O\.?|T\/O|TOP\s+OF)\s+(?:WALL|PLATE|BEARING|BRG\.?|MASONRY|CMU)|T\.?O\.?W\.?|J\.?B\.?E\.?)(?=\s|=|$)`, "i");
   const CEILING_LABEL = /^(?:B\.?O\.?\s+)?(?:CLG|CEILING)\.?(?:\s*(?:HT|HEIGHT)\.?)?$/i;
   const DATUM = /^(?:(?:FIRST|1ST|GROUND|MAIN)\s+FLOOR|(?:FIN(?:ISH(?:ED)?)?\.?\s+)?(?:FIRST\s+)?FL(?:OO)?R\.?(?:\s+EL(?:EV(?:ATION)?)?\.?)?|(?:ARCHITECTURAL\s+)?F\.?F\.?E\.?|LEVEL\s+(?:1|ONE)|T\.?O\.?\s+(?:CONC(?:RETE)?\.?\s+)?SLAB(?:\s+EL(?:EV(?:ATION)?)?\.?)?)\s*(?:=|:)?\s*/i;
   const feetOf = (s: string): number | null => {
@@ -312,7 +361,10 @@ export function heightFactsFromText(input: {
     // "10'-0" A.F.F." in one item: a ceiling height tag.
     if (/A\.?F\.?F\.?$/i.test(i.str)) {
       const feet = feetOf(i.str);
-      if (feet !== null && feet <= 60) out.push({ kind: "ceiling-height", feet, sheet: input.sheet, phrase: i.str });
+      // Not beside a bulkhead, soffit or chase: Green Bay A11.2's "8' - 0" AFF"
+      // is "B.O BULKHEAD", how low the bulkhead comes, not a ceiling.
+      const hung = items.some((o) => o !== i && Math.abs(o.y - i.y) < 3 * i.height && Math.abs(o.x - i.x) < 200 && /\bBULKHEAD\b|\bSOFFIT\b|\bCHASE\b|^B\.\s?O\b/i.test(o.str));
+      if (feet !== null && feet <= 60 && !hung) out.push({ kind: "ceiling-height", feet, sheet: input.sheet, phrase: i.str });
       continue;
     }
     // A floor level with its figure in the same item: "ARCHITECTURAL FFE = 100'-0"".
@@ -331,7 +383,10 @@ export function heightFactsFromText(input: {
     const after = i.str.replace(kind === "structure-elevation" ? STRUCTURE : kind === "bearing-elevation" ? BEARING : CEILING_LABEL, "").trim();
     const inline = after === "" ? null : feetOf(after);
     const beside = inline !== null ? { value: inline, text: after } : figureBeside(i);
-    if (beside !== null && (kind !== "ceiling-height" || beside.value <= 60)) out.push({ kind, feet: beside.value, sheet: input.sheet, phrase: inline !== null ? i.str : `${i.str} ${beside.text}` });
+    if (beside === null || (kind === "ceiling-height" && beside.value > 60)) continue;
+    const lead = new RegExp(`^${ZONE}`, "i").exec(i.str)?.[0].replace(/\(E\)/i, "") ?? "";
+    const zone = kind === "ceiling-height" ? undefined : `${lead} ${inline === null ? after.replace(/^=\s*/, "") : ""}`.replace(/\s+/g, " ").trim().toUpperCase();
+    out.push({ kind, feet: beside.value, sheet: input.sheet, phrase: inline !== null ? i.str : `${i.str} ${beside.text}`, ...(zone === undefined ? {} : { zone }) });
   }
   return out;
 }
@@ -343,7 +398,8 @@ export function heightFactsFromText(input: {
  */
 export function labelledWallHeights(input: { sheet: string; items: readonly { str: string; x: number; y: number; height: number }[] }): HeightFact[] {
   const FIGURE = /^(\d{1,2})\s*'\s*[-–]?\s*(\d{1,2})?(?:\s+(\d{1,2})\/(\d{1,2}))?\s*(?:"|”)?$/;
-  const LABEL = /\bWALL\b|^AT\s+[A-Z]|\bBULKHEAD\b|\bPARTITION\b|\bSOFFIT\b/i;
+  // A bulkhead or soffit hangs from above: its dimension is how low it comes, not how high a wall goes.
+  const LABEL = /\bWALL\b|^AT\s+[A-Z]|\bPARTITION\b/i;
   const items = input.items.map((i) => ({ ...i, str: i.str.trim() })).filter((i) => i.str !== "");
   const out: HeightFact[] = [];
   for (const i of items) {
@@ -396,6 +452,22 @@ export function relativeToFloor(facts: readonly HeightFact[]): HeightFact[] {
 function floorLabel(feet: number): string {
   const whole = Math.floor(feet);
   return `${whole}'-${Math.round((feet - whole) * 12)}"`;
+}
+
+/**
+ * A ceiling plan's sentence for every ceiling — "ALL DROPPED CEILINGS ARE 8'-0"
+ * ABOVE FINISH FLOOR, UNLESS OTHERWISE NOTED." (Green Bay A4.0 note 2), printed
+ * across cells — as a ceiling height labelled U.N.O.
+ */
+export function ceilingNotesFromLines(sheet: string, lines: readonly string[]): HeightFact[] {
+  const out: HeightFact[] = [];
+  for (const line of lines) {
+    const joined = line.replace(/\s*\|\s*/g, " ");
+    const m = /\bALL\s+(?:(?:DROPPED|SUSPENDED|ACOUSTIC(?:AL)?|GYP(?:SUM)?\.?\s+BD\.?)\s+)?CEILINGS?\s+(?:ARE|SHALL\s+BE|TO\s+BE|AT)\s+(\d{1,2})\s*'\s*[-–]?\s*(\d{1,2})?\s*(?:"|'')?\s*(?:A\.?F\.?F\.?|ABOVE\s+FIN(?:ISH(?:ED)?)?\.?\s+FLOOR)/i.exec(joined);
+    if (m === null) continue;
+    out.push({ kind: "ceiling-height", feet: Number(m[1]) + (m[2] === undefined ? 0 : Number(m[2])) / 12, label: "U.N.O.", sheet, phrase: m[0] });
+  }
+  return out;
 }
 
 /** Lettered general notes on a sheet — "A. ALL WALLS WILL BE TO DECK ABOVE U.N.O." — by letter. */

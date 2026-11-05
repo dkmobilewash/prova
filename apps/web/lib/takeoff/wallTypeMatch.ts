@@ -113,6 +113,8 @@ export type MatchableWallType = {
   defaultHeightFt?: number | null;
   /** The legend's height for this type and where it came from, for Set height (`wallHeight.ts`). */
   legendHeight?: HeightOption | null;
+  /** The legend's height and its options by part of the building (`legendOptions`), for Set height. */
+  legendHeights?: HeightOption[];
   /**
    * Finish to finish, in inches, where the company has recorded one — #731.
    *

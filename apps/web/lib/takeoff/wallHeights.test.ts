@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { heightBasis, heightFactsFromText, labelledWallHeights, lettersNotesFromLines, relativeToFloor, resolveHeight, type HeightFact } from "./wallHeights";
+import { buildingsOf, ceilingNotesFromLines, heightBasis, heightFactsFromText, labelledWallHeights, lettersNotesFromLines, relativeToFloor, resolveHeight, type HeightFact } from "./wallHeights";
 
 /** Invented phrases in every SHAPE the sixteen training legends print (measured 2026-10-22); no real line is quoted. */
 describe("the words a legend uses for a wall's height", () => {
@@ -99,16 +99,32 @@ describe("the feet, from facts read elsewhere", () => {
     expect(got.from?.sheet).toBe("A111");
   });
 
-  it("refuses to pick between two deck heights, and offers a lone bearing line only as a LOW floor", () => {
+  it("refuses to pick between two deck heights — both are options — and offers a lone bearing line only as a LOW floor", () => {
     const low: HeightFact = { kind: "structure-elevation", feet: 10, sheet: "A130", phrase: "T.O. JOIST 10'" };
     const high: HeightFact = { kind: "structure-elevation", feet: 16.5, sheet: "A115", phrase: "B.O. ROOF DECK 16'-6\" AFF" };
     const two = resolveHeight({ code: "A1", ownPhrases: ["TO DECK"], generalNote: null, facts: [low, high] });
     expect(two.feet).toBeNull();
-    expect(two.why).toContain("more than one structure height");
+    expect(two.options?.map((f) => f.feet)).toEqual([10, 16.5]);
     const bearing: HeightFact = { kind: "bearing-elevation", feet: 10, sheet: "A300", phrase: "T.O. WALL 10' - 0\"" };
     const floor = resolveHeight({ code: "P09", ownPhrases: ["TO DECK"], generalNote: null, facts: [bearing] });
     expect(floor).toMatchObject({ feet: 10, confidence: "LOW" });
-    expect(floor.why).toContain("BEARING line");
+    expect(floor.why).toContain("bearing line");
+  });
+
+  it("one level per part of the building: a zone's deck, else its bearing line, sections over a framing plan's spots (Joplin, Bunkie)", () => {
+    const fact = (kind: HeightFact["kind"], feet: number, zone: string, sheet = "A-301", framing = false): HeightFact => ({ kind, feet, zone, sheet, phrase: `${zone} ${feet}`, ...(framing ? { framing } : {}) });
+    const joplin = resolveHeight({
+      code: "A",
+      ownPhrases: ["BOTTOM OF STRUCTURE"],
+      generalNote: null,
+      facts: [fact("structure-elevation", 12, "LOWER"), fact("bearing-elevation", 12 + 4 / 12, "ADMIN"), fact("bearing-elevation", 16 + 8 / 12, "CENTRAL"), fact("structure-elevation", 24.6, "", "S-102", true)],
+    });
+    expect(joplin.options?.map((f) => f.zone)).toEqual(["LOWER", "ADMIN", "CENTRAL"]);
+    // A zone with a deck does not also offer its bearing line.
+    const deckWins = resolveHeight({ code: "A", ownPhrases: ["TO DECK"], generalNote: null, facts: [fact("structure-elevation", 15, ""), fact("bearing-elevation", 14, "")] });
+    expect(deckWins.feet).toBe(15);
+    // With no section level at all, the framing plan's spot is what there is.
+    expect(resolveHeight({ code: "A", ownPhrases: ["TO DECK"], generalNote: null, facts: [fact("structure-elevation", 13, "", "S-102", true)] }).feet).toBe(13);
   });
 
   it("GUESSES NOTHING: a basis with no fact behind it stays unresolved and says what is missing", () => {
@@ -240,5 +256,44 @@ describe("\"see sheet X\" is followed (Grand Junction's types send every height 
     const elsewhere = resolveHeight({ code: "A1", ownPhrases: ["SEE SHEET A400 FOR WALL HEIGHTS"], generalNote: null, facts: elevations });
     expect(elsewhere.feet).toBeNull();
     expect(elsewhere.options).toBeUndefined();
+  });
+});
+
+describe("round 14: a part of the building, a plan sheet's building, and a ceiling plan's rule", () => {
+  it("reads the zone a level line is drawn for: Joplin's LOWER BOD, Bunkie's T.O. WALL 2", () => {
+    const facts = heightFactsFromText({
+      sheet: "A301",
+      items: [
+        { str: "LOWER BOD", x: 100, y: 100, height: 8 },
+        { str: "12'-0\"", x: 100, y: 112, height: 8 },
+        { str: "T.O. WALL 2", x: 400, y: 100, height: 8 },
+        { str: "14' - 4\"", x: 400, y: 112, height: 8 },
+        { str: "ANGLE ATTACHMENT TO JOIST", x: 700, y: 100, height: 8 },
+        { str: "9' - 2\"", x: 700, y: 112, height: 8 },
+      ],
+    });
+    expect(facts.map((f) => [f.kind, f.zone, f.feet])).toEqual([["structure-elevation", "LOWER", 12], ["bearing-elevation", "2", 14 + 4 / 12]]);
+  });
+
+  it("names a drawing's building from its caption, and takes the plan sheet's own zone", () => {
+    expect(buildingsOf(["FLOOR PLAN - WAREHOUSE", "FINISH FLOOR (ADDITION)", "NORTH ELEVATION 1", "FLOOR PLAN - DEMOLITION"])).toEqual(["WAREHOUSE", "ADDITION"]);
+    const main: HeightFact = { kind: "bearing-elevation", feet: 10, zone: "", sheet: "A300", phrase: "T.O. WALL 10'-0\"" };
+    const warehouse: HeightFact = { kind: "bearing-elevation", feet: 14 + 4 / 12, zone: "2", sheet: "A201", phrase: "T.O. WALL 2 14'-4\"", buildings: ["WAREHOUSE"] };
+    const ask = (buildings?: string[]) => resolveHeight({ code: "P08", ownPhrases: ["TO DECK"], generalNote: null, facts: [main, warehouse], ...(buildings ? { buildings } : {}) });
+    expect(ask().options?.map((f) => f.feet)).toEqual([10, 14 + 4 / 12]);
+    expect(ask(["WAREHOUSE"]).feet).toBeCloseTo(14 + 4 / 12, 6);
+    // The addition's plan names a building no level sheet does: the zone that names none is its.
+    expect(ask(["ADDITION"]).feet).toBe(10);
+  });
+
+  it("takes a ceiling plan's own 'ALL DROPPED CEILINGS ARE 8'-0\"' over its tags, and a bulkhead's A.F.F. is no ceiling (Green Bay A4.0)", () => {
+    const stated = ceilingNotesFromLines("A4.0", ["ACOUSTIC TILE CEILING | 2. | ALL DROPPED CEILINGS ARE 8' | - | 0\" ABOVE FINISH FLOOR, UNLESS OTHERWISE NOTED."]);
+    expect(stated).toHaveLength(1);
+    expect(stated[0]).toMatchObject({ kind: "ceiling-height", feet: 8, label: "U.N.O." });
+    const tags = heightFactsFromText({ sheet: "A4.0", items: [1, 2, 3].map((n) => ({ str: "9'-0\" A.F.F.", x: 100 * n, y: 100, height: 8 })) });
+    const rule = resolveHeight({ code: "IW-1", ownPhrases: [], generalNote: { kind: "note", feet: null, label: "9", text: "TERMINATE ALL PARTITIONS 8\" ABOVE HIGHEST ADJACENT CEILING PER", sheet: "A4.0", phrase: "9." }, facts: [...tags, ...stated] });
+    expect(rule.feet).toBeCloseTo(8 + 8 / 12, 6);
+    const bulkhead = heightFactsFromText({ sheet: "A11.2", items: [{ str: "8' - 0\" AFF", x: 100, y: 100, height: 8 }, { str: "B.O BULKHEAD", x: 100, y: 90, height: 8 }] });
+    expect(bulkhead).toEqual([]);
   });
 });

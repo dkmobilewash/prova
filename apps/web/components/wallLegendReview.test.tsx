@@ -108,8 +108,8 @@ describe("the wall legend review screen", () => {
   it("SHOWS EACH TYPE'S HEIGHT AND CONFIDENCE BEFORE ADD, in the row, with the general-note grade spelled out", () => {
     const out = render(true, [], {
       lp_1: {
-        P1: { heightFt: 15, confidence: "LOW", generalNoteOnly: true, sentence: "Height 15 ft (LOW — general note only, check the sheet): …" },
-        P2: { heightFt: null, confidence: null, generalNoteOnly: false, sentence: "No height read: to the deck, and no deck elevation was found." },
+        P1: { heightFt: 15, confidence: "LOW", generalNoteOnly: true, sentence: "Height 15 ft (LOW — general note only, check the sheet): …", options: [] },
+        P2: { heightFt: null, confidence: null, generalNoteOnly: false, sentence: "No height read: to the deck, and no deck elevation was found.", options: [] },
       },
     });
     const p1 = out.querySelector('[data-legend="type"][data-legend-code="P1"] [data-legend="height"]');

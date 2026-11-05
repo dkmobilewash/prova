@@ -10,8 +10,9 @@ import { sheetStrokes } from "../sheetStrokes";
 import { shapeFromLegend, tagSymbols } from "../tagSymbols";
 import { legendVocabulary, tagsFromSymbols } from "../symbolTagging";
 import { propagateTypes } from "../typePropagation";
-import { resolveHeight } from "../wallHeights";
-import { setHeightFacts } from "../setHeightFacts";
+import { buildingsOf, resolveHeight } from "../wallHeights";
+import { sheetViews } from "../sheetViews";
+import { heightOfLegendType, setHeightFacts } from "../setHeightFacts";
 import { tagByRun } from "../wallTags";
 import type { WallCandidate } from "../wallVectors";
 
@@ -78,11 +79,33 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || LEGEND_PAGE === 0)("
       return resolveHeight({ code: t.code, heightNote: s?.heightNote ?? null, ownPhrases: t.lines, generalNote, facts });
     });
     for (const r of readings) {
+      console.log(`HEIGHTJSON ${JSON.stringify({ set: SET, code: r.code, feet: r.feet, options: (r.options ?? []).map((f) => f.feet), why: r.why })}`);
       console.log(
         `  ${r.code.padEnd(14)} ${r.feet === null ? "   —  " : `${r.feet.toFixed(1).padStart(5)} ft`}  ${r.confidence.padEnd(6)} ${r.generalNoteOnly ? "GENERAL NOTE ONLY " : ""}${r.basis?.kind ?? "no basis"}: ${r.why}`,
       );
     }
     expect(readings.length).toBe(text.types.length);
+    // What the library writes (`legendHeightOf`), and the same for the plan sheet HEIGHT_PLAN's own building.
+    const planBuildings = PLAN_PAGE > 0 ? buildingsOf(sheetViews((await doc.pageText(PLAN_PAGE)).items, (await doc.pageText(PLAN_PAGE)).widthPt).map((v) => v.name)) : [];
+    for (const [tag, buildings] of [["PRODUCT_HEIGHTS_JSON", undefined], ["SHEET_HEIGHTS_JSON", planBuildings]] as const) {
+      console.log(`${tag} ${JSON.stringify(text.types.map((t) => {
+        const s = sight?.types.find((x: SightType) => x.code.toUpperCase() === t.code.toUpperCase());
+        const r = heightOfLegendType({ code: t.code, lines: t.lines, heightNote: s?.heightNote ?? null }, { facts, generalNote, factSheets }, buildings);
+        return { code: t.code, feet: r.feet, conf: r.feet === null ? null : r.confidence, gno: r.generalNoteOnly, options: (r.options ?? []).map((f) => f.feet), sentence: r.why.slice(0, 160) };
+      }))}`);
+    }
+
+    if (process.env.HEIGHT_PLANS) for (const f of facts.filter((f) => f.kind === "structure-elevation" || f.kind === "bearing-elevation")) console.log(`LEVEL ${f.sheet} zone=${JSON.stringify(f.zone)} buildings=${JSON.stringify(f.buildings ?? [])} ${f.phrase}`);
+    // ── PER PLAN SHEET: the zone the sheet's own building takes (HEIGHT_PLANS="31,35") ──
+    for (const page of (process.env.HEIGHT_PLANS ?? "").split(",").filter(Boolean).map(Number)) {
+      const t = await doc.pageText(page);
+      const buildings = buildingsOf(sheetViews(t.items, t.widthPt).map((v) => v.name));
+      for (const tp of text.types) {
+        const s = sight?.types.find((x: SightType) => x.code.toUpperCase() === tp.code.toUpperCase());
+        const r = resolveHeight({ code: tp.code, heightNote: s?.heightNote ?? null, ownPhrases: tp.lines, generalNote, facts, buildings });
+        console.log(`HEIGHTSHEET ${JSON.stringify({ set: SET, page, buildings, code: r.code, feet: r.feet, options: (r.options ?? []).map((f) => f.feet) })}`);
+      }
+    }
 
     // ── BAKER END TO END, WHEN A LABEL FILE IS GIVEN ──
     if (LABEL !== "" && PLAN_PAGE > 0 && sight !== null) {
