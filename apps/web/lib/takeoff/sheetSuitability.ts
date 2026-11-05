@@ -498,6 +498,12 @@ const NOT_WHAT_YOU_PRICE: ReadonlyArray<readonly [RegExp, number, string]> = [
   [/\bSECTION(S)?\b/i, -200, "a sections sheet"],
   [/\bSECT\.?\b/i, -200, "a section"],
   [/\bELEVATION(S)?\b/i, -200, "an elevations sheet"],
+  // ── DEMOLITION OUTRANKS THE KIND OF DRAWING IT IS ──
+  // Baker A001 carries a demolition plan and an exterior demolition elevation,
+  // and the sheet was called "an elevations sheet" (Diego, Chrome's re-test):
+  // ELEVATION was in this list and DEMO was not. What matters to an estimator
+  // is that every wall on it is coming out, so it sits below every other kind.
+  [/\bDEMO(LITION)?\b/i, -250, "a demolition drawing"],
   [/\bELEV\.?\b/i, -200, "an elevation"],
   // A SCHEDULE AND A DIAGRAM ARE NOT DRAWINGS YOU MEASURE, and both appear as
   // captioned views on a mixed sheet: A120 carries a TOILET ACCESSORIES

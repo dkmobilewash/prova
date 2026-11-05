@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { JobStepper } from "./JobStepper";
 import { jobSteps, type JobStepFacts } from "@/lib/job-steps";
 
-const base: JobStepFacts = { jobId: "j1", hasPlan: true, scaledSheets: 1, measurements: 0, wallsToConfirm: 0, lineItemCount: 0, signatureStatuses: [] };
+const base: JobStepFacts = { jobId: "j1", hasPlan: true, scaledSheets: 1, measurements: 0, wallsToConfirm: 0, lineItemCount: 0, unpricedLines: 0, signatureStatuses: [] };
 const html = (facts: Partial<JobStepFacts>) => {
   const { steps, next } = jobSteps({ ...base, ...facts });
   const host = document.createElement("div");

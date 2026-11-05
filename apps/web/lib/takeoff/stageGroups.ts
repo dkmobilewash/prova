@@ -90,10 +90,11 @@ export function groupsForStage(input: {
   const { found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes } = input;
   const tags = wallTypeTags(textItems, widthPt);
   const fromNote = defaultWallTypeFromNotes(textItems, wallTypes);
-  const byRun =
+  const read =
     legendCodes === null
-      ? tagByRun(found.walls, tags, feetPerUnit, wallTypes)
-      : planTextTagByRun({ segments: segmentsPt, text: textItems, widthPt, walls: found.walls, feetPerUnit, legendCodes, textTags: tags, wallTypes }).byRun;
+      ? { byRun: tagByRun(found.walls, tags, feetPerUnit, wallTypes), wallTypes: [...wallTypes] }
+      : planTextTagByRun({ segments: segmentsPt, text: textItems, widthPt, walls: found.walls, feetPerUnit, legendCodes, textTags: tags, wallTypes });
   const hatched = hatchedRuns(found.walls, found.inUnits, feetPerUnit);
-  return { groups: wallGroups(clusterByThickness(found.walls), byRun, wallTypes, fromNote, hatched), hatched };
+  // The types with the plan's tag variants (C6 of family C), so a variant tag names a type.
+  return { groups: wallGroups(clusterByThickness(found.walls), read.byRun, read.wallTypes, fromNote, hatched), hatched };
 }

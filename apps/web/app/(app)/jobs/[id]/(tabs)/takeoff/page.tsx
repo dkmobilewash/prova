@@ -30,6 +30,7 @@ import { loadTakeoffCurrency } from "@/lib/takeoff-currency-query";
 import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
 import { deleteTakeoffPlan } from "@/lib/actions";
 import { requireCapability } from "@/lib/authz";
+import { loadTakeoffPostDraft } from "@/lib/ask/drafts";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
 import { printedScalesFromProposals, scalePrefillsFromReadings,
   scaleDeclinesFromReadings,
@@ -114,11 +115,22 @@ export const maxDuration = 300;
  * derived on each render from the traced geometry and the sheet's calibration,
  * by the same pure module the Server Action re-runs before it writes anything.
  */
-export default async function JobTakeoffPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function JobTakeoffPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ draft?: string }>;
+}) {
   const { id } = await params;
   const { context, allowed } = await requireCapability("VIEW_JOB_COSTS");
   if (!allowed) return <NoAccess capability="VIEW_JOB_COSTS" />;
   const { company, job } = await requireJobGivenContext(id, context);
+  // A card from the Ask box: one sheet's unposted measurements open ticked,
+  // and the list's own Add is the write (lib/ask/commands/takeoff.ts).
+  const draftId = (await searchParams)?.draft;
+  const askLookup = draftId ? await loadTakeoffPostDraft(context, draftId, job.id) : null;
+  const postDraft = askLookup?.kind === "draft" ? askLookup.draft : undefined;
 
   // Whether what was measured came off current drawings. Loaded beside the
   // plan rather than after it: the answer belongs above the measurements, and
@@ -422,6 +434,7 @@ export default async function JobTakeoffPage({ params }: { params: Promise<{ id:
           <TakeoffMeasurementList
             jobId={job.id}
             sheet={sheet}
+            askDraft={postDraft?.pageId === sheet.id ? postDraft : undefined}
             // Decimal does not cross into a client component.
             wallTypes={postableWallTypes.map((type) => ({
               id: type.id,

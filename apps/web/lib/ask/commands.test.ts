@@ -42,6 +42,7 @@ const OPEN_HANDOFF_PAGES: Record<string, string> = {
  * `can(principal, "MANAGE_BILLING")` (lib/jobs/job-access.ts).
  */
 const JOB_TAB_GUARDS: Record<string, { file: string; guard: (cap: string) => RegExp }> = {
+  takeoff: { file: "../../app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx", guard: (cap) => new RegExp(`requireCapability\\("${cap}"\\)`) },
   buyout: { file: "../../app/(app)/jobs/[id]/buyout/page.tsx", guard: (cap) => new RegExp(`requireCapability\\("${cap}"\\)`) },
   billing: {
     file: "../../app/(app)/jobs/[id]/(tabs)/billing/page.tsx",
@@ -194,6 +195,8 @@ describe("who is offered what", () => {
       "find_bid_leads",
       "start_change_order",
       "draft_purchase_order",
+      "run_takeoff",
+      "post_takeoff_to_estimate",
     ]);
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_items");
     // Writing the crew schedule is MANAGE_FIELD, which an estimator lacks.
@@ -228,10 +231,15 @@ describe("who is offered what", () => {
       "start_pay_application",
       "bill_retainage",
       "prepare_lien_waiver",
+      "run_takeoff",
+      "post_takeoff_to_estimate",
     ]);
     for (const command of commandsFor(ACCOUNTING)) {
       expect(["MANAGE_BILLING", "VIEW_JOB_COSTS"], command.name).toContain(command.capability);
-      expect(command.tier, command.name).toBe("T3_MONEY_EVIDENCE");
+      // The two takeoff cards are drafts (a run whose walls are reviewed on the
+      // page, lines added from it); everything else accounting gets is money.
+      const takeoff = command.name === "run_takeoff" || command.name === "post_takeoff_to_estimate";
+      expect(command.tier, command.name).toBe(takeoff ? "T1_DRAFT" : "T3_MONEY_EVIDENCE");
     }
   });
 

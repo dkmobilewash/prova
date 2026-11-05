@@ -299,7 +299,7 @@ const HATCH_PITCH_RULE = process.env.NEXT_PUBLIC_TAKEOFF_HATCH_PITCH === "1";
 
 /** What the full-screen workspace's Select arrow can pick out. */
 export type ViewerSelection =
-  | { kind: "group"; key: string; name: string; runs: number; feet: number }
+  | { kind: "run"; layer: string; feet: number; ofRuns: number }
   | { kind: "shape"; id: string; itemId: string | null; label: string | null; measure: string };
 
 export function TakeoffPlanViewer({
@@ -332,6 +332,7 @@ export function TakeoffPlanViewer({
   onPageChange,
   fill = false,
   panelOpen = true,
+  openReview = false,
   onResults,
   readOnly = false,
   roomFinder = false,
@@ -418,6 +419,8 @@ export function TakeoffPlanViewer({
    * canvas takes the space it gives up.
    */
   panelOpen?: boolean;
+  /** Needs review starts open (the job stepper's Review). */
+  openReview?: boolean;
   /**
    * A Find the estimator pressed has come back. The workspace opens its rail on
    * this: results live in that rail and it starts closed, so without it a Find
@@ -1073,6 +1076,8 @@ export function TakeoffPlanViewer({
   // are left off the drawing; and the slots are where the shell's pieces of
   // the old toolbar are portalled to, set by ref once they exist.
   const [litLayer, setLitLayer] = useState<string | null>(null);
+  /** What the Select arrow picked on the plan: ONE run, or one drawn shape. */
+  const [picked, setPicked] = useState<{ kind: "run"; x1: number; y1: number; x2: number; y2: number; feet: number } | { kind: "shape"; id: string } | null>(null);
   const [hiddenLayers, setHiddenLayers] = useState<ReadonlySet<string>>(new Set());
   const [railMore, setRailMore] = useState(false);
   const pickToolRef = useRef<(key: string) => void>(() => {});
@@ -1130,8 +1135,13 @@ export function TakeoffPlanViewer({
   const [frameWidth, setFrameWidth] = useState(0);
   const [frameHeight, setFrameHeight] = useState(0);
   const [cssWidth, setCssWidth] = useState(0);
+  // One screen pixel in page units. The overlay's viewBox is the page, so a
+  // radius in page units grows with zoom; dots and handles are sized in these
+  // instead and stay the same on screen at any zoom.
+  const onePx = 1 / Math.max(cssWidth, 1);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
   // ── DRAGGING PAST WHAT IS SHOWING ──
   // The overlay, so a scroll can replay the last pointer position into it; the
   // last position itself; whether the button is down on the drawing; and
@@ -1139,7 +1149,9 @@ export function TakeoffPlanViewer({
   const overlayRef = useRef<SVGSVGElement | null>(null);
   const lastPointerRef = useRef<{ x: number; y: number; id: number } | null>(null);
   const pressedRef = useRef(false);
+  const pressStartRef = useRef<{ x: number; y: number } | null>(null);
   const dragOnRef = useRef(false);
+  const toolRef = useRef<ToolId>("pan");
   const docRef = useRef<{ numPages: number; getPage: (n: number) => Promise<unknown> } | null>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
 
@@ -1523,39 +1535,67 @@ export function TakeoffPlanViewer({
   const zoomFactorRef = useRef(zoomFactor);
   zoomFactorRef.current = zoomFactor;
 
-  // ── THE WHEEL SCROLLS; CTRL/⌘+WHEEL AND A PINCH ZOOM ──
+  // ── THE WHEEL ZOOMS ABOUT THE POINTER, SMOOTHLY; A TRACKPAD PANS AND PINCHES ──
   //
-  // A plain wheel moves the sheet up and down and Shift+wheel sideways — the
-  // frame's own scrolling, which every browser already does. Ctrl or ⌘ with the
-  // wheel, and a trackpad pinch (which arrives as a wheel event with ctrlKey
-  // set), zoom about the pointer. A wheel notch (deltaY about 100) is a step of
-  // about 11%; a pinch's small deltas make small steps. Throttled, because
-  // every step re-renders the sheet.
-  const wheelAnchor = useRef<{ fx: number; fy: number; px: number; py: number } | null>(null);
+  // Chrome's re-test and Diego, Togal/Bluebeam style: a mouse wheel zooms about
+  // the cursor; a trackpad's two-finger scroll pans (the frame's own scrolling)
+  // and a pinch — a wheel event with ctrlKey set — zooms. Ctrl/⌘ with a wheel
+  // zooms too. A mouse is told from a trackpad by its notches: a line-mode
+  // delta, or wheelDeltaY a whole multiple of 120 with no sideways part.
+  //
+  // SMOOTH because nothing re-renders mid-gesture: the sheet is scaled with a
+  // CSS transform about the point under the pointer, which keeps that point
+  // still. 160ms after the wheel stops, the zoom is committed; the sheet is
+  // rendered off-screen and swapped in, and the transform is taken off in the
+  // same frame as the scroll is set — so there is no blank canvas and no jump.
+  const previewRef = useRef<{ scale: number; fx: number; fy: number; px: number; py: number; zoomAtStart: number; widthAtStart: number; timer: number } | null>(null);
   useEffect(() => {
     const frame = frameRef.current;
     if (!fill || frame === null) return;
-    let last = 0;
     const onWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return;
+      const sheet = sheetRef.current;
+      if (sheet === null) return;
+      const legacy = (event as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY ?? 0;
+      // ponytail: a heuristic. A trackpad stroke that happens to land on an
+      // exact multiple of 120 with no sideways part reads as one mouse notch;
+      // add a per-device setting if anyone meets it.
+      const mouse = event.deltaMode !== 0 || (event.deltaX === 0 && legacy !== 0 && legacy % 120 === 0);
+      const pinch = event.ctrlKey || event.metaKey;
+      if (!mouse && !pinch) return;
       event.preventDefault();
-      const now = performance.now();
-      if (now - last < 40) return;
-      last = now;
-      const box = frame.getBoundingClientRect();
-      const px = event.clientX - box.left;
-      const py = event.clientY - box.top;
-      wheelAnchor.current = {
-        fx: (frame.scrollLeft + px) / Math.max(1, frame.scrollWidth),
-        fy: (frame.scrollTop + py) / Math.max(1, frame.scrollHeight),
-        px,
-        py,
-      };
+      let live = previewRef.current;
+      if (live === null) {
+        const sb = sheet.getBoundingClientRect();
+        const fb = frame.getBoundingClientRect();
+        const width = Math.max(1, sb.width);
+        live = {
+          scale: 1,
+          fx: (event.clientX - sb.left) / width,
+          fy: (event.clientY - sb.top) / width,
+          px: event.clientX - fb.left,
+          py: event.clientY - fb.top,
+          zoomAtStart: zoomFactorRef.current,
+          widthAtStart: width,
+          timer: 0,
+        };
+        previewRef.current = live;
+        sheet.style.transformOrigin = `${live.fx * width}px ${live.fy * width}px`;
+      }
       const lines = event.deltaMode === 1 ? event.deltaY * 33 : event.deltaY;
-      const factor = Math.min(1.15, Math.max(1 / 1.15, Math.exp(-lines * 0.0012)));
       const lowest = ZOOM_STEPS[0]!;
       const highest = ZOOM_STEPS[ZOOM_STEPS.length - 1]!;
-      setZoom(Math.min(highest, Math.max(lowest, zoomFactorRef.current * factor)));
+      live.scale = Math.min(highest / live.zoomAtStart, Math.max(lowest / live.zoomAtStart, live.scale * Math.min(1.25, Math.max(0.8, Math.exp(-lines * (Math.abs(lines) < 50 ? 0.01 : 0.0015))))));
+      sheet.style.transform = `scale(${live.scale})`;
+      window.clearTimeout(live.timer);
+      const settling = live;
+      live.timer = window.setTimeout(() => {
+        if (Math.abs(settling.scale - 1) < 0.001) {
+          previewRef.current = null;
+          sheet.style.transform = "";
+          return;
+        }
+        setZoom(settling.zoomAtStart * settling.scale);
+      }, 160);
     };
     frame.addEventListener("wheel", onWheel, { passive: false });
     return () => frame.removeEventListener("wheel", onWheel);
@@ -1567,16 +1607,32 @@ export function TakeoffPlanViewer({
       return node !== null && (node.tagName === "INPUT" || node.tagName === "TEXTAREA" || node.tagName === "SELECT" || node.isContentEditable);
     };
     const down = (event: KeyboardEvent) => {
-      if (typing(event.target)) return;
+      // Esc leaves Set scale from its own distance box too: that box is where
+      // the cursor is once both ends are down.
+      if (typing(event.target) && !(event.key === "Escape" && toolRef.current === "calibrate")) return;
       if (event.key === " " && !event.repeat) {
         event.preventDefault();
         spaceRef.current = true;
         setSpaceHeld(true);
       }
-      // Esc lets go of what the arrow picked, when nothing is being drawn.
-      if (event.key === "Escape" && draftLengthRef.current === 0) {
-        setLitLayer(null);
-        onSelectRef.current?.(null);
+      // ── ESC STEPS BACK TO SELECT (Chrome's re-test) ──
+      // A half-drawn shape goes first; with none, a tool other than Select —
+      // Set scale, or anything from "⋯" — is put down; with Select already
+      // in hand, what it picked is let go. Set scale is left in one press even
+      // mid-line, because a half-set scale is never worth keeping.
+      if (event.key === "Escape") {
+        const current = toolRef.current;
+        if (draftLengthRef.current > 0 && current !== "calibrate") {
+          setDraft(EMPTY);
+        } else if (current !== "pan") {
+          setDraft(EMPTY);
+          setTool("pan");
+          setRailMore(false);
+        } else {
+          setLitLayer(null);
+          setPicked(null);
+          onSelectRef.current?.(null);
+        }
       }
     };
     const up = (event: KeyboardEvent) => {
@@ -1642,13 +1698,27 @@ export function TakeoffPlanViewer({
   }, []);
   // Once the sheet has its new size, put the point that was under the pointer
   // back under it — so a wheel zooms INTO what you are looking at.
+  // What the new render did not cover of the gesture stays as a transform.
   useLayoutEffect(() => {
-    const anchor = wheelAnchor.current;
+    const live = previewRef.current;
     const frame = frameRef.current;
-    if (anchor === null || frame === null) return;
-    wheelAnchor.current = null;
-    frame.scrollLeft = anchor.fx * frame.scrollWidth - anchor.px;
-    frame.scrollTop = anchor.fy * frame.scrollHeight - anchor.py;
+    const sheet = sheetRef.current;
+    if (live === null || frame === null || sheet === null || cssWidth === 0) return;
+    const applied = cssWidth / live.widthAtStart;
+    live.scale /= applied;
+    live.zoomAtStart *= applied;
+    live.widthAtStart = cssWidth;
+    sheet.style.transform = "";
+    const sb = sheet.getBoundingClientRect();
+    const fb = frame.getBoundingClientRect();
+    frame.scrollLeft += sb.left + live.fx * cssWidth - (fb.left + live.px);
+    frame.scrollTop += sb.top + live.fy * cssWidth - (fb.top + live.py);
+    if (Math.abs(live.scale - 1) < 0.01) {
+      previewRef.current = null;
+      return;
+    }
+    sheet.style.transformOrigin = `${live.fx * cssWidth}px ${live.fy * cssWidth}px`;
+    sheet.style.transform = `scale(${live.scale})`;
   }, [cssWidth]);
 
   // ── Render the current page at the current zoom ───────────────────────
@@ -1692,19 +1762,28 @@ export function TakeoffPlanViewer({
           devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
         });
         const viewport = page.getViewport({ scale: plan.renderScale });
+        // ── DRAWN OFF-SCREEN, THEN SWAPPED IN ──
+        // Resizing the visible canvas clears it, so every zoom step showed a
+        // blank sheet until pdf.js finished — the flicker in Chrome's re-test.
+        // The old picture stays up until the new one is whole.
+        const off = document.createElement("canvas");
+        off.width = plan.canvasWidth;
+        off.height = plan.canvasHeight;
+        const offContext = off.getContext("2d");
+        if (!offContext) return;
+        const task = page.render({ canvasContext: offContext, viewport });
+        renderTaskRef.current = task;
+        await task.promise;
+        if (cancelled) return;
         canvas.width = plan.canvasWidth;
         canvas.height = plan.canvasHeight;
         // The CSS size is what was asked for and is never reduced, so the
         // overlay's coordinates and the scroll position do not move.
         canvas.style.width = `${plan.cssWidth}px`;
         canvas.style.height = `${plan.cssHeight}px`;
+        canvas.getContext("2d")?.drawImage(off, 0, 0);
+        off.width = 0;
         setCssWidth(plan.cssWidth);
-
-        const canvasContext = canvas.getContext("2d");
-        if (!canvasContext) return;
-        const task = page.render({ canvasContext, viewport });
-        renderTaskRef.current = task;
-        await task.promise;
         // THE SHEET IS ON SCREEN NOW, so "Drawing…" goes. The words below are
         // read for the demolition check only; holding the indicator through
         // them made a word-heavy sheet read as still drawing (round 10b).
@@ -1739,6 +1818,28 @@ export function TakeoffPlanViewer({
   useEffect(() => {
     setDraft(EMPTY);
   }, [pageNumber, tool]);
+  // ── A NEW HINT IN THE PANEL IS SCROLLED TO ──
+  // With the panel scrolled down, a message docked at its top arrived out of
+  // sight and read as a button that did nothing (Chrome's re-test).
+  useEffect(() => {
+    const targets = [dockSlot, sideSlot].filter((node): node is HTMLElement => node !== null);
+    if (targets.length === 0) return;
+    const observer = new MutationObserver((changes) => {
+      for (const change of changes) {
+        for (const node of change.addedNodes) {
+          if (node instanceof HTMLElement) node.scrollIntoView({ block: "nearest" });
+        }
+      }
+    });
+    for (const target of targets) observer.observe(target, { childList: true });
+    return () => observer.disconnect();
+  }, [dockSlot, sideSlot]);
+  // A pick belongs to its sheet: another sheet lets go of it, and of the strip.
+  useEffect(() => {
+    setPicked(null);
+    setLitLayer(null);
+    onSelectRef.current?.(null);
+  }, [pageNumber]);
 
 
   const aspect = pageSize ? pageSize.heightPt / pageSize.widthPt : 1.294;
@@ -2050,6 +2151,14 @@ export function TakeoffPlanViewer({
       }) ?? null
     );
   }
+  function nearEdge(raw: { x: number; y: number }, m: { xs: number[]; ys: number[] }, reach: number) {
+    for (let i = 0; i < m.xs.length; i += 1) {
+      const j = (i + 1) % m.xs.length;
+      const near = nearestOnSegment(raw, m.xs[i]!, m.ys[i]!, m.xs[j]!, m.ys[j]!);
+      if (Math.hypot(near.x - raw.x, near.y - raw.y) <= reach) return true;
+    }
+    return false;
+  }
   /** A drawn shape's quantity, in words, at this sheet's scale. */
   function measureOf(m: { kind: MeasurementKind; xs: number[]; ys: number[] }): string {
     if (m.kind === "COUNT") return `${m.xs.length} ea`;
@@ -2134,44 +2243,50 @@ export function TakeoffPlanViewer({
       setKeyBox({ x1: raw.x, y1: raw.y, x2: raw.x, y2: raw.y });
       return;
     }
-    // ── THE SELECT ARROW PICKS WHAT IT IS CLICKED ON ──
+    // ── THE SELECT ARROW PICKS ONE THING: THE RUN OR SHAPE UNDER IT ──
     //
-    // A drawn shape first (it is what somebody made), then the nearest found
-    // run, which lights its whole layer; a click on nothing lets go of both.
-    // The reach is ten SCREEN pixels, so it is the same at every zoom.
+    // Chrome's re-test: a click lit the whole group, or the room drawn under
+    // the run. Now the order is what the pointer is ON: a drawn shape's own
+    // line, then the nearest single found run, and only then the inside of a
+    // room. A click on nothing lets go. The reach is ten SCREEN pixels.
     if (fill && tool === "pan") {
       const raw = pointAt(event);
       if (!raw) return;
       const width = (event.currentTarget as Element).getBoundingClientRect().width;
       const reach = width > 0 ? 10 / width : PICK_RADIUS;
       const shape = measurementAt(raw);
-      if (shape !== null) {
+      const onEdge = shape !== null && !(shape.kind === "AREA" && pointInRing(raw.x, raw.y, shape.xs, shape.ys) && !nearEdge(raw, shape, reach));
+      const pickShape = (m: NonNullable<typeof shape>) => {
         setLitLayer(null);
-        onSelect?.({ kind: "shape", id: shape.id, itemId: shape.itemId ?? null, label: shape.label, measure: measureOf(shape) });
-        return;
-      }
-      let best: { group: WallGroup; distance: number } | null = null;
+        setPicked({ kind: "shape", id: m.id });
+        onSelect?.({ kind: "shape", id: m.id, itemId: m.itemId ?? null, label: m.label, measure: measureOf(m) });
+      };
+      if (shape !== null && onEdge) return pickShape(shape);
+      let best: { group: WallGroup; run: WallGroup["runs"][number]; distance: number } | null = null;
       for (const { group } of ordered) {
         if (hiddenLayers.has(layerKeyOf(group))) continue;
         for (const run of group.runs) {
           const near = nearestOnSegment(raw, run.x1, run.y1, run.x2, run.y2);
           const distance = Math.hypot(near.x - raw.x, near.y - raw.y);
-          if (distance <= reach && (best === null || distance < best.distance)) best = { group, distance };
+          if (distance <= reach && (best === null || distance < best.distance)) best = { group, run, distance };
         }
       }
       if (best !== null) {
         const key = layerKeyOf(best.group);
-        setLitLayer(key);
+        const feet = Math.hypot(best.run.x2 - best.run.x1, best.run.y2 - best.run.y1) * (feetPerUnit ?? 0);
+        setLitLayer(null);
+        setPicked({ kind: "run", x1: best.run.x1, y1: best.run.y1, x2: best.run.x2, y2: best.run.y2, feet });
         onSelect?.({
-          kind: "group",
-          key,
-          name: layerNames[key] ?? defaultLayerName(best.group, new Map((takeoffItems ?? []).map((item) => [item.id, item.name]))),
-          runs: best.group.runs.length,
-          feet: best.group.feet,
+          kind: "run",
+          layer: layerNames[key] ?? defaultLayerName(best.group, new Map((takeoffItems ?? []).map((item) => [item.id, item.name]))),
+          feet,
+          ofRuns: best.group.runs.length,
         });
         return;
       }
+      if (shape !== null) return pickShape(shape);
       setLitLayer(null);
+      setPicked(null);
       onSelect?.(null);
       return;
     }
@@ -4006,6 +4121,7 @@ export function TakeoffPlanViewer({
 
   findRef.current = onFindWalls;
   draftLengthRef.current = draft.xs.length;
+  toolRef.current = tool;
   dragOnRef.current =
     rectDragRef.current !== null ||
     symbolBox !== null ||
@@ -4021,6 +4137,11 @@ export function TakeoffPlanViewer({
    *  is written. */
   const slot = (target: HTMLElement | null | undefined, node: React.ReactNode) =>
     fill && target ? createPortal(node, target) : node;
+  /** Like `slot`, but in the shell it is ONLY ever docked: with no place made
+   *  for it yet, it waits rather than landing unstyled at the plan's top-left
+   *  (Chrome's re-test: a bare "Walls on this sheet: 698 ft" up there). */
+  const dock = (target: HTMLElement | null | undefined, node: React.ReactNode) =>
+    fill ? (target ? createPortal(node, target) : null) : node;
   /** Messages and the draft card dock in the panel, never over the drawing;
    *  with the panel collapsed, small at the canvas's bottom-left. */
   const noticeTarget = panelOpen ? dockSlot : noticeSlot;
@@ -4102,8 +4223,10 @@ export function TakeoffPlanViewer({
     fill ? ordered.filter(({ group }) => hiddenLayers.has(layerKey(group))).map(({ index }) => index) : [],
   );
   const litGroup = fill ? (ordered.find(({ group }) => layerKey(group) === litLayer) ?? null) : null;
-  /** The lit layer's readout, pinned to the middle of its longest run. */
+  /** The lit layer's readout, pinned to the middle of its longest run — or the
+   *  one picked run's own length. */
   const litReadout = (() => {
+    if (picked?.kind === "run") return { x: (picked.x1 + picked.x2) / 2, y: (picked.y1 + picked.y2) / 2, text: formatFeetInches(picked.feet) };
     if (litGroup === null || litGroup.group.runs.length === 0) return null;
     const run = litGroup.group.runs.reduce((a, b) =>
       Math.hypot(b.x2 - b.x1, b.y2 - b.y1) > Math.hypot(a.x2 - a.x1, a.y2 - a.y1) ? b : a,
@@ -4769,6 +4892,7 @@ export function TakeoffPlanViewer({
       {slot(panelOpen ? reviewSlot : noticeTarget, answerKey === undefined && !readOnly && feetPerUnit !== null && (
         <TakeoffHeldWalls
           asRow={fill && panelOpen}
+          defaultOpen={openReview}
           onHover={setHeldHover}
           onShow={(id) => setHeldShown({ id, at: Date.now() })}
           walls={(sheet?.measurements ?? [])
@@ -4787,7 +4911,7 @@ export function TakeoffPlanViewer({
         </p>
       ))}
       {/* In the panel, never over the plan ("This sheet shows existing work…"). */}
-      {slot(sideSlot, answerKey === undefined && (
+      {dock(panelOpen ? sideSlot : noticeSlot, answerKey === undefined && (
         <TakeoffExclusionBar
           feet={found === null ? null : found.reduce((sum, group) => sum + group.feet, 0)}
           aside={userAside}
@@ -5614,7 +5738,7 @@ export function TakeoffPlanViewer({
           // is room to spare, and when there is not it leaves the overflow at
           // the end where the scrollbar can reach it.
           <div className={fill ? "flex min-h-full min-w-full" : ""}>
-          <div className={`relative w-fit${fill ? " m-auto" : ""}`}>
+          <div ref={sheetRef} className={`relative w-fit${fill ? " m-auto" : ""}`}>
             <canvas ref={canvasRef} className="block" />
             {/* The lit layer's length, on the drawing beside the run it names. */}
             {litReadout !== null && cssWidth > 0 && (
@@ -5642,21 +5766,30 @@ export function TakeoffPlanViewer({
               data-takeoff={answerKey?.tracing === true ? "tracing-surface" : undefined}
               ref={overlayRef}
               onPointerDown={(event) => {
-                // HOLD THE POINTER for the whole drag, so leaving the visible
-                // plan (where the auto-pan is) does not drop the box.
+                // The pointer is HELD once a drag is under way (see the move
+                // handler), so leaving the visible plan does not drop the box.
                 if (event.button === 0 && !spaceRef.current) {
                   pressedRef.current = true;
                   lastPointerRef.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
-                  try {
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                  } catch {
-                    // A synthetic event has no real pointer to capture.
-                  }
+                  pressStartRef.current = { x: event.clientX, y: event.clientY };
                 }
                 onPointerDown(event);
               }}
               onPointerMove={(event) => {
                 if (event.isTrusted) lastPointerRef.current = { x: event.clientX, y: event.clientY, id: event.pointerId };
+                // ── CAPTURED ONLY ONCE IT IS A DRAG ──
+                // Capturing on the press sent every plain click to the overlay
+                // instead of what is under it, so a count's mark stopped
+                // dropping when clicked (click list A5, a regression from #971).
+                const start = pressStartRef.current;
+                if (event.isTrusted && start !== null && pressedRef.current && (event.buttons & 1) === 1 && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) {
+                  pressStartRef.current = null;
+                  try {
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                  } catch {
+                    // Nothing to capture on a pointer that has gone.
+                  }
+                }
                 const corner = rectDragRef.current;
                 if (corner !== null && tool === "rect" && (event.buttons & 1) === 1) {
                   const raw = pointAt(event);
@@ -6085,7 +6218,7 @@ export function TakeoffPlanViewer({
                           strokeWidth={lit ? STROKE_PX * 3 : STROKE_PX * 1.5}
                           vectorEffect="non-scaling-stroke"
                         />
-                        <circle cx={d.hinge.x} cy={d.hinge.y} r={lit ? 0.004 : 0.0025} fill={d.wall === null ? "#c026d3" : "#2563eb"} />
+                        <circle cx={d.hinge.x} cy={d.hinge.y} r={(lit ? 4 : 2.5) * onePx} fill={d.wall === null ? "#c026d3" : "#2563eb"} />
                       </g>
                     );
                   })}
@@ -6133,7 +6266,7 @@ export function TakeoffPlanViewer({
               {demo?.page === pageNumber && demo.read !== null && (
                 <g data-takeoff="demo-overlay">
                   {demo.read.runs.map((r, i) => !demoDropped.has(i) && <line key={`${r.x1}:${r.y1}`} x1={r.x1} y1={r.y1} x2={r.x2} y2={r.y2} stroke="#dc2626" strokeWidth={STROKE_PX + 1} vectorEffect="non-scaling-stroke" />)}
-                  {demo.read.doors.map((d) => <circle key={`${d.x}:${d.y}`} cx={d.x} cy={d.y} r={0.006} fill="none" stroke="#dc2626" strokeWidth={STROKE_PX} vectorEffect="non-scaling-stroke" />)}
+                  {demo.read.doors.map((d) => <circle key={`${d.x}:${d.y}`} cx={d.x} cy={d.y} r={6 * onePx} fill="none" stroke="#dc2626" strokeWidth={STROKE_PX} vectorEffect="non-scaling-stroke" />)}
                 </g>
               )}
               {symbols !== null && symbols.page === pageNumber && symbols.choices && (
@@ -6251,6 +6384,7 @@ export function TakeoffPlanViewer({
                       xs={xs}
                       ys={ys}
                       colour={editing ? "#f59e0b" : m.postedAt ? "#6b7280" : "#38bdf8"}
+                      onePx={onePx}
                     />
                     {/* ── OPENINGS TAKEN OFF THIS AREA ──
                         Drawn as their own outlines rather than as a hole in
@@ -6279,7 +6413,7 @@ export function TakeoffPlanViewer({
                           key={i}
                           cx={x}
                           cy={ys[i]}
-                          r={0.007}
+                          r={7 * onePx}
                           fill="#f59e0b"
                           stroke="#0f172a"
                           strokeWidth={STROKE_PX / 2}
@@ -6323,6 +6457,37 @@ export function TakeoffPlanViewer({
               />
               {/* The held run under the pointer in Needs review: amber and wide,
                   so it stands out of everything else on the sheet. */}
+              {/* What the Select arrow picked: one run or one shape, outlined. */}
+              {picked?.kind === "run" && (
+                <line
+                  data-takeoff="picked-outline"
+                  x1={picked.x1}
+                  y1={picked.y1}
+                  x2={picked.x2}
+                  y2={picked.y2}
+                  stroke="#2563eb"
+                  strokeWidth={STROKE_PX * 4}
+                  strokeOpacity={0.6}
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+              {picked?.kind === "shape" &&
+                (sheet?.measurements ?? [])
+                  .filter((m) => m.id === picked.id)
+                  .map((m) => (
+                    <polyline
+                      key={m.id}
+                      data-takeoff="picked-outline"
+                      points={[...m.xs.map((x, i) => `${x},${m.ys[i]}`), ...(m.kind === "AREA" ? [`${m.xs[0]},${m.ys[0]}`] : [])].join(" ")}
+                      fill="none"
+                      stroke="#2563eb"
+                      strokeWidth={STROKE_PX * 3}
+                      strokeOpacity={0.7}
+                      strokeLinejoin="round"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
               {heldHoverRun !== null && (
                 <line
                   data-takeoff="held-highlight"
@@ -6396,6 +6561,7 @@ export function TakeoffPlanViewer({
                   ys={draft.ys}
                   colour="#f0b429"
                   open
+                  onePx={onePx}
                 />
               )}
             </svg>
@@ -6495,6 +6661,10 @@ export function TakeoffPlanViewer({
                   setLitLayer(null);
                   onSelect?.(null);
                 }
+                if (!hiddenLayers.has(key) && picked !== null) {
+                  setPicked(null);
+                  onSelect?.(null);
+                }
                 setHiddenLayers((was) => {
                   const next = new Set(was);
                   if (!next.delete(key)) next.add(key);
@@ -6503,6 +6673,7 @@ export function TakeoffPlanViewer({
               }}
               onLit={(key) => {
                 setLitLayer(key);
+                setPicked(null);
                 if (key === null) onSelect?.(null);
               }}
               banner={<div ref={setBannerSlot} className="empty:hidden" />}
@@ -7130,19 +7301,22 @@ function Shape({
   ys,
   colour,
   open = false,
+  onePx,
 }: {
   kind: MeasurementKind;
   xs: number[];
   ys: number[];
   colour: string;
   open?: boolean;
+  /** One screen pixel in page units, so the dots do not grow with zoom. */
+  onePx: number;
 }) {
   const points = xs.map((x, i) => `${x},${ys[i]}`).join(" ");
   if (kind === "COUNT") {
     return (
       <g>
         {xs.map((x, i) => (
-          <circle key={i} cx={x} cy={ys[i]} r={0.006} fill={colour} fillOpacity={0.9} />
+          <circle key={i} cx={x} cy={ys[i]} r={6 * onePx} fill={colour} fillOpacity={0.9} />
         ))}
       </g>
     );
@@ -7170,7 +7344,7 @@ function Shape({
         vectorEffect="non-scaling-stroke"
       />
       {xs.map((x, i) => (
-        <circle key={i} cx={x} cy={ys[i]} r={0.004} fill={colour} />
+        <circle key={i} cx={x} cy={ys[i]} r={4 * onePx} fill={colour} />
       ))}
     </g>
   );
@@ -7413,8 +7587,8 @@ export function ScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: (
  * means that is the unit — and these lines were set to 0.002 of one.
  *
  * Found by a click-through of the prefill: the two end dots rendered on the
- * drawing and **the line between them did not**. The dots are plain circles
- * with `r={0.004}` in the viewBox's own units, so they scale and show. Every
+ * drawing and **the line between them did not**. The dots were plain circles
+ * then, with `r={0.004}` in the viewBox's own units, so they scaled and showed. Every
  * stroked line carries `non-scaling-stroke`, which makes its width a count of
  * device pixels rather than user units — so `0.002` asked for two thousandths
  * of a pixel.

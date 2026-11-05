@@ -5,7 +5,8 @@ import { useMemo, useState, useTransition } from "react";
 import { ActionForm } from "@/components/ActionForm";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { SubmitButton } from "@/components/SubmitButton";
-import { deleteTakeoffMeasurement, postTakeoffMeasurements, rescaleTakeoffMeasurements } from "@/lib/actions";
+import { deleteTakeoffMeasurement, postTakeoffMeasurements, rescaleTakeoffMeasurements, settleAskDraft } from "@/lib/actions";
+import type { TakeoffPostDraft } from "@/lib/ask/drafts";
 import { measurementPrimitive, type StoredMeasurement } from "@/lib/takeoff-plan";
 import type { PlanMeasurementRow, PlanSheet } from "@/lib/takeoff-plan-view";
 import { RECIPES } from "@/lib/takeoff-recipes";
@@ -57,12 +58,19 @@ export function TakeoffMeasurementList({
   jobId,
   sheet,
   wallTypes,
+  askDraft,
 }: {
   jobId: string;
   sheet: PlanSheet;
   wallTypes: PostableWallType[];
+  /** A card from the Ask box for THIS sheet: its rows start ticked (only those
+   * still unposted), the list is scrolled to, and a successful Add tells the
+   * card (lib/ask/drafts.ts). */
+  askDraft?: TakeoffPostDraft;
 }) {
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(() =>
+    askDraft ? sheet.measurements.filter((row) => !row.postedAt && askDraft.measurementIds.includes(row.id)).map((row) => row.id) : [],
+  );
   const [recipe, setRecipe] = useState(PLAN_RECIPES[0]?.id ?? "wall");
 
   const unposted = sheet.measurements.filter((m) => !m.postedAt);
@@ -114,7 +122,7 @@ export function TakeoffMeasurementList({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3" ref={askDraft ? (el) => el?.scrollIntoView?.({ block: "center" }) : undefined}>
       {/* ABOVE the older-scale banner, and the two are mutually exclusive by
           construction: `outOfDate` is emptied on a multi-scale sheet. A
           screen that said "these read at an older scale, press to fix" AND
@@ -225,7 +233,10 @@ export function TakeoffMeasurementList({
       <ActionForm
         action={postTakeoffMeasurements.bind(null, jobId)}
         className="flex flex-col gap-3 rounded-lg border border-line-card bg-surface-card p-3"
-        onSuccess={() => setSelected([])}
+        onSuccess={() => {
+          setSelected([]);
+          if (askDraft) void settleAskDraft(askDraft.proposalId);
+        }}
       >
         {chosen.map((row) => (
           <input key={row.id} type="hidden" name="measurementId" value={row.id} />

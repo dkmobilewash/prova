@@ -15,11 +15,12 @@ export async function loadJobStepFacts(companyId: string, jobId: string): Promis
     select: { id: true },
   });
   const onPlan = plan === null ? null : { page: { planId: plan.id } };
-  const [scaledSheets, measurements, wallsToConfirm, lineItemCount, signatures] = await Promise.all([
+  const [scaledSheets, measurements, wallsToConfirm, lineItemCount, unpricedLines, signatures] = await Promise.all([
     plan === null ? 0 : prisma.takeoffPlanPage.count({ where: { planId: plan.id, calibrations: { some: {} } } }),
     onPlan === null ? 0 : prisma.takeoffMeasurement.count({ where: onPlan }),
     onPlan === null ? 0 : prisma.takeoffMeasurement.count({ where: { ...onPlan, label: HELD_LABEL } }),
     prisma.jobLineItem.count({ where: { jobId, job: { companyId }, isDeleted: false } }),
+    prisma.jobLineItem.count({ where: { jobId, job: { companyId }, isDeleted: false, unitPrice: null, budgetedUnitCost: null } }),
     prisma.signatureRequest.findMany({ where: { jobId, job: { companyId } }, select: { status: true } }),
   ]);
   return {
@@ -29,6 +30,7 @@ export async function loadJobStepFacts(companyId: string, jobId: string): Promis
     measurements,
     wallsToConfirm,
     lineItemCount,
+    unpricedLines,
     signatureStatuses: signatures.map((row) => row.status),
   };
 }

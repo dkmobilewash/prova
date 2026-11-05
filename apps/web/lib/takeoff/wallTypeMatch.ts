@@ -127,7 +127,51 @@ export type MatchableWallType = {
    * there, so `defaultWallTypeFromNotes` falls back to this.
    */
   unoNote?: string | null;
+  /**
+   * Set on a VARIANT: the legend family a plan tag belongs to — Hutto's C6 is
+   * family C with suffix 6 ("letter indicates partition type, number
+   * indicates wood stud thickness"). The variant keeps the family's id, so it
+   * prices with the family's assembly, and carries the tag as its `code`, so
+   * the estimate says what the drawing says. See `withVariantTypes`.
+   */
+  family?: string;
 };
+
+const designation = (one: string) => one.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/**
+ * ── THE PLAN'S TAG IS THE CODE; THE LEGEND GIVES THE FAMILY ──
+ *
+ * A tag the legend does not spell but whose start is a legend code, followed
+ * by a size suffix — one or two digits and at most one letter — is that code's
+ * variant: C6 and C4 of Hutto's C, A3 of Joplin's A. The family has to END IN
+ * A LETTER, so the boundary is a letter turning into a digit: with codes 1 and
+ * 2, a tag 12 is a code of its own, not "1, size 2". Longest family wins, and
+ * a tag the legend spells exactly is never a variant.
+ */
+export function familyOf(tag: string, codes: readonly string[]): string | null {
+  const t = designation(tag);
+  if (t === "" || codes.some((c) => designation(c) === t)) return null;
+  let best: string | null = null;
+  for (const code of codes) {
+    const f = designation(code);
+    if (!/[A-Z]$/.test(f) || !t.startsWith(f) || !/^\d{1,2}[A-Z]?$/.test(t.slice(f.length))) continue;
+    if (best === null || f.length > designation(best).length) best = code;
+  }
+  return best;
+}
+
+/** The types, plus one variant per tag that is a family's variant (`familyOf`) and has no type of its own. */
+export function withVariantTypes(types: readonly MatchableWallType[], tags: readonly string[]): MatchableWallType[] {
+  const out = [...types];
+  for (const tag of new Set(tags.map((t) => t.trim().toUpperCase()))) {
+    if (out.some((t) => sameDesignation(t.code, tag))) continue;
+    const family = familyOf(tag, types.filter((t) => t.family === undefined).map((t) => t.code));
+    const parent = family === null ? undefined : types.find((t) => t.code === family);
+    if (parent !== undefined) out.push({ ...parent, code: tag, family: parent.code, unoNote: null });
+  }
+  return out;
+}
 
 export type WallTypeMatch =
   | { state: "MATCH"; type: MatchableWallType; tag: string; feet: number; share: number }

@@ -91,4 +91,18 @@ describe("walls on the job by type", () => {
     expect(summary.unpriced.map((u) => u.name)).not.toContain(DROPPED_ITEM);
     expect(await prisma.jobLineItem.count({ where: { jobId, takeoffItemId: dropped.id } })).toBe(0);
   });
+  it("A TAG THAT IS A FAMILY'S VARIANT (B6 of B) goes on its own item under its full code, priced with B", async () => {
+    await prisma.takeoffMeasurement.deleteMany({ where: { pageId } });
+    await prisma.takeoffWallProposal.deleteMany({ where: { pageId } });
+    const b = await prisma.wallType.create({ data: { companyId, code: "B", name: "Partition B", thicknessIn: 8, defaultHeightFt: 10, sides: 2, components: { create: [{ description: "studs", basis: "LINEAR_FT", factor: 1 }] } } });
+    const run = (y: number) => ({ x1: 0.2, y1: y, x2: 0.5, y2: y, thicknessFeet: 8 / 12 });
+    await prisma.takeoffWallProposal.createMany({ data: [
+      { pageId, calibrationId, thicknessInches: 8, source: "TAG", sourceLabel: "B", namedCode: "B", runs: [run(0.8)] },
+      { pageId, calibrationId, thicknessInches: 8, source: "TAG", sourceLabel: "B6", namedCode: "B6", runs: [run(0.9)] },
+    ] });
+    const outcome = await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 1, userId: null });
+    expect(outcome.kind).toBe("written");
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId }, select: { label: true, item: { select: { name: true, wallTypeId: true } } } });
+    expect(rows.map((r) => [r.label, r.item?.name, r.item?.wallTypeId]).sort()).toEqual([["B wall", "B walls", b.id], ["B6 wall", "B6 walls", b.id]]);
+  });
 });

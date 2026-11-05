@@ -545,9 +545,8 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
           wallTypes,
           fromNote,
         )
-      : wallGroups(
-          clusterByThickness(runs),
-          planTextTagByRun({
+      : (() => {
+          const read = planTextTagByRun({
             segments: input.segments,
             text: input.textItems,
             widthPt: pageSize.widthPt,
@@ -556,10 +555,10 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
             legendCodes: planText.legendCodes,
             textTags: tags,
             wallTypes,
-          }).byRun,
-          wallTypes,
-          fromNote,
-        );
+          });
+          // With the plan's tag variants, so a C6 tag names C's variant.
+          return wallGroups(clusterByThickness(runs), read.byRun, read.wallTypes, fromNote);
+        })();
 
   return {
     inUnits,

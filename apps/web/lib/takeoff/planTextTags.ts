@@ -3,7 +3,7 @@ import { legendVocabulary, prefixlessVocabulary, tagsFromSymbols } from "./symbo
 import { SHEET_REFERENCE, tagSymbols, type SymbolShape, type TextForSymbol } from "./tagSymbols";
 import { propagateTypes } from "./typePropagation";
 import { tagByRun, type WallTypeTag } from "./wallTags";
-import type { MatchableWallType } from "./wallTypeMatch";
+import { familyOf, withVariantTypes, type MatchableWallType } from "./wallTypeMatch";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
@@ -126,9 +126,25 @@ export function planTextTagByRun(input: {
   /** Today's text-matched tags against the company's own types, kept. */
   textTags: readonly WallTypeTag[];
   wallTypes: readonly MatchableWallType[];
-}): { byRun: Map<WallCandidate, string>; report: PlanTextTagReport } {
-  const { segments, text, widthPt, walls, feetPerUnit, legendCodes, textTags, wallTypes } = input;
+}): { byRun: Map<WallCandidate, string>; report: PlanTextTagReport; wallTypes: MatchableWallType[] } {
+  const { segments, text, widthPt, walls, feetPerUnit, textTags } = input;
   const symbols = tagSymbols({ segments, text, unitsPerPaperInch: 72 });
+  // ── THE PLAN'S OWN TAGS JOIN THE VOCABULARY AS VARIANTS ──
+  // Hutto's legend defines C and D and its plan tags C6, D6, E6; Joplin's
+  // defines A and tags A3. A tag read in a symbol that is a legend family plus
+  // a size suffix (`familyOf`) is a code of its own, typed with its family's
+  // assembly under its full name (`withVariantTypes`).
+  const variants = [
+    ...new Set(
+      symbols
+        .filter((s) => s.rejected === null)
+        .flatMap((s) => [s.text, ...s.parts])
+        .map((p) => p.trim().toUpperCase())
+        .filter((p) => familyOf(p, input.legendCodes) !== null),
+    ),
+  ];
+  const legendCodes = [...input.legendCodes, ...variants];
+  const wallTypes = withVariantTypes(input.wallTypes, variants);
   const spelled = legendVocabulary(legendCodes);
   const holds = (vocab: ReadonlyMap<string, string>) => (s: (typeof symbols)[number]) =>
     [s.text, ...s.parts].some((p) => vocab.has(p.trim().toUpperCase()));
@@ -195,6 +211,7 @@ export function planTextTagByRun(input: {
 
   return {
     byRun,
+    wallTypes,
     report: {
       symbols: symbols.length,
       coded: fromSymbols.counts.knownToLegend,

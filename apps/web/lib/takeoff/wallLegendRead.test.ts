@@ -4,7 +4,8 @@ import { unoFromJson } from "./planTextRead";
 
 /**
  * The legend read's shape, without a model call: what the tool is asked for
- * (`wall-legend.2` adds the "unless noted otherwise" list) is what the app
+ * (`wall-legend.2` adds the "unless noted otherwise" list, `wall-legend.3`
+ * the tag's suffix key) is what the app
  * reads back, and a stored read's `uno` is what `legendFromProposal` hands
  * the detection as each type's default sentence.
  */
@@ -36,6 +37,12 @@ describe("the legend read's defaults", () => {
     const read = wallLegendReadFrom({ types: [{ code: "A", lines: ["x"] }], uno: [{ code: "A", note: "ALL PARTITIONS TYPE A U.N.O." }], reason: "", confidence: "HIGH" });
     // `legendProposalFrom` stores the read as `textRead`, JSON round-tripped.
     expect(unoFromJson(JSON.parse(JSON.stringify(read)))).toEqual([{ code: "A", note: "ALL PARTITIONS TYPE A U.N.O." }]);
-    expect(WALL_LEGEND_PROMPT_VERSION).toBe("wall-legend.2");
+    expect(WALL_LEGEND_PROMPT_VERSION).toBe("wall-legend.3");
+  });
+
+  it("keeps the legend's suffix key verbatim, and null when it states none", () => {
+    expect(wallLegendReadFrom({ types: [], suffixKey: "LETTER INDICATES PARTITION TYPE\n NUMBER INDICATES WOOD STUD THICKNESS", reason: "", confidence: "HIGH" }).suffixKey).toBe("LETTER INDICATES PARTITION TYPE NUMBER INDICATES WOOD STUD THICKNESS");
+    expect(wallLegendReadFrom({ types: [], suffixKey: "  ", reason: "", confidence: "HIGH" }).suffixKey).toBeNull();
+    expect(wallLegendReadFrom({ types: [], reason: "", confidence: "HIGH" }).suffixKey).toBeNull();
   });
 });
