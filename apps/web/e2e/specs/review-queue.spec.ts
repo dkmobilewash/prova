@@ -12,8 +12,8 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
  * ── ONE REVIEW QUEUE (guided flow, Phase 4) ──
  *
  * The stepper's Review opens the workspace on a single list across the job:
- * a wall held "to confirm", an untyped wall group, a floor plan with no scale,
- * an unpriced estimate line — one at a time, with Next and a count left. Each
+ * a wall held "to confirm", an untyped wall group, a wall group with no height,
+ * a floor plan with no scale, an unpriced estimate line — one at a time, with Next and a count left. Each
  * is decided with the piece that already decides it, and Review is done when
  * the list is empty.
  *
@@ -115,7 +115,7 @@ test.describe("the job's one review queue", () => {
     await page.goto(`/jobs/${jobId}`);
     await expectHealthy(page, "the job with things to review", { monitor });
     await expect(page.locator('[data-job-step="review"]')).toHaveAttribute("data-state", "current");
-    await expect(page.locator("[data-job-next]")).toContainText("Next: Review 4 items");
+    await expect(page.locator("[data-job-next]")).toContainText("Next: Review 5 items");
     await expect(page.locator("[data-job-next]")).toHaveAttribute("href", `/takeoff/${jobId}?open=review`);
   });
 
@@ -125,7 +125,7 @@ test.describe("the job's one review queue", () => {
     await tab.waitForURL(new RegExp(`/takeoff/${jobId}\\?open=review`));
     await expect(tab.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 60_000 });
     await expect(queue(tab)).toBeVisible();
-    await expect(left(tab)).toHaveText("4 left to review");
+    await expect(left(tab)).toHaveText("5 left to review");
     await expect(item(tab)).toHaveAttribute("data-kind", "wall");
     await expect(item(tab)).toContainText("Wall to confirm · sheet A101 · 14 ft");
     await expect(picker(tab)).toHaveValue("1");
@@ -133,8 +133,9 @@ test.describe("the job's one review queue", () => {
     // Next skips without deciding: the count stays, and it comes back round.
     await item(tab).locator('[data-takeoff="review-queue-next"]').click();
     await expect(item(tab)).toHaveAttribute("data-kind", "type");
-    await expect(left(tab)).toHaveText("4 left to review");
-    for (const kind of ["scale", "price", "wall"]) {
+    await expect(left(tab)).toHaveText("5 left to review");
+    // "Walls — untyped" has no height of its own: a height item (wall-heights.spec.ts).
+    for (const kind of ["height", "scale", "price", "wall"]) {
       await item(tab).locator('[data-takeoff="review-queue-next"]').click();
       await expect(item(tab)).toHaveAttribute("data-kind", kind);
     }
@@ -142,7 +143,7 @@ test.describe("the job's one review queue", () => {
 
   test("4. Not a wall: it is dropped, and leaves the queue", async () => {
     await item(tab).locator('[data-takeoff="review-queue-drop"]').click();
-    await expect(left(tab)).toHaveText("3 left to review");
+    await expect(left(tab)).toHaveText("4 left to review");
     await expect.poll(async () => (await prisma.takeoffMeasurement.findFirst({ where: { page: { planId }, xs: { equals: [0.6, 0.7] } }, select: { label: true } }))?.label).toBe("wall, dropped");
   });
 
@@ -151,10 +152,21 @@ test.describe("the job's one review queue", () => {
     await expect(item(tab)).toContainText(/Untyped walls · sheet A101 · 4-7\/8" · 65 ft/);
     await tab.screenshot({ path: path.join(SHOTS, "queue-type-1440.png") });
     await item(tab).locator('[data-takeoff="review-queue-type"]', { hasText: CODE }).click();
-    await expect(left(tab)).toHaveText("2 left to review");
+    // The untyped group and its height leave; the W1 item, which the starter
+    // library gives no height, takes its place.
+    await expect(left(tab)).toHaveText("3 left to review");
     await expect
       .poll(async () => (await prisma.takeoffMeasurement.findMany({ where: { page: { planId }, label: `${CODE} wall (set by hand)` }, select: { id: true } })).length)
       .toBe(2);
+  });
+
+  test("5b. the W1 walls have no height: a typed one sets the whole group", async () => {
+    await expect(item(tab)).toHaveAttribute("data-kind", "height");
+    await expect(item(tab)).toContainText(/No height · .+ · sheet A101 · 65 ft/);
+    await item(tab).locator('[data-takeoff="set-height-typed"]').fill("10");
+    await item(tab).locator('[data-takeoff="set-height-save"]').click();
+    await expect(left(tab)).toHaveText("2 left to review");
+    await expect.poll(async () => (await prisma.takeoffItem.findFirst({ where: { jobId, wallType: { code: CODE } }, select: { heightFt: true } }))?.heightFt?.toString()).toBe("10");
   });
 
   test("6. the floor plan with no scale: its sheet, and the printed-scale fix", async () => {

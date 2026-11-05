@@ -1,3 +1,4 @@
+import type { HeightOption } from "./wallHeight";
 import type { TaggedFeet } from "./wallTags";
 
 /**
@@ -110,6 +111,8 @@ export type MatchableWallType = {
   summary?: string;
   /** The height a run of this type is priced at when none is typed; null means the panel must ask for one. */
   defaultHeightFt?: number | null;
+  /** The legend's height for this type and where it came from, for Set height (`wallHeight.ts`). */
+  legendHeight?: HeightOption | null;
   /**
    * Finish to finish, in inches, where the company has recorded one — #731.
    *
