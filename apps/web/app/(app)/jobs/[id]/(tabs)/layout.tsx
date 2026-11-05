@@ -7,6 +7,9 @@ import { canReach } from "@/lib/permissions";
 import { jobPaperworkLinks, loadJobPaperworkCounts } from "@/lib/jobs/job-paperwork";
 import { JobSummaryHeader } from "@/components/JobSummaryHeader";
 import { JobStageNav } from "@/components/job/JobStageNav";
+import { JobStepper } from "@/components/job/JobStepper";
+import { jobSteps } from "@/lib/job-steps";
+import { loadJobStepFacts } from "@/lib/job-steps-query";
 import { JobSectionNav } from "@/components/job/JobSectionNav";
 import { jobDocumentLinks, jobTabs } from "@/components/job/jobTabs";
 import { JobPaperworkPanel } from "@/components/job/JobPaperworkPanel";
@@ -52,13 +55,18 @@ export default async function JobTabsLayout({
   const { showsJobMoney, showsBilling, showsField } = jobCapabilities(principal);
   const isEstimateStage = summary.status === "ESTIMATE";
 
-  const [facts, paperworkCounts, asOf] = await Promise.all([
+  // The estimating steps (Job → … → Send), only while the job is an
+  // estimate and only for somebody who prices it: they are the path to a bid.
+  const showsSteps = isEstimateStage && showsJobMoney;
+  const [facts, paperworkCounts, asOf, stepFacts] = await Promise.all([
     loadJobStageFacts(company.id, id),
     viewerToday().then((today) => loadJobPaperworkCounts(company.id, id, today)),
     // The reader's calendar day, so "overdue" on the Billing step flips at
     // THEIR midnight, not the server's UTC one (lib/due-date.ts).
     viewerAsOf(),
+    showsSteps ? loadJobStepFacts(company.id, id) : Promise.resolve(null),
   ]);
+  const steps = stepFacts === null ? null : jobSteps(stepFacts);
 
   // The old tab rail, refiled under five stages (components/job/jobStages.ts).
   // Every tab keeps its own route; jobStages.test.ts holds the stages' links
@@ -122,6 +130,10 @@ export default async function JobTabsLayout({
       />
       <JobStageNav stages={stages} />
       <JobSectionNav tabs={tabs} />
+      {/* The estimating steps under the tab row, not between it and the stage
+          boxes (jobTabs.test.ts keeps those two together): the steps belong to
+          the work on the page below them. */}
+      {steps !== null && <JobStepper steps={steps.steps} next={steps.next} />}
       {/* The open stage's page, with the job's paperwork beside it on a wide
           screen and below it on a narrow one. `min-w-0` lets a wide table
           inside a tab scroll in its own box instead of pushing the panel
