@@ -244,8 +244,9 @@ export function TakeoffWorkspace({
   const [queueOpen, setQueueOpen] = useState(openReview && reviewQueue.length > 0);
   const [queueItem, setQueueItem] = useState<ReviewItem | null>(null);
   // A group is shown whole: every run lit and the plan zoomed to all of them.
-  const queueGroup = queueOpen && queueItem !== null && (queueItem.kind === "type" || queueItem.kind === "height");
-  const queueFocus = queueOpen && queueItem !== null && !queueGroup ? focusOf(queueItem) : null;
+  const queueGroup = queueOpen && queueItem !== null && (queueItem.kind === "type" || queueItem.kind === "height" || queueItem.kind === "windows");
+  // A sheet's windows are lit together, and the one being looked at is zoomed to.
+  const queueFocus = queueOpen && queueItem !== null && (!queueGroup || queueItem.kind === "windows") ? focusOf(queueItem) : null;
   const queueRuns = useMemo(
     () => (queueGroup && queueItem !== null && "runs" in queueItem ? { pageNumber: queueItem.pageNumber, runs: queueItem.runs } : null),
     [queueGroup, queueItem],

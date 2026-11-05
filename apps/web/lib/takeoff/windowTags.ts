@@ -115,3 +115,36 @@ export function windowsByTag(input: {
     .filter((t) => t.count > 0 || vocabulary === "schedule");
   return { counted: true, vocabulary, windows, byTag };
 }
+
+/**
+ * ── WHAT A COUNTED SHEET LEAVES FOR THE REVIEW QUEUE ──
+ *
+ * Counted windows are a SUGGESTION, the way wall types are: the ingest stores
+ * them on the sheet as this read, the review queue shows them as one count to
+ * confirm (false hits dropped there), and only the confirmed windows become
+ * count items on the estimate (`confirmWindows`). Nothing posts before that.
+ */
+export const WINDOWS_SUGGESTED = "WINDOWS_SUGGESTED";
+export type StoredWindow = { tag: string; x1: number; y1: number; x2: number; y2: number };
+export type StoredWindows = { windows: StoredWindow[]; decided?: boolean };
+
+/** The counted windows as stored: each on its frame's line, so the queue can light it. Null when the sheet was not counted. */
+export function windowsToStore(tagged: TaggedWindows, frames: readonly WindowSymbol[]): StoredWindows | null {
+  if (!tagged.counted) return null;
+  const windows = tagged.windows.flatMap((w) => {
+    const f = w.frame === null ? undefined : frames[w.frame];
+    return f === undefined ? [] : [{ tag: w.tag, x1: f.x1, y1: f.y1, x2: f.x2, y2: f.y2 }];
+  });
+  return windows.length === 0 ? null : { windows };
+}
+
+/** A stored read, or null when it is not one (an older shape, or hand-edited). */
+export function storedWindowsOf(value: unknown): StoredWindows | null {
+  const v = value as Partial<StoredWindows> | null;
+  if (v === null || typeof v !== "object" || !Array.isArray(v.windows)) return null;
+  const windows = v.windows.filter((w): w is StoredWindow => typeof w?.tag === "string" && [w.x1, w.y1, w.x2, w.y2].every((n) => Number.isFinite(n)));
+  return { windows, decided: v.decided === true };
+}
+
+/** The count item a confirmed window of this type joins. */
+export const windowItemName = (tag: string) => `Windows — ${tag}`;

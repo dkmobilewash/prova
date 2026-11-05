@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { WindowSymbol } from "./doorWindowSymbols";
 import type { TagSymbol } from "./tagSymbols";
 import type { WallCandidate } from "./wallVectors";
-import { windowsByTag } from "./windowTags";
+import { storedWindowsOf, windowsByTag, windowsToStore } from "./windowTags";
 
 // Windows counted by their frames, each typed by the nearest tag within 3 ft.
 // Page 1000 pt wide, 100 ft per page width: 1 ft = 10 pt.
@@ -72,5 +72,19 @@ describe("windows counted by their openings, typed by the nearest tag", () => {
     expect(got.windows.map((w) => w.tag)).toEqual(["A", "B"]);
     // A wall code spelled like a letter is not one.
     expect(run([tag("A", 10, 21.5), tag("B", 30, 21.5)], { windowRows: letterRows, wallCodes: ["B"], frames: [frame(10), frame(30)] }).windows.map((w) => w.tag)).toEqual(["A"]);
+  });
+});
+describe("what a counted sheet stores for the review queue", () => {
+  it("stores each counted window on its frame's line, and nothing for a sheet not counted", () => {
+    const frames = [frame(10), frame(30)];
+    const got = run([tag("W1", 10, 21.5), tag("W2", 30, 21.5)], { frames });
+    expect(windowsToStore(got, frames)).toEqual({ windows: [{ tag: "W1", ...frames[0]! }, { tag: "W2", ...frames[1]! }].map(({ tag, x1, y1, x2, y2 }) => ({ tag, x1, y1, x2, y2 })) });
+    expect(windowsToStore(run([], { frames }), frames)).toBeNull();
+  });
+
+  it("reads back a stored suggestion, dropping a malformed window, and refuses anything else", () => {
+    expect(storedWindowsOf({ windows: [{ tag: "A", x1: 0, y1: 0, x2: 1, y2: 0 }, { tag: "B", x1: "x" }], decided: true })).toEqual({ windows: [{ tag: "A", x1: 0, y1: 0, x2: 1, y2: 0 }], decided: true });
+    expect(storedWindowsOf(null)).toBeNull();
+    expect(storedWindowsOf({ feet: 3 })).toBeNull();
   });
 });

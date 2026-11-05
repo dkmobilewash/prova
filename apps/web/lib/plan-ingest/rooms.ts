@@ -1,5 +1,6 @@
 import { doorScheduleRowsOf, scheduleRowsOf } from "@/lib/takeoff/workspaceLoad";
 import { storedLegendCodes } from "@/lib/takeoff/planTextRead";
+import { storedWindowsOf, windowsToStore, WINDOWS_SUGGESTED, type StoredWindows } from "@/lib/takeoff/windowTags";
 import { splitLinesFrom } from "@/lib/takeoff/userExclusions";
 import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
@@ -90,6 +91,22 @@ async function writeWallOpenings(
   }
 }
 
+/**
+ * The sheet's counted windows, for the review queue to confirm. A count somebody
+ * already decided is never replaced by a re-run, and a sheet no longer counted
+ * loses an undecided suggestion rather than keeping a stale one.
+ */
+async function writeSuggestedWindows(planId: string, pageNumber: number, value: StoredWindows | null) {
+  const where = { planId_pageNumber_kind: { planId, pageNumber, kind: WINDOWS_SUGGESTED } };
+  const was = await prisma.takeoffPlanTextRead.findUnique({ where, select: { value: true } });
+  if (storedWindowsOf(was?.value)?.decided) return;
+  if (value === null) {
+    if (was) await prisma.takeoffPlanTextRead.delete({ where });
+    return;
+  }
+  await prisma.takeoffPlanTextRead.upsert({ where, create: { planId, pageNumber, kind: WINDOWS_SUGGESTED, value }, update: { value, computedAt: new Date() } });
+}
+
 /** The fullest finish schedule in the set. Read once per run: every counted sheet asks. */
 const schedules = new Map<string, FinishSchedule | null>();
 async function setFinishSchedule(doc: PlanPdf, planId: string, pageCount: number): Promise<FinishSchedule | null> {
@@ -144,6 +161,7 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
       ? doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: inPoints as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: await doorScheduleRowsOf(input.planId), windowRows: await scheduleRowsOf(input.planId, "WINDOW"), wallCodes: await storedLegendCodes(input.planId) })
       : { doors: [], windows: [] };
     await writeWallOpenings(page.id, runs, openings.doors, openings.windows, "join" in openings && openings.join ? openings.join.openings : []);
+    if ("tagged" in openings) await writeSuggestedWindows(input.planId, input.pageNumber, windowsToStore(openings.tagged, openings.windows));
     const found = sheetRooms({
       pairings: input.boundary?.pairings ?? [],
       runs,

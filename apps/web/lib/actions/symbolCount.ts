@@ -1,6 +1,7 @@
 "use server";
 
 import { countItemFor } from "@/lib/takeoff/countItem";
+import { storedWindowsOf, windowItemName, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
@@ -93,4 +94,51 @@ export async function saveSymbolCountAcrossSheets(jobId: string, planId: string,
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { saved, total: saved.reduce((t, s) => t + s.count, 0) } };
+}
+
+/**
+ * ── A SHEET'S SUGGESTED WINDOWS, CONFIRMED FROM THE REVIEW QUEUE ──
+ *
+ * `kept` is the windows the estimator did not drop, as indexes into the stored
+ * suggestion. Each type's kept windows become one count on the sheet, on that
+ * type's count item ("Windows — A"), and the suggestion is marked decided so a
+ * re-run never offers it again. Keeping none is a decision too: nothing posts.
+ */
+export async function confirmWindows(jobId: string, planId: string, pageNumber: number, kept: readonly number[]): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company, id: userId } = context;
+  const plan = await prisma.takeoffPlan.findFirst({ where: { id: planId, jobId, companyId: company.id }, select: { id: true } });
+  if (!plan) return actionFail("That plan is no longer on this job. Reload the page.");
+  const where = { planId_pageNumber_kind: { planId: plan.id, pageNumber, kind: WINDOWS_SUGGESTED } };
+  const read = await prisma.takeoffPlanTextRead.findUnique({ where, select: { value: true } });
+  const stored = storedWindowsOf(read?.value);
+  if (stored === null) return actionFail("Those windows are no longer suggested on this sheet. Reload the page.");
+  if (stored.decided) return actionOk;
+  if (!kept.every((i) => Number.isInteger(i) && stored.windows[i] !== undefined)) return actionFail("Those windows did not come through. Reload the page.");
+  // ponytail: decided is claimed before the counts are written, so a double submit posts once; a failure after it needs the counts redone by hand.
+  await prisma.takeoffPlanTextRead.update({ where, data: { value: { ...stored, decided: true } } });
+  const page = await prisma.takeoffPlanPage.upsert({
+    where: { planId_pageNumber: { planId: plan.id, pageNumber } },
+    create: { planId: plan.id, pageNumber },
+    update: {},
+    select: { id: true, calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } } },
+  });
+  const byTag = new Map<string, { xs: number[]; ys: number[] }>();
+  for (const i of new Set(kept)) {
+    const w = stored.windows[i]!;
+    const at = byTag.get(w.tag) ?? { xs: [], ys: [] };
+    at.xs.push((w.x1 + w.x2) / 2);
+    at.ys.push((w.y1 + w.y2) / 2);
+    byTag.set(w.tag, at);
+  }
+  for (const [tag, at] of byTag) {
+    const label = windowItemName(tag);
+    await prisma.takeoffMeasurement.create({
+      data: { itemId: await countItemFor(company.id, jobId, label), pageId: page.id, calibrationId: page.calibrations[0]?.id ?? null, kind: "COUNT", xs: at.xs, ys: at.ys, label, createdByUserId: userId },
+    });
+  }
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
+  return actionOk;
 }

@@ -1,7 +1,13 @@
 ### Windows counted by their openings, typed by the nearest tag (Diego)
 `diego/windows-by-opening`
 
-NOT FOR MERGE YET: false counts are not low enough (see below).
+**Windows are a SUGGESTION, like wall types (Diego, 2026-11-05).** A counted
+sheet's windows wait in the review queue as one count to confirm, after the
+wall heights and before the scales: every window lit on the plan, ← / → zooms
+to each, D drops a false hit, Enter confirms. Only the kept windows post, one
+count item per type ("Windows — A"), and a re-run never offers a decided sheet
+again. That is why the false rate below is acceptable to ship: a false hit
+costs one key, not a wrong quantity.
 
 One tag often names several windows (Topeka: an "A" hexagon read 24 times
 against 50–61 windows a sheet), so counting tags undercounted by half. A window
@@ -19,6 +25,9 @@ prints two plans 21 ft apart on the paper, and no facade was exterior.
 | training, sheets counted (Baker, Bunkie, Topeka ×3) | 139 of 182 | 43 | 46 | 137/138 |
 | held-out, sheets counted (Hutto A101/A102), measured once | 82 of 92 | 10 | 17 | 82/82 |
 | before (tags counted), same sheets | 70 / 81 | | 27 / 105 | |
+
+Not changed here: the wall area deduction still takes every frame found as a
+window opening, as on main.
 
 Sheets with no window tags (Crosslines, MHK, Grand Junction; Hillside held-out)
 stay "to check"; frames alone there found 40 of 97 on training.
