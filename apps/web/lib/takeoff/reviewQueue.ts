@@ -1,6 +1,7 @@
 import { ceilingOption, type CeilingRoom, type HeightOption } from "./wallHeight";
-import { verdictFor, type WallGroup } from "./wallGroups";
-import { isPropagatedTag, plainTag } from "./planTextTags";
+import type { WallGroup } from "./wallGroups";
+import { plainTag } from "./planTextTags";
+import { SOURCE_WORDS, typeSource } from "./postingGate";
 import { inchLabel } from "./wallVectors";
 
 /**
@@ -12,7 +13,8 @@ import { inchLabel } from "./wallVectors";
  *
  *   1. wall   — a run the model held off the estimate, "to confirm";
  *   2. type   — a found wall group posted to "Walls — untyped", which the
- *               "Set type" picker names (`setWallGroupType`);
+ *               "Set type" picker names (`setWallGroupType`), the type the
+ *               drawing suggests pre-filled with its source (`postingGate.ts`);
  *   3. height — a wall group (its takeoff item) with no height, which "Set
  *               height" gives one (`setWallGroupHeight`, `wallHeight.ts`);
  *   4. scale  — a floor plan with no scale saved;
@@ -112,30 +114,36 @@ export function heightItem(
 }
 
 /**
- * The type the drawing suggests for an untyped group, and why, from the same
- * verdict the sheet's group list shows (`verdictFor`). A tag the library
- * lacks is suggested only where the set's legend defines it, since "Set
- * type" adds it from there. Nothing is suggested from a bare thickness shared
- * by several types: that is the question, not an answer.
+ * The type the drawing suggests for an untyped group, and why: #989's
+ * `typeSource` (the same reading the whole-set run posts from, where its
+ * source passes the gate), in `SOURCE_WORDS`, with the tag and the sheet.
+ *
+ *   printed tag: S6B on A101 · tag carried along the wall: S6B ·
+ *   tag on another sheet of this floor: S6B · the only type that thick: 4-7/8"
+ *
+ * Beyond it, a tag the library lacks is suggested where the set's legend
+ * defines it, since "Set type" adds it from there. A thickness several types
+ * share suggests nothing: that is the question, not an answer.
  */
 export function suggestType(group: WallGroup, sheet: string, legendCodes: readonly string[]): Guess | null {
-  const verdict = verdictFor(group);
-  const tagged = (tag: string) => (isPropagatedTag(tag) ? `tag ${plainTag(tag)} carried along the wall on ${sheet}` : `tag ${plainTag(tag)} on ${sheet}`);
-  switch (verdict.state) {
-    case "NAMED":
-    case "TAG_DISAGREES":
-      return { code: verdict.type.code, from: tagged(verdict.tag) };
-    case "NO_SUCH_TYPE": {
-      const code = legendCodes.find((c) => c.toUpperCase() === plainTag(verdict.tag).toUpperCase());
-      return code === undefined ? null : { code, from: `${tagged(verdict.tag)}, from the legend` };
-    }
-    case "ONLY_ONE_THAT_THICK":
-      return { code: verdict.type.code, from: `the only ${inchLabel(group.inches)} type in your library` };
-    case "ASK":
-      return verdict.suggested === undefined ? null : { code: verdict.suggested.code, from: verdict.note ? `sheet note: ${verdict.note}` : `first of the ${inchLabel(group.inches)} types` };
-    default:
-      return null;
+  const tag = group.source.kind === "TAG" ? plainTag(group.source.tag) : null;
+  const found = typeSource(group);
+  if (found !== null) {
+    const detail =
+      found.source === "tag" || found.source === "tag-variant"
+        ? `: ${tag} on ${sheet}`
+        : found.source === "carried" || found.source === "sibling"
+          ? `: ${tag}`
+          : found.source === "thickness"
+            ? `: ${inchLabel(group.inches)}`
+            : "";
+    return { code: found.type.code, from: `${SOURCE_WORDS[found.source]}${detail}` };
   }
+  if (tag !== null && group.candidates.length === 0) {
+    const code = legendCodes.find((c) => c.toUpperCase() === tag.toUpperCase());
+    if (code !== undefined) return { code, from: `printed tag: ${tag} on ${sheet}, in the legend but not yet your library` };
+  }
+  return null;
 }
 
 /** The height pre-filled for a type: its own (the job's item, else the legend's), else the ceiling. */
@@ -169,4 +177,10 @@ export function focusOf(item: ReviewItem): (QueueRun & { pageNumber: number }) |
 /** What the stepper's Next says for a queue of `n`. */
 export function reviewLabel(n: number): string {
   return `Review ${n} ${n === 1 ? "item" : "items"}`;
+}
+
+/** The legend's codes with the drawing's suggestion first; a suggestion the legend lacks is still offered. */
+export function orderedCodes(codes: readonly string[], suggested: string | null): string[] {
+  if (suggested === null) return [...codes];
+  return [suggested, ...codes.filter((code) => code.toUpperCase() !== suggested.toUpperCase())];
 }

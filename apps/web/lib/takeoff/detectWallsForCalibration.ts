@@ -16,7 +16,7 @@ import { SheetTooDenseError, type StrokeSegment, type WallCandidate } from "./wa
 import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
 import { matchGroups } from "./proposalMatch";
-import { groupsForStage } from "./stageGroups";
+import { groupsForStage, siblingPages } from "./stageGroups";
 import { aiGate } from "@/lib/ai/settings";
 import { tagVocabulary } from "./planTextTags";
 import { doorScheduleForPlan, doorsOnSheet, legendForPlan, typedFeetOf, writeSheetResult } from "./planTextRead";
@@ -346,9 +346,27 @@ export async function detectWallsForCalibration(
     const found = { ...detected.found, walls: offered.offeredRuns, groups: detected.found.regroup(offered.offeredRuns) };
     // The groups: the finder's own when it paired with the thicknesses, else
     // rebuilt here with them — same runs, same feet, named with the types.
-    const groups = pairWithThicknesses
+    let groups = pairWithThicknesses
       ? found.groups
       : groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: planText?.legendCodes ?? null }).groups;
+    // ── NO TAG ON THIS SHEET: READ THEM OFF ITS SIBLING — see `tagsFromSibling` ──
+    if (!pairWithThicknesses && planText !== undefined && raster === null && !groups.some((g) => g.source.kind === "TAG")) {
+      try {
+        const { pairingsForPlan } = await import("./priorPlanLoad");
+        for (const page of siblingPages((await pairingsForPlan(target.planId)).sheets, target.pageNumber)) {
+          if (page < 1 || page > doc.pageCount) continue;
+          const other = await doc.pageStrokes(page);
+          const otherText = (await doc.pageText(page)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
+          const withSibling = groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: planText.legendCodes, sibling: { segmentsPt: other.segments, textItems: otherText, widthPt: other.widthPt } }).groups;
+          if (withSibling.some((g) => g.source.kind === "TAG")) {
+            groups = withSibling;
+            break;
+          }
+        }
+      } catch (error) {
+        console.error("[takeoff] sibling-sheet tags failed; grouping without them", { planId: target.planId, page: target.pageNumber }, error);
+      }
+    }
     if (planTextOn) {
       try {
         const schedule = await doorScheduleForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime });

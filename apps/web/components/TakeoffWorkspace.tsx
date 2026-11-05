@@ -18,6 +18,7 @@ import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
 import { restoreSaved, type SavedSheet } from "@/lib/takeoff/restoreSaved";
 import { addOpening, addTraced, removeOpening, removeTraced, startReview, tracedWall, type ReviewState } from "@/lib/takeoff/answerKeyReview";
 import { crossingPoint, splitCandidate } from "@/lib/takeoff/splitCandidate";
+import { labelSheetKey } from "@/lib/takeoff/labelRows";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { TakeoffPlanViewer, type ViewerSelection } from "@/components/TakeoffPlanViewer";
 import { TakeoffAssemblyPanel } from "@/components/TakeoffAssemblyPanel";
@@ -983,7 +984,7 @@ export function TakeoffWorkspace({
   useEffect(() => {
     // The sheet's own number, and the scale the calibration gives — the same
     // two the save uses, so a file written on this sheet is read back for it.
-    const sheetNumber = data.sheetLabelByPage[page] ?? readNumberByPage[page] ?? `p${page}`;
+    const sheetNumber = labelSheetKey(data.sheetLabelByPage[page] ?? readNumberByPage[page] ?? `p${page}`);
     const scaleFeetPerUnit =
       currentSheet?.calibration != null ? (feetPerPageWidth(currentSheet.calibration) ?? 0) : 0;
     const sheetKey = `${draftSet}#${page}`;
@@ -1936,7 +1937,7 @@ export function TakeoffWorkspace({
                   // does not exist at all on a set ingested without that
                   // stage, and `p15` is what an answer key was then named
                   // after an hour of reviewing A120.
-                  number: data.sheetLabelByPage[page] ?? readNumberByPage[page] ?? `p${page}`,
+                  number: labelSheetKey(data.sheetLabelByPage[page] ?? readNumberByPage[page] ?? `p${page}`),
                   // ── THE SCALE SOMEBODY ACCEPTED, NOT THE ONE PROPOSED ──
                   //
                   // The first version read `scalePrefillByPage`, which is what

@@ -137,7 +137,7 @@ test.describe("confirming wall groups from the keyboard", () => {
     await expect(queue().locator('[data-takeoff="review-queue-left"]')).toHaveText("3 left to review", { timeout: 60_000 });
     await expect(label()).toHaveText(`Walls · sheet A101 · 4-7/8" · 86 ft`);
     await expect(group().locator('[data-takeoff="queue-type"]')).toHaveText("ZF1");
-    await expect(group().locator('[data-takeoff="queue-type-from"]')).toHaveText("tag ZF1 on A101");
+    await expect(group().locator('[data-takeoff="queue-type-from"]')).toHaveText("printed tag: ZF1 on A101");
     await expect(group().locator('[data-takeoff="queue-height"]')).toHaveValue(`15'-0"`);
     await expect(group().locator('[data-takeoff="queue-height-from"]')).toHaveText(LEGEND_FROM);
     await expect(group().locator('[data-takeoff="queue-keys"]')).toHaveText("Enter accept · 1–9 type · H height · N skip");
@@ -171,7 +171,7 @@ test.describe("confirming wall groups from the keyboard", () => {
   });
 
   test("5. a type with no height of its own takes the ceiling over its walls", async () => {
-    await expect(group().locator('[data-takeoff="queue-type-from"]')).toHaveText("tag ZF2 on A101");
+    await expect(group().locator('[data-takeoff="queue-type-from"]')).toHaveText("printed tag: ZF2 on A101");
     await expect(group().locator('[data-takeoff="queue-height"]')).toHaveValue(`10'-0"`);
     await expect(group().locator('[data-takeoff="queue-height-from"]')).toHaveText(`ceiling plan, room 104 OFFICE: 10'-0"`);
     await expect(page.locator('[data-takeoff="focus-run"]')).toHaveCount(1);

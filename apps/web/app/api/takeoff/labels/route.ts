@@ -1,6 +1,6 @@
 import { requireCompanyContext } from "@/lib/auth";
 import { LABEL_DIR_VAR, labellingAllowed, readLabels, writeLabels } from "@/lib/plan-ingest/labelStore";
-import { labelFile, type LabelCandidate, type LabelVerdict } from "@/lib/takeoff/labelRows";
+import { labelFile, labelSheetKey, type LabelCandidate, type LabelVerdict } from "@/lib/takeoff/labelRows";
 import type { SplitRecord } from "@/lib/takeoff/answerKeyReview";
 import { NextResponse } from "next/server";
 
@@ -58,7 +58,11 @@ export async function GET(request: Request) {
   }
   if (!labellingAllowed(process.env)) return notHere();
 
-  const saved = await readLabels(set, sheet);
+  // Keyed by the sheet NUMBER. A title-keyed file is read as a fallback only —
+  // nothing writes one any more, and the POST below never will.
+  const key = labelSheetKey(sheet);
+  const saved =
+    (await readLabels(set, key)) ?? (key !== sheet.trim() ? await readLabels(set, sheet) : null);
   if (saved === null) {
     // NOT an error: a sheet nobody has labelled is the ordinary case, and the
     // page needs to tell the two apart without reading a message.
@@ -170,9 +174,12 @@ export async function POST(request: Request) {
     /** Round 13: windows and doors marked on the sheet. */
     openings?: { x: number; y: number; kind: string; tag?: string }[];
   };
+  // The file is named by the sheet NUMBER whatever the client sent — a title
+  // here wrote "A101 · FLOOR PLAN" beside A101 and orphaned the real review.
+  const sheet = labelSheetKey(input.sheet);
   const file = labelFile({
     set: input.set,
-    sheet: input.sheet,
+    sheet,
     page: input.page ?? 1,
     reviewedBy: input.reviewedBy ?? "",
     secondsSpent: input.secondsSpent ?? 0,
@@ -201,7 +208,7 @@ export async function POST(request: Request) {
   // verdicts than the file already holds, whatever produced it. It does not refuse a smaller save outright — a reviewer may
   // legitimately redo a sheet — it refuses an UNACKNOWLEDGED one, and says
   // exactly what it is protecting so the answer is obvious.
-  const existing = await readLabels(parsed.set, parsed.sheet, process.env);
+  const existing = await readLabels(parsed.set, sheet, process.env);
   if (existing !== null) {
     const had = existing.verdicts?.length ?? 0;
     const now = file.verdicts.length;
@@ -221,7 +228,7 @@ export async function POST(request: Request) {
     }
   }
 
-  const written = await writeLabels(parsed.set, parsed.sheet, file);
+  const written = await writeLabels(parsed.set, sheet, file);
   if (!written.ok) {
     return NextResponse.json({ ok: false, error: written.error }, { status: 400 });
   }

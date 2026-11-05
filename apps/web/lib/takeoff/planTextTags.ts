@@ -49,9 +49,26 @@ export function isPropagatedTag(tag: string): boolean {
   return tag.endsWith(PROPAGATED_MARK);
 }
 
-/** The code without the propagation marker. */
+/**
+ * A tag read off ANOTHER sheet of the same floor — Green Bay's A3.1 prints no
+ * wall tag and its dimension plan A3.2 tags every partition (`groupsForStage`).
+ * Marked like a carried tag, for the same reason: it still prices as the code,
+ * and the screen says it was not printed on this sheet.
+ */
+export const SIBLING_MARK = " ⇄";
+
+export function siblingTag(code: string): string {
+  return `${plainTag(code)}${SIBLING_MARK}`;
+}
+
+export function isSiblingTag(tag: string): boolean {
+  return tag.endsWith(SIBLING_MARK);
+}
+
+/** The code without the propagation or sibling marker. */
 export function plainTag(tag: string): string {
-  return isPropagatedTag(tag) ? tag.slice(0, -PROPAGATED_MARK.length) : tag;
+  if (isPropagatedTag(tag)) return tag.slice(0, -PROPAGATED_MARK.length);
+  return isSiblingTag(tag) ? tag.slice(0, -SIBLING_MARK.length) : tag;
 }
 
 /** What the finder is handed when the switch is on. */
