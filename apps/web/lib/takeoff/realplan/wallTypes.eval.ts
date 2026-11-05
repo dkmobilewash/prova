@@ -187,7 +187,7 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
           JSON.stringify({
             set, page, feetPerUnit: fpu, heldOut, legend: legend === null ? null : legendCodes, units: "page-width",
             totalFt: total, typedFt: typed, by,
-            runs: [...posted].map(([r, as]) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFt: r.lengthFeet, thicknessIn: r.thicknessFeet * 12, type: as?.code ?? null, source: as?.source ?? null })),
+            runs: [...posted].map(([r, as]) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFt: r.lengthFeet, thicknessIn: r.thicknessFeet * 12, type: as?.code ?? null, source: as?.source ?? null, hatched: staged.hatched.has(r) })),
           }),
         );
       }
