@@ -76,11 +76,21 @@ export const notYetRegistered: Exclusion[] = [
   { action: "proposals.*", reason: "Bid proposals are a scope + price + exclusions document built from a job's estimate; clauses are edited where the document is shown. Never a command." },
   { action: "wallTypes.*", reason: "Wall types are the company's partition schedule and a job's wall runs are measurements off the drawings; both are entered where the schedule and the runs are shown, and every run write regenerates estimate lines. Never a command." },
   { action: "bidRecap.*", reason: "Markup, overhead and profit are the estimator's own margin call, read off the recap they are looking at; applying one rewrites every line price on the job. Never a command." },
+  // planIngest.* was one wildcard saying a model must never start a run.
+  // Diego decided otherwise on 2026-11-04 for ONE stage: run_takeoff
+  // (commands/takeoff.ts) starts the whole-set wall finder, which spends no
+  // allowance (STAGE_SPENDS.WALLS), from a card that shows the sheet count and
+  // the allowance, on the person's tap. Everything else in the module stays
+  // out, for the reasons the wildcard gave.
   {
-    action: "planIngest.*",
-    reason:
-      "The plan-ingestion runner. Starting a run spends the company's plan-sheet allowance a page at a time, and retrying resets an attempt ceiling that exists to bound that spend — so a model must be able to do neither. The person uploads a plan set and the panel on the job drives the run; the model is never the thing that decides three hundred pages are worth reading.",
+    action: "advancePlanIngest",
+    reason: "Pumps a run a slice at a time while the page is open; the cron drains it otherwise. Nothing for a person to ask for.",
   },
+  {
+    action: "retryPlanIngestPage",
+    reason: "Retrying resets an attempt ceiling that exists to bound a paid stage's spend; a person presses it beside the failed sheet. Never a command.",
+  },
+  { action: "planIngestFailures", reason: "A read for the panel's list of failed sheets; changes nothing." },
   {
     action: "planSheets.*",
     reason:
