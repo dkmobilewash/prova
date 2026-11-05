@@ -9,6 +9,7 @@ import { sameCode } from "@/lib/takeoff/legendMerge";
 import { storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { actionFail, actionOk, type ActionResult } from "./shared";
 import { addWallTypeFromLegend } from "./wallLegend";
+import { syncReviewedItems } from "@/lib/estimating/takeoff-item-lines";
 
 /**
  * ── "SET TYPE": THE ESTIMATOR NAMES WHAT THE DRAWING DID NOT ──
@@ -43,6 +44,28 @@ export async function setWallGroupType(jobId: string, input: WallGroupTypeInput)
   // The takeoff tab's capability, as its other writes. Adding a NEW type to
   // the library is still estimating's, and `addWallTypeFromLegend` says so.
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  return typeGroup(context, jobId, input, null);
+}
+
+/**
+ * ── THE REVIEW QUEUE'S ENTER: A GROUP'S TYPE AND HEIGHT IN ONE PRESS ──
+ *
+ * Set type, then the height on that type's item for the whole job (as
+ * `setWallGroupHeight` does), in one transaction and one round trip, so a
+ * person confirming suggestions waits on neither. A height equal to the
+ * item's own changes nothing. Once takeoff lines are on the estimate, the
+ * items the runs left and joined follow (`syncReviewedItems`).
+ */
+export async function confirmWallGroup(jobId: string, input: WallGroupTypeInput & { heightFt: number | null }): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const heightFt = input.heightFt;
+  if (heightFt !== null && (!Number.isFinite(heightFt) || heightFt <= 0 || heightFt >= 100)) return actionFail("A wall height is a number of feet between 0 and 100.");
+  return typeGroup(context, jobId, input, heightFt);
+}
+
+/** Both actions' work, after each has checked the capability itself. */
+async function typeGroup(context: Awaited<ReturnType<typeof requireCompanyContext>>, jobId: string, input: WallGroupTypeInput, heightFt: number | null): Promise<ActionResult> {
   const companyId = context.company.id;
   const code = String(input.code ?? "").trim().toUpperCase();
   const runs = Array.isArray(input.runs) ? input.runs.filter((r) => [r.x1, r.y1, r.x2, r.y2].every(Number.isFinite)) : [];
@@ -104,7 +127,13 @@ export async function setWallGroupType(jobId: string, input: WallGroupTypeInput)
       if (ids.length > 0) await tx.takeoffMeasurement.updateMany({ where: { id: { in: ids } }, data: { itemId, label } });
     }
     if (data.length > 0) await tx.takeoffMeasurement.createMany({ data });
+    if (heightFt !== null) {
+      await tx.takeoffItem.update({ where: { id: itemId }, data: { heightFt: heightFt.toFixed(2) } });
+      await tx.takeoffItem.updateMany({ where: { id: itemId, sides: null }, data: { sides: 2 } });
+      await syncReviewedItems(tx, companyId, jobId, [itemId, untyped?.id ?? null]);
+    }
   });
   revalidatePath(`/jobs/${jobId}/takeoff`);
+  if (heightFt !== null) revalidatePath(`/takeoff/${jobId}`);
   return actionOk;
 }

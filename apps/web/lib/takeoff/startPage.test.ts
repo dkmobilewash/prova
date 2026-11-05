@@ -29,4 +29,15 @@ describe("the sheet the workspace opens on", () => {
   it("falls back to the first page when every title says something else", () => {
     expect(startPages([sheet(7, -100), sheet(8, -200)])).toEqual({ work: 7, scale: 7, review: 7 });
   });
+
+  it("IS THE FLOOR PLAN THE WHOLE-SET RUN COUNTS, over an overall plan or a ceiling plan the titles rank as high (new-customer run v2, M2)", () => {
+    // Baker: A100 OVERALL FLOOR PLAN p12 and A101 FLOOR PLAN p13 rank alike, the RCP p20 near them; the run counts A101.
+    const baker = [sheet(12, 105, { scaled: true }), sheet(13, 105, { scaled: true }), sheet(20, 100, { scaled: true })];
+    expect(startPages(baker).work).toBe(12);
+    expect(startPages(baker, [13]).work).toBe(13);
+    // Before its scale is saved it has no page row yet, and it is still where the work is.
+    expect(startPages([sheet(20, 100, { scaled: true })], [13]).work).toBe(13);
+    // A sheet a person worked on still wins.
+    expect(startPages(baker.map((s) => (s.pageNumber === 20 ? { ...s, lastMeasuredAt: 5 } : s)), [13]).work).toBe(20);
+  });
 });

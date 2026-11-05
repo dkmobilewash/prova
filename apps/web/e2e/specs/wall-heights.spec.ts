@@ -171,7 +171,10 @@ test.describe("wall heights and square feet", () => {
     await expect(item).toHaveAttribute("data-kind", "height");
     await expect(item).toContainText("No height · Walls — untyped · sheet p1 · 43 ft");
     await tab.screenshot({ path: path.join(SHOTS, "queue-height-1440.png") });
-    await item.locator('[data-takeoff="set-height-ceiling"]').click();
+    // The ceiling is pre-filled, with where it came from: one press.
+    await expect(item.locator('[data-takeoff="queue-height"]')).toHaveValue(`10'-0"`);
+    await expect(item.locator('[data-takeoff="queue-height-from"]')).toHaveText(`ceiling plan, room 104 OFFICE: 10'-0"`);
+    await item.locator('[data-takeoff="queue-accept"]').click();
     await expect(queue.locator('[data-takeoff="review-queue-left"]')).toHaveText("1 left to review");
     await expect.poll(() => heightOf("untyped"), { timeout: 30_000 }).toBe("10");
     expect((await prisma.takeoffItem.findUniqueOrThrow({ where: { id: ids.untyped }, select: { sides: true } })).sides, "an item with no sides takes 2").toBe(2);

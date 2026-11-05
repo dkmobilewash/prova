@@ -115,7 +115,7 @@ test.describe("the job's one review queue", () => {
     await page.goto(`/jobs/${jobId}`);
     await expectHealthy(page, "the job with things to review", { monitor });
     await expect(page.locator('[data-job-step="review"]')).toHaveAttribute("data-state", "current");
-    await expect(page.locator("[data-job-next]")).toContainText("Next: Review 5 items");
+    await expect(page.locator("[data-job-next]")).toContainText("Next: Review 4 items");
     await expect(page.locator("[data-job-next]")).toHaveAttribute("href", `/takeoff/${jobId}?open=review`);
   });
 
@@ -125,7 +125,7 @@ test.describe("the job's one review queue", () => {
     await tab.waitForURL(new RegExp(`/takeoff/${jobId}\\?open=review`));
     await expect(tab.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 60_000 });
     await expect(queue(tab)).toBeVisible();
-    await expect(left(tab)).toHaveText("5 left to review");
+    await expect(left(tab)).toHaveText("4 left to review");
     await expect(item(tab)).toHaveAttribute("data-kind", "wall");
     await expect(item(tab)).toContainText("Wall to confirm · sheet A101 · 14 ft");
     await expect(picker(tab)).toHaveValue("1");
@@ -133,9 +133,10 @@ test.describe("the job's one review queue", () => {
     // Next skips without deciding: the count stays, and it comes back round.
     await item(tab).locator('[data-takeoff="review-queue-next"]').click();
     await expect(item(tab)).toHaveAttribute("data-kind", "type");
-    await expect(left(tab)).toHaveText("5 left to review");
-    // "Walls — untyped" has no height of its own: a height item (wall-heights.spec.ts).
-    for (const kind of ["height", "scale", "price", "wall"]) {
+    await expect(left(tab)).toHaveText("4 left to review");
+    // "Walls — untyped" has no height either, but its runs are this group's:
+    // asked once, with the type (fast-confirm.spec.ts).
+    for (const kind of ["scale", "price", "wall"]) {
       await item(tab).locator('[data-takeoff="review-queue-next"]').click();
       await expect(item(tab)).toHaveAttribute("data-kind", kind);
     }
@@ -143,17 +144,18 @@ test.describe("the job's one review queue", () => {
 
   test("4. Not a wall: it is dropped, and leaves the queue", async () => {
     await item(tab).locator('[data-takeoff="review-queue-drop"]').click();
-    await expect(left(tab)).toHaveText("4 left to review");
+    await expect(left(tab)).toHaveText("3 left to review");
     await expect.poll(async () => (await prisma.takeoffMeasurement.findFirst({ where: { page: { planId }, xs: { equals: [0.6, 0.7] } }, select: { label: true } }))?.label).toBe("wall, dropped");
   });
 
   test("5. the untyped group: Set type names it, and every run goes onto that type", async () => {
     await expect(item(tab)).toHaveAttribute("data-kind", "type");
-    await expect(item(tab)).toContainText(/Untyped walls · sheet A101 · 4-7\/8" · 65 ft/);
+    await expect(item(tab)).toContainText(`Walls · sheet A101 · 4-7/8" · 65 ft`);
     await tab.screenshot({ path: path.join(SHOTS, "queue-type-1440.png") });
-    await item(tab).locator('[data-takeoff="review-queue-type"]', { hasText: CODE }).click();
-    // The untyped group and its height leave; the W1 item, which the starter
-    // library gives no height, takes its place.
+    // Nothing on the drawing names it: pick the legend's W1 and accept, with no height known.
+    await item(tab).locator('[data-takeoff="queue-code"]', { hasText: CODE }).click();
+    await item(tab).locator('[data-takeoff="queue-accept"]').click();
+    // The group leaves; the W1 item, which the starter library gives no height, joins.
     await expect(left(tab)).toHaveText("3 left to review");
     await expect
       .poll(async () => (await prisma.takeoffMeasurement.findMany({ where: { page: { planId }, label: `${CODE} wall (set by hand)` }, select: { id: true } })).length)
@@ -161,11 +163,14 @@ test.describe("the job's one review queue", () => {
   });
 
   test("5b. the W1 walls have no height: a typed one sets the whole group", async () => {
+    // The queue moved on before the server answered, so the new item comes round: skip to it.
+    for (let i = 0; i < 3 && (await item(tab).getAttribute("data-kind")) !== "height"; i += 1) {
+      await item(tab).locator('[data-takeoff="review-queue-next"]').click();
+    }
     await expect(item(tab)).toHaveAttribute("data-kind", "height");
-    // By name: until the server's re-render lands, "Walls — untyped" is still the height item on show.
     await expect(item(tab)).toContainText("No height · W1 walls · sheet A101 · 65 ft");
-    await item(tab).locator('[data-takeoff="set-height-typed"]').fill("10");
-    await item(tab).locator('[data-takeoff="set-height-save"]').click();
+    await item(tab).locator('[data-takeoff="queue-height"]').fill("10");
+    await item(tab).locator('[data-takeoff="queue-accept"]').click();
     await expect(left(tab)).toHaveText("2 left to review");
     await expect.poll(async () => (await prisma.takeoffItem.findFirst({ where: { jobId, wallType: { code: CODE } }, select: { heightFt: true } }))?.heightFt?.toString()).toBe("10");
   });

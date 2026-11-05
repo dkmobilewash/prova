@@ -516,15 +516,26 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
         if (kind === "wall") {
           const keep = item.locator('[data-takeoff="review-queue-keep"]');
           await ((await keep.count()) > 0 ? keep : item.getByRole("button", { name: /Keep|It is a wall|Yes/ })).first().click();
-        } else if (kind === "type") {
-          const typeButton = item.locator('[data-takeoff="review-queue-type"]').first();
-          if ((await typeButton.count()) === 0) {
+        } else if (kind === "type" || kind === "height") {
+          // One row per group (#992): the suggested type and height pre-filled,
+          // Enter accepts; with no suggestion, 1 picks the legend's first type.
+          const row = item.locator('[data-takeoff="queue-group"]');
+          if ((await row.count()) === 0) {
             stuck(`an untyped group offers no type to set: "${(await text(item)).slice(0, 200)}"`);
             await item.locator('[data-takeoff="review-queue-next"]').click();
             act();
             continue;
           }
-          await typeButton.click();
+          await tab.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+          if (kind === "type" && (await text(row.locator('[data-takeoff="queue-type"]'))) === "—") {
+            await tab.keyboard.press("1");
+            act();
+          }
+          if (kind === "height" && (await row.locator('[data-takeoff="queue-height"]').inputValue()) === "") {
+            await row.locator('[data-takeoff="queue-height"]').fill("10");
+            act(2);
+          }
+          await tab.keyboard.press("Enter");
         } else if (kind === "scale") {
           const printed = item.locator('[data-takeoff="review-queue-confirm-scale"], [data-takeoff="review-queue-printed"]');
           if ((await printed.count()) === 0) {

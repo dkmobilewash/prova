@@ -1,7 +1,7 @@
 "use server";
 
 import { syncReviewedItems, syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
-import { namedItem, untypedItem } from "@/lib/plan-ingest/wallItems";
+import { namedItem, untypedItem, wallItemsForSheet, wallItemsNoteFor } from "@/lib/plan-ingest/wallItems";
 import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
 import { planSetFromLoaded } from "@/lib/takeoff/planSet";
@@ -704,6 +704,31 @@ export async function confirmSheetScales(
 }
 
 /**
+ * ── RUN TAKEOFF PUTS THE SHEET'S WALLS ON THE JOB ──
+ *
+ * The workspace's Run takeoff finds the walls in the browser; the sheet's
+ * walls were stored when its scale was saved. This posts those to the job by
+ * type, exactly as the whole-set run does (`wallItemsForSheet`): typed walls
+ * on their type's item, the rest on "Walls — untyped" for the review queue.
+ * A sheet with walls already on the job is left as it is, so pressing it
+ * again never counts a wall twice (new-customer run v2, M3: it added nothing).
+ */
+export async function postSheetWalls(jobId: string, planId: string, pageNumber: number): Promise<ActionResultWith<{ note: string | null }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const page = await prisma.takeoffPlanPage.findFirst({
+    where: { planId, pageNumber, plan: { jobId, companyId: context.company.id } },
+    select: { id: true, measurements: { where: { kind: "LINEAR", source: "DETECTED" }, select: { id: true }, take: 1 } },
+  });
+  if (page === null) return actionFail("That sheet is no longer on this job. Reload the page.");
+  if (page.measurements.length > 0) return { ok: true, value: { note: null } };
+  const outcome = await wallItemsForSheet({ planId, companyId: context.company.id, jobId, pageNumber, userId: context.id });
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/takeoff/${jobId}`);
+  return { ok: true, value: { note: outcome.kind === "written" ? wallItemsNoteFor(outcome) : null } };
+}
+
+/**
  * Writes one sheet's calibration and starts the wall finder on it, for a hand
  * set scale and for Confirm scales alike, so the two cannot drift apart.
  * Not exported: a "use server" file's exports are actions.
@@ -1080,6 +1105,25 @@ async function saveTakeoffMeasurementsFor(
       return actionFail(`${noun} ${i + 1} of ${raw.length} couldn't be added: that outline crosses itself.`);
     }
     shapes.push({ xs, ys });
+  }
+
+  // ── A RUN ALREADY ON THE JOB IS NOT WRITTEN TWICE ──
+  // Run takeoff and the whole-set run post a sheet's found walls by themselves
+  // (`postSheetWalls`, `walls.ts`), and the group list still offers "Add
+  // these" on those groups: writing the same runs again would count the walls
+  // twice. A run that lies on one of the sheet's posted runs is left out;
+  // its type is set with Set type or in the review queue.
+  if (kind === "LINEAR") {
+    // The posted runs only: those are what a press of "Add these" duplicates.
+    const existing = await prisma.takeoffMeasurement.findMany({ where: { pageId: page.id, kind: "LINEAR", source: "DETECTED" }, select: { xs: true, ys: true } });
+    const near = (a: number, b: number) => Math.abs(a - b) < 1e-4;
+    const same = (s: { xs: number[]; ys: number[] }, m: { xs: number[]; ys: number[] }) =>
+      s.xs.length === 2 && m.xs.length === 2 &&
+      ((near(s.xs[0]!, m.xs[0]!) && near(s.ys[0]!, m.ys[0]!) && near(s.xs[1]!, m.xs[1]!) && near(s.ys[1]!, m.ys[1]!)) ||
+        (near(s.xs[0]!, m.xs[1]!) && near(s.ys[0]!, m.ys[1]!) && near(s.xs[1]!, m.xs[0]!) && near(s.ys[1]!, m.ys[0]!)));
+    const fresh = shapes.filter((shape) => !existing.some((m) => same(shape, m)));
+    if (fresh.length === 0) return actionFail("These walls are already on the job. Give them a type with Set type, or in the review queue.");
+    shapes.splice(0, shapes.length, ...fresh);
   }
 
   // `createManyAndReturn` rather than `createMany`, because an optional

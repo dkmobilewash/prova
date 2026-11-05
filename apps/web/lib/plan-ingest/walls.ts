@@ -322,6 +322,7 @@ export function refreshNoteFor(kind: RefreshOutcome["kind"]): string {
     case "posted-left-alone":
       return "already found; walls already sent to the estimate are left alone";
     case "proposals-only":
+      return "walls found";
     case "failed":
       return "already found";
   }
@@ -398,6 +399,15 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       const refresh = deps.refresh ?? realDeps.refresh!;
       const again = await refresh({ pageId: page.id, calibrationId: calibration.id, planId: ctx.planId, companyId: ctx.companyId, pageNumber: task.pageNumber, feetPerUnit, wallTypes: types, pairWithThicknesses: false, jobId: ctx.jobId, userId: ctx.startedByUserId });
       if (again.kind === "failed") return { ok: false, error: "Finding the walls on this sheet again failed. Retry it." };
+      // ── FOUND, BUT NEVER POSTED: POST IT NOW ──
+      // Saving a scale stores the sheet's walls as proposals (detection runs on
+      // every calibration), so on a new job every scaled sheet arrives here with
+      // nothing on the job. This used to say "already found" and post nothing,
+      // and Baker's whole-set run put 0 walls on the job (new-customer run v2, M3).
+      if (again.kind === "proposals-only") {
+        await note(task.id, await postAndRooms(task.pageNumber, again.held ?? [], refreshNoteFor(again.kind)));
+        return { ok: true };
+      }
       await note(task.id, refreshNoteFor(again.kind));
       return { ok: true };
     }
@@ -433,35 +443,43 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
     // plans carry their rooms and ceiling areas before anybody opens them
     // (`lib/plan-ingest/rooms.ts`). Its outcome rides on the task's note; a
     // failure there does not fail the sheet, whose walls are already written.
-    let text = `${said.note}${paired}`;
-    if (outcome === "written") {
-      // ── THE WALLS ONTO THE JOB, BY TYPE (`lib/plan-ingest/wallItems.ts`) ──
-      const writeWallItems = deps.writeWallItems ?? realDeps.writeWallItems!;
-      try {
-        const items = await writeWallItems({ planId: ctx.planId, companyId: ctx.companyId, jobId: ctx.jobId, pageNumber: task.pageNumber, held: boundary?.held ?? [], userId: ctx.startedByUserId });
-        // "no walls found" here means the detection stored no rows, which the
-        // detector's own note already says — repeating it after "walls found"
-        // would read as a contradiction, and the one place it can happen is a
-        // test whose `detect` returns "written" without writing (the whole-set
-        // dbtest's stub). Every other skip and every write is worth a clause.
-        if (!(items.kind === "skipped" && items.why === "no walls found")) text = `${text}; ${wallItemsNoteFor(items)}`;
-      } catch (error) {
-        console.error("[walls] wall items after walls threw", { planId: ctx.planId, pageNumber: task.pageNumber, error });
-        text = `${text}; walls on job failed`;
-      }
-      const findRooms = deps.findRooms ?? realDeps.findRooms!;
-      try {
-        const rooms = await findRooms({ planId: ctx.planId, companyId: ctx.companyId, jobId: ctx.jobId, pageNumber: task.pageNumber, boundary, userId: ctx.startedByUserId });
-        // A company without the room finder sees the note it always saw.
-        if (!(rooms.kind === "skipped" && rooms.why === "room finding is off")) text = `${said.note}; ${roomsNoteFor(rooms)}`;
-      } catch (error) {
-        console.error("[walls] rooms after walls threw", { planId: ctx.planId, pageNumber: task.pageNumber, error });
-        text = `${said.note}; rooms failed`;
-      }
-    }
+    const text = outcome === "written" ? await postAndRooms(task.pageNumber, boundary?.held ?? [], said.note, paired, boundary) : `${said.note}${paired}`;
     await note(task.id, text);
     return { ok: true };
   };
+
+  /**
+   * A sheet whose walls are stored, onto the job by type, then its rooms: what
+   * a fresh detection gets, and what a sheet found earlier but never posted
+   * gets too. Returns the task's note.
+   */
+  async function postAndRooms(pageNumber: number, held: readonly { x1: number; y1: number; x2: number; y2: number }[], said: string, paired = "", boundary?: DetectedBoundary): Promise<string> {
+    let text = `${said}${paired}`;
+    // ── THE WALLS ONTO THE JOB, BY TYPE (`lib/plan-ingest/wallItems.ts`) ──
+    const writeWallItems = deps.writeWallItems ?? realDeps.writeWallItems!;
+    try {
+      const items = await writeWallItems({ planId: ctx.planId, companyId: ctx.companyId, jobId: ctx.jobId, pageNumber, held, userId: ctx.startedByUserId });
+      // "no walls found" here means the detection stored no rows, which the
+      // detector's own note already says — repeating it after "walls found"
+      // would read as a contradiction, and the one place it can happen is a
+      // test whose `detect` returns "written" without writing (the whole-set
+      // dbtest's stub). Every other skip and every write is worth a clause.
+      if (!(items.kind === "skipped" && items.why === "no walls found")) text = `${text}; ${wallItemsNoteFor(items)}`;
+    } catch (error) {
+      console.error("[walls] wall items after walls threw", { planId: ctx.planId, pageNumber, error });
+      text = `${text}; walls on job failed`;
+    }
+    const findRooms = deps.findRooms ?? realDeps.findRooms!;
+    try {
+      const rooms = await findRooms({ planId: ctx.planId, companyId: ctx.companyId, jobId: ctx.jobId, pageNumber, boundary, userId: ctx.startedByUserId });
+      // A company without the room finder sees the note it always saw.
+      if (!(rooms.kind === "skipped" && rooms.why === "room finding is off")) text = `${said}; ${roomsNoteFor(rooms)}`;
+    } catch (error) {
+      console.error("[walls] rooms after walls threw", { planId: ctx.planId, pageNumber, error });
+      text = `${said}; rooms failed`;
+    }
+    return text;
+  }
 }
 
 /** One line per sheet of the set, as the panel lists them. */

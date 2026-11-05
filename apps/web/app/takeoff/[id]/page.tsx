@@ -102,6 +102,7 @@ export default async function TakeoffWorkspacePage({
       openReview={open === "review"}
       openScale={open === "scale"}
       reviewQueue={queue.items}
+      reviewHeights={queue.heights}
       planSet={planSetFromLoaded(data)}
       /* ── ANSWER-KEY MODE FROM THE URL ──
          So a review session can be opened on the right sheet in one link,
