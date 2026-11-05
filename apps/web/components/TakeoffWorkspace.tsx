@@ -19,7 +19,7 @@ import { restoreSaved, type SavedSheet } from "@/lib/takeoff/restoreSaved";
 import { addTraced, removeTraced, startReview, tracedWall, type ReviewState } from "@/lib/takeoff/answerKeyReview";
 import { crossingPoint, splitCandidate } from "@/lib/takeoff/splitCandidate";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
-import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
+import { TakeoffPlanViewer, type ViewerSelection } from "@/components/TakeoffPlanViewer";
 import { TakeoffAssemblyPanel } from "@/components/TakeoffAssemblyPanel";
 import { TakeoffItemProperties } from "@/components/TakeoffItemProperties";
 import { TakeoffItemsPanel } from "@/components/TakeoffItemsPanel";
@@ -287,6 +287,24 @@ export function TakeoffWorkspace({
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
   const [tabsSlot, setTabsSlot] = useState<HTMLElement | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
+  // The Export menu closes on Esc and on a click anywhere outside it — not on
+  // a click inside, where a download may still be answering.
+  useEffect(() => {
+    if (!exportOpen) return;
+    const outside = (event: PointerEvent) => {
+      if (exportRef.current !== null && !exportRef.current.contains(event.target as Node)) setExportOpen(false);
+    };
+    const esc = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExportOpen(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    window.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      window.removeEventListener("keydown", esc);
+    };
+  }, [exportOpen]);
 
   // ── THE REMEMBERED FURNITURE, once, on mount ──
   //
@@ -306,7 +324,9 @@ export function TakeoffWorkspace({
 
     const sheets = readStored(KEY.sheets);
     setSheetsOpen(sheets === "open");
-    setFactsOpen(readStored(KEY.facts) === "open");
+    // NOT READ BACK: a strip remembered open stayed open on every visit after
+    // the first item somebody picked, 104px off the drawing with nothing in it
+    // they had asked for (Chrome's click test). It opens with a selection.
 
     const stored = Number(readStored(KEY.railWidth));
     if (Number.isFinite(stored) && stored >= RAIL_MIN && stored <= RAIL_MAX) setRailWidth(stored);
@@ -350,7 +370,6 @@ export function TakeoffWorkspace({
   }, []);
   const rememberFacts = useCallback((open: boolean) => {
     setFactsOpen(open);
-    writeStored(KEY.facts, open ? "open" : "closed");
   }, []);
 
   const toggleHiddenItem = useCallback(
@@ -693,10 +712,20 @@ export function TakeoffWorkspace({
   // Picking an item opens the properties strip, because the properties are the
   // reason to look at it. Closing the strip by hand still sticks: this only
   // fires on a CHANGE of selection, so it cannot fight somebody who shut it.
+  // ── WHAT THE ARROW PICKED ON THE DRAWING, OR THE ITEM PICKED IN THE RAIL ──
+  // The bottom strip shows it, and only while there is something to show: a
+  // click on nothing, Esc or hiding its layer lets go, and the strip goes.
+  const [selection, setSelection] = useState<ViewerSelection | null>(null);
   useEffect(() => {
-    if (activeItemId !== null && !factsOpen) rememberFacts(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- on selection only; including factsOpen would reopen it the moment it is closed.
+    if (activeItemId !== null) setSelection(null);
   }, [activeItemId]);
+  const selectedItem =
+    selection?.kind === "shape" && selection.itemId !== null
+      ? (items.find((item) => item.id === selection.itemId) ?? null)
+      : selection === null
+        ? activeItem
+        : null;
+  const stripOpen = !phone && (factsOpen || selection !== null || activeItem !== null);
 
   /**
    * ── THE ITEMS RAIL CARRIES THE ASSEMBLY BENEATH THE LIST ──
@@ -1076,7 +1105,7 @@ export function TakeoffWorkspace({
       setDraftNote(
         draft === null
           ? "That backup is no longer in this browser."
-          : "Press Find the walls first, then restore.",
+          : "Press Run takeoff first, then restore.",
       );
       return;
     }
@@ -1177,7 +1206,7 @@ export function TakeoffWorkspace({
       className="flex h-[100dvh] flex-col overflow-hidden bg-canvas"
       style={
         {
-          "--shell-port": `calc(100dvh - 3rem${factsOpen && !phone ? ` - ${FACTS_REM}rem` : ""})`,
+          "--shell-port": `calc(100dvh - 3rem${stripOpen ? ` - ${FACTS_REM}rem` : ""})`,
         } as React.CSSProperties
       }
       data-takeoff="workspace"
@@ -1310,18 +1339,27 @@ export function TakeoffWorkspace({
           )}
           {!phone && (
             <>
+              {/* ── QUANTITIES GOES TO THE PANEL'S QUANTITIES; IT NEVER CLOSES IT ──
+                  It used to toggle the whole right-hand panel, so pressing it
+                  took the layers away and moved the plan sideways (Chrome's
+                  click test). The panel collapses from its own header. */}
               <button
                 type="button"
-                onClick={() => rememberPanel(!panelOpen)}
-                aria-expanded={panelOpen}
-                className={`${BAR_BUTTON}${panelOpen ? " bg-rail-hover" : ""}`}
+                onClick={() => {
+                  if (!panelOpen) rememberPanel(true);
+                  window.setTimeout(
+                    () => document.getElementById("takeoff-quantities")?.scrollIntoView({ block: "start", behavior: "smooth" }),
+                    panelOpen ? 0 : 60,
+                  );
+                }}
+                className={BAR_BUTTON}
                 data-takeoff="toggle-panel"
               >
                 Quantities
               </button>
               {/* The drawing as it was issued, in a tab of its own at this sheet. */}
               <a
-                href={`/api/takeoff/plan/${data.plan.id}#page=${page}`}
+                href={`/takeoff/${jobId}/pdf?page=${page}`}
                 target="_blank"
                 rel="noopener"
                 className={BAR_BUTTON}
@@ -1329,7 +1367,7 @@ export function TakeoffWorkspace({
               >
                 PDF
               </a>
-              <div className="relative">
+              <div className="relative" ref={exportRef}>
                 <button
                   type="button"
                   onClick={() => setExportOpen((open) => !open)}
@@ -1607,6 +1645,11 @@ export function TakeoffWorkspace({
               initialPage={openPage}
               fill
               bar={{ pager: pagerSlot, actions: actionsSlot, tabs: tabsSlot }}
+              onSelect={(picked) => {
+                setSelection(picked);
+                if (picked?.kind === "shape" && picked.itemId !== null) setActiveItemId(picked.itemId);
+              }}
+              onPanelOpen={rememberPanel}
               panelDrawer={drawers}
               rail={{
                 undo: (
@@ -1695,7 +1738,7 @@ export function TakeoffWorkspace({
               <div className="flex h-full flex-col justify-center gap-2 p-4 text-center">
                 <p className="text-sm font-semibold text-ink">Answer key</p>
                 <p className="text-xs text-ink-body">
-                  Press <span className="font-semibold">Find the walls</span> to load this sheet.
+                  Press <span className="font-semibold">Run takeoff</span> to load this sheet.
                   Everything it finds — and every long line it could not pair — becomes a candidate
                   for you to confirm or reject.
                 </p>
@@ -1815,14 +1858,33 @@ export function TakeoffWorkspace({
           is the same question Phase 2's properties answer one level down. It
           reserves height from `--shell-port` above rather than overlaying the
           canvas, so the drawing never sits underneath it. */}
-      {factsOpen && !phone && (
+      {stripOpen && (
         <section
           className="shrink-0 overflow-y-auto border-t border-line-card bg-surface px-3 py-2"
           style={{ height: `${FACTS_REM}rem` }}
           data-takeoff="sheet-facts"
         >
-          {activeItem ? (
-            <TakeoffItemProperties jobId={jobId} item={activeItem} readOnly={phone} />
+          {selectedItem ? (
+            <TakeoffItemProperties jobId={jobId} item={selectedItem} readOnly={phone} />
+          ) : selection !== null ? (
+            /* A found wall group, or a drawn shape in no item, picked with the arrow. */
+            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-xs" data-takeoff="selection-facts">
+              <span className="font-semibold text-ink">
+                {selection.kind === "group" ? selection.name : (selection.label ?? "A drawn shape")}
+              </span>
+              {selection.kind === "group" ? (
+                <>
+                  <Fact label="Runs">{selection.runs}</Fact>
+                  <Fact label="Length">{Math.round(selection.feet).toLocaleString()} ft</Fact>
+                  <span className="text-ink-muted">Found by Run takeoff. Add it to the job from Quantities in the panel.</span>
+                </>
+              ) : (
+                <>
+                  <Fact label="Measures">{selection.measure}</Fact>
+                  <span className="text-ink-muted">In no item yet. Pick it with Edit to move or delete it.</span>
+                </>
+              )}
+            </div>
           ) : (
             <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-xs">
             <span className="font-semibold text-ink">

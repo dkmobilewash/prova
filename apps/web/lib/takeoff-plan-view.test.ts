@@ -30,7 +30,9 @@ describe("the takeoff viewer's tool list", () => {
     // THREE MORE SINCE THIS WAS WRITTEN, and the order on the row is the
     // order of work: move, scale, then the three that CREATE a measurement,
     // then the two that change one that already exists.
-    const expected: ToolId[] = ["pan", "calibrate", "linear", "area", "rect", "count", "symbol", "edit", "cutout", "exclude", "split", "workarea"];
+    // `hand` since Chrome's click test: it moves the sheet and draws nothing,
+    // so it sits with the arrow, before the scale.
+    const expected: ToolId[] = ["pan", "hand", "calibrate", "linear", "area", "rect", "count", "symbol", "edit", "cutout", "exclude", "split", "workarea"];
     expect(ids).toEqual(expected);
   });
 
@@ -80,7 +82,7 @@ describe("the takeoff viewer's tool list", () => {
     // one point per kept match, through the same action a clicked count uses —
     // so the capture layer's `kindOf` knows nothing of it and returns null.
     // `exclude`, `split` and `workarea` write a sheet exclusion, never a measurement: not a quantity.
-    const NO_KIND: ToolId[] = ["pan", "calibrate", "edit", "cutout", "symbol", "split", "exclude", "workarea"];
+    const NO_KIND: ToolId[] = ["pan", "hand", "calibrate", "edit", "cutout", "symbol", "split", "exclude", "workarea"];
     const creating = ids.filter((id) => !NO_KIND.includes(id));
     expect(creating).toEqual(["linear", "area", "rect", "count"]);
 
