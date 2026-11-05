@@ -12,6 +12,7 @@ import {
   removeProposal,
   reopenChangeOrder,
   reviseChangeOrder,
+  settleAskDraft,
   submitChangeOrder,
   voidChangeOrder,
 } from "@/lib/actions";
@@ -20,6 +21,7 @@ import { TRADE_SCOPE_OPTIONS } from "@/lib/trade-scopes";
 // an inline `type` specifier still loads the module at runtime, and
 // actions/shared.ts imports prisma. A type-only IMPORT is erased.
 import type { ActionResult } from "@/lib/actions/shared";
+import type { ChangeOrderDraft } from "@/lib/ask/drafts";
 import {
   CONTRACT_EFFECT,
   type ChangeOrderStatus,
@@ -760,7 +762,11 @@ export function ChangeOrders({
   docuSign,
   today,
   equipmentRates = [],
+  draft,
 }: {
+  /** A card from the Ask box (lib/ask/drafts.ts): the New change order form
+   * opens filled in and focused, and Start draft tells the card it saved. */
+  draft?: ChangeOrderDraft;
   /** Empty for anyone without job cost access. */
   equipmentRates?: EquipmentRateRow[];
   jobId: string;
@@ -816,17 +822,31 @@ export function ChangeOrders({
           event.preventDefault();
           const form = event.currentTarget;
           const formData = new FormData(form);
-          create.run(() => createChangeOrder(jobId, formData), () => form.reset(), form);
+          create.run(
+            () => createChangeOrder(jobId, formData),
+            () => {
+              form.reset();
+              if (draft) void settleAskDraft(draft.proposalId);
+            },
+            form,
+          );
         }}
         className="mb-4 flex flex-wrap items-end gap-3 rounded-md border border-line-card bg-surface p-3"
       >
         <label className={labelClass}>
           New change order
-          <input name="title" required className={`${inputClass} w-64`} placeholder="Add rated head-of-wall at corridor" />
+          <input
+            name="title"
+            required
+            defaultValue={draft?.title}
+            autoFocus={draft !== undefined}
+            className={`${inputClass} w-64`}
+            placeholder="Add rated head-of-wall at corridor"
+          />
         </label>
         <label className={labelClass}>
           Notes
-          <input name="description" className={`${inputClass} w-64`} />
+          <input name="description" defaultValue={draft?.description ?? undefined} className={`${inputClass} w-64`} />
         </label>
         <button type="submit" disabled={create.isPending} className={primaryBtn}>
           {create.isPending ? "Starting…" : "Start draft"}

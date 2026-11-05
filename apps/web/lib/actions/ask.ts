@@ -229,7 +229,7 @@ export async function loadAskProposal(
         title: command.title,
         button: command.button,
         mode: command.mode,
-        handoffHref: command.handoffHref?.(row.id),
+        handoffHref: command.handoffHref?.(row.id, (row.resolved ?? {}) as Record<string, unknown>),
         preview: Array.isArray(row.preview) ? (row.preview as PreviewLine[]) : [],
         // A reattached card must show every web suggestion it would save:
         // confirming it saves what is still ticked, so hiding them here

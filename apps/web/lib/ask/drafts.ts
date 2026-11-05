@@ -168,3 +168,36 @@ export async function loadMessageDraft(
     draft: { proposalId, toAddress, toName, jobId: str(payload, "jobId"), subject, body },
   };
 }
+
+export type ChangeOrderDraft = { proposalId: string; title: string; description: string | null };
+
+/** The Estimate tab's "New change order" prefill. `jobId` is the page's own
+ * job: a card for another job is gone here, never shown on the wrong one. */
+export async function loadChangeOrderDraft(
+  viewer: Viewer,
+  proposalId: string | undefined,
+  jobId: string,
+): Promise<DraftLookup<ChangeOrderDraft>> {
+  const found = await loadDraftRow(viewer, proposalId, "start_change_order");
+  if (found.kind !== "draft" || !proposalId) return found as DraftLookup<ChangeOrderDraft>;
+  const title = str(found.draft, "title");
+  if (str(found.draft, "jobId") !== jobId || !title) return { kind: "gone" };
+  return { kind: "draft", draft: { proposalId, title, description: str(found.draft, "description") } };
+}
+
+export type PurchaseOrderDraft = { proposalId: string; lineItemId: string; vendorId: string; quantity: string };
+
+/** The Buyout row's prefill: which line, which vendor, how many. */
+export async function loadPurchaseOrderDraft(
+  viewer: Viewer,
+  proposalId: string | undefined,
+  jobId: string,
+): Promise<DraftLookup<PurchaseOrderDraft>> {
+  const found = await loadDraftRow(viewer, proposalId, "draft_purchase_order");
+  if (found.kind !== "draft" || !proposalId) return found as DraftLookup<PurchaseOrderDraft>;
+  const lineItemId = str(found.draft, "lineItemId");
+  const vendorId = str(found.draft, "vendorId");
+  const quantity = str(found.draft, "quantity");
+  if (str(found.draft, "jobId") !== jobId || !lineItemId || !vendorId || !quantity) return { kind: "gone" };
+  return { kind: "draft", draft: { proposalId, lineItemId, vendorId, quantity } };
+}

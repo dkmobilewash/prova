@@ -359,6 +359,8 @@ export const CAN_DO: readonly CanDoGroup[] = [
       { text: "draft an invoice", commands: ["draft_invoice"] },
       { text: "log a payment", commands: ["log_payment"] },
       { text: "release retainage", commands: ["release_retainage"] },
+      { text: "start a change order", commands: ["start_change_order"] },
+      { text: "start a purchase order", commands: ["draft_purchase_order"] },
     ],
   },
   {

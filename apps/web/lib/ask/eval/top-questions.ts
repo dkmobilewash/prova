@@ -155,6 +155,8 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   c("q-invoice", "invoice Turner 45,000 on Riverside for the September progress", "draft_invoice", ACCOUNTING),
   c("q-payment", "log a 12,500 check against invoice 3 on Riverside, check 4471", "log_payment", ACCOUNTING),
   c("q-retainage-release", "Turner released 18,400 of the Cedar Park retainage on September 8", "release_retainage", ACCOUNTING),
+  c("q-co-start", "start a change order on Riverside for 12 extra door frames", "start_change_order"),
+  c("q-po-start", "make a PO to ABC Supply for 200 sheets of 5/8 type X on Riverside", "draft_purchase_order"),
   many(
     "q-paid-this-month",
     "are we going to get paid on Riverside this month?",
@@ -526,7 +528,8 @@ export const CENSUS_REFUSALS = 2;
  * they are routable, and a tool nobody's words reach is the shape this
  * census exists to notice. */
 /** -> 126 on 2026-10-11: one question for `record_bid_outcome`, the win/loss card the research agents learn from. */
-export const TOTAL_QUESTIONS = 126;
+/** -> 128 on 2026-11-04: one each for `start_change_order` and `draft_purchase_order`. */
+export const TOTAL_QUESTIONS = 128;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the

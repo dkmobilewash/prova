@@ -19,6 +19,8 @@ import { pursuitCommands } from "./commands/pursuits";
 import { crewScheduleCommands } from "./commands/crewSchedule";
 import { contactCommands, contactExclusions } from "./commands/contacts";
 import { leadCommands } from "./commands/leads";
+import { changeOrderCommands, changeOrderExclusions } from "./commands/changeOrders";
+import { purchaseOrderCommands } from "./commands/purchaseOrders";
 
 /**
  * The commands: what Ask can DO, as distinct from what it can answer.
@@ -74,7 +76,9 @@ export type CommandName =
   | "set_pursuit_stage"
   | "schedule_crew"
   | "add_contact"
-  | "find_bid_leads";
+  | "find_bid_leads"
+  | "start_change_order"
+  | "draft_purchase_order";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
  * composer) has no member on purpose: it cannot be registered. T4 is an
@@ -261,10 +265,13 @@ export type DirectCommandDefinition = CommandBase & {
 /** The tap is a link; the page's own form is the write. */
 export type HandoffCommandDefinition = CommandBase & {
   mode: "HANDOFF";
-  /** Where the card's primary goes, given the card id. The page must be
-   * the one `ROUTE_CAPABILITY` guards with this command's capability, and
-   * it reads `?draft=` (lib/ask/drafts.ts). */
-  handoffHref: (proposalId: string) => string;
+  /** Where the card's primary goes, given the card id and the payload the
+   * card holds. The page must be the one `ROUTE_CAPABILITY` guards with
+   * this command's capability (or a job tab whose own guard is that
+   * capability — commands.test.ts reads it), and it reads `?draft=`
+   * (lib/ask/drafts.ts). `resolved` is the server-held payload, so a job
+   * tab's id comes from the row `resolve` wrote, never from the model. */
+  handoffHref: (proposalId: string, resolved: ResolvedPayload) => string;
   core?: never;
   execute?: never;
 };
@@ -295,6 +302,8 @@ export const COMMANDS: CommandDefinition[] = [
   ...crewScheduleCommands,
   ...contactCommands,
   ...leadCommands,
+  ...changeOrderCommands,
+  ...purchaseOrderCommands,
 ];
 
 export const EXCLUSIONS: Exclusion[] = [
@@ -307,6 +316,7 @@ export const EXCLUSIONS: Exclusion[] = [
   ...laborExclusions,
   ...messageExclusions,
   ...contactExclusions,
+  ...changeOrderExclusions,
   {
     action: "takeoffItems.*",
     reason:

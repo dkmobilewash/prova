@@ -306,6 +306,20 @@ export const EVAL_CASES: EvalCase[] = [
   command("cmd-bid-lost-reason", "we lost Main St to Acme, they came in lower", "record_bid_outcome", { projectName: "Main St", winnerName: "Acme" }, ESTIMATOR),
   noCommand("none-field-bid-won", "mark the Riverside bid as won", FIELD),
   noCommand("none-change-order", "approve the change order on Riverside"),
+  // Workflow commands, 2026-11-04. Each spoken example from the brief, then
+  // three variants written the way a phone's dictation hands them over:
+  // lower-case names, numbers as words or digits, no punctuation. The
+  // model passes the person's words; lib/ask/spoken.ts folds the trade
+  // words when the command matches them against rows.
+  command("cmd-co-spoken", "start a change order on Clerk for 12 extra door frames", "start_change_order", { jobName: "Clerk", title: "door frames" }),
+  command("cmd-co-dictated", "start a change order on clerk for twelve extra door frames", "start_change_order", { jobName: "clerk", title: "door frames" }),
+  command("cmd-co-new", "new change order on Riverside extra blocking at the corridor TVs", "start_change_order", { jobName: "Riverside", title: "blocking" }),
+  command("cmd-co-pm", "open a CO on Riverside for the added soffit at the lobby", "start_change_order", { jobName: "Riverside", title: "soffit" }, { role: "MEMBER", jobFunction: "PROJECT_MANAGER" }),
+  command("cmd-po-spoken", "make a PO to ABC Supply for 200 sheets of 5/8 type X on Hutto", "draft_purchase_order", { vendorName: "ABC", quantity: "200", jobName: "Hutto" }),
+  command("cmd-po-dictated", "make a PO to ABC supply for 200 sheets of five-eighths type X on Hutto", "draft_purchase_order", { vendorName: "ABC", quantity: "200" }),
+  command("cmd-po-order", "order 150 sheets of half inch board from ABC Supply for Riverside", "draft_purchase_order", { vendorName: "ABC", quantity: "150", jobName: "Riverside" }),
+  command("cmd-po-buy", "PO to L&W for 40 boxes of screws on Riverside", "draft_purchase_order", { vendorName: "L&W", quantity: "40" }),
+  noCommand("none-field-po", "make a PO to ABC Supply for 200 sheets of 5/8 type X on Hutto", FIELD),
   noCommand("none-poem", "write me a poem about drywall"),
   noCommand("none-advice", "how do I file a mechanics lien in California?"),
   noCommand("none-field-invoice", "invoice Riverside for 45,000 for the September progress", FIELD),
