@@ -29,7 +29,7 @@ import { defaultLayerName, layerKeyOf } from "@/lib/takeoff/layerKey";
 import { postSheetWalls, renameTakeoffLayer, setWallGroupHeight } from "@/lib/actions";
 import { SetWallHeight } from "./SetWallHeight";
 import type { TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
-import { areaLine, ceilingOption, heightFrom, wallSquareFeet, type CeilingRoom, type HeightOption } from "@/lib/takeoff/wallHeight";
+import { areaLine, ceilingOption, heightFrom, heightOptionsInOrder, wallSquareFeet, type CeilingRoom, type HeightOption } from "@/lib/takeoff/wallHeight";
 import { formatFeetInches, parseFeetInches } from "@/lib/feet-inches";
 import {
   calibrationNotices,
@@ -93,6 +93,7 @@ import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { renovationMarks, showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
 import { DROPPED_LABEL, HELD_ITEM, HELD_LABEL, sameRun } from "@/lib/takeoff/estimateHold";
+import { sameRunAs } from "@/lib/takeoff/runMatch";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 import { TakeoffHeldWalls } from "./TakeoffHeldWalls";
 import { TakeoffWallReview } from "./TakeoffWallReview";
@@ -327,6 +328,7 @@ export function TakeoffPlanViewer({
   takeoffItems = [],
   levelByPage,
   wallTypes,
+  generalHeight = null,
   scalePrefillByPage,
   viewScalesByPage,
   answerKey,
@@ -377,6 +379,8 @@ export function TakeoffPlanViewer({
    *  Used only to MATCH the drawing's own tags against — the viewer never
    *  chooses a type, it reports which one the drawing named. */
   wallTypes: MatchableWallType[];
+  /** The set's sheet-wide height rule, offered after a type's own height and before the ceiling (`heightOptionsInOrder`). */
+  generalHeight?: { feet: number; from: string } | null;
   /**
    * The title-block scale per PAGE NUMBER, deliberately not per sheet.
    *
@@ -4202,17 +4206,30 @@ export function TakeoffPlanViewer({
   const [typedNow, setTypedNow] = useState<Record<string, string | null>>({});
   const runsKey = (group: WallGroup) => group.runs.map((r) => `${r.x1},${r.y1},${r.x2},${r.y2}`).join(";");
   const runsOf = (group: WallGroup) => group.runs.map((run) => ({ x1: run.x1, y1: run.y1, x2: run.x2, y2: run.y2 }));
-  /** The typed item every run of the group sits on, or null: untyped, mixed, held or not on the job. */
-  function typedItemOf(group: WallGroup): { id: string; name: string } | null {
-    const rows = sheet?.measurements ?? [];
-    let itemId: string | null = null;
+  /** The item a run of this sheet is on, found by `sameRunAs` so a re-run a hair off still finds it. */
+  function itemOfRun(run: { x1: number; y1: number; x2: number; y2: number }): string | null {
+    const m = (sheet?.measurements ?? []).find((row) => row.kind === "LINEAR" && row.itemId && sameRunAs(run, row.xs, row.ys));
+    return m?.itemId ?? null;
+  }
+  /**
+   * The typed item holding the most of the group's runs, and how many: `on` of
+   * `of`. Null when none of them is typed (untyped, held or not on the job).
+   *
+   * ── A MIXED GROUP SAYS SO ──
+   * It returned null unless EVERY run sat on one typed item, so a re-run that
+   * found a typed group again with one more run read "untyped" under its own
+   * type's heading, with no Clear type (Chrome on Baker A101, 2026-11-06).
+   */
+  function typedItemOf(group: WallGroup): { id: string; name: string; on: number; of: number } | null {
+    const counts = new Map<string, number>();
     for (const run of group.runs) {
-      const m = rows.find((row) => row.kind === "LINEAR" && row.xs.length === 2 && row.xs[0] === run.x1 && row.xs[1] === run.x2 && row.ys[0] === run.y1 && row.ys[1] === run.y2);
-      if (m === undefined || !m.itemId || (itemId !== null && m.itemId !== itemId)) return null;
-      itemId = m.itemId;
+      const id = itemOfRun(run);
+      const item = id === null ? undefined : takeoffItems.find((i) => i.id === id);
+      if (item !== undefined && item.name !== UNTYPED_ITEM && item.name !== HELD_ITEM) counts.set(item.id, (counts.get(item.id) ?? 0) + 1);
     }
-    const item = itemId === null ? undefined : takeoffItems.find((i) => i.id === itemId);
-    return item === undefined || item.name === UNTYPED_ITEM || item.name === HELD_ITEM ? null : item;
+    const best = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
+    const item = best === undefined ? undefined : takeoffItems.find((i) => i.id === best[0]);
+    return item === undefined ? null : { id: item.id, name: item.name, on: best![1], of: group.runs.length };
   }
   async function setTypeFor(index: number, group: WallGroup, code: string) {
     setSettingType(index);
@@ -4415,14 +4432,18 @@ export function TakeoffPlanViewer({
   function wallFactsOf(group: WallGroup) {
     const keys = group.runs.map((r) => runKey([r.x1, r.x2], [r.y1, r.y2]));
     const counts = new Map<string, number>();
-    for (const key of keys) {
-      const id = runItem.get(key);
+    for (const run of group.runs) {
+      const id = runItem.get(runKey([run.x1, run.x2], [run.y1, run.y2])) ?? itemOfRun(run);
       if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
     }
-    const itemId = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? group.itemId ?? null;
+    // A confirmed type's item over "Walls — untyped": the row reads the type's
+    // height, not the untyped pile's "no height", on a group a re-run found again.
+    const itemId = typedItemOf(group)?.id ?? [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? group.itemId ?? null;
     const item = wallItems.find((one) => one.id === itemId);
     if (item === undefined) return null;
-    const options = [ceilingOption(group.runs, ceilingRooms), ...(wallTypes.find((t) => t.id === item.wallTypeId)?.legendHeights ?? [])].filter((o): o is HeightOption => o !== null);
+    // The queue's order: the type's own, the set's general note, then the ceiling (Chrome: the queue said
+    // 15'-0" from general note A601 while this row offered "Ceiling 10'-0"" first).
+    const options = heightOptionsInOrder({ type: wallTypes.find((t) => t.id === item.wallTypeId)?.legendHeights ?? [], general: generalHeight, ceiling: ceilingOption(group.runs, ceilingRooms) });
     const mine = new Set(keys);
     const openings = item.measurements.filter((m) => m.pageNumber === pageNumber && m.xs.length === 2 && mine.has(runKey(m.xs, m.ys))).flatMap((m) => m.openings ?? []);
     const sqFt = wallSquareFeet({ linearFt: group.feet, heightFt: item.heightFt, sides: item.sides, openings, thresholdSqFt: openingThresholdSqFt });
@@ -5500,7 +5521,10 @@ export function TakeoffPlanViewer({
                   const namedOnly = priced === null ? namedTypeFor(group, chosen[index]) : null;
                   // What its walls are on now: the code just set until the rows say so, then the rows.
                   const justSet = typedNow[runsKey(group)];
-                  const typedLabel = justSet === null ? null : (justSet ?? typedItemOf(group)?.name ?? null);
+                  const typedOn = justSet === undefined ? typedItemOf(group) : null;
+                  const typedLabel = justSet === null ? null : (justSet ?? typedOn?.name ?? null);
+                  // Some of its runs typed, some not: shown, and the rest offered the same type.
+                  const partly = typedOn !== null && typedOn.on < typedOn.of ? typedOn : null;
                   return (
                   <Fragment key={`${group.inches}-${index}`}>
                   {heading !== null && (
@@ -5630,6 +5654,11 @@ export function TakeoffPlanViewer({
                         <span className="rounded bg-tag-brand px-1.5 py-0.5 text-xs font-semibold text-tag-brand-ink" data-takeoff="group-typed-as">
                           {typedLabel}
                         </span>
+                        {partly !== null && (
+                          <span className="text-xs text-ink-body" data-takeoff="group-typed-partly">
+                            on {partly.on} of {partly.of} runs: the rest are untyped, confirm them below
+                          </span>
+                        )}
                         <button
                           type="button"
                           data-takeoff="group-clear-type"
@@ -5641,7 +5670,7 @@ export function TakeoffPlanViewer({
                         </button>
                       </span>
                     )}
-                    {typedLabel === null && priced === null && namedOnly === null && legendCodes.length > 0 && (
+                    {(typedLabel === null || partly !== null) && priced === null && namedOnly === null && legendCodes.length > 0 && (
                       <span className="flex flex-wrap items-center gap-1" data-takeoff="set-type">
                         <span className="text-xs text-ink-muted">Set type</span>
                         {legendCodes.map((code) => (

@@ -46,7 +46,7 @@ describe("the job's one review queue", () => {
     expect(QUEUE_PART.wall).toBe("Held walls");
   });
 
-  it("A WALL GROUP WITH NO HEIGHT is one item, on the sheet with most of it, offering the ceiling and the legend", () => {
+  it("A WALL GROUP WITH NO HEIGHT is one item, on the sheet with most of it, offering the legend, then the ceiling", () => {
     const other = { pageNumber: 4, sheet: "A102", feetPerUnit: 100 };
     const room = { xs: [0.1, 0.9, 0.9, 0.1], ys: [0.5, 0.5, 0.9, 0.9], heightFeet: 9, name: "201 CLASS", from: "tag" };
     const legend = { kind: "legend" as const, feet: 14, from: "legend W1: TO DECK → 14'-0\"" };
@@ -57,7 +57,8 @@ describe("the job's one review queue", () => {
     ], [legend])!;
     expect(item).toMatchObject({ kind: "height", key: "height:i1", itemId: "i1", pageNumber: 4, sheet: "A102" });
     expect((item as { feet: number }).feet).toBeCloseTo(80);
-    expect((item as { options: { kind: string; feet: number }[] }).options.map((o) => [o.kind, o.feet])).toEqual([["ceiling", 9], ["legend", 14]]);
+    expect((item as { options: { kind: string; feet: number }[] }).options.map((o) => [o.kind, o.feet])).toEqual([["legend", 14], ["ceiling", 9]]);
+    // In the one suggestion order (`heightOptionsInOrder`): the type's own first, the ceiling last.
     expect(focusOf(item)).toEqual({ pageNumber: 4, ...run(0.2, 0.8) });
     expect(heightItem({ id: "i2", name: "W2" }, [{ sheet, runs: [], rooms: [] }], [legend])).toBeNull();
   });
