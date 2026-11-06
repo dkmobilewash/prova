@@ -106,31 +106,52 @@ export const nextRedoLabel = (state: UndoState): string | null =>
  */
 export async function undoOnce(
   state: UndoState,
-): Promise<{ state: UndoState; result: ActionResult; label: string; inPlace?: boolean } | null> {
+): Promise<{ state: UndoState; result: ActionResult; label: string; inPlace?: boolean; entry: UndoEntry } | null> {
   const entry = state.done[state.done.length - 1];
   if (!entry) return null;
   const result = await entry.undo();
-  if (!result.ok) return { state, result, label: entry.label };
+  if (!result.ok) return { state, result, label: entry.label, entry };
   return {
     state: { done: state.done.slice(0, -1), undone: [entry, ...state.undone] },
     result,
     label: entry.label,
     inPlace: entry.inPlace,
+    entry,
   };
 }
 
 /** The mirror of `undoOnce`, with the same failure rule. */
 export async function redoOnce(
   state: UndoState,
-): Promise<{ state: UndoState; result: ActionResult; label: string; inPlace?: boolean } | null> {
+): Promise<{ state: UndoState; result: ActionResult; label: string; inPlace?: boolean; entry: UndoEntry } | null> {
   const entry = state.undone[0];
   if (!entry) return null;
   const result = await entry.redo();
-  if (!result.ok) return { state, result, label: entry.label };
+  if (!result.ok) return { state, result, label: entry.label, entry };
   return {
     state: { done: [...state.done, entry], undone: state.undone.slice(1) },
     result,
     label: entry.label,
     inPlace: entry.inPlace,
+    entry,
   };
+}
+
+/**
+ * ── APPLIED TO THE STACK AS IT IS NOW, NOT AS IT WAS WHEN THE PRESS STARTED ──
+ *
+ * An undo awaits the server, and the review queue saves behind, so an entry can
+ * be pushed while it waits. Writing back the state the press began with dropped
+ * that entry: Chrome on Baker accepted two groups, pressed Undo twice, and after
+ * a reload both were still saved. These move the one entry by identity on the
+ * latest state, so whatever arrived in between stays.
+ */
+export function movedToUndone(state: UndoState, entry: UndoEntry): UndoState {
+  if (!state.done.includes(entry)) return state;
+  return { done: state.done.filter((e) => e !== entry), undone: [entry, ...state.undone] };
+}
+
+export function movedToDone(state: UndoState, entry: UndoEntry): UndoState {
+  if (!state.undone.includes(entry)) return state;
+  return { done: [...state.done, entry], undone: state.undone.filter((e) => e !== entry) };
 }

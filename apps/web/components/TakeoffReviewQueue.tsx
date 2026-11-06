@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { ActionResult } from "@/lib/actions/shared";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
@@ -203,8 +204,23 @@ export function TakeoffReviewQueue({
     setDone((was) => new Set(was).add(current.key));
   }
 
-  /** Accept now, save behind: the next item is on screen before the server answers. */
-  function acceptNow<R extends { ok: true } | { ok: false; error: string }>(key: string, what: string, run: () => Promise<R>, undoOf?: (saved: Extract<R, { ok: true }>) => UndoEntry) {
+  /**
+   * Accept now, save behind: the next item is on screen before the server answers.
+   *
+   * ── THE UNDO ENTRY JOINS THE STACK AT THE PRESS, NOT AT THE ANSWER ──
+   * It used to be pushed when the save came back, so the stack's order was the
+   * server's, and an Undo pressed while a save was out could be overtaken by it
+   * (Chrome on Baker: two accepts, Undo twice, both still saved after a reload).
+   * Pushed here, in the order things were pressed; its Undo waits for the save
+   * and reverses exactly what it saved, and its Redo keeps the new token, so a
+   * redone accept is undone in full too.
+   */
+  function acceptNow<R extends { ok: true } | { ok: false; error: string }>(
+    key: string,
+    what: string,
+    run: () => Promise<R>,
+    undoable?: { label: string; undo: (saved: Extract<R, { ok: true }>) => Promise<ActionResult>; redo: () => Promise<R> },
+  ) {
     setError(null);
     setCursor(after(key));
     setDone((was) => new Set(was).add(key));
@@ -216,37 +232,48 @@ export function TakeoffReviewQueue({
       });
       setError(`${what}: ${why}`);
     };
-    void run().then(
+    let saved: Promise<Extract<R, { ok: true }> | null> = run().then(
       (result) => {
-        if (!result.ok) return back(result.error);
-        if (undoOf === undefined || onUndoable === undefined) return;
-        // ── UNDO PUTS IT BACK, AND THE ITEM BACK IN THE QUEUE ──
-        const entry = undoOf(result as Extract<R, { ok: true }>);
-        onUndoable({
-          ...entry,
-          undo: async () => {
-            const undone = await entry.undo();
-            if (undone.ok) {
-              setDone((was) => {
-                const next = new Set(was);
-                next.delete(key);
-                return next;
-              });
-              // Back on the item just undone, so it is what the person sees.
-              setCursor(key);
-            }
-            return undone;
-          },
-          redo: async () => {
-            const again = await entry.redo();
-            if (again.ok) setDone((was) => new Set(was).add(key));
-            return again;
-          },
-          inPlace: true,
-        });
+        if (!result.ok) {
+          back(result.error);
+          return null;
+        }
+        return result as Extract<R, { ok: true }>;
       },
-      () => back("it did not save. Try it again."),
+      () => {
+        back("it did not save. Try it again.");
+        return null;
+      },
     );
+    if (undoable === undefined || onUndoable === undefined) return;
+    onUndoable({
+      label: undoable.label,
+      // ── UNDO PUTS IT BACK, AND THE ITEM BACK IN THE QUEUE ──
+      undo: async () => {
+        const done = await saved;
+        // It never saved (and is back in the queue already): nothing to reverse.
+        if (done === null) return { ok: true };
+        const undone = await undoable.undo(done);
+        if (undone.ok) {
+          setDone((was) => {
+            const next = new Set(was);
+            next.delete(key);
+            return next;
+          });
+          // Back on the item just undone, so it is what the person sees.
+          setCursor(key);
+        }
+        return undone;
+      },
+      redo: async () => {
+        const again = await undoable.redo();
+        if (!again.ok) return again;
+        saved = Promise.resolve(again as Extract<R, { ok: true }>);
+        setDone((was) => new Set(was).add(key));
+        return { ok: true };
+      },
+      inPlace: true,
+    });
   }
 
   const button = "min-h-[32px] rounded-md border border-line-card px-3 text-xs font-medium text-ink-body hover:bg-rail disabled:opacity-50";
@@ -320,22 +347,21 @@ export function TakeoffReviewQueue({
                 onAccept={(code, heightFt) => {
                   // One group through the sheet's confirm, for the token Undo puts it back with.
                   const group = { planId, pageNumber: current.pageNumber, code: code!, inches: current.inches, runs: current.runs, heightFt, level: levelHeightFor(code, current.level) === null ? null : current.level!.label };
+                  const confirmOne = async () => {
+                    const result = await confirmSheetSuggestions(jobId, [group]);
+                    if (!result.ok) return result;
+                    return result.value.accepted === 1 ? result : { ok: false as const, error: result.value.failed[0] ?? "it did not save. Try it again." };
+                  };
                   acceptNow(
                     current.key,
                     `${code} on sheet ${current.sheet}`,
-                    async () => {
-                      const result = await confirmSheetSuggestions(jobId, [group]);
-                      if (!result.ok) return result;
-                      return result.value.accepted === 1 ? result : { ok: false as const, error: result.value.failed[0] ?? "it did not save. Try it again." };
-                    },
-                    (saved) => ({
+                    confirmOne,
+                    {
                       label: `Type ${code} on ${current.sheet}`,
-                      undo: () => undoSheetSuggestions(jobId, saved.value.undo),
-                      redo: async () => {
-                        const again = await confirmSheetSuggestions(jobId, [group]);
-                        return again.ok ? { ok: true as const } : again;
-                      },
-                    }),
+                      undo: (saved) => undoSheetSuggestions(jobId, saved.value.undo),
+                      // A fresh token: what the redo wrote is what the next Undo takes back.
+                      redo: confirmOne,
+                    },
                   );
                 }}
               />
@@ -357,11 +383,11 @@ export function TakeoffReviewQueue({
               onAccept={(_code, heightFt) => {
                 if (heightFt === null) return setError("Type a height first: H.");
                 const itemId = current.itemId;
-                acceptNow(current.key, current.name, () => setWallGroupHeight(jobId, itemId, heightFt), (saved) => ({
+                acceptNow(current.key, current.name, () => setWallGroupHeight(jobId, itemId, heightFt), {
                   label: `Height ${heightFt} ft on ${current.name}`,
-                  undo: () => undoSheetSuggestions(jobId, { moved: [], created: [], items: [{ id: itemId, heightFt: saved.value.was.heightFt, sides: saved.value.was.sides }] }),
+                  undo: (saved) => undoSheetSuggestions(jobId, { moved: [], created: [], items: [{ id: itemId, heightFt: saved.value.was.heightFt, sides: saved.value.was.sides }] }),
                   redo: () => setWallGroupHeight(jobId, itemId, heightFt),
-                }));
+                });
               }}
             />
           )}

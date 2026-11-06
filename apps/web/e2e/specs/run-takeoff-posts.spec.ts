@@ -85,6 +85,17 @@ test.describe("Run takeoff puts the sheet's walls on the job", () => {
     await page.screenshot({ path: path.join(SHOTS, "run-takeoff-posted-1440.png") });
   });
 
+  /** The panel's groups, by thickness: what the queue and a reload must agree with. */
+  const groups = async () => (await page.locator('[data-takeoff="found-group"]').evaluateAll((rows) => rows.map((r) => r.getAttribute("data-inches")))).sort();
+
+  test("2b. ONE GROUPING: the panel shows the stored group the queue reads, not its own find, and keeps it on a reload", async () => {
+    // Chrome on Baker: one 7-3/8" 114 ft group here, C8B 117 ft in the queue, and gone on reload.
+    await expect.poll(groups, { timeout: 30_000 }).toEqual(["4.875"]);
+    await page.reload();
+    await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 60_000 });
+    await expect.poll(groups, { timeout: 30_000 }).toEqual(["4.875"]);
+  });
+
   test("3. pressed again: nothing more goes on the job", async () => {
     const run = page.locator('[data-takeoff="find-walls"]');
     await expect(run).toBeEnabled({ timeout: 60_000 });
@@ -92,6 +103,8 @@ test.describe("Run takeoff puts the sheet's walls on the job", () => {
     await expect(run).toHaveText("Run takeoff", { timeout: 180_000 });
     await page.waitForTimeout(1_000);
     expect(await onJob()).toBe(2);
+    // Pressed with the walls stored: the stored group again, not a find of the sheet's own lines.
+    expect(await groups()).toEqual(["4.875"]);
   });
 
   test("4. the stepper is past Takeoff", async () => {
