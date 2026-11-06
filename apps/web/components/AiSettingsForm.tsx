@@ -116,7 +116,10 @@ export function AiSettingsForm({ settings }: { settings: AiSettingsView }) {
             />
             <span>
               <span className="font-medium">{AI_FEATURE_LABEL[feature]}</span>
-              {OPT_IN_FEATURES.has(feature) && <span className="ml-2 text-xs text-ink-muted">new — off until you turn it on</span>}
+              {/* Plan reading is on from signup for a new company (lib/auth.ts); older ones turn it on here. */}
+              {OPT_IN_FEATURES.has(feature) && (
+                <span className="ml-2 text-xs text-ink-muted">{feature === "PLAN_TEXT_READ" ? "on for new companies — turn it on here for an older one" : "new — off until you turn it on"}</span>
+              )}
               <span className="block text-xs text-ink-body">{AI_FEATURE_DESCRIPTION[feature]}</span>
             </span>
           </label>

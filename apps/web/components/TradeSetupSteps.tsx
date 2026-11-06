@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { applyTradePreset, saveStarterMarkup, skipBusinessScopeQuestions } from "@/lib/actions";
 import { CompanySetupGate } from "@/components/CompanySetupGate";
+import { PlanReadingSwitch } from "@/components/PlanReadingSwitch";
 import { Spinner } from "@/components/Spinner";
 import { RECAP_RATE_FIELDS } from "@/lib/bid-recap";
 import { MARKUP_FIELDS, TRADE_PRESETS } from "@/lib/trade-presets";
@@ -21,7 +22,7 @@ export type SetupStep = "trade" | "markup" | "questions";
  * not `type="number"`, which submits an empty string for a value the browser
  * dislikes (CLAUDE.md, the openings-deduction entry).
  */
-export function TradeSetupSteps({ initial }: { initial: SetupStep }) {
+export function TradeSetupSteps({ initial, planReadingOn }: { initial: SetupStep; planReadingOn: boolean }) {
   const [step, setStep] = useState<SetupStep>(initial);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -69,6 +70,7 @@ export function TradeSetupSteps({ initial }: { initial: SetupStep }) {
               ))}
             </ul>
             <p className="mt-4 text-xs text-ink-muted">You can change any of it later in Settings and on the Wall types page.</p>
+            <PlanReadingSwitch initialOn={planReadingOn} />
             {/* Today's skip, unchanged: onboarding done, nothing preset, no
                 markup owed. Never a dead end (CompanySetupGate's own rule). */}
             <button
