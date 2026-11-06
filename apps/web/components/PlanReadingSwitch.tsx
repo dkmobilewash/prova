@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { setWallTypesFromDrawings } from "@/lib/actions";
 import { AI_FEATURE_LABEL, PLAN_READING_SENTENCE } from "@/lib/ai/features";
+import { Spinner } from "@/components/Spinner";
 
 /**
  * AI plan reading on `/welcome`: on for a new company (lib/auth.ts), said here
@@ -49,7 +50,16 @@ export function PlanReadingSwitch({ initialOn }: { initialOn: boolean }) {
           onClick={toggle}
           className="inline-flex min-h-11 shrink-0 items-center rounded-md border border-line-card px-3 text-sm font-semibold text-ink hover:bg-rail-hover disabled:opacity-50"
         >
-          {isPending ? "Saving…" : on ? "On — turn off" : "Off — turn on"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Saving…
+            </span>
+          ) : on ? (
+            "On — turn off"
+          ) : (
+            "Off — turn on"
+          )}
         </button>
       </div>
       {error && (
