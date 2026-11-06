@@ -3,6 +3,9 @@ import { findJob } from "./findJob";
 import { throughAction } from "./adapter";
 import { STAGE_SPENDS } from "@/lib/plan-ingest/stageCost";
 import { allowanceSummary } from "../allowance";
+import { parseFeetInches } from "@/lib/feet-inches";
+import { OFF_ESTIMATE_ITEMS } from "@/lib/takeoff/estimateHold";
+import { sameCode } from "@/lib/takeoff/legendMerge";
 import type {
   CommandContext,
   CommandDefinition,
@@ -198,4 +201,109 @@ export const postTakeoffToEstimateCommand: HandoffCommandDefinition = {
   resolve: resolvePostTakeoff,
 };
 
-export const takeoffCommands: CommandDefinition[] = [runTakeoffCommand, postTakeoffToEstimateCommand];
+/**
+ * "Set S6B walls to 15 feet": the queue's T, for every item of one wall type
+ * on the job at once. DIRECT over `setWallGroupHeight`, the action T calls,
+ * once per item (a type split by level is one item per level), so its range
+ * check, its sides rule and its estimate-line sync are the same. The card
+ * shows each item's height now and the linear feet it carries.
+ */
+export function spokenFeet(raw: string | undefined): number | null {
+  const text = (raw ?? "")
+    .toLowerCase()
+    .replace(/\s*(feet|foot|ft)\.?/g, "'")
+    .replace(/\s*(inches|inch|in)\.?/g, '"')
+    .replace(/'\s*and\s*/g, "' ")
+    .trim();
+  const parsed = parseFeetInches(text, { label: "Height" });
+  return parsed.ok && parsed.n > 0 && parsed.n < 100 ? parsed.n : null;
+}
+
+const feetWords = (n: number) => `${Math.round(n * 100) / 100} ft`;
+
+async function resolveSetWallHeight(ctx: CommandContext, input: CommandInput): Promise<Resolution> {
+  const code = (input.wallType ?? "").trim().toUpperCase();
+  if (!code) return { kind: "need", missing: "which wall type, e.g. S6B" };
+  const heightFt = spokenFeet(input.height);
+  if (input.height && heightFt === null) return { kind: "need", missing: `the height in feet — "${input.height}" isn't one between 0 and 100` };
+  if (heightFt === null) return { kind: "need", missing: "the height in feet" };
+  const located = await findJob(ctx, input);
+  if (located.kind !== "job") return located;
+  const { job } = located;
+  const status = await prisma.job.findFirst({ where: { id: job.id, companyId: ctx.companyId }, select: { status: true } });
+  if (status?.status !== "ESTIMATE") {
+    return { kind: "refuse", reason: `${job.name} is past estimating; a height there changes by change order.`, href: `/jobs/${job.id}` };
+  }
+  const items = await prisma.takeoffItem.findMany({
+    where: { jobId: job.id, job: { companyId: ctx.companyId }, wallTypeId: { not: null }, name: { notIn: [...OFF_ESTIMATE_ITEMS] } },
+    orderBy: { sortOrder: "asc" },
+    select: { id: true, name: true, heightFt: true, wallType: { select: { code: true } }, _count: { select: { measurements: true } } },
+  });
+  const ofType = items.filter((item) => item.wallType !== null && sameCode(item.wallType.code, code));
+  if (ofType.length === 0) {
+    const typed = [...new Set(items.map((item) => item.wallType?.code).filter(Boolean))];
+    return {
+      kind: "refuse",
+      reason: `No walls on ${job.name}'s takeoff are typed ${code}.${typed.length ? ` Typed so far: ${typed.join(", ")}.` : ""} Type them in the review queue first.`,
+      href: `/takeoff/${job.id}?open=review`,
+    };
+  }
+  return {
+    kind: "ready",
+    resolved: { jobId: job.id, jobName: job.name, code, heightFt, itemIds: ofType.map((item) => item.id) },
+    preview: [
+      { label: "Job", value: job.name },
+      { label: "Wall type", value: code },
+      ...ofType.map((item) => ({
+        label: item.name,
+        value: `${item.heightFt === null ? "no height" : feetWords(Number(item.heightFt))} → ${feetWords(heightFt)} (${item._count.measurements} wall${item._count.measurements === 1 ? "" : "s"})`,
+      })),
+      { label: "Estimate", value: "its lines are updated at the new height" },
+    ],
+    warnings: heightFt > 30 ? [`${feetWords(heightFt)} is tall for a wall. Check it against the sections.`] : [],
+  };
+}
+
+async function executeSetWallHeight(_ctx: CommandContext, resolved: ResolvedPayload): Promise<Executed> {
+  const jobId = String(resolved.jobId);
+  const heightFt = Number(resolved.heightFt);
+  const ids = Array.isArray(resolved.itemIds) ? resolved.itemIds.map(String) : [];
+  const { setWallGroupHeight } = await import("@/lib/actions/takeoffItems");
+  for (const id of ids) {
+    const result = await throughAction("set the height", () => setWallGroupHeight(jobId, id, heightFt));
+    if (!result.ok) return result;
+  }
+  return {
+    ok: true,
+    message: `${String(resolved.code)} walls on ${String(resolved.jobName)} are ${feetWords(heightFt)} now, and the estimate follows.`,
+    created: { label: `${String(resolved.code)} walls, ${String(resolved.jobName)}`, href: `/takeoff/${jobId}`, targetType: "TakeoffItem", targetId: ids[0] ?? "" },
+    revalidate: [`/jobs/${jobId}/takeoff`, `/takeoff/${jobId}`],
+  };
+}
+
+export const setWallHeightCommand: DirectCommandDefinition = {
+  name: "set_wall_height",
+  description:
+    "Sets the height of every wall of one wall type on a job's takeoff, e.g. 'set S6B walls to 15 feet' or 'make the W2 walls on Baker 12 feet'. The same as pressing T in the review queue for each group of that type; the estimate lines follow. Needs the wall type code, the height as the person said it, and the job. Does not type walls, change a type's library default, set one wall, or measure.",
+  capability: "VIEW_JOB_COSTS",
+  tier: "T2_MODIFY",
+  mode: "DIRECT",
+  action: "setWallGroupHeight",
+  core: "setWallGroupHeight",
+  title: "Set wall height",
+  verb: "Finding the walls",
+  button: "Set the height",
+  input_schema: {
+    type: "object",
+    properties: {
+      jobName: { type: "string", description: "The job, as the person named it." },
+      wallType: { type: "string", description: "The wall type code, e.g. S6B or W1." },
+      height: { type: "string", description: "The height as the person said it, e.g. 15 feet, 15' 6\", 12." },
+    },
+  },
+  continuationKeys: ["jobId"],
+  resolve: resolveSetWallHeight,
+  execute: executeSetWallHeight,
+};
+
+export const takeoffCommands: CommandDefinition[] = [runTakeoffCommand, postTakeoffToEstimateCommand, setWallHeightCommand];

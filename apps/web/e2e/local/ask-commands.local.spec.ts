@@ -9,8 +9,8 @@ import { startChangeOrderCommand } from "../../lib/ask/commands/changeOrders";
 import { draftPurchaseOrderCommand } from "../../lib/ask/commands/purchaseOrders";
 import { prepareLienWaiverCommand } from "../../lib/ask/commands/lienWaivers";
 import { startPayApplicationCommand } from "../../lib/ask/commands/payApplications";
-import { postTakeoffToEstimateCommand } from "../../lib/ask/commands/takeoff";
-import type { CommandInput, HandoffCommandDefinition } from "../../lib/ask/commands";
+import { postTakeoffToEstimateCommand, setWallHeightCommand } from "../../lib/ask/commands/takeoff";
+import type { CommandDefinition, CommandInput } from "../../lib/ask/commands";
 import { WORKFLOW_EXAMPLES } from "../../components/askExamples";
 
 /**
@@ -54,7 +54,7 @@ test.beforeAll(async ({ browser }) => {
 });
 
 /** Types `question` into Ask and returns the card's id once it is on screen. */
-async function ask(question: string, command: HandoffCommandDefinition, input: CommandInput): Promise<string> {
+async function ask(question: string, command: CommandDefinition, input: CommandInput): Promise<string> {
   let cardId = "";
   if (!REAL_MODEL) {
     const today = new Date().toISOString().slice(0, 10);
@@ -79,7 +79,7 @@ async function ask(question: string, command: HandoffCommandDefinition, input: C
       title: command.title,
       button: command.button,
       mode: command.mode,
-      handoffHref: command.handoffHref(id, resolution.resolved),
+      handoffHref: command.handoffHref?.(id, resolution.resolved),
       preview: resolution.preview,
       warnings: resolution.warnings,
       alsoRequested: [],
@@ -102,6 +102,12 @@ async function ask(question: string, command: HandoffCommandDefinition, input: C
   await panel.getByLabel("Ask about your jobs").fill(question);
   await panel.getByRole("button", { name: "Ask", exact: true }).click();
   await expect(panel.getByText(command.title).first()).toBeVisible({ timeout: 60_000 });
+  if (command.mode === "DIRECT") {
+    // The tap IS the write (confirmAskProposal); the card id comes off the row.
+    await panel.getByRole("button", { name: command.button }).click();
+    if (!cardId) cardId = (await prisma.askProposal.findFirstOrThrow({ where: { command: command.name, createdByUserId: actor.userId }, orderBy: { createdAt: "desc" }, select: { id: true } })).id;
+    return cardId;
+  }
   const link = panel.getByRole("link", { name: command.button });
   if (!cardId) cardId = new URL((await link.getAttribute("href"))!, "http://x").searchParams.get("draft") ?? "";
   await link.click();
@@ -216,4 +222,64 @@ test("the empty panel lists what you can say by workflow, and a tap fills the bo
   await expect(box).toBeFocused();
   await page.waitForTimeout(1_000);
   expect(asks, "a workflow chip must fill the box, never send").toBe(0);
+});
+
+/** A takeoff on an ESTIMATE job (the billing fixture's job is contracted): one
+ * sheet 100 ft wide, 25 ft of S6B with no height, and one unpriced line. */
+const TAKEOFF_JOB = "ZZ Click Takeoff Baker";
+async function seedTakeoffJob(): Promise<{ jobId: string; itemId: string }> {
+  const { companyId } = actor;
+  const old = await prisma.job.findFirst({ where: { companyId, name: TAKEOFF_JOB }, select: { id: true } });
+  if (old) {
+    const item = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId: old.id, name: "S6B walls" }, select: { id: true } });
+    await prisma.takeoffItem.update({ where: { id: item.id }, data: { heightFt: null } });
+    return { jobId: old.id, itemId: item.id };
+  }
+  const contact = await prisma.contact.create({ data: { companyId, name: "ZZ Click Takeoff GC" } });
+  const job = await prisma.job.create({ data: { companyId, contactId: contact.id, name: TAKEOFF_JOB, status: "ESTIMATE" } });
+  const s6b =
+    (await prisma.wallType.findFirst({ where: { companyId, code: "S6B" }, select: { id: true } })) ??
+    (await prisma.wallType.create({ data: { companyId, code: "S6B", name: "6in stud, one layer each side", sides: 2, components: { create: [{ description: "studs", basis: "LINEAR_FT", factor: 1 }] } } }));
+  const plan = await prisma.takeoffPlan.create({ data: { companyId, jobId: job.id, fileUrl: "https://example.test/ask-takeoff.pdf", fileName: "ask-takeoff.pdf" } });
+  const sheet = await prisma.takeoffPlanPage.create({ data: { planId: plan.id, pageNumber: 1, label: "A101", pageWidthPt: 2592 } });
+  const calibration = await prisma.takeoffScaleCalibration.create({ data: { pageId: sheet.id, x1: 0, y1: 0.1, x2: 1, y2: 0.1, declaredDistanceFeet: "100" } });
+  const item = await prisma.takeoffItem.create({ data: { companyId, jobId: job.id, name: "S6B walls", type: "LINEAR", colorHex: "#222222", wallTypeId: s6b.id } });
+  await prisma.takeoffMeasurement.create({ data: { pageId: sheet.id, calibrationId: calibration.id, kind: "LINEAR", source: "DETECTED", xs: [0, 0.25], ys: [0.5, 0.5], itemId: item.id } });
+  await prisma.jobLineItem.create({ data: { jobId: job.id, description: "Hang, tape and finish", quantity: 100, unit: "SF" } });
+  return { jobId: job.id, itemId: item.id };
+}
+
+test("set S6B walls to 15 feet: the card shows the height now and new, the tap sets it, and the estimate follows", async () => {
+  const { itemId } = await seedTakeoffJob();
+  const card = await ask(`set S6B walls to 15 feet on ${TAKEOFF_JOB}`, setWallHeightCommand, { jobName: TAKEOFF_JOB, wallType: "S6B", height: "15 feet" });
+  const panel = page.locator("[data-tour=ai-chat]");
+  await expect(panel.getByText(/S6B walls on ZZ Click Takeoff Baker are 15 ft now/)).toBeVisible();
+  await expect.poll(async () => Number((await prisma.takeoffItem.findUniqueOrThrow({ where: { id: itemId } })).heightFt)).toBe(15);
+  // The queue's own Set height writes the item's estimate lines at once.
+  await expect.poll(() => prisma.jobLineItem.count({ where: { takeoffItemId: itemId, isDeleted: false } })).toBeGreaterThan(0);
+  await settled(card);
+});
+
+/** A read has no card: asked of the real model only, and graded by the tool
+ * the stream says it used and the figure in its words. */
+async function askRead(question: string): Promise<{ text: string; toolsUsed: string[] }> {
+  await page.unroute("**/api/ask");
+  await page.goto("/ai");
+  const panel = page.locator("[data-tour=ai-chat]");
+  await panel.getByLabel("Ask about your jobs").fill(question);
+  const response = page.waitForResponse((r) => r.url().includes("/api/ask") && r.request().method() === "POST", { timeout: 60_000 });
+  await panel.getByRole("button", { name: "Ask", exact: true }).click();
+  const events = (await (await response).text()).split("\n").filter(Boolean).map((line) => JSON.parse(line) as { type: string; delta?: string; toolsUsed?: string[] });
+  return { text: events.map((e) => e.delta ?? "").join(""), toolsUsed: events.find((e) => e.type === "done")?.toolsUsed ?? [] };
+}
+
+test("how many linear feet of S6B, and what is left to review: read off the takeoff and the queue", async () => {
+  test.skip(!REAL_MODEL, "a read is the model's answer; run with ANTHROPIC_API_KEY");
+  await seedTakeoffJob();
+  const feet = await askRead(`How many linear feet of S6B on ${TAKEOFF_JOB}?`);
+  expect(feet.toolsUsed).toContain("takeoff_quantities");
+  expect(feet.text).toMatch(/\b25\b/);
+  const left = await askRead(`What's left to review on ${TAKEOFF_JOB}?`);
+  expect(left.toolsUsed).toContain("takeoff_review");
+  expect(left.text).toMatch(/hang,? tape/i);
 });

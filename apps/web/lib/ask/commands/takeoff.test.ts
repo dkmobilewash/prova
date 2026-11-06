@@ -16,19 +16,22 @@ const fake = vi.hoisted(() => ({
     takeoffPlan: { findFirst: vi.fn() },
     planIngestJob: { findFirst: vi.fn() },
     takeoffMeasurement: { findMany: vi.fn() },
+    takeoffItem: { findMany: vi.fn() },
   },
+  setWallGroupHeight: vi.fn(),
   startPlanIngest: vi.fn(),
   wallsSheetsFor: vi.fn(),
 }));
 vi.mock("@prova/db", () => ({ prisma: fake.prisma }));
 vi.mock("@/lib/actions/planIngest", () => ({ startPlanIngest: fake.startPlanIngest }));
+vi.mock("@/lib/actions/takeoffItems", () => ({ setWallGroupHeight: fake.setWallGroupHeight }));
 vi.mock("@/lib/plan-ingest/walls", () => ({
   wallsSheetsFor: fake.wallsSheetsFor,
   wallsTaskPages: (sheets: number[]) => sheets,
 }));
 vi.mock("../allowance", () => ({ allowanceSummary: async () => ({ planSheetsLeft: 1340 }) }));
 
-const { runTakeoffCommand, postTakeoffToEstimateCommand } = await import("./takeoff");
+const { runTakeoffCommand, postTakeoffToEstimateCommand, setWallHeightCommand, spokenFeet } = await import("./takeoff");
 
 const ctx = { companyId: "co-1", userId: "u-1", principal: { role: "OWNER", jobFunction: null }, today: "2026-11-04" } as const;
 const wv = { id: "job-1", name: "Washington Village", status: "ESTIMATE", contact: { name: "WV GC" } };
@@ -122,5 +125,51 @@ describe("post_takeoff_to_estimate", () => {
   it("refuses when everything measured is already on the estimate", async () => {
     fake.prisma.takeoffMeasurement.findMany.mockResolvedValue([]);
     expect((await postTakeoffToEstimateCommand.resolve(ctx, { jobName: "Washington Village" })).kind).toBe("refuse");
+  });
+});
+
+describe("set_wall_height", () => {
+  const items = [
+    { id: "it-1", name: "S6B walls", heightFt: null, wallType: { code: "S6B" }, _count: { measurements: 4 } },
+    { id: "it-2", name: "S6B walls — levels 2–9", heightFt: "9.67", wallType: { code: "S6B" }, _count: { measurements: 1 } },
+    { id: "it-3", name: "S6A walls", heightFt: "10", wallType: { code: "S6A" }, _count: { measurements: 7 } },
+  ];
+  beforeEach(() => {
+    fake.prisma.takeoffItem.findMany.mockReset().mockResolvedValue(items);
+    fake.setWallGroupHeight.mockReset().mockResolvedValue({ ok: true });
+  });
+
+  it("reads a height the way it is said, and refuses what is not one", () => {
+    expect(["15", "15 feet", "15 ft", "15'", "15 foot 6 inches", "15' 6\"", "15 feet and 6 inches"].map(spokenFeet)).toEqual([15, 15, 15, 15, 15.5, 15.5, 15.5]);
+    expect(["fifteen", "", "0", "120 feet", undefined].map(spokenFeet)).toEqual([null, null, null, null, null]);
+  });
+
+  it("is a T2 modify, DIRECT over the queue's own Set height", () => {
+    expect(setWallHeightCommand).toMatchObject({ mode: "DIRECT", core: "setWallGroupHeight", tier: "T2_MODIFY", capability: "VIEW_JOB_COSTS" });
+  });
+
+  it("covers every item of the type, one per level, and nothing else; resolving writes nothing", async () => {
+    const card = await setWallHeightCommand.resolve(ctx, { jobName: "Washington Village", wallType: "s6b", height: "15 feet" });
+    if (card.kind !== "ready") throw new Error(`expected ready, got ${card.kind}`);
+    expect(card.resolved).toEqual({ jobId: "job-1", jobName: "Washington Village", code: "S6B", heightFt: 15, itemIds: ["it-1", "it-2"] });
+    expect(card.preview.filter((l) => l.label.startsWith("S6B")).map((l) => l.value)).toEqual(["no height → 15 ft (4 walls)", "9.67 ft → 15 ft (1 wall)"]);
+    expect(fake.setWallGroupHeight).not.toHaveBeenCalled();
+  });
+
+  it("the tap sets each item through the action, and stops at the first refusal", async () => {
+    const resolved = { jobId: "job-1", jobName: "Washington Village", code: "S6B", heightFt: 15, itemIds: ["it-1", "it-2"] };
+    expect(await setWallHeightCommand.execute(ctx, resolved)).toMatchObject({ ok: true });
+    expect(fake.setWallGroupHeight.mock.calls).toEqual([["job-1", "it-1", 15], ["job-1", "it-2", 15]]);
+    fake.setWallGroupHeight.mockReset().mockResolvedValue({ ok: false, error: "A wall height is a number of feet between 0 and 100." });
+    expect(await setWallHeightCommand.execute(ctx, resolved)).toMatchObject({ ok: false });
+    expect(fake.setWallGroupHeight).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for what is missing, and refuses a job past estimating", async () => {
+    expect(await setWallHeightCommand.resolve(ctx, { jobName: "Washington Village", height: "15" })).toMatchObject({ kind: "need", missing: expect.stringMatching(/wall type/) });
+    expect(await setWallHeightCommand.resolve(ctx, { jobName: "Washington Village", wallType: "S6B" })).toMatchObject({ kind: "need", missing: "the height in feet" });
+    expect(await setWallHeightCommand.resolve(ctx, { jobName: "Washington Village", wallType: "S6B", height: "tall" })).toMatchObject({ kind: "need" });
+    fake.prisma.job.findFirst.mockResolvedValue({ status: "CONTRACTED" });
+    expect(await setWallHeightCommand.resolve(ctx, { jobName: "Washington Village", wallType: "S6B", height: "15" })).toMatchObject({ kind: "refuse" });
   });
 });
