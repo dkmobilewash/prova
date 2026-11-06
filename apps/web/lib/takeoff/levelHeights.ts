@@ -26,8 +26,14 @@ const WORDS: Record<string, number> = { FIRST: 1, GROUND: 1, MAIN: 1, SECOND: 2,
 const ORDINAL = String.raw`(?:(\d{1,2})(?:ST|ND|RD|TH)?|(${Object.keys(WORDS).join("|")}))`;
 const n = (digits: string | undefined, word: string | undefined) => (digits !== undefined ? Number(digits) : WORDS[word!.toUpperCase()]!);
 const PHASE = String.raw`(?:\s*\([A-Z]?\d{0,2}\))?`;
-const MARK_NUMBERED = new RegExp(String.raw`^(?:${ORDINAL}\s+(?:FLOOR|LEVEL)|LEVEL\s+(\d{1,2}))${PHASE}$`, "i");
-const MARK_ABOVE = new RegExp(String.raw`^(?:ROOF(?:\s+(?:PLAN|LEVEL|DECK))?|PENTHOUSE\s+(?:FLOOR|ROOF|LEVEL)|HIGH\s+ROOF|MAIN\s+ROOF)${PHASE}$`, "i");
+// "T.O. 2nd FLOOR SLAB", "TOP OF 3RD BEARING", "1.0 - FIRST FLOOR": a top-of prefix,
+// a section's own numbering, and a trailing word for what the elevation is OF.
+const LEAD = String.raw`(?:\d{1,2}(?:\.\d)?\s*[-–]\s*)?(?:(?:T\.\s?O\.?|T\/O|TOP\s+OF)\s+)?`;
+const TAIL = String.raw`(?:\s+(?:SLAB|DECK|FLOOR|LINE))?(?:\s+EL(?:EV)?\.?)?`;
+// A WOOD-FRAMED SET marks its storeys by the bearing each floor sits on (Topeka A3xx:
+// "T.O. 2nd BEARING 109'-1 1/8""), and the roof by its truss bearing.
+const MARK_NUMBERED = new RegExp(String.raw`^${LEAD}(?:${ORDINAL}\s+(?:FLOOR|LEVEL|FLR\.?|BEARING|BRG\.?)|LEVEL\s+(\d{1,2}))${TAIL}${PHASE}$`, "i");
+const MARK_ABOVE = new RegExp(String.raw`^${LEAD}(?:ROOF(?:\s+(?:PLAN|LEVEL|DECK|BEARING))?|PENTHOUSE\s+(?:FLOOR|ROOF|LEVEL)|HIGH\s+ROOF|MAIN\s+ROOF|(?:ROOF\s+)?TRUSS\s+(?:BEARING|BRG\.?))${TAIL}${PHASE}$`, "i");
 const FEET = /^(\d{1,4})\s*'\s*(?:[-–]\s*)?(?:(\d{1,2})(?:\s+(\d{1,2})\/(\d{1,2}))?)?\s*(?:"|''|”)?$/;
 
 const feetOf = (s: string): number | null => {
@@ -36,7 +42,12 @@ const feetOf = (s: string): number | null => {
   return Number(m[1]) + ((m[2] === undefined ? 0 : Number(m[2])) + (m[3] === undefined ? 0 : Number(m[3]) / Number(m[4]))) / 12;
 };
 
-/** The level markers a section or elevation prints: a level's name with its elevation beside it, on one line. */
+/**
+ * The level markers a section or elevation prints: a level's name with its
+ * elevation on the same line, or directly over or under the name (Topeka and
+ * MHK print the figure below the label). A figure printed as `109'` with its
+ * inches as the next item is read as one.
+ */
 export function levelMarks(sheet: string, items: readonly { str: string; x: number; y: number; height: number }[]): LevelMark[] {
   const list = items.map((i) => ({ ...i, str: i.str.trim() })).filter((i) => i.str !== "");
   const out: LevelMark[] = [];
@@ -44,16 +55,31 @@ export function levelMarks(sheet: string, items: readonly { str: string; x: numb
     const numbered = MARK_NUMBERED.exec(i.str);
     if (numbered === null && !MARK_ABOVE.test(i.str)) continue;
     const level = numbered === null ? null : numbered[3] !== undefined ? Number(numbered[3]) : n(numbered[1], numbered[2]);
-    // The figure on the same line, nearest first: a section stacks its levels one under another.
+    const h = Math.max(i.height, 1);
+    const row = (o: (typeof list)[number]) => Math.abs(o.y - i.y) < 1.5 * h && Math.abs(o.x - i.x) < 200;
+    const stacked = (o: (typeof list)[number]) => Math.abs(o.x - i.x) < 4 * h && Math.abs(o.y - i.y) >= 0.5 * h && Math.abs(o.y - i.y) < 2.5 * h;
+    // Nearest first: a section stacks its levels one under another, so the row wins over a stacked figure.
     const figure = list
-      .filter((o) => o !== i && Math.abs(o.y - i.y) < 1.5 * Math.max(i.height, 1) && Math.abs(o.x - i.x) < 200)
-      .map((o) => ({ o, feet: feetOf(o.str) }))
-      .filter((f): f is { o: (typeof list)[number]; feet: number } => f.feet !== null)
-      .sort((a, b) => Math.abs(a.o.x - i.x) - Math.abs(b.o.x - i.x))[0];
+      .filter((o) => o !== i && (row(o) || stacked(o)))
+      .map((o) => ({ o, feet: feetWithInches(o, list) }))
+      .filter((f): f is { o: (typeof list)[number]; feet: { value: number; text: string } } => f.feet !== null)
+      .sort((a, b) => Number(!row(a.o)) - Number(!row(b.o)) || Math.hypot(a.o.x - i.x, a.o.y - i.y) - Math.hypot(b.o.x - i.x, b.o.y - i.y))[0];
     if (figure === undefined) continue;
-    out.push({ level, name: i.str, feet: figure.feet, sheet, phrase: `${i.str} ${figure.o.str}` });
+    out.push({ level, name: i.str, feet: figure.feet.value, sheet, phrase: `${i.str} ${figure.feet.text}` });
   }
   return out;
+}
+
+const INCHES = /^[-–]?\s*(\d{1,2})(?:\s+(\d{1,2})\/(\d{1,2}))?\s*(?:"|''|”)$/;
+/** A figure, with its inches when they are printed as the next item on the line (`109'` `- 1 1/8"`). */
+function feetWithInches(o: { str: string; x: number; y: number; height: number }, list: readonly { str: string; x: number; y: number; height: number }[]) {
+  const feet = feetOf(o.str);
+  if (feet === null) return null;
+  if (!/^\d{1,4}\s*'$/.test(o.str)) return { value: feet, text: o.str };
+  const inch = list.find((p) => p !== o && Math.abs(p.y - o.y) < Math.max(o.height, 1) && p.x > o.x && p.x - o.x < 40 && INCHES.test(p.str));
+  if (inch === undefined) return { value: feet, text: o.str };
+  const m = INCHES.exec(inch.str)!;
+  return { value: feet + (Number(m[1]) + (m[2] === undefined ? 0 : Number(m[2]) / Number(m[3]))) / 12, text: `${o.str} ${inch.str}` };
 }
 
 /** The levels a floor plan's caption names: "2nd - 9th Floor Plan" is 2–9; a ceiling, roof or site plan names none. */
