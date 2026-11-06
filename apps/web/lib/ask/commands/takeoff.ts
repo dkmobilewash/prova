@@ -6,6 +6,8 @@ import { allowanceSummary } from "../allowance";
 import { parseFeetInches } from "@/lib/feet-inches";
 import { OFF_ESTIMATE_ITEMS } from "@/lib/takeoff/estimateHold";
 import { sameCode } from "@/lib/takeoff/legendMerge";
+import { loadReviewQueue } from "@/lib/takeoff/reviewQueueQuery";
+import { sheetSuggestionGroups } from "@/lib/takeoff/reviewQueue";
 import type {
   CommandContext,
   CommandDefinition,
@@ -324,8 +326,6 @@ async function resolveAcceptSheet(ctx: CommandContext, input: CommandInput): Pro
   const located = await findJob(ctx, input);
   if (located.kind !== "job") return located;
   const { job } = located;
-  const { loadReviewQueue } = await import("@/lib/takeoff/reviewQueueQuery");
-  const { sheetSuggestionGroups } = await import("@/lib/takeoff/reviewQueue");
   const queue = await loadReviewQueue(ctx.companyId, job.id);
   const types = queue.items.filter((item) => item.kind === "type");
   const onSheet = types.filter((item) => item.sheet.toLowerCase() === said.toLowerCase() || String(item.pageNumber) === said);
