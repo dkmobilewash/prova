@@ -13,7 +13,8 @@ import { finishWizard, landOnDashboard, startJob } from "../lib/journey";
  * An addendum's sheets uploaded as a second plan file: each matched to the sheet
  * it replaces by sheet number, and the takeoff's change by wall type in LF, SF
  * and $. Seeded: A101 issued twice (one wall kept, one gone, one new), A102
- * revised with no scale yet, A103 a new sheet. Read-only: nothing changes.
+ * revised with no scale yet, A103 a new sheet. Then the GC's summary, Apply,
+ * and Undo.
  */
 test.describe.configure({ mode: "serial" });
 
@@ -99,7 +100,39 @@ test.describe("what an addendum's sheets change, by wall type", () => {
     await page.screenshot({ path: path.join(SHOTS, "addendum-changes-1280.png"), fullPage: true });
   });
 
-  test("5. nothing crashed", async () => {
+  test("5. the summary to send the GC says the same, in words, with Copy", async () => {
+    const summary = page.locator('[data-addendum="summary"]');
+    await expect(summary).toHaveValue(/^Addendum 1: changes to our framing and drywall scope/);
+    await expect(summary).toHaveValue(/• ZAD1: −20 LF \(−400 SF\), −\$400\.00/);
+    await expect(summary).toHaveValue(/• New walls \(type to confirm\): \+12 LF, to be priced/);
+    await expect(summary).toHaveValue(/Net change to our price: −\$400\.00, plus the walls still to be priced\./);
+    await expect(page.locator('[data-addendum="copy-summary"]')).toBeVisible();
+  });
+
+  const rowsOn = async (label: string) => {
+    const page = await prisma.takeoffPlanPage.findFirstOrThrow({ where: { label, plan: { jobId } }, select: { id: true } });
+    return (await prisma.takeoffMeasurement.findMany({ where: { pageId: page.id }, orderBy: { createdAt: "asc" }, select: { item: { select: { name: true } } } })).map((m) => m.item?.name ?? "?");
+  };
+
+  test("6. Apply: the revised walls on their types, the earlier sheet's off the estimate, the summary kept", async () => {
+    await page.locator('[data-addendum="apply"]').click();
+    await expect(page.locator('[data-addendum="applied"]')).toHaveText("Applied: 2 revised walls on the takeoff (2 written, 0 retyped), 2 replaced walls taken off the estimate.", { timeout: 30_000 });
+    await expect.poll(() => rowsOn("A-101"), { timeout: 30_000 }).toEqual(["ZAD1 walls", "Walls — untyped"]);
+    expect(await rowsOn("A101")).toEqual(["Walls — dropped", "Walls — dropped"]);
+    await expect(page.locator('[data-addendum="sheet"]').nth(0).locator('[data-addendum="sheet-status"]')).toHaveText(/^applied/, { timeout: 30_000 });
+    await expect(page.locator('[data-addendum="summary"]')).toHaveValue(/• ZAD1: −20 LF/);
+    await page.screenshot({ path: path.join(SHOTS, "addendum-applied-1280.png"), fullPage: true });
+  });
+
+  test("7. Undo: every wall back where it was, and the sheet to compare again", async () => {
+    await page.locator('[data-addendum="undo"]').click();
+    await expect.poll(() => rowsOn("A-101"), { timeout: 30_000 }).toEqual([]);
+    expect(await rowsOn("A101")).toEqual(["ZAD1 walls", "ZAD1 walls"]);
+    await expect(page.locator('[data-addendum="apply"]')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[data-addendum="sheet"]').nth(0).locator('[data-addendum="sheet-status"]')).toHaveText("compared: 1 of 2 runs matched in place");
+  });
+
+  test("8. nothing crashed", async () => {
     expect(monitor.crashes).toEqual([]);
   });
 });

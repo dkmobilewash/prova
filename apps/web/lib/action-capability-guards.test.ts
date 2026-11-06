@@ -1932,6 +1932,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // feed refresh on /rfis and /submittals (MANAGE_JOBS).
   acc: () => import("./actions/acc"),
   accFeed: () => import("./actions/accFeed"),
+  revisedSheets: () => import("./actions/revisedSheets"),
   // CompanyCam: the Integrations card's five (MANAGE_COMPLIANCE, then
   // owner) — the same door as Procore's, reachable only from
   // /settings/integrations.

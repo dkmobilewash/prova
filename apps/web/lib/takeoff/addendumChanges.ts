@@ -48,15 +48,18 @@ export function changesByType(input: {
   olds: readonly { itemId: string; xs: readonly number[]; ys: readonly number[]; feet: number }[];
   news: readonly (Run & { feet: number })[];
   items: ReadonlyMap<string, ItemFacts>;
-}): { rows: ChangeRow[]; matched: number } {
+}): { rows: ChangeRow[]; matched: number; assigned: (string | null)[] } {
   const oldFt = new Map<string, number>();
   const newFt = new Map<string | null, number>();
   const add = <K,>(map: Map<K, number>, key: K, feet: number) => map.set(key, (map.get(key) ?? 0) + feet);
   for (const o of input.olds) add(oldFt, o.itemId, o.feet);
   let matched = 0;
+  // Each revised run's item: its earlier twin's, or null (new, no type yet).
+  const assigned: (string | null)[] = [];
   for (const run of input.news) {
     const twin = input.olds.find((o) => sameRunAs(run, o.xs, o.ys));
     if (twin !== undefined) matched += 1;
+    assigned.push(twin?.itemId ?? null);
     add(newFt, twin?.itemId ?? null, run.feet);
   }
   const keys = new Set<string | null>([...oldFt.keys(), ...newFt.keys()]);
@@ -78,7 +81,7 @@ export function changesByType(input: {
       deltaDollars: item === undefined || item.jobDollars === null || !(item.jobFeet > 0) ? null : (item.jobDollars * deltaFt) / item.jobFeet,
     });
   }
-  return { rows, matched };
+  return { rows, matched, assigned };
 }
 
 /** Rows from several sheets, summed by item. */
@@ -97,9 +100,11 @@ export type AddendumSheet = {
   sheetNumber: string;
   /** The sheet it replaces: its plan file's label and page. */
   replaces: { label: string; pageNumber: number } | null;
-  status: "compared" | "no scale" | "walls not found yet" | "nothing measured on the earlier sheet" | "new sheet";
+  status: "compared" | "applied" | "no scale" | "walls not found yet" | "nothing measured on the earlier sheet" | "new sheet";
   runs: number;
   matched: number;
+  /** What applying it does, for `applyRevisedSheets`; server-only, never rendered. */
+  work?: { pageId: string; calibrationId: string; news: (Run & { itemId: string | null })[]; oldIds: string[] };
 };
 
 export type AddendumChanges = { planLabel: string; sheets: AddendumSheet[]; rows: ChangeRow[] } | null;
@@ -152,14 +157,18 @@ export async function loadAddendumChanges(companyId: string, jobId: string): Pro
     const [oldPage, newPage] = await Promise.all([
       prisma.takeoffPlanPage.findUnique({
         where: { planId_pageNumber: { planId: was.planId, pageNumber: was.pageNumber } },
-        select: { measurements: { where: { kind: "LINEAR", itemId: { in: [...facts.keys()] } }, select: { itemId: true, xs: true, ys: true, calibration: { select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } } } } },
+        select: {
+          measurements: { where: { kind: "LINEAR", itemId: { in: [...facts.keys()] } }, select: { id: true, itemId: true, xs: true, ys: true, calibration: { select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } } } },
+          // Walls `applyRevisedSheets` took off: the sheet was applied.
+          _count: { select: { measurements: { where: { kind: "LINEAR", label: { startsWith: "replaced by " } } } } },
+        },
       }),
       prisma.takeoffPlanPage.findUnique({
         where: { planId_pageNumber: { planId: plan.id, pageNumber } },
-        select: { calibrations: { orderBy: { createdAt: "desc" }, take: 1 }, wallProposals: { orderBy: { createdAt: "desc" }, select: { calibrationId: true, createdAt: true, runs: true } } },
+        select: { id: true, calibrations: { orderBy: { createdAt: "desc" }, take: 1 }, wallProposals: { orderBy: { createdAt: "desc" }, select: { calibrationId: true, createdAt: true, runs: true } } },
       }),
     ]);
-    const olds = (oldPage?.measurements ?? []).filter((m) => m.xs.length === 2 && m.itemId !== null).map((m) => ({ itemId: m.itemId!, xs: m.xs, ys: m.ys, feet: length(m.xs, m.ys) * (feetOf(m.calibration) ?? 0) }));
+    const olds = (oldPage?.measurements ?? []).filter((m) => m.xs.length === 2 && m.itemId !== null).map((m) => ({ id: m.id, itemId: m.itemId!, xs: m.xs, ys: m.ys, feet: length(m.xs, m.ys) * (feetOf(m.calibration) ?? 0) }));
     const calibration = newPage?.calibrations[0] ?? null;
     const perUnit = feetOf(calibration);
     if (calibration === null || perUnit === null) {
@@ -172,14 +181,55 @@ export async function loadAddendumChanges(companyId: string, jobId: string): Pro
       continue;
     }
     if (olds.length === 0) {
-      sheets.push({ pageNumber, sheetNumber, replaces, status: "nothing measured on the earlier sheet", runs: 0, matched: 0 });
+      sheets.push({ pageNumber, sheetNumber, replaces, status: (oldPage?._count.measurements ?? 0) > 0 ? "applied" : "nothing measured on the earlier sheet", runs: 0, matched: 0 });
       continue;
     }
     const newest = mine[0]!.createdAt.getTime();
     const news = mine.filter((p) => p.createdAt.getTime() === newest).flatMap((p) => p.runs as Run[]).map((r) => ({ ...r, feet: Math.hypot(r.x2 - r.x1, r.y2 - r.y1) * perUnit }));
     const result = changesByType({ olds, news, items: facts });
     rows.push(...result.rows);
-    sheets.push({ pageNumber, sheetNumber, replaces, status: "compared", runs: news.length, matched: result.matched });
+    sheets.push({
+      pageNumber,
+      sheetNumber,
+      replaces,
+      status: "compared",
+      runs: news.length,
+      matched: result.matched,
+      work: { pageId: newPage!.id, calibrationId: calibration.id, news: news.map((r, i) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, itemId: result.assigned[i] ?? null })), oldIds: olds.map((o) => o.id) },
+    });
   }
   return { planLabel: plan.revisionLabel ?? plan.fileName ?? "The newest drawings", sheets, rows: sumRows(rows).filter((r) => Math.abs(r.deltaFt) >= 0.5) };
+}
+
+/**
+ * ── WHAT TO SEND THE GC ──
+ *
+ * The changes in words a GC reads: the sheets, each wall type's change in feet,
+ * square feet and dollars, the net, and what is not priced yet. Plain text, so
+ * it pastes into an email or an RFI response as it is.
+ */
+export function gcSummary(changes: NonNullable<AddendumChanges>, scope = "framing and drywall"): string {
+  const n = (v: number) => Math.abs(Math.round(v)).toLocaleString("en-US");
+  const sign = (v: number) => (Math.round(v) > 0 ? "+" : Math.round(v) < 0 ? "−" : "");
+  const usd = (v: number) => `${sign(v)}${Math.abs(v).toLocaleString("en-US", { style: "currency", currency: "USD" })}`;
+  const compared = changes.sheets.filter((s) => s.status === "compared").map((s) => s.sheetNumber);
+  const pending = changes.sheets.filter((s) => s.status !== "compared" && s.replaces !== null).map((s) => s.sheetNumber);
+  const added = changes.sheets.filter((s) => s.replaces === null).map((s) => s.sheetNumber);
+  const lines = [`${changes.planLabel}: changes to our ${scope} scope`, ""];
+  lines.push(`Sheets compared: ${compared.length > 0 ? compared.join(", ") : "none yet"}.`);
+  if (pending.length > 0) lines.push(`Revised, still to compare: ${pending.join(", ")}.`);
+  if (added.length > 0) lines.push(`New sheets: ${added.join(", ")}.`);
+  lines.push("");
+  const moved = changes.rows.filter((r) => Math.round(r.deltaFt) !== 0);
+  if (moved.length === 0) lines.push("No change to our walls on the sheets compared.");
+  for (const r of moved) {
+    const what = r.code ?? "New walls (type to confirm)";
+    const area = r.deltaSqFt === null ? "" : ` (${sign(r.deltaSqFt)}${n(r.deltaSqFt)} SF)`;
+    const price = r.deltaDollars === null ? ", to be priced" : `, ${usd(r.deltaDollars)}`;
+    lines.push(`• ${what}: ${sign(r.deltaFt)}${n(r.deltaFt)} LF${area}${price}`);
+  }
+  const net = moved.reduce((v, r) => v + (r.deltaDollars ?? 0), 0);
+  const open = moved.some((r) => r.deltaDollars === null);
+  if (moved.length > 0) lines.push("", `Net change to our price: ${usd(net)}${open ? ", plus the walls still to be priced" : ""}.`);
+  return lines.join("\n");
 }

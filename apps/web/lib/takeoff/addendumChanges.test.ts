@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changesByType, sumRows, type ItemFacts } from "./addendumChanges";
+import { changesByType, gcSummary, sumRows, type ItemFacts } from "./addendumChanges";
 
 const items = new Map<string, ItemFacts>([
   // S6A: 200 ft on the job priced at $4,000 → $20 a foot; 15 ft high, both faces.
@@ -41,5 +41,36 @@ describe("sumRows", () => {
     const sum = sumRows([...a, ...b]);
     expect(sum.map((r) => [r.code, r.deltaFt])).toEqual([["C8B", 0], ["S6A", -40], [null, 12]]);
     expect(sum.find((r) => r.code === "S6A")?.deltaDollars).toBe(-800);
+  });
+});
+
+describe("gcSummary: the changes in words a GC reads", () => {
+  it("the sheets, each type's change in LF, SF and $, the net, and what is still to be priced", () => {
+    const text = gcSummary({
+      planLabel: "Addendum 1",
+      sheets: [
+        { pageNumber: 1, sheetNumber: "A101", replaces: { label: "bid.pdf", pageNumber: 3 }, status: "compared", runs: 2, matched: 1 },
+        { pageNumber: 2, sheetNumber: "A102", replaces: { label: "bid.pdf", pageNumber: 4 }, status: "no scale", runs: 0, matched: 0 },
+        { pageNumber: 5, sheetNumber: "A103", replaces: null, status: "new sheet", runs: 0, matched: 0 },
+      ],
+      rows: [
+        { itemId: "s6a", code: "S6A", name: "S6A walls", oldFt: 50, newFt: 30, deltaFt: -20, deltaSqFt: -400, deltaDollars: -400 },
+        { itemId: null, code: null, name: "New walls, no type yet", oldFt: 0, newFt: 12, deltaFt: 12, deltaSqFt: null, deltaDollars: null },
+      ],
+    });
+    expect(text).toBe(
+      [
+        "Addendum 1: changes to our framing and drywall scope",
+        "",
+        "Sheets compared: A101.",
+        "Revised, still to compare: A102.",
+        "New sheets: A103.",
+        "",
+        "• S6A: −20 LF (−400 SF), −$400.00",
+        "• New walls (type to confirm): +12 LF, to be priced",
+        "",
+        "Net change to our price: −$400.00, plus the walls still to be priced.",
+      ].join("\n"),
+    );
   });
 });

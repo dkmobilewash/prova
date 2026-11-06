@@ -7,5 +7,9 @@ change in square feet at its height, and in dollars from its own priced lines,
 with the net. A revised run on the same spot as an earlier one keeps its type;
 a run with no earlier twin is "new walls, no type yet", priced once typed. Each
 sheet says how many of its runs matched in place, so a reissue that moved the
-drawing on the page is visible rather than silently untyped. Read-only:
-applying the changes, with Undo, and the GC's summary come next.
+drawing on the page is visible rather than silently untyped.
+
+Apply puts it on the takeoff: each revised wall onto its carried type (or
+untyped), the replaced sheet's walls onto "Walls — dropped", labelled with the
+drawing that replaced them, and the lines rewritten; Undo is the review queue's
+own. Beside it, the same rows in words to send the GC, with Copy.

@@ -55,11 +55,15 @@ describe("loadAddendumChanges", () => {
   it("each revised sheet against the one it replaces, and the change by wall type with LF, SF and $", async () => {
     const changes = await loadAddendumChanges(companyId, jobId);
     expect(changes?.planLabel).toBe("Addendum 1");
-    expect(changes?.sheets).toEqual([
+    // `work` is server-only, checked below; toEqual skips an undefined key.
+    expect(changes?.sheets.map((sheet) => ({ ...sheet, work: undefined }))).toEqual([
       { pageNumber: 1, sheetNumber: "A-101", replaces: { label: "bid.pdf", pageNumber: 3 }, status: "compared", runs: 2, matched: 1 },
       { pageNumber: 2, sheetNumber: "A102", replaces: { label: "bid.pdf", pageNumber: 4 }, status: "no scale", runs: 0, matched: 0 },
       { pageNumber: 5, sheetNumber: "A103", replaces: null, status: "new sheet", runs: 0, matched: 0 },
     ]);
+    // What applying it would do: the kept wall onto S6A, the new one untyped, both earlier runs replaced.
+    expect(changes!.sheets[0]!.work?.news.map((r) => r.itemId === null ? "untyped" : "typed")).toEqual(["typed", "untyped"]);
+    expect(changes!.sheets[0]!.work?.oldIds).toHaveLength(2);
     const rows = changes!.rows.map((r) => ({ ...r, oldFt: Math.round(r.oldFt), newFt: Math.round(r.newFt), deltaFt: Math.round(r.deltaFt), deltaSqFt: r.deltaSqFt === null ? null : Math.round(r.deltaSqFt), deltaDollars: r.deltaDollars === null ? null : Math.round(r.deltaDollars) }));
     expect(rows).toEqual([
       // 50 → 30 ft: −20 LF × 10 ft × 2 faces = −400 SF, at $20 a foot = −$400.

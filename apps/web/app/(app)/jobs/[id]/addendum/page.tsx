@@ -5,15 +5,17 @@ import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
-import { loadAddendumChanges, type ChangeRow } from "@/lib/takeoff/addendumChanges";
+import { gcSummary, loadAddendumChanges, type ChangeRow } from "@/lib/takeoff/addendumChanges";
+import { RevisedSheetsActions } from "@/components/RevisedSheetsActions";
 
 /**
  * ── WHAT THE REVISED SHEETS CHANGE ──
  *
  * The newest drawings on the job against the sheets they replace, matched by
  * sheet number, and what that does to the takeoff by wall type: feet, square
- * feet and dollars (`loadAddendumChanges`). Read-only: nothing here changes the
- * takeoff or the estimate. MANAGE_ESTIMATING, as the proposal: it shows price.
+ * feet and dollars (`loadAddendumChanges`). Apply puts it on the takeoff, with
+ * Undo (`applyRevisedSheets`); the GC's summary is the same rows in words
+ * (`gcSummary`). MANAGE_ESTIMATING, as the proposal: it shows price.
  */
 export default async function JobAddendumPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -44,7 +46,7 @@ export default async function JobAddendumPage({ params }: { params: Promise<{ id
       ) : (
         <>
           <p className="mt-1 text-sm text-ink-body">
-            {changes.planLabel}, against the sheets it replaces. Nothing here changes the takeoff or the estimate.
+            {changes.planLabel}, against the sheets it replaces. Nothing changes until you apply it.
           </p>
 
           <section className="mt-6" data-addendum="sheets">
@@ -63,7 +65,9 @@ export default async function JobAddendumPage({ params }: { params: Promise<{ id
                     <td className="py-2 pr-2 font-medium text-ink">{s.sheetNumber}</td>
                     <td className="py-2 pr-2 text-ink-body">{s.replaces === null ? "a new sheet" : `${s.sheetNumber} in ${s.replaces.label}`}</td>
                     <td className="py-2 text-ink-body" data-addendum="sheet-status">
-                      {s.status === "compared"
+                      {s.status === "applied"
+                        ? "applied: its walls are on the takeoff, the earlier sheet's off the estimate"
+                        : s.status === "compared"
                         ? `compared: ${s.matched} of ${s.runs} runs matched in place`
                         : s.status === "no scale"
                           ? "no scale yet: set it to compare"
@@ -127,6 +131,8 @@ export default async function JobAddendumPage({ params }: { params: Promise<{ id
               </p>
             )}
           </section>
+
+          <RevisedSheetsActions jobId={job.id} summary={gcSummary(changes)} canApply={changes.sheets.some((s) => s.status === "compared")} />
         </>
       )}
     </PageShell>
