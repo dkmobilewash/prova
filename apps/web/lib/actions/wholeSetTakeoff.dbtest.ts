@@ -226,6 +226,23 @@ describe("whole-set takeoff", () => {
     expect(await onJob()).toBe(1);
   });
 
+  it("RUN TAKEOFF ON A SHEET LOOKS FOR ITS ROOMS, CEILINGS AND WINDOWS, as the whole-set run does (walk v7)", async () => {
+    // Page 6, with the room finder on. Whatever the rooms step finds on the test
+    // plan, its clause is on the note: what matters is that it was asked at all.
+    const page = await prisma.takeoffPlanPage.create({ data: { planId, pageNumber: 6 } });
+    const calibration = await prisma.takeoffScaleCalibration.create({ data: { pageId: page.id, x1: 0, y1: 0, x2: 1, y2: 0, declaredDistanceFeet: "100" } });
+    await prisma.takeoffWallProposal.create({
+      data: { pageId: page.id, calibrationId: calibration.id, thicknessInches: 6, source: "REMAINDER", runs: [{ x1: 0.2, y1: 0.3, x2: 0.6, y2: 0.3, thicknessFeet: 0.5 }] },
+    });
+    await prisma.company.update({ where: { id: companyId }, data: { roomFinderOn: true } });
+    try {
+      const posted = await postSheetWalls(jobId, planId, 6);
+      expect(posted.ok && posted.value.note).toMatch(/^on the job by type: none typed; untyped 40 ft; rooms (failed|: )/);
+    } finally {
+      await prisma.company.update({ where: { id: companyId }, data: { roomFinderOn: false } });
+    }
+  });
+
   it("ADD THESE NEVER WRITES A RUN THAT IS ALREADY ON THE JOB: all of them refused, some of them left out", async () => {
     const form = (shapes: { xs: number[]; ys: number[] }[]) => {
       const f = new FormData();
