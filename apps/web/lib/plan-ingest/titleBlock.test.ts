@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { titleBlockWork, type ProposalRow, type TitleBlockDeps } from "./titleBlock";
+import { titleBlockWork, titleFieldOverHeading, type ProposalRow, type TitleBlockDeps } from "./titleBlock";
 import type { ClaimedTask } from "./runner";
 import type { StageCtx } from "./stages";
 
@@ -181,4 +182,47 @@ describe("what it refuses, and what it spends doing so", () => {
     expect(out.error).not.toContain("api.anthropic.com");
     expect(d.saved).toHaveLength(0);
   });
+});
+
+describe("the title block's own title over a notes heading from the sheet's body (walk v5: A101 filed as GENERAL NOTES)", () => {
+  // Invented: a notes block on the sheet, then the title block's title field, then its number.
+  const TEXT = "GENERAL NOTES\nA. ZZ SYNTHETIC NOTE ONE.\nB. ZZ SYNTHETIC NOTE TWO.\nZZ SYNTHETIC ARCHITECTS\nFLOOR PLAN\nFLOOR PLAN\nPROJECT NO.\nA101";
+  const asNotes = { ...READ, sheetNumber: "A101", title: "GENERAL NOTES", pageType: "OTHER" as const, confidence: "HIGH" as const };
+
+  it("takes the plan title printed just above the sheet number, as a PLAN, at MEDIUM, and says why", () => {
+    const out = titleFieldOverHeading(asNotes, TEXT);
+    expect(out).toMatchObject({ title: "FLOOR PLAN", pageType: "PLAN", confidence: "MEDIUM", sheetNumber: "A101" });
+    expect(out.reason).toContain('over the "GENERAL NOTES" heading');
+  });
+
+  it("leaves every other reading exactly as it was", () => {
+    // The model already gave the plan's title.
+    const plan = { ...asNotes, title: "FLOOR PLAN", pageType: "PLAN" as const };
+    expect(titleFieldOverHeading(plan, TEXT)).toBe(plan);
+    // A real notes sheet: nothing above its number names a plan.
+    expect(titleFieldOverHeading({ ...asNotes, sheetNumber: "G001" }, "GENERAL NOTES\nA. ZZ NOTE.\nZZ SYNTHETIC ARCHITECTS\nGENERAL NOTES\nG001")).toMatchObject({ title: "GENERAL NOTES", pageType: "OTHER" });
+    // The number is not in the text, or the plan title is too far above it.
+    expect(titleFieldOverHeading({ ...asNotes, sheetNumber: "A999" }, TEXT).title).toBe("GENERAL NOTES");
+    expect(titleFieldOverHeading(asNotes, "FLOOR PLAN\nA\nB\nC\nD\nE\nA101").title).toBe("GENERAL NOTES");
+    // A notes sheet whose block prints a drawing index above its number: an entry is not its title.
+    expect(titleFieldOverHeading({ ...asNotes, sheetNumber: "S1.0" }, "GENERAL NOTES\nZZ NOTE.\nS2.1 ZZ ROOF FRAMING PLAN\nS1.0").title).toBe("GENERAL NOTES");
+    // An honest LOW stays LOW.
+    expect(titleFieldOverHeading({ ...asNotes, confidence: "LOW" }, TEXT).confidence).toBe("LOW");
+  });
+
+  it("the stage saves the corrected reading", async () => {
+    const d = deps({
+      loadSheetText: async () => ({ id: "text_1", hasTextLayer: true, titleBlockText: TEXT, wholePageFallback: false }),
+      extract: vi.fn(async () => asNotes) as unknown as TitleBlockDeps["extract"],
+    });
+    expect(await titleBlockWork(CTX, d.deps)(task(13))).toEqual({ ok: true });
+    expect(d.saved[0]!.read).toMatchObject({ title: "FLOOR PLAN", pageType: "PLAN" });
+  });
+});
+
+it("THE READ IS ASKED AT TEMPERATURE 0, so the same text gets the same answer (A101: FLOOR PLAN on one walk, GENERAL NOTES on the next)", () => {
+  const src = readFileSync(new URL("../../../../packages/integrations/src/planSheets.ts", import.meta.url), "utf8");
+  const call = src.slice(src.indexOf("client.messages.create({"), src.indexOf("system: SYSTEM_PROMPT"));
+  expect(call, "the title-block call was not found where this test looks").toContain("max_tokens");
+  expect(call).toMatch(/\btemperature: 0,/);
 });
