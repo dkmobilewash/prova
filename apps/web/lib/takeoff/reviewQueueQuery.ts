@@ -26,7 +26,7 @@ import { feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/
 export async function loadReviewQueue(
   companyId: string,
   jobId: string,
-): Promise<{ planId: string | null; items: ReviewItem[]; heights: Record<string, CodeHeight>; codes: string[]; scaledSheets: number; floorPlans: number; floorPlansScaled: number }> {
+): Promise<{ planId: string | null; items: ReviewItem[]; heights: Record<string, CodeHeight>; heightChoices: Record<string, CodeHeight[]>; codes: string[]; scaledSheets: number; floorPlans: number; floorPlansScaled: number }> {
   const plan = await prisma.takeoffPlan.findFirst({ where: { jobId, companyId }, orderBy: { createdAt: "desc" }, select: { id: true } });
   const unpriced = await prisma.jobLineItem.findMany({
     where: { jobId, job: { companyId }, isDeleted: false, unitPrice: null, budgetedUnitCost: null },
@@ -45,7 +45,7 @@ export async function loadReviewQueue(
     askCost,
     costCategory: asCostCategory(line.costCategory),
   }));
-  if (plan === null) return { planId: null, items: prices, heights: {}, codes: [], scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0 };
+  if (plan === null) return { planId: null, items: prices, heights: {}, heightChoices: {}, codes: [], scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0 };
 
   const [pages, sheetRows] = await Promise.all([
     prisma.takeoffPlanPage.findMany({
@@ -103,6 +103,12 @@ export async function loadReviewQueue(
   const codes = legendCodes.length > 0 ? legendCodes : libraryTypes.map((type) => type.code);
   const wallTypes: MatchableWallType[] = libraryTypes.map((t) => ({ id: t.id, code: t.code, name: t.name, hasParts: t._count.components > 0, thicknessIn: t.thicknessIn === null ? null : Number(t.thicknessIn) }));
   const heights: Record<string, CodeHeight> = {};
+  // Where the sections print one height per part of the building, each is a choice.
+  const heightChoices: Record<string, CodeHeight[]> = {};
+  for (const type of libraryTypes) {
+    const options = legendOptions({ code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes });
+    if (options.length > 1) heightChoices[type.code.toUpperCase()] = options.map((o) => ({ feet: o.feet, from: o.from }));
+  }
   for (const type of libraryTypes) {
     const legend = legendOption({ code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes });
     const onJob = typedItems.find((item) => item.wallTypeId === type.id);
@@ -202,6 +208,7 @@ export async function loadReviewQueue(
     planId: plan.id,
     items: reviewQueue(items),
     heights,
+    heightChoices,
     codes,
     scaledSheets: scaled.size,
     floorPlans: floors.length,

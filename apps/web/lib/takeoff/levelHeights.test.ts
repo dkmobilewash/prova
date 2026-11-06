@@ -55,4 +55,17 @@ describe("a wall takes its plan's level, and the level's floor-to-floor", () => 
     expect(got.slice(0, 4).every((l) => l.join() === "1")).toBe(true);
     expect(got.slice(4).every((l) => l.join() === "2,3,4,5,6,7,8,9")).toBe(true);
   });
+
+  it("takes the caption under a drawing, not the one above it, when plans are stacked (Crosslines A100)", () => {
+    // Roof, floors 2–9 and the 1st floor stacked down the sheet, each captioned just below.
+    const strip = (y: number) => [{ x1: 0.2, y1: y, x2: 0.5, y2: y }, { x1: 0.5, y1: y, x2: 0.5, y2: y + 0.1 }];
+    const captions = [
+      { name: "Roof Plan (P2)", captionX: 0.19, captionY: 0.217 },
+      { name: "2nd - 9th Floor Plan (P2)", captionX: 0.19, captionY: 0.448 },
+      { name: "1st Floor Plan (P2)", captionX: 0.19, captionY: 0.673 },
+    ];
+    // The typical floor's walls sit nearer the roof caption above them than their own below.
+    expect(runLevels(strip(0.31), captions, 100)[0]).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(runLevels(strip(0.51), captions, 100)[0]).toEqual([1]);
+  });
 });

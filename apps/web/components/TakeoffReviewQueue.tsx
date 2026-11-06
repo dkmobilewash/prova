@@ -33,6 +33,7 @@ export function TakeoffReviewQueue({
   items,
   legendCodes,
   heights = {},
+  heightChoices = {},
   planSet,
   onShow,
   onLeft,
@@ -46,6 +47,8 @@ export function TakeoffReviewQueue({
   legendCodes: string[];
   /** Each type's height by code (`loadReviewQueue`), for the pre-filled height. */
   heights?: Readonly<Record<string, CodeHeight>>;
+  /** Each type's heights by part of the building (Joplin's three roofs), offered as choices. */
+  heightChoices?: Readonly<Record<string, readonly CodeHeight[]>>;
   planSet: PlanSetRow[];
   onShow: (item: ReviewItem | null) => void;
   /** Told how many are left whenever that changes, so the top bar's count is this one. */
@@ -185,6 +188,7 @@ export function TakeoffReviewQueue({
                 codes={current.suggested === null || legendCodes.some((c) => c.toUpperCase() === current.suggested!.code.toUpperCase()) ? legendCodes : [...legendCodes, current.suggested.code]}
                 suggested={current.suggested}
                 heightOf={(code) => levelHeightFor(code, current.level) ?? heightFor(code, heights, current.ceiling)}
+                heightOptions={(code) => (code === null ? [] : (heightChoices[code.toUpperCase()] ?? []))}
                 onSkip={() => setCursor(after(current.key))}
                 onAccept={(code, heightFt) =>
                   acceptNow(current.key, `${code} on sheet ${current.sheet}`, () =>
@@ -199,6 +203,7 @@ export function TakeoffReviewQueue({
               label={`No height · ${current.name} · sheet ${current.sheet}${current.feet !== null ? ` · ${Math.round(current.feet)} ft` : ""}`}
               codes={[]}
               suggested={null}
+              heightOptions={() => (current.options.length > 1 ? current.options.map((o) => ({ feet: o.feet, from: o.from })) : [])}
               heightOf={() => {
                 // The type's own height first, as for a group being typed; else the ceiling.
                 const first = current.options.find((o) => o.kind === "legend") ?? current.options[0];

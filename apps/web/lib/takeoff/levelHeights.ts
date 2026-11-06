@@ -120,7 +120,7 @@ const toSegment = (p: { x: number; y: number }, r: Run) => {
 /**
  * Each run's level, from the floor plan it is drawn in: the runs are joined
  * into drawings (ends within `SAME_DRAWING_FEET` of another run), and each
- * drawing takes the levels of the caption nearest its outline. Empty where
+ * drawing takes the levels of the nearest caption at or below its top. Empty where
  * the nearest caption names no level. Page-width units throughout.
  */
 export function runLevels(runs: readonly Run[], captions: readonly { name: string; captionX: number; captionY: number }[], feetPerUnit: number): number[][] {
@@ -139,7 +139,10 @@ export function runLevels(runs: readonly Run[], captions: readonly { name: strin
     const members = runs.filter((_, i) => root(i) === r);
     const box = { x1: Math.min(...members.flatMap((m) => [m.x1, m.x2])), x2: Math.max(...members.flatMap((m) => [m.x1, m.x2])), y1: Math.min(...members.flatMap((m) => [m.y1, m.y2])), y2: Math.max(...members.flatMap((m) => [m.y1, m.y2])) };
     const gap = (c: { captionX: number; captionY: number }) => Math.hypot(Math.max(box.x1 - c.captionX, 0, c.captionX - box.x2), Math.max(box.y1 - c.captionY, 0, c.captionY - box.y2));
-    const nearest = [...captions].sort((a, b) => gap(a) - gap(b))[0];
+    // A drawing's caption sits under it: a caption above the drawing's top belongs to the drawing above
+    // (Crosslines A100 stacks the roof, floors 2–9 and the 1st floor, each captioned below).
+    const below = captions.filter((c) => c.captionY >= box.y1);
+    const nearest = [...(below.length > 0 ? below : captions)].sort((a, b) => gap(a) - gap(b))[0];
     levelsOf.set(r, nearest === undefined ? [] : planLevels(nearest.name));
   }
   return runs.map((_, i) => levelsOf.get(root(i))!);
