@@ -11,11 +11,11 @@ import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
 import { sheetCategory } from "@/lib/takeoff/planSet";
-import { storedLevels } from "@/lib/takeoff/levelReads";
+import { storedGeneralHeight, storedLevels } from "@/lib/takeoff/levelReads";
 import { storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { levelHeight, runLevels } from "@/lib/takeoff/levelHeights";
 import { heightBasis } from "@/lib/takeoff/wallHeights";
-import { heightItem, reviewQueue, splitByLevel, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { GENERAL_HEIGHT_KEY, heightItem, reviewQueue, splitByLevel, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import { storedWindowsOf, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
 import { feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/takeoff/wallHeight";
 
@@ -109,6 +109,9 @@ export async function loadReviewQueue(
   const codes = legendCodes.length > 0 ? legendCodes : libraryTypes.map((type) => type.code);
   const wallTypes: MatchableWallType[] = libraryTypes.map((t) => ({ id: t.id, code: t.code, name: t.name, hasParts: t._count.components > 0, thicknessIn: t.thicknessIn === null ? null : Number(t.thicknessIn) }));
   const heights: Record<string, CodeHeight> = {};
+  // The set's sheet-wide rule, under a key no legend prints: a group whose type has no height takes it before the ceiling.
+  const general = await storedGeneralHeight(plan.id);
+  if (general !== null) heights[GENERAL_HEIGHT_KEY] = general;
   // Where the sections print one height per part of the building, each is a choice.
   const heightChoices: Record<string, CodeHeight[]> = {};
   for (const type of libraryTypes) {
@@ -199,7 +202,9 @@ export async function loadReviewQueue(
       rooms: roomsOn(page.pageNumber),
     }));
     const type = item.wallType;
-    const legend = legendOptions(type === null ? null : { code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes });
+    const own = legendOptions(type === null ? null : { code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes });
+    // No height of the type's own: the sheet-wide note offers one, and is offered first.
+    const legend = own.length > 0 || general === null ? own : [{ kind: "legend" as const, feet: general.feet, from: general.from }];
     const queued = heightItem(item, sheets, legend);
     if (queued !== null) items.push(queued);
   }

@@ -13,6 +13,7 @@ import { propagateTypes } from "../typePropagation";
 import { buildingsOf, resolveHeight } from "../wallHeights";
 import { sheetViews } from "../sheetViews";
 import { heightOfLegendType, setHeightFacts } from "../setHeightFacts";
+import { generalHeightOf } from "../legendHeights";
 import { levelHeight, runLevels } from "../levelHeights";
 import { tagByRun } from "../wallTags";
 import type { WallCandidate } from "../wallVectors";
@@ -73,6 +74,8 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || LEGEND_PAGE === 0)("
     console.log(`\n=== ${SET}: legend p${LEGEND_PAGE}, ${text.types.length} types`);
     console.log(`  facts: ${factSheets.join(" || ") || "none"}`);
     console.log(`  general note: ${generalNote === null ? "none" : `${generalNote.sheet} "${generalNote.phrase}"`}`);
+    // What an untyped group is offered before the ceiling (`generalHeightOf`).
+    console.log(`GENERAL_HEIGHT_JSON ${JSON.stringify(generalHeightOf({ facts, generalNote, factSheets }))}`);
 
     // ── EACH TYPE'S HEIGHT ──
     const readings = text.types.map((t) => {

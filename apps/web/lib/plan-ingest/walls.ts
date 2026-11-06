@@ -10,7 +10,7 @@ import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { effectiveSheetNumber, effectiveTitle, type SheetRow } from "./sheetIndex";
 import { levelFromTitle } from "./sheetLevel";
 import { sheetIndexFor } from "./sheetIndexQuery";
-import { roomsForSheet, type RoomsOutcome } from "./rooms";
+import { roomsForSheet, windowsForSheet, type WindowsOutcome, type RoomsOutcome } from "./rooms";
 import { refreshSheetWalls, type RefreshOutcome } from "@/lib/takeoff/refreshSheetWalls";
 import type { StageCtx, StageWork } from "./stages";
 
@@ -330,6 +330,8 @@ export type WallsDeps = {
   detect: (target: DetectTarget) => Promise<DetectOutcome>;
   /** Rooms and ceilings for a sheet whose walls were just written; `roomsForSheet` unless a test says otherwise. */
   findRooms?: (input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null; boundary?: DetectedBoundary }) => Promise<RoomsOutcome>;
+  /** A sheet found again: its windows counted for the review queue (`windowsForSheet`). */
+  findWindows?: (input: { planId: string; companyId: string; pageNumber: number }) => Promise<WindowsOutcome>;
   /** The sheet's walls onto the job, an item per wall type; `wallItemsForSheet` unless a test says otherwise. */
   writeWallItems?: (input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null; held?: readonly { x1: number; y1: number; x2: number; y2: number }[] }) => Promise<WallItemsOutcome>;
   /** A sheet found before, found again; `refreshSheetWalls` unless a test says otherwise. */
@@ -339,6 +341,7 @@ export type WallsDeps = {
 const realDeps: WallsDeps = {
   detect: (target) => detectWallsForCalibration(target),
   findRooms: (input) => roomsForSheet(input),
+  findWindows: (input) => windowsForSheet(input),
   writeWallItems: (input) => wallItemsForSheet(input),
   refresh: (target) => refreshSheetWalls(target),
 };
@@ -439,7 +442,13 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
         await note(task.id, await postAndRooms(task.pageNumber, again.held ?? [], refreshNoteFor(again.kind)));
         return { ok: true };
       }
-      await note(task.id, refreshNoteFor(again.kind));
+      // ── AND ITS WINDOWS, WHICH A SHEET FOUND BEFORE #1008 NEVER HAD COUNTED ──
+      const findWindows = deps.findWindows ?? realDeps.findWindows!;
+      const windows = await findWindows({ planId: ctx.planId, companyId: ctx.companyId, pageNumber: task.pageNumber }).catch((error) => {
+        console.error("[walls] windows on a sheet found again failed", { planId: ctx.planId, pageNumber: task.pageNumber, error });
+        return null;
+      });
+      await note(task.id, `${refreshNoteFor(again.kind)}${windows?.kind === "counted" ? `; ${windows.windows} ${windows.windows === 1 ? "window" : "windows"} to confirm` : ""}`);
       return { ok: true };
     }
     let boundary: DetectedBoundary | undefined;
