@@ -5,6 +5,7 @@ import {
   documentFileProblem,
   documentUploadErrorMessage,
   documentUploadPathname,
+  planTooLargeProblem,
   type DocumentUploadPurpose,
 } from "@/lib/document-uploads";
 
@@ -30,7 +31,8 @@ import {
  */
 export type DocumentUploadOutcome =
   | { ok: true; fileUrl: string; fileName: string | null }
-  | { ok: false; error: string };
+  /** `resumable`: the bytes stopped on the way (Resume can pick up), as against a refusal. */
+  | { ok: false; error: string; resumable?: true };
 
 export async function uploadDocumentFile(
   purpose: DocumentUploadPurpose,
@@ -98,7 +100,7 @@ export async function uploadPlanSetFile(
   options: { onProgress?: (progress: Progress) => void; signal?: AbortSignal } = {},
 ): Promise<DocumentUploadOutcome> {
   const purpose: DocumentUploadPurpose = "plan-takeoff";
-  const problem = documentFileProblem(file, purpose);
+  const problem = documentFileProblem(file, purpose) ?? planTooLargeProblem(file.size);
   if (problem) return { ok: false, error: problem };
   const fresh = documentUploadPathname(purpose, ownerId, file.name);
   if (!fresh) return { ok: false, error: "That record cannot take an attachment." };
@@ -116,7 +118,7 @@ export async function uploadPlanSetFile(
       });
       return { ok: true, fileUrl: blob.url, fileName: documentDisplayFileName(file.name) };
     } catch (err) {
-      return { ok: false, error: documentUploadErrorMessage(err) };
+      return { ok: false, error: documentUploadErrorMessage(err), resumable: true };
     }
   }
 
@@ -143,7 +145,7 @@ export async function uploadPlanSetFile(
     return { ok: true, fileUrl: blob.url, fileName: documentDisplayFileName(file.name) };
   } catch (err) {
     // The parts already stored stay saved: Resume, or the same file chosen again, picks up there.
-    return { ok: false, error: `${documentUploadErrorMessage(err)} The parts already sent are kept: press Resume to pick up where it stopped.` };
+    return { ok: false, error: `${documentUploadErrorMessage(err)} The parts already sent are kept: press Resume to pick up where it stopped.`, resumable: true };
   }
 }
 

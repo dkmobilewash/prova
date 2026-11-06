@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
@@ -83,7 +83,26 @@ test.describe("a big plan set uploads in resumable parts", () => {
     expect(resent).toEqual([7]);
   });
 
-  test("3. nothing crashed", async () => {
+  test("3. a set too large for the server to read is refused BEFORE it is sent, saying what to do", async () => {
+    test.setTimeout(60_000);
+    await openJobTab(page, "Takeoff");
+    const stub = await stubDocumentUpload(page);
+    // 501 MB, sparse: the default reading limit is 500 MB (`planProcessMaxBytes`).
+    const file = path.join(dir, "ZZ-E2E too big.pdf");
+    writeFileSync(file, "%PDF-1.7\n");
+    truncateSync(file, 501 * MB);
+    await page.locator('input[type="file"]').first().setInputFiles(file);
+    await page.getByRole("button", { name: "Add a drawing" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "too large" })).toHaveText(
+      "This set is too large to process on the current plan; split it or contact support. (It is 501.0 MB; the current limit is 500.0 MB.)",
+    );
+    await expect(page.locator('[data-takeoff="plan-upload-resume"]')).toHaveCount(0);
+    expect(stub.partsSent()).toEqual([]);
+    expect(stub.uploadedUrls()).toEqual([]);
+    expect(await prisma.takeoffPlan.count({ where: { jobId } })).toBe(2);
+  });
+
+  test("4. nothing crashed", async () => {
     expect(monitor.crashes).toEqual([]);
   });
 });

@@ -55,7 +55,8 @@ export function TakeoffPlanUploader({ jobId }: { jobId: string }) {
     setBusy(false);
     if (!uploaded.ok) {
       setError(uploaded.error);
-      setStopped(file);
+      // Only an upload that stopped on the way can be resumed; a refusal cannot.
+      if (uploaded.resumable) setStopped(file);
       return;
     }
     setProgress(null);

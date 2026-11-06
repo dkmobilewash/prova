@@ -129,6 +129,31 @@ export const DOCUMENT_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
 export const PLAN_SET_UPLOAD_MAX_BYTES = 1024 * 1024 * 1024;
 
 /**
+ * ── HOW BIG A SET THE SERVER CAN READ, WHICH IS SMALLER THAN WHAT IT STORES ──
+ *
+ * Diego, 2026-11-06: until the Vercel plan is upgraded (4 GB functions), a set too
+ * big for the server must say so, not time out in silence. Reading holds the whole
+ * file in memory: measured locally, RSS ≈ 610 MB + 1.2 × the file (Topeka 109 MB →
+ * 742 MB; ELEVEN03 342 MB → 1,020 MB), and the default function has 2 GB with page
+ * rendering on top. 500 MB keeps that near 1.2 GB. NOT measured on a Vercel function.
+ *
+ * `NEXT_PUBLIC_PLAN_PROCESS_MAX_MB` raises it (1024 once functions have 4 GB). Public
+ * because the uploader refuses before a byte is sent, so nobody uploads for twenty
+ * minutes to be told no; `readPlanBytes` refuses again, before downloading, for every
+ * reading stage.
+ */
+export const PLAN_PROCESS_DEFAULT_MAX_MB = 500;
+export function planProcessMaxBytes(raw: string | undefined = process.env.NEXT_PUBLIC_PLAN_PROCESS_MAX_MB): number {
+  const mb = Number(raw);
+  return (Number.isFinite(mb) && mb > 0 ? Math.min(mb, PLAN_SET_UPLOAD_MAX_BYTES / (1024 * 1024)) : PLAN_PROCESS_DEFAULT_MAX_MB) * 1024 * 1024;
+}
+/** Null when the server can read a set this size; otherwise the sentence to show. */
+export function planTooLargeProblem(bytes: number, maxBytes: number = planProcessMaxBytes()): string | null {
+  if (!(bytes > maxBytes)) return null;
+  return `This set is too large to process on the current plan; split it or contact support. (It is ${formatDocumentSize(bytes)}; the current limit is ${formatDocumentSize(maxBytes)}.)`;
+}
+
+/**
  * A SPEC SECTION — 50MB, and a third ceiling rather than either of the two
  * above, which is a decision with a wrong first answer behind it.
  *

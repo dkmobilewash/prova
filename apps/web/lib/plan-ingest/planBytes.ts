@@ -1,5 +1,5 @@
 import { prisma } from "@prova/db";
-import { documentUrlProblem } from "@/lib/document-uploads";
+import { documentUrlProblem, planTooLargeProblem } from "@/lib/document-uploads";
 import { isLocalPlanUrl, readLocalPlan } from "@/lib/plan-ingest/localPlanFile";
 
 /**
@@ -38,7 +38,9 @@ export async function readPlanBytes(planId: string, companyId: string): Promise<
   // `localPlanFile.ts` for the gate and why it refuses in production.
   if (isLocalPlanUrl(plan.fileUrl)) {
     const local = await readLocalPlan(plan.fileUrl, process.env);
-    return local.ok ? { ok: true, bytes: local.bytes } : { ok: false, error: local.error };
+    if (!local.ok) return { ok: false, error: local.error };
+    const tooLarge = planTooLargeProblem(local.bytes.length);
+    return tooLarge ? { ok: false, error: tooLarge } : { ok: true, bytes: local.bytes };
   }
 
   const problem = documentUrlProblem(plan.fileUrl, "plan-takeoff", plan.jobId, process.env);
@@ -48,6 +50,13 @@ export async function readPlanBytes(planId: string, companyId: string): Promise<
     const upstream = await fetch(plan.fileUrl);
     if (!upstream.ok) {
       return { ok: false, error: "The plan file couldn't be fetched just now. Try again in a moment." };
+    }
+    // Refused from the header, BEFORE the body is read: downloading a set too big
+    // to hold is the failure this exists to prevent (`planProcessMaxBytes`).
+    const tooLarge = planTooLargeProblem(Number(upstream.headers.get("content-length") ?? 0));
+    if (tooLarge) {
+      await upstream.body?.cancel().catch(() => {});
+      return { ok: false, error: tooLarge };
     }
     return { ok: true, bytes: Buffer.from(await upstream.arrayBuffer()) };
   } catch (err) {
