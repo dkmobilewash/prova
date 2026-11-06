@@ -109,11 +109,25 @@ function fitsDemo(demo: SheetForPairing, s: SheetForPairing): boolean {
 export function demoPlansFor(sheets: readonly SheetForPairing[], newPage: number): number[] {
   const page = sheets.find((s) => s.pageNumber === newPage);
   if (page === undefined || isDemo(page)) return [];
-  return sheets
-    .filter(isDemo)
-    .map((d) => ({ ...d, title: d.demoCaption ?? d.title }))
-    .filter((d) => kindOf(d.title) !== "other" && kindOf(d.title) !== "site" && fitsDemo(d, page))
-    .map((d) => d.pageNumber);
+  // A sheet that draws the site AND a demolition plan is a demolition plan too
+  // (W8th's D201, "ARCHITECTURAL SITE PLAN & LEVEL 1 DEMOLITION PLAN"): its
+  // site half is not what the offer is about.
+  const demos = sheets.filter(isDemo).map((d) => {
+    const title = d.demoCaption ?? d.title;
+    return { ...d, title: title !== null && /\bDEMOLITION\s+PLAN\b/i.test(title) ? title.replace(/\bSITE\s+PLAN\b/gi, "") : title };
+  });
+  const kind = (d: SheetForPairing) => kindOf(d.title);
+  const byTitle = demos.filter((d) => kind(d) !== "other" && kind(d) !== "site" && fitsDemo(d, page));
+  if (byTitle.length > 0) return byTitle.map((d) => d.pageNumber);
+  // ── THE TITLES SAY NOTHING: OFFER BY SHEET NUMBER, FOR THE DRAWINGS TO DECIDE ──
+  // Bunkie's inventory reads every title as "BID DOCUMENTS", Green Bay's A3.1
+  // none at all, so no title admits a candidate. Then the demolition sheets of
+  // the same discipline (AD101 for A100, never MD1.1 or ED1.0) are candidates,
+  // and `linedUpDemo` — the drawings lining up, never a title — chooses or not.
+  const silent = (title: string | null) => !saysPlan(title) && kindOf(title) === "floor";
+  if (!silent(page.title)) return [];
+  const discipline = disciplineOf(page.sheetNumber);
+  return demos.filter((d) => discipline !== null && disciplineOf(d.sheetNumber) === discipline && (silent(d.title) || kind(d) === "floor")).map((d) => d.pageNumber);
 }
 
 const flat = (number: string | null) => (number ?? "").toUpperCase().replace(/[-\s]/g, "");
