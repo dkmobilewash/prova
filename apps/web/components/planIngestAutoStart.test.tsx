@@ -158,6 +158,28 @@ describe("a set that has already been read", () => {
     expect(queuedPlanReads).toHaveBeenCalledTimes(3);
   });
 
+  it("STILL OFFERS THE TITLE BLOCKS once the legend queued behind the free pass has run (walk v6)", async () => {
+    // The legend run took the view when it ran, and the offer was keyed on the
+    // view's stage: a new company with plan reading on never saw the button.
+    const legend = view({ jobId: "legend_1", stage: "WALL_LEGEND", finished: 0, percent: 0, complete: false, total: 65 });
+    advancePlanIngest.mockImplementation(async (jobId: string) => ({ ok: true, value: view({ jobId, stage: jobId === "legend_1" ? "WALL_LEGEND" : "PAGE_INVENTORY", complete: true }) }));
+    queuedPlanReads.mockResolvedValueOnce({ ok: true, value: [legend] }).mockResolvedValue({ ok: true, value: [] });
+    paint(null);
+    for (let i = 0; i < 6; i += 1) await act(async () => {});
+    expect(advancePlanIngest.mock.calls.map((c) => c[0])).toEqual(["job_1", "legend_1"]);
+    expect(host.textContent).toContain("Read the title blocks");
+  });
+
+  it("offers the title blocks on a reload whose free pass is done and legend still queued", async () => {
+    const legend = view({ jobId: "legend_1", stage: "WALL_LEGEND", finished: 0, percent: 0, complete: false, total: 65 });
+    advancePlanIngest.mockResolvedValue({ ok: true, value: view({ jobId: "legend_1", stage: "WALL_LEGEND", complete: true }) });
+    queuedPlanReads.mockResolvedValueOnce({ ok: true, value: [legend] }).mockResolvedValue({ ok: true, value: [] });
+    paint(view());
+    for (let i = 0; i < 4; i += 1) await act(async () => {});
+    expect(advancePlanIngest.mock.calls.map((c) => c[0])).toEqual(["legend_1"]);
+    expect(host.textContent).toContain("Read the title blocks");
+  });
+
   it("names what is queued after the reading on screen", async () => {
     const legend = view({ jobId: "legend_1", stage: "WALL_LEGEND", finished: 0, percent: 0, complete: false, total: 65 });
     const titles = view({ jobId: "titles_1", stage: "TITLE_BLOCK", finished: 12, percent: 18, complete: false, total: 65 });
