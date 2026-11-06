@@ -47,7 +47,7 @@ export default async function JobAddendumPage({ params }: { params: Promise<{ id
           The Takeoff tab's uploader shows only on a job with no drawing yet, so
           an addendum had no way in (walk v8). Uploaded here, they are the job's
           newest plan file, read and scaled on the Takeoff tab like the first. */}
-      <section className="mt-4 rounded-lg border border-line-card bg-surface-card p-4" data-addendum="upload">
+      <section className="mt-4 rounded-lg border border-line-card bg-surface p-4" data-addendum="upload">
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-label">Upload the revised sheets</h2>
         <TakeoffPlanUploader jobId={job.id} />
         <p className="mt-2 text-xs text-ink-muted">
