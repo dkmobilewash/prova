@@ -6,7 +6,7 @@ import { can } from "@/lib/permissions";
 import { pdfPageCount } from "@/lib/ask/pageCount";
 import { claimPorts, closeIfSettled, ingestViewOf, unfinishedIngestsFor } from "@/lib/plan-ingest/claim";
 import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
-import { runIngest, MAX_ATTEMPTS, type IngestView } from "@/lib/plan-ingest/runner";
+import { runIngestLanes, MAX_ATTEMPTS, MODEL_LANES, type IngestView } from "@/lib/plan-ingest/runner";
 import { isRunnableStage, stageWork, STAGE_SPENDS } from "@/lib/plan-ingest/stages";
 import { wallsSheetsFor, wallsTaskPages } from "@/lib/plan-ingest/walls";
 import { scannedPageNumbers } from "@/lib/plan-ingest/raster";
@@ -247,7 +247,8 @@ export async function advancePlanIngest(ingestJobId: string): Promise<ActionResu
   }
 
   try {
-    await runIngest({
+    // A model-bound stage reads several pages at once; see MODEL_LANES.
+    await runIngestLanes(STAGE_SPENDS[job.stage] ? MODEL_LANES : 1, {
       ports: claimPorts({
         jobId: job.id,
         work: stageWork(job.stage, {

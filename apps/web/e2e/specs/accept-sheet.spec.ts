@@ -16,8 +16,9 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
  * lines, and leaves the rest in the queue. One line says what went in, with
  * Undo, which puts every run back on "Walls — untyped" and the lines with it.
  *
- * fast-confirm.spec.ts's fixture: ZA1 and ZA2 tagged on A101, and a third group
- * nothing names, which the press must leave.
+ * fast-confirm.spec.ts's fixture: ZA1 and ZA2 tagged on A101, and two groups
+ * nothing names, which the press must leave. Those two then take one type in one
+ * go (walk v6: 13 such groups at two keys each), with Undo.
  */
 test.describe.configure({ mode: "serial" });
 
@@ -30,6 +31,7 @@ const GROUPS = {
   one: { tag: "ZA1", inches: 4.875, runs: [{ x1: 0.1, y1: 0.3, x2: 0.5, y2: 0.3 }, { x1: 0.5, y1: 0.3, x2: 0.5, y2: 0.5 }] },
   two: { tag: "ZA2", inches: 3.625, runs: [{ x1: 0.2, y1: 0.6, x2: 0.5, y2: 0.6 }] },
   three: { tag: null, inches: 6.125, runs: [{ x1: 0.6, y1: 0.2, x2: 0.7, y2: 0.2 }] },
+  four: { tag: null, inches: 8, runs: [{ x1: 0.6, y1: 0.8, x2: 0.8, y2: 0.8 }] },
 };
 
 test.describe("accepting a sheet's drawn suggestions in one press", () => {
@@ -56,7 +58,7 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
   const untypedRuns = async () => (await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, name: "Walls — untyped" }, select: { _count: { select: { measurements: true } } } }))._count.measurements;
   const linesOf = (code: string) => prisma.jobLineItem.count({ where: { jobId, isDeleted: false, takeoffItem: { wallType: { code } } } });
 
-  test("1. three untyped wall groups on A101, two of them tagged", async () => {
+  test("1. four untyped wall groups on A101, two of them tagged", async () => {
     test.setTimeout(90_000);
     await signInAs(page, PERSONAS.rooms.email);
     await landOnDashboard(page, monitor);
@@ -113,24 +115,24 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
     }
   });
 
-  test("2. the queue offers the sheet's two drawn suggestions, not the third group", async () => {
+  test("2. the queue offers the sheet's two drawn suggestions, not the two nothing names", async () => {
     await page.goto(`/takeoff/${jobId}?open=review`);
     await expect(queue()).toBeVisible({ timeout: 60_000 });
-    await expect(left()).toHaveText("3 left to review");
+    await expect(left()).toHaveText("4 left to review");
     await expect(acceptAll()).toHaveText("Accept all suggestions on this sheet (2 groups)");
   });
 
-  test("3. one press: both groups typed with their heights, their lines written, the third left", async () => {
+  test("3. one press: both groups typed with their heights, their lines written, the other two left", async () => {
     await acceptAll().click();
-    // The two leave at once (1 left); ZA2 has no height of its own, so its height item joins once the save is back (2).
-    await expect(left()).toHaveText(/^[12] left to review$/, { timeout: 5_000 });
+    // The two leave at once (2 left); ZA2 has no height of its own, so its height item joins once the save is back (3).
+    await expect(left()).toHaveText(/^[23] left to review$/, { timeout: 5_000 });
     await expect(queue().locator('[data-takeoff="review-queue-accepted-text"]')).toHaveText("Accepted 2 groups on sheet A101 · 130 ft");
-    await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(1);
+    await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(2);
     const zf1 = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, wallType: { code: "ZA1" } }, select: { heightFt: true, _count: { select: { measurements: true } } } });
     expect(zf1._count.measurements).toBe(2);
     expect(zf1.heightFt?.toString()).toBe("15");
     expect(await linesOf("ZA1")).toBeGreaterThan(0);
-    // What stays is the group nothing names, and ZA2's height (it has none of its own).
+    // What stays is the groups nothing names, and ZA2's height (it has none of its own).
     const kinds = await queue().locator('[data-takeoff="review-queue-item"]').getAttribute("data-kind");
     expect(["type", "height"]).toContain(kinds);
     await expect(acceptAll()).toHaveCount(0);
@@ -140,16 +142,38 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
   test("4. Undo: every run back on Walls — untyped, the lines gone, the groups back in the queue", async () => {
     await queue().locator('[data-takeoff="review-queue-accepted-undo"]').click();
     await expect(queue().locator('[data-takeoff="review-queue-accepted"]')).toHaveCount(0, { timeout: 30_000 });
-    await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(4);
+    await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(5);
     expect(await linesOf("ZA1")).toBe(0);
     expect(await linesOf("ZA2")).toBe(0);
     // The two groups are back to accept again, and nothing else joined (the
     // untyped runs' own line is never a price item, #1018).
-    await expect(left()).toHaveText("3 left to review", { timeout: 30_000 });
+    await expect(left()).toHaveText("4 left to review", { timeout: 30_000 });
     await expect(acceptAll()).toHaveText("Accept all suggestions on this sheet (2 groups)");
   });
 
-  test("5. nothing crashed", async () => {
+  test("5. the two groups nothing names take one type in one go, and Undo takes both back", async () => {
+    await acceptAll().click();
+    await expect(queue().locator('[data-takeoff="review-queue-accepted-text"]')).toHaveText("Accepted 2 groups on sheet A101 · 130 ft");
+    // The queue is on a group nothing names: the type picked there can go on both.
+    const rest = queue().locator('[data-takeoff="queue-accept-rest"]');
+    await expect(rest).toHaveText("Pick a type for all 2 groups nothing names on A101", { timeout: 30_000 });
+    await expect(rest).toBeDisabled();
+    await page.keyboard.press("1");
+    await expect(rest).toHaveText("ZA1 on all 2 groups nothing names on A101 (A)");
+    await page.keyboard.press("a");
+    await expect(queue().locator('[data-takeoff="review-queue-accepted-text"]')).toHaveText("Accepted 2 groups on sheet A101 · 43 ft");
+    await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(0);
+    const za1 = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, wallType: { code: "ZA1" } }, select: { heightFt: true, _count: { select: { measurements: true } } } });
+    expect(za1._count.measurements).toBe(4);
+    expect(za1.heightFt?.toString()).toBe("15");
+    await page.screenshot({ path: path.join(SHOTS, "rest-typed-1440.png") });
+
+    await queue().locator('[data-takeoff="review-queue-accepted-undo"]').click();
+    await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(2);
+    await expect(rest).toHaveText("Pick a type for all 2 groups nothing names on A101", { timeout: 30_000 });
+  });
+
+  test("6. nothing crashed", async () => {
     expect(monitor.crashes).toEqual([]);
   });
 });
