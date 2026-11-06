@@ -25,9 +25,12 @@ import { sameRunAs } from "@/lib/takeoff/runMatch";
  * read exactly as read (`addWallTypeFromLegend`, the review screen's own
  * action), with its "check against the drawing" note.
  *
- * Remembered for the job: the item takes the group's thickness, so later
- * sheets' groups at that thickness match it (`matchGroupToItem`) and the
- * WALLS stage posts them as this type (`wallItems.ts`).
+ * ── ONLY THE RUNS OF THE GROUP IT WAS PRESSED ON ──
+ * It used to write the group's thickness onto the type's item, "remembered for
+ * the job", and the thickness then matched EVERY group that thick to the item
+ * (`matchGroupToItem`): Chrome on Baker set S6B on the 114 ft 7-3/8" group and
+ * the 17 ft S6A-tagged and 20 ft S8B-tagged groups read S6B too, and still did
+ * after Undo. Set type moves its own runs and nothing else learns from them.
  */
 const JOB_COSTS_ONLY = "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
 const RUNS_MAX = 2000;
@@ -217,7 +220,6 @@ async function typeGroup(context: Awaited<ReturnType<typeof requireCompanyContex
       { defaultHeightFt: wallType.defaultHeightFt, sides: wallType.sides },
       level,
     );
-    await tx.takeoffItem.updateMany({ where: { id: itemId, thicknessIn: null }, data: { thicknessIn: input.inches.toFixed(2) } });
     const untyped = await tx.takeoffItem.findFirst({ where: { jobId, companyId, name: UNTYPED_ITEM }, select: { id: true } });
     const posted = await tx.takeoffMeasurement.findMany({ where: { pageId: page.id, kind: "LINEAR", source: "DETECTED" }, select: { id: true, xs: true, ys: true, itemId: true } });
     const label = `${wallType.code} wall (set by hand)`;
@@ -278,7 +280,11 @@ export async function clearWallGroupType(
     if (ours.length === 0) return [];
     const untyped = await untypedItem(tx, companyId, jobId);
     await tx.takeoffMeasurement.updateMany({ where: { id: { in: ours.map((m) => m.id) } }, data: { itemId: untyped, label: "wall, untyped" } });
-    await syncDecidedItems(tx, companyId, jobId, [untyped, ...new Set(ours.map((m) => m.itemId))]);
+    // A typed item left with no walls keeps no thickness: an earlier build's Set
+    // type wrote one, and it matched every group that thick to the empty item.
+    const left = [...new Set(ours.map((m) => m.itemId).filter((id): id is string => id !== null))];
+    await tx.takeoffItem.updateMany({ where: { id: { in: left }, wallTypeId: { not: null }, measurements: { none: {} } }, data: { thicknessIn: null } });
+    await syncDecidedItems(tx, companyId, jobId, [untyped, ...left]);
     return ours.map((m) => ({ id: m.id, itemId: m.itemId, label: m.label }));
   });
   if (moved.length === 0) return actionFail("Nothing on this group is typed now. Reload the page.");
