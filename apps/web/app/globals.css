@@ -493,4 +493,19 @@ html {
     min-height: 44px;
     min-width: 44px;
   }
+
+  /* THE TAKEOFF WORKSPACE ON AN iPAD (contractors use them on site). Every
+     control in it is a tap target, the rail's tools and the zoom buttons
+     first: measured at 1180 and 1024 they were 26-36px. It is one screen
+     with no sentences of inline links, so the rule the comment above avoids
+     for the whole app is safe here. `inline-flex` for the anchors, which
+     ignore a min-height while inline. Checked by ipad-workspace.spec.ts. */
+  [data-takeoff="workspace"] :is(button, a[href], [role="button"]):not(.sr-only) {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  [data-takeoff="workspace"] a[href]:not(.sr-only) {
+    display: inline-flex;
+    align-items: center;
+  }
 }

@@ -196,7 +196,8 @@ export function QueueGroupConfirm({
           ))}
         </span>
       )}
-      <span className="text-ink-muted" data-takeoff="queue-keys">
+      {/* Keys for a keyboard; on a touch screen every one is a button already. */}
+      <span className="hidden text-ink-muted mouse:inline" data-takeoff="queue-keys">
         Enter accept{choosing ? " · 1–9 type" : ""} · T height · N skip
       </span>
       {askedHeight && pick !== null && heightText.trim() === "" && (
