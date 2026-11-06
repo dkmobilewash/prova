@@ -48,8 +48,19 @@ export function QueueGroupConfirm({
   const heightText = typed ?? (height === null ? "" : feetLabel(height.feet));
   const choosing = codes.length > 0;
 
+  // ── A TYPE WITH NO HEIGHT IS ASKED ITS HEIGHT HERE, ONCE ──
+  // Accepting it bare made the type's item a height item of its own, so the
+  // count stood still for an answer (walk v3: "the count did not move"). The
+  // first Enter goes to the height; a second Enter leaves it for later.
+  const [askedHeight, setAskedHeight] = useState(false);
   function accept() {
     if (choosing && pick === null) return setError("Pick a type: 1–9.");
+    if (choosing && heightText.trim() === "" && !askedHeight) {
+      setAskedHeight(true);
+      setError(null);
+      heightBox.current?.focus();
+      return;
+    }
     let feet: number | null = null;
     if (heightText.trim() !== "") {
       const parsed = parseFeetInches(heightText, { label: "Height", min: 0 });
@@ -151,6 +162,11 @@ export function QueueGroupConfirm({
       <span className="text-ink-muted" data-takeoff="queue-keys">
         Enter accept{choosing ? " · 1–9 type" : ""} · H height · N skip
       </span>
+      {askedHeight && pick !== null && heightText.trim() === "" && (
+        <span className="text-ink-body" data-takeoff="queue-ask-height">
+          {pick.code} has no height yet: type the height of every {pick.code} wall on this job, or Enter again to leave it for later.
+        </span>
+      )}
       {error !== null && (
         <span role="alert" className="text-tag-rose-ink">
           {error}
