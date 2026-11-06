@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { JobNext, JobStep } from "@/lib/job-steps";
+import { RefreshOnReturn } from "./RefreshOnReturn";
 
 /**
  * ── THE ESTIMATING STEPS, AS ONE SLIM BAR ──
@@ -14,8 +15,9 @@ import type { JobNext, JobStep } from "@/lib/job-steps";
  * On a phone the steps scroll sideways in their own row and Next takes the
  * line under them at full width, so it is never squeezed out by the steps.
  *
- * A server component: nothing here changes without a navigation, and the
- * facts are `jobSteps()`'s, so this only draws them.
+ * A server component: the facts are `jobSteps()`'s, so this only draws them.
+ * They change in the workspace's own tab, so the page reads them again when
+ * this tab comes back into view (`RefreshOnReturn`).
  */
 const STATE_WORD = { done: "done", current: "current step", todo: "not started" } as const;
 
@@ -26,6 +28,7 @@ export function JobStepper({ steps, next }: { steps: JobStep[]; next: JobNext })
       data-job-stepper=""
       className="mb-3 flex items-center gap-3 max-sm:flex-wrap max-sm:gap-1.5 rounded-lg border border-line-card bg-surface px-2 py-1.5 print:hidden"
     >
+      <RefreshOnReturn />
       {/* `relative`: each step's screen-reader word is `sr-only`, which is
           position: absolute — without a positioned row to belong to it escaped
           this row's sideways scroll and widened the whole page by 260px on a

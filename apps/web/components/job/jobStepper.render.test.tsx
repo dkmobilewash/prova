@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+// The stepper re-reads its page when its tab comes back (`RefreshOnReturn`); no router here.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh() {} }) }));
 import { JobStepper } from "./JobStepper";
 import { jobSteps, type JobStepFacts } from "@/lib/job-steps";
 
