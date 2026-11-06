@@ -29,6 +29,7 @@ export function QueueGroupConfirm({
   codes,
   suggested,
   heightOf,
+  missing = null,
   heightOptions = () => [],
   onAccept,
   onSkip,
@@ -41,6 +42,8 @@ export function QueueGroupConfirm({
   suggested: Guess | null;
   /** The height to pre-fill for a type. */
   heightOf: (code: string | null) => CodeHeight | null;
+  /** Why no height from the drawings can be offered (no legend read), and where to fix it. */
+  missing?: { text: string; href: string; action: string } | null;
   /** A type's heights by part of the building, each with what printed it, to pick from. */
   heightOptions?: (code: string | null) => readonly CodeHeight[];
   onAccept: (code: string | null, heightFt: number | null) => void;
@@ -155,6 +158,14 @@ export function QueueGroupConfirm({
           {typed !== null ? "typed" : (height?.from ?? "none known: T to type one")}
         </span>
       </form>
+      {missing !== null && (
+        <span className="text-ink-muted" data-takeoff="queue-height-missing">
+          {missing.text}{" "}
+          <a href={missing.href} className="underline">
+            {missing.action}
+          </a>
+        </span>
+      )}
       {zones.length > 0 && (
         <span className="inline-flex flex-wrap items-center gap-1" data-takeoff="queue-zones">
           <span className="text-ink-muted">By part of the building (Z)</span>
