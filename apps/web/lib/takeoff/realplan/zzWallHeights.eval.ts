@@ -13,6 +13,7 @@ import { propagateTypes } from "../typePropagation";
 import { buildingsOf, resolveHeight } from "../wallHeights";
 import { sheetViews } from "../sheetViews";
 import { heightOfLegendType, setHeightFacts } from "../setHeightFacts";
+import { levelHeight, runLevels } from "../levelHeights";
 import { tagByRun } from "../wallTags";
 import type { WallCandidate } from "../wallVectors";
 
@@ -68,7 +69,7 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || LEGEND_PAGE === 0)("
     expect(doc.pageCount).toBeGreaterThan(0);
 
     // ── FACTS, FROM THE SHEETS THAT CARRY THEM — the app's own walk (`setHeightFacts`) ──
-    const { facts, generalNote, factSheets } = await setHeightFacts(doc, { legendPage: LEGEND_PAGE });
+    const { facts, generalNote, factSheets, levels: levelsAll = [] } = await setHeightFacts(doc, { legendPage: LEGEND_PAGE });
     console.log(`\n=== ${SET}: legend p${LEGEND_PAGE}, ${text.types.length} types`);
     console.log(`  facts: ${factSheets.join(" || ") || "none"}`);
     console.log(`  general note: ${generalNote === null ? "none" : `${generalNote.sheet} "${generalNote.phrase}"`}`);
@@ -92,6 +93,26 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || LEGEND_PAGE === 0)("
         const s = sight?.types.find((x: SightType) => x.code.toUpperCase() === t.code.toUpperCase());
         const r = heightOfLegendType({ code: t.code, lines: t.lines, heightNote: s?.heightNote ?? null }, { facts, generalNote, factSheets }, buildings);
         return { code: t.code, feet: r.feet, conf: r.feet === null ? null : r.confidence, gno: r.generalNoteOnly, options: (r.options ?? []).map((f) => f.feet), sentence: r.why.slice(0, 160) };
+      }))}`);
+    }
+
+    // ── BY LEVEL: the plan page's walls take their plan's level (`runLevels`), and a type
+    // that runs to the structure takes that level's floor-to-floor — the level of most
+    // of the sheet's wall length, which is every wall on a one-plan sheet.
+    if (PLAN_PAGE > 0 && LABEL !== "") {
+      const label = JSON.parse(readFileSync(LABEL, "utf8")) as LabelFile;
+      const t = await doc.pageText(PLAN_PAGE);
+      const walls = label.verdicts.filter((v) => v.verdict === "wall");
+      const levels = runLevels(walls, sheetViews(t.items, t.widthPt), label.feetPerUnit);
+      const feetBy = new Map<string, number>();
+      walls.forEach((w, i) => feetBy.set(levels[i]!.join(","), (feetBy.get(levels[i]!.join(",")) ?? 0) + w.lengthFeet));
+      const top = [...feetBy].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+      const level = top === "" ? null : levelHeight(levelsAll, top.split(",").map(Number));
+      console.log(`LEVEL plan p${PLAN_PAGE}: ${[...feetBy].map(([k, f]) => `[${k || "none"}] ${Math.round(f)} ft`).join(", ")} -> ${level === null ? "no floor-to-floor" : `${level.feet.toFixed(3)} ft, ${level.from}`}`);
+      console.log(`LEVEL_HEIGHTS_JSON ${JSON.stringify(text.types.map((tp) => {
+        const s = sight?.types.find((x: SightType) => x.code.toUpperCase() === tp.code.toUpperCase());
+        const r = heightOfLegendType({ code: tp.code, lines: tp.lines, heightNote: s?.heightNote ?? null }, { facts, generalNote, factSheets }, planBuildings);
+        return { code: tp.code, feet: level !== null && r.basis?.kind === "to-structure" ? level.feet : r.feet };
       }))}`);
     }
 
