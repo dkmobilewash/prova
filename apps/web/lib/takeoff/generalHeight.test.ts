@@ -31,3 +31,23 @@ describe("a sheet-wide wall-height note outranks the ceiling plan (Chrome on Bak
     expect(heightFor(null, {}, ceiling)).toEqual({ feet: 10, from: "ceiling plan, 2 rooms" });
   });
 });
+
+describe("a variant tag is offered its family's height and zone choices (Joplin's A3 and B1)", () => {
+  const zones = [{ feet: 12, from: "A-512 LOWER BOD" }, { feet: 16.667, from: "A-422 CENTRAL TOW" }];
+  it("finds A's entry for an A3 group, and never a family for a code the legend spells itself", async () => {
+    const { forCode } = await import("./reviewQueue");
+    const choices = { A: zones, A3X: [{ feet: 9, from: "its own" }] };
+    expect(forCode(choices, "A3")).toEqual(zones);
+    expect(forCode(choices, "a3")).toEqual(zones);
+    expect(forCode(choices, "A3X")).toEqual([{ feet: 9, from: "its own" }]);
+    // 12 is not a size of 1: a family ends in a letter.
+    expect(forCode({ "1": zones }, "12")).toBeUndefined();
+    expect(forCode(choices, null)).toBeUndefined();
+  });
+
+  it("gives an A3 group A's height, and A's level height", async () => {
+    const { levelHeightFor } = await import("./reviewQueue");
+    expect(heightFor("A3", { A: { feet: 15, from: "legend A" } }, ceiling)).toEqual({ feet: 15, from: "legend A" });
+    expect(levelHeightFor("A3", { label: "level 1", height: { feet: 9.667, from: "x" }, codes: ["A"] })).toEqual({ feet: 9.667, from: "x" });
+  });
+});

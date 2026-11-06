@@ -4,6 +4,7 @@ import type { WallGroup } from "./wallGroups";
 import { plainTag } from "./planTextTags";
 import { SOURCE_WORDS, typeSource } from "./postingGate";
 import { inchLabel } from "./wallVectors";
+import { familyOf } from "./wallTypeMatch";
 
 /**
  * ── ONE REVIEW QUEUE FOR THE WHOLE JOB ──
@@ -56,6 +57,8 @@ export type ReviewItem =
       ceiling: HeightOption | null;
       /** The level its walls' plan shows, and that level's floor-to-floor for the types that run to the structure. */
       level?: QueueLevel;
+      /** Where its sheet's plan names one building part: each type's height for that part (Bunkie's ADDITION 10'-0"), by code. */
+      building?: { name: string; heights: Record<string, CodeHeight> };
     }
   | { kind: "height"; key: string; itemId: string; name: string; pageNumber: number; sheet: string; runs: QueueRun[]; feet: number | null; options: HeightOption[] }
   | {
@@ -99,7 +102,8 @@ export type QueueLevel = { label: string; height: CodeHeight | null; codes: stri
 /** A type's height on a level: the level's floor-to-floor, for a type that runs to the structure. */
 export function levelHeightFor(code: string | null, level: QueueLevel | undefined): CodeHeight | null {
   if (code === null || level === undefined || level.height === null) return null;
-  return level.codes.includes(code.toUpperCase()) ? level.height : null;
+  const family = familyOf(code, level.codes);
+  return level.codes.includes(code.toUpperCase()) || family !== null ? level.height : null;
 }
 
 /**
@@ -233,9 +237,22 @@ export function suggestType(group: WallGroup, sheet: string, legendCodes: readon
 /** Where `heights` carries the set's sheet-wide rule (`generalHeightOf`): not a code any legend can print. */
 export const GENERAL_HEIGHT_KEY = "*";
 
-/** A group's height: its type's own, else the set's sheet-wide note ("all walls to deck U.N.O."), else the ceiling over its rooms. */
+/**
+ * A code's entry, else its family's: Joplin tags its walls A3 and B1, variants of
+ * the legend's A and B (`familyOf`), and the heights and zone choices are the
+ * legend's — so an A3 group is offered A's.
+ */
+export function forCode<T>(map: Readonly<Record<string, T>>, code: string | null): T | undefined {
+  if (code === null) return undefined;
+  const own = map[code.toUpperCase()];
+  if (own !== undefined) return own;
+  const family = familyOf(code, Object.keys(map).filter((k) => k !== GENERAL_HEIGHT_KEY));
+  return family === null ? undefined : map[family];
+}
+
+/** A group's height: its type's own (or its family's), else the set's sheet-wide note ("all walls to deck U.N.O."), else the ceiling over its rooms. */
 export function heightFor(code: string | null, heights: Readonly<Record<string, CodeHeight>>, ceiling: HeightOption | null): CodeHeight | null {
-  const own = code === null ? undefined : heights[code.toUpperCase()];
+  const own = forCode(heights, code);
   return own ?? heights[GENERAL_HEIGHT_KEY] ?? (ceiling === null ? null : { feet: ceiling.feet, from: ceiling.from });
 }
 
