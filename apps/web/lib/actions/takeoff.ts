@@ -752,8 +752,11 @@ export async function postSheetWalls(jobId: string, planId: string, pageNumber: 
   // ceiling and no openings off the boards, where v6's whole-set run had all
   // three (`postAndRooms` in walls.ts). Same step, same switches, no model.
   if (outcome.kind === "written") {
+    // The note names what was found; a skip or failure is for the log, not the
+    // person (the walls are on the job either way, and the whole-set run can retry).
     const rooms = await roomsForSheet({ planId, companyId: context.company.id, jobId, pageNumber, userId: context.id }).catch((error) => ({ kind: "failed" as const, error: String(error) }));
-    if (!(rooms.kind === "skipped" && rooms.why === "room finding is off")) note = `${note}; ${roomsNoteFor(rooms)}`;
+    if (rooms.kind === "written") note = `${note}; ${roomsNoteFor(rooms)}`;
+    else if (rooms.kind === "failed") console.error("[postSheetWalls] rooms after walls failed", { planId, pageNumber, error: rooms.error });
   }
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath(`/takeoff/${jobId}`);

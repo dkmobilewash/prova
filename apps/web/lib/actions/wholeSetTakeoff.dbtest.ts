@@ -18,6 +18,14 @@ const context = { company: { id: "" }, id: "", role: "OWNER" as string, jobFunct
 process.env.TAKEOFF_LOCAL_PLAN_DIR = `${process.cwd()}/e2e/fixtures`;
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+// The rooms step, watched: Run takeoff on a sheet must ask it (walk v7). It runs
+// for real unless a test hands it an answer.
+const roomsCalls: number[] = [];
+let roomsAnswer: unknown = null;
+vi.mock("@/lib/plan-ingest/rooms", async (actual) => {
+  const real = await actual<typeof import("@/lib/plan-ingest/rooms")>();
+  return { ...real, roomsForSheet: async (input: Parameters<typeof real.roomsForSheet>[0]) => (roomsCalls.push(input.pageNumber), roomsAnswer ?? real.roomsForSheet(input)) };
+});
 const { saveWholeSetTakeoffSwitch, wholeSetTakeoffSummary } = await import("./wholeSetTakeoff");
 const { startPlanIngest } = await import("./planIngest");
 const { postSheetWalls, saveTakeoffMeasurements } = await import("./takeoff");
@@ -237,19 +245,19 @@ describe("whole-set takeoff", () => {
   });
 
   it("RUN TAKEOFF ON A SHEET LOOKS FOR ITS ROOMS, CEILINGS AND WINDOWS, as the whole-set run does (walk v7)", async () => {
-    // Page 6, with the room finder on. Whatever the rooms step finds on the test
-    // plan, its clause is on the note: what matters is that it was asked at all.
+    // Page 6: the rooms step is asked, and what it found is on the note.
     const page = await prisma.takeoffPlanPage.create({ data: { planId, pageNumber: 6 } });
     const calibration = await prisma.takeoffScaleCalibration.create({ data: { pageId: page.id, x1: 0, y1: 0, x2: 1, y2: 0, declaredDistanceFeet: "100" } });
     await prisma.takeoffWallProposal.create({
       data: { pageId: page.id, calibrationId: calibration.id, thicknessInches: 6, source: "REMAINDER", runs: [{ x1: 0.2, y1: 0.3, x2: 0.6, y2: 0.3, thicknessFeet: 0.5 }] },
     });
-    await prisma.company.update({ where: { id: companyId }, data: { roomFinderOn: true } });
+    roomsAnswer = { kind: "written", rooms: 3, ceilingSqFt: 1200 };
     try {
       const posted = await postSheetWalls(jobId, planId, 6);
-      expect(posted.ok && posted.value.note).toMatch(/^on the job by type: none typed; untyped 40 ft; rooms (failed|: )/);
+      expect(roomsCalls).toContain(6);
+      expect(posted).toEqual({ ok: true, value: { note: "on the job by type: none typed; untyped 40 ft; 3 rooms, 1,200 sf of ceiling read", waiting: false } });
     } finally {
-      await prisma.company.update({ where: { id: companyId }, data: { roomFinderOn: false } });
+      roomsAnswer = null;
     }
   });
 
