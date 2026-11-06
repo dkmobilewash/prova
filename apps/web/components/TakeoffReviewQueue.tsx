@@ -85,6 +85,18 @@ export function TakeoffReviewQueue({
   const heightOfGroup = (g: TypeItem, code: string | null) => levelHeightFor(code, g.level) ?? forCode(g.building?.heights ?? {}, code) ?? heightFor(code, heights, g.ceiling);
   // The groups on this sheet nothing on the drawing names: no tag, no legend, no library guess.
   const unnamed = current === null || current.kind !== "type" || current.suggested !== null ? [] : left.filter((item): item is TypeItem => item.kind === "type" && item.pageNumber === current.pageNumber && item.suggested === null);
+  // ── THE SHEET'S GROUPS, COUNTED THE WAY THE TWO BUTTONS COUNT THEM ──
+  // The queue shows one group at a time, so "Accept all … (9 groups)" and "on all
+  // 11 groups nothing names" were checked by stepping through, and came out 10 and
+  // 10 (Chrome on Baker A101). Said once, beside the buttons, so each count can be
+  // read against what it covers: named by the drawing (Accept all), suggested by
+  // thickness alone (one by one: the thickness is a guess), named by nothing (A).
+  const sheetTypes = current === null || current.kind !== "type" ? [] : left.filter((item): item is TypeItem => item.kind === "type" && item.pageNumber === current.pageNumber);
+  const sheetCounts = {
+    drawn: sheetTypes.filter((g) => g.suggested?.drawn === true).length,
+    guessed: sheetTypes.filter((g) => g.suggested !== null && g.suggested.drawn !== true).length,
+    none: sheetTypes.filter((g) => g.suggested === null).length,
+  };
   async function acceptSheet(groups: readonly { key: string; feet: number | null; group: Parameters<typeof confirmSheetSuggestions>[1][number] }[] = sheetGroups) {
     if (current === null || current.kind !== "type" || groups.length === 0) return;
     const sheet = current.sheet;
@@ -436,6 +448,16 @@ export function TakeoffReviewQueue({
                 Open the line ↗
               </a>
             </>
+          )}
+          {sheetTypes.length > 1 && current.kind === "type" && (
+            <span className="text-ink-muted" data-takeoff="review-queue-sheet-counts">
+              {current.sheet}: {sheetTypes.length} groups ·{" "}
+              {[
+                `${sheetCounts.drawn} named by the drawing`,
+                ...(sheetCounts.guessed > 0 ? [`${sheetCounts.guessed} suggested by thickness alone, one by one`] : []),
+                `${sheetCounts.none} named by nothing`,
+              ].join(" · ")}
+            </span>
           )}
           {sheetGroups.length > 1 && (
             <button type="button" className={button} disabled={busy} onClick={() => void acceptSheet()} data-takeoff="review-queue-accept-sheet" title="Every group whose type a printed tag or the legend gives, with its height; the rest stay here">

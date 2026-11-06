@@ -120,6 +120,8 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
     await expect(queue()).toBeVisible({ timeout: 60_000 });
     await expect(left()).toHaveText("4 left to review");
     await expect(acceptAll()).toHaveText("Accept all suggestions on this sheet (2 groups)");
+    // The sheet's groups counted the way the two buttons count them (Chrome on Baker: 9 vs "10", 11 vs "10").
+    await expect(queue().locator('[data-takeoff="review-queue-sheet-counts"]')).toHaveText("A101: 4 groups · 2 named by the drawing · 2 named by nothing");
   });
 
   test("3. one press: both groups typed with their heights, their lines written, the other two left", async () => {
