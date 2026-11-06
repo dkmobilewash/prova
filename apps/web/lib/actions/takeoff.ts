@@ -722,20 +722,35 @@ export async function confirmSheetScales(
  * A sheet with walls already on the job is left as it is, so pressing it
  * again never counts a wall twice (new-customer run v2, M3: it added nothing).
  */
-export async function postSheetWalls(jobId: string, planId: string, pageNumber: number): Promise<ActionResultWith<{ note: string | null }>> {
+export async function postSheetWalls(jobId: string, planId: string, pageNumber: number): Promise<ActionResultWith<{ note: string | null; waiting: boolean }>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const page = await prisma.takeoffPlanPage.findFirst({
     where: { planId, pageNumber, plan: { jobId, companyId: context.company.id } },
-    select: { id: true, measurements: { where: { kind: "LINEAR", source: "DETECTED" }, select: { id: true }, take: 1 } },
+    select: {
+      id: true,
+      measurements: { where: { kind: "LINEAR", source: "DETECTED" }, select: { id: true }, take: 1 },
+      calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true } },
+    },
   });
   if (page === null) return actionFail("That sheet is no longer on this job. Reload the page.");
-  if (page.measurements.length > 0) return { ok: true, value: { note: null } };
+  if (page.measurements.length > 0) return { ok: true, value: { note: null, waiting: false } };
   const outcome = await wallItemsForSheet({ planId, companyId: context.company.id, jobId, pageNumber, userId: context.id });
+  // THE FINDER SAVING A SCALE STARTS MAY NOT HAVE STORED THE WALLS YET. Walk v6:
+  // A101's scale at 15:25:06, its walls stored at 15:25:48, and Run takeoff
+  // pressed in between posted nothing and said nothing (the STUCK of v2–v6).
+  // While the scale is young, "no walls found" means "not yet": the viewer asks again.
+  const scaledAt = page.calibrations[0]?.createdAt.getTime() ?? 0;
+  if (outcome.kind === "skipped" && outcome.why === "no walls found" && Date.now() - scaledAt < FINDER_WAIT_MS) {
+    return { ok: true, value: { note: null, waiting: true } };
+  }
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath(`/takeoff/${jobId}`);
-  return { ok: true, value: { note: outcome.kind === "written" ? wallItemsNoteFor(outcome) : null } };
+  return { ok: true, value: { note: outcome.kind === "written" ? wallItemsNoteFor(outcome) : null, waiting: false } };
 }
+
+/** How long after a scale is saved its finder may still be storing the walls. Walk v6 took 42 s with six sheets at once. */
+const FINDER_WAIT_MS = 3 * 60_000;
 
 /**
  * Writes one sheet's calibration and starts the wall finder on it, for a hand
