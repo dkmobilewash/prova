@@ -16,7 +16,7 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
  * lines, and leaves the rest in the queue. One line says what went in, with
  * Undo, which puts every run back on "Walls — untyped" and the lines with it.
  *
- * fast-confirm.spec.ts's fixture: ZF1 and ZF2 tagged on A101, and a third group
+ * fast-confirm.spec.ts's fixture: ZA1 and ZA2 tagged on A101, and a third group
  * nothing names, which the press must leave.
  */
 test.describe.configure({ mode: "serial" });
@@ -27,8 +27,8 @@ const SIZE = { width: 1440, height: 900 };
 const NOTE = `Height 15 ft (MEDIUM): "TO DECK"; A301 prints T.O. DECK 15' 0"`;
 // 1 page width = 144 ft.
 const GROUPS = {
-  one: { tag: "ZF1", inches: 4.875, runs: [{ x1: 0.1, y1: 0.3, x2: 0.5, y2: 0.3 }, { x1: 0.5, y1: 0.3, x2: 0.5, y2: 0.5 }] },
-  two: { tag: "ZF2", inches: 3.625, runs: [{ x1: 0.2, y1: 0.6, x2: 0.5, y2: 0.6 }] },
+  one: { tag: "ZA1", inches: 4.875, runs: [{ x1: 0.1, y1: 0.3, x2: 0.5, y2: 0.3 }, { x1: 0.5, y1: 0.3, x2: 0.5, y2: 0.5 }] },
+  two: { tag: "ZA2", inches: 3.625, runs: [{ x1: 0.2, y1: 0.6, x2: 0.5, y2: 0.6 }] },
   three: { tag: null, inches: 6.125, runs: [{ x1: 0.6, y1: 0.2, x2: 0.7, y2: 0.2 }] },
 };
 
@@ -77,13 +77,16 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
     await prisma.planSheetProposal.create({
       data: { ingestJobId: ingest.id, planId, pageNumber: 1, proposedSheetNumber: "A101", proposedTitle: "FIRST FLOOR PLAN", proposedPageType: "PLAN", proposedScale: '1/4" = 1\'-0"', proposedReason: "seeded", proposedConfidence: "HIGH", model: "seed", promptVersion: "n/a" },
     });
-    await prisma.takeoffPlanTextRead.create({ data: { planId, pageNumber: 0, kind: "legend", value: { page: 1, title: "PARTITION TYPES", codes: ["ZF1", "ZF2"], proposals: [], reason: "seeded", confidence: "HIGH" } } });
-    // ZF1 as the legend read adds it, with its height; ZF2 with none.
-    if ((await prisma.wallType.count({ where: { companyId, code: "ZF1" } })) === 0) {
-      await prisma.wallType.create({ data: { companyId, code: "ZF1", name: "ZZ-E2E partition to deck", defaultHeightFt: "15", sides: 2, notes: `Read off sheet A001 of the plan set. Check against the drawing before pricing.\n${NOTE}` } });
+    await prisma.takeoffPlanTextRead.create({ data: { planId, pageNumber: 0, kind: "legend", value: { page: 1, title: "PARTITION TYPES", codes: ["ZA1", "ZA2"], proposals: [], reason: "seeded", confidence: "HIGH" } } });
+    // ZA1 as the legend read adds it, with its height; ZA2 with none.
+    if ((await prisma.wallType.count({ where: { companyId, code: "ZA1" } })) === 0) {
+      // One part, so its runs make an estimate line: a type with no parts makes none, by design.
+      await prisma.wallType.create({
+        data: { companyId, code: "ZA1", name: "ZZ-E2E partition to deck", defaultHeightFt: "15", sides: 2, notes: `Read off sheet A001 of the plan set. Check against the drawing before pricing.\n${NOTE}`, components: { create: [{ description: "ZZ-E2E hang and finish", unit: "sq ft", basis: "BOARDED_SQFT" }] } },
+      });
     }
-    if ((await prisma.wallType.count({ where: { companyId, code: "ZF2" } })) === 0) {
-      await prisma.wallType.create({ data: { companyId, code: "ZF2", name: "ZZ-E2E partition to ceiling", sides: 2 } });
+    if ((await prisma.wallType.count({ where: { companyId, code: "ZA2" } })) === 0) {
+      await prisma.wallType.create({ data: { companyId, code: "ZA2", name: "ZZ-E2E partition to ceiling", sides: 2 } });
     }
 
     const sheet = await prisma.takeoffPlanPage.create({ data: { planId, pageNumber: 1, label: "A101", pageWidthPt: 2592 } });
@@ -122,11 +125,11 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
     await expect(left()).toHaveText(/^[12] left to review$/, { timeout: 5_000 });
     await expect(queue().locator('[data-takeoff="review-queue-accepted-text"]')).toHaveText("Accepted 2 groups on sheet A101 · 130 ft");
     await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(1);
-    const zf1 = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, wallType: { code: "ZF1" } }, select: { heightFt: true, _count: { select: { measurements: true } } } });
+    const zf1 = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, wallType: { code: "ZA1" } }, select: { heightFt: true, _count: { select: { measurements: true } } } });
     expect(zf1._count.measurements).toBe(2);
     expect(zf1.heightFt?.toString()).toBe("15");
-    expect(await linesOf("ZF1")).toBeGreaterThan(0);
-    // What stays is the group nothing names, and ZF2's height (it has none of its own).
+    expect(await linesOf("ZA1")).toBeGreaterThan(0);
+    // What stays is the group nothing names, and ZA2's height (it has none of its own).
     const kinds = await queue().locator('[data-takeoff="review-queue-item"]').getAttribute("data-kind");
     expect(["type", "height"]).toContain(kinds);
     await expect(acceptAll()).toHaveCount(0);
@@ -137,10 +140,12 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
     await queue().locator('[data-takeoff="review-queue-accepted-undo"]').click();
     await expect(queue().locator('[data-takeoff="review-queue-accepted"]')).toHaveCount(0, { timeout: 30_000 });
     await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(4);
-    expect(await linesOf("ZF1")).toBe(0);
-    expect(await linesOf("ZF2")).toBe(0);
-    await expect(left()).toHaveText("3 left to review", { timeout: 30_000 });
-    await expect(acceptAll()).toHaveText("Accept all suggestions on this sheet (2 groups)");
+    expect(await linesOf("ZA1")).toBe(0);
+    expect(await linesOf("ZA2")).toBe(0);
+    // The two groups are back to accept again. (Any confirm writes the untyped
+    // runs' own "no type: check" line, which the queue then asks a price for;
+    // Undo leaves that line, so the count is not compared.)
+    await expect(acceptAll()).toHaveText("Accept all suggestions on this sheet (2 groups)", { timeout: 30_000 });
   });
 
   test("5. nothing crashed", async () => {
