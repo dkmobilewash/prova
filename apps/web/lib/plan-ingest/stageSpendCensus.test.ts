@@ -129,7 +129,14 @@ describe("what one click on Retry actually buys", () => {
    * `claim.ts` increments on CLAIM rather than on failure — and only the first of them
    * can drift silently.
    */
-  const retrySource = stripComments(readFileSync(`${HERE}../actions/planIngest.ts`, "utf8"));
+  // retryPlanIngestPage's own body: the slice action branches on STAGE_SPENDS too (MODEL_LANES).
+  const actionSource = stripComments(readFileSync(`${HERE}../actions/planIngest.ts`, "utf8"));
+  const retryAt = actionSource.indexOf("export async function retryPlanIngestPage(");
+  const retryEnd = actionSource.indexOf("\nexport ", retryAt + 1);
+  const retrySource = actionSource.slice(retryAt, retryEnd === -1 ? undefined : retryEnd);
+  it("finds retryPlanIngestPage to read", () => {
+    expect(retryAt).toBeGreaterThan(-1);
+  });
 
   /** The expression the action seeds a PAID stage's attempts with. */
   function paidSeedExpression(): string {
