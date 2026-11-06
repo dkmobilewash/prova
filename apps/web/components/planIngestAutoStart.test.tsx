@@ -35,12 +35,14 @@ import type { IngestView } from "@/lib/plan-ingest/runner";
 const startPlanIngest = vi.fn();
 const advancePlanIngest = vi.fn();
 const planIngestFailures = vi.fn(async () => ({ ok: true, value: [] }));
+const queuedPlanReads = vi.fn(async () => ({ ok: true, value: [] as IngestView[] }));
 
 vi.mock("@/lib/actions", () => ({
   startPlanIngest: (...a: unknown[]) => startPlanIngest(...a),
   advancePlanIngest: (...a: unknown[]) => advancePlanIngest(...a),
   retryPlanIngestPage: async () => ({ ok: true }),
   planIngestFailures: (...a: unknown[]) => planIngestFailures(...(a as [])),
+  queuedPlanReads: (...a: unknown[]) => queuedPlanReads(...(a as [])),
 }));
 
 const { PlanIngestPanel } = await import("./PlanIngestPanel");
@@ -66,6 +68,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   startPlanIngest.mockResolvedValue({ ok: true, value: view({ finished: 0, percent: 0, complete: false }) });
   advancePlanIngest.mockResolvedValue({ ok: true, value: view() });
+  queuedPlanReads.mockResolvedValue({ ok: true, value: [] });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -137,14 +140,33 @@ describe("a set that has already been read", () => {
     expect(startPlanIngest).not.toHaveBeenCalled();
   });
 
-  it("DOES NOT RESUME A PAUSED RUN behind somebody's back", async () => {
-    // Resuming is a decision about work already begun — the panel shows
-    // "Paused" and waits for "Keep reading". This is only about work never
-    // begun at all.
-    paint(view({ finished: 12, percent: 41, complete: false }));
+  it("GOES ON WITH EVERY READING STILL QUEUED, OLDEST FIRST — never starting a new one", async () => {
+    // Diego, 2026-11-06, reversing "resume only on a press": the wall legend
+    // queued behind the free pass waited for the daily cron, so a new customer
+    // had no suggested types until the next day. Every queued run now advances
+    // while the page is open, the oldest first; nothing new is started.
+    const legend = view({ jobId: "legend_1", stage: "WALL_LEGEND", finished: 0, percent: 0, complete: false, total: 65 });
+    const titles = view({ jobId: "titles_1", stage: "TITLE_BLOCK", finished: 12, percent: 18, complete: false, total: 65 });
+    queuedPlanReads.mockResolvedValueOnce({ ok: true, value: [legend, titles] }).mockResolvedValueOnce({ ok: true, value: [titles] }).mockResolvedValue({ ok: true, value: [] });
+    advancePlanIngest.mockImplementation(async (jobId: string) => ({ ok: true, value: view({ jobId, stage: jobId === "legend_1" ? "WALL_LEGEND" : "TITLE_BLOCK", complete: true }) }));
+    paint(titles);
+    await act(async () => {});
+    await act(async () => {});
     await act(async () => {});
     expect(startPlanIngest).not.toHaveBeenCalled();
-    expect(advancePlanIngest).not.toHaveBeenCalled();
+    expect(advancePlanIngest.mock.calls.map((c) => c[0])).toEqual(["legend_1", "titles_1"]);
+    expect(queuedPlanReads).toHaveBeenCalledTimes(3);
+  });
+
+  it("names what is queued after the reading on screen", async () => {
+    const legend = view({ jobId: "legend_1", stage: "WALL_LEGEND", finished: 0, percent: 0, complete: false, total: 65 });
+    const titles = view({ jobId: "titles_1", stage: "TITLE_BLOCK", finished: 12, percent: 18, complete: false, total: 65 });
+    queuedPlanReads.mockResolvedValue({ ok: true, value: [legend, titles] });
+    advancePlanIngest.mockImplementation(() => new Promise(() => {}));
+    paint(titles);
+    await act(async () => {});
+    expect(host.querySelector('[data-plan-ingest="reading"]')?.textContent).toBe("The wall legend:");
+    expect(host.querySelector('[data-plan-ingest="queued"]')?.textContent).toBe("Next: The title blocks (12 of 65)");
   });
 
   it("does not start on a run that finished with failures", async () => {
