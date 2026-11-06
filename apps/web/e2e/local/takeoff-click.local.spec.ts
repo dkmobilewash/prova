@@ -547,6 +547,74 @@ test("B8 Baker A001 (keynote legend with a demo plan): 0 walls, 2 doors", async 
   await expect(hook("demo-total")).toContainText(/0 walls[^·]*· 2 doors/, { timeout: 60_000 });
 });
 
+// ── PART B9. Plan comparison on E Street: A2.1 against its demolition plan A1.1 ──
+// Chrome after plan-compare: A2.1 still said "This sheet shows existing work…
+// draw the work area or exclude existing walls" with the walls already set
+// aside, and its total did not say whether those were in it. The company's
+// switch is turned on for these steps only and put back as it was.
+const SHOTS_B9 = join(__dirname, "../artifacts/estreet-compare");
+mkdirSync(SHOTS_B9, { recursive: true });
+let compareWas: boolean | null = null;
+let allFeet = NaN;
+async function compare(on: boolean) {
+  const user = await prisma.user.findFirstOrThrow({ where: { email: PERSONAS.main.email }, select: { companyId: true } });
+  const was = await prisma.company.findUniqueOrThrow({ where: { id: user.companyId }, select: { planCompareOn: true } });
+  if (compareWas === null) compareWas = was.planCompareOn;
+  await prisma.company.update({ where: { id: user.companyId }, data: { planCompareOn: on } });
+}
+/** A2.1's printed 1/4" = 1'-0", taken from the toolbar's offer the first time. */
+async function a21Scaled() {
+  await sheet("estreet", 28);
+  if (await hook("toolbar-scale-offer").isVisible({ timeout: 5000 }).catch(() => false)) {
+    await hook("toolbar-scale-offer").click();
+    await button("Use the printed scale").click();
+    const save = button("Set the scale");
+    if (await save.isVisible({ timeout: 3000 }).catch(() => false)) await save.click();
+    await expect(hook("toolbar-scale-offer")).toHaveCount(0, { timeout: 20_000 });
+  }
+}
+
+test("B9-1 switch off: A2.1's walls, all of them, and the renovation prompt", async () => {
+  await compare(false);
+  await a21Scaled();
+  await findWalls();
+  allFeet = await settledWallFeet();
+  await expect(hook("renovation-prompt")).toBeVisible();
+  await expect(hook("existing-aside")).toHaveCount(0);
+  await expect(hook("wall-total")).not.toContainText("new");
+});
+
+test("B9-2 switch on: the set-aside line replaces the prompt, and the total says new and existing, adding up to the whole", async () => {
+  await compare(true);
+  await sheet("estreet", 28);
+  await findWalls();
+  await expect(hook("prior-plan-aside")).toBeVisible({ timeout: 60_000 });
+  const aside = hook("existing-aside");
+  await expect(aside).toContainText(/^Existing walls set aside using demolition plan A1\.1: \d+ walls?, [\d,]+ ft$/);
+  await expect(hook("renovation-prompt")).toHaveCount(0);
+  const total = await hook("wall-total").innerText();
+  const m = total.match(/^Walls on this sheet: ([\d,]+) ft new \(([\d,]+) ft existing set aside\)$/);
+  expect(m, `the total names both parts: "${total}"`).not.toBeNull();
+  const [newFeet, asideFeet] = [num(m![1]!), num(m![2]!)];
+  expect(num((await aside.innerText()).match(/([\d,]+) ft$/)![1]!)).toBe(asideFeet);
+  // WHICH SPLIT IT IS: the total is the walls left after the comparison, so
+  // new + set aside is the sheet's whole, as found with the switch off.
+  expect(Math.abs(newFeet + asideFeet - allFeet), `${newFeet} new + ${asideFeet} set aside against ${allFeet} found without the comparison`).toBeLessThanOrEqual(2);
+  await page.screenshot({ path: join(SHOTS_B9, "a21-existing-aside.png") });
+});
+
+test("B9-3 A1.1 says it is not counted, and what it is used for", async () => {
+  await sheet("estreet", 24);
+  await expect(hook("demo-not-counted")).toHaveText("Not counted: used to set aside existing walls on A2.1.");
+  await page.screenshot({ path: join(SHOTS_B9, "a11-not-counted.png") });
+});
+
+test("B9-4 an unpaired sheet keeps no such line", async () => {
+  await sheet("estreet", 27);
+  await expect(hook("demo-not-counted")).toHaveCount(0);
+  await compare(compareWas ?? false);
+});
+
 // ── PART C. Rooms and Split area: Joplin A-101 ─────────────────────────────
 // Across the open dining area at y = 0.306, between the DINING (y 0.274) and
 // KITCHEN (y 0.337) tags; the room's outline crosses that line at x 0.480 and 0.603.
