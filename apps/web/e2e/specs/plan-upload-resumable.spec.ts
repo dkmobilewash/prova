@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
 import { prisma } from "@prova/db";
 import { signInAs } from "../lib/signIn";
@@ -18,8 +21,16 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
 test.describe.configure({ mode: "serial" });
 
 const MB = 1024 * 1024;
-/** A PDF header and 101 MB of padding: 13 parts of 8 MB. */
-const bigPdf = (name: string) => ({ name, mimeType: "application/pdf", buffer: Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.alloc(101 * MB - 9, 0x20)]) });
+/**
+ * A PDF header and 101 MB of padding (13 parts of 8 MB), written to a file:
+ * Playwright refuses an in-memory file over 50 MB.
+ */
+const dir = mkdtempSync(path.join(tmpdir(), "zz-e2e-big-plan-"));
+const bigPdf = (name: string) => {
+  const file = path.join(dir, name);
+  writeFileSync(file, Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.alloc(101 * MB - 9, 0x20)]));
+  return file;
+};
 const PARTS = Math.ceil((101 * MB) / (8 * MB));
 
 test.describe("a big plan set uploads in resumable parts", () => {
