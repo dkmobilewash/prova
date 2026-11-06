@@ -27,9 +27,51 @@ export type TaggedWindow = {
   y: number;
   /** The schedule row the tag names, when a schedule was read. */
   row: ScheduledOpening | null;
-  /** The frame placed with it, as an index into the frames given, or null. */
+  /** The frame placed with it, as an index into the frames given (the first piece of a joined one), or null. */
   frame: number | null;
+  /** The whole window's line, where pieces of one frame were joined (`joinedFrames`). */
+  span?: { x1: number; y1: number; x2: number; y2: number };
 };
+
+/** Two frame pieces whose ends are this close, on one wall line, are one window drawn in two strokes. */
+export const FRAME_JOIN_FEET = 0.25;
+
+/**
+ * ── ONE WINDOW DRAWN AS TWO FRAME PIECES IS ONE WINDOW ──
+ *
+ * Topeka draws some windows as two frame pieces either side of a mullion, and each
+ * piece was counted: 16 of its 46 false windows on training were a second count of a
+ * window already counted. Pieces on the same wall run, collinear, whose ends are
+ * within `FRAME_JOIN_FEET`, are joined into one frame before they are typed. Two
+ * windows with wall between them stay two: the gap is the wall.
+ */
+export function joinedFrames(frames: readonly WindowSymbol[], feetPerUnit: number): { f: WindowSymbol; first: number }[] {
+  const gap = FRAME_JOIN_FEET / feetPerUnit;
+  const out: { f: WindowSymbol; first: number }[] = [];
+  frames.forEach((f, i) => {
+    const same = out.find(({ f: o }) => {
+      if (o.wall < 0 || o.wall !== f.wall) return false;
+      const dx = o.x2 - o.x1, dy = o.y2 - o.y1, len = Math.hypot(dx, dy);
+      if (len === 0) return false;
+      const ux = dx / len, uy = dy / len;
+      // Collinear: the piece's ends sit on the frame's line.
+      const off = (px: number, py: number) => Math.abs((px - o.x1) * uy - (py - o.y1) * ux);
+      if (off(f.x1, f.y1) > gap / 2 || off(f.x2, f.y2) > gap / 2) return false;
+      const a = (f.x1 - o.x1) * ux + (f.y1 - o.y1) * uy, b = (f.x2 - o.x1) * ux + (f.y2 - o.y1) * uy;
+      return Math.max(Math.min(a, b) - len, -Math.max(a, b)) <= gap;
+    });
+    if (same === undefined) {
+      out.push({ f, first: i });
+      return;
+    }
+    const o = same.f;
+    const dx = o.x2 - o.x1, dy = o.y2 - o.y1, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
+    const ts = [0, len, (f.x1 - o.x1) * ux + (f.y1 - o.y1) * uy, (f.x2 - o.x1) * ux + (f.y2 - o.y1) * uy];
+    const lo = Math.min(...ts), hi = Math.max(...ts);
+    same.f = { ...o, x1: o.x1 + lo * ux, y1: o.y1 + lo * uy, x2: o.x1 + hi * ux, y2: o.y1 + hi * uy, widthFeet: (hi - lo) * feetPerUnit };
+  });
+  return out;
+}
 
 export type TaggedWindows = {
   /** Whether the sheet's tags could be read as windows at all. */
@@ -98,15 +140,15 @@ export function windowsByTag(input: {
   const tags = input.symbols.filter(isTag).map((s) => ({ tag: normaliseTag(s.text), points: [{ x: s.x / W, y: s.y / W }, ...(s.leader ? [{ x: s.leader.x / W, y: s.leader.y / W }] : [])] }));
   const reach = WINDOW_TAG_TYPES_FEET / input.feetPerUnit;
   const windows: TaggedWindow[] = [];
-  input.frames.forEach((f, i) => {
+  for (const { f, first } of joinedFrames(input.frames, input.feetPerUnit)) {
     let tag: string | null = null, best = reach;
     for (const t of tags) for (const p of t.points) {
       const d = nearestOnRun(p, f).d;
       if (d <= best) { best = d; tag = t.tag; }
     }
-    if (tag === null) return;
-    windows.push({ tag, x: (f.x1 + f.x2) / 2, y: (f.y1 + f.y2) / 2, row: rowOf.get(tag) ?? null, frame: i });
-  });
+    if (tag === null) continue;
+    windows.push({ tag, x: (f.x1 + f.x2) / 2, y: (f.y1 + f.y2) / 2, row: rowOf.get(tag) ?? null, frame: first, span: { x1: f.x1, y1: f.y1, x2: f.x2, y2: f.y2 } });
+  }
   // A schedule with no tag read on this sheet is not a count of zero windows.
   if (windows.length === 0) return { counted: false, vocabulary: null, windows: [], byTag: [] };
   const order = [...new Set([...rowOf.keys(), ...windows.map((w) => w.tag)])].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
@@ -132,7 +174,7 @@ export type StoredWindows = { windows: StoredWindow[]; decided?: boolean };
 export function windowsToStore(tagged: TaggedWindows, frames: readonly WindowSymbol[]): StoredWindows | null {
   if (!tagged.counted) return null;
   const windows = tagged.windows.flatMap((w) => {
-    const f = w.frame === null ? undefined : frames[w.frame];
+    const f = w.span ?? (w.frame === null ? undefined : frames[w.frame]);
     return f === undefined ? [] : [{ tag: w.tag, x1: f.x1, y1: f.y1, x2: f.x2, y2: f.y2 }];
   });
   return windows.length === 0 ? null : { windows };
