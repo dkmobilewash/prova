@@ -593,9 +593,14 @@ export const OUTSIDE_LOOK_FEET = 60;
  */
 export function exteriorWalls(walls: readonly WallCandidate[], feetPerUnit: number): boolean[] {
   const look = OUTSIDE_LOOK_FEET / feetPerUnit;
+  const drawing = drawingsOf(walls, feetPerUnit);
   const hits = (ox: number, oy: number, dx: number, dy: number, skip: number): boolean => {
     for (let i = 0; i < walls.length; i++) {
-      if (i === skip) continue;
+      // Only a wall of the same drawing stands on its outside: Crosslines A100
+      // prints two floor plans 21 ft apart (paper at scale), and the ray from
+      // one plan's facade met the other's, so no facade was exterior and none
+      // of its 73 windows could count.
+      if (i === skip || drawing[i] !== drawing[skip]) continue;
       const w = walls[i]!;
       // Ray (o + t·d, t in (0, look]) against segment w.
       const sx = w.x2 - w.x1, sy = w.y2 - w.y1;
@@ -615,4 +620,28 @@ export function exteriorWalls(walls: readonly WallCandidate[], feetPerUnit: numb
     const nx = -(w.y2 - w.y1) / len, ny = (w.x2 - w.x1) / len;
     return !hits(mx, my, nx, ny, i) || !hits(mx, my, -nx, -ny, i);
   });
+}
+
+/** Walls that touch through other walls with gaps no wider than this are one drawing: a door opening, not the paper between two plans. */
+export const SAME_DRAWING_GAP_FEET = 4;
+
+/** Each wall's drawing, as a component number: walls joined end to end, or end to side, across at most `SAME_DRAWING_GAP_FEET`. */
+function drawingsOf(walls: readonly WallCandidate[], feetPerUnit: number): number[] {
+  const parent = walls.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
+  const gap = SAME_DRAWING_GAP_FEET / feetPerUnit;
+  const pointToSeg = (px: number, py: number, w: WallCandidate) => {
+    const dx = w.x2 - w.x1, dy = w.y2 - w.y1, l2 = dx * dx + dy * dy;
+    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - w.x1) * dx + (py - w.y1) * dy) / l2));
+    return Math.hypot(px - w.x1 - t * dx, py - w.y1 - t * dy);
+  };
+  for (let i = 0; i < walls.length; i++) {
+    const a = walls[i]!;
+    for (let j = i + 1; j < walls.length; j++) {
+      const b = walls[j]!;
+      // ponytail: every pair, O(n²); a few hundred walls a sheet. A grid if a sheet ever has thousands.
+      if (Math.min(pointToSeg(a.x1, a.y1, b), pointToSeg(a.x2, a.y2, b), pointToSeg(b.x1, b.y1, a), pointToSeg(b.x2, b.y2, a)) <= gap) parent[find(i)] = find(j);
+    }
+  }
+  return walls.map((_, i) => find(i));
 }

@@ -666,11 +666,13 @@ export async function loadTakeoffWorkspace(
   // The door schedule rows the ingest read, newest per page, for the doors
   // panel's join — only for a company whose switch is on.
   const doorScheduleRows = roomFinder?.doorsWindowsOn ? await doorScheduleRowsOf(plan.id) : [];
+  const windowScheduleRows = roomFinder?.doorsWindowsOn ? await scheduleRowsOf(plan.id, "WINDOW") : [];
 
   return {
     doorsWindowsOn: roomFinder?.doorsWindowsOn ?? false,
     planCompare,
     doorScheduleRows,
+    windowScheduleRows,
     plan,
     sheets,
     symbolCountOn: !(roomFinder?.symbolCountOff ?? false),
@@ -890,8 +892,13 @@ export async function takeoffSavedSignature(companyId: string, jobId: string): P
 
 /** Every row of the newest DOOR schedule read on each page of the plan, flattened. */
 export async function doorScheduleRowsOf(planId: string): Promise<StoredScheduleRow[]> {
+  return scheduleRowsOf(planId, "DOOR");
+}
+
+/** Every row of the newest schedule of this kind read on each page of the plan, flattened. */
+export async function scheduleRowsOf(planId: string, kind: "DOOR" | "WINDOW"): Promise<StoredScheduleRow[]> {
   const proposals = await prisma.planScheduleProposal.findMany({
-    where: { planId, kind: "DOOR" },
+    where: { planId, kind },
     orderBy: { createdAt: "desc" },
     select: { pageNumber: true, rows: true },
   });
