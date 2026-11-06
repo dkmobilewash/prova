@@ -359,7 +359,10 @@ export const EXCLUSIONS: Exclusion[] = [
   // takes are the ones the DRAWING already named, so a person can say "accept
   // all on A101" without naming a shape. One group typed by hand still can't.
   { action: "setWallGroupType", reason: GROUP_TYPED_BY_LOOKING },
-  { action: "confirmWallGroup", reason: GROUP_TYPED_BY_LOOKING },
+  {
+    action: "clearWallGroupType",
+    reason: "The queue's and the panel's Clear type: puts one group a person typed by mistake back on untyped. Its argument is the group's runs, shapes on the sheet being looked at, so there is nothing to name to Ask; a wrong type is cleared where it is seen.",
+  },
   {
     action: "undoSheetSuggestions",
     reason: "Undo holds the before-snapshot the queue's own Accept all returned, in the page that pressed it. Ask's card has no snapshot to give back, and says there is no Undo from it.",
