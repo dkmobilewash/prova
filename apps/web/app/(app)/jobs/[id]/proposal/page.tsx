@@ -13,6 +13,8 @@ import { money } from "@/lib/money";
 import { formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { groupProposalClauses, PROPOSAL_CLAUSE_HEADINGS } from "@/lib/proposal-clauses";
+import { GcProposalSections } from "@/components/GcProposalSections";
+import { loadGcProposal } from "@/lib/estimating/gc-proposal";
 import { ProposalDrafts, type ProposalDraftView } from "@/components/ProposalDrafts";
 import { loadProposalFacts } from "@/lib/estimating/proposal-facts-query";
 import { recapLines, recapStateFor } from "@/lib/estimating/recap-state";
@@ -116,6 +118,7 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
   });
   const bidTotal = lines.reduce((sum, line) => sum + (line.total ?? 0), 0);
   const groups = groupProposalClauses(job.proposalClauses);
+  const gcProposal = await loadGcProposal(company.id, job.id);
   const timeZone = await viewerTimeZone();
 
   // `addedTotal` is what the rates WOULD add, recomputed here from the job's
@@ -292,6 +295,19 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
         )}
       </section>
 
+      {/* What the GC also reads on the signing link: the scope by wall type and
+          the terms. The clauses below carry their own edit controls here. */}
+      <GcProposalSections proposal={gcProposal} showClauses={false} />
+      {gcProposal.terms.paymentTermsDays === null && gcProposal.terms.retainagePercent === null && (
+        <p className="mt-3 text-sm text-ink-body print:hidden" data-proposal="terms-missing">
+          No payment terms or retainage on file for {job.contact.name}, so the GC&rsquo;s copy shows no terms.{" "}
+          <Link href={`/contacts/${job.contactId}`} className="font-medium text-link hover:underline">
+            Set them on {job.contact.name}&rsquo;s record &rarr;
+          </Link>
+        </p>
+      )}
+
+      <div id="clauses" className="scroll-mt-4" />
       {groups.map((group) => (
         <section key={group.kind} className="mt-6">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-label">

@@ -63,6 +63,8 @@ export type JobStepFacts = {
   signatureStatuses: string[];
   /** Asked its trade at signup and its own markup still not all set (`markupNeeded`). */
   markupNeeded: boolean;
+  /** The proposal says what is in the number and what is not: at least one inclusion and one exclusion. */
+  clausesReady: boolean;
 };
 export type JobNext = { label: string; href: string; newTab: boolean } | null;
 
@@ -137,8 +139,16 @@ export function jobSteps(facts: JobStepFacts): { steps: JobStep[]; next: JobNext
         : facts.unpricedLines > 0
           ? `Price ${facts.unpricedLines} ${facts.unpricedLines === 1 ? "line" : "lines"} on the estimate`
           : "Set your markup",
-    send: "Send it for signature",
+    // A proposal with no inclusions or exclusions reaches the GC as a price
+    // and a list of lines; the step still links to the signing link, and
+    // Next asks for the clauses first (the guided flow's Send).
+    send: facts.clausesReady ? "Send it for signature" : "Add inclusions and exclusions",
   };
-  const goes = key === "estimate" && facts.lineItemCount === 0 ? { href: workspace, newTab: true } : where[key];
+  const goes =
+    key === "estimate" && facts.lineItemCount === 0
+      ? { href: workspace, newTab: true }
+      : key === "send" && !facts.clausesReady
+        ? { href: `${job}/proposal#clauses`, newTab: false }
+        : where[key];
   return { steps, next: { label: NEXT[key], ...goes } };
 }

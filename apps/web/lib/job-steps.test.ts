@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { jobSteps, type JobStepFacts } from "./job-steps";
 
-const base: JobStepFacts = { jobId: "j1", hasPlan: false, scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0, measurements: 0, toReview: 0, lineItemCount: 0, unpricedLines: 0, signatureStatuses: [], markupNeeded: false };
+const base: JobStepFacts = { jobId: "j1", hasPlan: false, scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0, measurements: 0, toReview: 0, lineItemCount: 0, unpricedLines: 0, signatureStatuses: [], markupNeeded: false, clausesReady: true };
 const states = (facts: Partial<JobStepFacts>) => jobSteps({ ...base, ...facts }).steps.map((s) => `${s.key}:${s.state}`).join(" ");
 
 describe("a job's estimating steps", () => {
@@ -76,5 +76,15 @@ describe("a job's estimating steps", () => {
     expect(jobSteps({ ...priced, unpricedLines: 1, markupNeeded: true }).next?.label).toBe("Price 1 line on the estimate");
     // The control: the same job with markup set is past Estimate.
     expect(states({ ...priced, markupNeeded: false })).toContain("estimate:done");
+  });
+
+  it("SEND ASKS FOR INCLUSIONS AND EXCLUSIONS FIRST: Next goes to the proposal's clauses, the step still to the signing link", () => {
+    const priced = { ...base, hasPlan: true, scaledSheets: 1, measurements: 3, lineItemCount: 2 };
+    const without = jobSteps({ ...priced, clausesReady: false });
+    expect(without.next).toEqual({ label: "Add inclusions and exclusions", href: "/jobs/j1/proposal#clauses", newTab: false });
+    expect(without.steps.find((s) => s.key === "send")).toMatchObject({ state: "current", href: "/jobs/j1#contract-signature" });
+    expect(jobSteps({ ...priced, clausesReady: true }).next?.label).toBe("Send it for signature");
+    // A nudge, not a lock: a link sent without them still counts as sent.
+    expect(states({ ...priced, clausesReady: false, signatureStatuses: ["PENDING"] })).toContain("send:done");
   });
 });

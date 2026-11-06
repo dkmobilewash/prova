@@ -341,16 +341,7 @@ export async function syncTakeoffItemLines(
       wallTypeId,
       studSpacingIn: num(assembly.studSpacingIn),
       openingThresholdSqFt,
-      measurements: item.measurements.map((m) => ({
-        id: m.id,
-        pageNumber: m.page.pageNumber,
-        kind: m.kind,
-        xs: m.xs,
-        ys: m.ys,
-        cutouts: Array.isArray(m.cutouts) ? (m.cutouts as { xs: number[]; ys: number[] }[]) : [],
-        openings: openingsFromJson(m.openings),
-        feetPerPageWidth: m.calibration === null ? null : feetAcross(m.calibration),
-      })),
+      measurements: item.measurements.map(geometryMeasurement),
     });
 
     for (const component of assembly.components) {
@@ -491,6 +482,21 @@ export async function syncTakeoffItemLines(
  * numbers. Both are `declaredDistanceFeet / the calibration line's length in
  * page-width units`, which is the definition rather than a convention.
  */
+/** A loaded measurement as `itemGeometry` reads it — one mapping for the estimate lines and the proposal's scope. */
+function geometryMeasurement(m: LoadedItem["measurements"][number]): ItemMeasurement {
+  return {
+    id: m.id,
+    pageNumber: m.page.pageNumber,
+    kind: m.kind,
+    xs: m.xs,
+    ys: m.ys,
+    cutouts: Array.isArray(m.cutouts) ? (m.cutouts as { xs: number[]; ys: number[] }[]) : [],
+    openings: openingsFromJson(m.openings),
+    feetPerPageWidth: m.calibration === null ? null : feetAcross(m.calibration),
+  };
+}
+type LoadedItem = Awaited<ReturnType<typeof loadItemsForLines>>["items"][number];
+
 function feetAcross(calibration: {
   x1: number;
   y1: number;
@@ -518,4 +524,56 @@ export async function syncReviewedItems(tx: Tx, companyId: string, jobId: string
   const sent = await tx.jobLineItem.count({ where: { jobId, takeoffItemId: { not: null } } });
   if (sent === 0) return;
   await syncTakeoffItemLines(tx, companyId, jobId, new Set(itemIds.filter((id): id is string => id !== null)));
+}
+
+/**
+ * ── THE PROPOSAL'S SCOPE, BY WALL TYPE ──
+ *
+ * What the GC reads above the price: each wall type the takeoff measured, its
+ * linear feet and its boarded square feet, from the same items, heights, sides
+ * and opening rule the estimate lines are priced from (`itemGeometry`), so the
+ * scope and the price cannot disagree. Walls with no type are one row of linear
+ * feet, since they have no height to make an area from. Read-only.
+ */
+export type WallScopeRow = { code: string | null; name: string; linearFt: number; squareFeet: number | null; heightFt: number | null };
+
+export async function wallScope(tx: Tx, companyId: string, jobId: string): Promise<WallScopeRow[]> {
+  const { items, assemblies } = await loadItemsForLines(tx, companyId, jobId);
+  const assemblyById = new Map(assemblies.map((assembly) => [assembly.id, assembly]));
+  const company = await tx.company.findUniqueOrThrow({ where: { id: companyId }, select: { openingDeduction: true, openingDeductionSqFt: true } });
+  const openingThresholdSqFt = company.openingDeduction === null ? 0 : thresholdFor(company.openingDeduction, company.openingDeductionSqFt === null ? null : Number(company.openingDeductionSqFt));
+
+  const rows = new Map<string, WallScopeRow>();
+  for (const item of items) {
+    if (OFF_ESTIMATE_ITEMS.includes(item.name) || item.measurements.length === 0) continue;
+    const assembly = item.wallTypeId === null ? undefined : assemblyById.get(item.wallTypeId);
+    const untyped = item.name === UNTYPED_ITEM;
+    if (assembly === undefined && !untyped) continue;
+    const heightFt = num(item.heightFt) ?? (assembly ? num(assembly.defaultHeightFt) : null);
+    const geometry = itemGeometry({
+      id: item.id,
+      name: item.name,
+      type: item.type,
+      heightFt,
+      sides: item.sides ?? (assembly ? (assembly.sides === 1 ? 1 : 2) : null),
+      wastePercent: null,
+      depthIn: null,
+      wallTypeId: item.wallTypeId,
+      openingThresholdSqFt,
+      measurements: item.measurements.map(geometryMeasurement),
+    });
+    if (!(geometry.linearFt > 0)) continue;
+    const key = assembly?.id ?? UNTYPED_ITEM;
+    const was = rows.get(key);
+    const squareFeet = assembly !== undefined && heightFt !== null && heightFt > 0 ? geometry.boardedSqFt : null;
+    rows.set(key, {
+      code: assembly?.code ?? null,
+      name: assembly?.name ?? "Walls with no type yet",
+      linearFt: (was?.linearFt ?? 0) + geometry.linearFt,
+      squareFeet: squareFeet === null && was?.squareFeet == null ? null : (was?.squareFeet ?? 0) + (squareFeet ?? 0),
+      // One height per type is the usual case; mixed heights print none rather than one of them.
+      heightFt: was === undefined ? heightFt : was.heightFt === heightFt ? heightFt : null,
+    });
+  }
+  return [...rows.values()].sort((a, b) => (a.code === null ? 1 : b.code === null ? -1 : a.code.localeCompare(b.code, undefined, { numeric: true })));
 }
