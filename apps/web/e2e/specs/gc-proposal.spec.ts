@@ -10,7 +10,8 @@ import { finishWizard, landOnDashboard, startJob } from "../lib/journey";
  * ── THE GUIDED FLOW'S LAST STEP: SEND, AND WHAT THE GC GETS ──
  *
  * The signing link was the line items and a total. A proposal the GC can act
- * on also says the scope by wall type with the takeoff's feet, what is in the
+ * on also says the scope by wall type with the takeoff's feet (only the walls
+ * the price is made of: a type with no parts is the sub's to see, not the GC's), what is in the
  * number and what is not, and the terms. This walks Send from a priced
  * estimate: the stepper asks for inclusions and exclusions first, the link is
  * made, and the GC — signed out, in their own browser — reads all of it, signs,
@@ -58,7 +59,12 @@ test.describe("Send, and the proposal the GC gets", () => {
     for (const [x2, y] of [[0.3, 0.3], [0.2, 0.4]] as const) {
       await prisma.takeoffMeasurement.create({ data: { pageId: sheet.id, calibrationId: calibration.id, kind: "LINEAR", source: "DETECTED", xs: [0, x2], ys: [y, y], itemId: item.id } });
     }
-    await prisma.jobLineItem.create({ data: { jobId, description: "ZZ-E2E ZW1 framing and board", quantity: "1000", unit: "sq ft", budgetedUnitCost: "4", unitPrice: "5.13", costCategory: "MATERIAL" } });
+    // The line the ZW1 walls are priced on, as the queue writes it: the scope reads only items with one.
+    await prisma.jobLineItem.create({ data: { jobId, takeoffItemId: item.id, description: "ZZ-E2E ZW1 framing and board", quantity: "1000", unit: "sq ft", budgetedUnitCost: "4", unitPrice: "5.13", costCategory: "MATERIAL" } });
+    // A legend type with no parts (DEMO-BAKER's S8B): measured, no line, so not in the number.
+    const s8 = await prisma.wallType.create({ data: { companyId, code: "ZS8", name: "ZZ-E2E legend type, no parts", defaultHeightFt: 10, sides: 2 } });
+    const bare = await prisma.takeoffItem.create({ data: { companyId, jobId, name: "ZS8 walls", type: "LINEAR", colorHex: "#222222", wallTypeId: s8.id, heightFt: "10" } });
+    await prisma.takeoffMeasurement.create({ data: { pageId: sheet.id, calibrationId: calibration.id, kind: "LINEAR", source: "DETECTED", xs: [0, 0.3], ys: [0.6, 0.6], itemId: bare.id } });
   });
 
   test("2. Send asks for inclusions and exclusions first, on the proposal", async () => {
@@ -67,8 +73,12 @@ test.describe("Send, and the proposal the GC gets", () => {
     await expect(next()).toHaveText("Next: Add inclusions and exclusions");
     await next().click();
     await page.waitForURL(new RegExp(`/jobs/${jobId}/proposal#clauses`));
-    // The proposal page shows the GC's scope and terms beside its own clauses.
+    // The proposal page shows the GC's scope and terms beside its own clauses:
+    // ZW1 only, since ZS8 is not in the price, and the sub is told so here.
     await expect(page.locator('[data-proposal="scope-row"]')).toHaveCount(1);
+    await expect(page.locator('[data-proposal="scope-row"]')).toContainText("ZW1");
+    await expect(page.locator('[data-proposal="scope-unpriced"]')).toContainText("Measured but not in the price, so not on the GC’s copy: ZS8 30 LF.");
+    await page.screenshot({ path: path.join(SHOTS, "proposal-unpriced-walls.png"), fullPage: true });
     await expect(page.locator('[data-proposal="terms"]')).toContainText("Payment: net 30 days.");
     for (const [kind, text] of [["INCLUSION", INCLUSION], ["EXCLUSION", EXCLUSION]] as const) {
       const form = page.locator("form").filter({ has: page.locator('input[name="text"]') }).last();
@@ -98,7 +108,10 @@ test.describe("Send, and the proposal the GC gets", () => {
     await gc.goto(link);
     await expectHealthy(gc, "the signing link, as the GC", { monitor: new HealthMonitor(gc), signedIn: false });
     const row = gc.locator('[data-proposal="scope-row"]');
+    // ZS8's walls are not in the price, so they are not in the GC's scope either.
     await expect(row).toHaveCount(1);
+    await expect(gc.getByText("ZS8")).toHaveCount(0);
+    await expect(gc.locator('[data-proposal="scope-unpriced"]')).toHaveCount(0);
     await expect(row).toContainText("ZW1 · ZZ-E2E steel studs, board both sides");
     await expect(row).toContainText("10'-0\"");
     await expect(row).toContainText("50 LF");

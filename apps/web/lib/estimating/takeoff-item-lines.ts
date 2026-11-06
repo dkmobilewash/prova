@@ -546,21 +546,36 @@ export async function syncReviewedItems(tx: Tx, companyId: string, jobId: string
  *
  * What the GC reads above the price: each wall type the takeoff measured, its
  * linear feet and its boarded square feet, from the same items, heights, sides
- * and opening rule the estimate lines are priced from (`itemGeometry`), so the
- * scope and the price cannot disagree. Walls with no type are one row of linear
- * feet, since they have no height to make an area from. Read-only.
+ * and opening rule the estimate lines are priced from (`itemGeometry`). Read-only.
+ *
+ * ── ONLY THE ITEMS THE PRICE IS MADE OF ──
+ * DEMO-BAKER's walk (2026-11-06): the GC's scope listed S8B and S8C, whose
+ * types have no parts and so no estimate lines, and GYPC1, a ceiling — walls in
+ * the proposal that were not in the number. So `priced` is the wall items with
+ * a live estimate line, and nothing else; `unpriced` is the measured walls that
+ * have none (a type with no parts, walls with no type yet), for the sub's own
+ * page to say before it sends. Ceilings and other area items are not walls and
+ * are in neither.
  */
 export type WallScopeRow = { code: string | null; name: string; linearFt: number; squareFeet: number | null; heightFt: number | null };
 
 export async function wallScope(tx: Tx, companyId: string, jobId: string): Promise<WallScopeRow[]> {
+  return (await wallScopeParts(tx, companyId, jobId)).priced;
+}
+
+export async function wallScopeParts(tx: Tx, companyId: string, jobId: string): Promise<{ priced: WallScopeRow[]; unpriced: WallScopeRow[] }> {
   const { items, assemblies } = await loadItemsForLines(tx, companyId, jobId);
+  const lined = new Set(
+    (await tx.jobLineItem.findMany({ where: { jobId, isDeleted: false, takeoffItemId: { not: null } }, select: { takeoffItemId: true }, distinct: ["takeoffItemId"] })).map((l) => l.takeoffItemId),
+  );
   const assemblyById = new Map(assemblies.map((assembly) => [assembly.id, assembly]));
   const company = await tx.company.findUniqueOrThrow({ where: { id: companyId }, select: { openingDeduction: true, openingDeductionSqFt: true } });
   const openingThresholdSqFt = company.openingDeduction === null ? 0 : thresholdFor(company.openingDeduction, company.openingDeductionSqFt === null ? null : Number(company.openingDeductionSqFt));
 
-  const rows = new Map<string, WallScopeRow>();
+  const parts = { priced: new Map<string, WallScopeRow>(), unpriced: new Map<string, WallScopeRow>() };
   for (const item of items) {
-    if (OFF_ESTIMATE_ITEMS.includes(item.name) || item.measurements.length === 0) continue;
+    if (OFF_ESTIMATE_ITEMS.includes(item.name) || item.measurements.length === 0 || item.type !== "LINEAR") continue;
+    const rows = lined.has(item.id) ? parts.priced : parts.unpriced;
     const assembly = item.wallTypeId === null ? undefined : assemblyById.get(item.wallTypeId);
     const untyped = item.name === UNTYPED_ITEM;
     if (assembly === undefined && !untyped) continue;
@@ -590,5 +605,6 @@ export async function wallScope(tx: Tx, companyId: string, jobId: string): Promi
       heightFt: was === undefined ? heightFt : was.heightFt === heightFt ? heightFt : null,
     });
   }
-  return [...rows.values()].sort((a, b) => (a.code === null ? 1 : b.code === null ? -1 : a.code.localeCompare(b.code, undefined, { numeric: true })));
+  const sorted = (rows: Map<string, WallScopeRow>) => [...rows.values()].sort((a, b) => (a.code === null ? 1 : b.code === null ? -1 : a.code.localeCompare(b.code, undefined, { numeric: true })));
+  return { priced: sorted(parts.priced), unpriced: sorted(parts.unpriced) };
 }
