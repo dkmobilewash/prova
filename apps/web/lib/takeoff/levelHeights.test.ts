@@ -68,4 +68,20 @@ describe("a wall takes its plan's level, and the level's floor-to-floor", () => 
     expect(runLevels(strip(0.31), captions, 100)[0]).toEqual([2, 3, 4, 5, 6, 7, 8, 9]);
     expect(runLevels(strip(0.51), captions, 100)[0]).toEqual([1]);
   });
+
+  it("reads a wood-framed set's bearings, the figure printed under the label and its inches apart (Topeka A3xx)", () => {
+    const wood = [
+      item("T.O. 1st FLOOR SLAB", 100, 500), item("100'", 100, 488), item("- 0\"", 112, 488),
+      item("T.O. 2nd BEARING", 100, 420), item("109'", 100, 408), item("- 1 1/8\"", 112, 408),
+      item("T.O 3RD BEARING", 100, 340), item("120' - 1\"", 100, 328),
+      item("TRUSS BEARING", 100, 260), item("131' - 0 7/8\"", 100, 248),
+      item("1.0 - FIRST FLOOR", 400, 500), item("0' - 0\"", 400, 488),
+      // A floor deck with no storey named says nothing about which level it is.
+      item("FLOOR DECK", 600, 500), item("110'", 600, 488),
+    ];
+    const marks = levelMarks("A301", wood);
+    expect(marks.map((m) => [m.level, Number(m.feet.toFixed(3))])).toEqual([[1, 100], [2, 109.094], [3, 120.083], [null, 131.073], [1, 0]]);
+    expect(levelHeight(marks.slice(0, 4), [1])!.feet).toBeCloseTo(9 + 1.125 / 12, 2);
+    expect(levelHeight(marks.slice(0, 4), [2, 3])!.feet).toBeCloseTo(10 + 11.875 / 12, 2);
+  });
 });

@@ -11,9 +11,15 @@
  *             whose title does not say it is something else (cover,
  *             demolition, elevations…). New-customer run v2, M2: "Run the
  *             takeoff" opened A100, and before the scales A111 (the RCP);
- *   - scale:  the first such sheet, in page order, with no scale yet;
+ *   - scale:  the best of those floor plans with no scale yet, else the first
+ *             such sheet, in page order, with no scale yet;
  *   - review: the first sheet with a wall held "to confirm".
  * Each falls back to `work`, and `work` to the first page.
+ *
+ * THE FLOOR PLANS ARE TAKEN BEST-RANKED FIRST, not in page order. E Street's
+ * whole-set list includes A0.4 (a paving detail) ahead of A2.1 FLOOR PLAN, and
+ * page order opened both work and Scale on the paving (Chrome's re-test). The
+ * same `takeoffRank` score says A2.1 (95) over A0.4 (5).
  */
 export type StartFacts = {
   pageNumber: number;
@@ -33,9 +39,10 @@ export function startPages(pages: readonly StartFacts[], counted: readonly numbe
   const worked = pages.filter((p) => p.lastMeasuredAt !== null).sort((a, b) => b.lastMeasuredAt! - a.lastMeasuredAt!)[0];
   const ok = pages.filter((p) => p.score >= 0);
   const plan = [...ok].sort((a, b) => b.score - a.score || a.pageNumber - b.pageNumber).find((p) => p.score > 0);
-  const floor = [...counted].sort((a, b) => a - b)[0];
-  const work = worked?.pageNumber ?? floor ?? plan?.pageNumber ?? ok[0]?.pageNumber ?? first;
-  const scale = ok.find((p) => !p.scaled)?.pageNumber ?? work;
+  const byPage = new Map(pages.map((p) => [p.pageNumber, p]));
+  const floors = counted.map((n) => byPage.get(n) ?? { pageNumber: n, scaled: false, score: 0 }).sort((a, b) => b.score - a.score || a.pageNumber - b.pageNumber);
+  const work = worked?.pageNumber ?? floors[0]?.pageNumber ?? plan?.pageNumber ?? ok[0]?.pageNumber ?? first;
+  const scale = floors.find((p) => !p.scaled)?.pageNumber ?? ok.find((p) => !p.scaled)?.pageNumber ?? work;
   const review = pages.find((p) => p.held > 0)?.pageNumber ?? work;
   return { work, scale, review };
 }

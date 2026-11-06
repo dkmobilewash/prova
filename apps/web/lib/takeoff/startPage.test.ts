@@ -40,4 +40,13 @@ describe("the sheet the workspace opens on", () => {
     // A sheet a person worked on still wins.
     expect(startPages(baker.map((s) => (s.pageNumber === 20 ? { ...s, lastMeasuredAt: 5 } : s)), [13]).work).toBe(20);
   });
+
+  it("TAKES THE COUNTED FLOOR PLANS BEST-RANKED FIRST, for work and for Scale: E Street opened on A0.4's paving, not A2.1 (Chrome's re-test)", () => {
+    // Page order and scores as E Street's: A0.4 paving 23 (5), A1.2 slab 25 (45), A2.1 FLOOR PLAN 28 (95), A2.4 skylight 31 (5).
+    const eStreet = [sheet(1, -100), sheet(23, 5), sheet(25, 45), sheet(28, 95), sheet(31, 5)];
+    const counted = [23, 25, 28, 31];
+    expect(startPages(eStreet, counted)).toEqual({ work: 28, scale: 28, review: 28 });
+    // Once A2.1 is scaled, Scale goes to the next-best counted plan, not back to the paving.
+    expect(startPages(eStreet.map((s) => (s.pageNumber === 28 ? { ...s, scaled: true } : s)), counted)).toMatchObject({ work: 28, scale: 25 });
+  });
 });

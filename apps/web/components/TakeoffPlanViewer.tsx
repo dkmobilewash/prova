@@ -1192,6 +1192,21 @@ export function TakeoffPlanViewer({
   const [userAside, setUserAside] = useState<{ kind: string; why: string; n: number }[]>([]);
   /** What plan comparison did on the sheet last found — shown by `PriorPlanBar`. */
   const [priorStatus, setPriorStatus] = useState<PriorStatus | null>(null);
+  // ── WHAT THE COMPARISON SET ASIDE, IN PLACE OF THE RENOVATION PROMPT ──
+  // A sheet paired with its demolition plan, walls set aside: the prompt to
+  // draw a work area or exclude existing walls is already answered (Chrome on
+  // E Street A2.1). Unpaired, or nothing set aside, the prompt stays.
+  const existingAside =
+    priorStatus !== null && priorStatus.page === pageNumber && priorStatus.why === null && priorStatus.n > 0 && priorStatus.sheet !== null
+      ? { sheet: priorStatus.sheet, n: priorStatus.n, feet: priorStatus.feet }
+      : null;
+  // The new plans this demolition plan is paired with: it is not counted itself.
+  const setsAsideOn =
+    planCompare === null
+      ? []
+      : Object.entries(planCompare.pairs)
+          .filter(([page, pairing]) => pairing.demoPage === pageNumber && Number(page) !== pageNumber)
+          .map(([page]) => planCompare.sheets.find((s) => s.pageNumber === Number(page))?.sheetNumber ?? `page ${page}`);
   const putExclusionRows = useCallback((rows: ExclusionRow[]) => {
     exclusionRowsRef.current = rows;
     exclusionsRef.current = userExclusionsFromRows(rows);
@@ -2952,15 +2967,35 @@ export function TakeoffPlanViewer({
     [groupRuns],
   );
   const zoomRun = reviewRun ?? groupBox;
+  // ── SCROLLED ONLY ONCE THE SHEET IS THAT SIZE ──
+  // The canvas takes its new width when the render at the new zoom FINISHES,
+  // which on a big sheet is long after the next frame. Scrolled sooner, the
+  // target is clamped to the old, smaller sheet: the review queue's first item
+  // opened at 194% on empty paper with none of its walls in view (Chrome's
+  // re-test). So the target waits here until `cssWidth` is the width it was
+  // worked out for.
+  const pendingScroll = useRef<{ left: number; top: number; width: number } | null>(null);
+  const scrollIfSized = useCallback((width: number) => {
+    const frame = frameRef.current;
+    const want = pendingScroll.current;
+    if (frame === null || want === null || Math.abs(width - want.width) > 1.5) return;
+    frame.scrollTo({ left: want.left, top: want.top });
+    pendingScroll.current = null;
+  }, []);
+  const cssWidthNow = useRef(0);
+  cssWidthNow.current = cssWidth;
+  useLayoutEffect(() => scrollIfSized(cssWidth), [cssWidth, scrollIfSized]);
   // Each run in turn, zoomed and centred, so the reviewer never has to look for it.
   useEffect(() => {
     const frame = frameRef.current;
     if (zoomRun === null || frame === null || pageSize === null || feetPerUnit === null) return;
     const view = viewOfRun(zoomRun, pageSize, { width: frame.clientWidth, height: frame.clientHeight }, feetPerUnit, BASE_SCALE);
+    pendingScroll.current = { left: view.left, top: view.top, width: pageSize.widthPt * BASE_SCALE * view.zoom };
     setZoom(view.zoom);
-    const id = requestAnimationFrame(() => frame.scrollTo({ left: view.left, top: view.top }));
+    // Already that size (the same zoom as the item before): no render is coming.
+    const id = requestAnimationFrame(() => scrollIfSized(cssWidthNow.current));
     return () => cancelAnimationFrame(id);
-  }, [zoomRun, pageSize, feetPerUnit, heldShown?.at]);
+  }, [zoomRun, pageSize, feetPerUnit, heldShown?.at, scrollIfSized]);
 
   /**
    * Taking a run back is its verdict becoming WALL, then the list rebuilt from
@@ -5017,6 +5052,7 @@ export function TakeoffPlanViewer({
           feet={found === null ? null : found.reduce((sum, group) => sum + group.feet, 0)}
           aside={userAside}
           excludes={exclusionRows.filter((r) => r.kind === "EXCLUDE_LIKE").length}
+          existing={existingAside}
           renovation={
             found !== null && renovationOnPage?.page === pageNumber && showsExistingWork(renovationOnPage.marks) && !exclusionRows.some((r) => r.kind === "EXCLUDE_LIKE" || r.kind === "WORK_AREA")
               ? renovationOnPage.marks
@@ -5032,6 +5068,11 @@ export function TakeoffPlanViewer({
       ))}
       {slot(panelOpen ? sideSlot : noticeSlot, answerKey === undefined && planCompare !== null && priorStatus !== null && priorStatus.page === pageNumber && (
         <PriorPlanBar status={priorStatus} sheets={planCompare.sheets} pageNumber={pageNumber} jobId={jobId} planId={planId} readOnly={readOnly} />
+      ))}
+      {slot(panelOpen ? sideSlot : noticeSlot, answerKey === undefined && setsAsideOn.length > 0 && (
+        <p className="shrink-0 text-xs text-ink-body" data-takeoff="demo-not-counted">
+          Not counted: used to set aside existing walls on {setsAsideOn.join(", ")}.
+        </p>
       ))}
       {/* ── THE SHEET IS THE INSTRUMENT, SO IT GETS THE ROOM ──
           Found walls used to stack ABOVE the drawing, and the frame reserved a
