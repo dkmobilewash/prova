@@ -1,0 +1,3 @@
+### One window offered twice a hand apart is counted once
+
+On Topeka the frame finder offers some windows twice — two outlines a couple of feet apart, each typed by the same tag — and each was counted. A same-tag window whose centre is within 4 ft of one already counted is now the same window (no two real windows' centres sit that close; Topeka's closest real same-tag pair is 5 ft apart, and one hexagon typing two windows 5 ft apart still counts both). Training (8 sheets with window marks, labels-snap-types-20261106T040424Z): false 40 → 28, found 139 and missed 43 unchanged, tag-correct 135/138 unchanged. Held-out, measured once: 82 found / 10 missed / 17 false, unchanged. Check: `windowTags.test.ts` — red with the distance at 0 ft and at 6 ft.
