@@ -22,7 +22,9 @@ export function TakeoffDoorsPanel({
   hovered: string | null;
   onHover: (id: string | null) => void;
 }) {
-  const { doors, windows, join, unplacedMarks } = result;
+  const { doors, windows, join, unplacedMarks, tagged } = result;
+  // Counted by tag when the sheet's tags could be read as windows; else the frames are offered to check.
+  const windowCount = tagged?.counted ? tagged.windows.length : null;
   const pairs = doors.filter((d) => d.leaves === 2).length;
   const placed = doors.filter((d) => d.wall !== null).length;
   const joined = join?.openings ?? null;
@@ -32,9 +34,36 @@ export function TakeoffDoorsPanel({
     <div data-takeoff="doors-windows" className="mt-3 rounded-lg border border-line-card bg-surface p-3 text-xs">
       <p className="text-sm font-medium text-ink">
         {count} {count === 1 ? "door" : "doors"}
-        {pairs > 0 ? ` (${pairs} ${pairs === 1 ? "pair" : "pairs"})` : ""}, {windows.length}{" "}
-        {windows.length === 1 ? "window" : "windows"} to check
+        {pairs > 0 ? ` (${pairs} ${pairs === 1 ? "pair" : "pairs"})` : ""},{" "}
+        {windowCount !== null ? (
+          <span data-takeoff="windows-by-tag">
+            {windowCount} {windowCount === 1 ? "window" : "windows"} by tag
+          </span>
+        ) : (
+          <>
+            {windows.length} {windows.length === 1 ? "window" : "windows"} to check
+          </>
+        )}
       </p>
+      {windowCount !== null && tagged && (
+        <p className="mt-0.5 text-ink-body" data-takeoff="windows-by-type">
+          {tagged.byTag
+            .filter((t) => t.count > 0)
+            .map((t) => `${t.tag} ×${t.count}${t.row?.widthFt != null && t.row.heightFt != null ? ` (${t.row.widthFt.toFixed(1)} × ${t.row.heightFt.toFixed(1)} ft)` : ""}`)
+            .join(", ") || "none tagged on this sheet"}
+          {(() => {
+            const loose = tagged.byTag.filter((t) => t.count > 0 && t.row === null && tagged.vocabulary === "schedule").map((t) => t.tag);
+            const unframed = tagged.windows.filter((w) => w.frame === null).length;
+            return (
+              <span className="text-ink-muted">
+                {tagged.vocabulary === "schedule" ? ". Named from the window schedule" : ". Read from the W tags drawn; no window schedule has been read for this set"}
+                {loose.length > 0 ? `; ${loose.join(", ")} not in the schedule read` : ""}
+                {unframed > 0 ? `; ${unframed} with no frame drawn by the tag` : ""}.
+              </span>
+            );
+          })()}
+        </p>
+      )}
       <p className="mt-0.5 text-ink-muted">
         Read from the swings and sills drawn on this sheet. {placed} of {doors.length} on a found run.
         {join !== null

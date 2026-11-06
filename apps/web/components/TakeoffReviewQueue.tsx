@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { confirmSheetScales, confirmWallGroup, priceLineFromCost, reviewWall, setWallGroupHeight } from "@/lib/actions";
+import { confirmSheetScales, confirmWallGroup, confirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight } from "@/lib/actions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
+import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
 import { heightFor, type CodeHeight, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
@@ -209,6 +210,15 @@ export function TakeoffReviewQueue({
                 if (heightFt === null) return setError("Type a height first: H.");
                 acceptNow(current.key, current.name, () => setWallGroupHeight(jobId, current.itemId, heightFt));
               }}
+            />
+          )}
+          {current.kind === "windows" && (
+            <QueueWindowsConfirm
+              key={current.key}
+              item={current}
+              onShow={onShow}
+              onSkip={() => setCursor(after(current.key))}
+              onAccept={(kept) => acceptNow(current.key, `windows on sheet ${current.sheet}`, () => confirmWindows(jobId, planId, current.pageNumber, kept))}
             />
           )}
           {current.kind === "scale" && (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { focusOf, heightFor, heightItem, orderedCodes, reviewQueue, suggestType, typeItems, wallItem, type ReviewItem } from "./reviewQueue";
+import { focusOf, heightFor, heightItem, orderedCodes, reviewQueue, suggestType, typeItems, wallItem, windowsItem, type ReviewItem } from "./reviewQueue";
 import type { WallGroup } from "./wallGroups";
 import { propagatedTag } from "./planTextTags";
 
@@ -95,5 +95,29 @@ describe("the drawing's type is pre-filled with its source (suggest, don't post)
     expect(orderedCodes(["IW-1", "IW-2", "IW-4"], "IW-4")).toEqual(["IW-4", "IW-1", "IW-2"]);
     expect(orderedCodes(["IW-1", "IW-2"], "C6")).toEqual(["C6", "IW-1", "IW-2"]);
     expect(orderedCodes(["IW-1", "IW-2"], null)).toEqual(["IW-1", "IW-2"]);
+  });
+});
+
+describe("a sheet's counted windows are one item to confirm (suggest, don't post)", () => {
+  const sheet = { pageNumber: 4, sheet: "A101", feetPerUnit: 100 };
+  const stored = { windows: [{ tag: "A", x1: 0.1, y1: 0.2, x2: 0.14, y2: 0.2 }, { tag: "B", x1: 0.3, y1: 0.2, x2: 0.34, y2: 0.2 }] };
+
+  it("lights every window and zooms to none until one is looked at", () => {
+    const item = windowsItem(sheet, stored)!;
+    expect(item).toMatchObject({ kind: "windows", key: "windows:4", sheet: "A101", tags: ["A", "B"], at: null });
+    expect(focusOf(item)).toBeNull();
+    expect(focusOf({ ...item, at: 1 } as ReviewItem)).toEqual({ pageNumber: 4, x1: 0.3, y1: 0.2, x2: 0.34, y2: 0.2 });
+  });
+
+  it("leaves the queue once decided, and is never an item with nothing in it", () => {
+    expect(windowsItem(sheet, { ...stored, decided: true })).toBeNull();
+    expect(windowsItem(sheet, { windows: [] })).toBeNull();
+  });
+
+  it("comes after the wall heights and before the scales", () => {
+    const windows = windowsItem(sheet, stored)!;
+    const scale: ReviewItem = { kind: "scale", key: "scale:1", pageNumber: 1, sheet: "A100" };
+    const height: ReviewItem = { kind: "height", key: "height:x", itemId: "x", name: "S1", pageNumber: 9, sheet: "A109", runs: [], feet: null, options: [] };
+    expect(reviewQueue([scale, windows, height]).map((i) => i.kind)).toEqual(["height", "windows", "scale"]);
   });
 });
