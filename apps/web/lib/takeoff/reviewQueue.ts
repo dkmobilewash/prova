@@ -34,7 +34,8 @@ import { inchLabel } from "./wallVectors";
  */
 export type QueueRun = { x1: number; y1: number; x2: number; y2: number };
 /** A pre-filled answer and where it came from, in words: `tag S6B on A101`. */
-export type Guess = { code: string; from: string };
+/** A suggested type and where it came from. `drawn`: read off the drawing — a printed tag or the legend — not a library guess by thickness, so "Accept all suggestions on this sheet" may take it. */
+export type Guess = { code: string; from: string; drawn?: true };
 /** A type's height for the queue, by code: the job's item height, else its legend height. */
 export type CodeHeight = { feet: number; from: string };
 export type ReviewItem =
@@ -200,11 +201,11 @@ export function suggestType(group: WallGroup, sheet: string, legendCodes: readon
           : found.source === "thickness"
             ? `: ${inchLabel(group.inches)}`
             : "";
-    return { code: found.type.code, from: `${SOURCE_WORDS[found.source]}${detail}` };
+    return { code: found.type.code, from: `${SOURCE_WORDS[found.source]}${detail}`, ...(found.source === "thickness" ? {} : { drawn: true as const }) };
   }
   if (tag !== null && group.candidates.length === 0) {
     const code = legendCodes.find((c) => c.toUpperCase() === tag.toUpperCase());
-    if (code !== undefined) return { code, from: `printed tag: ${tag} on ${sheet}, in the legend but not yet your library` };
+    if (code !== undefined) return { code, from: `printed tag: ${tag} on ${sheet}, in the legend but not yet your library`, drawn: true };
   }
   return null;
 }
