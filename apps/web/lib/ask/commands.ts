@@ -86,7 +86,8 @@ export type CommandName =
   | "bill_retainage"
   | "prepare_lien_waiver"
   | "run_takeoff"
-  | "post_takeoff_to_estimate";
+  | "post_takeoff_to_estimate"
+  | "set_wall_height";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
  * composer) has no member on purpose: it cannot be registered. T4 is an
@@ -317,6 +318,10 @@ export const COMMANDS: CommandDefinition[] = [
   ...takeoffCommands,
 ];
 
+/** The wildcard reason takeoffItems.* gave, kept for the actions it still covers. */
+const CONDITIONS_DRAWN =
+  "Naming, colouring, reordering and deleting the CONDITIONS an estimator draws with. Every one of these is a decision about a drawing somebody is looking at — which colour tells two wall types apart on this sheet, which order the rail reads in, whether this item is the 6in or the 8in partition. There is no sentence a person could say to Ask that carries the drawing, and an item created blind would be an empty condition in a list nobody asked for. Ask can already REPORT what a takeoff came to, because the quantities reach it as estimate lines; it has no business inventing the categories. assignMeasurementsToItem is the sharpest case: its argument is a list of measurement ids that only exist as shapes on a sheet, so there is nothing for a person to name.";
+
 export const EXCLUSIONS: Exclusion[] = [
   ...estimatingExclusions,
   ...fieldExclusions,
@@ -328,11 +333,22 @@ export const EXCLUSIONS: Exclusion[] = [
   ...messageExclusions,
   ...contactExclusions,
   ...changeOrderExclusions,
+  // takeoffItems.* was one wildcard until set_wall_height (commands/takeoff.ts)
+  // registered setWallGroupHeight: a height is a number a person can say. The
+  // rest keep the wildcard's reason, now one by one.
+  { action: "createTakeoffItem", reason: CONDITIONS_DRAWN },
+  { action: "updateTakeoffItem", reason: CONDITIONS_DRAWN },
+  { action: "deleteTakeoffItem", reason: CONDITIONS_DRAWN },
+  { action: "duplicateTakeoffItem", reason: CONDITIONS_DRAWN },
+  { action: "reorderTakeoffItems", reason: CONDITIONS_DRAWN },
+  { action: "assignMeasurementsToItem", reason: CONDITIONS_DRAWN },
+  { action: "addMeasurementCutout", reason: CONDITIONS_DRAWN },
+  { action: "updateMeasurementGeometry", reason: CONDITIONS_DRAWN },
   {
-    action: "takeoffItems.*",
-    reason:
-      "Naming, colouring, reordering and deleting the CONDITIONS an estimator draws with. Every one of these is a decision about a drawing somebody is looking at — which colour tells two wall types apart on this sheet, which order the rail reads in, whether this item is the 6in or the 8in partition. There is no sentence a person could say to Ask that carries the drawing, and an item created blind would be an empty condition in a list nobody asked for. Ask can already REPORT what a takeoff came to, because the quantities reach it as estimate lines; it has no business inventing the categories. assignMeasurementsToItem is the sharpest case: its argument is a list of measurement ids that only exist as shapes on a sheet, so there is nothing for a person to name.",
+    action: "sendTakeoffItemsToEstimate",
+    reason: "The workspace's Send to estimate. post_takeoff_to_estimate already hands that decision to the takeoff tab, where the measurements are read before they are added.",
   },
+  { action: "setAssemblyLibraryPin", reason: "Pins the assembly library open in the workspace's rail; a layout preference, not a record." },
   {
     action: "wallGroupType.*",
     reason:

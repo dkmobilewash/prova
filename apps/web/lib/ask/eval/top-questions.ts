@@ -162,6 +162,7 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   c("q-waiver", "send the lien waiver for Riverside pay app 4", "prepare_lien_waiver", ACCOUNTING),
   c("q-takeoff-run", "run takeoff on Riverside", "run_takeoff", ESTIMATOR),
   c("q-takeoff-post", "update the Riverside estimate from the takeoff", "post_takeoff_to_estimate", ESTIMATOR),
+  c("q-wall-height", "set the S6B walls on Riverside to 15 feet", "set_wall_height", ESTIMATOR),
   many(
     "q-paid-this-month",
     "are we going to get paid on Riverside this month?",
@@ -446,6 +447,8 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   // all. Both near-misses answer in the right shape with the wrong figures.
   t("q-takeoff-superseded", "did any of our Riverside numbers come off drawings that have been superseded?", "takeoff_currency", ESTIMATOR),
   t("q-wall-quantities", "how much board and how many studs are we carrying on Riverside?", "wall_schedule", ESTIMATOR),
+  t("q-takeoff-lf", "how many linear feet of S6A did we take off on Riverside?", "takeoff_quantities", ESTIMATOR),
+  t("q-takeoff-left", "what's left to review on the Riverside takeoff?", "takeoff_review", ESTIMATOR),
   t("q-quotes-comparable", "are those three framing quotes actually bidding the same scope?", "bid_levelling", ESTIMATOR),
   t("q-bid-responsive", "have we missed anything that would get our bid thrown out?", "bid_compliance", ESTIMATOR),
   t("q-alternates-in", "what are we at on Harbor lofts with the alternates in?", "bid_alternates", ESTIMATOR),
@@ -535,8 +538,9 @@ export const CENSUS_REFUSALS = 2;
 /** -> 126 on 2026-10-11: one question for `record_bid_outcome`, the win/loss card the research agents learn from. */
 /** -> 128 on 2026-11-04: one each for `start_change_order` and `draft_purchase_order`.
  * -> 131 the same day: `start_pay_application`, `bill_retainage`, `prepare_lien_waiver`.
- * -> 133: `run_takeoff` and `post_takeoff_to_estimate`. */
-export const TOTAL_QUESTIONS = 133;
+ * -> 133: `run_takeoff` and `post_takeoff_to_estimate`.
+ * -> 136 on 2026-11-06: `takeoff_quantities`, `takeoff_review`, `set_wall_height`. */
+export const TOTAL_QUESTIONS = 136;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the
