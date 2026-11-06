@@ -154,7 +154,7 @@ export function titleBlockWork(ctx: StageCtx, deps: TitleBlockDeps = realDeps): 
       pageNumber: task.pageNumber,
       sheetTextId: text.id,
       model: pass.model,
-      read,
+      read: titleFieldOverHeading(read, text.titleBlockText),
     });
 
     return { ok: true };
@@ -203,3 +203,46 @@ const realDeps: TitleBlockDeps = {
     });
   },
 };
+
+/**
+ * ── THE TITLE BLOCK'S OWN TITLE OVER A NOTES HEADING FROM THE SHEET'S BODY ──
+ *
+ * Baker's A101 carries a general-notes block, so its title-block text opens
+ * "GENERAL NOTES" and ends "FLOOR PLAN / FLOOR PLAN / A101". One walk's read
+ * took the title from the end, the next from the top (identical text), and the
+ * sheet left the floor plans: the workspace opened on the overall plan.
+ *
+ * So, only when the model's title is a notes, legend, abbreviations or symbols
+ * heading: if one of the few lines just above the sheet's own number reads as
+ * a plan's title, that is the title field and it wins, as a PLAN, at MEDIUM,
+ * with the reason saying so — unless the line opens with a sheet number, which
+ * is a drawing index's entry (Baker's S1.0, P0.01 and T0.01 print one there).
+ * Anything else is left exactly as read.
+ * ponytail: lines "above the number" is the common title-block layout, not all
+ * of them; a set whose title prints after its number keeps the model's answer.
+ */
+const HEADING = /\b(NOTES|LEGENDS?|ABBREVIATIONS|SYMBOLS)\b/i;
+const PLAN_TITLE = /^[A-Z0-9 .,&'()/-]*\bPLANS?\b[A-Z0-9 .,&'()/-]*$/i;
+const NEAR = 4;
+/** A line that opens with a sheet number is an entry in a drawing index the block prints ("S2.1 ROOF FRAMING PLAN"), not this sheet's title. */
+const INDEX_ENTRY = /^[A-Z]{1,3}[-.]?\d/i;
+
+export function titleFieldOverHeading(read: SheetTitleBlock, titleBlockText: string | null): SheetTitleBlock {
+  if (read.title === null || !HEADING.test(read.title) || read.sheetNumber === null || !titleBlockText) return read;
+  const lines = titleBlockText.split("\n").map((line) => line.trim());
+  const number = read.sheetNumber.replace(/\s+/g, "").toUpperCase();
+  const at = lines.map((line) => line.replace(/\s+/g, "").toUpperCase()).lastIndexOf(number);
+  if (at < 1) return read;
+  const title = lines
+    .slice(Math.max(0, at - NEAR), at)
+    .reverse()
+    .find((line) => PLAN_TITLE.test(line) && !HEADING.test(line) && !INDEX_ENTRY.test(line));
+  if (title === undefined) return read;
+  return {
+    ...read,
+    title,
+    pageType: "PLAN",
+    confidence: read.confidence === "LOW" ? "LOW" : "MEDIUM",
+    reason: `${read.reason} Title taken as "${title}", printed just above the sheet number ${read.sheetNumber}, over the "${read.title}" heading the reading gave.`,
+  };
+}
