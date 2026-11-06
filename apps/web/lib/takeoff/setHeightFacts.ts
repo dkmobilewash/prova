@@ -31,6 +31,8 @@ export type SetHeightFacts = {
   factSheets: string[];
   /** Every level marker the sections and elevations print (`levelMarks`), for a wall's floor-to-floor by its plan's level. */
   levels?: LevelMark[];
+  /** The buildings the set's PLAN captions name ("FLOOR PLAN - WAREHOUSE" → WAREHOUSE), for a type's height per building. */
+  buildings?: string[];
 };
 
 const GENERAL = (f: HeightFact) =>
@@ -102,7 +104,7 @@ export async function setHeightFacts(doc: PlanPdf, input: { legendPage: number; 
   }
   const generalNote = facts.find((f) => GENERAL(f) && !f.sheet.includes("(p")) ?? facts.find(GENERAL) ?? null;
   const located = facts.map((f) => (f.buildings === undefined ? f : { ...f, buildings: f.buildings.filter((b) => planBuildings.has(b)) }));
-  return { facts: relativeToFloor(located), generalNote, factSheets, levels };
+  return { facts: relativeToFloor(located), generalNote, factSheets, levels, buildings: [...planBuildings] };
 }
 
 /** One legend type's height from the set's facts — `resolveHeight` with the set's general note in place. */

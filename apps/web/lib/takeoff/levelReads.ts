@@ -1,6 +1,7 @@
 import { prisma } from "@prova/db";
 import { planLevels, type LevelMark } from "./levelHeights";
 import { sheetViews } from "./sheetViews";
+import { buildingsOf } from "./wallHeights";
 
 /**
  * ── WHERE A WALL'S LEVEL IS KEPT, SO THE REVIEW QUEUE NEVER OPENS THE PDF ──
@@ -22,29 +23,34 @@ export async function storeLevelMarks(planId: string, marks: readonly LevelMark[
   await prisma.takeoffPlanTextRead.upsert({ where, create: { planId, pageNumber: 0, kind: LEVEL_MARKS, value }, update: { value, computedAt: new Date() } });
 }
 
-/** A sheet's captions, kept only where one names a level: a single-storey set stores nothing. */
+/**
+ * A sheet's captions, kept only where one names a level or its plan names a
+ * building ("FLOOR PLAN - INVESTIGATIVE SERVICES ADDITION" → ADDITION): a
+ * single-building, single-storey set stores nothing.
+ */
 export async function storePlanCaptions(planId: string, pageNumber: number, items: Parameters<typeof sheetViews>[0], widthPt: number): Promise<void> {
   const captions: StoredCaption[] = sheetViews(items, widthPt).map((v) => ({ name: v.name, captionX: v.captionX, captionY: v.captionY }));
+  const buildings = buildingsOf(captions.map((c) => c.name).filter((name) => /\bPLAN\b/i.test(name)));
   const where = { planId_pageNumber_kind: { planId, pageNumber, kind: PLAN_CAPTIONS } };
-  if (!captions.some((c) => planLevels(c.name).length > 0)) {
+  if (!captions.some((c) => planLevels(c.name).length > 0) && buildings.length === 0) {
     await prisma.takeoffPlanTextRead.deleteMany({ where: { planId, pageNumber, kind: PLAN_CAPTIONS } });
     return;
   }
-  await prisma.takeoffPlanTextRead.upsert({ where, create: { planId, pageNumber, kind: PLAN_CAPTIONS, value: { captions } }, update: { value: { captions }, computedAt: new Date() } });
+  const value = { captions, buildings };
+  await prisma.takeoffPlanTextRead.upsert({ where, create: { planId, pageNumber, kind: PLAN_CAPTIONS, value }, update: { value, computedAt: new Date() } });
 }
 
-/** The plan's stored level marks and captions by page, for the queue. */
-export async function storedLevels(planId: string): Promise<{ marks: LevelMark[]; captions: Map<number, StoredCaption[]> }> {
+/** The plan's stored level marks, and each page's captions and plan buildings, for the queue. */
+export async function storedLevels(planId: string): Promise<{ marks: LevelMark[]; captions: Map<number, StoredCaption[]>; buildings: Map<number, string[]> }> {
   const rows = await prisma.takeoffPlanTextRead.findMany({ where: { planId, kind: { in: [LEVEL_MARKS, PLAN_CAPTIONS] } }, select: { pageNumber: true, kind: true, value: true } });
   const marks = ((rows.find((r) => r.kind === LEVEL_MARKS)?.value as { marks?: LevelMark[] } | null)?.marks ?? []).filter((m) => typeof m?.feet === "number" && typeof m.name === "string");
+  const pages = rows.filter((r) => r.kind === PLAN_CAPTIONS);
   const captions = new Map(
-    rows
-      .filter((r) => r.kind === PLAN_CAPTIONS)
-      .map((r) => [r.pageNumber, ((r.value as { captions?: StoredCaption[] } | null)?.captions ?? []).filter((c) => typeof c?.name === "string" && Number.isFinite(c.captionX) && Number.isFinite(c.captionY))]),
+    pages.map((r) => [r.pageNumber, ((r.value as { captions?: StoredCaption[] } | null)?.captions ?? []).filter((c) => typeof c?.name === "string" && Number.isFinite(c.captionX) && Number.isFinite(c.captionY))]),
   );
-  return { marks, captions };
+  const buildings = new Map(pages.map((r) => [r.pageNumber, ((r.value as { buildings?: unknown[] } | null)?.buildings ?? []).filter((b): b is string => typeof b === "string")]));
+  return { marks, captions, buildings };
 }
-
 
 /** The set's sheet-wide height (`generalHeightOf`), or its absence: a re-read that finds none clears an old one. */
 export async function storeGeneralHeight(planId: string, value: { feet: number; from: string } | null): Promise<void> {

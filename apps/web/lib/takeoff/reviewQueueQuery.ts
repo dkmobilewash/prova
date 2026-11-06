@@ -17,7 +17,7 @@ import { levelHeight, runLevels } from "@/lib/takeoff/levelHeights";
 import { heightBasis } from "@/lib/takeoff/wallHeights";
 import { GENERAL_HEIGHT_KEY, heightItem, reviewQueue, splitByLevel, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import { storedWindowsOf, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
-import { feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/takeoff/wallHeight";
+import { buildingHeights, feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/takeoff/wallHeight";
 
 /**
  * The job's review queue (`reviewQueue.ts`), plus the plan-set counts the
@@ -160,6 +160,17 @@ export async function loadReviewQueue(
       rooms: roomsOn(page.pageNumber),
     }));
     const typed = typeItems(sheet, page.measurements.filter((m) => m.label !== HELD_LABEL), groups);
+    // ── ITS PLAN'S BUILDING PART: each type's height drawn for it, pre-filled ──
+    const pageBuildings = levelsRead.buildings.get(page.pageNumber) ?? [];
+    if (pageBuildings.length === 1) {
+      const name = pageBuildings[0]!.toUpperCase();
+      const byCode: Record<string, CodeHeight> = {};
+      for (const type of libraryTypes) {
+        const one = buildingHeights(type)[name];
+        if (one !== undefined) byCode[type.code.toUpperCase()] = one;
+      }
+      if (Object.keys(byCode).length > 0) for (const item of typed) if (item.kind === "type") item.building = { name, heights: byCode };
+    }
     const captions = levelsRead.captions.get(page.pageNumber);
     const fpu = sheet.feetPerUnit;
     items.push(

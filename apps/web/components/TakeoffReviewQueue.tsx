@@ -7,7 +7,7 @@ import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, priceLineF
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
-import { QUEUE_PART, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { forCode, QUEUE_PART, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
 
@@ -281,12 +281,12 @@ export function TakeoffReviewQueue({
             ) : (
               <QueueGroupConfirm
                 key={current.key}
-                label={`Walls · sheet ${current.sheet}${current.level ? ` · ${current.level.label}` : ""} · ${inchLabel(current.inches)}${current.feet !== null ? ` · ${Math.round(current.feet)} ft` : ""}`}
+                label={`Walls · sheet ${current.sheet}${current.level ? ` · ${current.level.label}` : ""}${current.building ? ` · ${current.building.name.toLowerCase()}` : ""} · ${inchLabel(current.inches)}${current.feet !== null ? ` · ${Math.round(current.feet)} ft` : ""}`}
                 codes={current.suggested === null || legendCodes.some((c) => c.toUpperCase() === current.suggested!.code.toUpperCase()) ? legendCodes : [...legendCodes, current.suggested.code]}
                 suggested={current.suggested}
                 missing={legendMissing(legend, jobId)}
-                heightOf={(code) => levelHeightFor(code, current.level) ?? heightFor(code, heights, current.ceiling)}
-                heightOptions={(code) => (code === null ? [] : (heightChoices[code.toUpperCase()] ?? []))}
+                heightOf={(code) => levelHeightFor(code, current.level) ?? forCode(current.building?.heights ?? {}, code) ?? heightFor(code, heights, current.ceiling)}
+                heightOptions={(code) => forCode(heightChoices, code) ?? []}
                 onSkip={() => setCursor(after(current.key))}
                 onAccept={(code, heightFt) => {
                   // One group through the sheet's confirm, for the token Undo puts it back with.
