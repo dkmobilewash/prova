@@ -90,7 +90,10 @@ export async function stubDocumentUpload(
         const attempt = (attempts.get(partNumber) ?? 0) + 1;
         attempts.set(partNumber, attempt);
         if (options.failPart?.(partNumber, attempt)) {
-          await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "service_unavailable", message: "stubbed drop" } }) });
+          // A refusal the Blob SDK does not retry on its own (a 503 or a network
+          // error it retries ten times with backoff, which outlasts a test), so
+          // the failure reaches `resumableUpload` as a token running out would.
+          await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: { code: "forbidden", message: "stubbed refusal" } }) });
           return;
         }
         partsSent.push(partNumber);

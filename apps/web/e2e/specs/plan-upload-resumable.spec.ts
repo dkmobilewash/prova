@@ -64,8 +64,9 @@ test.describe("a big plan set uploads in resumable parts", () => {
   test("2. a part that keeps failing stops the upload with Resume, and Resume sends only what is missing", async () => {
     test.setTimeout(180_000);
     await page.goto(`/jobs/${jobId}/addendum`);
-    // Part 7 fails on every try of the first attempt (4 tries), then goes.
-    const stub = await stubDocumentUpload(page, { failPart: (n, attempt) => n === 7 && attempt <= 4 });
+    // Part 7 fails on every try until the connection "comes back", just before Resume.
+    let down = true;
+    const stub = await stubDocumentUpload(page, { failPart: (n) => n === 7 && down });
     const upload = page.locator('[data-addendum="upload"]');
     await upload.locator('input[type="file"]').setInputFiles(bigPdf("ZZ-E2E addendum set.pdf"));
     await upload.getByRole("button", { name: "Add a drawing" }).click();
@@ -74,6 +75,7 @@ test.describe("a big plan set uploads in resumable parts", () => {
     await expect(upload.getByRole("alert")).toContainText("press Resume to pick up where it stopped");
     const before = stub.partsSent();
     expect(before).not.toContain(7);
+    down = false;
     await resume.click();
     await expect.poll(() => prisma.takeoffPlan.count({ where: { jobId } }), { timeout: 120_000 }).toBe(2);
     const resent = stub.partsSent().slice(before.length);
