@@ -1136,6 +1136,8 @@ export function TakeoffPlanViewer({
    *  leaving the page, ends the wait. */
   const postWait = useRef<object | null>(null);
   useEffect(() => () => void (postWait.current = null), []);
+  /** A sheet whose stored groups replace a live find once they are posted (`postWhenStored`). */
+  const [preferStored, setPreferStored] = useState<number | null>(null);
   async function postWhenStored(sheetAt: number) {
     const mine = {};
     postWait.current = mine;
@@ -1149,6 +1151,15 @@ export function TakeoffPlanViewer({
         continue;
       }
       setPostedNote(posted.ok ? (posted.value.note === null ? null : { page: sheetAt, text: posted.value.note, failed: false }) : { page: sheetAt, text: posted.error, failed: true });
+      // ── ONE GROUPING: THE STORED ONE ──
+      // What the queue and a reload show is the groups stored with the scale;
+      // a find in this browser groups the same lines its own way (Chrome on
+      // Baker: one 7-3/8" 114 ft group here, C8B 117 ft in the queue, gone on
+      // reload). The post's own render brings the stored groups; they take over.
+      if (posted.ok) {
+        seeded.current.delete(sheetAt);
+        setPreferStored(sheetAt);
+      }
       return;
     }
   }
@@ -3247,13 +3258,14 @@ export function TakeoffPlanViewer({
     if (stored === null) return;
     // NOT OVER THE TOP OF A LIVE RESULT. A press of Find the walls on this very
     // sheet is newer than anything on the server and must win.
-    if (foundRaw !== null && foundOnPage === pageNumber) return;
+    if (foundRaw !== null && foundOnPage === pageNumber && preferStored !== pageNumber) return;
     seeded.current.add(pageNumber);
+    if (preferStored === pageNumber) setPreferStored(null);
     setFound(stored);
     setFoundOnPage(pageNumber);
     setChosen({});
     setShowingAll(false);
-  }, [pageNumber, storedWallsByPage, foundRaw, foundOnPage]);
+  }, [pageNumber, storedWallsByPage, foundRaw, foundOnPage, preferStored]);
 
   /**
    * ── WHAT KIND OF SHEET IS THIS, READ OFF THE DRAWING ITSELF ──
@@ -3689,6 +3701,20 @@ export function TakeoffPlanViewer({
           .join(", "),
       );
       setFindError("The sheet is still loading. Try that again in a moment.");
+      return;
+    }
+    // ── THE STORED GROUPS, WHERE THE SHEET'S SCALE HAS THEM ──
+    // Run takeoff in the workspace shows and posts the groups the queue reads,
+    // rather than finding the sheet again here and grouping it differently.
+    const storedNow = fill && answerKey === undefined && !readOnly ? storedWallsFor(storedWallsByPage, pageNumber) : null;
+    if (storedNow !== null) {
+      setFindError(null);
+      setFound(storedNow);
+      setFoundOnPage(pageNumber);
+      setChosen({});
+      setShowingAll(false);
+      seeded.current.add(pageNumber);
+      void postWhenStored(pageNumber);
       return;
     }
     setFinding(true);

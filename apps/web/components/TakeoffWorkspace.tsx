@@ -37,6 +37,8 @@ import {
   nextRedoLabel,
   nextUndoLabel,
   pushed,
+  movedToDone,
+  movedToUndone,
   redoOnce,
   undoOnce,
 } from "@/lib/takeoff/undoStack";
@@ -553,7 +555,12 @@ export function TakeoffWorkspace({
       try {
         const outcome = direction === "undo" ? await undoOnce(undoState) : await redoOnce(undoState);
         if (!outcome) return;
-        setUndoState(outcome.state);
+        // By identity, on the stack as it is now (`movedToUndone`): an accept the
+        // queue saved while this waited is still on it.
+        if (outcome.result.ok) {
+          const moved = outcome.entry;
+          setUndoState((was) => (direction === "undo" ? movedToUndone(was, moved) : movedToDone(was, moved)));
+        }
         setToast(
           outcome.result.ok
             ? `${direction === "undo" ? "Undid" : "Redid"}: ${outcome.label}`
