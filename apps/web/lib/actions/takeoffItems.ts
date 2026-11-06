@@ -8,7 +8,7 @@ import { parseNumericInput } from "@/lib/numeric-input";
 import { ringArea, ringSelfIntersects } from "@/lib/sheet-geometry";
 import { cutoutInside } from "@/lib/takeoff/drawTools";
 import { cutoutsFromJson } from "@/lib/takeoff/itemQuantities";
-import { syncReviewedItems, syncTakeoffItemLines, type ItemLineSummary } from "@/lib/estimating/takeoff-item-lines";
+import { syncDecidedItems, syncTakeoffItemLines, type ItemLineSummary } from "@/lib/estimating/takeoff-item-lines";
 import { can } from "@/lib/permissions";
 import { colorProblem, nextItemColor } from "@/lib/takeoff/itemColors";
 import {
@@ -256,9 +256,8 @@ export async function updateTakeoffItem(
  * The height goes on the group's takeoff item, which is the figure the
  * estimate prices at, so it is saved with the job and every run of the group
  * takes it. An item with no sides yet takes 2, the same assumption the
- * screen's square feet showed. Once takeoff lines are on the estimate, this
- * item's lines follow at once (`syncReviewedItems`); before that, Send to
- * estimate picks it up.
+ * screen's square feet showed. The item's estimate lines are written or
+ * updated at once (`syncDecidedItems`).
  */
 export async function setWallGroupHeight(jobId: string, itemId: string, heightFt: number): Promise<ActionResult> {
   const context = await requireCompanyContext();
@@ -272,9 +271,9 @@ export async function setWallGroupHeight(jobId: string, itemId: string, heightFt
   await prisma.$transaction(async (tx) => {
     await tx.takeoffItem.update({ where: { id: itemId }, data: { heightFt: heightFt.toFixed(2) } });
     await tx.takeoffItem.updateMany({ where: { id: itemId, sides: null }, data: { sides: 2 } });
-    await syncReviewedItems(tx, company.id, jobId, [itemId]);
+    await syncDecidedItems(tx, company.id, jobId, [itemId]);
   });
-  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/jobs/${jobId}`, "layout");
   revalidatePath(`/takeoff/${jobId}`);
   return actionOk;
 }

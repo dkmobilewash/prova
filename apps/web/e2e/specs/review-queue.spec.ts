@@ -149,45 +149,58 @@ test.describe("the job's one review queue", () => {
     await expect.poll(async () => (await prisma.takeoffMeasurement.findFirst({ where: { page: { planId }, xs: { equals: [0.6, 0.7] } }, select: { label: true } }))?.label).toBe("wall, dropped");
   });
 
-  test("5. the untyped group: Set type names it, and every run goes onto that type", async () => {
+  /** Next round the queue until the item on show is this kind (and, for a price, this line). */
+  async function goTo(kind: string, line?: string) {
+    for (let i = 0; i < 12; i += 1) {
+      const on = (await item(tab).getAttribute("data-kind")) === kind;
+      const right = line === undefined || (await item(tab).locator('[data-takeoff="review-queue-line"]').getAttribute("href").catch(() => ""))?.includes(`line=${line}`);
+      if (on && right) return;
+      await item(tab).locator('[data-takeoff="review-queue-next"]').click();
+    }
+    throw new Error(`no ${kind} item came round`);
+  }
+  const leftCount = async () => Number(((await left(tab).innerText()).match(/^(\d+)/) ?? [])[1] ?? 0);
+
+  test("5. the untyped group: its type, and every run goes onto that type — and its estimate lines are written then", async () => {
     await expect(item(tab)).toHaveAttribute("data-kind", "type");
     await expect(item(tab)).toContainText(`Walls · sheet A101 · 4-7/8" · 65 ft`);
     await tab.screenshot({ path: path.join(SHOTS, "queue-type-1440.png") });
     // Nothing on the drawing names it: pick the legend's W1 and accept, with no height known.
     await item(tab).locator('[data-takeoff="queue-code"]', { hasText: CODE }).click();
     await item(tab).locator('[data-takeoff="queue-accept"]').click();
-    // The group leaves; the W1 item, which the starter library gives no height, joins.
-    await expect(left(tab)).toHaveText("3 left to review");
+    // W1 has no height: the first press asks for one; the second leaves it for later.
+    await expect(item(tab).locator('[data-takeoff="queue-ask-height"]')).toBeVisible();
+    const before = await leftCount();
+    await item(tab).locator('[data-takeoff="queue-accept"]').click();
+    // The count moves on the answer itself.
+    await expect.poll(leftCount, { timeout: 2_000 }).toBe(before - 1);
     await expect
       .poll(async () => (await prisma.takeoffMeasurement.findMany({ where: { page: { planId }, label: `${CODE} wall (set by hand)` }, select: { id: true } })).length)
       .toBe(2);
+    // Reviewing it wrote W1's lines on the estimate, with no Send to estimate.
+    await expect.poll(async () => prisma.jobLineItem.count({ where: { jobId, isDeleted: false, takeoffItem: { wallType: { code: CODE } } } }), { timeout: 30_000 }).toBeGreaterThan(0);
   });
 
   test("5b. the W1 walls have no height: a typed one sets the whole group", async () => {
-    // The queue moved on before the server answered, so the new item comes round: skip to it.
-    for (let i = 0; i < 3 && (await item(tab).getAttribute("data-kind")) !== "height"; i += 1) {
-      await item(tab).locator('[data-takeoff="review-queue-next"]').click();
-    }
-    await expect(item(tab)).toHaveAttribute("data-kind", "height");
+    // The queue moved on before the server answered, so the new item comes round: go to it.
+    await goTo("height");
     await expect(item(tab)).toContainText("No height · W1 walls · sheet A101 · 65 ft");
     await item(tab).locator('[data-takeoff="queue-height"]').fill("10");
     await item(tab).locator('[data-takeoff="queue-accept"]').click();
-    await expect(left(tab)).toHaveText("2 left to review");
     await expect.poll(async () => (await prisma.takeoffItem.findFirst({ where: { jobId, wallType: { code: CODE } }, select: { heightFt: true } }))?.heightFt?.toString()).toBe("10");
   });
 
   test("6. the floor plan with no scale: its sheet, and the printed-scale fix", async () => {
-    await expect(item(tab)).toHaveAttribute("data-kind", "scale");
+    await goTo("scale");
     await expect(item(tab)).toContainText("No scale · floor plan A102");
     await expect(picker(tab)).toHaveValue("2");
     await expect(item(tab).locator('[data-takeoff="review-queue-set-scale"]')).toBeVisible();
     await item(tab).locator('[data-takeoff="review-queue-printed"]').click();
-    await expect(left(tab)).toHaveText("1 left to review");
-    expect(await prisma.takeoffScaleCalibration.count({ where: { page: { planId, pageNumber: 2 } } })).toBe(1);
+    await expect.poll(async () => prisma.takeoffScaleCalibration.count({ where: { page: { planId, pageNumber: 2 } } })).toBe(1);
   });
 
-  test("7. the unpriced line opens on the estimate; once priced, the queue is empty", async () => {
-    await expect(item(tab)).toHaveAttribute("data-kind", "price");
+  test("7. the unpriced line opens on the estimate; once priced, it leaves the queue", async () => {
+    await goTo("price", lineId);
     const link = item(tab).locator('[data-takeoff="review-queue-line"]');
     await expect(link).toHaveAttribute("href", `/jobs/${jobId}/estimate?line=${lineId}#line-${lineId}`);
     const [estimate] = await Promise.all([tab.context().waitForEvent("page"), link.click()]);
@@ -202,18 +215,27 @@ test.describe("the job's one review queue", () => {
     await line.getByRole("button", { name: "Save", exact: true }).click();
     await expect.poll(async () => (await prisma.jobLineItem.findUniqueOrThrow({ where: { id: lineId }, select: { unitPrice: true } })).unitPrice?.toString(), { timeout: 30_000 }).toBe("85");
     await estimate.close();
-    // Back on the workspace's tab: it reads the queue again.
+    // Back on the workspace's tab: it reads the queue again, and that line is gone from it.
     await tab.bringToFront();
     await tab.evaluate(() => window.dispatchEvent(new Event("focus")));
-    await expect(left(tab)).toHaveText("Nothing left to review", { timeout: 30_000 });
-    await expect(queue(tab).locator('[data-takeoff="review-queue-done"]')).toHaveAttribute("href", `/jobs/${jobId}`);
-    await queue(tab).screenshot({ path: path.join(SHOTS, "queue-done.png") });
+    await expect(queue(tab).locator(`[data-takeoff="review-queue-line"][href*="line=${lineId}"]`)).toHaveCount(0, { timeout: 30_000 });
+  });
+
+  test("7b. W1's lines, written by the review, priced like any line: the queue is empty", async () => {
+    // Priced here directly; step 7 is the pricing flow itself.
+    await prisma.jobLineItem.updateMany({ where: { jobId, isDeleted: false, unitPrice: null, budgetedUnitCost: null }, data: { unitPrice: "1" } });
+    await tab.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await tab.goto(`/takeoff/${jobId}?open=review`);
+    await expect(tab.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 60_000 });
+    await expect(tab.locator('[data-takeoff="review-queue-item"]')).toHaveCount(0);
   });
 
   test("8. Review is done when the list is empty", async () => {
     await page.goto(`/jobs/${jobId}`);
     await expect(page.locator('[data-job-step="review"]')).toHaveAttribute("data-state", "done");
     await expect(page.locator("[data-job-next]")).not.toHaveText(/Review/);
+    // The review put the takeoff on the estimate: there is no separate press for it.
+    await expect(page.locator("[data-job-next]")).not.toContainText("Put the takeoff on the estimate");
   });
 
   test("9. nothing crashed", async () => {
