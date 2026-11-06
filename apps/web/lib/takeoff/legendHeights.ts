@@ -55,8 +55,8 @@ export async function legendHeightsFor(input: {
     const pdf = await openPlanPdf(bytes.bytes);
     try {
       set = await setHeightFacts(pdf, { legendPage: input.legendPage });
-      // Kept for the queue: a wall's floor-to-floor by its plan's level.
-      await storeLevelMarks(input.planId, set.levels ?? []);
+      // Kept for the queue: a wall's floor-to-floor by its plan's level. Never at the height's cost.
+      await storeLevelMarks(input.planId, set.levels ?? []).catch((error) => console.error("[takeoff] level marks not stored", { planId: input.planId }, error));
     } finally {
       await pdf.close();
     }
