@@ -63,6 +63,13 @@ export function priorPlanFor(input: { demo: Page; newPage: { segments: readonly 
   const set = existingWallSet({ level: null, remove, remain, newPlan: newRuns, feetPerUnit });
   const shift = !few && set.shift !== null ? set.shift : alignViews(longFaces(newPage.segments, newPage.widthPt, feetPerUnit), faces, feetPerUnit);
   if (shift === null || shift.votes < MIN_VOTES) return { lines: null, why: `the demolition plan does not line up with this sheet (${shift?.votes ?? 0} of ${MIN_VOTES} walls agree), so nothing is compared` };
-  const lines: PriorLine[] = few ? faces.filter((f) => !removed(f)) : remain.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, thicknessFeet: w.thicknessFeet }));
+  // ── THE DEMOLITION PLAN'S FACES RIDE ALONG WITH ITS PAIRED WALLS ──
+  // The finder pairs only some of a demolition plan's walls, and a wall it
+  // pairs at another thickness fails the band; both are still drawn there as
+  // faces. Crosslines' and E Street's comparisons left 713 ft of existing wall
+  // offered that way. `onPriorPlan` takes raw faces only with BOTH of a wall's
+  // faces drawn, so one line beside a new wall still claims nothing.
+  const standingFaces = faces.filter((f) => !removed(f));
+  const lines: PriorLine[] = few ? standingFaces : [...remain.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, thicknessFeet: w.thicknessFeet })), ...standingFaces];
   return { lines: lines.map((p) => ({ ...p, x1: p.x1 + shift.dx, y1: p.y1 + shift.dy, x2: p.x2 + shift.dx, y2: p.y2 + shift.dy })), votes: shift.votes, walls: few ? "faces" : "walls" };
 }
