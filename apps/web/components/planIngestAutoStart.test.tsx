@@ -170,6 +170,50 @@ describe("a set that has already been read", () => {
     expect(host.textContent).toContain("Read the title blocks");
   });
 
+  it("OFFERS THE TITLE BLOCKS WHILE THE LEGEND READS, AND PRESSED, THEY TAKE THE LOOP (Topeka: 82 s behind the legend)", async () => {
+    vi.useFakeTimers();
+    try {
+      const legend = view({ jobId: "legend_1", stage: "WALL_LEGEND", finished: 3, percent: 2, complete: false, total: 137 });
+      const titles = view({ jobId: "titles_1", stage: "TITLE_BLOCK", finished: 0, percent: 0, complete: false, total: 137 });
+      let legendDone = 3;
+      advancePlanIngest.mockImplementation(async (jobId: string) =>
+        jobId === "titles_1"
+          ? { ok: true, value: view({ jobId, stage: "TITLE_BLOCK", total: 137, complete: true }) }
+          : { ok: true, value: view({ jobId, stage: "WALL_LEGEND", total: 137, finished: (legendDone += 1), percent: 5, complete: false }) },
+      );
+      queuedPlanReads.mockResolvedValueOnce({ ok: true, value: [legend] }).mockResolvedValue({ ok: true, value: [legend] });
+      startPlanIngest.mockResolvedValue({ ok: true, value: titles });
+      paint(view({ total: 137 }));
+      for (let i = 0; i < 4; i += 1) await act(async () => {});
+      // The legend is reading, and the offer is there anyway.
+      expect(advancePlanIngest.mock.calls.map((c) => c[0])).toContain("legend_1");
+      const button = [...host.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Read the title blocks"));
+      expect(button, "no Read the title blocks while the legend reads").toBeDefined();
+      advancePlanIngest.mockClear();
+      await act(async () => {
+        button!.click();
+      });
+      for (let i = 0; i < 4; i += 1) await act(async () => {});
+      // The title blocks went first; the legend's scheduled slice did not run alongside.
+      expect(startPlanIngest).toHaveBeenCalledWith(expect.any(String), "TITLE_BLOCK");
+      expect(advancePlanIngest.mock.calls[0]?.[0]).toBe("titles_1");
+      // When they finish, the legend picks up again — ONE loop, not two: the
+      // legend slice scheduled before the press must not start a second one.
+      const legendCalls = () => advancePlanIngest.mock.calls.filter((c) => c[0] === "legend_1").length;
+      const resumed = legendCalls();
+      for (let gap = 0; gap < 5; gap += 1) {
+        await act(async () => {
+          vi.advanceTimersByTime(400);
+        });
+        for (let i = 0; i < 3; i += 1) await act(async () => {});
+      }
+      expect(advancePlanIngest.mock.calls.filter((c) => c[0] === "titles_1")).toHaveLength(1);
+      expect(legendCalls() - resumed).toBe(5);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("offers the title blocks on a reload whose free pass is done and legend still queued", async () => {
     const legend = view({ jobId: "legend_1", stage: "WALL_LEGEND", finished: 0, percent: 0, complete: false, total: 65 });
     advancePlanIngest.mockResolvedValue({ ok: true, value: view({ jobId: "legend_1", stage: "WALL_LEGEND", complete: true }) });
