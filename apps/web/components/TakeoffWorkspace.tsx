@@ -45,7 +45,7 @@ import { TOOL_KEYS } from "@/lib/takeoff-plan-view";
 import { TakeoffExportButtons } from "@/components/TakeoffExportButtons";
 import { TakeoffWallReview } from "@/components/TakeoffWallReview";
 import { TakeoffReviewQueue } from "@/components/TakeoffReviewQueue";
-import { focusOf, type CodeHeight, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { focusOf, legendMissing, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { reviewWall } from "@/lib/actions";
 import { setReviewProgress, type SetReviewItem } from "@/lib/takeoff/wallReview";
@@ -101,6 +101,8 @@ type Props = {
   planSet?: PlanSetRow[];
   /** Each type's height for the queue's pre-filled height, by code. */
   reviewHeights?: Record<string, CodeHeight>;
+  /** Whether the set's legend was read, so a missing height says why (`legendMissing`). */
+  reviewLegend?: LegendState;
   /** Each type's heights by part of the building, to pick from (`loadReviewQueue`). */
   reviewHeightChoices?: Record<string, CodeHeight[]>;
   /** The codes a queued group can be given: the legend's, else the company's library. */
@@ -210,6 +212,7 @@ export function TakeoffWorkspace({
   reviewQueue = [],
   planSet = [],
   reviewHeights = {},
+  reviewLegend = "read",
   reviewHeightChoices = {},
   reviewCodes = [],
   labellingAvailable = false,
@@ -1563,6 +1566,7 @@ export function TakeoffWorkspace({
                 items={reviewQueue}
                 legendCodes={reviewCodes.length > 0 ? reviewCodes : data.legendCodes}
                 heights={reviewHeights}
+                legend={reviewLegend}
                 heightChoices={reviewHeightChoices}
                 planSet={planSet}
                 onShow={onQueueShow}
@@ -1847,6 +1851,7 @@ export function TakeoffWorkspace({
               onUndoable={onUndoable}
               focusRun={setCurrent ?? queueFocus}
               focusRuns={setCurrent === null ? queueRuns : null}
+              heightMissing={legendMissing(reviewLegend, jobId)}
               activeItemId={activeItemId}
             />
           </div>
