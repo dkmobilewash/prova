@@ -1126,6 +1126,28 @@ export function TakeoffPlanViewer({
   const [foundSlot, setFoundSlot] = useState<HTMLElement | null>(null);
   /** What Run takeoff put on the job, on the sheet it ran on. */
   const [postedNote, setPostedNote] = useState<{ page: number; text: string; failed: boolean; waiting?: boolean } | null>(null);
+  /** The sheet's walls onto the job. While the finder that saving the scale
+   *  started is still storing them, ask again every few seconds rather than post
+   *  nothing (walk v6), without holding Run takeoff busy. A newer press, or
+   *  leaving the page, ends the wait. */
+  const postWait = useRef<object | null>(null);
+  useEffect(() => () => void (postWait.current = null), []);
+  async function postWhenStored(sheetAt: number) {
+    const mine = {};
+    postWait.current = mine;
+    for (;;) {
+      const posted = await postSheetWalls(jobId, planId, sheetAt);
+      if (postWait.current !== mine) return;
+      if (posted.ok && posted.value.waiting) {
+        setPostedNote({ page: sheetAt, text: "", failed: false, waiting: true });
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        if (postWait.current !== mine) return;
+        continue;
+      }
+      setPostedNote(posted.ok ? (posted.value.note === null ? null : { page: sheetAt, text: posted.value.note, failed: false }) : { page: sheetAt, text: posted.error, failed: true });
+      return;
+    }
+  }
   const [reviewSlot, setReviewSlot] = useState<HTMLElement | null>(null);
   const [bannerSlot, setBannerSlot] = useState<HTMLElement | null>(null);
   /** The top of the layer panel, where messages and the draft card dock. */
@@ -4064,19 +4086,7 @@ export function TakeoffPlanViewer({
       // them, unless something of the sheet is on the job already
       // (`postSheetWalls`). New-customer run v2, M3: it used to add nothing.
       if (fill && !readOnly && answerKey === undefined) {
-        // While the finder that saving the scale started is still storing the
-        // walls, ask again every few seconds rather than post nothing (walk v6).
-        const sheetAt = pageNumber;
-        for (;;) {
-          const posted = await postSheetWalls(jobId, planId, sheetAt);
-          if (posted.ok && posted.value.waiting) {
-            setPostedNote({ page: sheetAt, text: "", failed: false, waiting: true });
-            await new Promise((resolve) => setTimeout(resolve, 3_000));
-            continue;
-          }
-          setPostedNote(posted.ok ? (posted.value.note === null ? null : { page: sheetAt, text: posted.value.note, failed: false }) : { page: sheetAt, text: posted.error, failed: true });
-          break;
-        }
+        void postWhenStored(pageNumber);
       }
     } catch (problem) {
       // The sheet is still on screen and the manual tools still work, so this
