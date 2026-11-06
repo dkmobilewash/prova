@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@prova/db";
 import { claimPorts, closeIfSettled, hasWaitingWork, ingestCounts } from "./claim";
-import { MAX_ATTEMPTS, runIngest } from "./runner";
+import { MAX_ATTEMPTS, MODEL_LANES, runIngest, runIngestLanes } from "./runner";
 
 /**
  * THE CLAIM, AGAINST A REAL POSTGRES — because the one thing this design rests
@@ -224,6 +224,31 @@ describe("backoff", () => {
 });
 
 describe("a whole run through the real port", () => {
+  it("reads a set on MODEL_LANES workers at once, every page exactly once (walk v6: 189 s one at a time)", async () => {
+    await seed(12);
+    const worked = new Map<number, number>();
+    let inFlight = 0;
+    let most = 0;
+    const work = async (task: { pageNumber: number }) => {
+      inFlight += 1;
+      most = Math.max(most, inFlight);
+      worked.set(task.pageNumber, (worked.get(task.pageNumber) ?? 0) + 1);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      inFlight -= 1;
+      return { ok: true as const };
+    };
+    const reports = await runIngestLanes(MODEL_LANES, {
+      ports: claimPorts({ jobId: ingestJobId, work }),
+    });
+
+    expect(reports).toHaveLength(MODEL_LANES);
+    expect(reports.reduce((sum, r) => sum + r.done, 0)).toBe(12);
+    expect([...worked.keys()].sort((a, b) => a - b)).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
+    expect([...worked.values()].every((n) => n === 1)).toBe(true);
+    expect(most).toBe(MODEL_LANES);
+    expect(await ingestCounts(ingestJobId)).toMatchObject({ total: 12, finished: 12, pending: 0 });
+  });
+
   it("finishes every page and closes the job", async () => {
     await seed(5);
     const report = await runIngest({ ports: ports() });

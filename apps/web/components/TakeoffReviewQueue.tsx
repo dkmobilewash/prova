@@ -81,9 +81,12 @@ export function TakeoffReviewQueue({
   // went in, with Undo.
   const [accepted, setAccepted] = useState<{ text: string; keys: string[]; undo: SheetSuggestionsUndo } | null>(null);
   const sheetGroups = current === null || current.kind !== "type" ? [] : sheetSuggestionGroups(left, current.pageNumber, heights, planId);
-  async function acceptSheet() {
-    if (current === null || current.kind !== "type" || sheetGroups.length === 0) return;
-    const groups = sheetGroups;
+  type TypeItem = Extract<ReviewItem, { kind: "type" }>;
+  const heightOfGroup = (g: TypeItem, code: string | null) => levelHeightFor(code, g.level) ?? forCode(g.building?.heights ?? {}, code) ?? heightFor(code, heights, g.ceiling);
+  // The groups on this sheet nothing on the drawing names: no tag, no legend, no library guess.
+  const unnamed = current === null || current.kind !== "type" || current.suggested !== null ? [] : left.filter((item): item is TypeItem => item.kind === "type" && item.pageNumber === current.pageNumber && item.suggested === null);
+  async function acceptSheet(groups: readonly { key: string; feet: number | null; group: Parameters<typeof confirmSheetSuggestions>[1][number] }[] = sheetGroups) {
+    if (current === null || current.kind !== "type" || groups.length === 0) return;
     const sheet = current.sheet;
     setBusy(true);
     setError(null);
@@ -285,9 +288,23 @@ export function TakeoffReviewQueue({
                 codes={current.suggested === null || legendCodes.some((c) => c.toUpperCase() === current.suggested!.code.toUpperCase()) ? legendCodes : [...legendCodes, current.suggested.code]}
                 suggested={current.suggested}
                 missing={legendMissing(legend, jobId)}
-                heightOf={(code) => levelHeightFor(code, current.level) ?? forCode(current.building?.heights ?? {}, code) ?? heightFor(code, heights, current.ceiling)}
+                heightOf={(code) => heightOfGroup(current, code)}
                 heightOptions={(code) => forCode(heightChoices, code) ?? []}
                 onSkip={() => setCursor(after(current.key))}
+                rest={unnamed.length > 1 ? `${unnamed.length} groups nothing names on ${current.sheet}` : null}
+                onAcceptRest={(code, heightFt) => {
+                  // The type picked here on every group of the sheet nothing names
+                  // (walk v6: 13 of them, two keys each). Each keeps its own height
+                  // unless a height was typed here; one line says it, with Undo.
+                  const offered = heightOfGroup(current, code)?.feet ?? null;
+                  void acceptSheet(
+                    unnamed.map((g) => ({
+                      key: g.key,
+                      feet: g.feet,
+                      group: { planId, pageNumber: g.pageNumber, code, inches: g.inches, runs: g.runs, heightFt: heightFt === offered ? (heightOfGroup(g, code)?.feet ?? null) : heightFt, level: levelHeightFor(code, g.level) === null ? null : g.level!.label },
+                    })),
+                  );
+                }}
                 onAccept={(code, heightFt) => {
                   // One group through the sheet's confirm, for the token Undo puts it back with.
                   const group = { planId, pageNumber: current.pageNumber, code: code!, inches: current.inches, runs: current.runs, heightFt, level: levelHeightFor(code, current.level) === null ? null : current.level!.label };
