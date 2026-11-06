@@ -245,13 +245,21 @@ export async function expectHealthy(page: Page, step: string, options: HealthOpt
  *
  * `window.innerWidth`, not `page.viewportSize()`: the media query behind
  * `md:` reads the LAYOUT viewport, which is what `innerWidth` reports.
+ *
+ * ── THE WIDTH IS READ ONLY TO WORD A FAILURE ──
+ * It was read first, with `page.evaluate`, and a sign-in still redirecting to
+ * the dashboard destroyed the page under it: "Execution context was destroyed"
+ * in `landOnDashboard`, the only failure of two e2e runs on main (answer-key-gate
+ * step 1, 7b0041ca and 89071236). The locator assertion waits through a
+ * navigation; the width is asked for after it fails, when nothing is moving.
  */
 async function expectShellNavigation(page: Page, where: string): Promise<void> {
-  const layoutWidth = await page.evaluate(() => window.innerWidth);
-  const owner =
-    layoutWidth >= RAIL_BREAKPOINT_PX ? "the top bar's words (TopBar.tsx)" : "the bottom tabs (BottomTabs.tsx)";
-  await expect(
-    page.getByRole("navigation", { name: RAIL_NAV_NAME }),
-    `${where}: at a layout width of ${layoutWidth}px the shell's main navigation is ${owner}, and it is missing`,
-  ).toBeVisible();
+  try {
+    await expect(page.getByRole("navigation", { name: RAIL_NAV_NAME })).toBeVisible();
+  } catch (error) {
+    const layoutWidth = await page.evaluate(() => window.innerWidth).catch(() => page.viewportSize()?.width ?? 0);
+    const owner =
+      layoutWidth >= RAIL_BREAKPOINT_PX ? "the top bar's words (TopBar.tsx)" : "the bottom tabs (BottomTabs.tsx)";
+    throw new Error(`${where}: at a layout width of ${layoutWidth}px the shell's main navigation is ${owner}, and it is missing`, { cause: error });
+  }
 }
