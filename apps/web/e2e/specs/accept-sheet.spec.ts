@@ -122,7 +122,8 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
 
   test("3. one press: both groups typed with their heights, their lines written, the third left", async () => {
     await acceptAll().click();
-    await expect(left()).toHaveText(/^[12] left to review$/, { timeout: 5_000 });
+    // At once, before the save is back; then ZA2's height (it has none of its own) may join.
+    await expect(left()).toHaveText("1 left to review", { timeout: 5_000 });
     await expect(queue().locator('[data-takeoff="review-queue-accepted-text"]')).toHaveText("Accepted 2 groups on sheet A101 · 130 ft");
     await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(1);
     const zf1 = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, wallType: { code: "ZA1" } }, select: { heightFt: true, _count: { select: { measurements: true } } } });
@@ -142,10 +143,10 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
     await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(4);
     expect(await linesOf("ZA1")).toBe(0);
     expect(await linesOf("ZA2")).toBe(0);
-    // The two groups are back to accept again. (Any confirm writes the untyped
-    // runs' own "no type: check" line, which the queue then asks a price for;
-    // Undo leaves that line, so the count is not compared.)
-    await expect(acceptAll()).toHaveText("Accept all suggestions on this sheet (2 groups)", { timeout: 30_000 });
+    // The two groups are back to accept again, and nothing else joined (the
+    // untyped runs' own line is never a price item, #1018).
+    await expect(left()).toHaveText("3 left to review", { timeout: 30_000 });
+    await expect(acceptAll()).toHaveText("Accept all suggestions on this sheet (2 groups)");
   });
 
   test("5. nothing crashed", async () => {
