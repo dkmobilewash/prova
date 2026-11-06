@@ -256,6 +256,24 @@ export function heightFor(code: string | null, heights: Readonly<Record<string, 
   return own ?? heights[GENERAL_HEIGHT_KEY] ?? (ceiling === null ? null : { feet: ceiling.feet, from: ceiling.from });
 }
 
+/**
+ * "Accept all suggestions on this sheet": every group on the sheet whose type
+ * the drawing gave (`Guess.drawn`), each with the height Enter would pre-fill —
+ * the level's floor-to-floor for a type that runs to the structure, else the
+ * type's own, else the ceiling. One function for the queue's button and Ask's
+ * card, so the two accept the same groups at the same heights.
+ */
+export function sheetSuggestionGroups(items: readonly ReviewItem[], pageNumber: number, heights: Readonly<Record<string, CodeHeight>>, planId: string) {
+  return items
+    .filter((item): item is Extract<ReviewItem, { kind: "type" }> => item.kind === "type" && item.pageNumber === pageNumber && item.suggested?.drawn === true)
+    .map((g) => {
+      const code = g.suggested!.code;
+      const byLevel = levelHeightFor(code, g.level);
+      const heightFt = (byLevel ?? heightFor(code, heights, g.ceiling))?.feet ?? null;
+      return { key: g.key, sheet: g.sheet, feet: g.feet, group: { planId, pageNumber: g.pageNumber, code, inches: g.inches, runs: g.runs, heightFt, level: byLevel === null ? null : g.level!.label } };
+    });
+}
+
 // What saves the most time first (Chrome's re-test): a group is one key for
 // dozens of feet, a held wall one key for one run. So groups and windows,
 // then the held walls, sheet by sheet.

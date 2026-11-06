@@ -609,6 +609,18 @@ test("B9-3 A1.1 says it is not counted, and what it is used for", async () => {
   await page.screenshot({ path: join(SHOTS_B9, "a11-not-counted.png") });
 });
 
+test("B9-3b on A1.1 the line is at the top of the panel, and no group offers Add these", async () => {
+  await on("estreet", 24);
+  const first = page.locator('[data-takeoff="panel-dock"] > *').first();
+  await expect(first).toHaveAttribute("data-takeoff", "demo-not-counted");
+  // Scaled by B2 in a full run; run on its own (-g B9), the printed scale first.
+  if (await hook("find-walls").isDisabled()) await takeOfferedScale(`1/4" = 1'-0"`);
+  await findWalls();
+  await expect(hook("found-group").first()).toBeVisible({ timeout: 60_000 });
+  await expect(hook("add-group")).toHaveCount(0);
+  await page.screenshot({ path: join(SHOTS_B9, "a11-no-add-these.png") });
+});
+
 test("B9-4 an unpaired sheet keeps no such line", async () => {
   await sheet("estreet", 27);
   await expect(hook("demo-not-counted")).toHaveCount(0);

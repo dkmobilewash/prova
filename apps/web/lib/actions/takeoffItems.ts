@@ -259,7 +259,7 @@ export async function updateTakeoffItem(
  * screen's square feet showed. The item's estimate lines are written or
  * updated at once (`syncDecidedItems`).
  */
-export async function setWallGroupHeight(jobId: string, itemId: string, heightFt: number): Promise<ActionResult> {
+export async function setWallGroupHeight(jobId: string, itemId: string, heightFt: number): Promise<ActionResultWith<{ was: { heightFt: string | null; sides: number | null } }>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
@@ -268,14 +268,17 @@ export async function setWallGroupHeight(jobId: string, itemId: string, heightFt
   if (!Number.isFinite(heightFt) || heightFt <= 0 || heightFt >= 100) return actionFail("A wall height is a number of feet between 0 and 100.");
   const item = await itemInJob(itemId, jobId, company.id);
   if (!item) return actionFail(GONE);
-  await prisma.$transaction(async (tx) => {
+  // What it replaces, for Undo (`undoSheetSuggestions` puts it back).
+  const was = await prisma.$transaction(async (tx) => {
+    const before = await tx.takeoffItem.findUniqueOrThrow({ where: { id: itemId }, select: { heightFt: true, sides: true } });
     await tx.takeoffItem.update({ where: { id: itemId }, data: { heightFt: heightFt.toFixed(2) } });
     await tx.takeoffItem.updateMany({ where: { id: itemId, sides: null }, data: { sides: 2 } });
     await syncDecidedItems(tx, company.id, jobId, [itemId]);
+    return { heightFt: before.heightFt === null ? null : before.heightFt.toString(), sides: before.sides };
   });
   revalidatePath(`/jobs/${jobId}`, "layout");
   revalidatePath(`/takeoff/${jobId}`);
-  return actionOk;
+  return { ok: true, value: { was } };
 }
 
 /**

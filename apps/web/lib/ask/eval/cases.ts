@@ -368,6 +368,11 @@ export const EVAL_CASES: EvalCase[] = [
   command("cmd-wall-height-dictated", "set the height of the s6b walls on baker to 15 ft", "set_wall_height", { jobName: "baker", wallType: "s6b", height: "15" }, ESTIMATOR),
   noCommand("none-field-wall-height", "set S6B walls to 15 feet on Baker", FIELD),
   noCommand("none-wall-type-blind", "make all the untyped walls on Baker S6B"),
+  // "Accept all suggestions on A101", after #1020 (2026-11-06).
+  command("cmd-accept-sheet", "Accept all suggestions on A101 for Baker", "accept_sheet_suggestions", { jobName: "Baker", sheet: "A101" }, ESTIMATOR),
+  command("cmd-accept-sheet-take", "take the suggested wall types on sheet A102 of Riverside", "accept_sheet_suggestions", { jobName: "Riverside", sheet: "A102" }),
+  command("cmd-accept-sheet-dictated", "accept all the suggestions on a101 on the baker takeoff", "accept_sheet_suggestions", { jobName: "baker", sheet: "a101" }, ESTIMATOR),
+  noCommand("none-field-accept-sheet", "accept all suggestions on A101 for Baker", FIELD),
   noCommand("none-poem", "write me a poem about drywall"),
   noCommand("none-advice", "how do I file a mechanics lien in California?"),
   noCommand("none-field-invoice", "invoice Riverside for 45,000 for the September progress", FIELD),
