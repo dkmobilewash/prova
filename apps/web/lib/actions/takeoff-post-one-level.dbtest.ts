@@ -84,4 +84,11 @@ describe("posting measurements from more than one sheet", () => {
     const run = await prisma.wallRun.findFirst({ where: { jobId }, orderBy: { createdAt: "desc" } });
     expect(run?.label).toBe("Pilot walls — from A100, A104");
   });
+  it("names the sheets in sheet order whatever order they came in (it read A104, A100 once in CI)", async () => {
+    // A105 then A101: the same shape as the case above, the sheets handed over back to front.
+    const result = await post([6, 2]);
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    const run = await prisma.wallRun.findFirst({ where: { jobId }, orderBy: { createdAt: "desc" } });
+    expect(run?.label).toBe("Pilot walls — from A101, A105");
+  });
 });
