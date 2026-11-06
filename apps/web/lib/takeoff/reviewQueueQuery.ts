@@ -10,8 +10,12 @@ import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
 import { sheetCategory } from "@/lib/takeoff/planSet";
+import { storedLevels } from "@/lib/takeoff/levelReads";
+import { storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
+import { levelHeight, runLevels } from "@/lib/takeoff/levelHeights";
+import { heightBasis } from "@/lib/takeoff/wallHeights";
+import { heightItem, reviewQueue, splitByLevel, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import { storedWindowsOf, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
-import { heightItem, reviewQueue, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import { feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/takeoff/wallHeight";
 
 /**
@@ -23,7 +27,7 @@ import { feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/
 export async function loadReviewQueue(
   companyId: string,
   jobId: string,
-): Promise<{ planId: string | null; items: ReviewItem[]; heights: Record<string, CodeHeight>; codes: string[]; scaledSheets: number; floorPlans: number; floorPlansScaled: number }> {
+): Promise<{ planId: string | null; items: ReviewItem[]; heights: Record<string, CodeHeight>; heightChoices: Record<string, CodeHeight[]>; codes: string[]; scaledSheets: number; floorPlans: number; floorPlansScaled: number }> {
   const plan = await prisma.takeoffPlan.findFirst({ where: { jobId, companyId }, orderBy: { createdAt: "desc" }, select: { id: true } });
   const unpriced = await prisma.jobLineItem.findMany({
     where: { jobId, job: { companyId }, isDeleted: false, unitPrice: null, budgetedUnitCost: null },
@@ -42,7 +46,7 @@ export async function loadReviewQueue(
     askCost,
     costCategory: asCostCategory(line.costCategory),
   }));
-  if (plan === null) return { planId: null, items: prices, heights: {}, codes: [], scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0 };
+  if (plan === null) return { planId: null, items: prices, heights: {}, heightChoices: {}, codes: [], scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0 };
 
   const [pages, sheetRows] = await Promise.all([
     prisma.takeoffPlanPage.findMany({
@@ -100,6 +104,12 @@ export async function loadReviewQueue(
   const codes = legendCodes.length > 0 ? legendCodes : libraryTypes.map((type) => type.code);
   const wallTypes: MatchableWallType[] = libraryTypes.map((t) => ({ id: t.id, code: t.code, name: t.name, hasParts: t._count.components > 0, thicknessIn: t.thicknessIn === null ? null : Number(t.thicknessIn) }));
   const heights: Record<string, CodeHeight> = {};
+  // Where the sections print one height per part of the building, each is a choice.
+  const heightChoices: Record<string, CodeHeight[]> = {};
+  for (const type of libraryTypes) {
+    const options = legendOptions({ code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes });
+    if (options.length > 1) heightChoices[type.code.toUpperCase()] = options.map((o) => ({ feet: o.feet, from: o.from }));
+  }
   for (const type of libraryTypes) {
     const legend = legendOption({ code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes });
     const onJob = typedItems.find((item) => item.wallTypeId === type.id);
@@ -107,6 +117,17 @@ export async function loadReviewQueue(
     if (feet !== null) heights[type.code.toUpperCase()] = { feet, from: legend !== null && Math.abs(legend.feet - feet) < 0.005 ? legend.from : `set on this job: ${feetLabel(feet)}` };
     else if (legend !== null) heights[type.code.toUpperCase()] = { feet: legend.feet, from: legend.from };
   }
+  // ── EACH WALL'S LEVEL: its plan's caption, and the level markers the set prints ──
+  const levelsRead = await storedLevels(plan.id);
+  // The types whose height is the storey: those whose own words run them to the structure.
+  const toStructure = (lines: readonly string[]) => lines.some((line) => heightBasis(line)?.kind === "to-structure");
+  const legendTypes = (await prisma.planLegendProposal.findMany({ where: { planId: plan.id }, select: { merged: true } })).flatMap((p) => storedLegendTypesFromJson(p.merged));
+  const structureCodes = [
+    ...new Set([
+      ...libraryTypes.filter((t) => toStructure((t.notes ?? "").split("\n"))).map((t) => t.code.toUpperCase()),
+      ...legendTypes.filter((t) => toStructure(t.lines)).map((t) => t.code.toUpperCase()),
+    ]),
+  ];
   const roomsOn = (pageNumber: number): CeilingRoom[] =>
     rooms
       .filter((r) => r.page.pageNumber === pageNumber)
@@ -130,7 +151,18 @@ export async function loadReviewQueue(
       suggested: named === null ? null : suggestType(named[at]!, sheet.sheet, legendCodes),
       rooms: roomsOn(page.pageNumber),
     }));
-    items.push(...typeItems(sheet, page.measurements.filter((m) => m.label !== HELD_LABEL), groups));
+    const typed = typeItems(sheet, page.measurements.filter((m) => m.label !== HELD_LABEL), groups);
+    const captions = levelsRead.captions.get(page.pageNumber);
+    const fpu = sheet.feetPerUnit;
+    items.push(
+      ...(captions === undefined || fpu === null
+        ? typed
+        : typed.flatMap((item) =>
+            item.kind === "type"
+              ? splitByLevel(item, (runs) => runLevels(runs, captions, fpu), (levels) => levelHeight(levelsRead.marks, levels), structureCodes, fpu)
+              : [item],
+          )),
+    );
   }
 
   // ── WALL GROUPS WITH NO HEIGHT ──
@@ -184,6 +216,7 @@ export async function loadReviewQueue(
     planId: plan.id,
     items: reviewQueue(items),
     heights,
+    heightChoices,
     codes,
     scaledSheets: scaled.size,
     floorPlans: floors.length,
