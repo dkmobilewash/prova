@@ -19,6 +19,7 @@ import type { CodeHeight, Guess } from "@/lib/takeoff/reviewQueue";
  *          print one per zone (Joplin's 12'-0" / 12'-4" / 16'-8") — a choice,
  *          since nothing on a plan says which wall is under which roof
  *   N      skip to the next item
+ *   A      the type picked, on every group of the sheet nothing names (`rest`)
  *
  * The keys are taken in the capture phase and stopped there, so the viewer's
  * own keys never see them while a group is on show. Nothing is claimed while somebody types in
@@ -33,6 +34,8 @@ export function QueueGroupConfirm({
   heightOptions = () => [],
   onAccept,
   onSkip,
+  rest = null,
+  onAcceptRest,
 }: {
   /** What the group is: `Walls · sheet A101 · 4-7/8" · 65 ft`. */
   label: string;
@@ -48,6 +51,9 @@ export function QueueGroupConfirm({
   heightOptions?: (code: string | null) => readonly CodeHeight[];
   onAccept: (code: string | null, heightFt: number | null) => void;
   onSkip: () => void;
+  /** "13 groups nothing names on A101": offers the type picked here on all of them at once. */
+  rest?: string | null;
+  onAcceptRest?: (code: string, heightFt: number | null) => void;
 }) {
   const [pick, setPick] = useState<Guess | null>(suggested);
   const [typed, setTyped] = useState<string | null>(null);
@@ -80,7 +86,7 @@ export function QueueGroupConfirm({
   // count stood still for an answer (walk v3: "the count did not move"). The
   // first Enter goes to the height; a second Enter leaves it for later.
   const [askedHeight, setAskedHeight] = useState(false);
-  function accept() {
+  function accept(all = false) {
     if (choosing && pick === null) return setError("Pick a type: 1–9.");
     if (choosing && heightText.trim() === "" && !askedHeight) {
       setAskedHeight(true);
@@ -94,8 +100,10 @@ export function QueueGroupConfirm({
       if (!parsed.ok || !(parsed.n > 0 && parsed.n < 100)) return setError(parsed.ok ? "A wall height is between 0 and 100 ft." : parsed.error);
       feet = parsed.n;
     }
-    onAccept(pick?.code ?? null, feet);
+    if (all && pick !== null && onAcceptRest) onAcceptRest(pick.code, feet);
+    else onAccept(pick?.code ?? null, feet);
   }
+  const offersRest = rest !== null && onAcceptRest !== undefined && choosing;
   const choose = (code: string) => {
     setError(null);
     setFrozen(null);
@@ -118,6 +126,7 @@ export function QueueGroupConfirm({
       heightBox.current?.select();
     } else if ((key === "z" || key === "Z") && zones.length > 0) takeZone(zone === null ? 0 : (zoneAt!.at + 1) % zones.length);
     else if (key === "n" || key === "N") onSkip();
+    else if ((key === "a" || key === "A") && offersRest) accept(true);
     else return;
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -187,9 +196,14 @@ export function QueueGroupConfirm({
           ))}
         </span>
       )}
-      <button type="button" className={`${button} border-brand bg-brand font-semibold text-neutral-900`} onClick={accept} data-takeoff="queue-accept">
+      <button type="button" className={`${button} border-brand bg-brand font-semibold text-neutral-900`} onClick={() => accept()} data-takeoff="queue-accept">
         Accept ⏎
       </button>
+      {offersRest && (
+        <button type="button" className={button} disabled={pick === null} onClick={() => accept(true)} data-takeoff="queue-accept-rest" title="Every group on this sheet that no tag, legend or library type names gets the type picked here; Undo takes them all back">
+          {pick === null ? `Pick a type for all ${rest}` : `${pick.code} on all ${rest} (A)`}
+        </button>
+      )}
       {choosing && (
         <span className="inline-flex flex-wrap items-center gap-1" data-takeoff="queue-codes">
           {codes.map((code, i) => (
@@ -209,7 +223,7 @@ export function QueueGroupConfirm({
       )}
       {/* Keys for a keyboard; on a touch screen every one is a button already. */}
       <span className="hidden text-ink-muted mouse:inline" data-takeoff="queue-keys">
-        Enter accept{choosing ? " · 1–9 type" : ""} · T height · N skip
+        Enter accept{choosing ? " · 1–9 type" : ""}{offersRest ? " · A all" : ""} · T height · N skip
       </span>
       {askedHeight && pick !== null && heightText.trim() === "" && (
         <span className="text-ink-body" data-takeoff="queue-ask-height">
