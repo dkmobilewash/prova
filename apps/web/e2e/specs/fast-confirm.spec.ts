@@ -168,6 +168,14 @@ test.describe("confirming wall groups from the keyboard", () => {
       () => expect.poll(async () => { const i = await itemOf("ZF1"); return i === null ? null : [i.heightFt?.toString(), i._count.measurements]; }, { intervals: [100] }).toEqual(["15", 2]),
     );
     await expect(queue().locator('[data-takeoff="review-queue-left"]')).toHaveText("2 left to review");
+    // And from the server, once the confirm has written the untyped runs' own
+    // "no type: check" line: the queue does not ask a price for walls it is
+    // about to type. Before, it did, and this count read 3 whenever the
+    // refresh came before the assertion (it passed on CI by timing).
+    await expect.poll(() => prisma.jobLineItem.count({ where: { jobId, isDeleted: false, takeoffItem: { name: "Walls — untyped" } } }), { timeout: 30_000 }).toBe(1);
+    await page.reload();
+    await expect(queue().locator('[data-takeoff="review-queue-left"]')).toHaveText("2 left to review", { timeout: 60_000 });
+    await expect(queue().locator('[data-takeoff="review-queue-item"]')).toHaveAttribute("data-kind", "type");
   });
 
   test("5. a type with no height of its own takes the ceiling over its walls", async () => {

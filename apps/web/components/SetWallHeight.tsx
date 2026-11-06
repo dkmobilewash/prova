@@ -12,7 +12,18 @@ import { feetLabel, type HeightOption } from "@/lib/takeoff/wallHeight";
  * Whatever is chosen goes on the group's item for the whole job
  * (`setWallGroupHeight`); `onSet` returns a sentence when it did not save.
  */
-export function SetWallHeight({ options, onSet, name }: { options: readonly HeightOption[]; onSet: (feet: number) => Promise<string | null>; name: string }) {
+export function SetWallHeight({
+  options,
+  onSet,
+  name,
+  missing = null,
+}: {
+  options: readonly HeightOption[];
+  onSet: (feet: number) => Promise<string | null>;
+  name: string;
+  /** Why the legend offers no height (it was never read), shown where its button would be. */
+  missing?: { text: string; href: string; action: string } | null;
+}) {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +74,14 @@ export function SetWallHeight({ options, onSet, name }: { options: readonly Heig
           Save
         </button>
       </form>
+      {missing !== null && !options.some((o) => o.kind === "legend") && (
+        <span className="text-xs text-ink-muted" data-takeoff="set-height-missing">
+          {missing.text}{" "}
+          <a href={missing.href} className="underline">
+            {missing.action}
+          </a>
+        </span>
+      )}
       {error !== null && (
         <span role="alert" className="text-xs text-tag-rose-ink">
           {error}

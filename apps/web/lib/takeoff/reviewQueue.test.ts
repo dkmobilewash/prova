@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { QUEUE_PART, focusOf, heightFor, levelHeightFor, splitByLevel, heightItem, orderedCodes, reviewQueue, suggestType, typeItems, wallItem, windowsItem, type ReviewItem } from "./reviewQueue";
+import { QUEUE_PART, focusOf, heightFor, legendMissing, levelHeightFor, splitByLevel, heightItem, orderedCodes, reviewQueue, suggestType, typeItems, wallItem, windowsItem, type ReviewItem } from "./reviewQueue";
 import type { WallGroup } from "./wallGroups";
 import { propagatedTag } from "./planTextTags";
 
@@ -149,5 +149,13 @@ describe("a sheet's counted windows are one item to confirm (suggest, don't post
     const scale: ReviewItem = { kind: "scale", key: "scale:1", pageNumber: 1, sheet: "A100" };
     const height: ReviewItem = { kind: "height", key: "height:x", itemId: "x", name: "S1", pageNumber: 9, sheet: "A109", runs: [], feet: null, options: [] };
     expect(reviewQueue([scale, windows, height]).map((i) => i.kind)).toEqual(["height", "windows", "scale"]);
+  });
+});
+
+describe("a missing height from the drawings says why (Chrome on Baker: only the ceiling, no 15'-0\" to deck)", () => {
+  it("is silent once the legend is read, and otherwise names the fix", () => {
+    expect(legendMissing("read", "j1")).toBeNull();
+    expect(legendMissing("unread", "j1")).toEqual({ text: expect.stringMatching(/legend has not been read yet/), href: "/jobs/j1/takeoff", action: "Read the wall legend" });
+    expect(legendMissing("off", "j1")).toMatchObject({ href: "/settings/assistant#ai-switch", text: expect.stringMatching(/Wall types from the drawings is off/) });
   });
 });

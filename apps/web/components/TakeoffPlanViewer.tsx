@@ -359,6 +359,7 @@ export function TakeoffPlanViewer({
   onPanelOpen,
   focusRun = null,
   focusRuns = null,
+  heightMissing = null,
   activeItemId = null,
   earlierVersionByPage = {},
   wallItems = [],
@@ -528,6 +529,8 @@ export function TakeoffPlanViewer({
   focusRun?: { pageNumber: number; x1: number; y1: number; x2: number; y2: number } | null;
   /** A whole wall group the review queue is on: every run lit, the plan zoomed to all of them. */
   focusRuns?: { pageNumber: number; runs: readonly { x1: number; y1: number; x2: number; y2: number }[] } | null;
+  /** Why no height from the drawings can be offered (no legend read), for Set height (`legendMissing`). */
+  heightMissing?: { text: string; href: string; action: string } | null;
   onMeasurementSaved?: (saved: { id: string; kind: MeasurementKind }) => void;
   /**
    * The takeoff item new measurements belong to, when a host has one selected.
@@ -4265,6 +4268,7 @@ export function TakeoffPlanViewer({
           <SetWallHeight
             name={facts.item.name}
             options={facts.options}
+            missing={heightMissing}
             onSet={async (feet) => {
               const saved = await setWallGroupHeight(jobId, facts.item.id, feet);
               return saved.ok ? null : saved.error;
