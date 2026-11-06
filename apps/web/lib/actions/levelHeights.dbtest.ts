@@ -8,7 +8,7 @@ import { legendProposalFrom } from "@/lib/takeoff/legendProposalBuild";
 const context = { company: { id: "" }, id: "", role: "OWNER" as string, jobFunction: null as string | null };
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-const { confirmWallGroup } = await import("./wallGroupType");
+const { confirmSheetSuggestions } = await import("./wallGroupType");
 const { loadReviewQueue } = await import("@/lib/takeoff/reviewQueueQuery");
 const { wallItemsForSheet } = await import("@/lib/plan-ingest/wallItems");
 const { LEVEL_MARKS, PLAN_CAPTIONS } = await import("@/lib/takeoff/levelReads");
@@ -65,8 +65,8 @@ describe("a wall's height follows its plan's level", () => {
 
   it("confirms each level into its own item at its own height", async () => {
     for (const [i, level, feet] of [[0, "level 1", 9 + 8 / 12], [1, "levels 2–3", 8 + 7 / 12]] as const) {
-      const r = await confirmWallGroup(jobId, { planId, pageNumber: 10, code: "A", inches: 5, runs: runs.slice(i * 4, i * 4 + 4), heightFt: feet, level });
-      expect(r).toEqual({ ok: true });
+      const r = await confirmSheetSuggestions(jobId, [{ planId, pageNumber: 10, code: "A", inches: 5, runs: runs.slice(i * 4, i * 4 + 4), heightFt: feet, level }]);
+      expect(r.ok && r.value.accepted).toBe(1);
     }
     const items = await prisma.takeoffItem.findMany({ where: { jobId, wallTypeId: { not: null } }, select: { name: true, heightFt: true, _count: { select: { measurements: true } } }, orderBy: { name: "asc" } });
     expect(items.map((i) => [i.name, Number(i.heightFt).toFixed(2), i._count.measurements])).toEqual([
@@ -77,7 +77,8 @@ describe("a wall's height follows its plan's level", () => {
   });
 
   it("refuses a level that is not one, and types into the plain item without one", async () => {
-    expect(await confirmWallGroup(jobId, { planId, pageNumber: 10, code: "A", inches: 5, runs: runs.slice(0, 1), heightFt: null, level: "levels; drop" })).toEqual({ ok: true });
+    const r = await confirmSheetSuggestions(jobId, [{ planId, pageNumber: 10, code: "A", inches: 5, runs: runs.slice(0, 1), heightFt: null, level: "levels; drop" }]);
+    expect(r.ok && r.value.accepted).toBe(1);
     expect(await prisma.takeoffItem.count({ where: { jobId, name: "A walls" } })).toBe(1);
   });
 });

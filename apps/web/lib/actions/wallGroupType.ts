@@ -48,24 +48,17 @@ export async function setWallGroupType(jobId: string, input: WallGroupTypeInput)
 }
 
 /**
- * ── THE REVIEW QUEUE'S ENTER: A GROUP'S TYPE AND HEIGHT IN ONE PRESS ──
+ * ── A GROUP'S TYPE AND HEIGHT IN ONE PRESS ──
  *
  * Set type, then the height on that type's item for the whole job (as
- * `setWallGroupHeight` does), in one transaction and one round trip, so a
- * person confirming suggestions waits on neither. A height equal to the
- * item's own changes nothing. The estimate lines of the items the runs left
- * and joined are written or updated at once (`syncDecidedItems`), so a
- * reviewed takeoff is an estimate with no further press.
+ * `setWallGroupHeight` does), in one transaction and one round trip. A height
+ * equal to the item's own changes nothing. The estimate lines of the items the
+ * runs left and joined are written or updated at once (`syncDecidedItems`).
+ * The review queue's Enter and "Accept all suggestions on this sheet" both go
+ * through `confirmSheetSuggestions` below — one group or many — for the token
+ * Undo puts it back with.
  */
 export type ConfirmGroupInput = WallGroupTypeInput & { heightFt: number | null; level?: string | null };
-
-export async function confirmWallGroup(jobId: string, input: ConfirmGroupInput): Promise<ActionResult> {
-  const context = await requireCompanyContext();
-  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
-  const checked = checkedHeight(input);
-  if (typeof checked === "string") return actionFail(checked);
-  return typeGroup(context, jobId, input, checked.heightFt, checked.level);
-}
 
 /** The height and level a group may be confirmed with, or why not. */
 function checkedHeight(input: ConfirmGroupInput): { heightFt: number | null; level: string | null } | string {

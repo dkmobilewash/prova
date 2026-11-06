@@ -613,6 +613,8 @@ test("B9-3b on A1.1 the line is at the top of the panel, and no group offers Add
   await on("estreet", 24);
   const first = page.locator('[data-takeoff="panel-dock"] > *').first();
   await expect(first).toHaveAttribute("data-takeoff", "demo-not-counted");
+  // Scaled by B2 in a full run; run on its own (-g B9), the printed scale first.
+  if (await hook("find-walls").isDisabled()) await takeOfferedScale(`1/4" = 1'-0"`);
   await findWalls();
   await expect(hook("found-group").first()).toBeVisible({ timeout: 60_000 });
   await expect(hook("add-group")).toHaveCount(0);
