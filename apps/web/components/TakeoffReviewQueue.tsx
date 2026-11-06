@@ -265,7 +265,7 @@ export function TakeoffReviewQueue({
               <button type="button" className={button} disabled={busy} onClick={() => void decide(() => reviewWall(jobId, current.measurementId, "drop"))} data-takeoff="review-queue-drop">
                 Not a wall
               </button>
-              <span className="text-ink-muted" data-takeoff="review-queue-wall-keys">
+              <span className="hidden text-ink-muted mouse:inline" data-takeoff="review-queue-wall-keys">
                 K it&rsquo;s a wall · D not a wall · N skip
               </span>
             </>

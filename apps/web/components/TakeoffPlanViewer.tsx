@@ -1641,7 +1641,74 @@ export function TakeoffPlanViewer({
       }, 160);
     };
     frame.addEventListener("wheel", onWheel, { passive: false });
-    return () => frame.removeEventListener("wheel", onWheel);
+
+    // ── TWO FINGERS ON A TOUCH SCREEN: PINCH ZOOMS, DRAGGING PANS (an iPad on site) ──
+    // The same preview as the wheel: the sheet follows the fingers as a CSS
+    // transform about the point between them, and the zoom is committed once,
+    // when a finger lifts — the layout effect on `cssWidth` then puts that
+    // point back under where the fingers ended. One finger is the tool's, as
+    // with a pen: Select picks, a drawing tool draws, the Hand pans. In the
+    // CAPTURE phase, before the drawing's own handlers can stop the event.
+    let pinch: { d0: number; x0: number; y0: number; px0: number; py0: number; dx: number; dy: number } | null = null;
+    const between = (t: TouchList) => ({ x: (t[0]!.clientX + t[1]!.clientX) / 2, y: (t[0]!.clientY + t[1]!.clientY) / 2, d: Math.hypot(t[0]!.clientX - t[1]!.clientX, t[0]!.clientY - t[1]!.clientY) });
+    const onTouchStart = (event: TouchEvent) => {
+      const sheet = sheetRef.current;
+      if (event.touches.length !== 2 || sheet === null) return;
+      event.preventDefault();
+      if (previewRef.current !== null) window.clearTimeout(previewRef.current.timer);
+      const m = between(event.touches);
+      const sb = sheet.getBoundingClientRect();
+      const fb = frame.getBoundingClientRect();
+      const width = Math.max(1, sb.width);
+      const live = { scale: 1, fx: (m.x - sb.left) / width, fy: (m.y - sb.top) / width, px: m.x - fb.left, py: m.y - fb.top, zoomAtStart: zoomFactorRef.current, widthAtStart: width, timer: 0 };
+      previewRef.current = live;
+      sheet.style.transformOrigin = `${live.fx * width}px ${live.fy * width}px`;
+      pinch = { d0: Math.max(1, m.d), x0: m.x, y0: m.y, px0: live.px, py0: live.py, dx: 0, dy: 0 };
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      const live = previewRef.current;
+      const sheet = sheetRef.current;
+      if (pinch === null || live === null || sheet === null || event.touches.length < 2) return;
+      event.preventDefault();
+      const m = between(event.touches);
+      const lowest = ZOOM_STEPS[0]!;
+      const highest = ZOOM_STEPS[ZOOM_STEPS.length - 1]!;
+      live.scale = Math.min(highest / live.zoomAtStart, Math.max(lowest / live.zoomAtStart, m.d / pinch.d0));
+      pinch.dx = m.x - pinch.x0;
+      pinch.dy = m.y - pinch.y0;
+      live.px = pinch.px0 + pinch.dx;
+      live.py = pinch.py0 + pinch.dy;
+      sheet.style.transform = `translate(${pinch.dx}px, ${pinch.dy}px) scale(${live.scale})`;
+    };
+    const onTouchEnd = (event: TouchEvent) => {
+      const live = previewRef.current;
+      const sheet = sheetRef.current;
+      if (pinch === null || event.touches.length >= 2) return;
+      const moved = pinch;
+      pinch = null;
+      if (live === null || sheet === null) return;
+      // A pan with no zoom, or a zoom already at its limit: no render is coming,
+      // so the drag becomes the frame's own scroll here.
+      if (Math.abs(live.scale - 1) < 0.01) {
+        previewRef.current = null;
+        sheet.style.transform = "";
+        frame.scrollLeft -= moved.dx;
+        frame.scrollTop -= moved.dy;
+        return;
+      }
+      setZoom(live.zoomAtStart * live.scale);
+    };
+    frame.addEventListener("touchstart", onTouchStart, { passive: false, capture: true });
+    frame.addEventListener("touchmove", onTouchMove, { passive: false, capture: true });
+    frame.addEventListener("touchend", onTouchEnd, { capture: true });
+    frame.addEventListener("touchcancel", onTouchEnd, { capture: true });
+    return () => {
+      frame.removeEventListener("wheel", onWheel);
+      frame.removeEventListener("touchstart", onTouchStart, { capture: true });
+      frame.removeEventListener("touchmove", onTouchMove, { capture: true });
+      frame.removeEventListener("touchend", onTouchEnd, { capture: true });
+      frame.removeEventListener("touchcancel", onTouchEnd, { capture: true });
+    };
   }, [fill]);
   useEffect(() => {
     if (!fill) return;
@@ -1786,7 +1853,11 @@ export function TakeoffPlanViewer({
         // applied the page's own /Rotate. Everything stored is a fraction of
         // THIS width — see `lib/takeoff-plan.ts`.
         const unit = page.getViewport({ scale: 1 });
-        setPageSize({ widthPt: unit.width, heightPt: unit.height });
+        // The same object while the size is the same: this runs on every render
+        // at a new zoom, and a fresh object re-fired everything keyed on it — the
+        // review queue's zoom-to-item snapped a pinch or a wheel zoom straight
+        // back (the iPad probe: 100% -> 100% with the queue open, 38% -> 154% without).
+        setPageSize((was) => (was !== null && was.widthPt === unit.width && was.heightPt === unit.height ? was : { widthPt: unit.width, heightPt: unit.height }));
 
         // ── SIZED WITHIN WHAT A BROWSER WILL ACTUALLY DRAW ──
         //
@@ -5906,7 +5977,9 @@ export function TakeoffPlanViewer({
           window.addEventListener("pointerup", end);
         }}
         onAuxClick={(event) => event.preventDefault()}
-        style={panning ? { cursor: "grabbing" } : spaceHeld || tool === "hand" ? { cursor: "grab" } : undefined}
+        // `touch-action: none` in the workspace: the drawing's gestures are ours
+        // (pinch and two-finger pan above), so a pinch never zooms the page.
+        style={{ ...(fill ? { touchAction: "none" } : {}), ...(panning ? { cursor: "grabbing" } : spaceHeld || tool === "hand" ? { cursor: "grab" } : {}) }}
         className={
           fill
             ? // The host has decided the height; take all of it. No max-h and
