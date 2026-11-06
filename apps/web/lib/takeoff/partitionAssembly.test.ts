@@ -353,3 +353,50 @@ describe("the longer stud spellings real sets use", () => {
     expect(sized.components.find((c) => c.basis === "STUDS")?.description).toMatch(/wood stud/);
   });
 });
+
+describe("a different layer count on each face is read per face, not as a contradiction", () => {
+  const board = (lines: string[]) => {
+    const r = readPartitionAssembly({ lines, where: "A601" });
+    return { r, line: r.components.find((c) => c.basis === "BOARDED_SQFT") };
+  };
+
+  it("Baker S8C: 1 layer interior, 2 exterior, and the DOUBLE that is the exterior's", () => {
+    const { r, line } = board(["NON", "-", "RATED INTERIOR WALL", "1 LAYER GYP. INTERIOR W/", "2 LAYER GYP. EXTERIOR", 'DOUBLE LAYER 5/8"', 'TYPE "X" GYP. BOARD', "2x STEEL FRAMING,", "SEE STRUCTURAL"]);
+    expect(r.flags.map((f) => f.why).join(" ")).not.toMatch(/contradicts/);
+    expect(r.read.layersPerSide).toBe(1.5);
+    // Both faces at once: three layers of board in all.
+    expect(line?.factor).toBe(1.5);
+    expect(line?.description).toMatch(/1 layer one side and 2 the other/);
+  });
+
+  it("one side and the other side, and a shaft side and a room side", () => {
+    expect(board(['3 5/8" METAL STUD W/ TWO LAYERS OF 5/8" GYP. BD. ON ONE SIDE & ONE LAYER', "ON THE OTHER SIDE"]).r.read.layersPerSide).toBe(1.5);
+    expect(board(['4" METAL STUDS WITH ONE LAYER OF 1" TYPE X GYP. BD. ON SHAFT SIDE OF STUD & 3 LAYERS TYPE X GYP. BD. ON ROOM SIDE']).r.read.layersPerSide).toBe(2);
+  });
+
+  it("still a contradiction: a choice between assemblies, a count on no face that fits neither, one face twice", () => {
+    for (const lines of [
+      ['(1) LAYER OF 5/8" GWB OR (2) LAYERS OF 1/2" GWB EA. SIDE'],
+      ['1 LAYER 5/8" GYP. INTERIOR W/ 2 LAYER GYP. EXTERIOR', "3 LAYERS GYP."],
+      ['1 LAYER 5/8" GYP. INTERIOR', "2 LAYERS GYP. INTERIOR"],
+      ['1 LAYER 5/8" GYP. BD.', "2 LAYERS 5/8\" GYP. BD."],
+    ]) {
+      const { r } = board(lines);
+      expect(r.flags.map((f) => f.why).join(" "), lines.join(" | ")).toMatch(/contradicts/);
+      expect(r.read.layersPerSide).toBeNull();
+    }
+  });
+});
+
+describe("a board callout the legend read wrapped across two lines is still read", () => {
+  it("Baker S6C: SINGLE LAYER 5/8\" TYPE \"X\" | GYP. BOARD", () => {
+    const r = readPartitionAssembly({ lines: ["NON", "-", "RATED INTERIOR WALL", "1 LAYER GYP. PER SIDE", 'SINGLE LAYER 5/8" TYPE "X"', "GYP. BOARD", "2x STEEL FRAMING,", "SEE STRUCTURAL"], where: "A601" });
+    expect(r.read.boardThicknessIn).toBe(0.625);
+    expect(r.components.find((c) => c.basis === "BOARDED_SQFT")?.factor).toBe(1);
+  });
+
+  it("does not join lines when one of them already names the board", () => {
+    const r = readPartitionAssembly({ lines: ['5/8" GYP. BD. EACH SIDE', "1"], where: "A601" });
+    expect(r.read.boardThicknessIn).toBe(0.625);
+  });
+});
