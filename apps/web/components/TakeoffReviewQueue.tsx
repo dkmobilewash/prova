@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { confirmSheetScales, confirmWallGroup, priceLineFromCost, reviewWall, setWallGroupHeight } from "@/lib/actions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
-import { heightFor, type CodeHeight, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { heightFor, levelHeightFor, type CodeHeight, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
 
@@ -147,14 +147,14 @@ export function TakeoffReviewQueue({
             ) : (
               <QueueGroupConfirm
                 key={current.key}
-                label={`Walls · sheet ${current.sheet} · ${inchLabel(current.inches)}${current.feet !== null ? ` · ${Math.round(current.feet)} ft` : ""}`}
+                label={`Walls · sheet ${current.sheet}${current.level ? ` · ${current.level.label}` : ""} · ${inchLabel(current.inches)}${current.feet !== null ? ` · ${Math.round(current.feet)} ft` : ""}`}
                 codes={current.suggested === null || legendCodes.some((c) => c.toUpperCase() === current.suggested!.code.toUpperCase()) ? legendCodes : [...legendCodes, current.suggested.code]}
                 suggested={current.suggested}
-                heightOf={(code) => heightFor(code, heights, current.ceiling)}
+                heightOf={(code) => levelHeightFor(code, current.level) ?? heightFor(code, heights, current.ceiling)}
                 onSkip={() => setCursor(after(current.key))}
                 onAccept={(code, heightFt) =>
                   acceptNow(current.key, `${code} on sheet ${current.sheet}`, () =>
-                    confirmWallGroup(jobId, { planId, pageNumber: current.pageNumber, code: code!, inches: current.inches, runs: current.runs, heightFt }),
+                    confirmWallGroup(jobId, { planId, pageNumber: current.pageNumber, code: code!, inches: current.inches, runs: current.runs, heightFt, level: levelHeightFor(code, current.level) === null ? null : current.level!.label }),
                   )
                 }
               />

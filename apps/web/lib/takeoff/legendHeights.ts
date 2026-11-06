@@ -1,5 +1,6 @@
 import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
 import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
+import { storeLevelMarks } from "./levelReads";
 import { heightOfLegendType, heightSentence, setHeightFacts, type SetHeightFacts } from "./setHeightFacts";
 
 /** What the library learned about a type's height — shown on the review row and kept in the type's notes. */
@@ -54,6 +55,8 @@ export async function legendHeightsFor(input: {
     const pdf = await openPlanPdf(bytes.bytes);
     try {
       set = await setHeightFacts(pdf, { legendPage: input.legendPage });
+      // Kept for the queue: a wall's floor-to-floor by its plan's level.
+      await storeLevelMarks(input.planId, set.levels ?? []);
     } finally {
       await pdf.close();
     }

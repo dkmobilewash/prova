@@ -10,7 +10,11 @@ import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
 import { sheetCategory } from "@/lib/takeoff/planSet";
-import { heightItem, reviewQueue, suggestType, typeItems, wallItem, type CodeHeight, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { storedLevels } from "@/lib/takeoff/levelReads";
+import { storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
+import { levelHeight, runLevels } from "@/lib/takeoff/levelHeights";
+import { heightBasis } from "@/lib/takeoff/wallHeights";
+import { heightItem, reviewQueue, splitByLevel, suggestType, typeItems, wallItem, type CodeHeight, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import { feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/takeoff/wallHeight";
 
 /**
@@ -106,6 +110,17 @@ export async function loadReviewQueue(
     if (feet !== null) heights[type.code.toUpperCase()] = { feet, from: legend !== null && Math.abs(legend.feet - feet) < 0.005 ? legend.from : `set on this job: ${feetLabel(feet)}` };
     else if (legend !== null) heights[type.code.toUpperCase()] = { feet: legend.feet, from: legend.from };
   }
+  // ── EACH WALL'S LEVEL: its plan's caption, and the level markers the set prints ──
+  const levelsRead = await storedLevels(plan.id);
+  // The types whose height is the storey: those whose own words run them to the structure.
+  const toStructure = (lines: readonly string[]) => lines.some((line) => heightBasis(line)?.kind === "to-structure");
+  const legendTypes = (await prisma.planLegendProposal.findMany({ where: { planId: plan.id }, select: { merged: true } })).flatMap((p) => storedLegendTypesFromJson(p.merged));
+  const structureCodes = [
+    ...new Set([
+      ...libraryTypes.filter((t) => toStructure((t.notes ?? "").split("\n"))).map((t) => t.code.toUpperCase()),
+      ...legendTypes.filter((t) => toStructure(t.lines)).map((t) => t.code.toUpperCase()),
+    ]),
+  ];
   const roomsOn = (pageNumber: number): CeilingRoom[] =>
     rooms
       .filter((r) => r.page.pageNumber === pageNumber)
@@ -129,7 +144,18 @@ export async function loadReviewQueue(
       suggested: named === null ? null : suggestType(named[at]!, sheet.sheet, legendCodes),
       rooms: roomsOn(page.pageNumber),
     }));
-    items.push(...typeItems(sheet, page.measurements.filter((m) => m.label !== HELD_LABEL), groups));
+    const typed = typeItems(sheet, page.measurements.filter((m) => m.label !== HELD_LABEL), groups);
+    const captions = levelsRead.captions.get(page.pageNumber);
+    const fpu = sheet.feetPerUnit;
+    items.push(
+      ...(captions === undefined || fpu === null
+        ? typed
+        : typed.flatMap((item) =>
+            item.kind === "type"
+              ? splitByLevel(item, (runs) => runLevels(runs, captions, fpu), (levels) => levelHeight(levelsRead.marks, levels), structureCodes, fpu)
+              : [item],
+          )),
+    );
   }
 
   // ── WALL GROUPS WITH NO HEIGHT ──

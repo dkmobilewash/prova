@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { focusOf, heightFor, heightItem, orderedCodes, reviewQueue, suggestType, typeItems, wallItem, type ReviewItem } from "./reviewQueue";
+import { focusOf, heightFor, levelHeightFor, splitByLevel, heightItem, orderedCodes, reviewQueue, suggestType, typeItems, wallItem, type ReviewItem } from "./reviewQueue";
 import type { WallGroup } from "./wallGroups";
 import { propagatedTag } from "./planTextTags";
 
@@ -95,5 +95,32 @@ describe("the drawing's type is pre-filled with its source (suggest, don't post)
     expect(orderedCodes(["IW-1", "IW-2", "IW-4"], "IW-4")).toEqual(["IW-4", "IW-1", "IW-2"]);
     expect(orderedCodes(["IW-1", "IW-2"], "C6")).toEqual(["C6", "IW-1", "IW-2"]);
     expect(orderedCodes(["IW-1", "IW-2"], null)).toEqual(["IW-1", "IW-2"]);
+  });
+});
+
+describe("a group on two plans of one sheet is one item per level (by level is automatic)", () => {
+  const run = (x: number) => ({ x1: x, y1: 0.1, x2: x + 0.1, y2: 0.1 });
+  const item = { kind: "type", key: "type:10:g", pageNumber: 10, sheet: "A100", inches: 5, runs: [run(0.1), run(0.6), run(0.62)], feet: 30, suggested: null, ceiling: null } as Extract<ReviewItem, { kind: "type" }>;
+  const levelsOf = () => [[1], [2, 3], [2, 3]];
+  const heightOf = (levels: readonly number[]) => (levels[0] === 1 ? { feet: 9.667, from: "floor to floor, 1st Floor" } : { feet: 8.583, from: "floor to floor, levels 2–3" });
+
+  it("splits by level, each with its floor-to-floor and its own key", () => {
+    const got = splitByLevel(item, levelsOf, heightOf, ["A"], 100);
+    expect(got.map((i) => i.kind === "type" && [i.key, i.level?.label, i.runs.length, Math.round(i.feet!)])).toEqual([
+      ["type:10:g:L1", "level 1", 1, 10],
+      ["type:10:g:L2,3", "levels 2–3", 2, 20],
+    ]);
+  });
+
+  it("leaves a group on one level whole, and a sheet with no level untouched", () => {
+    expect(splitByLevel(item, () => [[2], [2], [2]], heightOf, ["A"], 100).map((i) => i.key)).toEqual(["type:10:g"]);
+    expect(splitByLevel(item, () => [[], [], []], heightOf, ["A"], 100)).toEqual([item]);
+  });
+
+  it("is the height only of a type that runs to the structure", () => {
+    const level = { label: "level 1", height: { feet: 9.667, from: "x" }, codes: ["A"] };
+    expect(levelHeightFor("a", level)).toEqual({ feet: 9.667, from: "x" });
+    expect(levelHeightFor("C", level)).toBeNull();
+    expect(levelHeightFor("A", { ...level, height: null })).toBeNull();
   });
 });
