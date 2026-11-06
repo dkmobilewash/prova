@@ -508,4 +508,17 @@ html {
     display: inline-flex;
     align-items: center;
   }
+  /* With 44px zoom buttons the bottom-left bar is taller: the notices box
+     (at bottom-12) sat on it, and the "This sheet" card shared the corner
+     with the notices box — measured at 1180 and 1024. The notices clear the
+     taller bar; the card goes to the bottom-right, where no control is (its
+     top-left would sit on the review queue's bar, which shares its box). */
+  [data-takeoff="workspace"] [data-hud="notices"] {
+    bottom: 4.5rem;
+  }
+  [data-takeoff="workspace"] [data-takeoff="sheet-summary"] {
+    left: auto;
+    right: 0.5rem;
+    bottom: 0.5rem;
+  }
 }

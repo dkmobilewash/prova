@@ -1850,7 +1850,11 @@ export function TakeoffPlanViewer({
         // applied the page's own /Rotate. Everything stored is a fraction of
         // THIS width — see `lib/takeoff-plan.ts`.
         const unit = page.getViewport({ scale: 1 });
-        setPageSize({ widthPt: unit.width, heightPt: unit.height });
+        // The same object while the size is the same: this runs on every render
+        // at a new zoom, and a fresh object re-fired everything keyed on it — the
+        // review queue's zoom-to-item snapped a pinch or a wheel zoom straight
+        // back (the iPad probe: 100% -> 100% with the queue open, 38% -> 154% without).
+        setPageSize((was) => (was !== null && was.widthPt === unit.width && was.heightPt === unit.height ? was : { widthPt: unit.width, heightPt: unit.height }));
 
         // ── SIZED WITHIN WHAT A BROWSER WILL ACTUALLY DRAW ──
         //
