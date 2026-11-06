@@ -88,7 +88,17 @@ export function isAllowedDocumentType(
 export const DOCUMENT_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
 
 /**
- * PLAN SETS ONLY — 250MB, because 15MB refuses every real one.
+ * PLAN SETS ONLY — 1 GB (Diego, 2026-11-06; it was 250MB), because 15MB refuses every
+ * real one and 250MB refused ELEVEN03's permit set (342MB) on a pilot's first upload.
+ * Above 100MB the browser sends it in resumable parts (`uploadPlanSetFile`).
+ *
+ * WHAT 1 GB MEANS ON THE SERVER: the reading stages hold the file in memory per
+ * slice (below), so a 1 GB set is about 1 GB of RSS on top of the function's
+ * baseline. Vercel's default function memory is 2 GB; Pro can raise it to 4 GB
+ * in the dashboard. Measured locally on the 342MB set in the PR; not measured
+ * on a Vercel function, which a laptop cannot.
+ *
+ * (Was: 250MB.)
  *
  * A drawing set is 20–100MB and routinely more; the step-1 plan says so and Diego
  * approved 250MB for this purpose alone as part of step 0. It then shipped without it
@@ -116,7 +126,7 @@ export const DOCUMENT_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
  * whole document anyway (203 requests, 25.8MB served for a 12.9MB file), so ranging
  * bounds nothing here.
  */
-export const PLAN_SET_UPLOAD_MAX_BYTES = 250 * 1024 * 1024;
+export const PLAN_SET_UPLOAD_MAX_BYTES = 1024 * 1024 * 1024;
 
 /**
  * A SPEC SECTION — 50MB, and a third ceiling rather than either of the two
@@ -661,7 +671,8 @@ export function formatDocumentSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 /**

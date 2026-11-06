@@ -1,10 +1,11 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import { formatDocumentSize } from "@/lib/document-uploads";
 
 import { SubmitButton } from "@/components/SubmitButton";
 import { Spinner } from "@/components/Spinner";
-import { uploadDocumentFile } from "@/lib/document-upload-client";
+import { uploadPlanSetFile } from "@/lib/document-upload-client";
 import { PDF_MAGIC_BYTES, looksLikePdf } from "@/lib/pdf-bytes";
 import { recordTakeoffPlan } from "@/lib/actions";
 
@@ -27,11 +28,15 @@ export function TakeoffPlanUploader({ jobId }: { jobId: string }) {
   const [busy, setBusy] = useState(false);
   const [isPending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  /** How far the bytes are, while they go. */
+  const [progress, setProgress] = useState<{ loaded: number; total: number; percent: number } | null>(null);
+  /** The file an upload stopped on, kept for Resume: its stored parts are not sent again. */
+  const [stopped, setStopped] = useState<File | null>(null);
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
-    const file = inputRef.current?.files?.[0];
+    const file = inputRef.current?.files?.[0] ?? stopped ?? undefined;
     if (!file) {
       setError("Pick a PDF of the sheet you're bidding.");
       return;
@@ -44,12 +49,16 @@ export function TakeoffPlanUploader({ jobId }: { jobId: string }) {
     }
 
     setBusy(true);
-    const uploaded = await uploadDocumentFile("plan-takeoff", jobId, file);
+    setStopped(null);
+    setProgress({ loaded: 0, total: file.size, percent: 0 });
+    const uploaded = await uploadPlanSetFile(jobId, file, { onProgress: setProgress });
     setBusy(false);
     if (!uploaded.ok) {
       setError(uploaded.error);
+      setStopped(file);
       return;
     }
+    setProgress(null);
 
     const formData = new FormData();
     formData.set("fileUrl", uploaded.fileUrl);
@@ -92,10 +101,28 @@ export function TakeoffPlanUploader({ jobId }: { jobId: string }) {
         Upload the sheets you&rsquo;re bidding rather than the whole set — this is a measuring tool, not a drawing
         register. The issued set belongs on Drawings.
       </p>
+      {/* ── HOW FAR, WHILE IT GOES ── A 342 MB set is minutes on a site connection. */}
+      {busy && progress !== null && (
+        <div className="flex items-center gap-2" data-takeoff="plan-upload-progress">
+          <progress value={progress.percent} max={100} className="h-2 w-48" aria-label="Upload progress" />
+          <span className="text-xs tabular-nums text-ink-body" data-takeoff="plan-upload-progress-text">
+            {formatDocumentSize(progress.loaded)} of {formatDocumentSize(progress.total)} · {progress.percent}%
+          </span>
+        </div>
+      )}
       {error && (
         <p role="alert" className="text-sm text-tag-rose-ink">
           {error}
         </p>
+      )}
+      {stopped !== null && !busy && (
+        <button
+          type="submit"
+          className="self-start rounded-md border border-line-card px-3 py-1.5 text-sm font-medium text-ink-body hover:bg-rail"
+          data-takeoff="plan-upload-resume"
+        >
+          Resume the upload of {stopped.name}
+        </button>
       )}
     </form>
   );
