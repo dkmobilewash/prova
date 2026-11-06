@@ -1,4 +1,5 @@
 import { bothFacesDashed } from "./dashedFaces";
+import { renovationMarks, showsExistingWork } from "./renovationMarks";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
@@ -29,6 +30,12 @@ import type { StrokeSegment, WallCandidate } from "./wallVectors";
  *      the legend's swatch, must differ from the NEW WALL swatch's pen (or,
  *      with no new-wall row, from the pen most of the sheet's walls use), and
  *      is matched on grey AND width together.
+ *   4. GREY AGAINST THE SHEET'S BLACK, where no legend row names the pen: on
+ *      a sheet that says it shows existing work (`renovationMarks`), whose
+ *      walls are mostly drawn dark, a wall whose faces are nearly all grey
+ *      (`GREY_FACE_SHARE`). Still not grey alone — the sheet's words and its
+ *      own new-wall pen must both say so. Measured 2026-11-06: training 920
+ *      ft junk / 29 real (worst Baker −29), held-out once 766 / 71.
  *
  * Pure, so the three routes have tests that do not need a drawing. Measured
  * on training labels only once Chrome's cleanup of existing walls out of the
@@ -47,6 +54,10 @@ export const PEN_GRAY_SLACK = 0.1;
 export const PEN_WIDTH_RATIO = 1.25;
 /** Share of a wall's face strokes, by length, that must carry the legend's pen. */
 export const PEN_FACE_SHARE = 0.6;
+/** A screened pen: grey at least this light (0 black, 1 white) — `existingMarks`'s own cut. */
+export const GREY_PEN = 0.3;
+/** Share of a wall's face strokes, by length, that must be grey for route 3. */
+export const GREY_FACE_SHARE = 0.8;
 /** A face stroke sits this close to the wall's face line, in feet (as `dashedFaces`). */
 const ON_FACE_FEET = 0.25;
 
@@ -252,7 +263,7 @@ const distanceToRun = (px: number, py: number, w: { x1: number; y1: number; x2: 
   return Math.hypot(px - (w.x1 + t * dx), py - (w.y1 + t * dy));
 };
 
-export type ExistingWall = { wall: WallCandidate; route: "tag" | "legend"; why: string };
+export type ExistingWall = { wall: WallCandidate; route: "tag" | "legend" | "grey"; why: string };
 
 export function existingWalls(input: {
   /** The finder's runs, page-width units. */
@@ -303,6 +314,26 @@ export function existingWalls(input: {
       }
     }
   }
+
+  // ── 3. GREY AGAINST THE SHEET'S BLACK, ON A SHEET THAT SHOWS EXISTING WORK ──
+  // Where no legend row names the existing pen, a renovation sheet still draws
+  // existing walls screened: Baker's A100 draws its new walls black and the
+  // building that stays in grey. Not grey alone: the sheet must say it shows
+  // existing work (`renovationMarks`), most of its walls must be drawn dark,
+  // and the wall's own faces must be nearly all grey (`GREY_FACE_SHARE`).
+  // Training renovation sheets, cleaned keys: 1,214 ft junk to 55 ft real.
+  if (pens.existing === null && showsExistingWork(renovationMarks(input.textItems.map((t) => t.str).join(" ")))) {
+    const modal = modalWallPen(walls, segments, feetPerUnit);
+    if (modal !== null && modal.gray < GREY_PEN) {
+      for (const w of walls) {
+        if (found.has(w)) continue;
+        const faces = [...faceStrokes(w, 1, segments, feetPerUnit), ...faceStrokes(w, -1, segments, feetPerUnit)];
+        const total = faces.reduce((n, f) => n + length(f), 0);
+        const grey = faces.filter((f) => (f.gray ?? 0) >= GREY_PEN).reduce((n, f) => n + length(f), 0);
+        if (total > 0 && grey / total >= GREY_FACE_SHARE) found.set(w, { wall: w, route: "grey", why: "drawn grey where the sheet draws its walls black, on a sheet that shows existing work" });
+      }
+    }
+  }
   return [...found.values()];
 }
 
@@ -312,5 +343,6 @@ export function existingSentence(list: readonly ExistingWall[]): string {
   const parts: string[] = [];
   if (n("tag") > 0) parts.push(`${n("tag")} tagged (E) or EXISTING beside the wall`);
   if (n("legend") > 0) parts.push(`${n("legend")} drawn with the legend's existing-wall pen`);
+  if (n("grey") > 0) parts.push(`${n("grey")} drawn grey where the sheet draws its walls black`);
   return `${parts.join("; ")} — existing work, not a wall to take off`;
 }
