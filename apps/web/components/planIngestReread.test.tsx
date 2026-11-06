@@ -3,8 +3,10 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { PlanIngestPanel } from "./PlanIngestPanel";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+// The panel asks for the set's queued readings when it opens on a run; nothing is queued here.
+vi.mock("@/lib/actions", async (original) => ({ ...(await original<object>()), queuedPlanReads: async () => ({ ok: true, value: [] }) }));
+const { PlanIngestPanel } = await import("./PlanIngestPanel");
 import type { PlanIngestStage } from "@prova/db";
 import type { IngestView } from "@/lib/plan-ingest/runner";
 

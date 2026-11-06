@@ -180,7 +180,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
    * run whose tab was closed.
    */
   const drain = useCallback(async () => {
-    const result = await queuedPlanReads(planId);
+    const result = await queuedPlanReads(planId).catch(() => ({ ok: false as const, error: "Reading this plan set stopped unexpectedly. Nothing was lost — try again." }));
     if (!alive.current) return;
     if (!result.ok) {
       setRunning(false);
