@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { demoEvidence, pairDemoWithNewPlan, type SheetForPairing } from "./pairDemoPlans";
+import { demoPlansFor, demoEvidence, pairDemoWithNewPlan, type SheetForPairing } from "./pairDemoPlans";
 
 const sheet = (pageNumber: number, sheetNumber: string, title: string): SheetForPairing => ({ pageNumber, sheetNumber, title });
 const FPU = 288;
@@ -88,5 +88,44 @@ describe("demoEvidence", () => {
     expect(demoEvidence(items("DEMOLITION: WORK REQUIRED IS NOTED ON PLANS."))).toBeNull();
     expect(demoEvidence(items("REFER TO CIVIL DEMOLITION PLAN FOR SITE"))).toBeNull();
     expect(demoEvidence(items("SEE DEMOLITION PLAN AND PLUMBING DWGS."))).toBeNull();
+  });
+});
+
+describe("the demolition plans OFFERED to a sheet nothing paired (demoPlansFor)", () => {
+  it("by title when the titles say what the sheets draw", () => {
+    const sheets = [
+      { pageNumber: 2, sheetNumber: "D101", title: "LEVEL 1 DEMOLITION PLAN" },
+      { pageNumber: 3, sheetNumber: "D102", title: "LEVEL 2 DEMOLITION PLAN" },
+      { pageNumber: 5, sheetNumber: "A101", title: "LEVEL 1 FLOOR PLAN" },
+    ];
+    expect(demoPlansFor(sheets, 5)).toEqual([2]);
+  });
+
+  it("a sheet drawing the site AND a demolition plan is offered as the demolition plan", () => {
+    const sheets = [
+      { pageNumber: 3, sheetNumber: "D201", title: "SITE PLAN & LEVEL 1 DEMOLITION PLAN" },
+      { pageNumber: 4, sheetNumber: "A201", title: "LEVEL 1 FLOOR PLAN" },
+    ];
+    expect(demoPlansFor(sheets, 4)).toEqual([3]);
+  });
+
+  it("titles that say nothing: the demolition sheets of the same discipline, by number — never another trade's", () => {
+    const noise = [
+      { pageNumber: 6, sheetNumber: "AD1.0", title: null },
+      { pageNumber: 30, sheetNumber: "MD1.1", title: null },
+      { pageNumber: 40, sheetNumber: "ED1.0", title: null },
+      { pageNumber: 9, sheetNumber: "A3.1", title: null },
+      { pageNumber: 12, sheetNumber: "A2.0", title: "BID DOCUMENTS" },
+    ];
+    expect(demoPlansFor(noise, 9)).toEqual([6]);
+    expect(demoPlansFor(noise, 12)).toEqual([6]);
+  });
+
+  it("a sheet whose title says it is a plan is never offered a demolition plan the titles rule out", () => {
+    const sheets = [
+      { pageNumber: 2, sheetNumber: "AD101", title: "LEVEL 2 DEMOLITION PLAN" },
+      { pageNumber: 5, sheetNumber: "A101", title: "LEVEL 1 FLOOR PLAN" },
+    ];
+    expect(demoPlansFor(sheets, 5)).toEqual([]);
   });
 });

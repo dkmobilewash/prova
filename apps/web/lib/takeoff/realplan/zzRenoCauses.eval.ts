@@ -9,7 +9,8 @@ import { runsHeldOffEstimate } from "../estimateHold";
 import { excludedSheetReason, heldOutReason } from "../heldOutSets";
 import { keyFromLabels, scoreSheet, type ScoredRun } from "../heldOutScore";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
-import { priorPlanFor } from "../priorPlan";
+import { priorPlanFor, type PriorPlan } from "../priorPlan";
+import { longFaces } from "../viewAlign";
 import { autoPairs, linedUpDemo } from "../priorPlanLoad";
 import { demoPlansFor } from "../pairDemoPlans";
 import { sheetStrokes } from "../sheetStrokes";
@@ -36,7 +37,7 @@ const findPdf = (dir: string) => {
   return null;
 };
 type Saved = Parameters<typeof keyFromLabels>[0] & { page: number; feetPerUnit: number };
-type Row = { unpairedWhy: string; grey: Record<string, number>; causes: Record<string, number>; set: string; sheet: string; renovation: boolean; paired: string; key: number; posted: number; postedOn: number; real: number; junk: number };
+type Row = { subs: Record<string, number>; unpairedWhy: string; grey: Record<string, number>; causes: Record<string, number>; set: string; sheet: string; renovation: boolean; paired: string; key: number; posted: number; postedOn: number; real: number; junk: number };
 
 async function sheetsOf(pdf: string): Promise<{ pageNumber: number; sheetNumber: string | null; title: string | null }[]> {
   const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
@@ -102,6 +103,8 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         let paired = "-";
         let pair: { demoPage: number; basis: string } | undefined = auto.get(saved.page);
         let unpairedWhy = "";
+        let priorUsed: PriorPlan | null = null;
+        let demoFaces: { x1: number; y1: number; x2: number; y2: number }[] = [];
         // ── THE OFFER (#1039), AS IF ACCEPTED: no auto pair, the demolition plan the layout check lines up ──
         if (pair === undefined && process.env.PCA_SUGGEST === "1") {
           const cands = demoPlansFor(sheetsAll, saved.page);
@@ -109,7 +112,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           for (const p of cands) demos.push({ page: p, ...(await doc.pageStrokes(p)) });
           const best = linedUpDemo({ segments: strokes.segments, widthPt: W }, demos, fpu);
           if (best !== null) pair = { demoPage: best.demoPage, basis: `suggested (${best.votes} walls)` };
-          else unpairedWhy = `candidates by title [${cands.join(",")}]; each alone: ${demos.map((d) => `p${d.page}=${linedUpDemo({ segments: strokes.segments, widthPt: W }, [d], 1e-9 + fpu)?.votes ?? "<8/paper"}`).join(" ")}; demo-ish pages ${sheetsAll.filter((x) => /DEMO/i.test(`${x.sheetNumber ?? ""} ${x.title ?? ""}`)).map((x) => `p${x.pageNumber} ${x.sheetNumber} ${x.title}`).join(" | ").slice(0, 300)}`;
+          else unpairedWhy = `PAGE ${JSON.stringify(sheetsAll.find((x) => x.pageNumber === saved.page))} DEMOISH ${JSON.stringify(sheetsAll.filter((x) => /DEMO|EXIST/i.test(`${x.sheetNumber ?? ""} ${x.title ?? ""}`) || /^(?:[A-Z]D|D[A-Z]?)[-.\d]/i.test(x.sheetNumber ?? "")))} ` +  `candidates by title [${cands.join(",")}]; each alone: ${demos.map((d) => `p${d.page}=${linedUpDemo({ segments: strokes.segments, widthPt: W }, [d], 1e-9 + fpu)?.votes ?? "<8/paper"}`).join(" ")}; demo-ish pages ${sheetsAll.filter((x) => /DEMO/i.test(`${x.sheetNumber ?? ""} ${x.title ?? ""}`)).map((x) => `p${x.pageNumber} ${x.sheetNumber} ${x.title}`).join(" | ").slice(0, 300)}`;
         }
         if (pair !== undefined) {
           const ds = await doc.pageStrokes(pair.demoPage);
@@ -117,6 +120,11 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           const prior = priorPlanFor({ demo: { segments: ds.segments, textItems: dt, widthPt: ds.widthPt, heightPt: ds.heightPt }, newPage: { segments: strokes.segments, widthPt: W }, newRuns: off, feetPerUnit: fpu });
           paired = `p${pair.demoPage} by ${pair.basis}${prior.lines === null ? ` — not aligned: ${prior.why}` : `, ${prior.votes} votes`}`;
           if (prior.lines !== null) on = offer({ lines: prior.lines, sheet: `p${pair.demoPage}` });
+          priorUsed = prior;
+          if (prior.lines !== null && prior.shift !== undefined) {
+            const fpDemo = (fpu * ds.widthPt) / W, sh = prior.shift;
+            demoFaces = longFaces(ds.segments, ds.widthPt, fpDemo).map((f) => ({ x1: f.x1 + sh.dx, y1: f.y1 + sh.dy, x2: f.x2 + sh.dx, y2: f.y2 + sh.dy }));
+          }
         }
         await doc.close();
         const junkOf = (r: WallCandidate) => scoreSheet({ set: dir, sheet, key, proposed: [{ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFeet: r.lengthFeet, thicknessFeet: r.thicknessFeet } as ScoredRun], feetPerUnit: fpu }).extraFeet >= 0.5 * r.lengthFeet;
@@ -143,6 +151,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const EXIST_WORDS = /\bN\.?\s?I\.?\s?C\b|NOT IN CONTRACT|\bEXIST|\(E\)|TO REMAIN|\bE\.?T\.?R\b/i;
         const near = (r: WallCandidate, feet: number) => textItems.some((t) => EXIST_WORDS.test(t.str) && Math.hypot(t.x / W - (r.x1 + r.x2) / 2, t.y / W - (r.y1 + r.y2) / 2) * fpu <= feet);
         const causes: Record<string, number> = {};
+        const subs: Record<string, number> = {};
         const grey: Record<string, number> = {};
         for (const r of on) {
           if (heldOn.has(r)) continue;
@@ -151,11 +160,29 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           // A grey-pen rule's price on this sheet, at three cut-offs: real feet it would lose, junk feet it would drop.
           for (const cut of [0.5, 0.8, 0.95]) if (greyShare >= cut) grey[`${junkOf(r) ? "junk" : "real"}@${cut}`] = (grey[`${junkOf(r) ? "junk" : "real"}@${cut}`] ?? 0) + r.lengthFeet;
           if (!junkOf(r)) continue;
+          if (priorUsed !== null && priorUsed.lines !== null && greyShare < 0.5) {
+            const lines = priorUsed.lines, L = Math.hypot(r.x2 - r.x1, r.y2 - r.y1);
+            const share = (cands: readonly { x1: number; y1: number; x2: number; y2: number }[], reachFt: number, base = r as { x1: number; y1: number; x2: number; y2: number }) => {
+              const l = Math.hypot(base.x2 - base.x1, base.y2 - base.y1); if (l === 0) return 0;
+              const ux = (base.x2 - base.x1) / l, uy = (base.y2 - base.y1) / l, reach = reachFt / fpu, spans: [number, number][] = [];
+              for (const p of cands) { const pl = Math.hypot(p.x2 - p.x1, p.y2 - p.y1); if (pl === 0 || Math.abs(((p.x2 - p.x1) * ux + (p.y2 - p.y1) * uy) / pl) < 0.97) continue;
+                const off = (x: number, y: number) => Math.abs((x - base.x1) * uy - (y - base.y1) * ux); if (Math.max(off(p.x1, p.y1), off(p.x2, p.y2)) > reach) continue;
+                const a = (p.x1 - base.x1) * ux + (p.y1 - base.y1) * uy, b = (p.x2 - base.x1) * ux + (p.y2 - base.y1) * uy; const lo = Math.max(0, Math.min(a, b)), hi = Math.min(l, Math.max(a, b)); if (hi > lo) spans.push([lo, hi]); }
+              spans.sort((p, q) => p[0] - q[0]); let c = 0, e = 0; for (const [lo, hi] of spans) if (hi > e) { c += hi - Math.max(lo, e); e = hi; } return c / l; };
+            const face = (sgn: number) => { const nx = -(r.y2 - r.y1) / L, ny = (r.x2 - r.x1) / L, o = (sgn * r.thicknessFeet) / 2 / fpu; return { x1: r.x1 + nx * o, y1: r.y1 + ny * o, x2: r.x2 + nx * o, y2: r.y2 + ny * o }; };
+            const at05 = share(lines, 0.5), at15 = share(lines, 1.5);
+            const facesBoth = Math.min(share(demoFaces, 0.5, face(1)), share(demoFaces, 0.5, face(-1)));
+            const facesOne = Math.max(share(demoFaces, 0.5, face(1)), share(demoFaces, 0.5, face(-1)), share(demoFaces, 0.5));
+            const sub = priorUsed.walls === "faces"
+              ? (facesOne >= 0.7 ? "faces mode: one face only" : at15 >= 0.7 ? "faces mode: offset" : "not on the demolition plan")
+              : at05 >= 0.7 ? "same place, thickness band differs" : at15 >= 0.7 ? "offset 0.5-1.5 ft" : at15 >= 0.3 ? "partial (30-70%)" : facesBoth >= 0.7 ? "demo draws both faces, its finder paired no wall" : facesOne >= 0.7 ? "demo draws one face only" : "not on the demolition plan";
+            subs[sub] = (subs[sub] ?? 0) + r.lengthFeet;
+          }
           const cause = greyShare >= 0.5 ? "grey pen" : near(r, 15) ? "existing/NIC words within 15 ft" : paired !== "-" ? (paired.includes("not aligned") ? "paired, not aligned" : "paired, compare left it") : setHasDemo ? "unpaired, set has a demolition plan" : "unpaired, no demolition plan in set";
           causes[cause] = (causes[cause] ?? 0) + r.lengthFeet;
         }
         if (process.env.PCA_RUNS !== undefined) for (const r of off) appendFileSync(process.env.PCA_RUNS, JSON.stringify({ set: dir, sheet, renovation, k: `${r.x1.toFixed(5)},${r.y1.toFixed(5)},${r.x2.toFixed(5)},${r.y2.toFixed(5)}`, ft: r.lengthFeet, junk: junkOf(r) }) + "\n");
-        rows.push({ unpairedWhy, grey, causes, set: dir, sheet, renovation, paired, key: scoreSheet({ set: dir, sheet, key, proposed: [], feetPerUnit: fpu }).keyFeet, posted: posted(off), postedOn: posted(on), real, junk });
+        rows.push({ subs, unpairedWhy, grey, causes, set: dir, sheet, renovation, paired, key: scoreSheet({ set: dir, sheet, key, proposed: [], feetPerUnit: fpu }).keyFeet, posted: posted(off), postedOn: posted(on), real, junk });
       }
     }
     expect(rows.length, "no labelled sheet was read").toBeGreaterThan(0);
