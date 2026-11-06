@@ -254,20 +254,19 @@ test.describe("the per-company AI switch", () => {
     await expect(select).toHaveValue("");
     expect(await tickedCount()).toBe(ALL.length - OFF.length);
   });
-  test("6. turning on Wall types from the drawings is stored, and the plan set offers the legend read", async () => {
+  test("6. turning on Wall types from the drawings in Settings queues the plan set's legend read", async () => {
     // A CUSTOMER WHO TURNS PLAN READING ON MUST GET LEGEND READS. Reported on
     // :3010 (2026-11-06): ticking the box and pressing Save said "Saved", yet
     // `optedInFeatures` read back empty, so the set's legend was never read and
     // no wall type or height came off the drawings. The opt-in is the one
-    // feature that reads the OTHER way — off until ticked — so it gets its own
-    // round trip: ticked in a real browser, stored in the database, and seen by
-    // the gate the plan set's panel asks.
+    // feature that reads the OTHER way — off until ticked — and steps 1–5 never
+    // touch it, so it gets its own round trip through a real browser.
     //
-    // A finished title-block run on a seeded plan is what makes the panel show
-    // its legend stage (a run with no tasks is complete). Pressing "Read the
-    // wall legend" is NOT driven: the CI server cannot fetch a plan file, which
-    // `plan-ingest.spec.ts` step 3 already pins as an honest refusal. What this
-    // proves is everything up to that point — the switch reaching `aiGate`.
+    // The queue is `queueLegendRead` (`legendAutoStart.ts`), which the takeoff
+    // page runs on open for a set whose free inventory pass has finished — once
+    // per set, and only with the opt-in on. So a seeded finished inventory is
+    // all it needs: no plan file is read to QUEUE the run (reading it is the
+    // cron's, and CI has neither the file nor a model).
     const pdf = readFileSync(path.resolve(__dirname, "../fixtures/plan-sheet.pdf"));
     await page.route("**/api/takeoff/plan/**", (route) => route.fulfill({ status: 200, contentType: "application/pdf", body: pdf }));
     const owner = await prisma.user.findFirstOrThrow({ where: { email: PERSONAS.aiSwitch.email }, select: { companyId: true } });
@@ -275,15 +274,16 @@ test.describe("the per-company AI switch", () => {
     const contact = await prisma.contact.create({ data: { companyId, name: "ZZ-E2E GC" } });
     const job = await prisma.job.create({ data: { companyId, contactId: contact.id, name: "ZZ-E2E Plan reading", status: "ESTIMATE" } });
     const plan = await prisma.takeoffPlan.create({ data: { companyId, jobId: job.id, fileUrl: "local:plan-sheet.pdf", fileName: "plan-sheet.pdf" } });
-    await prisma.planIngestJob.create({ data: { planId: plan.id, companyId, stage: "TITLE_BLOCK", pageCount: 0 } });
-    const legendStage = (): Locator => page.locator('[data-plan-ingest="legend-stage"]');
+    await prisma.planIngestJob.create({ data: { planId: plan.id, companyId, stage: "PAGE_INVENTORY", pageCount: 1, finishedAt: new Date() } });
+    const legendRuns = () => prisma.planIngestJob.count({ where: { planId: plan.id, stage: "WALL_LEGEND" } });
     const optIn = (): Locator => box("PLAN_TEXT_READ");
 
-    // OFF UNTIL CHOSEN, asserted first so the end state cannot have been true at the start.
+    // OFF UNTIL CHOSEN, asserted first so the end state cannot have been true at
+    // the start: the page opens, says the reading is off, and queues nothing.
     await page.goto(`/jobs/${job.id}/takeoff`);
     await expectHealthy(page, "takeoff tab, plan reading off", { monitor });
-    await expect(legendStage().getByText(/is off for your company/)).toBeVisible();
-    await expect(legendStage().getByRole("button", { name: "Read the wall legend" })).toHaveCount(0);
+    await expect(page.locator('[data-plan-ingest="legend-stage"]').getByText(/is off for your company/)).toBeVisible();
+    expect(await legendRuns(), "with plan reading off, no legend read is queued").toBe(0);
 
     await page.goto("/settings/assistant");
     await expectHealthy(page, "/settings/assistant before the opt-in", { monitor });
@@ -291,7 +291,7 @@ test.describe("the per-company AI switch", () => {
     await optIn().check();
     await saveAndSettle();
 
-    // STORED, read from the database rather than from the box: a box that stays
+    // STORED, read from the database rather than off the box: a box that stays
     // ticked on screen is exactly what the report saw while the row stayed empty.
     const row = await prisma.companyAiSettings.findUniqueOrThrow({ where: { companyId }, select: { optedInFeatures: true } });
     expect(row.optedInFeatures, "the opt-in must reach the database").toContain("PLAN_TEXT_READ");
@@ -301,9 +301,11 @@ test.describe("the per-company AI switch", () => {
     // The rest of the company's choices are untouched by it.
     expect(await tickedCount()).toBe(ALL.length - OFF.length);
 
+    // QUEUED: opening the plan set now starts its legend read, one task per sheet.
     await page.goto(`/jobs/${job.id}/takeoff`);
     await expectHealthy(page, "takeoff tab, plan reading on", { monitor });
-    await expect(legendStage().getByRole("button", { name: "Read the wall legend" }), "the plan set now offers the legend read").toBeEnabled();
-    await expect(legendStage().getByText(/is off for your company/)).toHaveCount(0);
+    expect(await legendRuns(), "with plan reading on, the set's legend read is queued").toBe(1);
+    const tasks = await prisma.planIngestTask.count({ where: { job: { planId: plan.id, stage: "WALL_LEGEND" } } });
+    expect(tasks, "one legend task per sheet of the inventory").toBe(1);
   });
 });

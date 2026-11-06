@@ -6,10 +6,11 @@ Assistant and pressing Save said "Saved", while `optedInFeatures` read back empt
 no legend read ran, and no wall type or height came off the drawings.
 
 `ai-switch.spec.ts` step 6 now drives the real round trip in Chromium:
-- before: the job's plan-set panel says plan reading is off;
+- before: opening the plan set says plan reading is off and queues nothing;
 - tick and save the opt-in in Settings;
 - the database row holds `PLAN_TEXT_READ`, and the box reads it back on reload;
-- the panel offers "Read the wall legend".
+- opening the plan set again queues its legend read (`queueLegendRead`: one
+  WALL_LEGEND run, one task per sheet), checked in the database.
 
 The opt-in is the one feature that reads the other way (off until ticked), and the
 spec's first five steps never touched it.
