@@ -1,6 +1,6 @@
 import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
 import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
-import { storeLevelMarks } from "./levelReads";
+import { storeGeneralHeight, storeLevelMarks } from "./levelReads";
 import { heightOfLegendType, heightSentence, setHeightFacts, type SetHeightFacts } from "./setHeightFacts";
 
 /** What the library learned about a type's height — shown on the review row and kept in the type's notes. */
@@ -57,6 +57,8 @@ export async function legendHeightsFor(input: {
       set = await setHeightFacts(pdf, { legendPage: input.legendPage });
       // Kept for the queue: a wall's floor-to-floor by its plan's level. Never at the height's cost.
       await storeLevelMarks(input.planId, set.levels ?? []).catch((error) => console.error("[takeoff] level marks not stored", { planId: input.planId }, error));
+      // And the sheet-wide rule, for walls whose type has none (`generalHeightOf`).
+      await storeGeneralHeight(input.planId, generalHeightOf(set)).catch((error) => console.error("[takeoff] general height not stored", { planId: input.planId }, error));
     } finally {
       await pdf.close();
     }
@@ -64,4 +66,21 @@ export async function legendHeightsFor(input: {
     unread = err instanceof Error ? err.message : String(err);
   }
   return new Map(input.types.map((type) => [type.code.toUpperCase(), legendHeightOf(type, set, unread)]));
+}
+
+/**
+ * ── THE SHEET-WIDE HEIGHT, FOR A WALL WITH NO TYPE RULE OF ITS OWN ──
+ *
+ * Baker A601 note A: "ALL WALLS WILL BE TO DECK ABOVE UNLESS OTHERWISE NOTED", and
+ * the sections put the deck at 15'-0". A typed group already gets that through its
+ * type's legend height; an UNTYPED group had only the ceiling plan to go on and
+ * suggested 10'-0" (Chrome's re-test, 2026-11-06). The note says what every wall
+ * does unless its own type says otherwise, so it outranks the ceiling — and an
+ * "N" above the ceiling" note still needs a ceiling, so it gives no figure here.
+ */
+export function generalHeightOf(set: SetHeightFacts | null): { feet: number; from: string } | null {
+  if (set === null || set.generalNote === null) return null;
+  const reading = heightOfLegendType({ code: "ALL", heightNote: null, lines: [] }, set);
+  if (reading.feet === null || !reading.generalNoteOnly) return null;
+  return { feet: reading.feet, from: `general note ${set.generalNote.sheet}: ${reading.why}`.slice(0, 220) };
 }

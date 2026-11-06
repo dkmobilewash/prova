@@ -36,7 +36,8 @@ import { inchLabel } from "./wallVectors";
  */
 export type QueueRun = { x1: number; y1: number; x2: number; y2: number };
 /** A pre-filled answer and where it came from, in words: `tag S6B on A101`. */
-export type Guess = { code: string; from: string };
+/** A suggested type and where it came from. `drawn`: read off the drawing — a printed tag or the legend — not a library guess by thickness, so "Accept all suggestions on this sheet" may take it. */
+export type Guess = { code: string; from: string; drawn?: true };
 /** A type's height for the queue, by code: the job's item height, else its legend height. */
 export type CodeHeight = { feet: number; from: string };
 export type ReviewItem =
@@ -219,19 +220,23 @@ export function suggestType(group: WallGroup, sheet: string, legendCodes: readon
           : found.source === "thickness"
             ? `: ${inchLabel(group.inches)}`
             : "";
-    return { code: found.type.code, from: `${SOURCE_WORDS[found.source]}${detail}` };
+    return { code: found.type.code, from: `${SOURCE_WORDS[found.source]}${detail}`, ...(found.source === "thickness" ? {} : { drawn: true as const }) };
   }
   if (tag !== null && group.candidates.length === 0) {
     const code = legendCodes.find((c) => c.toUpperCase() === tag.toUpperCase());
-    if (code !== undefined) return { code, from: `printed tag: ${tag} on ${sheet}, in the legend but not yet your library` };
+    if (code !== undefined) return { code, from: `printed tag: ${tag} on ${sheet}, in the legend but not yet your library`, drawn: true };
   }
   return null;
 }
 
 /** The height pre-filled for a type: its own (the job's item, else the legend's), else the ceiling. */
+/** Where `heights` carries the set's sheet-wide rule (`generalHeightOf`): not a code any legend can print. */
+export const GENERAL_HEIGHT_KEY = "*";
+
+/** A group's height: its type's own, else the set's sheet-wide note ("all walls to deck U.N.O."), else the ceiling over its rooms. */
 export function heightFor(code: string | null, heights: Readonly<Record<string, CodeHeight>>, ceiling: HeightOption | null): CodeHeight | null {
   const own = code === null ? undefined : heights[code.toUpperCase()];
-  return own ?? (ceiling === null ? null : { feet: ceiling.feet, from: ceiling.from });
+  return own ?? heights[GENERAL_HEIGHT_KEY] ?? (ceiling === null ? null : { feet: ceiling.feet, from: ceiling.from });
 }
 
 // What saves the most time first (Chrome's re-test): a group is one key for

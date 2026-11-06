@@ -12,6 +12,7 @@ import { sheetViews } from "./sheetViews";
  */
 export const LEVEL_MARKS = "LEVEL_MARKS";
 export const PLAN_CAPTIONS = "PLAN_CAPTIONS";
+export const GENERAL_HEIGHT = "GENERAL_HEIGHT";
 export type StoredCaption = { name: string; captionX: number; captionY: number };
 
 export async function storeLevelMarks(planId: string, marks: readonly LevelMark[]): Promise<void> {
@@ -44,3 +45,19 @@ export async function storedLevels(planId: string): Promise<{ marks: LevelMark[]
   return { marks, captions };
 }
 
+
+/** The set's sheet-wide height (`generalHeightOf`), or its absence: a re-read that finds none clears an old one. */
+export async function storeGeneralHeight(planId: string, value: { feet: number; from: string } | null): Promise<void> {
+  if (value === null) {
+    await prisma.takeoffPlanTextRead.deleteMany({ where: { planId, pageNumber: 0, kind: GENERAL_HEIGHT } });
+    return;
+  }
+  const where = { planId_pageNumber_kind: { planId, pageNumber: 0, kind: GENERAL_HEIGHT } };
+  await prisma.takeoffPlanTextRead.upsert({ where, create: { planId, pageNumber: 0, kind: GENERAL_HEIGHT, value }, update: { value, computedAt: new Date() } });
+}
+
+export async function storedGeneralHeight(planId: string): Promise<{ feet: number; from: string } | null> {
+  const row = await prisma.takeoffPlanTextRead.findUnique({ where: { planId_pageNumber_kind: { planId, pageNumber: 0, kind: GENERAL_HEIGHT } }, select: { value: true } });
+  const v = row?.value as { feet?: unknown; from?: unknown } | null | undefined;
+  return v && typeof v.feet === "number" && v.feet > 0 && typeof v.from === "string" ? { feet: v.feet, from: v.from } : null;
+}
