@@ -198,6 +198,7 @@ describe("who is offered what", () => {
       "run_takeoff",
       "post_takeoff_to_estimate",
       "set_wall_height",
+      "accept_sheet_suggestions",
     ]);
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_items");
     // Writing the crew schedule is MANAGE_FIELD, which an estimator lacks.
@@ -235,6 +236,7 @@ describe("who is offered what", () => {
       "run_takeoff",
       "post_takeoff_to_estimate",
       "set_wall_height",
+      "accept_sheet_suggestions",
     ]);
     for (const command of commandsFor(ACCOUNTING)) {
       expect(["MANAGE_BILLING", "VIEW_JOB_COSTS"], command.name).toContain(command.capability);
@@ -242,7 +244,7 @@ describe("who is offered what", () => {
       // page, lines added from it); everything else accounting gets is money.
       // set_wall_height modifies a takeoff height the review queue sets.
       const takeoff = command.name === "run_takeoff" || command.name === "post_takeoff_to_estimate";
-      const tier = takeoff ? "T1_DRAFT" : command.name === "set_wall_height" ? "T2_MODIFY" : "T3_MONEY_EVIDENCE";
+      const tier = takeoff ? "T1_DRAFT" : command.name === "set_wall_height" || command.name === "accept_sheet_suggestions" ? "T2_MODIFY" : "T3_MONEY_EVIDENCE";
       expect(command.tier, command.name).toBe(tier);
     }
   });
@@ -330,6 +332,8 @@ describe("who is offered what", () => {
       // A wall type's height on the takeoff, the queue's T for every group of
       // that type; its estimate lines follow (commands/takeoff.ts).
       "set_wall_height",
+      // The queue's Accept all on one sheet, for the groups the drawing named.
+      "accept_sheet_suggestions",
     ]);
     const reschedule = COMMANDS.find((c) => c.name === "reschedule_job")!;
     expect(reschedule.mode).toBe("DIRECT");
