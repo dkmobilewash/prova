@@ -1,5 +1,5 @@
 import type { CostCategoryValue } from "@/lib/bid-recap";
-import { ceilingOption, type CeilingRoom, type HeightOption } from "./wallHeight";
+import { ceilingOption, heightOptionsInOrder, type CeilingRoom, type HeightOption } from "./wallHeight";
 import type { WallGroup } from "./wallGroups";
 import { plainTag } from "./planTextTags";
 import { SOURCE_WORDS, typeSource } from "./postingGate";
@@ -182,21 +182,24 @@ export function typeItems(
 
 /**
  * A wall item with no height, shown on the sheet holding most of its length.
- * Its Set height offers the ceiling over the rooms its walls bound there and
- * the type's legend height, where either exists.
+ * Its Set height offers the type's legend height, the set's general note and
+ * the ceiling over the rooms its walls bound there, in that order
+ * (`heightOptionsInOrder`), where each exists.
  */
 export function heightItem(
   item: { id: string; name: string },
   sheets: readonly { sheet: QueueSheet; runs: readonly QueueRun[]; rooms: readonly CeilingRoom[] }[],
   /** The legend's height, and its options by part of the building (`legendOptions`). */
   legend: readonly HeightOption[],
+  /** The set's sheet-wide rule, offered after the type's own and before the ceiling. */
+  general: { feet: number; from: string } | null = null,
 ): ReviewItem | null {
   const on = sheets.filter((s) => s.runs.length > 0);
   if (on.length === 0) return null;
   const span = (runs: readonly QueueRun[]) => runs.reduce((n, run) => n + length(run), 0);
   const most = on.reduce((best, s) => ((feetOf(s.runs, s.sheet.feetPerUnit) ?? span(s.runs)) > (feetOf(best.runs, best.sheet.feetPerUnit) ?? span(best.runs)) ? s : best));
   const feet = on.every((s) => s.sheet.feetPerUnit === null) ? null : on.reduce((n, s) => n + (feetOf(s.runs, s.sheet.feetPerUnit) ?? 0), 0);
-  const options = [ceilingOption(most.runs, most.rooms), ...legend].filter((o): o is HeightOption => o !== null);
+  const options = heightOptionsInOrder({ type: legend, general, ceiling: ceilingOption(most.runs, most.rooms) });
   return { kind: "height", key: `height:${item.id}`, itemId: item.id, name: item.name, pageNumber: most.sheet.pageNumber, sheet: most.sheet.sheet, runs: [...most.runs], feet, options };
 }
 
@@ -253,7 +256,8 @@ export function forCode<T>(map: Readonly<Record<string, T>>, code: string | null
 /** A group's height: its type's own (or its family's), else the set's sheet-wide note ("all walls to deck U.N.O."), else the ceiling over its rooms. */
 export function heightFor(code: string | null, heights: Readonly<Record<string, CodeHeight>>, ceiling: HeightOption | null): CodeHeight | null {
   const own = forCode(heights, code);
-  return own ?? heights[GENERAL_HEIGHT_KEY] ?? (ceiling === null ? null : { feet: ceiling.feet, from: ceiling.from });
+  const first = heightOptionsInOrder({ type: own === undefined ? [] : [{ kind: "legend", feet: own.feet, from: own.from }], general: heights[GENERAL_HEIGHT_KEY] ?? null, ceiling })[0];
+  return first === undefined ? null : { feet: first.feet, from: first.from };
 }
 
 /**

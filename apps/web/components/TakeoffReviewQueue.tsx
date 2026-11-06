@@ -321,7 +321,7 @@ export function TakeoffReviewQueue({
               heightOptions={() => (current.options.length > 1 ? current.options.map((o) => ({ feet: o.feet, from: o.from })) : [])}
               heightOf={() => {
                 // The type's own height first, as for a group being typed; else the ceiling.
-                const first = current.options.find((o) => o.kind === "legend") ?? current.options[0];
+                const first = current.options[0]; // in suggestion order: type, general note, ceiling (`heightOptionsInOrder`)
                 return first === undefined ? null : { feet: first.feet, from: first.from };
               }}
               onSkip={() => setCursor(after(current.key))}

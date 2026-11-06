@@ -7,7 +7,7 @@ import { legendProposalFrom } from "@/lib/takeoff/legendProposalBuild";
 const context = { company: { id: "" }, id: "", role: "OWNER" as string, jobFunction: null as string | null };
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-const { setWallGroupType } = await import("./wallGroupType");
+const { clearWallGroupType, setWallGroupType } = await import("./wallGroupType");
 const { wallItemsForSheet, UNTYPED_ITEM } = await import("@/lib/plan-ingest/wallItems");
 
 let companyId = "";
@@ -65,5 +65,18 @@ describe("Set type", () => {
     expect(await prisma.takeoffMeasurement.count({ where: { pageId, item: { wallType: { code: "C" } } } })).toBe(1);
     const refused = await setWallGroupType(jobId, { planId, pageNumber: 3, code: "Q9", inches: 7, runs });
     expect(refused.ok).toBe(false);
+  });
+
+  it("A RE-RUN A HAIR OFF IS THE SAME WALL: Set type moves it rather than writing it twice, and Clear type finds it (Chrome on Baker A101)", async () => {
+    const pageId = await sheet(4, [{ x1: 0.2, y1: 0.6, x2: 0.6, y2: 0.6 }]);
+    await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 4, userId: null });
+    // The finder run again returns the run a hair off the posted one.
+    const rerun = [{ x1: 0.2004, y1: 0.6003, x2: 0.5997, y2: 0.5998 }];
+    expect(await setWallGroupType(jobId, { planId, pageNumber: 4, code: "C", inches: 7, runs: rerun })).toEqual({ ok: true });
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId }, select: { item: { select: { wallType: { select: { code: true } } } } } });
+    expect(rows.map((r) => r.item?.wallType?.code ?? null)).toEqual(["C"]);
+    const cleared = await clearWallGroupType(jobId, { planId, pageNumber: 4, runs: rerun });
+    expect(cleared.ok && cleared.value.moved).toHaveLength(1);
+    expect(await prisma.takeoffMeasurement.count({ where: { pageId, item: { name: UNTYPED_ITEM } } })).toBe(1);
   });
 });
