@@ -92,6 +92,11 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
   const [isPending, startTransition] = useTransition();
   /** The readings still to do after the one on screen, oldest first. */
   const [queued, setQueued] = useState<IngestView[]>([]);
+  /** The free pass has finished and the title blocks are not started. Its own
+   *  state, not `view.stage`: the wall legend queued behind the free pass takes
+   *  the view when it runs (#1025), and the offer went with it — a new company
+   *  could not reach "Read the title blocks" at all (walk v6). */
+  const [freePassDone, setFreePassDone] = useState(existing?.stage === "PAGE_INVENTORY" && existing.complete);
 
   /** Set on unmount so a slice that resolves after the panel is gone does not
    *  set state on a dead component, and does not schedule another slice. */
@@ -145,6 +150,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       setView(next);
 
       if (next.complete) {
+        if (next.stage === "PAGE_INVENTORY") setFreePassDone(true);
         void loadFailures(jobId);
         // On to the next reading queued on this set, oldest first, rather than
         // stopping: the wall legend queued behind the free pass used to wait
@@ -249,6 +255,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
     startTransition(async () => {
       const started = await startPlanIngest(planId, "TITLE_BLOCK");
       if (!started.ok) return setError(started.error);
+      setFreePassDone(false);
       setView(started.value);
       setFailures([]);
       setRunning(true);
@@ -479,7 +486,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
               offer to re-read the title blocks it has just read, and charge for
               it. `STAGE_SPENDS` is what decides, rather than the stage name, so
               a third stage added later inherits the rule instead of the label. */}
-          {view.complete && view.stage === "PAGE_INVENTORY" && !running && (
+          {freePassDone && !running && (
             <div className="mt-1 border-t border-line-card pt-3" data-plan-ingest="next-stage">
               <p className="mb-2 text-sm text-ink-body">
                 Nothing was charged for that — it only opened the file and recorded what is on each page.

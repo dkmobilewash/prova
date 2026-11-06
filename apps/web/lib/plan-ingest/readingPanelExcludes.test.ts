@@ -50,6 +50,11 @@ describe("the sheet-reading panel's ingest query", () => {
     }
   });
 
+  it("excludes the wall legend too, so a reload shows the free pass and its title-block offer (walk v6)", () => {
+    const exclusion = page.match(/latestIngestFor\([^)]*\{\s*not:\s*(\[[^\]]*\])\s*\}/);
+    expect(exclusion?.[1]).toContain("WALL_LEGEND");
+  });
+
   it("still gives each background panel its own single-stage query", () => {
     for (const stage of BACKGROUND_STAGES) {
       expect(page, `${stage}'s own panel lost its query`).toContain(`latestIngestFor(plan.id, "${stage}")`);

@@ -3,6 +3,7 @@ import { extractWallLegend, WALL_LEGEND_PROMPT_VERSION, type WallLegendRead } fr
 import { aiGate } from "@/lib/ai/settings";
 import { claimPlanSheet, markPlanSheetFailure } from "@/lib/ask/planSheetSpend";
 import { recordAskUsage } from "@/lib/ask/usage";
+import { legendHeightsFor } from "@/lib/takeoff/legendHeights";
 import { legendPages } from "@/lib/takeoff/legendPages";
 import { legendProposalFrom } from "@/lib/takeoff/legendProposalBuild";
 import { refreshSuggestionsAfterResponse } from "@/lib/takeoff/suggestionRefresh";
@@ -47,6 +48,7 @@ export type WallLegendDeps = {
 export type WallLegendProposalRow = {
   ingestJobId: string;
   planId: string;
+  companyId: string;
   pageNumber: number;
   sheetTitle: string | null;
   model: string;
@@ -109,6 +111,7 @@ export function wallLegendWork(ctx: StageCtx, deps: WallLegendDeps = realDeps): 
     await deps.saveProposal({
       ingestJobId: ctx.ingestJobId,
       planId: ctx.planId,
+      companyId: ctx.companyId,
       pageNumber: task.pageNumber,
       sheetTitle: title,
       model: pass.model,
@@ -148,5 +151,10 @@ const realDeps: WallLegendDeps = {
       // A re-read replaces the words AND forgets the drawing's read of the old words.
       update: { ...proposal, sightRead: Prisma.DbNull },
     });
+    // The set's sheet-wide height and level marks, stored with the legend
+    // rather than when somebody first opens its review (walk v6: the queue
+    // offered Baker's 10'-0" ceiling until Accept all, and the walls run to
+    // deck at 15'-0"). It reports its own failures and never throws.
+    await legendHeightsFor({ planId: row.planId, companyId: row.companyId, legendPage: row.pageNumber, types: [] });
   },
 };
