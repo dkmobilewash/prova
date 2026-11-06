@@ -17,13 +17,14 @@ import { levelHeight, runLevels } from "@/lib/takeoff/levelHeights";
 import { heightBasis } from "@/lib/takeoff/wallHeights";
 import { GENERAL_HEIGHT_KEY, heightItem, reviewQueue, splitByLevel, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import { storedWindowsOf, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
+import { refreshSuggestionsAfterResponse } from "@/lib/takeoff/suggestionRefresh";
 import { buildingHeights, feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/takeoff/wallHeight";
 
 /**
  * The job's review queue (`reviewQueue.ts`), plus the plan-set counts the
  * stepper reads beside it, from the job's NEWEST plan set — the one the
- * workspace opens. Select-only; the job layout runs it on every tab of an
- * estimate.
+ * workspace opens. Select-only, but for the stale-suggestion refresh it starts
+ * after the response; the job layout runs it on every tab of an estimate.
  */
 export async function loadReviewQueue(
   companyId: string,
@@ -52,6 +53,8 @@ export async function loadReviewQueue(
     costCategory: asCostCategory(line.costCategory),
   }));
   if (plan === null) return { planId: null, items: prices, heights: {}, heightChoices: {}, codes: [], legend: "read", scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0 };
+  // Suggestions stored before the set's legend or the current rules are worked out again, after the response (`suggestionRefresh.ts`).
+  refreshSuggestionsAfterResponse({ planId: plan.id, companyId });
 
   const [pages, sheetRows] = await Promise.all([
     prisma.takeoffPlanPage.findMany({
