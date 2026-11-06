@@ -1769,6 +1769,7 @@ export function TakeoffWorkspace({
               sheetLabelByPage={data.sheetLabelByPage}
               earlierVersionByPage={data.earlierVersionByPage}
               wallTypes={data.viewerWallTypes}
+              generalHeight={data.generalHeight}
               wallItems={data.items}
               openingThresholdSqFt={data.openingThresholdSqFt}
               roomFinder={data.roomFinderOn}

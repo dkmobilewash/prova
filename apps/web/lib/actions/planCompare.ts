@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { actionFail, actionOk, ownerRefusal, type ActionResult } from "./shared";
+import { actionFail, actionOk, ownerRefusal, type ActionResult, type ActionResultWith } from "./shared";
+import { suggestPriorPlan } from "@/lib/takeoff/priorPlanLoad";
 
 const SETTINGS_ONLY =
   "The company's settings aren't part of your job function. The account owner sets who sees what, on the Team page.";
@@ -54,4 +55,24 @@ export async function savePriorPlanChoice(input: { jobId: string; planId: string
   });
   revalidatePath(`/jobs/${input.jobId}`);
   return actionOk;
+}
+
+/**
+ * The demolition plan to OFFER a sheet with no pairing (`suggestPriorPlan`):
+ * the bar asks "Compare with A001?" and saves it, as the person's own choice,
+ * only when they accept. Nothing is paired here.
+ */
+type PriorSuggestion = { demoPage: number; sheet: string; votes: number };
+export async function suggestPriorPlanChoice(input: { jobId: string; planId: string; pageNumber: number }): Promise<ActionResultWith<PriorSuggestion | null>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return { ok: false, error: JOB_COSTS_ONLY };
+  const plan = await prisma.takeoffPlan.findFirst({ where: { id: input.planId, jobId: input.jobId, companyId: context.company.id }, select: { id: true } });
+  if (plan === null) return { ok: false, error: "That plan isn't on this job any more." };
+  if (!Number.isInteger(input.pageNumber) || input.pageNumber < 1) return { ok: false, error: "That isn't a sheet of this set." };
+  try {
+    return { ok: true, value: await suggestPriorPlan({ planId: plan.id, companyId: context.company.id, pageNumber: input.pageNumber }) };
+  } catch (error) {
+    console.error("[takeoff] demolition plan suggestion failed", { planId: plan.id, page: input.pageNumber }, error);
+    return { ok: true, value: null };
+  }
 }
