@@ -34,7 +34,7 @@ export type Pairing = { demoPage: number; source: "auto" | "user"; basis: string
 export { longFaces } from "./viewAlign";
 
 type Page = { segments: readonly StrokeSegment[]; textItems: readonly { str: string; x: number; y: number; width: number; height: number }[]; widthPt: number; heightPt: number };
-export type PriorPlan = { lines: PriorLine[]; votes: number; walls: "walls" | "faces" } | { lines: null; why: string };
+export type PriorPlan = { lines: PriorLine[]; votes: number; walls: "walls" | "faces"; shift?: { dx: number; dy: number } } | { lines: null; why: string };
 
 /**
  * The demolition plan's standing walls, moved onto the new sheet.
@@ -64,5 +64,5 @@ export function priorPlanFor(input: { demo: Page; newPage: { segments: readonly 
   const shift = !few && set.shift !== null ? set.shift : alignViews(longFaces(newPage.segments, newPage.widthPt, feetPerUnit), faces, feetPerUnit);
   if (shift === null || shift.votes < MIN_VOTES) return { lines: null, why: `the demolition plan does not line up with this sheet (${shift?.votes ?? 0} of ${MIN_VOTES} walls agree), so nothing is compared` };
   const lines: PriorLine[] = few ? faces.filter((f) => !removed(f)) : remain.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, thicknessFeet: w.thicknessFeet }));
-  return { lines: lines.map((p) => ({ ...p, x1: p.x1 + shift.dx, y1: p.y1 + shift.dy, x2: p.x2 + shift.dx, y2: p.y2 + shift.dy })), votes: shift.votes, walls: few ? "faces" : "walls" };
+  return { lines: lines.map((p) => ({ ...p, x1: p.x1 + shift.dx, y1: p.y1 + shift.dy, x2: p.x2 + shift.dx, y2: p.y2 + shift.dy })), votes: shift.votes, walls: few ? "faces" : "walls", shift: { dx: shift.dx, dy: shift.dy } };
 }
