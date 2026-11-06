@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
   advancePlanIngest,
   planIngestFailures,
+  queuedPlanReads,
   retryPlanIngestPage,
   startPlanIngest,
 } from "@/lib/actions";
@@ -74,12 +75,23 @@ export type PlanIngestPanelProps = {
 
 type Failure = { pageNumber: number; attempts: number; error: string | null };
 
+/** What each reading is called where the panel names it. */
+const READING: Record<string, string> = {
+  PAGE_INVENTORY: "The sheets",
+  TITLE_BLOCK: "The title blocks",
+  WALL_LEGEND: "The wall legend",
+  SCHEDULE_ROWS: "The schedules",
+  SHEET_INDEX: "The sheet index",
+};
+
 export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }: PlanIngestPanelProps) {
   const [view, setView] = useState<IngestView | null>(existing);
   const [error, setError] = useState<string | null>(null);
   const [failures, setFailures] = useState<Failure[]>([]);
   const [running, setRunning] = useState(false);
   const [isPending, startTransition] = useTransition();
+  /** The readings still to do after the one on screen, oldest first. */
+  const [queued, setQueued] = useState<IngestView[]>([]);
 
   /** Set on unmount so a slice that resolves after the panel is gone does not
    *  set state on a dead component, and does not schedule another slice. */
@@ -133,8 +145,11 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       setView(next);
 
       if (next.complete) {
-        setRunning(false);
         void loadFailures(jobId);
+        // On to the next reading queued on this set, oldest first, rather than
+        // stopping: the wall legend queued behind the free pass used to wait
+        // for the daily cron (the 4th's walk: 65 legend pages unclaimed).
+        void drainRef.current();
         return;
       }
 
@@ -155,6 +170,36 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
     },
     [loadFailures],
   );
+
+  /**
+   * ── EVERY QUEUED READING ADVANCES WHILE THE PAGE IS OPEN, OLDEST FIRST ──
+   *
+   * Asks the server what is still to do on the set (`queuedPlanReads`) and
+   * pumps the oldest; `pump` comes back here when it completes. With nothing
+   * left the panel stops. The cron (`/api/plan-ingest/run`) still finishes a
+   * run whose tab was closed.
+   */
+  const drain = useCallback(async () => {
+    const result = await queuedPlanReads(planId);
+    if (!alive.current) return;
+    if (!result.ok) {
+      setRunning(false);
+      return setError(result.error);
+    }
+    const [next, ...rest] = result.value;
+    setQueued(rest);
+    if (next === undefined) {
+      setQueued([]);
+      setRunning(false);
+      return;
+    }
+    setView(next);
+    setRunning(true);
+    lastSettled.current = null;
+    void pump(next.jobId, 0);
+  }, [planId, pump]);
+  const drainRef = useRef(drain);
+  drainRef.current = drain;
 
   function onStart() {
     setError(null);
@@ -298,8 +343,10 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
    */
   const startedOnce = useRef(false);
   useEffect(() => {
-    if (existing !== null || startedOnce.current) return;
+    if (startedOnce.current) return;
     startedOnce.current = true;
+    // A set with readings already: every one still to do goes on, oldest first.
+    if (existing !== null) return void drain();
     onStart();
     // `onStart` is stable for this component's lifetime and re-running on its
     // identity would defeat the ref above.
@@ -367,6 +414,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       {view && (
         <>
           <p className="mb-2 text-sm text-ink-body" data-plan-ingest="progress">
+            <span className="font-medium text-ink" data-plan-ingest="reading">{READING[view.stage] ?? "Reading"}:</span>{" "}
             <span className="text-ink-label">
               {view.finished + view.exhausted} of {view.total}
             </span>{" "}
@@ -398,6 +446,12 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
             />
           </div>
 
+          {queued.length > 0 && (
+            <p className="mb-2 text-xs text-ink-muted" data-plan-ingest="queued">
+              Next:{" "}
+              {queued.map((q) => `${READING[q.stage] ?? q.stage} (${q.finished + q.exhausted} of ${q.total})`).join(", then ")}
+            </p>
+          )}
           <p className="mb-3 text-sm text-ink-body" data-plan-ingest="state">
             {view.complete
               ? view.exhausted > 0
