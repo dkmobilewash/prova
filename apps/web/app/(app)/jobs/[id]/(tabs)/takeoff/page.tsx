@@ -200,6 +200,8 @@ export default async function JobTakeoffPage({
     sheetRows,
     scheduleSheetCount,
   } = loaded;
+  // A second plan file on the job is a revision or an addendum: its sheets are compared on their own page.
+  const planFiles = await prisma.takeoffPlan.count({ where: { jobId: job.id, companyId: company.id } });
 
   // A set inventoried before the legend read started itself: queue it now,
   // the same once-per-set rule `legendAutoStart.ts` applies when an inventory
@@ -309,6 +311,11 @@ export default async function JobTakeoffPage({
             revisionLabel={plan.revisionLabel}
             sheetIssuedOn={plan.sheetIssuedOn === null ? null : plan.sheetIssuedOn.toISOString().slice(0, 10)}
           />
+          {isEstimateStage && (
+            <Link href={`/jobs/${job.id}/addendum`} className="text-sm font-medium text-link hover:underline" data-takeoff="addendum-link">
+              {planFiles > 1 ? "What the revised sheets change" : "Upload revised sheets (addendum)"} &rarr;
+            </Link>
+          )}
         {isEstimateStage && (
           <ConfirmDeleteButton
             label="Delete plan"

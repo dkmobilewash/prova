@@ -327,6 +327,9 @@ const PAGE_ONLY_CAPABILITY: Record<string, Capability> = {
   // so an ACCOUNTING member reaches the link and gets NoAccess, deliberately:
   // pricing a bid for a GC is an estimator's job, not a bookkeeper's.
   "/jobs/[id]/proposal": "MANAGE_ESTIMATING",
+  // A revision's changes in dollars, and Apply rewrites the estimate's lines:
+  // the proposal's gate, and what `applyRevisedSheets` asserts itself.
+  "/jobs/[id]/addendum": "MANAGE_ESTIMATING",
   // Same gate as the upload token that attaches a section's file.
   "/jobs/[id]/specs": "MANAGE_ESTIMATING",
 

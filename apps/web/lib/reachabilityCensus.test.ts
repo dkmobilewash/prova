@@ -242,6 +242,11 @@ const REACHED_FROM: Record<string, Reached> = {
     parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/estimate/page.tsx"],
     needle: "/proposal`",
   },
+  "/jobs/[id]/addendum": {
+    reason: "The \"What the revised sheets change\" link on the job's Takeoff tab, shown once a second plan file is on the job.",
+    parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/takeoff/page.tsx"],
+    needle: "/addendum`",
+  },
   "/jobs/[id]/buyout": {
     reason: "The Buyout link on the job's Estimate tab, shown once the job is contracted.",
     parents: ["apps/web/app/(app)/jobs/[id]/(tabs)/estimate/page.tsx"],
