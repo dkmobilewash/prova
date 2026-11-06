@@ -46,8 +46,10 @@ export type HeightBasis =
   /** Two heights for two faces or two sides — reported, never averaged. */
   | { kind: "mixed"; parts: HeightBasis[]; phrase: string };
 
+// "SEAL TIGHT TO METAL DECK ABOVE" (SLN 3A–5A): a material word may name the DECK, and only
+// the deck — Camp Bow Wow's "PLATE FASTENED TO CONC. SLAB" is the bottom plate, not the top.
 const TO_STRUCTURE =
-  /\b(?:TO|THRU|THROUGH)\s+(?:THE\s+)?(?:ROOF\s+)?(?:DECK(?:ING)?|STRUCTURE|SLAB|JOISTS?|ROOF)\b|\bFULL\s+HEIGHT\b|\b(?:BOTTOM|UNDERSIDE|U\/S|B\.O\.)\s+OF\s+(?:THE\s+)?(?:STRUCTURE|STRUCTURAL|DECK|SLAB|JOISTS?|ROOF|CONCRETE|EXISTING\s+BEAM|BEAM|FLOOR)\b|\bCONT(?:INUOUS|\.)?\s+TO\s+(?:ROOF\s+)?DECK/i;
+  /\b(?:TO|THRU|THROUGH)\s+(?:THE\s+)?(?:ROOF\s+)?(?:(?:METAL|STEEL|CONC(?:RETE|\.)?|COMPOSITE|FLOOR)\s+(?=DECK))?(?:DECK(?:ING)?|STRUCTURE|SLAB|JOISTS?|ROOF)\b|\bFULL\s+HEIGHT\b|\b(?:BOTTOM|UNDERSIDE|U\/S|B\.O\.)\s+OF\s+(?:THE\s+)?(?:STRUCTURE|STRUCTURAL|DECK|SLAB|JOISTS?|ROOF|CONCRETE|EXISTING\s+BEAM|BEAM|FLOOR)\b|\bCONT(?:INUOUS|\.)?\s+TO\s+(?:ROOF\s+)?DECK/i;
 // "8" ABOVE HIGHEST ADJACENT CEILING" (Green Bay A4.0 note 9): up to two words between.
 const ABOVE_CEILING = /(\d+(?:\s*[-–]\s*\d+\/\d+|\s+\d+\/\d+|\/\d+)?)\s*(?:"|''|IN(?:CH(?:ES)?)?\.?)\s*(?:ABOVE|A\.?F\.?C\.?|OVER)\s+(?:THE\s+)?(?:[A-Z]+\s+){0,2}?(?:FINISHED\s+)?(?:CEILING|CLG)/i;
 const TO_CEILING = /\b(?:TO|AT)\s+(?:THE\s+)?(?:UNDERSIDE\s+OF\s+)?(?:FINISHED\s+)?(?:CEILING|CLG)\b|\bBOTTOM\s+OF\s+(?:THE\s+)?CEILING\b|\bCEILING\s+HEIGHT\b/i;

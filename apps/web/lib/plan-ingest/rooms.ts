@@ -122,6 +122,51 @@ async function setFinishSchedule(doc: PlanPdf, planId: string, pageCount: number
 
 export type RoomsOutcome = { kind: "written"; rooms: number; ceilingSqFt: number } | { kind: "skipped"; why: string } | { kind: "failed"; error: string };
 
+/**
+ * ── A SHEET'S WINDOWS, COUNTED ON THEIR OWN ──
+ *
+ * The count lived only inside the rooms step, which runs once per sheet: a job
+ * whose rooms were found before #1008 never had its windows counted, and its
+ * review queue showed no Windows part (Chrome on Baker, 2026-11-06). So the count
+ * runs from the stored walls of the sheet's current scale, wherever a sheet is
+ * looked at again — a re-run of the whole-set takeoff, or a rooms step that finds
+ * rooms already there. A sheet whose windows were already decided is left alone
+ * (`writeSuggestedWindows`).
+ */
+export type WindowsOutcome = { kind: "counted"; windows: number } | { kind: "skipped"; why: string };
+export async function windowsForSheet(input: { planId: string; companyId: string; pageNumber: number }): Promise<WindowsOutcome> {
+  const company = await prisma.company.findUnique({ where: { id: input.companyId }, select: { doorsWindowsOn: true } });
+  if (!company?.doorsWindowsOn) return { kind: "skipped", why: "doors and windows are off" };
+  const page = await prisma.takeoffPlanPage.findUnique({
+    where: { planId_pageNumber: { planId: input.planId, pageNumber: input.pageNumber } },
+    select: { calibrations: { orderBy: { createdAt: "desc" }, take: 1 }, wallProposals: { orderBy: { createdAt: "desc" }, select: { calibrationId: true, runs: true, createdAt: true } } },
+  });
+  const calibration = page?.calibrations[0];
+  if (!page || !calibration) return { kind: "skipped", why: "no scale" };
+  const feetPerUnit = feetPerPageWidth({ x1: calibration.x1, y1: calibration.y1, x2: calibration.x2, y2: calibration.y2, declaredDistanceFeet: Number(calibration.declaredDistanceFeet) });
+  if (feetPerUnit === null) return { kind: "skipped", why: "no scale" };
+  const mine = page.wallProposals.filter((p) => p.calibrationId === calibration.id);
+  if (mine.length === 0) return { kind: "skipped", why: "no walls found" };
+  const newest = mine[0]!.createdAt.getTime();
+  const runs = mine.filter((p) => p.createdAt.getTime() === newest).flatMap((p) => p.runs as { x1: number; y1: number; x2: number; y2: number; thicknessFeet: number }[]);
+  const read = await readPlanBytes(input.planId, input.companyId);
+  if (!read.ok) return { kind: "skipped", why: read.error };
+  const doc = await openPlanPdf(read.bytes);
+  try {
+    const text = await doc.pageText(input.pageNumber);
+    const strokes = await doc.pageStrokes(input.pageNumber);
+    const W = text.widthPt;
+    const inUnits = strokes.segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W }));
+    const candidates = runs.map((r) => ({ ...r, lengthFeet: Math.hypot(r.x2 - r.x1, r.y2 - r.y1) * feetPerUnit })) as unknown as WallCandidate[];
+    const openings = doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: strokes.segments as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: await doorScheduleRowsOf(input.planId), windowRows: await scheduleRowsOf(input.planId, "WINDOW"), wallCodes: await storedLegendCodes(input.planId) });
+    const stored = windowsToStore(openings.tagged, openings.windows);
+    await writeSuggestedWindows(input.planId, input.pageNumber, stored);
+    return stored === null ? { kind: "skipped", why: "no window tags read" } : { kind: "counted", windows: stored.windows.length };
+  } finally {
+    await doc.close().catch(() => {});
+  }
+}
+
 export async function roomsForSheet(input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null; boundary?: DetectedBoundary }): Promise<RoomsOutcome> {
   const company = await prisma.company.findUnique({ where: { id: input.companyId }, select: { roomFinderOn: true, doorsWindowsOn: true } });
   if (!company?.roomFinderOn) return { kind: "skipped", why: "room finding is off" };
@@ -138,7 +183,12 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
   });
   const calibration = page?.calibrations[0];
   if (!page || !calibration) return { kind: "skipped", why: "no scale" };
-  if (page.measurements.length > 0) return { kind: "skipped", why: "rooms already on the sheet" };
+  if (page.measurements.length > 0) {
+    // Rooms found before the windows were counted (Baker, 2026-11-03, before #1008)
+    // still get their windows suggested — the count is its own step.
+    if (company.doorsWindowsOn) await windowsForSheet(input).catch((error) => console.error("[rooms] windows on a sheet with rooms failed", { planId: input.planId, pageNumber: input.pageNumber }, error));
+    return { kind: "skipped", why: "rooms already on the sheet" };
+  }
   const feetPerUnit = feetPerPageWidth({ x1: calibration.x1, y1: calibration.y1, x2: calibration.x2, y2: calibration.y2, declaredDistanceFeet: Number(calibration.declaredDistanceFeet) });
   if (feetPerUnit === null) return { kind: "skipped", why: "no scale" };
   const mine = page.wallProposals.filter((p) => p.calibrationId === calibration.id);
