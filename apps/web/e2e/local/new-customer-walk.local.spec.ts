@@ -606,6 +606,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
             // and the same groups are offered again with the same count.
             seenKinds.undoChecked = 1;
             const leftBefore = await text(left);
+            note(`Accept all offered with the row at "${await item.locator('[data-takeoff="queue-height"]').first().inputValue().catch(() => "?")}" (${await text(item.locator('[data-takeoff="queue-height-from"]'))})`);
             await shot("review-accept-offered", tab);
             await acceptAll.click();
             await expect(summary).toBeVisible({ timeout: 60_000 });
@@ -660,6 +661,9 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
             act(2);
           }
           await tab.keyboard.press("Enter");
+        } else if (kind === "windows") {
+          // The windows counted on the sheet (#1024): a person who agrees confirms them all.
+          await item.locator('[data-takeoff="queue-windows-accept"]').click();
         } else if (kind === "scale") {
           const printed = item.locator('[data-takeoff="review-queue-confirm-scale"], [data-takeoff="review-queue-printed"]');
           if ((await printed.count()) === 0) {
@@ -712,6 +716,8 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const legendNamed = offered.filter((o) => !/^— /.test(o)).length;
       const fifteen = offered.filter((o) => / @ 15'-0" /.test(o)).length;
       note(`Pre-filled on ${offered.length} group rows shown one by one: ${legendNamed} with a type, ${fifteen} at 15'-0". ${offered.join(" | ")}`);
+      const typedItems = await prisma.takeoffItem.findMany({ where: { jobId, wallTypeId: { not: null } }, select: { name: true, heightFt: true } });
+      note(`Typed items' stored heights: ${typedItems.map((i) => `${i.name} ${i.heightFt?.toString() ?? "none"} ft`).join(", ")}`);
       note(`Answered: ${Object.entries(seenKinds).map(([k, n]) => `${n} ${k}`).join(", ")}. Queue ends: "${await text(tab.locator('[data-takeoff="review-queue-left"]'))}"`);
       await shot("review-done", tab);
     }
