@@ -103,6 +103,8 @@ type Props = {
   reviewHeights?: Record<string, CodeHeight>;
   /** Whether the set's legend was read, so a missing height says why (`legendMissing`). */
   reviewLegend?: LegendState;
+  /** Each type's heights by part of the building, to pick from (`loadReviewQueue`). */
+  reviewHeightChoices?: Record<string, CodeHeight[]>;
   /** The codes a queued group can be given: the legend's, else the company's library. */
   reviewCodes?: string[];
   /** Whether this server can label at all (`labellingAllowed`). False on every
@@ -211,6 +213,7 @@ export function TakeoffWorkspace({
   planSet = [],
   reviewHeights = {},
   reviewLegend = "read",
+  reviewHeightChoices = {},
   reviewCodes = [],
   labellingAvailable = false,
   finderVersion = "unknown",
@@ -1564,6 +1567,7 @@ export function TakeoffWorkspace({
                 legendCodes={reviewCodes.length > 0 ? reviewCodes : data.legendCodes}
                 heights={reviewHeights}
                 legend={reviewLegend}
+                heightChoices={reviewHeightChoices}
                 planSet={planSet}
                 onShow={onQueueShow}
                 onLeft={setQueueLeft}

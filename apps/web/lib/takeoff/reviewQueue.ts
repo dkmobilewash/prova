@@ -51,6 +51,8 @@ export type ReviewItem =
       suggested: Guess | null;
       /** The ceiling over the rooms its walls bound, the height when its type has none. */
       ceiling: HeightOption | null;
+      /** The level its walls' plan shows, and that level's floor-to-floor for the types that run to the structure. */
+      level?: QueueLevel;
     }
   | { kind: "height"; key: string; itemId: string; name: string; pageNumber: number; sheet: string; runs: QueueRun[]; feet: number | null; options: HeightOption[] }
   | {
@@ -86,6 +88,47 @@ export function legendMissing(state: LegendState, jobId: string): { text: string
   return state === "unread"
     ? { text: "No height from the drawings: the wall legend has not been read yet.", href: `/jobs/${jobId}/takeoff`, action: "Read the wall legend" }
     : { text: "No height from the drawings: the wall legend has not been read, and Wall types from the drawings is off.", href: "/settings/assistant#ai-switch", action: "Turn it on (owner)" };
+}
+
+/** "levels 2–9", its floor-to-floor and where that came from, and the codes it is the height of (those that run to the structure). */
+export type QueueLevel = { label: string; height: CodeHeight | null; codes: string[] };
+
+/** A type's height on a level: the level's floor-to-floor, for a type that runs to the structure. */
+export function levelHeightFor(code: string | null, level: QueueLevel | undefined): CodeHeight | null {
+  if (code === null || level === undefined || level.height === null) return null;
+  return level.codes.includes(code.toUpperCase()) ? level.height : null;
+}
+
+/**
+ * ── A GROUP SPLIT BY THE LEVEL ITS WALLS ARE DRAWN ON ──
+ *
+ * Diego, 2026-11-05: by level is automatic. Two plans on one sheet (Crosslines
+ * A100: the 1st floor and floors 2–9) put one thickness group on two levels
+ * with two floor-to-floors, so the group becomes one item per level, each
+ * with its own height pre-filled. `levelsOf` gives each run its plan's levels.
+ */
+export function splitByLevel(
+  item: Extract<ReviewItem, { kind: "type" }>,
+  levelsOf: (runs: readonly QueueRun[]) => number[][],
+  heightOf: (levels: readonly number[]) => CodeHeight | null,
+  codes: readonly string[],
+  feetPerUnit: number | null,
+): ReviewItem[] {
+  const levels = levelsOf(item.runs);
+  const byLevel = new Map<string, { levels: number[]; runs: QueueRun[] }>();
+  item.runs.forEach((run, i) => {
+    const l = levels[i] ?? [];
+    const key = l.join(",");
+    byLevel.set(key, { levels: l, runs: [...(byLevel.get(key)?.runs ?? []), run] });
+  });
+  if (byLevel.size === 1 && [...byLevel.keys()][0] === "") return [item];
+  return [...byLevel.values()].map(({ levels: l, runs }) => ({
+    ...item,
+    key: byLevel.size === 1 ? item.key : `${item.key}:L${l.join(",") || "-"}`,
+    runs,
+    feet: feetOf(runs, feetPerUnit),
+    ...(l.length === 0 ? {} : { level: { label: l.length === 1 ? `level ${l[0]}` : `levels ${l[0]}–${l[l.length - 1]}`, height: heightOf(l), codes: [...codes] } }),
+  }));
 }
 
 export type QueueSheet = { pageNumber: number; sheet: string; feetPerUnit: number | null };

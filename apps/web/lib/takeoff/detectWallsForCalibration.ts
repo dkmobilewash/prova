@@ -5,6 +5,7 @@ import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
 import { storedRasterFor } from "@/lib/plan-ingest/raster";
 import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
 import { pagesToSample } from "./sheetTemplate";
+import { storePlanCaptions } from "./levelReads";
 import { inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
 import { detectForSheet, offeredCandidates } from "./offeredCandidates";
 import { userExclusionsFromRows } from "./userExclusions";
@@ -443,6 +444,11 @@ export async function detectWallsForCalibration(
       })),
     );
 
+    // Which plan on the sheet shows which level, for each wall's floor-to-floor. Never at
+    // the walls' cost: a sheet whose captions do not store still posts, with no level.
+    await storePlanCaptions(target.planId, target.pageNumber, textItems, strokes.widthPt).catch((error) =>
+      console.error("[takeoff] plan captions not stored", { planId: target.planId, pageNumber: target.pageNumber }, error),
+    );
     await prisma.takeoffWallProposal.createMany({
       data: proposalRowsFor(
         groups,

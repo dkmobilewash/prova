@@ -6,7 +6,7 @@ import { confirmSheetScales, confirmWallGroup, confirmWindows, priceLineFromCost
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
-import { heightFor, legendMissing, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { heightFor, legendMissing, levelHeightFor, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
 
@@ -35,6 +35,7 @@ export function TakeoffReviewQueue({
   legendCodes,
   heights = {},
   legend = "read",
+  heightChoices = {},
   planSet,
   onShow,
   onLeft,
@@ -50,6 +51,8 @@ export function TakeoffReviewQueue({
   heights?: Readonly<Record<string, CodeHeight>>;
   /** Whether the set's legend was read: with none, a group's height says why it has none from the drawings. */
   legend?: LegendState;
+  /** Each type's heights by part of the building (Joplin's three roofs), offered as choices. */
+  heightChoices?: Readonly<Record<string, readonly CodeHeight[]>>;
   planSet: PlanSetRow[];
   onShow: (item: ReviewItem | null) => void;
   /** Told how many are left whenever that changes, so the top bar's count is this one. */
@@ -185,15 +188,16 @@ export function TakeoffReviewQueue({
             ) : (
               <QueueGroupConfirm
                 key={current.key}
-                label={`Walls · sheet ${current.sheet} · ${inchLabel(current.inches)}${current.feet !== null ? ` · ${Math.round(current.feet)} ft` : ""}`}
+                label={`Walls · sheet ${current.sheet}${current.level ? ` · ${current.level.label}` : ""} · ${inchLabel(current.inches)}${current.feet !== null ? ` · ${Math.round(current.feet)} ft` : ""}`}
                 codes={current.suggested === null || legendCodes.some((c) => c.toUpperCase() === current.suggested!.code.toUpperCase()) ? legendCodes : [...legendCodes, current.suggested.code]}
                 suggested={current.suggested}
-                heightOf={(code) => heightFor(code, heights, current.ceiling)}
                 missing={legendMissing(legend, jobId)}
+                heightOf={(code) => levelHeightFor(code, current.level) ?? heightFor(code, heights, current.ceiling)}
+                heightOptions={(code) => (code === null ? [] : (heightChoices[code.toUpperCase()] ?? []))}
                 onSkip={() => setCursor(after(current.key))}
                 onAccept={(code, heightFt) =>
                   acceptNow(current.key, `${code} on sheet ${current.sheet}`, () =>
-                    confirmWallGroup(jobId, { planId, pageNumber: current.pageNumber, code: code!, inches: current.inches, runs: current.runs, heightFt }),
+                    confirmWallGroup(jobId, { planId, pageNumber: current.pageNumber, code: code!, inches: current.inches, runs: current.runs, heightFt, level: levelHeightFor(code, current.level) === null ? null : current.level!.label }),
                   )
                 }
               />
@@ -205,6 +209,7 @@ export function TakeoffReviewQueue({
               codes={[]}
               suggested={null}
               missing={legendMissing(legend, jobId)}
+              heightOptions={() => (current.options.length > 1 ? current.options.map((o) => ({ feet: o.feet, from: o.from })) : [])}
               heightOf={() => {
                 // The type's own height first, as for a group being typed; else the ceiling.
                 const first = current.options.find((o) => o.kind === "legend") ?? current.options[0];

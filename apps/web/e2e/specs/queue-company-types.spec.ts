@@ -91,17 +91,40 @@ test.describe("the queue offers the company's types when the legend names none",
     await page.screenshot({ path: path.join(SHOTS, "queue-company-types-1440.png") });
   });
 
-  test("3. 1 picks W1, Enter type the group, and the queue empties", async () => {
+  test("3. 1 picks W1; with no height known, Enter asks for one, and the count does not stand still", async () => {
+    const left = page.locator('[data-takeoff="review-queue-left"]');
+    await expect(left).toHaveText("1 left to review");
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("1");
     await expect(page.locator('[data-takeoff="queue-type"]')).toHaveText("W1");
     await page.keyboard.press("Enter");
+    // Not accepted bare: that made W1's item a height item, and the count stood still (walk v3).
+    await expect(page.locator('[data-takeoff="queue-ask-height"]')).toHaveText("W1 has no height yet: type the height of every W1 wall on this job, or Enter again to leave it for later.");
+    await expect(page.locator('[data-takeoff="queue-height"]')).toBeFocused();
+    await expect(left).toHaveText("1 left to review");
+    await page.keyboard.type(`9'-0"`);
+    const start = Date.now();
+    await page.keyboard.press("Enter");
+    // The count moves at once, before the save is back.
+    await expect(left).toHaveText("Nothing left to review", { timeout: 2_000 });
+    expect(Date.now() - start).toBeLessThan(2_000);
     await expect.poll(async () => prisma.takeoffMeasurement.count({ where: { page: { planId, pageNumber: 2 }, item: { wallType: { code: "W1" } } } }), { timeout: 30_000 }).toBe(2);
-    // W1 has no height of its own, so a height item may follow; the type item itself is gone.
-    await expect(page.locator('[data-takeoff="review-queue-item"][data-kind="type"]')).toHaveCount(0, { timeout: 30_000 });
+    const w1 = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, wallType: { code: "W1" } }, select: { id: true, heightFt: true } });
+    expect(w1.heightFt?.toString()).toBe("9");
+    // No height item for W1 follows: its height came with its type.
+    await expect(page.locator('[data-takeoff="review-queue-item"][data-kind="height"]')).toHaveCount(0);
   });
 
-  test("4. nothing crashed", async () => {
+  test("4. the estimate has W1's lines at once: reviewing the takeoff made them, with no Put the takeoff on the estimate", async () => {
+    await expect.poll(async () => prisma.jobLineItem.count({ where: { jobId, isDeleted: false, takeoffItemId: (await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, wallType: { code: "W1" } }, select: { id: true } })).id } }), { timeout: 30_000 }).toBeGreaterThan(0);
+    await page.goto(`/jobs/${jobId}`);
+    await expect(page.locator("[data-job-next]")).not.toContainText("Put the takeoff on the estimate");
+    // W1 is a starter type with no prices yet, so its new lines are what Review asks next.
+    await expect(page.locator("[data-job-next]")).toContainText(/^Next: Review \d+ items?/);
+    await page.screenshot({ path: path.join(SHOTS, "stepper-after-review-1440.png") });
+  });
+
+  test("5. nothing crashed", async () => {
     expect(monitor.crashes).toEqual([]);
   });
 });

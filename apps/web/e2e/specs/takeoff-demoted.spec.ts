@@ -226,8 +226,12 @@ test.describe("demote, don't hide", () => {
     baseline = before;
     expect(await page.locator('[data-takeoff="demoted"]').count(), "the switch was turned off above, yet the model demoted at find").toBe(0);
     await openFinders(page);
+    // THE CHECK'S OWN RESPONSE, by its refusal row: any action POST on the
+    // page matched before, and on a CI run another one answered first —
+    // `{"ok":true,"value":null}` was captured and `replayVerdict` failed in
+    // 86ms (#994's run 42112895955, #1009's; green on retry each time).
     const [response] = await Promise.all([
-      page.waitForResponse(isActionPost, { timeout: 60_000 }),
+      page.waitForResponse(async (r) => isActionPost(r) && (await r.text()).includes('{"ok":false'), { timeout: 60_000 }),
       page.locator('[data-takeoff="check-runs"]').click(),
     ]);
     captured = { body: await response.text(), contentType: response.headers()["content-type"] ?? "text/x-component" };

@@ -18,4 +18,9 @@ describe("the floor plan the workspace opens on (#996, the cover found by the ne
   it("and a scaled cover is still not where the work is", () => {
     expect(floorPlansOfTheWork([sheet(5, null, null, true), sheet(12, "A100", "OVERALL FLOOR PLAN", true), sheet(13, "A101", "FLOOR PLAN", true)])).toEqual([13]);
   });
+  it("WALLS FOUND ON THE OVERALL PLAN FIRST DO NOT MAKE IT THE WORK (walk v3 opened A100)", () => {
+    const withWalls = (s: WallsSheet, hasWalls: boolean, onJob = false): WallsSheet => ({ ...s, hasWalls, onJob });
+    expect(floorPlansOfTheWork([withWalls(sheet(12, "A100", "OVERALL FLOOR PLAN", true), true, true), withWalls(sheet(13, "A101", "FLOOR PLAN", true), false)])).toEqual([13]);
+    expect(floorPlansOfTheWork([withWalls(sheet(12, "A100", "OVERALL FLOOR PLAN", true), true), withWalls(sheet(13, "A101", "FLOOR PLAN", false), false)])).toEqual([13]);
+  });
 });

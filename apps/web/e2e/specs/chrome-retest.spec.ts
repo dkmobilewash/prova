@@ -60,6 +60,25 @@ test.describe("Chrome's re-test", () => {
     const box = (await overlay().boundingBox())!;
     return { x: box.x + x * box.width, y: box.y + y * box.width };
   }
+  /**
+   * The point once the sheet has stopped moving. Opening or closing the strip
+   * resizes the frame, and at Fit the sheet re-fits — a render that finishes
+   * later. A point taken before, or during, lands off the run (main's CI on
+   * 68b531be: the click after Esc picked nothing).
+   */
+  async function settledAt(x: number, y: number) {
+    let last = "";
+    await expect
+      .poll(async () => {
+        const box = await overlay().boundingBox();
+        const now = box === null ? "" : `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.width)}`;
+        const same = now !== "" && now === last;
+        last = now;
+        return same;
+      }, { intervals: [250], timeout: 15_000 })
+      .toBe(true);
+    return at(x, y);
+  }
 
   test("1. three floor plans, two scaled; a typed group with a height on the first, and a run held to confirm", async () => {
     await signInAs(page, PERSONAS.rooms.email);
@@ -142,8 +161,8 @@ test.describe("Chrome's re-test", () => {
     await expect(page.locator('[data-testid="takeoff-plan-port"]')).toHaveAttribute("data-sheet-ready", "true", { timeout: 60_000 });
     // The review left it zoomed on a run; the whole sheet, so the run is on screen.
     await page.locator('[data-takeoff="fit"]').click();
-    await page.waitForTimeout(500);
-    const mid = await at((RUNS[0]!.x1 + RUNS[0]!.x2) / 2, RUNS[0]!.y1);
+    const onRun = () => settledAt((RUNS[0]!.x1 + RUNS[0]!.x2) / 2, RUNS[0]!.y1);
+    const mid = await onRun();
     await page.mouse.click(mid.x, mid.y);
     await expect(strip()).toContainText(`43'-2"`);
     await expect(strip()).toContainText("ZR1 walls");
@@ -155,7 +174,9 @@ test.describe("Chrome's re-test", () => {
     await page.screenshot({ path: path.join(SHOTS, "strip-one-run-1440.png") });
     await page.keyboard.press("Escape");
     await expect(strip()).toHaveCount(0);
-    await page.mouse.click(mid.x, mid.y);
+    // The strip has closed and the frame grown back: the run is wherever the re-fit put it.
+    const again = await onRun();
+    await page.mouse.click(again.x, again.y);
     await expect(strip()).toContainText(`43'-2"`);
     await picker.selectOption("2");
     await expect(strip()).toHaveCount(0);

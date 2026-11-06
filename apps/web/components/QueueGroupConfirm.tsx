@@ -15,6 +15,9 @@ import type { CodeHeight, Guess } from "@/lib/takeoff/reviewQueue";
  *   1–9    pick another type from the legend (the height follows it, unless typed)
  *   T      edit the height ("tall"; Enter in the box accepts). Not H: H is
  *          the Hand tool everywhere else in the workspace (Chrome's re-test)
+ *   Z      take the next height by part of the building, where the sections
+ *          print one per zone (Joplin's 12'-0" / 12'-4" / 16'-8") — a choice,
+ *          since nothing on a plan says which wall is under which roof
  *   N      skip to the next item
  *
  * The keys are taken in the capture phase and stopped there, so the viewer's
@@ -27,6 +30,7 @@ export function QueueGroupConfirm({
   suggested,
   heightOf,
   missing = null,
+  heightOptions = () => [],
   onAccept,
   onSkip,
 }: {
@@ -40,6 +44,8 @@ export function QueueGroupConfirm({
   heightOf: (code: string | null) => CodeHeight | null;
   /** Why no height from the drawings can be offered (no legend read), and where to fix it. */
   missing?: { text: string; href: string; action: string } | null;
+  /** A type's heights by part of the building, each with what printed it, to pick from. */
+  heightOptions?: (code: string | null) => readonly CodeHeight[];
   onAccept: (code: string | null, heightFt: number | null) => void;
   onSkip: () => void;
 }) {
@@ -47,12 +53,32 @@ export function QueueGroupConfirm({
   const [typed, setTyped] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const heightBox = useRef<HTMLInputElement>(null);
-  const height = heightOf(pick?.code ?? null);
+  // The zone picked, by its place in the type's list: picking another type starts over.
+  const [zoneAt, setZoneAt] = useState<{ code: string | null; at: number } | null>(null);
+  const zones = heightOptions(pick?.code ?? null);
+  const zone = zoneAt !== null && zoneAt.code === (pick?.code ?? null) ? (zones[zoneAt.at] ?? null) : null;
+  const height = zone ?? heightOf(pick?.code ?? null);
   const heightText = typed ?? (height === null ? "" : feetLabel(height.feet));
+  const takeZone = (at: number) => {
+    setError(null);
+    setTyped(null);
+    setZoneAt({ code: pick?.code ?? null, at });
+  };
   const choosing = codes.length > 0;
 
+  // ── A TYPE WITH NO HEIGHT IS ASKED ITS HEIGHT HERE, ONCE ──
+  // Accepting it bare made the type's item a height item of its own, so the
+  // count stood still for an answer (walk v3: "the count did not move"). The
+  // first Enter goes to the height; a second Enter leaves it for later.
+  const [askedHeight, setAskedHeight] = useState(false);
   function accept() {
     if (choosing && pick === null) return setError("Pick a type: 1–9.");
+    if (choosing && heightText.trim() === "" && !askedHeight) {
+      setAskedHeight(true);
+      setError(null);
+      heightBox.current?.focus();
+      return;
+    }
     let feet: number | null = null;
     if (heightText.trim() !== "") {
       const parsed = parseFeetInches(heightText, { label: "Height", min: 0 });
@@ -80,7 +106,8 @@ export function QueueGroupConfirm({
     else if (key === "t" || key === "T") {
       heightBox.current?.focus();
       heightBox.current?.select();
-    } else if (key === "n" || key === "N") onSkip();
+    } else if ((key === "z" || key === "Z") && zones.length > 0) takeZone(zone === null ? 0 : (zoneAt!.at + 1) % zones.length);
+    else if (key === "n" || key === "N") onSkip();
     else return;
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -139,6 +166,16 @@ export function QueueGroupConfirm({
           </a>
         </span>
       )}
+      {zones.length > 0 && (
+        <span className="inline-flex flex-wrap items-center gap-1" data-takeoff="queue-zones">
+          <span className="text-ink-muted">By part of the building (Z)</span>
+          {zones.map((z, i) => (
+            <button key={`${z.feet}:${z.from}`} type="button" title={z.from} className={`${button} ${zone !== null && zoneAt!.at === i && typed === null ? "border-brand" : ""}`} onClick={() => takeZone(i)}>
+              {feetLabel(z.feet)}
+            </button>
+          ))}
+        </span>
+      )}
       <button type="button" className={`${button} border-brand bg-brand font-semibold text-neutral-900`} onClick={accept} data-takeoff="queue-accept">
         Accept ⏎
       </button>
@@ -162,6 +199,11 @@ export function QueueGroupConfirm({
       <span className="text-ink-muted" data-takeoff="queue-keys">
         Enter accept{choosing ? " · 1–9 type" : ""} · T height · N skip
       </span>
+      {askedHeight && pick !== null && heightText.trim() === "" && (
+        <span className="text-ink-body" data-takeoff="queue-ask-height">
+          {pick.code} has no height yet: type the height of every {pick.code} wall on this job, or Enter again to leave it for later.
+        </span>
+      )}
       {error !== null && (
         <span role="alert" className="text-tag-rose-ink">
           {error}
