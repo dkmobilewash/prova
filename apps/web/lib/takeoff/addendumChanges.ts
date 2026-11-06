@@ -209,7 +209,7 @@ export async function loadAddendumChanges(companyId: string, jobId: string): Pro
  * square feet and dollars, the net, and what is not priced yet. Plain text, so
  * it pastes into an email or an RFI response as it is.
  */
-export function gcSummary(changes: NonNullable<AddendumChanges>, scope = "framing and drywall"): string {
+export function gcSummary(changes: NonNullable<AddendumChanges>, scope = "framing and drywall", applied: number | null = null): string {
   const n = (v: number) => Math.abs(Math.round(v)).toLocaleString("en-US");
   const sign = (v: number) => (Math.round(v) > 0 ? "+" : Math.round(v) < 0 ? "−" : "");
   const usd = (v: number) => `${sign(v)}${Math.abs(v).toLocaleString("en-US", { style: "currency", currency: "USD" })}`;
@@ -229,8 +229,11 @@ export function gcSummary(changes: NonNullable<AddendumChanges>, scope = "framin
     const price = r.deltaDollars === null ? ", to be priced" : `, ${usd(r.deltaDollars)}`;
     lines.push(`• ${what}: ${sign(r.deltaFt)}${n(r.deltaFt)} LF${area}${price}`);
   }
-  const net = moved.reduce((v, r) => v + (r.deltaDollars ?? 0), 0);
-  const open = moved.some((r) => r.deltaDollars === null);
-  if (moved.length > 0) lines.push("", `Net change to our price: ${usd(net)}${open ? ", plus the walls still to be priced" : ""}.`);
+  // Once applied, the estimate's own before and after: new walls with no type
+  // are priced as the default partition then, which the rows cannot know (walk
+  // v8: the page said $0.00 and Apply moved the estimate +$19,539.73).
+  const net = applied ?? moved.reduce((v, r) => v + (r.deltaDollars ?? 0), 0);
+  const open = applied === null && moved.some((r) => r.deltaDollars === null);
+  if (moved.length > 0 || applied !== null) lines.push("", `Net change to our price: ${usd(net)}${open ? ", plus the walls still to be priced" : ""}.`);
   return lines.join("\n");
 }

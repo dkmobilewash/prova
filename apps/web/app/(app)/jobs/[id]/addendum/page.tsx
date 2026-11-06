@@ -148,7 +148,7 @@ export default async function JobAddendumPage({ params }: { params: Promise<{ id
             )}
             {unpriced.length > 0 && (
               <p className="mt-1 text-xs text-ink-muted" data-addendum="unpriced">
-                Not in the net: {unpriced.map((r) => r.code ?? r.name.toLowerCase()).join(", ")}, which {unpriced.length === 1 ? "has" : "have"} no price yet. New walls take a price once they are typed.
+                Not in the net: {unpriced.map((r) => r.code ?? r.name.toLowerCase()).join(", ")}, which {unpriced.length === 1 ? "has" : "have"} no price here. New walls with no type are priced as your default partition when applied, until they are typed; Apply says what the estimate moved, and the summary carries that figure.
               </p>
             )}
           </section>
