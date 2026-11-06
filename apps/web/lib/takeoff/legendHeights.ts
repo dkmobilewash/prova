@@ -56,12 +56,32 @@ export function legendHeightOf(type: LegendTypeForHeight, set: SetHeightFacts | 
  * call; a set that will not open leaves every type reading its own words
  * only (a printed figure still resolves) with the reason in the sentence.
  */
+/**
+ * ── THE SET'S HEIGHT FACTS, READ ONCE A MINUTE OR SO, NOT ONCE PER TYPE ──
+ *
+ * Reading them opens the whole plan and walks every sheet: 3.4 s on Topeka
+ * (137 sheets). Accept all adds each code the library lacks from the legend, one
+ * at a time, and paid that per code — three new types were 10.2 of its 10.3 s.
+ * The facts are the plan file's (a plan id never gets a new file) and its legend
+ * page's, so they are kept here for a few minutes and the next type reuses them.
+ * ponytail: per server instance, a handful of entries; a different instance
+ * reads them again, which costs what it always did.
+ */
+const FACTS_TTL_MS = 10 * 60_000;
+const FACTS_KEPT = 8;
+const factsCache = new Map<string, { at: number; set: SetHeightFacts }>();
+
 export async function legendHeightsFor(input: {
   planId: string;
   companyId: string;
   legendPage: number;
   types: readonly LegendTypeForHeight[];
 }): Promise<Map<string, LegendHeightResult>> {
+  const key = `${input.planId}:${input.legendPage}`;
+  const kept = factsCache.get(key);
+  if (kept !== undefined && Date.now() - kept.at < FACTS_TTL_MS) {
+    return new Map(input.types.map((type) => [type.code.toUpperCase(), legendHeightOf(type, kept.set, null)]));
+  }
   let set: SetHeightFacts | null = null;
   let unread: string | null = null;
   try {
@@ -79,6 +99,11 @@ export async function legendHeightsFor(input: {
     }
   } catch (err) {
     unread = err instanceof Error ? err.message : String(err);
+  }
+  // Only a read that worked is kept: a failed one is tried again next time.
+  if (set !== null) {
+    factsCache.set(key, { at: Date.now(), set });
+    while (factsCache.size > FACTS_KEPT) factsCache.delete(factsCache.keys().next().value!);
   }
   return new Map(input.types.map((type) => [type.code.toUpperCase(), legendHeightOf(type, set, unread)]));
 }
