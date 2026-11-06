@@ -218,12 +218,15 @@ export function TakeoffReviewQueue({
           ...entry,
           undo: async () => {
             const undone = await entry.undo();
-            if (undone.ok)
+            if (undone.ok) {
               setDone((was) => {
                 const next = new Set(was);
                 next.delete(key);
                 return next;
               });
+              // Back on the item just undone, so it is what the person sees.
+              setCursor(key);
+            }
             return undone;
           },
           redo: async () => {
