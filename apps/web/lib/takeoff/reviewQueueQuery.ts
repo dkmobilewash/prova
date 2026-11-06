@@ -30,7 +30,11 @@ export async function loadReviewQueue(
 ): Promise<{ planId: string | null; items: ReviewItem[]; heights: Record<string, CodeHeight>; heightChoices: Record<string, CodeHeight[]>; codes: string[]; scaledSheets: number; floorPlans: number; floorPlansScaled: number }> {
   const plan = await prisma.takeoffPlan.findFirst({ where: { jobId, companyId }, orderBy: { createdAt: "desc" }, select: { id: true } });
   const unpriced = await prisma.jobLineItem.findMany({
-    where: { jobId, job: { companyId }, isDeleted: false, unitPrice: null, budgetedUnitCost: null },
+    // Never "Walls — untyped": those runs are this queue's type items, and the
+    // line goes when the last of them is typed. Asked a price, every confirm
+    // that wrote it put an item back for the one it took off — the count stood
+    // still (fast-confirm, once confirming wrote lines; walk v3's finding 3).
+    where: { jobId, job: { companyId }, isDeleted: false, unitPrice: null, budgetedUnitCost: null, OR: [{ takeoffItemId: null }, { takeoffItem: { name: { not: UNTYPED_ITEM } } }] },
     orderBy: { createdAt: "asc" },
     select: { id: true, description: true, quantity: true, unit: true, costCategory: true },
   });
