@@ -200,3 +200,21 @@ describe("onlyMarkedDoors", () => {
     expect(onlyMarkedDoors(doors, [{ x: 0.105, y: 0.505 }], 100)).toHaveLength(5);
   });
 });
+
+describe("an exterior wall is judged inside its own drawing (Crosslines A100)", () => {
+  it("does not let another plan on the sheet stand outside a facade", () => {
+    // Two 40 x 20 ft buildings at 100 ft per page width, one above the other with 21 ft of paper between.
+    const box = (y: number): WallCandidate[] => [
+      { x1: 0.1, y1: y, x2: 0.5, y2: y, thicknessFeet: 0.5, lengthFeet: 40 },
+      { x1: 0.5, y1: y, x2: 0.5, y2: y + 0.2, thicknessFeet: 0.5, lengthFeet: 20 },
+      { x1: 0.5, y1: y + 0.2, x2: 0.1, y2: y + 0.2, thicknessFeet: 0.5, lengthFeet: 40 },
+      { x1: 0.1, y1: y + 0.2, x2: 0.1, y2: y, thicknessFeet: 0.5, lengthFeet: 20 },
+    ];
+    const walls = [...box(0.1), ...box(0.51)];
+    // The upper building's south facade (index 2) faces the lower one's north facade (index 4).
+    const exterior = exteriorWalls(walls, 100);
+    expect(exterior[2]).toBe(true);
+    expect(exterior[4]).toBe(true);
+    expect(exterior.every(Boolean)).toBe(true);
+  });
+});

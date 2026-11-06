@@ -18,8 +18,11 @@ import { inchLabel } from "./wallVectors";
  *               drawing suggests pre-filled with its source (`postingGate.ts`);
  *   3. height — a wall group (its takeoff item) with no height, which "Set
  *               height" gives one (`setWallGroupHeight`, `wallHeight.ts`);
- *   4. scale  — a floor plan with no scale saved;
- *   5. price  — an estimate line with neither a price nor a cost. Once the
+ *   4. windows — a sheet's windows counted by opening and typed by the nearest
+ *               tag (`windowTags.ts`): one count to confirm, false hits
+ *               dropped first (`confirmWindows`);
+ *   5. scale  — a floor plan with no scale saved;
+ *   6. price  — an estimate line with neither a price nor a cost. Once the
  *               company's own markup is set (`pricingRatesFor`) it asks for
  *               the line's COST and the price is worked from it
  *               (`priceLineFromCost`); before that, the estimate opens on the
@@ -52,6 +55,17 @@ export type ReviewItem =
       level?: QueueLevel;
     }
   | { kind: "height"; key: string; itemId: string; name: string; pageNumber: number; sheet: string; runs: QueueRun[]; feet: number | null; options: HeightOption[] }
+  | {
+      kind: "windows";
+      key: string;
+      pageNumber: number;
+      sheet: string;
+      /** Each counted window's frame line, lit on the plan; its type in `tags`, same order. */
+      runs: QueueRun[];
+      tags: string[];
+      /** The window being looked at, zoomed to; null shows them all. */
+      at: number | null;
+    }
   | { kind: "scale"; key: string; pageNumber: number; sheet: string }
   | { kind: "price"; key: string; lineItemId: string; description: string; quantity: string; unit: string | null; askCost: boolean; costCategory: CostCategoryValue | null };
 
@@ -201,7 +215,21 @@ export function heightFor(code: string | null, heights: Readonly<Record<string, 
   return own ?? (ceiling === null ? null : { feet: ceiling.feet, from: ceiling.from });
 }
 
-const KIND_ORDER: ReviewItem["kind"][] = ["wall", "type", "height", "scale", "price"];
+const KIND_ORDER: ReviewItem["kind"][] = ["wall", "type", "height", "windows", "scale", "price"];
+
+/** A sheet's suggested windows, until they are confirmed. */
+export function windowsItem(sheet: QueueSheet, stored: { windows: readonly ({ tag: string } & QueueRun)[]; decided?: boolean }): ReviewItem | null {
+  if (stored.decided === true || stored.windows.length === 0) return null;
+  return {
+    kind: "windows",
+    key: `windows:${sheet.pageNumber}`,
+    pageNumber: sheet.pageNumber,
+    sheet: sheet.sheet,
+    runs: stored.windows.map(({ x1, y1, x2, y2 }) => ({ x1, y1, x2, y2 })),
+    tags: stored.windows.map((w) => w.tag),
+    at: null,
+  };
+}
 
 /** The queue in the order a person meets it: by kind, then sheet, longest first. Prices keep the estimate's order. */
 export function reviewQueue(items: readonly ReviewItem[]): ReviewItem[] {
@@ -216,6 +244,7 @@ export function reviewQueue(items: readonly ReviewItem[]): ReviewItem[] {
 /** The run to zoom to: a held run itself, or a group's longest run. */
 export function focusOf(item: ReviewItem): (QueueRun & { pageNumber: number }) | null {
   if (item.kind === "wall") return { pageNumber: item.pageNumber, x1: item.x1, y1: item.y1, x2: item.x2, y2: item.y2 };
+  if (item.kind === "windows") return item.at === null || item.runs[item.at] === undefined ? null : { pageNumber: item.pageNumber, ...item.runs[item.at]! };
   if (item.kind === "type" || item.kind === "height") {
     const longest = item.runs.reduce((best, run) => (length(run) > length(best) ? run : best));
     return { pageNumber: item.pageNumber, ...longest };

@@ -346,6 +346,7 @@ export function TakeoffPlanViewer({
   doorsWindows = false,
   planCompare = null,
   doorScheduleRows = [],
+  windowScheduleRows = [],
   wallModel = null,
   ceilingPages = [],
   onMeasurementSaved,
@@ -470,6 +471,8 @@ export function TakeoffPlanViewer({
    */
   planCompare?: { pairs: Record<number, Pairing>; sheets: { pageNumber: number; sheetNumber: string | null; title: string | null }[] } | null;
   /** The set's door schedule rows as the ingest read them, for the join; empty when none. */
+  /** The set's WINDOW schedule rows, so windows are counted by their tags (`windowsByTag`). */
+  windowScheduleRows?: StoredScheduleRow[];
   doorScheduleRows?: StoredScheduleRow[];
   /**
    * "Demote, don't hide": a run the check labels casework or reference stays
@@ -3873,6 +3876,7 @@ export function TakeoffPlanViewer({
           walls,
           feetPerUnit,
           scheduleRows: doorScheduleRows,
+          windowRows: windowScheduleRows,
         });
         const result = openingsInWorkArea(allOpenings, exclusionsRef.current?.workArea ?? []);
         const byWall = new Map<number, { widthFt: number }[]>();

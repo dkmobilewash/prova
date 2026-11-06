@@ -14,7 +14,8 @@ import { storedLevels } from "@/lib/takeoff/levelReads";
 import { storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { levelHeight, runLevels } from "@/lib/takeoff/levelHeights";
 import { heightBasis } from "@/lib/takeoff/wallHeights";
-import { heightItem, reviewQueue, splitByLevel, suggestType, typeItems, wallItem, type CodeHeight, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { heightItem, reviewQueue, splitByLevel, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { storedWindowsOf, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
 import { feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/takeoff/wallHeight";
 
 /**
@@ -195,6 +196,13 @@ export async function loadReviewQueue(
     const type = item.wallType;
     const legend = legendOptions(type === null ? null : { code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes });
     const queued = heightItem(item, sheets, legend);
+    if (queued !== null) items.push(queued);
+  }
+
+  // ── WINDOWS COUNTED BY OPENING, TO CONFIRM ──
+  for (const read of await prisma.takeoffPlanTextRead.findMany({ where: { planId: plan.id, kind: WINDOWS_SUGGESTED }, select: { pageNumber: true, value: true } })) {
+    const stored = storedWindowsOf(read.value);
+    const queued = stored === null ? null : windowsItem(sheetOf(read.pageNumber), stored);
     if (queued !== null) items.push(queued);
   }
 
