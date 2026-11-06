@@ -197,6 +197,7 @@ describe("who is offered what", () => {
       "draft_purchase_order",
       "run_takeoff",
       "post_takeoff_to_estimate",
+      "set_wall_height",
     ]);
     expect(commandsFor(ESTIMATOR).map((c) => c.name)).not.toContain("add_punch_items");
     // Writing the crew schedule is MANAGE_FIELD, which an estimator lacks.
@@ -233,13 +234,16 @@ describe("who is offered what", () => {
       "prepare_lien_waiver",
       "run_takeoff",
       "post_takeoff_to_estimate",
+      "set_wall_height",
     ]);
     for (const command of commandsFor(ACCOUNTING)) {
       expect(["MANAGE_BILLING", "VIEW_JOB_COSTS"], command.name).toContain(command.capability);
       // The two takeoff cards are drafts (a run whose walls are reviewed on the
       // page, lines added from it); everything else accounting gets is money.
+      // set_wall_height modifies a takeoff height the review queue sets.
       const takeoff = command.name === "run_takeoff" || command.name === "post_takeoff_to_estimate";
-      expect(command.tier, command.name).toBe(takeoff ? "T1_DRAFT" : "T3_MONEY_EVIDENCE");
+      const tier = takeoff ? "T1_DRAFT" : command.name === "set_wall_height" ? "T2_MODIFY" : "T3_MONEY_EVIDENCE";
+      expect(command.tier, command.name).toBe(tier);
     }
   });
 
@@ -323,6 +327,9 @@ describe("who is offered what", () => {
       // beside the BidOutcome row it records (commands/bidOutcomes.ts).
       "record_bid_outcome",
       "set_pursuit_stage",
+      // A wall type's height on the takeoff, the queue's T for every group of
+      // that type; its estimate lines follow (commands/takeoff.ts).
+      "set_wall_height",
     ]);
     const reschedule = COMMANDS.find((c) => c.name === "reschedule_job")!;
     expect(reschedule.mode).toBe("DIRECT");
@@ -522,6 +529,10 @@ describe("read-tool capabilities match the pages they cite", () => {
     // its literal from, and for the same reason. The wall schedule renders
     // inside that branch.
     wall_schedule: "VIEW_JOB_COSTS",
+    // Both read the takeoff the Takeoff tab and the workspace show, which
+    // take VIEW_JOB_COSTS (the takeoff page's requireCapability).
+    takeoff_quantities: "VIEW_JOB_COSTS",
+    takeoff_review: "VIEW_JOB_COSTS",
     // All three bid-day tools cite /bids and take its gate.
     bid_levelling: ROUTE_CAPABILITY["/bids"],
     bid_compliance: ROUTE_CAPABILITY["/bids"],

@@ -198,6 +198,8 @@ export type ToolName =
    */
   | "takeoff_currency"
   | "wall_schedule"
+  | "takeoff_quantities"
+  | "takeoff_review"
   | "bid_levelling"
   | "bid_compliance"
   | "bid_alternates"
@@ -932,6 +934,27 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "The wall schedule on a job being estimated: each wall run's length and height meeting its wall type, turned into studs, track, board, insulation and the labor hours those carry — summed per wall-type component the way an estimate reads ('W2 — 5/8\" Type X board: 4,260 sq ft'). Answers 'how much board on Riverside' and 'how many studs are we carrying'. Every quantity comes back computed, including waste and the round-up on whole sheets and studs. A run with NO HEIGHT of its own on a type with no default height produces no quantities at all and is listed in unpricedRuns — say which runs those are rather than treating them as zero, because a guessed ten feet is a number that looks right and gets bid. Only jobs still at ESTIMATE stage carry a wall schedule on screen; after award the runs are the record the contract was priced from and are changed by change order, so this does not answer for a contracted job. It does not know what a component costs — that is the estimate itself (estimate_detail) and the marked-up bid (bid_recap).",
     input_schema: jobFilter,
+  },
+  {
+    name: "takeoff_quantities",
+    // The job's Takeoff tab, hard-gated on VIEW_JOB_COSTS.
+    capability: "VIEW_JOB_COSTS",
+    description:
+      "Linear feet and square feet by wall type measured on a job's takeoff (the drawings), from the same walls, heights and opening rule the estimate lines are priced from: 'how many linear feet of S6A on Baker?', 'how much W1 did we take off on Riverside?'. Needs the job; wallType only if the person named one (a code like S6A or W1). Walls nobody has typed yet are one row with linear feet and no area. If the type is not on the takeoff, say so and name the types that are; never call it zero. NOT wall_schedule, which reads hand-entered wall runs and turns them into studs and board. Reads only; it never types, measures or changes a height.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        jobName: { type: "string", description: "The job, as the person named it." },
+        wallType: { type: "string", description: "A wall type code only if the person named one, e.g. S6A or W1. Omit otherwise." },
+      },
+    },
+  },
+  {
+    name: "takeoff_review",
+    capability: "VIEW_JOB_COSTS",
+    description:
+      "What is left in a job's takeoff review queue, the one the job's Next button counts: wall groups to type (with the type the drawing suggests and where that came from), wall types with no height, window counts to confirm, floor plans with no scale, and estimate lines with no cost. Answers 'what's left to review on Baker?' and 'is the Riverside takeoff done?'. Needs the job. Read out the counts and the suggestions as given, and point to `open` for the queue; the suggestions are suggestions to confirm, never answers. Reads only; it never confirms anything.",
+    input_schema: { type: "object" as const, properties: { jobName: { type: "string", description: "The job, as the person named it." } } },
   },
   {
     name: "bid_levelling",
