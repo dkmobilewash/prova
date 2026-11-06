@@ -261,6 +261,19 @@ function boards(lines: readonly string[]): { value: number; phrase: string }[] {
       out.push({ value, phrase: hit[0].trim() });
     }
   }
+  // A callout wrapped across lines is still one phrase: Baker's S8C reads
+  // `DOUBLE LAYER 5/8"` | `TYPE "X" GYP. BOARD`. Only where no line names a board.
+  if (out.length === 0 && lines.length > 1) {
+    const joined = lines.join(" ");
+    {
+      const re =
+        /(\d+(?:\s*\/\s*\d+)?)\s*"?\s*(?:THICK\s*)?(?:PAINTED\s*)?(?:TYPE\s*['"]?X['"]?\s*)?(?:GYP\.?(?:SUM)?|GWB|G\.?W\.?B\.?|DRYWALL|WALL\s*BOARD|BOARD|BD\.?|CEMENTITIOUS\s+BACKER)/gi;
+      for (const hit of joined.matchAll(re)) {
+        const value = inchesFrom(hit[1]);
+        if (value !== null && value >= 0.25 && value <= 1.25) out.push({ value, phrase: hit[0].trim() });
+      }
+    }
+  }
   return out;
 }
 
@@ -281,6 +294,42 @@ function layerCounts(lines: readonly string[]): { value: number; phrase: string 
 }
 
 const EACH_SIDE = /\b(?:EACH|EA\.?|BOTH)\s*SIDES?\b/i;
+
+/**
+ * ── A DIFFERENT COUNT ON EACH FACE IS NOT A CONTRADICTION ──
+ *
+ * Baker's S8C reads "1 LAYER GYP. INTERIOR W/ 2 LAYER GYP. EXTERIOR … DOUBLE
+ * LAYER 5/8"", K3 "TWO LAYERS … ON ONE SIDE & ONE LAYER ON THE OTHER SIDE",
+ * a fire wall "ONE LAYER … ON SHAFT SIDE … 3 LAYERS … ON ROOM SIDE". Each count
+ * is followed, in its own clause, by the face it is on. Two such counts on two
+ * different faces are one per face; a count that names no face must be one of
+ * them (S8C's DOUBLE is the exterior's 2). A choice between assemblies
+ * ("(1) LAYER … OR (2) LAYERS … EA. SIDE") names no two faces, so it stays a
+ * contradiction for a person to settle.
+ */
+const FACE = /\b(?:ON\s+)?(?:THE\s+)?(ONE|OTHER|SHAFT|ROOM|CORRIDOR|UNIT|STAIR|PUBLIC|TENANT|INTERIOR|EXTERIOR|INSIDE|OUTSIDE)\s+SIDE\b|\b(INTERIOR|EXTERIOR)\b/i;
+const COUNT = /\(?\b(\d+)\)?\s*LAYERS?\b|\b(ONE|TWO|THREE|SINGLE|DOUBLE)\s+LAYERS?\b/gi;
+const COUNT_WORDS: Record<string, number> = { ONE: 1, TWO: 2, THREE: 3, SINGLE: 1, DOUBLE: 2 };
+
+export function layersByFace(joined: string): { a: number; b: number } | null {
+  const hits = [...joined.matchAll(COUNT)].map((m) => ({ at: m.index!, end: m.index! + m[0].length, value: m[1] !== undefined ? Number(m[1]) : (COUNT_WORDS[m[2]!.toUpperCase()] ?? 1) }));
+  if (hits.length < 2) return null;
+  const faced: { face: string; value: number }[] = [];
+  const loose: number[] = [];
+  hits.forEach((h, i) => {
+    const clause = joined.slice(h.end, Math.min(hits[i + 1]?.at ?? joined.length, h.end + 80));
+    const face = EACH_SIDE.test(clause) ? null : FACE.exec(clause);
+    if (face === null) loose.push(h.value);
+    else faced.push({ face: (face[1] ?? face[2]!).toUpperCase(), value: h.value });
+  });
+  const faces = [...new Set(faced.map((f) => f.face))];
+  if (faces.length !== 2) return null;
+  const valueOf = (face: string) => [...new Set(faced.filter((f) => f.face === face).map((f) => f.value))];
+  const [a, b] = faces.map(valueOf);
+  if (a!.length !== 1 || b!.length !== 1) return null;
+  if (loose.some((v) => v !== a![0] && v !== b![0])) return null;
+  return { a: a![0]!, b: b![0]! };
+}
 const ONE_SIDE = /\b(?:ONE|1)\s*SIDE\s*ONLY\b|\bONE\s+SIDE\b/i;
 
 /** Distinct values, so "6in stud" said three times is one reading. */
@@ -444,7 +493,12 @@ export function readPartitionAssembly(input: {
   const layers = layerCounts(lines);
   const layerValues = distinct(layers);
   let layersPerSide: number | null = null;
-  if (layerValues.length > 1) {
+  const byFace = layerValues.length > 1 ? layersByFace(lines.join(" ")) : null;
+  if (byFace !== null) {
+    // Board is bought over both faces (`BOARDED_SQFT` counts the sides), so the
+    // two faces' counts average: 1 and 2 is 1.5 per side, three layers in all.
+    layersPerSide = (byFace.a + byFace.b) / 2;
+  } else if (layerValues.length > 1) {
     flags.push({
       why: `the layer count contradicts itself (${layerValues.join(", ")})`,
       phrase: layers.map((l) => l.phrase).join("  ·  "),
@@ -473,7 +527,7 @@ export function readPartitionAssembly(input: {
     components.push({
       description:
         `${fraction(boardThicknessIn)}in ${boardIsTypeX ? "type X " : ""}gypsum board` +
-        (layersPerSide > 1 ? `, ${layersPerSide} layers per side` : ""),
+        (byFace !== null ? `, ${byFace.a} layer${byFace.a === 1 ? "" : "s"} one side and ${byFace.b} the other` : layersPerSide > 1 ? `, ${layersPerSide} layers per side` : ""),
       unit: "SF",
       // Already both sides, via the type's `sides` — so the factor is layers
       // PER SIDE and nothing else.
