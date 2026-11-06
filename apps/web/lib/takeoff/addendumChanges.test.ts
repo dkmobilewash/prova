@@ -29,6 +29,18 @@ describe("changesByType", () => {
     expect(rows).toEqual([{ itemId: "c8b", code: "C8B", name: "C8B walls", oldFt: 30, newFt: 0, deltaFt: -30, deltaSqFt: -900, deltaDollars: null }]);
   });
 
+  it("ADDING A WALL TAKES NOTHING OFF: the wall it meets, split in two, keeps its type and its footage (walk v8)", () => {
+    // S6A, 40 ft. The revision adds a 12 ft wall meeting it in the middle: the finder returns S6A in two pieces.
+    const { rows, matched } = changesByType({
+      olds: [old("s6a", 0.1, 0.2, 0.5, 40)],
+      news: [run(0.1, 0.2, 0.3, 20), run(0.3, 0.2, 0.5, 20), { x1: 0.3, y1: 0.2, x2: 0.3, y2: 0.32, feet: 12 }],
+      items,
+    });
+    expect(matched).toBe(2);
+    expect(rows.find((r) => r.itemId === "s6a")).toMatchObject({ oldFt: 40, newFt: 40, deltaFt: 0, deltaDollars: 0 });
+    expect(rows.find((r) => r.itemId === null)).toMatchObject({ newFt: 12, deltaFt: 12 });
+  });
+
   it("a revised run a hair off its earlier twin is the same wall", () => {
     expect(changesByType({ olds: [old("s6a", 0.1, 0.2, 0.4, 30)], news: [run(0.1003, 0.2002, 0.3998, 30)], items }).matched).toBe(1);
   });

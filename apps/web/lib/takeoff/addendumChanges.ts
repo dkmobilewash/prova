@@ -1,6 +1,6 @@
 import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
-import { sameRunAs } from "@/lib/takeoff/runMatch";
+import { liesAlong } from "@/lib/takeoff/runMatch";
 import { earlierVersionsFor, sheetNumbersOf } from "@/lib/takeoff/sheetRevisions";
 import { UNTYPED_ITEM } from "@/lib/plan-ingest/wallItems";
 import { OFF_ESTIMATE_ITEMS } from "@/lib/takeoff/estimateHold";
@@ -12,9 +12,10 @@ import { OFF_ESTIMATE_ITEMS } from "@/lib/takeoff/estimateHold";
  * the sheet it replaces by sheet number (`earlierVersionsFor`). The earlier
  * sheet's walls are the confirmed takeoff; the revised sheet's are the walls the
  * finder stored when its scale was saved. Each revised run takes the type of the
- * earlier run on the same spot (`sameRunAs`), so a wall the addendum did not
- * touch carries its decision across; a run with no earlier twin is new, and an
- * earlier run with no revised twin is gone.
+ * earlier run it lies along (`liesAlong`: the same wall, a piece of it where a
+ * new wall now meets it, or it lengthened), so a wall the addendum did not touch
+ * carries its decision across; a run along no earlier one is new, and footage an
+ * earlier type no longer has is gone.
  *
  * ponytail: matched in place, with no alignment. A reissue normally keeps its
  * title block and grid; one shifted on the page matches few runs, and the
@@ -57,7 +58,7 @@ export function changesByType(input: {
   // Each revised run's item: its earlier twin's, or null (new, no type yet).
   const assigned: (string | null)[] = [];
   for (const run of input.news) {
-    const twin = input.olds.find((o) => sameRunAs(run, o.xs, o.ys));
+    const twin = input.olds.find((o) => liesAlong(run, o.xs, o.ys));
     if (twin !== undefined) matched += 1;
     assigned.push(twin?.itemId ?? null);
     add(newFt, twin?.itemId ?? null, run.feet);
