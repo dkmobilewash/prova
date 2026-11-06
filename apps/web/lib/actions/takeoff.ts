@@ -1399,7 +1399,10 @@ async function sheetsFeeding(
   pages: readonly { pageNumber: number; planId: string }[],
   companyId: string,
 ): Promise<{ ok: true; sheets: string[]; labelled: (label: string) => string } | { ok: false; error: string }> {
-  const distinct = [...new Map(pages.map((p) => [`${p.planId}:${p.pageNumber}`, p])).values()];
+  // In page order, not the order the caller's rows came back in: the label and
+  // the refusal below read the same whatever the query did (a dbtest saw
+  // "from A104, A100" against "from A100, A104").
+  const distinct = [...new Map(pages.map((p) => [`${p.planId}:${p.pageNumber}`, p])).values()].sort((a, b) => a.planId.localeCompare(b.planId) || a.pageNumber - b.pageNumber);
   const byPlan = new Map<string, Map<number, SheetRow>>();
   for (const planId of new Set(distinct.map((p) => p.planId))) {
     byPlan.set(planId, new Map((await sheetIndexFor(planId, companyId)).map((row) => [row.pageNumber, row])));
@@ -1432,7 +1435,7 @@ async function sheetsFeeding(
   }
   // Named only when the plan's index knows the sheets; "from sheet 1" tells a
   // reviewer nothing and would rename every single-sheet post.
-  const sheets = named.map((n) => n.name);
+  const sheets = named.map((n) => n.name).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   const suffix = named.some((n) => n.numbered) ? ` — from ${sheets.join(", ")}` : "";
   return { ok: true, sheets, labelled: (label: string) => (label.includes(" — from ") ? label : `${label}${suffix}`) };
 }
