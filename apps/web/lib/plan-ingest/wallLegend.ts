@@ -5,6 +5,7 @@ import { claimPlanSheet, markPlanSheetFailure } from "@/lib/ask/planSheetSpend";
 import { recordAskUsage } from "@/lib/ask/usage";
 import { legendPages } from "@/lib/takeoff/legendPages";
 import { legendProposalFrom } from "@/lib/takeoff/legendProposalBuild";
+import { refreshSuggestionsAfterResponse } from "@/lib/takeoff/suggestionRefresh";
 import { legendCropRects, type CropRect } from "@/lib/takeoff/legendSight";
 import { pageLines } from "@/lib/takeoff/planTextRead";
 import { tagSymbols } from "@/lib/takeoff/tagSymbols";
@@ -114,6 +115,8 @@ export function wallLegendWork(ctx: StageCtx, deps: WallLegendDeps = realDeps): 
       read,
       crops: crops(read.types.map((t) => t.code)),
     });
+    // A takeoff run before this legend suggested without it: its counted sheets are worked out again (`suggestionRefresh.ts`).
+    refreshSuggestionsAfterResponse({ planId: ctx.planId, companyId: ctx.companyId });
     return { ok: true };
   };
 }
