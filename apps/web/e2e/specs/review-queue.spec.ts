@@ -121,32 +121,59 @@ test.describe("the job's one review queue", () => {
   });
 
   let tab: Page;
-  test("3. one item at a time: the held wall first, on its sheet, with Next and a count", async () => {
+  /** The lit runs of the item on show, and how many of them are inside the drawing's scrolling frame. */
+  const litInView = (on: Page) =>
+    on.evaluate(() => {
+      const lines = [...document.querySelectorAll('[data-takeoff="focus-run"], [data-takeoff="review-run"]')];
+      let frame = lines[0]?.parentElement ?? null;
+      while (frame !== null && !/(auto|scroll)/.test(getComputedStyle(frame).overflow)) frame = frame.parentElement;
+      if (frame === null) return { lit: lines.length, inView: 0 };
+      const f = frame.getBoundingClientRect();
+      const inView = lines.filter((line) => {
+        const r = line.getBoundingClientRect();
+        return r.left >= f.left - 2 && r.right <= f.right + 2 && r.top >= f.top - 2 && r.bottom <= f.bottom + 2;
+      }).length;
+      return { lit: lines.length, inView };
+    });
+
+  test("3. one item at a time: the wall group first, zoomed to and lit, with Next and a count per part", async () => {
     [tab] = await Promise.all([page.context().waitForEvent("page"), page.locator("[data-job-next]").click()]);
     await tab.waitForURL(new RegExp(`/takeoff/${jobId}\\?open=review`));
     await expect(tab.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 60_000 });
     await expect(queue(tab)).toBeVisible();
     await expect(left(tab)).toHaveText("4 left to review");
-    await expect(item(tab)).toHaveAttribute("data-kind", "wall");
-    await expect(item(tab)).toContainText("Wall to confirm · sheet A101 · 14 ft");
-    await expect(picker(tab)).toHaveValue("1");
-    await tab.screenshot({ path: path.join(SHOTS, "queue-wall-1440.png") });
-    // Next skips without deciding: the count stays, and it comes back round.
-    await item(tab).locator('[data-takeoff="review-queue-next"]').click();
+    // What saves the most first: one key decides the group's 65 ft (Chrome's re-test).
     await expect(item(tab)).toHaveAttribute("data-kind", "type");
-    await expect(left(tab)).toHaveText("4 left to review");
+    await expect(queue(tab).locator('[data-takeoff="review-queue-progress"]')).toHaveText("Groups 0 of 1 · Held walls 0 of 1 · Scales 0 of 1 · Prices 0 of 1");
+    await expect(picker(tab)).toHaveValue("1");
+    // The FIRST item too: zoomed to, with both its walls lit and on screen —
+    // it opened at 194% on empty paper, scrolled before the sheet had grown.
+    await expect.poll(() => litInView(tab), { timeout: 30_000 }).toEqual({ lit: 2, inView: 2 });
+    await tab.screenshot({ path: path.join(SHOTS, "queue-first-group-1440.png") });
+    // Next skips without deciding: the count stays, and it comes back round.
     // "Walls — untyped" has no height either, but its runs are this group's:
     // asked once, with the type (fast-confirm.spec.ts).
-    for (const kind of ["scale", "price", "wall"]) {
+    for (const kind of ["wall", "scale", "price", "type"]) {
       await item(tab).locator('[data-takeoff="review-queue-next"]').click();
       await expect(item(tab)).toHaveAttribute("data-kind", kind);
+      if (kind === "wall") {
+        await expect(item(tab)).toContainText("Wall to confirm · sheet A101 · 14 ft");
+        await expect.poll(() => litInView(tab), { timeout: 30_000 }).toEqual({ lit: 1, inView: 1 });
+        await tab.screenshot({ path: path.join(SHOTS, "queue-wall-1440.png") });
+      }
     }
+    await expect(left(tab)).toHaveText("4 left to review");
   });
 
-  test("4. Not a wall: it is dropped, and leaves the queue", async () => {
+  test("4. Not a wall: it is dropped, leaves the queue, and its part counts it", async () => {
+    await item(tab).locator('[data-takeoff="review-queue-next"]').click();
+    await expect(item(tab)).toHaveAttribute("data-kind", "wall");
     await item(tab).locator('[data-takeoff="review-queue-drop"]').click();
     await expect(left(tab)).toHaveText("3 left to review");
+    await expect(queue(tab).locator('[data-takeoff="review-queue-progress"]')).toHaveText("Groups 0 of 1 · Held walls 1 of 1 · Scales 0 of 1 · Prices 0 of 1");
     await expect.poll(async () => (await prisma.takeoffMeasurement.findFirst({ where: { page: { planId }, xs: { equals: [0.6, 0.7] } }, select: { label: true } }))?.label).toBe("wall, dropped");
+    // Round to the group again.
+    for (let i = 0; i < 3 && (await item(tab).getAttribute("data-kind")) !== "type"; i += 1) await item(tab).locator('[data-takeoff="review-queue-next"]').click();
   });
 
   test("5. the untyped group: Set type names it, and every run goes onto that type", async () => {

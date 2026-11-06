@@ -6,7 +6,7 @@ import { confirmSheetScales, confirmWallGroup, confirmWindows, priceLineFromCost
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
-import { heightFor, type CodeHeight, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { QUEUE_PART, heightFor, type CodeHeight, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
 
@@ -64,6 +64,19 @@ export function TakeoffReviewQueue({
   const [priced, setPriced] = useState<string | null>(null);
   const left = items.filter((item) => !done.has(item.key));
   const current = left.find((item) => item.key === cursor) ?? left[0] ?? null;
+  // ── "Groups 3 of 8 · Held walls 0 of 34" ──
+  // Every item this queue has shown, by part: the server drops a decided one
+  // from `items`, so the total is what was ever seen and done is what is not
+  // left of it. A height item that joins later counts in its part.
+  const seen = useRef(new Map<string, Set<string>>());
+  for (const item of items) {
+    const part = QUEUE_PART[item.kind];
+    seen.current.set(part, (seen.current.get(part) ?? new Set()).add(item.key));
+  }
+  const progress = [...seen.current].map(([part, keys]) => {
+    const open = left.filter((item) => keys.has(item.key)).length;
+    return `${part} ${keys.size - open} of ${keys.size}`;
+  });
   const after = (key: string) => {
     const at = left.findIndex((item) => item.key === key);
     return left.length < 2 ? null : left[(at + 1) % left.length]!.key;
@@ -148,6 +161,11 @@ export function TakeoffReviewQueue({
       <span className="font-semibold" data-takeoff="review-queue-left">
         {left.length === 0 ? "Nothing left to review" : `${left.length} left to review`}
       </span>
+      {progress.length > 0 && (
+        <span className="text-ink-muted" data-takeoff="review-queue-progress">
+          {progress.join(" · ")}
+        </span>
+      )}
       {current === null ? (
         <a href={`/jobs/${jobId}`} className="underline" data-takeoff="review-queue-done">
           Back to the job

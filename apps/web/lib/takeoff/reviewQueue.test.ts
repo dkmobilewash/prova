@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { focusOf, heightFor, heightItem, orderedCodes, reviewQueue, suggestType, typeItems, wallItem, windowsItem, type ReviewItem } from "./reviewQueue";
+import { QUEUE_PART, focusOf, heightFor, heightItem, orderedCodes, reviewQueue, suggestType, typeItems, wallItem, windowsItem, type ReviewItem } from "./reviewQueue";
 import type { WallGroup } from "./wallGroups";
 import { propagatedTag } from "./planTextTags";
 
@@ -29,7 +29,7 @@ describe("the job's one review queue", () => {
     expect(focusOf(items[0]!)).toEqual({ pageNumber: 3, ...run(0.3, 0.6) });
   });
 
-  it("orders walls, then types, then scales, then prices; by sheet, longest first", () => {
+  it("orders groups (type, height), then held walls, then scales, then prices; by sheet, longest first (Chrome's re-test: what saves most first)", () => {
     const items: ReviewItem[] = [
       { kind: "price", key: "price:l1", lineItemId: "l1", description: "Walls — untyped", quantity: "40", unit: "LF", askCost: false, costCategory: null },
       { kind: "scale", key: "scale:2", pageNumber: 2, sheet: "A102" },
@@ -39,8 +39,11 @@ describe("the job's one review queue", () => {
       ...typeItems(sheet, [{ xs: [0.1, 0.2], ys: [0.5, 0.5] }], [{ id: "g", inches: 5, runs: [run(0.1, 0.2)] }]),
       heightItem({ id: "i1", name: "W1" }, [{ sheet, runs: [run(0.1, 0.2)], rooms: [] }], [])!,
     ];
-    expect(reviewQueue(items).map((i) => i.key)).toEqual(["wall:long", "wall:short", "wall:far", "type:3:g", "height:i1", "scale:2", "price:l1"]);
+    expect(reviewQueue(items).map((i) => i.key)).toEqual(["type:3:g", "height:i1", "wall:long", "wall:short", "wall:far", "scale:2", "price:l1"]);
     expect(focusOf(items[0]!)).toBeNull();
+    expect(QUEUE_PART.type).toBe("Groups");
+    expect(QUEUE_PART.height).toBe("Groups");
+    expect(QUEUE_PART.wall).toBe("Held walls");
   });
 
   it("A WALL GROUP WITH NO HEIGHT is one item, on the sheet with most of it, offering the ceiling and the legend", () => {

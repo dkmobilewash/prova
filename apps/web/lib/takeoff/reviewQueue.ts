@@ -10,17 +10,19 @@ import { inchLabel } from "./wallVectors";
  *
  * The job stepper's Review step opens this: everything a person still has to
  * decide before the takeoff is an estimate, one item at a time, in this order
- * (Diego's guided-flow Phase 4):
+ * (Diego's guided-flow Phase 4; groups ahead of held walls since Chrome's
+ * re-test, as one key decides far more of the estimate there):
  *
- *   1. wall   — a run the model held off the estimate, "to confirm";
- *   2. type   — a found wall group posted to "Walls — untyped", which the
+ *   1. type   — a found wall group posted to "Walls — untyped", which the
  *               "Set type" picker names (`setWallGroupType`), the type the
  *               drawing suggests pre-filled with its source (`postingGate.ts`);
- *   3. height — a wall group (its takeoff item) with no height, which "Set
+ *   2. height — a wall group (its takeoff item) with no height, which "Set
  *               height" gives one (`setWallGroupHeight`, `wallHeight.ts`);
- *   4. windows — a sheet's windows counted by opening and typed by the nearest
+ *   3. windows — a sheet's windows counted by opening and typed by the nearest
  *               tag (`windowTags.ts`): one count to confirm, false hits
  *               dropped first (`confirmWindows`);
+ *   4. wall   — a run the model held off the estimate, "to confirm", sheet
+ *               by sheet;
  *   5. scale  — a floor plan with no scale saved;
  *   6. price  — an estimate line with neither a price nor a cost. Once the
  *               company's own markup is set (`pricingRatesFor`) it asks for
@@ -172,7 +174,13 @@ export function heightFor(code: string | null, heights: Readonly<Record<string, 
   return own ?? (ceiling === null ? null : { feet: ceiling.feet, from: ceiling.from });
 }
 
-const KIND_ORDER: ReviewItem["kind"][] = ["wall", "type", "height", "windows", "scale", "price"];
+// What saves the most time first (Chrome's re-test): a group is one key for
+// dozens of feet, a held wall one key for one run. So groups and windows,
+// then the held walls, sheet by sheet.
+const KIND_ORDER: ReviewItem["kind"][] = ["type", "height", "windows", "wall", "scale", "price"];
+
+/** What the queue counts each kind as, for "Groups 3 of 8 · Held walls 0 of 34". */
+export const QUEUE_PART: Record<ReviewItem["kind"], string> = { type: "Groups", height: "Groups", windows: "Windows", wall: "Held walls", scale: "Scales", price: "Prices" };
 
 /** A sheet's suggested windows, until they are confirmed. */
 export function windowsItem(sheet: QueueSheet, stored: { windows: readonly ({ tag: string } & QueueRun)[]; decided?: boolean }): ReviewItem | null {
