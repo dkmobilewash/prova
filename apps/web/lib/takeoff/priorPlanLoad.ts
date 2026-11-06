@@ -1,8 +1,11 @@
 import { prisma } from "@prova/db";
-import { pairDemoWithNewPlan, type SheetForPairing } from "./pairDemoPlans";
+import { demoPlansFor, drawingOnly, pairDemoWithNewPlan, SECOND_PLAN_MIN_VOTES, type SheetForPairing } from "./pairDemoPlans";
+import { feetPerPageWidth } from "@/lib/takeoff-plan";
+import { alignViews, longFaces } from "./viewAlign";
 import type { PairChoice, Pairing } from "./priorPlan";
 import { KEYLESS_MODEL, KEYLESS_PROMPT_VERSION, keylessSheetName } from "@/lib/plan-ingest/pageInventory";
 import { hasTextLayer, openPlanPdf } from "@/lib/plan-ingest/planPdf";
+import type { SheetStrokes } from "@/lib/takeoff/sheetStrokes";
 import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
 
 /**
@@ -121,3 +124,63 @@ export function pairingFor(newPage: number, auto: ReadonlyMap<number, { demoPage
   return a === undefined ? null : { demoPage: a.demoPage, source: "auto", basis: a.basis };
 }
 
+
+/**
+ * ── A DEMOLITION PLAN TO OFFER, WHERE THE TITLES COULD NOT PAIR ONE ──
+ *
+ * Baker's A001 "DEMOLITION PLAN" fits A100 and A101 by title alike, so the
+ * pairer pairs neither and A101 says "No demolition plan is paired". For a
+ * sheet with no pairing (and none removed by a person), each demolition plan
+ * the titles allow is laid over the sheet with the same layout check plan
+ * comparison applies (`alignViews` over the drawings' own lines, the sheet's
+ * frame left out): one that lines up by `SECOND_PLAN_MIN_VOTES` walls and
+ * beats every other candidate is OFFERED. Never applied: a person accepts it.
+ */
+export async function suggestPriorPlan(input: { planId: string; companyId: string; pageNumber: number }): Promise<{ demoPage: number; sheet: string; votes: number } | null> {
+  const pairings = await pairingsForPlan(input.planId);
+  if (pairings.byPage.has(input.pageNumber)) return null;
+  const page = await prisma.takeoffPlanPage.findUnique({
+    where: { planId_pageNumber: { planId: input.planId, pageNumber: input.pageNumber } },
+    select: { priorPageChoice: true, calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } } },
+  });
+  if (page?.priorPageChoice === "none") return null;
+  const candidates = demoPlansFor(pairings.sheets, input.pageNumber);
+  const calibration = page?.calibrations[0];
+  const feetPerUnit = calibration === undefined ? null : feetPerPageWidth({ ...calibration, declaredDistanceFeet: Number(calibration.declaredDistanceFeet) });
+  if (candidates.length === 0 || feetPerUnit === null) return null;
+  const bytes = await readPlanBytes(input.planId, input.companyId);
+  if (!bytes.ok) return null;
+  const doc = await openPlanPdf(bytes.bytes);
+  try {
+    if (input.pageNumber > doc.pageCount) return null;
+    const own = await doc.pageStrokes(input.pageNumber);
+    const demos: { page: number; segments: SheetStrokes["segments"]; widthPt: number }[] = [];
+    for (const demoPage of candidates.filter((p) => p <= doc.pageCount)) demos.push({ page: demoPage, ...(await doc.pageStrokes(demoPage)) });
+    const best = linedUpDemo(own, demos, feetPerUnit);
+    if (best === null) return null;
+    return { ...best, sheet: sheetName(pairings.sheets, best.demoPage) };
+  } finally {
+    await doc.close();
+  }
+}
+
+/**
+ * The same-layout check behind the offer: the demolition plan whose drawing
+ * lines up with the sheet's by `SECOND_PLAN_MIN_VOTES` walls and strictly beats
+ * every other candidate, or null. Another paper size is another drawing scale,
+ * so it is never laid over.
+ */
+export function linedUpDemo(
+  own: { segments: SheetStrokes["segments"]; widthPt: number },
+  demos: readonly { page: number; segments: SheetStrokes["segments"]; widthPt: number }[],
+  feetPerUnit: number,
+): { demoPage: number; votes: number } | null {
+  const target = drawingOnly(longFaces(own.segments, own.widthPt, feetPerUnit));
+  const voted = demos
+    .filter((d) => Math.abs(d.widthPt / own.widthPt - 1) <= 0.01)
+    .map((d) => ({ demoPage: d.page, votes: alignViews(target, drawingOnly(longFaces(d.segments, d.widthPt, feetPerUnit)), feetPerUnit)?.votes ?? 0 }))
+    .sort((a, b) => b.votes - a.votes);
+  const best = voted[0];
+  if (best === undefined || best.votes < SECOND_PLAN_MIN_VOTES || best.votes === voted[1]?.votes) return null;
+  return best;
+}

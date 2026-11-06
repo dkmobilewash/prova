@@ -74,7 +74,7 @@ const saysPlan = (title: string | null) => /\b(PLANS?|LEVEL|FLOOR)\b/i.test(titl
 const NOT_A_PLAN_SHEET = /\b(INFORMATION|INDEX|GENERAL NOTES|ABBREVIATIONS|SYMBOLS)\b/i;
 
 /** A second plan needs this many agreeing walls to be called the same floor: a shared frame or a stair gives fewer. */
-const SECOND_PLAN_MIN_VOTES = 8;
+export const SECOND_PLAN_MIN_VOTES = 8;
 /** Past this share across the sheet is the title block. */
 const TITLE_STRIP_FROM = 0.85;
 /** A line this long, in page widths, is the sheet's border. */
@@ -85,8 +85,35 @@ const BORDER_SPAN = 0.55;
  * any real agreement: Baker's A001 scored 175 against A100 and 175 against A101,
  * both at exactly zero. Votes must come from the drawing.
  */
-function drawingOnly(lines: readonly Line[]): Line[] {
+export function drawingOnly(lines: readonly Line[]): Line[] {
   return lines.filter((l) => Math.max(l.x1, l.x2) < TITLE_STRIP_FROM && Math.hypot(l.x2 - l.x1, l.y2 - l.y1) < BORDER_SPAN);
+}
+
+/** A new plan that could be this demolition plan's floor: same drawing kind, discipline, level and area, and a plan. */
+function fitsDemo(demo: SheetForPairing, s: SheetForPairing): boolean {
+  const level = levelFromTitle(demo.title, "PLAN")?.label ?? null;
+  const area = areaOfTitle(demo.title);
+  const discipline = disciplineOf(demo.sheetNumber);
+  if (kindOf(s.title) !== kindOf(demo.title) || !saysPlan(s.title) || SAME_FLOOR_NOT_THE_PLAN.test(s.title ?? "")) return false;
+  if (discipline !== null && disciplineOf(s.sheetNumber) !== discipline) return false;
+  const otherLevel = levelFromTitle(s.title, "PLAN")?.label ?? null;
+  if (level !== null && otherLevel !== null && level !== otherLevel) return false;
+  return area === null || areaOfTitle(s.title) === null || areaOfTitle(s.title) === area;
+}
+
+/**
+ * The demolition plans of the set that could be `newPage`'s floor by their
+ * titles alone — the candidates for a suggestion, never a pairing: the
+ * drawings still have to line up (`suggestPriorPlan`).
+ */
+export function demoPlansFor(sheets: readonly SheetForPairing[], newPage: number): number[] {
+  const page = sheets.find((s) => s.pageNumber === newPage);
+  if (page === undefined || isDemo(page)) return [];
+  return sheets
+    .filter(isDemo)
+    .map((d) => ({ ...d, title: d.demoCaption ?? d.title }))
+    .filter((d) => kindOf(d.title) !== "other" && kindOf(d.title) !== "site" && fitsDemo(d, page))
+    .map((d) => d.pageNumber);
 }
 
 const flat = (number: string | null) => (number ?? "").toUpperCase().replace(/[-\s]/g, "");
@@ -116,14 +143,7 @@ export function pairDemoWithNewPlan(
     if (kind === "other" || kind === "site") continue;
     const level = levelFromTitle(demo.title, "PLAN")?.label ?? null;
     const area = areaOfTitle(demo.title);
-    const discipline = disciplineOf(demo.sheetNumber);
-    const fits = fresh.filter((s) => {
-      if (kindOf(s.title) !== kind || !saysPlan(s.title) || SAME_FLOOR_NOT_THE_PLAN.test(s.title ?? "")) return false;
-      if (discipline !== null && disciplineOf(s.sheetNumber) !== discipline) return false;
-      const otherLevel = levelFromTitle(s.title, "PLAN")?.label ?? null;
-      if (level !== null && otherLevel !== null && level !== otherLevel) return false;
-      return area === null || areaOfTitle(s.title) === null || areaOfTitle(s.title) === area;
-    });
+    const fits = fresh.filter((s) => fitsDemo(demo, s));
     const align = (page: number) => {
       const a = options.lines?.get(demo.pageNumber), b = options.lines?.get(page);
       return a && b && options.feetPerUnit ? alignViews(drawingOnly(b), drawingOnly(a), options.feetPerUnit) : null;

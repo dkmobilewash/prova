@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { savePriorPlanChoice } from "@/lib/actions";
+import { savePriorPlanChoice, suggestPriorPlanChoice } from "@/lib/actions";
 import type { Pairing } from "@/lib/takeoff/priorPlan";
 
 /** What plan comparison did on the sheet last found. `pairing` null: nothing paired. `why`: paired, not applied. */
@@ -56,13 +56,44 @@ export function PriorPlanBar({
       setChanged(true);
       router.refresh();
     });
+  // ── NOTHING PAIRED: OFFER THE DEMOLITION PLAN THAT LINES UP (`suggestPriorPlan`) ──
+  // Asked once per unpaired sheet; shown only when the drawings line up, and
+  // applied only by the person's click — as their own choice.
+  const [suggestion, setSuggestion] = useState<{ page: number; demoPage: number; sheet: string } | null>(null);
+  const unpaired = status.pairing === null && !readOnly;
+  useEffect(() => {
+    if (!unpaired) return;
+    let live = true;
+    suggestPriorPlanChoice({ jobId, planId, pageNumber }).then(
+      (r) => {
+        if (live && r.ok && r.value !== null) setSuggestion({ page: pageNumber, demoPage: r.value.demoPage, sheet: r.value.sheet });
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [unpaired, jobId, planId, pageNumber]);
+  const offer = unpaired && !changed && suggestion !== null && suggestion.page === pageNumber ? suggestion : null;
   const name = (s: Sheet) => `${s.sheetNumber ?? `Page ${s.pageNumber}`}${s.title ? ` — ${s.title}` : ""}`;
   const others = sheets.filter((s) => s.pageNumber !== pageNumber);
   const p = status.pairing;
   return (
     <div data-takeoff="prior-plan" className="shrink-0 space-y-1 text-xs text-ink-body">
       {p === null ? (
-        <p data-takeoff="prior-plan-none">No demolition plan is paired with this sheet, so no wall is compared.</p>
+        <>
+          <p data-takeoff="prior-plan-none">No demolition plan is paired with this sheet, so no wall is compared.</p>
+          {offer !== null && (
+            <p data-takeoff="prior-plan-suggest" className="flex flex-wrap items-center gap-2">
+              <span>
+                Demolition plan <span className="font-medium text-ink">{offer.sheet}</span> lines up with this sheet. Compare with {offer.sheet}?
+              </span>
+              <button type="button" data-takeoff="prior-plan-accept" disabled={pending} onClick={() => choose(offer.demoPage)} className="min-h-[44px] rounded border border-line-card px-3 text-xs text-ink hover:bg-surface">
+                Compare with {offer.sheet}
+              </button>
+            </p>
+          )}
+        </>
       ) : (
         <p data-takeoff="prior-plan-paired">
           Compared with demolition plan <span className="font-medium text-ink">{status.sheet}</span> ({BASIS[p.basis] ?? "paired automatically"}).{" "}
