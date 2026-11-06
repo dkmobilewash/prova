@@ -2967,15 +2967,35 @@ export function TakeoffPlanViewer({
     [groupRuns],
   );
   const zoomRun = reviewRun ?? groupBox;
+  // ── SCROLLED ONLY ONCE THE SHEET IS THAT SIZE ──
+  // The canvas takes its new width when the render at the new zoom FINISHES,
+  // which on a big sheet is long after the next frame. Scrolled sooner, the
+  // target is clamped to the old, smaller sheet: the review queue's first item
+  // opened at 194% on empty paper with none of its walls in view (Chrome's
+  // re-test). So the target waits here until `cssWidth` is the width it was
+  // worked out for.
+  const pendingScroll = useRef<{ left: number; top: number; width: number } | null>(null);
+  const scrollIfSized = useCallback((width: number) => {
+    const frame = frameRef.current;
+    const want = pendingScroll.current;
+    if (frame === null || want === null || Math.abs(width - want.width) > 1.5) return;
+    frame.scrollTo({ left: want.left, top: want.top });
+    pendingScroll.current = null;
+  }, []);
+  const cssWidthNow = useRef(0);
+  cssWidthNow.current = cssWidth;
+  useLayoutEffect(() => scrollIfSized(cssWidth), [cssWidth, scrollIfSized]);
   // Each run in turn, zoomed and centred, so the reviewer never has to look for it.
   useEffect(() => {
     const frame = frameRef.current;
     if (zoomRun === null || frame === null || pageSize === null || feetPerUnit === null) return;
     const view = viewOfRun(zoomRun, pageSize, { width: frame.clientWidth, height: frame.clientHeight }, feetPerUnit, BASE_SCALE);
+    pendingScroll.current = { left: view.left, top: view.top, width: pageSize.widthPt * BASE_SCALE * view.zoom };
     setZoom(view.zoom);
-    const id = requestAnimationFrame(() => frame.scrollTo({ left: view.left, top: view.top }));
+    // Already that size (the same zoom as the item before): no render is coming.
+    const id = requestAnimationFrame(() => scrollIfSized(cssWidthNow.current));
     return () => cancelAnimationFrame(id);
-  }, [zoomRun, pageSize, feetPerUnit, heldShown?.at]);
+  }, [zoomRun, pageSize, feetPerUnit, heldShown?.at, scrollIfSized]);
 
   /**
    * Taking a run back is its verdict becoming WALL, then the list rebuilt from
