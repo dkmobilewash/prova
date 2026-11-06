@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { areaLine, ceilingOption, heightFrom, legendOption, legendOptions, wallSquareFeet } from "./wallHeight";
+import { areaLine, ceilingOption, heightFrom, heightOptionsInOrder, legendOption, legendOptions, wallSquareFeet } from "./wallHeight";
 import { heightOptionLines } from "./legendHeights";
 
 const box = (x0: number, y0: number, x1: number, y1: number) => ({ xs: [x0, x1, x1, x0], ys: [y0, y0, y1, y1] });
@@ -54,5 +54,23 @@ describe("a type's height options by part of the building, kept in its notes (ro
     // A type with one height keeps it, and no option repeats it.
     expect(legendOptions({ code: "S6A", defaultHeightFt: 15, notes: "Height 15 ft (MEDIUM): A301 prints T.O. ROOF FRAMING 15' 0\"\nHeight option 15 ft: A301 T.O. ROOF FRAMING" }).map((o) => o.feet)).toEqual([15]);
     expect(legendOptions(null)).toEqual([]);
+  });
+});
+
+describe("heightOptionsInOrder: one order for the queue and the panel (Chrome on Baker A101)", () => {
+  const ceiling = { kind: "ceiling" as const, feet: 10, from: "ceiling plan, room 101: 10'-0\"" };
+  const general = { feet: 15, from: "general note A601: ALL WALLS TO DECK" };
+  const legend = { kind: "legend" as const, feet: 12, from: "legend S6B: 12'-0\"" };
+  it("the type's own, then the general note, then the ceiling", () => {
+    expect(heightOptionsInOrder({ type: [legend], general, ceiling }).map((o) => o.kind)).toEqual(["legend", "note", "ceiling"]);
+  });
+  it("no type height: the general note comes before the ceiling (the queue's 15'-0\", not the panel's 10'-0\")", () => {
+    expect(heightOptionsInOrder({ type: [], general, ceiling })[0]).toEqual({ kind: "note", feet: 15, from: general.from });
+  });
+  it("a figure already offered is not offered again", () => {
+    expect(heightOptionsInOrder({ type: [{ ...legend, feet: 15 }], general, ceiling }).map((o) => o.feet)).toEqual([15, 10]);
+  });
+  it("nothing known, nothing offered", () => {
+    expect(heightOptionsInOrder({ type: [], general: null, ceiling: null })).toEqual([]);
   });
 });
