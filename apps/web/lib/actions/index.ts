@@ -125,4 +125,5 @@ export * from "./takeoffReadSheet";
 export * from "./planTextRead";
 export * from "./wallLegend";
 export * from "./wallGroupType";
+export * from "./revisedSheets";
 export * from "./takeoffOffer";

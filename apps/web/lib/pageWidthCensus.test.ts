@@ -217,6 +217,7 @@ const SHELL_WITHOUT_PAGE_HEADER: Record<string, string> = {
   "apps/web/app/(app)/jobs/[id]/das-140/[noticeId]/page.tsx": "A printable DAS 140 filing view.",
   "apps/web/app/(app)/jobs/[id]/das-142/[requestId]/page.tsx": "A printable DAS 142 filing view.",
   "apps/web/app/(app)/jobs/[id]/proposal/page.tsx": "The proposal document the GC receives.",
+  "apps/web/app/(app)/jobs/[id]/addendum/page.tsx": "A job's revised sheets against the ones they replace, headed by the job.",
 };
 
 describe("page width census", () => {
