@@ -29,6 +29,8 @@ import { stubDocumentUpload } from "../lib/blobStub";
 const DIR = process.env.WALK_PLAN_DIR ?? "";
 const SET = process.env.WALK_SET ?? "";
 const OUT = process.env.WALK_OUT ?? "";
+/** How long the page is given. Long by default; a deliberate-break run shortens it. */
+const WAIT_MS = Number(process.env.LEGEND_WAIT_MS ?? 1_500_000);
 const EMAIL = `legend-${Date.now()}+clerk_test@example.com`;
 
 test.describe.configure({ mode: "serial" });
@@ -102,7 +104,7 @@ test.describe("a new company's wall legend, read with the page open", () => {
           if (!sawLegend) sawLegend = /The wall legend/.test((await page.locator('[data-plan-ingest="reading"]').first().textContent().catch(() => "")) ?? "");
           return prisma.planLegendProposal.count({ where: { planId } });
         },
-        { timeout: 1_500_000, intervals: [5_000] },
+        { timeout: WAIT_MS, intervals: [5_000] },
       )
       .toBeGreaterThan(0);
     const minutes = ((Date.now() - started) / 60_000).toFixed(1);
