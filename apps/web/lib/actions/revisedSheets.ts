@@ -8,7 +8,7 @@ import { namedItem, untypedItem } from "@/lib/plan-ingest/wallItems";
 import { syncDecidedItems } from "@/lib/estimating/takeoff-item-lines";
 import { DROPPED_ITEM } from "@/lib/takeoff/estimateHold";
 import { sameRunAs } from "@/lib/takeoff/runMatch";
-import { loadAddendumChanges } from "@/lib/takeoff/addendumChanges";
+import { gcSummary, loadAddendumChanges } from "@/lib/takeoff/addendumChanges";
 import { actionFail, type ActionResultWith } from "./shared";
 import type { SheetSuggestionsUndo } from "./wallGroupType";
 
@@ -28,7 +28,7 @@ import type { SheetSuggestionsUndo } from "./wallGroupType";
  */
 const ESTIMATING_ONLY = "Applying an addendum changes the estimate, which isn't part of your job function. The account owner sets who sees what, on the Team page.";
 
-export async function applyRevisedSheets(jobId: string): Promise<ActionResultWith<{ moved: number; written: number; replaced: number; undo: SheetSuggestionsUndo }>> {
+export async function applyRevisedSheets(jobId: string): Promise<ActionResultWith<{ moved: number; written: number; replaced: number; priceChange: number; summary: string; undo: SheetSuggestionsUndo }>> {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_ESTIMATING")) return actionFail(ESTIMATING_ONLY);
   const companyId = context.company.id;
@@ -38,6 +38,10 @@ export async function applyRevisedSheets(jobId: string): Promise<ActionResultWit
   const work = (changes?.sheets ?? []).flatMap((s) => (s.work === undefined ? [] : [s.work]));
   if (changes === null || work.length === 0) return actionFail("No compared sheet to apply. Set the revised sheets' scales and run their takeoff first.");
   const label = `replaced by ${changes.planLabel}`.slice(0, 120);
+  // The estimate at sale price, before and after: what the GC is told is what moved.
+  const priced = async () =>
+    (await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false }, select: { quantity: true, unitPrice: true } })).reduce((n, l) => n + Number(l.quantity) * Number(l.unitPrice ?? 0), 0);
+  const before = await priced();
 
   const undo = await prisma.$transaction(async (tx) => {
     const moved: SheetSuggestionsUndo["moved"] = [];
@@ -75,5 +79,6 @@ export async function applyRevisedSheets(jobId: string): Promise<ActionResultWit
   revalidatePath(`/jobs/${jobId}`, "layout");
   revalidatePath(`/takeoff/${jobId}`);
   const replaced = work.reduce((n, s) => n + s.oldIds.length, 0);
-  return { ok: true, value: { moved: undo.moved.length - replaced, written: undo.created.length, replaced, undo } };
+  const priceChange = Math.round(((await priced()) - before) * 100) / 100;
+  return { ok: true, value: { moved: undo.moved.length - replaced, written: undo.created.length, replaced, priceChange, summary: gcSummary(changes, undefined, priceChange), undo } };
 }

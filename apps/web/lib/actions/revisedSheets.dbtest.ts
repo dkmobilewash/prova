@@ -62,6 +62,9 @@ describe("applyRevisedSheets", () => {
   it("the revised walls go onto their carried types, the new one untyped, the earlier sheet's off the estimate; the lines follow", async () => {
     const result = await applyRevisedSheets(jobId);
     expect(result.ok && { moved: result.value.moved, written: result.value.written, replaced: result.value.replaced }).toEqual({ moved: 0, written: 2, replaced: 2 });
+    // What the estimate actually moved, and the summary that says so (no price on these lines: $0.00).
+    expect(result.ok && result.value.priceChange).toBe(0);
+    expect(result.ok && result.value.summary.split("\n").at(-1)).toBe("Net change to our price: $0.00.");
     expect(await where(newPageId)).toEqual(["S6A walls|wall (carried from the earlier sheet)", "Walls — untyped|wall, untyped"]);
     expect(await where(oldPageId)).toEqual(["Walls — dropped|replaced by Addendum 1", "Walls — dropped|replaced by Addendum 1"]);
     // S6A's studs line is the revised 30 ft now, not the earlier 50.

@@ -85,4 +85,14 @@ describe("gcSummary: the changes in words a GC reads", () => {
       ].join("\n"),
     );
   });
+
+  it("once applied, the net is what the estimate actually moved (new walls priced as the default partition)", () => {
+    const changes = {
+      planLabel: "Addendum 1",
+      sheets: [{ pageNumber: 1, sheetNumber: "A101", replaces: { label: "bid.pdf", pageNumber: 3 }, status: "compared" as const, runs: 3, matched: 2 }],
+      rows: [{ itemId: null, code: null, name: "New walls, no type yet", oldFt: 0, newFt: 28, deltaFt: 28, deltaSqFt: null, deltaDollars: null }],
+    };
+    expect(gcSummary(changes).split("\n").at(-1)).toBe("Net change to our price: $0.00, plus the walls still to be priced.");
+    expect(gcSummary(changes, undefined, 19539.73).split("\n").at(-1)).toBe("Net change to our price: +$19,539.73.");
+  });
 });

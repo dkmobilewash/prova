@@ -119,7 +119,9 @@ test.describe("what an addendum's sheets change, by wall type", () => {
 
   test("6. Apply: the revised walls on their types, the earlier sheet's off the estimate, the summary kept", async () => {
     await page.locator('[data-addendum="apply"]').click();
-    await expect(page.locator('[data-addendum="applied"]')).toHaveText("Applied: 2 revised walls on the takeoff (2 written, 0 retyped), 2 replaced walls taken off the estimate.", { timeout: 30_000 });
+    await expect(page.locator('[data-addendum="applied"]')).toHaveText(/^Applied: 2 revised walls on the takeoff \(2 written, 0 retyped\), 2 replaced walls taken off the estimate\. The estimate moved [+−]?\$[\d,]+\.\d\d\.$/, { timeout: 30_000 });
+    // The summary kept is the estimate's real move, not the rows' guess.
+    await expect(page.locator('[data-addendum="summary"]')).toHaveValue(/Net change to our price: [+−]?\$[\d,]+\.\d\d\.$/);
     await expect.poll(() => rowsOn("A-101"), { timeout: 30_000 }).toEqual(["ZAD1 walls", "Walls — untyped"]);
     expect(await rowsOn("A101")).toEqual(["Walls — dropped", "Walls — dropped"]);
     await expect(page.locator('[data-addendum="sheet"]').nth(0).locator('[data-addendum="sheet-status"]')).toHaveText(/^applied/, { timeout: 30_000 });

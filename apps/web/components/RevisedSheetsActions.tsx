@@ -35,7 +35,8 @@ export function RevisedSheetsActions({ jobId, summary, canApply }: { jobId: stri
                 const result = await applyRevisedSheets(jobId);
                 if (!result.ok) return setError(result.error);
                 const v = result.value;
-                setApplied({ summary, text: `Applied: ${v.moved + v.written} revised walls on the takeoff (${v.written} written, ${v.moved} retyped), ${v.replaced} replaced walls taken off the estimate.`, undo: v.undo });
+                const change = `${v.priceChange > 0 ? "+" : v.priceChange < 0 ? "−" : ""}${Math.abs(v.priceChange).toLocaleString("en-US", { style: "currency", currency: "USD" })}`;
+                setApplied({ summary: v.summary, text: `Applied: ${v.moved + v.written} revised walls on the takeoff (${v.written} written, ${v.moved} retyped), ${v.replaced} replaced walls taken off the estimate. The estimate moved ${change}.`, undo: v.undo });
                 router.refresh();
               })
             }

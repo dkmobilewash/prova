@@ -89,6 +89,18 @@ describe("what the demolition plan sets aside", () => {
     if (prior.lines === null) expect(prior.why).toMatch(/of 5 walls agree/);
   });
 
+  it("a wall the demolition plan draws at another thickness is still on it: its two faces are", () => {
+    // The demolition plan draws the short partition at 75 ft 0.9 ft thick, the new plan 0.5 ft: the
+    // walls' thicknesses are out of band, and both faces still lie within reach of the new wall's.
+    const thick = (x: number, y1: number, y2: number): StrokeSegment[] => [-0.45, 0.45].map((o) => ({ x1: (x + o) * P, y1: y1 * P, x2: (x + o) * P, y2: y2 * P, width: 1 }));
+    const others = [wall(20, 20, 100, 20), wall(20, 70, 100, 70), wall(20, 20, 20, 70), wall(100, 20, 100, 70), wall(50, 20, 50, 70), wall(20, 45, 50, 45), wall(75, 45, 100, 45)].flat();
+    const prior = priorPlanFor({ demo: demo([...others, ...thick(75, 20, 45), ...ticks]), newPage: { segments: newSegments, widthPt: W }, newRuns, feetPerUnit });
+    expect(prior.lines).not.toBeNull();
+    const after = offer({ lines: prior.lines!, sheet: "AD101" });
+    const at75 = after.offeredRuns.filter((w) => Math.abs(w.x1 * feetPerUnit - 75) < 1 && Math.abs(w.x2 * feetPerUnit - 75) < 1 && Math.min(w.y1, w.y2) * feetPerUnit < 44);
+    expect(at75).toEqual([]);
+  });
+
   it("a wall the demolition plan removes is not existing to remain", () => {
     // The demolition plan draws the middle partition dashed: to be removed.
     const dashed: StrokeSegment[] = [];
