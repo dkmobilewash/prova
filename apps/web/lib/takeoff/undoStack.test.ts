@@ -10,6 +10,8 @@ import {
   nextRedoLabel,
   nextUndoLabel,
   pushed,
+  movedToDone,
+  movedToUndone,
   redoOnce,
   undoOnce,
 } from "./undoStack";
@@ -130,5 +132,29 @@ describe("redoOnce", () => {
     state = (await redoOnce(state))!.state;
     expect(state.done.map((e) => e.label)).toEqual(["a", "b"]);
     expect(state.undone).toHaveLength(0);
+  });
+});
+
+describe("movedToUndone / movedToDone: by identity, on the stack as it is now", () => {
+  it("AN ENTRY PUSHED WHILE AN UNDO WAITS STAYS ON THE STACK (Chrome on Baker: two accepts, Undo twice, both still saved)", async () => {
+    const first: UndoEntry = { label: "Type C8B on A101 (117 ft)", undo: async () => ({ ok: true }), redo: async () => ({ ok: true }) };
+    const second: UndoEntry = { label: "Type C8B on A101 (62 ft)", undo: async () => ({ ok: true }), redo: async () => ({ ok: true }) };
+    const pressed = pushed(EMPTY, first);
+    const outcome = await undoOnce(pressed);
+    // The queue's second accept is pushed while the first undo was out.
+    const meanwhile = pushed(pressed, second);
+    // The old write, outcome.state, has no `second`: it could never be undone.
+    expect(outcome!.state.done).not.toContain(second);
+    const now = movedToUndone(meanwhile, outcome!.entry);
+    expect(now.done).toEqual([second]);
+    expect(now.undone).toEqual([first]);
+    // And back: Redo moves the same entry, leaving the other where it is.
+    expect(movedToDone(now, first)).toEqual({ done: [second, first], undone: [] });
+  });
+
+  it("an entry no longer on the side it is moved from leaves the stack as it is", () => {
+    const one: UndoEntry = { label: "one", undo: async () => ({ ok: true }), redo: async () => ({ ok: true }) };
+    expect(movedToUndone(EMPTY, one)).toBe(EMPTY);
+    expect(movedToDone(EMPTY, one)).toBe(EMPTY);
   });
 });
