@@ -72,12 +72,12 @@ import { setReviewProgress, type SetReviewItem } from "@/lib/takeoff/wallReview"
  *             closing it widens it. Quantities defaults open at 1440 and up
  *             and closed below, because at 1280 a 23rem rail is a third of the
  *             width.
- *   768-1279  both rails are DRAWERS: fixed, over a backdrop, reserving NO
+ *   600-1279  both rails are DRAWERS: fixed, over a backdrop, reserving NO
  *             width. The first version used `absolute` and still took its
  *             space out of the row, so the canvas was pushed off its own page
  *             and clipped at both edges. That is why the spec measures overlap
  *             rather than trusting a class name.
- *   < 768     read-only. Every tool places something on the drawing by
+ *   < 600     read-only, and the badge says why. Every tool places something on the drawing by
  *             clicking it, and 390px cannot be clicked accurately enough to
  *             trace a wall. An estimator on a phone is checking a number, not
  *             measuring one.
@@ -169,7 +169,11 @@ const RAIL_WIDTH = 1280;
 /** At or above this the quantities rail starts open. */
 const WIDE = 1440;
 /** Below this the workspace is read-only. */
-const PHONE = 768;
+// ── EDITABLE DOWN TO 600 ──
+// It was 768, and a laptop window with a side panel open (622 px, Chrome on
+// Baker) opened read-only with no word why. 600–1279 is the drawer layout,
+// which already works; below 600 is a phone, and the badge says how to edit.
+const PHONE = 600;
 
 const RAIL_MIN = 180;
 const RAIL_MAX = 420;
@@ -1334,8 +1338,9 @@ export function TakeoffWorkspace({
           <span
             className="rounded border border-line-card px-1.5 py-0.5 text-[10px] text-ink-muted"
             data-takeoff="read-only"
+            title={`Measuring needs a window at least ${PHONE} px wide: widen it, or close a side panel, to edit`}
           >
-            read-only
+            read-only below {PHONE} px: widen the window to edit
           </span>
         )}
 
