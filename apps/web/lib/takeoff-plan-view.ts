@@ -620,3 +620,20 @@ export function scaleDeclinesFromReadings(rows: readonly ScaleReadingRowForView[
   }
   return byPage;
 }
+
+/**
+ * ── HOW FAR ONE WHEEL EVENT ZOOMS ──
+ *
+ * A mouse notch is ONE step of 12%, whatever delta the browser reports for it:
+ * Chrome's re-test measured three notches going 25% → 31%, because the step was
+ * scaled by `deltaY` and a notch there is small. A pinch (or Ctrl/⌘ + wheel)
+ * stays continuous, following the delta, at most 25% per event.
+ */
+export const WHEEL_NOTCH = 1.12;
+export function wheelZoomFactor(deltaY: number, deltaMode: number, notch: boolean): number {
+  if (deltaY === 0) return 1;
+  if (notch) return deltaY > 0 ? 1 / WHEEL_NOTCH : WHEEL_NOTCH;
+  const lines = deltaMode === 1 ? deltaY * 33 : deltaY;
+  return Math.min(1.25, Math.max(0.8, Math.exp(-lines * (Math.abs(lines) < 50 ? 0.01 : 0.0015))));
+}
+
