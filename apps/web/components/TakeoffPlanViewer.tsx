@@ -74,6 +74,7 @@ import {
   TOOL_KEYS,
   TOOLS,
   ZOOM_STEPS,
+  wheelZoomFactor,
   type ToolId,
 } from "@/lib/takeoff-plan-view";
 import {
@@ -1599,10 +1600,10 @@ export function TakeoffPlanViewer({
         previewRef.current = live;
         sheet.style.transformOrigin = `${live.fx * width}px ${live.fy * width}px`;
       }
-      const lines = event.deltaMode === 1 ? event.deltaY * 33 : event.deltaY;
       const lowest = ZOOM_STEPS[0]!;
       const highest = ZOOM_STEPS[ZOOM_STEPS.length - 1]!;
-      live.scale = Math.min(highest / live.zoomAtStart, Math.max(lowest / live.zoomAtStart, live.scale * Math.min(1.25, Math.max(0.8, Math.exp(-lines * (Math.abs(lines) < 50 ? 0.01 : 0.0015))))));
+      // A mouse notch is one fixed step; a pinch follows its delta (`wheelZoomFactor`).
+      live.scale = Math.min(highest / live.zoomAtStart, Math.max(lowest / live.zoomAtStart, live.scale * wheelZoomFactor(event.deltaY, event.deltaMode, mouse && !pinch)));
       sheet.style.transform = `scale(${live.scale})`;
       window.clearTimeout(live.timer);
       const settling = live;

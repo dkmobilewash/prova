@@ -35,6 +35,9 @@ export function TakeoffReviewQueue({
   heights = {},
   planSet,
   onShow,
+  onLeft,
+  doubted = 0,
+  onCheckDoubted,
   onClose,
 }: {
   jobId: string;
@@ -45,6 +48,11 @@ export function TakeoffReviewQueue({
   heights?: Readonly<Record<string, CodeHeight>>;
   planSet: PlanSetRow[];
   onShow: (item: ReviewItem | null) => void;
+  /** Told how many are left whenever that changes, so the top bar's count is this one. */
+  onLeft?: (n: number) => void;
+  /** Posted walls the model doubts that are not in this queue: Keep/Drop, as a step of it. */
+  doubted?: number;
+  onCheckDoubted?: () => void;
   onClose: () => void;
 }) {
   // Decided here, before the server's re-render drops it from `items`.
@@ -77,6 +85,29 @@ export function TakeoffReviewQueue({
   }, [router]);
 
   useEffect(() => onShow(current), [current?.key]); // eslint-disable-line react-hooks/exhaustive-deps -- the item's key is its identity
+  useEffect(() => onLeft?.(left.length), [left.length]); // eslint-disable-line react-hooks/exhaustive-deps -- the count is what changes
+
+  // ── K, D AND N ON A WALL TO CONFIRM ──
+  // Taken before the workspace's keys (its K pages back a sheet) and only
+  // while a held wall is on show; never while somebody types in a field.
+  const wallKeys = useRef<(event: KeyboardEvent) => void>(() => {});
+  wallKeys.current = (event) => {
+    if (current === null || current.kind !== "wall" || busy || event.metaKey || event.ctrlKey || event.altKey) return;
+    const target = event.target as HTMLElement | null;
+    if (target !== null && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+    const key = event.key.toLowerCase();
+    if (key === "k") void decide(() => reviewWall(jobId, current.measurementId, "keep"));
+    else if (key === "d") void decide(() => reviewWall(jobId, current.measurementId, "drop"));
+    else if (key === "n") setCursor(after(current.key));
+    else return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => wallKeys.current(event);
+    window.addEventListener("keydown", listener, true);
+    return () => window.removeEventListener("keydown", listener, true);
+  }, []);
 
   async function decide(run: () => Promise<{ ok: true } | { ok: false; error: string }>) {
     if (current === null) return;
@@ -134,6 +165,9 @@ export function TakeoffReviewQueue({
               <button type="button" className={button} disabled={busy} onClick={() => void decide(() => reviewWall(jobId, current.measurementId, "drop"))} data-takeoff="review-queue-drop">
                 Not a wall
               </button>
+              <span className="text-ink-muted" data-takeoff="review-queue-wall-keys">
+                K it&rsquo;s a wall · D not a wall · N skip
+              </span>
             </>
           )}
           {current.kind === "type" &&
@@ -258,6 +292,11 @@ export function TakeoffReviewQueue({
             </button>
           )}
         </span>
+      )}
+      {doubted > 0 && onCheckDoubted && (
+        <button type="button" className={button} onClick={onCheckDoubted} data-takeoff="review-queue-doubted" title="Keep or drop each posted wall, most doubted first, from the keyboard (K, D, U)">
+          Check the walls the model doubts · {doubted}
+        </button>
       )}
       <button type="button" className="underline" onClick={onClose} data-takeoff="review-queue-close">
         Close

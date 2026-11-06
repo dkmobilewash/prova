@@ -13,7 +13,7 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
  *
  * Each untyped wall group shows its walls lit and zoomed on the plan, the
  * suggested type and height already in place with where each came from, and
- * Enter accepts both; 1–9 picks another legend type, H edits the height, N
+ * Enter accepts both; 1–9 picks another legend type, T edits the height, N
  * skips. Every press is timed from the key to the next group on screen and to
  * the rows saved, against 5 seconds.
  *
@@ -140,7 +140,7 @@ test.describe("confirming wall groups from the keyboard", () => {
     await expect(group().locator('[data-takeoff="queue-type-from"]')).toHaveText("printed tag: ZF1 on A101");
     await expect(group().locator('[data-takeoff="queue-height"]')).toHaveValue(`15'-0"`);
     await expect(group().locator('[data-takeoff="queue-height-from"]')).toHaveText(LEGEND_FROM);
-    await expect(group().locator('[data-takeoff="queue-keys"]')).toHaveText("Enter accept · 1–9 type · H height · N skip");
+    await expect(group().locator('[data-takeoff="queue-keys"]')).toHaveText("Enter accept · 1–9 type · T height · N skip");
     // Every run of the group is lit, and the plan has zoomed in to them.
     await expect(page.locator('[data-takeoff="focus-run"]')).toHaveCount(2);
     // Zoomed to the group, so no longer the whole sheet fitted.
@@ -184,7 +184,7 @@ test.describe("confirming wall groups from the keyboard", () => {
     );
   });
 
-  test("6. nothing names the last group: 1 and 2 pick from the legend, H types the height", async () => {
+  test("6. nothing names the last group: 1 and 2 pick from the legend, T types the height", async () => {
     await expect(group().locator('[data-takeoff="queue-type-from"]')).toHaveText("nothing on the drawing names it: 1–9");
     await expect(group().locator('[data-takeoff="queue-height"]')).toHaveValue("");
     await page.keyboard.press("1");
@@ -194,9 +194,9 @@ test.describe("confirming wall groups from the keyboard", () => {
     await expect(group().locator('[data-takeoff="queue-height"]')).toHaveValue(`15'-0"`);
     await page.keyboard.press("2");
     await expect(group().locator('[data-takeoff="queue-type"]')).toHaveText("ZF2");
-    await page.keyboard.press("h");
+    await page.keyboard.press("t");
     await expect(group().locator('[data-takeoff="queue-height"]')).toBeFocused();
-    // H was the queue's, not the hand tool's.
+    // T is the queue's height key; H stays the Hand tool.
     await expect(page.getByRole("button", { name: /^Hand/ }).first()).not.toHaveAttribute("aria-pressed", "true");
     await page.keyboard.type(`9'-6"`);
     await page.screenshot({ path: path.join(SHOTS, "group-3-typed-1440.png") });
