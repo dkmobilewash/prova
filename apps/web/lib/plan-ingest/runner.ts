@@ -311,3 +311,25 @@ export function ingestProgress(counts: {
     complete: settled >= counts.total,
   };
 }
+
+/**
+ * How many pages a model-bound stage reads at once inside one slice.
+ *
+ * A title-block page is one model call of about a second and a half, nearly all
+ * of it waiting on the network, so one-at-a-time made a 65-sheet set take three
+ * minutes on the page (walk v6: 124 pages in 189 s, the longest wait between
+ * sign-up and a sent bid). Four lanes share the claim, which is already safe
+ * for racing workers (`claim.dbtest.ts`); the monthly sheet allowance is an
+ * atomic increment under its ceiling, so lanes cannot overspend it either.
+ * Free stages stay at one: PAGE_INVENTORY and RASTER are CPU in this process,
+ * and lanes there buy memory, not time.
+ */
+export const MODEL_LANES = 4;
+
+/** `runIngest` on `lanes` workers at once, over the same claim. */
+export async function runIngestLanes(
+  lanes: number,
+  options: Parameters<typeof runIngest>[0],
+): Promise<RunReport[]> {
+  return Promise.all(Array.from({ length: Math.max(1, lanes) }, () => runIngest(options)));
+}
