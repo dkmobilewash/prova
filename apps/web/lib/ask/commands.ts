@@ -87,7 +87,8 @@ export type CommandName =
   | "prepare_lien_waiver"
   | "run_takeoff"
   | "post_takeoff_to_estimate"
-  | "set_wall_height";
+  | "set_wall_height"
+  | "accept_sheet_suggestions";
 
 /** Risk tier. T5 (delete, void, contract, admin, outward send without a
  * composer) has no member on purpose: it cannot be registered. T4 is an
@@ -318,6 +319,10 @@ export const COMMANDS: CommandDefinition[] = [
   ...takeoffCommands,
 ];
 
+/** The wildcard reason wallGroupType.* gave, kept for the one-group actions. */
+const GROUP_TYPED_BY_LOOKING =
+  "\"Set type\" names a group of walls on a sheet as one of the set's legend types. The group is a set of shapes on a drawing the estimator is looking at, and which type it is is decided by looking at it: there is nothing a person could say to Ask that names the group, and a type set blind would price walls as the wrong assembly.";
+
 /** The wildcard reason takeoffItems.* gave, kept for the actions it still covers. */
 const CONDITIONS_DRAWN =
   "Naming, colouring, reordering and deleting the CONDITIONS an estimator draws with. Every one of these is a decision about a drawing somebody is looking at — which colour tells two wall types apart on this sheet, which order the rail reads in, whether this item is the 6in or the 8in partition. There is no sentence a person could say to Ask that carries the drawing, and an item created blind would be an empty condition in a list nobody asked for. Ask can already REPORT what a takeoff came to, because the quantities reach it as estimate lines; it has no business inventing the categories. assignMeasurementsToItem is the sharpest case: its argument is a list of measurement ids that only exist as shapes on a sheet, so there is nothing for a person to name.";
@@ -349,10 +354,15 @@ export const EXCLUSIONS: Exclusion[] = [
     reason: "The workspace's Send to estimate. post_takeoff_to_estimate already hands that decision to the takeoff tab, where the measurements are read before they are added.",
   },
   { action: "setAssemblyLibraryPin", reason: "Pins the assembly library open in the workspace's rail; a layout preference, not a record." },
+  // wallGroupType.* was one wildcard until accept_sheet_suggestions
+  // (commands/takeoff.ts) registered confirmSheetSuggestions: the groups it
+  // takes are the ones the DRAWING already named, so a person can say "accept
+  // all on A101" without naming a shape. One group typed by hand still can't.
+  { action: "setWallGroupType", reason: GROUP_TYPED_BY_LOOKING },
+  { action: "confirmWallGroup", reason: GROUP_TYPED_BY_LOOKING },
   {
-    action: "wallGroupType.*",
-    reason:
-      "\"Set type\" names a group of walls on a sheet as one of the set's legend types. The group is a set of shapes on a drawing the estimator is looking at, and which type it is is decided by looking at it: there is nothing a person could say to Ask that names the group, and a type set blind would price walls as the wrong assembly.",
+    action: "undoSheetSuggestions",
+    reason: "Undo holds the before-snapshot the queue's own Accept all returned, in the page that pressed it. Ask's card has no snapshot to give back, and says there is no Undo from it.",
   },
   {
     action: "planCompare.*",

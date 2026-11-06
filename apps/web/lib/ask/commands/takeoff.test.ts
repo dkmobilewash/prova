@@ -19,19 +19,23 @@ const fake = vi.hoisted(() => ({
     takeoffItem: { findMany: vi.fn() },
   },
   setWallGroupHeight: vi.fn(),
+  loadReviewQueue: vi.fn(),
+  confirmSheetSuggestions: vi.fn(),
   startPlanIngest: vi.fn(),
   wallsSheetsFor: vi.fn(),
 }));
 vi.mock("@prova/db", () => ({ prisma: fake.prisma }));
 vi.mock("@/lib/actions/planIngest", () => ({ startPlanIngest: fake.startPlanIngest }));
 vi.mock("@/lib/actions/takeoffItems", () => ({ setWallGroupHeight: fake.setWallGroupHeight }));
+vi.mock("@/lib/takeoff/reviewQueueQuery", () => ({ loadReviewQueue: fake.loadReviewQueue }));
+vi.mock("@/lib/actions/wallGroupType", () => ({ confirmSheetSuggestions: fake.confirmSheetSuggestions }));
 vi.mock("@/lib/plan-ingest/walls", () => ({
   wallsSheetsFor: fake.wallsSheetsFor,
   wallsTaskPages: (sheets: number[]) => sheets,
 }));
 vi.mock("../allowance", () => ({ allowanceSummary: async () => ({ planSheetsLeft: 1340 }) }));
 
-const { runTakeoffCommand, postTakeoffToEstimateCommand, setWallHeightCommand, spokenFeet } = await import("./takeoff");
+const { runTakeoffCommand, postTakeoffToEstimateCommand, setWallHeightCommand, spokenFeet, acceptSheetSuggestionsCommand } = await import("./takeoff");
 
 const ctx = { companyId: "co-1", userId: "u-1", principal: { role: "OWNER", jobFunction: null }, today: "2026-11-04" } as const;
 const wv = { id: "job-1", name: "Washington Village", status: "ESTIMATE", contact: { name: "WV GC" } };
@@ -171,5 +175,53 @@ describe("set_wall_height", () => {
     expect(await setWallHeightCommand.resolve(ctx, { jobName: "Washington Village", wallType: "S6B", height: "tall" })).toMatchObject({ kind: "need" });
     fake.prisma.job.findFirst.mockResolvedValue({ status: "CONTRACTED" });
     expect(await setWallHeightCommand.resolve(ctx, { jobName: "Washington Village", wallType: "S6B", height: "15" })).toMatchObject({ kind: "refuse" });
+  });
+});
+
+describe("accept_sheet_suggestions", () => {
+  const run = { x1: 0, y1: 0, x2: 1, y2: 0 };
+  const group = (key: string, page: number, sheet: string, suggested: { code: string; from: string; drawn?: true } | null, feet: number, ceiling: { kind: "ceiling"; feet: number; from: string } | null = null) =>
+    ({ kind: "type", key, pageNumber: page, sheet, inches: 4.875, runs: [run], feet, suggested, ceiling }) as const;
+  const items = [
+    group("g1", 13, "A101", { code: "S6A", from: "printed tag S6A on A101", drawn: true }, 120),
+    group("g2", 13, "A101", { code: "W2", from: "the legend", drawn: true }, 40, { kind: "ceiling", feet: 9, from: "the ceiling plan" }),
+    group("g3", 13, "A101", { code: "W1", from: "thickness" }, 30),
+    group("g4", 14, "A102", { code: "S6A", from: "printed tag S6A on A102", drawn: true }, 80),
+    { kind: "price", key: "p1", lineItemId: "l1", description: "Board", quantity: "1", unit: "SF", askCost: false, costCategory: null },
+  ];
+  beforeEach(() => {
+    fake.loadReviewQueue.mockReset().mockResolvedValue({ planId: "plan-1", items, heights: { S6A: { feet: 10, from: "the legend" } }, heightChoices: {}, codes: [] });
+    fake.confirmSheetSuggestions.mockReset().mockResolvedValue({ ok: true, value: { accepted: 2, failed: [], undo: { moved: [], added: [], heights: [] } } });
+  });
+
+  it("is a T2 modify, DIRECT over #1020's confirmSheetSuggestions", () => {
+    expect(acceptSheetSuggestionsCommand).toMatchObject({ mode: "DIRECT", core: "confirmSheetSuggestions", tier: "T2_MODIFY", capability: "VIEW_JOB_COSTS" });
+  });
+
+  it("takes only the groups the drawing named on that sheet, at the heights the queue pre-fills, and writes nothing while resolving", async () => {
+    const card = await acceptSheetSuggestionsCommand.resolve(ctx, { jobName: "Washington Village", sheet: "a101" });
+    if (card.kind !== "ready") throw new Error(`expected ready, got ${JSON.stringify(card)}`);
+    expect(card.resolved).toMatchObject({ jobId: "job-1", sheet: "A101" });
+    // The thickness guess (W1) and the other sheet's group stay out; W2 takes the ceiling.
+    expect((card.resolved.groups as { code: string; heightFt: number | null; pageNumber: number }[]).map((g) => [g.code, g.heightFt, g.pageNumber])).toEqual([["S6A", 10, 13], ["W2", 9, 13]]);
+    expect(card.preview.map((l) => l.value)).toEqual(expect.arrayContaining(["A101: 2 groups, 160 ft", "S6A at 10 ft · 120 ft", "W2 at 9 ft · 40 ft", "1 group the drawing does not name"]));
+    expect(card.warnings.join(" ")).toMatch(/no Undo from here/);
+    expect(fake.confirmSheetSuggestions).not.toHaveBeenCalled();
+  });
+
+  it("the tap hands the card's groups to the action and says what went in, naming any that did not", async () => {
+    const card = await acceptSheetSuggestionsCommand.resolve(ctx, { jobName: "Washington Village", sheet: "A101" });
+    if (card.kind !== "ready") throw new Error("expected ready");
+    fake.confirmSheetSuggestions.mockResolvedValue({ ok: true, value: { accepted: 1, failed: ["W2: That group has no walls to type."], undo: { moved: [], added: [], heights: [] } } });
+    const done = await acceptSheetSuggestionsCommand.execute(ctx, card.resolved);
+    expect(fake.confirmSheetSuggestions).toHaveBeenCalledWith("job-1", card.resolved.groups);
+    expect(done).toMatchObject({ ok: true, message: expect.stringMatching(/^Accepted 1 group on A101; not accepted: W2/) });
+  });
+
+  it("refuses a sheet with nothing to type, and a sheet whose groups the drawing does not name; asks for a missing sheet", async () => {
+    expect(await acceptSheetSuggestionsCommand.resolve(ctx, { jobName: "Washington Village" })).toMatchObject({ kind: "need" });
+    expect(await acceptSheetSuggestionsCommand.resolve(ctx, { jobName: "Washington Village", sheet: "A900" })).toMatchObject({ kind: "refuse", href: "/takeoff/job-1?open=review" });
+    fake.loadReviewQueue.mockResolvedValue({ planId: "plan-1", items: [items[2]], heights: {}, heightChoices: {}, codes: [] });
+    expect(await acceptSheetSuggestionsCommand.resolve(ctx, { jobName: "Washington Village", sheet: "A101" })).toMatchObject({ kind: "refuse", reason: expect.stringMatching(/None of the 1 groups/) });
   });
 });

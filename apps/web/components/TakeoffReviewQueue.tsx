@@ -7,7 +7,7 @@ import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, priceLineF
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
-import { QUEUE_PART, heightFor, legendMissing, levelHeightFor, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { QUEUE_PART, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
 
@@ -80,10 +80,7 @@ export function TakeoffReviewQueue({
   // guesses by thickness stay for a person to look at. One line says what
   // went in, with Undo.
   const [accepted, setAccepted] = useState<{ text: string; keys: string[]; undo: SheetSuggestionsUndo } | null>(null);
-  const sheetGroups =
-    current === null || current.kind !== "type"
-      ? []
-      : left.filter((item): item is Extract<ReviewItem, { kind: "type" }> => item.kind === "type" && item.pageNumber === current.pageNumber && item.suggested?.drawn === true);
+  const sheetGroups = current === null || current.kind !== "type" ? [] : sheetSuggestionGroups(left, current.pageNumber, heights, planId);
   async function acceptSheet() {
     if (current === null || current.kind !== "type" || sheetGroups.length === 0) return;
     const groups = sheetGroups;
@@ -94,11 +91,7 @@ export function TakeoffReviewQueue({
     setDone((was) => new Set([...was, ...groups.map((g) => g.key)]));
     const result = await confirmSheetSuggestions(
       jobId,
-      groups.map((g) => {
-        const code = g.suggested!.code;
-        const byLevel = levelHeightFor(code, g.level);
-        return { planId, pageNumber: g.pageNumber, code, inches: g.inches, runs: g.runs, heightFt: (byLevel ?? heightFor(code, heights, g.ceiling))?.feet ?? null, level: byLevel === null ? null : g.level!.label };
-      }),
+      groups.map((g) => g.group),
     ).catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
     setBusy(false);
     if (!result.ok) {

@@ -163,6 +163,7 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   c("q-takeoff-run", "run takeoff on Riverside", "run_takeoff", ESTIMATOR),
   c("q-takeoff-post", "update the Riverside estimate from the takeoff", "post_takeoff_to_estimate", ESTIMATOR),
   c("q-wall-height", "set the S6B walls on Riverside to 15 feet", "set_wall_height", ESTIMATOR),
+  c("q-accept-sheet", "accept all the suggestions on sheet A101 for Riverside", "accept_sheet_suggestions", ESTIMATOR),
   many(
     "q-paid-this-month",
     "are we going to get paid on Riverside this month?",
@@ -539,8 +540,9 @@ export const CENSUS_REFUSALS = 2;
 /** -> 128 on 2026-11-04: one each for `start_change_order` and `draft_purchase_order`.
  * -> 131 the same day: `start_pay_application`, `bill_retainage`, `prepare_lien_waiver`.
  * -> 133: `run_takeoff` and `post_takeoff_to_estimate`.
- * -> 136 on 2026-11-06: `takeoff_quantities`, `takeoff_review`, `set_wall_height`. */
-export const TOTAL_QUESTIONS = 136;
+ * -> 136 on 2026-11-06: `takeoff_quantities`, `takeoff_review`, `set_wall_height`.
+ * -> 137 the same day: `accept_sheet_suggestions`. */
+export const TOTAL_QUESTIONS = 137;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the

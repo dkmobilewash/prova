@@ -6,6 +6,8 @@ import { allowanceSummary } from "../allowance";
 import { parseFeetInches } from "@/lib/feet-inches";
 import { OFF_ESTIMATE_ITEMS } from "@/lib/takeoff/estimateHold";
 import { sameCode } from "@/lib/takeoff/legendMerge";
+import { loadReviewQueue } from "@/lib/takeoff/reviewQueueQuery";
+import { sheetSuggestionGroups } from "@/lib/takeoff/reviewQueue";
 import type {
   CommandContext,
   CommandDefinition,
@@ -306,4 +308,100 @@ export const setWallHeightCommand: DirectCommandDefinition = {
   execute: executeSetWallHeight,
 };
 
-export const takeoffCommands: CommandDefinition[] = [runTakeoffCommand, postTakeoffToEstimateCommand, setWallHeightCommand];
+/**
+ * "Accept all suggestions on A101": the queue's Accept all on this sheet, from
+ * Ask. DIRECT over `confirmSheetSuggestions` (#1020) with the groups
+ * `sheetSuggestionGroups` builds — the same function the queue's button calls,
+ * so both take every group whose type the drawing gave, at the height Enter
+ * would pre-fill. The card lists each group (type, height, feet) before
+ * anything is written; library guesses by thickness stay in the queue.
+ *
+ * NO UNDO FROM HERE, and the card says so: the queue's Undo holds the
+ * before-snapshot in the page that pressed it. A group typed wrong is retyped
+ * in the queue.
+ */
+async function resolveAcceptSheet(ctx: CommandContext, input: CommandInput): Promise<Resolution> {
+  const said = (input.sheet ?? "").replace(/^sheet\s+/i, "").trim();
+  if (!said) return { kind: "need", missing: "which sheet, e.g. A101" };
+  const located = await findJob(ctx, input);
+  if (located.kind !== "job") return located;
+  const { job } = located;
+  const queue = await loadReviewQueue(ctx.companyId, job.id);
+  const types = queue.items.filter((item) => item.kind === "type");
+  const onSheet = types.filter((item) => item.sheet.toLowerCase() === said.toLowerCase() || String(item.pageNumber) === said);
+  if (queue.planId === null || onSheet.length === 0) {
+    return { kind: "refuse", reason: `Nothing on sheet ${said} of ${job.name} is waiting for a type.`, href: `/takeoff/${job.id}?open=review` };
+  }
+  const pageNumber = onSheet[0].pageNumber;
+  const groups = sheetSuggestionGroups(queue.items, pageNumber, queue.heights, queue.planId);
+  const sheet = onSheet[0].sheet;
+  if (groups.length === 0) {
+    return {
+      kind: "refuse",
+      reason: `None of the ${onSheet.length} groups on ${sheet} has a type the drawing gives (a printed tag or the legend), so there is nothing to accept all at once. Pick each one in the review queue.`,
+      href: `/takeoff/${job.id}?open=review`,
+    };
+  }
+  const feet = groups.reduce((n, g) => n + (g.feet ?? 0), 0);
+  const left = onSheet.length - groups.length;
+  return {
+    kind: "ready",
+    resolved: { jobId: job.id, jobName: job.name, sheet, groups: groups.map((g) => g.group) },
+    preview: [
+      { label: "Job", value: job.name },
+      { label: "Sheet", value: `${sheet}: ${groups.length} group${groups.length === 1 ? "" : "s"}, ${Math.round(feet).toLocaleString()} ft` },
+      ...groups.map((g, i) => ({
+        label: `Group ${i + 1}`,
+        value: `${g.group.code}${g.group.heightFt === null ? ", no height yet" : ` at ${Math.round(g.group.heightFt * 100) / 100} ft`}${g.feet === null ? "" : ` · ${Math.round(g.feet)} ft`}`,
+      })),
+      ...(left > 0 ? [{ label: "Left in the queue", value: `${left} group${left === 1 ? "" : "s"} the drawing does not name` }] : []),
+    ],
+    warnings: ["These are the drawing's suggestions. There is no Undo from here; a group typed wrong is retyped in the review queue."],
+  };
+}
+
+async function executeAcceptSheet(_ctx: CommandContext, resolved: ResolvedPayload): Promise<Executed> {
+  const jobId = String(resolved.jobId);
+  const { confirmSheetSuggestions } = await import("@/lib/actions/wallGroupType");
+  let summary = "";
+  const result = await throughAction("accept the suggestions", async () => {
+    const out = await confirmSheetSuggestions(jobId, resolved.groups as Parameters<typeof confirmSheetSuggestions>[1]);
+    if (!out.ok) return out;
+    const { accepted, failed } = out.value;
+    summary = `Accepted ${accepted} group${accepted === 1 ? "" : "s"} on ${String(resolved.sheet)}${failed.length > 0 ? `; not accepted: ${failed.join("; ")}` : ""}.`;
+    return { ok: true };
+  });
+  if (!result.ok) return result;
+  return {
+    ok: true,
+    message: `${summary} Their estimate lines are written.`,
+    created: { label: `Sheet ${String(resolved.sheet)}, ${String(resolved.jobName)}`, href: `/takeoff/${jobId}?open=review`, targetType: "Job", targetId: jobId },
+    revalidate: [`/jobs/${jobId}/takeoff`, `/takeoff/${jobId}`],
+  };
+}
+
+export const acceptSheetSuggestionsCommand: DirectCommandDefinition = {
+  name: "accept_sheet_suggestions",
+  description:
+    "Accepts every wall-type suggestion the drawing gives on one sheet of a job's takeoff (a printed tag or the legend), each at the height the review queue would pre-fill, e.g. 'accept all suggestions on A101' or 'take the suggested types on sheet A101 for Baker'. The same as the review queue's Accept all suggestions on this sheet; estimate lines follow. Needs the sheet and the job. Does not accept guesses by thickness, set heights by themselves (that is set_wall_height), keep or drop walls, or price anything.",
+  capability: "VIEW_JOB_COSTS",
+  tier: "T2_MODIFY",
+  mode: "DIRECT",
+  action: "confirmSheetSuggestions",
+  core: "confirmSheetSuggestions",
+  title: "Accept the sheet's suggestions",
+  verb: "Reading the review queue",
+  button: "Accept them",
+  input_schema: {
+    type: "object",
+    properties: {
+      jobName: { type: "string", description: "The job, as the person named it." },
+      sheet: { type: "string", description: "The sheet, e.g. A101." },
+    },
+  },
+  continuationKeys: ["jobId"],
+  resolve: resolveAcceptSheet,
+  execute: executeAcceptSheet,
+};
+
+export const takeoffCommands: CommandDefinition[] = [runTakeoffCommand, postTakeoffToEstimateCommand, setWallHeightCommand, acceptSheetSuggestionsCommand];
