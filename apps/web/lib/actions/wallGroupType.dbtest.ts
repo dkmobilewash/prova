@@ -48,15 +48,40 @@ describe("Set type", () => {
     expect(await prisma.takeoffItem.count({ where: { jobId, name: UNTYPED_ITEM, measurements: { some: {} } } })).toBe(0);
   });
 
-  it("is remembered for the job: the next sheet's group that thick posts as the type", async () => {
-    const pageId = await sheet(2, [{ x1: 0.5, y1: 0.5, x2: 0.8, y2: 0.5 }]);
-    const item = await prisma.takeoffItem.findFirst({ where: { jobId, wallType: { code: "C" } }, select: { id: true, thicknessIn: true } });
-    expect(Number(item?.thicknessIn)).toBe(7);
-    // Detection matches the group to the item by thickness (`matchGroupToItem`).
-    await prisma.takeoffWallProposal.updateMany({ where: { pageId }, data: { itemId: item!.id } });
+  it("ONLY THE GROUP PRESSED: another group as thick, with its own tag, is untouched; the item learns no thickness; Clear puts it all back (Chrome on Baker)", async () => {
+    // Two 7" groups on one sheet, tagged differently, both posted untyped.
+    const one = [{ x1: 0.1, y1: 0.8, x2: 0.5, y2: 0.8 }];
+    const other = [{ x1: 0.6, y1: 0.8, x2: 0.9, y2: 0.8 }];
+    const pageId = await sheet(2, [...one, ...other]);
     await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 2, userId: null });
-    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId }, select: { itemId: true, label: true } });
-    expect(rows).toEqual([{ itemId: item!.id, label: "C wall (set for this job)" }]);
+    const on = async (run: (typeof one)[number]) =>
+      (await prisma.takeoffMeasurement.findFirstOrThrow({ where: { pageId, xs: { equals: [run.x1, run.x2] }, ys: { equals: [run.y1, run.y2] } }, select: { item: { select: { name: true } } } })).item?.name;
+    expect(await setWallGroupType(jobId, { planId, pageNumber: 2, code: "C", inches: 7, runs: one })).toEqual({ ok: true });
+    expect(await on(one[0]!)).toBe("C walls");
+    expect(await on(other[0]!)).toBe(UNTYPED_ITEM);
+    // Nothing for detection to match the other group by: the item has no thickness.
+    const item = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, wallType: { code: "C" } }, select: { id: true, thicknessIn: true } });
+    expect(item.thicknessIn).toBeNull();
+    // Clear (Set type's Undo): back exactly, the other group still untouched.
+    expect((await clearWallGroupType(jobId, { planId, pageNumber: 2, runs: one })).ok).toBe(true);
+    expect([await on(one[0]!), await on(other[0]!)]).toEqual([UNTYPED_ITEM, UNTYPED_ITEM]);
+  });
+
+  it("Clear takes the thickness off a typed item it leaves empty, which an earlier build's Set type wrote", async () => {
+    const run = [{ x1: 0.1, y1: 0.9, x2: 0.4, y2: 0.9 }];
+    await sheet(5, run);
+    await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 5, userId: null });
+    await setWallGroupType(jobId, { planId, pageNumber: 5, code: "C", inches: 7, runs: run });
+    const item = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, wallType: { code: "C" } }, select: { id: true } });
+    // As the old build left it.
+    await prisma.takeoffItem.update({ where: { id: item.id }, data: { thicknessIn: "7.00" } });
+    // Every C run on the job cleared: the item is empty, and its thickness goes with its walls.
+    const all = await prisma.takeoffMeasurement.findMany({ where: { itemId: item.id }, select: { page: { select: { pageNumber: true } }, xs: true, ys: true } });
+    for (const pageNumber of new Set(all.map((m) => m.page.pageNumber))) {
+      const runs = all.filter((m) => m.page.pageNumber === pageNumber).map((m) => ({ x1: m.xs[0]!, y1: m.ys[0]!, x2: m.xs[1]!, y2: m.ys[1]! }));
+      expect((await clearWallGroupType(jobId, { planId, pageNumber, runs })).ok).toBe(true);
+    }
+    expect((await prisma.takeoffItem.findUniqueOrThrow({ where: { id: item.id }, select: { thicknessIn: true } })).thicknessIn).toBeNull();
   });
 
   it("writes the runs when nothing was posted yet, and refuses a code the legend lacks", async () => {
