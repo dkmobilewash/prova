@@ -73,6 +73,23 @@ const length = (run: QueueRun) => Math.hypot(run.x2 - run.x1, run.y2 - run.y1);
 const feetOf = (runs: readonly QueueRun[], feetPerUnit: number | null) =>
   feetPerUnit === null ? null : runs.reduce((n, run) => n + length(run), 0) * feetPerUnit;
 
+/**
+ * ── WHY A HEIGHT FROM THE DRAWINGS IS MISSING ──
+ *
+ * A wall type's height comes from the legend read (`legendHeightsFor`). With no
+ * legend read on the set there is nothing to suggest from, and a queue offering
+ * only the ceiling reads as if the drawings said nothing — Chrome on Baker,
+ * 2026-11-06: "Ceiling 10'-0"" and no 15'-0" to deck. So the queue says why,
+ * and where to fix it: read the legend, or have the owner turn the reading on.
+ */
+export type LegendState = "read" | "unread" | "off";
+export function legendMissing(state: LegendState, jobId: string): { text: string; href: string; action: string } | null {
+  if (state === "read") return null;
+  return state === "unread"
+    ? { text: "No height from the drawings: the wall legend has not been read yet.", href: `/jobs/${jobId}/takeoff`, action: "Read the wall legend" }
+    : { text: "No height from the drawings: the wall legend has not been read, and Wall types from the drawings is off.", href: "/settings/assistant#ai-switch", action: "Turn it on (owner)" };
+}
+
 /** "levels 2–9", its floor-to-floor and where that came from, and the codes it is the height of (those that run to the structure). */
 export type QueueLevel = { label: string; height: CodeHeight | null; codes: string[] };
 

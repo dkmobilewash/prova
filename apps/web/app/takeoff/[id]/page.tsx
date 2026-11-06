@@ -106,6 +106,7 @@ export default async function TakeoffWorkspacePage({
       openScale={open === "scale"}
       reviewQueue={queue.items}
       reviewHeights={queue.heights}
+      reviewLegend={queue.legend}
       reviewHeightChoices={queue.heightChoices}
       reviewCodes={queue.codes}
       planSet={planSetFromLoaded(data)}
