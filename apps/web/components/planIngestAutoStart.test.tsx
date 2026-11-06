@@ -37,6 +37,7 @@ const advancePlanIngest = vi.fn();
 const planIngestFailures = vi.fn(async () => ({ ok: true, value: [] }));
 const queuedPlanReads = vi.fn(async () => ({ ok: true, value: [] as IngestView[] }));
 
+vi.mock("@/lib/plan-ingest/advanceOverHttp", () => ({ advanceOverHttp: (...a: unknown[]) => advancePlanIngest(...a) }));
 vi.mock("@/lib/actions", () => ({
   startPlanIngest: (...a: unknown[]) => startPlanIngest(...a),
   advancePlanIngest: (...a: unknown[]) => advancePlanIngest(...a),

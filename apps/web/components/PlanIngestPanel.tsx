@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
-  advancePlanIngest,
   planIngestFailures,
   queuedPlanReads,
   retryPlanIngestPage,
   startPlanIngest,
 } from "@/lib/actions";
+import { advanceOverHttp } from "@/lib/plan-ingest/advanceOverHttp";
 // The TYPE from the database-free module, never from claim.ts — see its comment
 // on IngestView. A client component that could reach prisma fails the build.
 import type { IngestView } from "@/lib/plan-ingest/runner";
@@ -152,7 +152,8 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       // A token per loop, not the job id: a slice scheduled before the title
       // blocks took over must not become a second loop when the legend resumes.
       if (!alive.current || pumping.current !== mine || mine === null || mine.jobId !== jobId) return;
-      const result = await advancePlanIngest(jobId);
+      // Over a plain request, so a long slice does not hold up this page's actions (`advanceOverHttp`).
+      const result = await advanceOverHttp(jobId);
       if (!alive.current) return;
 
       if (!result.ok) {
