@@ -4,7 +4,7 @@ import { prisma, type PlanIngestStage } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { pdfPageCount } from "@/lib/ask/pageCount";
-import { claimPorts, closeIfSettled, ingestViewOf } from "@/lib/plan-ingest/claim";
+import { claimPorts, closeIfSettled, ingestViewOf, unfinishedIngestsFor } from "@/lib/plan-ingest/claim";
 import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
 import { runIngest, MAX_ATTEMPTS, type IngestView } from "@/lib/plan-ingest/runner";
 import { isRunnableStage, stageWork, STAGE_SPENDS } from "@/lib/plan-ingest/stages";
@@ -297,6 +297,21 @@ export async function advancePlanIngest(ingestJobId: string): Promise<ActionResu
  * claim out from under a live worker — the one case where a person's click and
  * the machinery genuinely conflict.
  */
+/**
+ * The plan readings still to do on a set, oldest first — the reading panel's
+ * queue. It advances the first with `advancePlanIngest`, then asks again, so
+ * every queued run (inventory, title blocks, the wall legend, schedules) moves
+ * while somebody is on the page. The whole-set walls and scanned-sheet runs
+ * have panels of their own and are left to them.
+ */
+export async function queuedPlanReads(planId: string): Promise<ActionResultWith<IngestView[]>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(NOT_YOURS) as ActionResultWith<IngestView[]>;
+  const plan = await planInCompany(planId, context.company.id);
+  if (!plan) return { ok: false, error: "That plan set could not be found." };
+  return { ok: true, value: await unfinishedIngestsFor(plan.id, ["WALLS", "RASTER"]) };
+}
+
 export async function retryPlanIngestPage(ingestJobId: string, pageNumber: number): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(NOT_YOURS);

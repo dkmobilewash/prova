@@ -21,6 +21,7 @@ vi.mock("@/lib/actions", () => ({
   advancePlanIngest: (...a: unknown[]) => advancePlanIngest(...a),
   retryPlanIngestPage: async () => ({ ok: true }),
   planIngestFailures: async () => ({ ok: true, value: [] }),
+  queuedPlanReads: async () => ({ ok: true, value: [] }),
 }));
 const { PlanIngestPanel } = await import("./PlanIngestPanel");
 
