@@ -15,6 +15,7 @@ import { viewerTimeZone } from "@/lib/viewerToday";
 import { groupProposalClauses, PROPOSAL_CLAUSE_HEADINGS } from "@/lib/proposal-clauses";
 import { GcProposalSections } from "@/components/GcProposalSections";
 import { loadGcProposal } from "@/lib/estimating/gc-proposal";
+import { wallScopeParts } from "@/lib/estimating/takeoff-item-lines";
 import { ProposalDrafts, type ProposalDraftView } from "@/components/ProposalDrafts";
 import { loadProposalFacts } from "@/lib/estimating/proposal-facts-query";
 import { recapLines, recapStateFor } from "@/lib/estimating/recap-state";
@@ -119,6 +120,9 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
   const bidTotal = lines.reduce((sum, line) => sum + (line.total ?? 0), 0);
   const groups = groupProposalClauses(job.proposalClauses);
   const gcProposal = await loadGcProposal(company.id, job.id);
+  // Walls measured but not in the price: off the GC's scope (it reads only what
+  // the number is made of), so the sub is told here, before it sends.
+  const { unpriced } = await prisma.$transaction((tx) => wallScopeParts(tx, company.id, job.id));
   const timeZone = await viewerTimeZone();
 
   // `addedTotal` is what the rates WOULD add, recomputed here from the job's
@@ -298,6 +302,15 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
       {/* What the GC also reads on the signing link: the scope by wall type and
           the terms. The clauses below carry their own edit controls here. */}
       <GcProposalSections proposal={gcProposal} showClauses={false} />
+      {unpriced.length > 0 && (
+        <p className="mt-3 text-sm text-ink-body print:hidden" data-proposal="scope-unpriced">
+          Measured but not in the price, so not on the GC&rsquo;s copy:{" "}
+          {unpriced.map((row) => `${row.code ?? "no type"} ${Math.round(row.linearFt).toLocaleString()} LF`).join(", ")}. A type with no parts prices nothing.{" "}
+          <Link href="/wall-types" className="font-medium text-link hover:underline">
+            Give it its parts in Wall types &rarr;
+          </Link>
+        </p>
+      )}
       {gcProposal.terms.paymentTermsDays === null && gcProposal.terms.retainagePercent === null && (
         <p className="mt-3 text-sm text-ink-body print:hidden" data-proposal="terms-missing">
           No payment terms or retainage on file for {job.contact.name}, so the GC&rsquo;s copy shows no terms.{" "}

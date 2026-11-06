@@ -61,7 +61,8 @@ describe("the guided takeoff by voice", () => {
   it("how many linear feet of S6A: the scope row, matched however the code was said", async () => {
     const result = await HANDLERS.takeoff_quantities(companyId, { jobName: "takeoff-review baker", wallType: "s6a" });
     expect(result.unavailable).toBeUndefined();
-    expect(result.data).toEqual({ job: "ASK-TAKEOFF-REVIEW Baker", wallTypes: [{ wallType: "S6A", name: "6in stud, board both sides", linearFeet: 50, squareFeet: 1000, heightFt: 10 }] });
+    expect(result.data).toEqual({ job: "ASK-TAKEOFF-REVIEW Baker", wallTypes: [{ wallType: "S6A", name: "6in stud, board both sides", linearFeet: 50, squareFeet: 1000, heightFt: 10, inPrice: false }] });
+    // No estimate line is written for S6A here, so it is measured and not in the price: off the GC's scope.
   });
 
   it("a type not on the takeoff is said so, with the types that are — never a zero", async () => {
