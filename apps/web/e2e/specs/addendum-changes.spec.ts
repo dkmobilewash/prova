@@ -66,12 +66,15 @@ test.describe("what an addendum's sheets change, by wall type", () => {
     await prisma.takeoffWallProposal.create({ data: { pageId: newA101.id, calibrationId: newCal.id, thicknessInches: 6, source: "REMAINDER", runs: [{ x1: 0.1, y1: 0.2, x2: 0.4, y2: 0.2, thicknessFeet: 0.5 }, { x1: 0.6, y1: 0.7, x2: 0.72, y2: 0.7, thicknessFeet: 0.5 }] } });
   });
 
-  test("2. the Takeoff tab links to what the revised sheets change", async () => {
+  test("2. the Takeoff tab links to what the revised sheets change, where they are uploaded too", async () => {
     await page.goto(`/jobs/${jobId}/takeoff`);
     await expectHealthy(page, "the takeoff tab with two plan files", { monitor });
     await page.locator('[data-takeoff="addendum-link"]').click();
     await page.waitForURL(new RegExp(`/jobs/${jobId}/addendum$`));
     await expectHealthy(page, "the addendum page", { monitor });
+    // Where the revised sheets go in: the Takeoff tab's own uploader is gone once a drawing is on the job (walk v8).
+    await expect(page.locator('[data-addendum="upload"] input[type="file"]')).toHaveCount(1);
+    await expect(page.locator('[data-addendum="upload"]').getByRole("button", { name: "Add a drawing" })).toBeVisible();
   });
 
   test("3. each revised sheet against the one it replaces", async () => {

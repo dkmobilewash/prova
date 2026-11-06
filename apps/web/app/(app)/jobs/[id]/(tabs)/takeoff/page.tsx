@@ -311,9 +311,9 @@ export default async function JobTakeoffPage({
             revisionLabel={plan.revisionLabel}
             sheetIssuedOn={plan.sheetIssuedOn === null ? null : plan.sheetIssuedOn.toISOString().slice(0, 10)}
           />
-          {planFiles > 1 && (
+          {isEstimateStage && (
             <Link href={`/jobs/${job.id}/addendum`} className="text-sm font-medium text-link hover:underline" data-takeoff="addendum-link">
-              What the revised sheets change &rarr;
+              {planFiles > 1 ? "What the revised sheets change" : "Upload revised sheets (addendum)"} &rarr;
             </Link>
           )}
         {isEstimateStage && (

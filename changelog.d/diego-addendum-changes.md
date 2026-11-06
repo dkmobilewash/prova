@@ -13,3 +13,8 @@ Apply puts it on the takeoff: each revised wall onto its carried type (or
 untyped), the replaced sheet's walls onto "Walls — dropped", labelled with the
 drawing that replaced them, and the lines rewritten; Undo is the review queue's
 own. Beside it, the same rows in words to send the GC, with Copy.
+
+The revised sheets are uploaded on that page: the Takeoff tab's own uploader
+shows only on a job with no drawing yet, so walk v8 found no way to add an
+addendum's sheets to a job that already had its set. The Takeoff tab links to
+it from the first drawing on ("Upload revised sheets (addendum)").

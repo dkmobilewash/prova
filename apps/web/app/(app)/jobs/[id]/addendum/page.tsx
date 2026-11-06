@@ -7,6 +7,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { money } from "@/lib/money";
 import { gcSummary, loadAddendumChanges, type ChangeRow } from "@/lib/takeoff/addendumChanges";
 import { RevisedSheetsActions } from "@/components/RevisedSheetsActions";
+import { TakeoffPlanUploader } from "@/components/TakeoffPlanUploader";
 
 /**
  * ── WHAT THE REVISED SHEETS CHANGE ──
@@ -23,7 +24,10 @@ export default async function JobAddendumPage({ params }: { params: Promise<{ id
   if (!allowed) return <NoAccess capability="MANAGE_ESTIMATING" />;
   const job = await prisma.job.findFirst({ where: { id, companyId: context.company.id }, select: { id: true, name: true } });
   if (!job) notFound();
-  const changes = await loadAddendumChanges(context.company.id, job.id);
+  const [changes, planFiles] = await Promise.all([
+    loadAddendumChanges(context.company.id, job.id),
+    prisma.takeoffPlan.count({ where: { jobId: job.id, companyId: context.company.id } }),
+  ]);
 
   const ft = (n: number) => `${Math.round(n).toLocaleString()} LF`;
   const signed = (n: number, unit: string) => (Math.round(n) === 0 ? `0 ${unit}` : `${n > 0 ? "+" : "−"}${Math.abs(Math.round(n)).toLocaleString()} ${unit}`);
@@ -39,9 +43,26 @@ export default async function JobAddendumPage({ params }: { params: Promise<{ id
         </Link>
       </div>
       <h1 className="text-xl font-semibold text-ink">What the revised sheets change</h1>
+      {/* ── WHERE THE REVISED SHEETS GO IN ──
+          The Takeoff tab's uploader shows only on a job with no drawing yet, so
+          an addendum had no way in (walk v8). Uploaded here, they are the job's
+          newest plan file, read and scaled on the Takeoff tab like the first. */}
+      <section className="mt-4 rounded-lg border border-line-card bg-surface-card p-4" data-addendum="upload">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-ink-label">Upload the revised sheets</h2>
+        <TakeoffPlanUploader jobId={job.id} />
+        <p className="mt-2 text-xs text-ink-muted">
+          Then on the{" "}
+          <Link href={`/jobs/${job.id}/takeoff`} className="text-link hover:underline">
+            Takeoff tab
+          </Link>
+          : read its title blocks and set its scales, and each sheet is compared here with the one it replaces.
+        </p>
+      </section>
       {changes === null ? (
         <p className="mt-3 text-sm text-ink-body" data-addendum="none">
-          The newest drawings on {job.name} replace no sheet of an earlier file. Upload the revised sheets on the Takeoff tab; each is matched to the sheet it replaces by its sheet number.
+          {planFiles > 1
+            ? `The newest drawings on ${job.name} match no sheet of an earlier file yet: read their title blocks on the Takeoff tab, so each sheet has its number.`
+            : `${job.name} has one drawing file. Upload the revised sheets above; each is matched to the sheet it replaces by its sheet number.`}
         </p>
       ) : (
         <>
