@@ -339,31 +339,53 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       await shot("plan-set-before");
       note(`Plan set: "${(await text(set)).slice(0, 500)}"`);
       note(`Stepper: ${await states(page)} · ${await text(next(page))}`);
-      await confirm.click();
-      act();
-      await page.waitForTimeout(3000);
+      // Confirm covers the sheets the reader is sure of, and says the floor
+      // plans need their own (#1000): read what it says, then take them.
+      if (await confirm.isEnabled()) {
+        note(`Confirm says: "${await text(page.locator('[data-takeoff="plan-set-covers"]'))}"`);
+        await confirm.click();
+        act();
+        await expect(page.locator('[data-takeoff="plan-set-message"]')).toBeVisible({ timeout: 60_000 }).catch(() => {});
+      }
       await page.reload();
       await page.locator('[data-takeoff="plan-set"]').scrollIntoViewIfNeeded().catch(() => {});
       await shot("plan-set-after");
-      note(`After confirming: "${(await text(page.locator('[data-takeoff="plan-set"]'))).slice(0, 300)}"`);
-      // What a person does next while Next still says "Confirm the scales":
-      // the floor plans that need a look, each with its printed-scale button.
-      const fixes = page.locator('[data-takeoff="plan-set-fix"]').getByRole("button", { name: /Use the printed scale/ });
-      let pressed = 0;
-      while ((await fixes.count()) > 0 && pressed < 12) {
-        const before = await fixes.count();
-        await fixes.first().click();
+      note(`After confirming: "${await text(page.locator('[data-takeoff="plan-set-summary"]'))}"`);
+      // The floor plans: one "Use the printed scale on all N" press, the list
+      // of what it will scale, and Apply (#1000).
+      const all = page.locator('[data-takeoff="plan-set-printed-all"]');
+      if (await seen(all, 5000)) {
+        await hydrated(page, '[data-takeoff="plan-set-printed-all"]');
+        note(`Offered: "${await text(all)}"`);
+        await all.click();
         act();
-        pressed += 1;
-        await expect.poll(() => fixes.count(), { timeout: 60_000 }).toBeLessThan(before).catch(() => {});
+        const list = page.locator('[data-takeoff="plan-set-printed-list"]');
+        await expect(list).toBeVisible({ timeout: 30_000 });
+        await shot("plan-set-printed-list");
+        note(`It lists: ${(await page.locator('[data-takeoff="plan-set-printed-sheet"]').allInnerTexts()).map((t) => t.replace(/\s+/g, " ")).join(" | ")}`);
+        await page.locator('[data-takeoff="plan-set-printed-apply"]').click();
+        act();
+        await expect(page.locator('[data-takeoff="plan-set-look"]')).toBeHidden({ timeout: 60_000 }).catch(() => {});
+      } else {
+        // One floor plan, or none printed: each sheet's own button.
+        const fixes = page.locator('[data-takeoff="plan-set-fix"]').getByRole("button", { name: /Use the printed scale/ });
+        let pressed = 0;
+        while ((await fixes.count()) > 0 && pressed < 12) {
+          const before = await fixes.count();
+          await fixes.first().click();
+          act();
+          pressed += 1;
+          await expect.poll(() => fixes.count(), { timeout: 60_000 }).toBeLessThan(before).catch(() => {});
+        }
+        if (pressed > 0) note(`No "on all" button; ${pressed} sheet-by-sheet printed-scale presses.`);
       }
-      if (pressed > 0) {
-        stuck(`"Confirm 4 scales" scaled no floor plan; the floor plans each needed "Use the printed scale" (${pressed} presses)`);
-        await page.reload();
-        await page.locator('[data-takeoff="plan-set"]').scrollIntoViewIfNeeded().catch(() => {});
-        await shot("plan-set-printed-used");
-        note(`After the printed scales: "${(await text(page.locator('[data-takeoff="plan-set-summary"]'))).slice(0, 200)}"`);
-      }
+      await page.reload();
+      await page.locator('[data-takeoff="plan-set"]').scrollIntoViewIfNeeded().catch(() => {});
+      await shot("plan-set-printed-used");
+      const summary = await text(page.locator('[data-takeoff="plan-set-summary"]'));
+      note(`After the printed scales: "${summary}"`);
+      const [, done, total] = summary.match(/(\d+) of (\d+) floor plans? scaled/) ?? [];
+      if (done !== total) stuck(`floor plans still unscaled after the scales step: "${summary}"`);
       note(`Stepper: ${await states(page)} · ${await text(next(page))}`);
     });
 
@@ -581,8 +603,12 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
             await tab.keyboard.press("1");
             act();
           }
-          if (kind === "height" && (await row.locator('[data-takeoff="queue-height"]').inputValue()) === "") {
-            await row.locator('[data-takeoff="queue-height"]').fill("10");
+          // No height: the row's own key (T since #1005, H before) opens the
+          // box; type one and Enter accepts both.
+          if ((await row.locator('[data-takeoff="queue-height"]').inputValue()) === "") {
+            const keys = await text(row.locator('[data-takeoff="queue-keys"]'));
+            await tab.keyboard.press(/\bT height\b/.test(keys) ? "t" : "h");
+            await tab.keyboard.type("10");
             act(2);
           }
           await tab.keyboard.press("Enter");
@@ -773,20 +799,38 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const made = await expect.poll(async () => prisma.signatureRequest.count({ where: { jobId } }), { timeout: 30_000 }).toBeGreaterThan(0).then(() => true, () => false);
       await shot("sent");
       if (!made) stuck(`Create signing link made nothing: "${(await text(form)).slice(0, 300)}"`);
-      // What the GC gets: the link, opened signed out in their own browser.
+      // What the GC gets: the signing link, opened signed out in their own
+      // browser (#1006). The walk stops here — it reads, it does not sign.
       const token = (await prisma.signatureRequest.findFirstOrThrow({ where: { jobId }, orderBy: { createdAt: "desc" }, select: { token: true } })).token;
+      const shown = await text(page.getByText(new RegExp(`/esign/${token}`)));
+      if (shown) note(`The job shows the link to send: ${shown}`);
+      else stuck("the job does not show the signing link to share");
       const gc = await (await page.context().browser()!.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
       await gc.goto(`/esign/${token}`);
-      await expect(gc.getByRole("button", { name: "Sign contract" })).toBeVisible({ timeout: 60_000 });
-      const scopeRows = await gc.locator('[data-proposal="scope-row"]').allInnerTexts();
-      note(`The GC's page — scope by wall type: ${scopeRows.map((r) => r.replace(/\s+/g, " ")).join(" | ") || "NONE"}`);
-      for (const [what, selector] of [["Inclusions", '[data-proposal="clauses-inclusion"]'], ["Exclusions", '[data-proposal="clauses-exclusion"]'], ["Terms", '[data-proposal="terms"]']] as const) {
+      const sign = gc.getByRole("button", { name: "Sign contract" });
+      if (!(await seen(sign, 60_000))) stuck("the signing link opens no Sign contract");
+      // Scope by wall type: every row says its height, its LF, and its SF
+      // (walls with no type yet have no height to make an area from).
+      const scopeRows = (await gc.locator('[data-proposal="scope-row"]').allInnerTexts()).map((r) => r.replace(/\s+/g, " ").trim());
+      note(`Scope by wall type: ${scopeRows.join(" | ") || "NONE"}`);
+      if (scopeRows.length === 0) stuck("the GC's page has no scope by wall type");
+      for (const row of scopeRows) {
+        const typed = !/no type yet/.test(row);
+        if (!/[\d,]+ LF/.test(row)) stuck(`a scope row has no LF: "${row}"`);
+        if (typed && !/[\d,]+ SF/.test(row)) stuck(`a typed scope row has no SF: "${row}"`);
+        if (typed && !/\d+'-\d+"/.test(row)) stuck(`a typed scope row has no height: "${row}"`);
+      }
+      const terms = await text(gc.locator('[data-proposal="terms"]'));
+      if (terms === "") stuck("the GC's page has no terms");
+      else note(`Terms: ${terms}`);
+      for (const [what, selector] of [["Inclusions", '[data-proposal="clauses-inclusion"]'], ["Exclusions", '[data-proposal="clauses-exclusion"]']] as const) {
         const found = await text(gc.locator(selector));
         if (found === "") stuck(`the GC's page has no ${what}`);
         else note(`${what}: ${found.slice(0, 200)}`);
       }
-      note(`Price: ${await text(gc.getByText(/^Total: /))}`);
-      if (scopeRows.length === 0) stuck("the GC's page has no scope by wall type");
+      const total = await text(gc.getByText(/^Total: /));
+      note(`Price: ${total}`);
+      if (/\$0\.00$/.test(total)) stuck("the GC's price is $0.00");
       await gc.screenshot({ path: path.join(OUT, "proposal-the-gc-gets.png"), fullPage: true });
       current?.shots.push("proposal-the-gc-gets.png");
       await gc.context().close();
