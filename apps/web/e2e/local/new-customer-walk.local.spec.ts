@@ -579,6 +579,20 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       for (let round = 0; round < 400; round += 1) {
         if (/Nothing left/.test(await text(left))) break;
         if (!(await seen(item, 10_000))) break;
+        // The sheet's drawn suggestions in one press, as a person who knows the
+        // way would: what it takes is in the summary, the rest stays here.
+        const acceptAll = queue.locator('[data-takeoff="review-queue-accept-sheet"]');
+        if ((await acceptAll.count()) > 0) {
+          const offered = await text(acceptAll);
+          await acceptAll.click();
+          act();
+          const summary = queue.locator('[data-takeoff="review-queue-accepted-text"]');
+          await expect(summary).toBeVisible({ timeout: 60_000 });
+          note(`${offered} → "${await text(summary)}"`);
+          if (seenKinds.acceptAll === undefined) await shot("review-accept-all", tab);
+          seenKinds.acceptAll = (seenKinds.acceptAll ?? 0) + 1;
+          continue;
+        }
         const kind = (await item.getAttribute("data-kind")) ?? "?";
         seenKinds[kind] = (seenKinds[kind] ?? 0) + 1;
         const before = await text(left);
