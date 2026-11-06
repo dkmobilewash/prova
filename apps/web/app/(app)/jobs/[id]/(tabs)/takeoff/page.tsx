@@ -347,7 +347,7 @@ export default async function JobTakeoffPage({
       {isEstimateStage && (
         <PlanIngestPanel
           planId={plan.id}
-          existing={await latestIngestFor(plan.id, { not: ["WALLS", "RASTER"] })}
+          existing={await latestIngestFor(plan.id, { not: ["WALLS", "RASTER", "WALL_LEGEND"] })}
           scheduleSheetCount={scheduleSheetCount}
           legend={{
             on: (await aiGate(company.id, "PLAN_TEXT_READ")).ok,
