@@ -40,6 +40,9 @@ beforeAll(async () => {
   expect((await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 10, userId: null })).kind).toBe("written");
 });
 afterAll(async () => {
+  // Confirming a group writes its estimate lines at once (#1010, `syncDecidedItems`),
+  // so they go before the items and the job they hang off.
+  await prisma.jobLineItem.deleteMany({ where: { jobId } });
   await prisma.takeoffMeasurement.deleteMany({ where: { page: { planId } } });
   await prisma.takeoffItem.deleteMany({ where: { jobId } });
   await prisma.takeoffPlan.deleteMany({ where: { id: planId } });
