@@ -197,6 +197,8 @@ export async function legendForPlan(input: {
   planId: string;
   doc: PlanDoc;
   outOfTime: () => boolean;
+  /** Stored reads only: a suggestion refresh (`suggestionRefresh.ts`) never calls the model. */
+  noModel?: boolean;
 }): Promise<PlanTextLegend | null> {
   // ── THE INGEST'S READ FIRST ──
   // The WALL_LEGEND stage stores what it read for review; a detection that
@@ -207,6 +209,7 @@ export async function legendForPlan(input: {
   if (fromIngest !== null) return fromIngest;
   const cached = await readStored<PlanTextLegend>(input.planId, SET_PAGE, "legend");
   if (cached !== null) return cached;
+  if (input.noModel) return null;
 
   const titles = await titlesFor(input.planId);
   const pages: PageForLegend[] = [];
@@ -252,6 +255,7 @@ export async function doorScheduleForPlan(input: {
   planId: string;
   doc: PlanDoc;
   outOfTime: () => boolean;
+  noModel?: boolean;
 }): Promise<PlanTextDoors | null> {
   const fromIngest = await prisma.planScheduleProposal.findFirst({
     where: { planId: input.planId, kind: "DOOR" },
@@ -265,6 +269,7 @@ export async function doorScheduleForPlan(input: {
 
   const cached = await readStored<PlanTextDoors>(input.planId, SET_PAGE, "doors");
   if (cached !== null) return cached;
+  if (input.noModel) return null;
 
   const titles = await titlesFor(input.planId);
   const byTitle = [...titles].filter(([, t]) => t !== null && DOOR_SCHEDULE_TITLE.test(t)).map(([p]) => p);

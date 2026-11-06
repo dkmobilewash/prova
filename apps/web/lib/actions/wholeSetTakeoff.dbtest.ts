@@ -212,18 +212,28 @@ describe("whole-set takeoff", () => {
   });
 
   it("RUN TAKEOFF PUTS A SHEET'S STORED WALLS ON THE JOB, and never twice (postSheetWalls)", async () => {
-    // Page 5: walls stored under its scale, nothing on the job.
+    // Page 5: a scale just saved, its finder not done yet — "not yet", not nothing (walk v6).
     const calibration = await prisma.takeoffScaleCalibration.findFirstOrThrow({ where: { pageId: pageIds[5] } });
+    await prisma.takeoffScaleCalibration.update({ where: { id: calibration.id }, data: { createdAt: new Date() } });
+    expect(await postSheetWalls(jobId, planId, 5)).toEqual({ ok: true, value: { note: null, waiting: true } });
+    // Then the finder stores the walls, and the next ask posts them.
     await prisma.takeoffWallProposal.create({
       data: { pageId: pageIds[5], calibrationId: calibration.id, thicknessInches: 6, source: "REMAINDER", runs: [{ x1: 0.2, y1: 0.2, x2: 0.6, y2: 0.2, thicknessFeet: 0.5 }] },
     });
     const first = await postSheetWalls(jobId, planId, 5);
-    expect(first).toEqual({ ok: true, value: { note: "on the job by type: none typed; untyped 40 ft" } });
+    expect(first).toEqual({ ok: true, value: { note: "on the job by type: none typed; untyped 40 ft", waiting: false } });
     const onJob = () => prisma.takeoffMeasurement.count({ where: { pageId: pageIds[5], kind: "LINEAR" } });
     expect(await onJob()).toBe(1);
     // Pressed again: the sheet has walls on the job, so it is left alone.
-    expect(await postSheetWalls(jobId, planId, 5)).toEqual({ ok: true, value: { note: null } });
+    expect(await postSheetWalls(jobId, planId, 5)).toEqual({ ok: true, value: { note: null, waiting: false } });
     expect(await onJob()).toBe(1);
+  });
+
+  it("a scale saved long ago with no walls stored is nothing found, not waiting", async () => {
+    const calibration = await prisma.takeoffScaleCalibration.findFirstOrThrow({ where: { pageId: pageIds[4] } });
+    await prisma.takeoffScaleCalibration.update({ where: { id: calibration.id }, data: { createdAt: new Date(Date.now() - 10 * 60_000) } });
+    expect(await prisma.takeoffWallProposal.count({ where: { pageId: pageIds[4] } })).toBe(0);
+    expect(await postSheetWalls(jobId, planId, 4)).toEqual({ ok: true, value: { note: null, waiting: false } });
   });
 
   it("RUN TAKEOFF ON A SHEET LOOKS FOR ITS ROOMS, CEILINGS AND WINDOWS, as the whole-set run does (walk v7)", async () => {
