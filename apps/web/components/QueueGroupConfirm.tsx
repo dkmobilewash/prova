@@ -13,12 +13,12 @@ import type { CodeHeight, Guess } from "@/lib/takeoff/reviewQueue";
  *
  *   Enter  accept what is shown
  *   1–9    pick another type from the legend (the height follows it, unless typed)
- *   H      edit the height (Enter in the box accepts)
+ *   T      edit the height ("tall"; Enter in the box accepts). Not H: H is
+ *          the Hand tool everywhere else in the workspace (Chrome's re-test)
  *   N      skip to the next item
  *
- * The keys are taken in the capture phase and stopped there, so the
- * workspace's own H (the hand tool) and the viewer's keys never see them
- * while a group is on show. Nothing is claimed while somebody types in
+ * The keys are taken in the capture phase and stopped there, so the viewer's
+ * own keys never see them while a group is on show. Nothing is claimed while somebody types in
  * another field.
  */
 export function QueueGroupConfirm({
@@ -74,7 +74,7 @@ export function QueueGroupConfirm({
     const digit = /^[1-9]$/.test(key) ? Number(key) : 0;
     if (key === "Enter") accept();
     else if (digit > 0 && choosing && codes[digit - 1] !== undefined) choose(codes[digit - 1]!);
-    else if (key === "h" || key === "H") {
+    else if (key === "t" || key === "T") {
       heightBox.current?.focus();
       heightBox.current?.select();
     } else if (key === "n" || key === "N") onSkip();
@@ -116,7 +116,7 @@ export function QueueGroupConfirm({
           inputMode="decimal"
           value={heightText}
           placeholder="none"
-          aria-label="Height (H)"
+          aria-label="Height (T)"
           data-takeoff="queue-height"
           onChange={(event) => setTyped(event.target.value)}
           onKeyDown={(event) => {
@@ -125,7 +125,7 @@ export function QueueGroupConfirm({
           className="w-16 rounded-md border border-line-card bg-surface px-1.5 py-0.5 text-xs text-ink-body"
         />
         <span className="text-ink-muted" data-takeoff="queue-height-from">
-          {typed !== null ? "typed" : (height?.from ?? "none known: H to type one")}
+          {typed !== null ? "typed" : (height?.from ?? "none known: T to type one")}
         </span>
       </form>
       <button type="button" className={`${button} border-brand bg-brand font-semibold text-neutral-900`} onClick={accept} data-takeoff="queue-accept">
@@ -149,7 +149,7 @@ export function QueueGroupConfirm({
         </span>
       )}
       <span className="text-ink-muted" data-takeoff="queue-keys">
-        Enter accept{choosing ? " · 1–9 type" : ""} · H height · N skip
+        Enter accept{choosing ? " · 1–9 type" : ""} · T height · N skip
       </span>
       {error !== null && (
         <span role="alert" className="text-tag-rose-ink">

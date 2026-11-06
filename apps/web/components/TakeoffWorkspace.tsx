@@ -1,5 +1,6 @@
 "use client";
 
+import { formatFeetInches } from "@/lib/feet-inches";
 import Link from "next/link";
 import { clearDraft, loadDraft, otherDrafts, saveDraft } from "@/lib/takeoff/draftStore";
 import {
@@ -243,6 +244,11 @@ export function TakeoffWorkspace({
   // ── THE JOB'S ONE REVIEW QUEUE (the stepper's Review). See `reviewQueue.ts`. ──
   const [queueOpen, setQueueOpen] = useState(openReview && reviewQueue.length > 0);
   const [queueItem, setQueueItem] = useState<ReviewItem | null>(null);
+  /** The queue's own "left to review", for the top bar's one Review button. */
+  const [queueLeft, setQueueLeft] = useState(reviewQueue.length);
+  useEffect(() => setQueueLeft(reviewQueue.length), [reviewQueue.length]);
+  /** The posted walls the queue does not already hold, most doubted first: its Keep/Drop step. */
+  const doubted = useMemo(() => data.wallReviewQueue.filter((item) => !item.held), [data.wallReviewQueue]);
   // A group is shown whole: every run lit and the plan zoomed to all of them.
   const queueGroup = queueOpen && queueItem !== null && (queueItem.kind === "type" || queueItem.kind === "height" || queueItem.kind === "windows");
   // A sheet's windows are lit together, and the one being looked at is zoomed to.
@@ -759,15 +765,38 @@ export function TakeoffWorkspace({
   // The bottom strip shows it, and only while there is something to show: a
   // click on nothing, Esc or hiding its layer lets go, and the strip goes.
   const [selection, setSelection] = useState<ViewerSelection | null>(null);
+  // An item picked IN THE RAIL lets go of what was picked on the drawing. One
+  // the drawing picked (its shape's item, lit in the rail) must not: that is
+  // how the strip came to show the whole item's 652.96 ft for one run.
+  const pickedOnDrawing = useRef(false);
+  /** The active item is the drawing's pick, not one chosen in the rail: it goes when the pick goes. */
+  const activeFromDrawing = useRef(false);
   useEffect(() => {
+    if (pickedOnDrawing.current) {
+      pickedOnDrawing.current = false;
+      return;
+    }
+    activeFromDrawing.current = false;
     if (activeItemId !== null) setSelection(null);
   }, [activeItemId]);
-  const selectedItem =
-    selection?.kind === "shape" && selection.itemId !== null
-      ? (items.find((item) => item.id === selection.itemId) ?? null)
-      : selection === null
-        ? activeItem
-        : null;
+  /** Esc, a click on nothing or a sheet change: the strip clears, the drawing's item with it. */
+  const letGo = useCallback(() => {
+    setSelection(null);
+    if (activeFromDrawing.current) {
+      activeFromDrawing.current = false;
+      pickedOnDrawing.current = true;
+      setActiveItemId(null);
+    }
+  }, []);
+  // ── THE ONE THING PICKED, NOT ITS WHOLE ITEM ──
+  // A shape picked on the drawing shows its own length with its item's type and
+  // height; the item's properties (its 652.96 ft total) are for an item picked
+  // in the rail. Chrome's re-test: the strip kept the group's total for one run.
+  const selectedItem = selection === null ? activeItem : null;
+  const shapeItem = selection?.kind === "shape" && selection.itemId !== null ? (items.find((item) => item.id === selection.itemId) ?? null) : null;
+  const shapeType = shapeItem?.wallTypeId ? (data.viewerWallTypes.find((type) => type.id === shapeItem.wallTypeId)?.code ?? null) : null;
+  // And it lets go on a sheet change, as on Esc and a click on nothing.
+  useEffect(() => letGo(), [page, letGo]);
   const stripOpen = !phone && (factsOpen || selection !== null || activeItem !== null);
 
   /**
@@ -1338,30 +1367,19 @@ export function TakeoffWorkspace({
             className="flex shrink-0 items-center gap-1.5"
             data-takeoff="bar-actions"
           />
-          {!phone && reviewQueue.length > 0 && !queueOpen && (
+          {/* ── ONE REVIEW ──
+              Chrome's re-test: "To review · 34" and "Review walls" (38 runs)
+              were two reviews with two counts. This opens the one queue, and
+              its number is the queue's own "left to review"; Keep/Drop of the
+              posted walls is a step inside it (`onCheckDoubted`). */}
+          {!phone && (reviewQueue.length > 0 || doubted.length > 0) && !queueOpen && setReview === null && (
             <button
               type="button"
-              onClick={() => {
-                setSetReview(null);
-                setQueueOpen(true);
-              }}
+              onClick={() => setQueueOpen(true)}
               className={BAR_BUTTON}
               data-takeoff="review-queue-open"
             >
-              To review · {reviewQueue.length}
-            </button>
-          )}
-          {!phone && data.wallReviewQueue.length > 0 && setReview === null && (
-            <button
-              type="button"
-              onClick={() => {
-                setQueueOpen(false);
-                setSetReview({ queue: data.wallReviewQueue, decided: new Map(), history: [] });
-              }}
-              className={BAR_BUTTON}
-              data-takeoff="review-set"
-            >
-              Review walls
+              {queueLeft > 0 ? `Review walls · ${queueLeft}` : "Review walls"}
             </button>
           )}
           {/* A deliberate, slow mode, so it says what it is rather than
@@ -1544,6 +1562,13 @@ export function TakeoffWorkspace({
                 heights={reviewHeights}
                 planSet={planSet}
                 onShow={onQueueShow}
+                onLeft={setQueueLeft}
+                doubted={doubted.length}
+                onCheckDoubted={() => {
+                  setQueueOpen(false);
+                  setQueueItem(null);
+                  setSetReview({ queue: doubted, decided: new Map(), history: [] });
+                }}
                 onClose={() => {
                   setQueueOpen(false);
                   setQueueItem(null);
@@ -1568,7 +1593,11 @@ export function TakeoffWorkspace({
                 onKeep={() => void onSetDecide("keep")}
                 onDrop={() => void onSetDecide("drop")}
                 onUndo={() => void onSetUndo()}
-                onClose={() => setSetReview(null)}
+                // Back to the queue it was started from.
+                onClose={() => {
+                  setSetReview(null);
+                  setQueueOpen(true);
+                }}
               />
             )}
             {summaryOpen && !phone && (
@@ -1746,8 +1775,13 @@ export function TakeoffWorkspace({
               fill
               bar={{ pager: pagerSlot, actions: actionsSlot, tabs: tabsSlot }}
               onSelect={(picked) => {
+                if (picked === null) return letGo();
                 setSelection(picked);
-                if (picked?.kind === "shape" && picked.itemId !== null) setActiveItemId(picked.itemId);
+                if (picked.kind === "shape" && picked.itemId !== null && picked.itemId !== activeItemId) {
+                  pickedOnDrawing.current = true;
+                  activeFromDrawing.current = true;
+                  setActiveItemId(picked.itemId);
+                }
               }}
               onPanelOpen={rememberPanel}
               panelDrawer={drawers}
@@ -1993,7 +2027,15 @@ export function TakeoffWorkspace({
               ) : (
                 <>
                   <Fact label="Measures">{selection.measure}</Fact>
-                  <span className="text-ink-muted">In no item yet. Pick it with Edit to move or delete it.</span>
+                  {shapeItem !== null ? (
+                    <>
+                      <Fact label="Item">{shapeItem.name}</Fact>
+                      <Fact label="Type">{shapeType ?? "untyped"}</Fact>
+                      <Fact label="Height">{shapeItem.heightFt === null ? "no height" : formatFeetInches(shapeItem.heightFt)}</Fact>
+                    </>
+                  ) : (
+                    <span className="text-ink-muted">In no item yet. Pick it with Edit to move or delete it.</span>
+                  )}
                 </>
               )}
             </div>

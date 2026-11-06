@@ -838,9 +838,15 @@ test("R5-10 Done, then K pages to the previous sheet again", async () => {
   await expect.poll(async () => picker.evaluate((el) => (el as HTMLSelectElement).selectedOptions[0]?.textContent ?? "")).toContain("AS-101");
 });
 
-test("R5-11 Review walls in the top bar opens a sheet at 0 of N looked at · 0 ft dropped", async () => {
+/** The posted walls' Keep/Drop: a step of the one review queue (Chrome's re-test), from the top bar's Review walls. */
+async function checkDoubted() {
+  await hook("review-queue-open").click();
+  await hook("review-queue-doubted").click();
+}
+
+test("R5-11 Review walls → Check the walls the model doubts opens a sheet at 0 of N looked at · 0 ft dropped", async () => {
   await sheet("baker", 12);
-  await hook("review-set").click();
+  await checkDoubted();
   await expect(hook("review-counter")).toContainText(/^0 of \d+ looked at · 0 ft dropped/);
   // The first run is on whichever sheet holds it, and the viewer must open that sheet.
   const where = (await hook("review-counter").locator("xpath=..").innerText()).match(/sheet (\S+)/)?.[1] ?? "";
@@ -852,7 +858,7 @@ test("R5-11 Review walls in the top bar opens a sheet at 0 of N looked at · 0 f
 test("R5-12/13 D moves on and adds the dropped feet; U takes it back; Done", async () => {
   if (!(await hook("review-counter").isVisible().catch(() => false))) {
     await sheet("baker", 12);
-    await hook("review-set").click();
+    await checkDoubted();
   }
   await page.keyboard.press("d");
   await expect(hook("review-counter")).toContainText(/^1 of \d+ looked at · [1-9][\d,]* ft dropped/);
@@ -860,6 +866,8 @@ test("R5-12/13 D moves on and adds the dropped feet; U takes it back; Done", asy
   await expect(hook("review-counter")).toContainText(/^0 of \d+ looked at · 0 ft dropped/);
   await hook("review-close").click();
   await expect(hook("review-counter")).toHaveCount(0);
+  // Done goes back to the queue it was started from; close that too.
+  await hook("review-queue-close").click();
 });
 
 test("R5-15 Baker A101 shows the renovation prompt, and a saved work area takes it away", async () => {
