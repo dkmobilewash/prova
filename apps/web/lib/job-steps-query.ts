@@ -13,9 +13,12 @@ import { hasInclusionsAndExclusions } from "@/lib/estimating/gc-proposal";
  */
 export async function loadJobStepFacts(companyId: string, jobId: string): Promise<JobStepFacts> {
   const queue = await loadReviewQueue(companyId, jobId);
-  const [measurements, lineItemCount, signatures, company, bidDefaults, clauses] = await Promise.all([
+  const [measurements, lineItemCount, unpricedLines, signatures, company, bidDefaults, clauses] = await Promise.all([
     queue.planId === null ? 0 : prisma.takeoffMeasurement.count({ where: { page: { planId: queue.planId } } }),
     prisma.jobLineItem.count({ where: { jobId, job: { companyId }, isDeleted: false } }),
+    // Every unpriced line, "Walls — untyped" too: the queue asks no price for
+    // that one (its runs are type items there), but a bid carrying it is not priced.
+    prisma.jobLineItem.count({ where: { jobId, job: { companyId }, isDeleted: false, unitPrice: null, budgetedUnitCost: null } }),
     prisma.signatureRequest.findMany({ where: { jobId, job: { companyId } }, select: { status: true } }),
     prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { tradePresetAskedAt: true } }),
     prisma.companyBidDefaults.findUnique({ where: { companyId } }),
@@ -30,7 +33,7 @@ export async function loadJobStepFacts(companyId: string, jobId: string): Promis
     measurements,
     toReview: queue.items.length,
     lineItemCount,
-    unpricedLines: queue.items.filter((item) => item.kind === "price").length,
+    unpricedLines,
     signatureStatuses: signatures.map((row) => row.status),
     markupNeeded: markupNeeded(company, bidDefaults),
     clausesReady: hasInclusionsAndExclusions(clauses),
