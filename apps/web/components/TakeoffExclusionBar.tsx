@@ -17,6 +17,7 @@ export function TakeoffExclusionBar({
   workAreas,
   readOnly,
   renovation = null,
+  existing = null,
   onPickTool,
   onUndo,
   onClear,
@@ -31,6 +32,8 @@ export function TakeoffExclusionBar({
   readOnly: boolean;
   /** The marks that say this sheet shows existing work, when walls are found and nothing excludes them yet. */
   renovation?: string[] | null;
+  /** What plan comparison set aside as existing, by the paired demolition plan. Its line stands in for the renovation prompt. */
+  existing?: { sheet: string; n: number; feet: number } | null;
   onPickTool?: (tool: "workarea" | "exclude") => void;
   onUndo: (kind: Kind) => void;
   onClear: (kind: Kind) => void;
@@ -39,7 +42,12 @@ export function TakeoffExclusionBar({
   const control = "underline hover:text-ink-body";
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted" data-takeoff="exclusion-bar">
-      {renovation && !readOnly && (
+      {existing !== null && (
+        <span className="w-full" data-takeoff="existing-aside">
+          Existing walls set aside using demolition plan {existing.sheet}: {existing.n} wall{existing.n === 1 ? "" : "s"}, {Math.round(existing.feet).toLocaleString()} ft
+        </span>
+      )}
+      {renovation && existing === null && !readOnly && (
         <span className="flex w-full flex-wrap items-center gap-2 rounded-md bg-tag-amber px-2 py-1 font-medium text-tag-amber-ink" data-takeoff="renovation-prompt" title={`Marked by: ${renovation.join(", ")}`}>
           {RENOVATION_PROMPT}
           {onPickTool && (
@@ -57,6 +65,8 @@ export function TakeoffExclusionBar({
       {feet !== null && (
         <span className="font-semibold text-ink-body" data-takeoff="wall-total">
           Walls on this sheet: {Math.round(feet).toLocaleString()} ft
+          {/* The total is the walls left after the comparison: the set-aside ones are not in it. */}
+          {existing !== null && ` new (${Math.round(existing.feet).toLocaleString()} ft existing set aside)`}
         </span>
       )}
       {aside.map((one) => (
