@@ -107,6 +107,10 @@ export async function extractSheetTitleBlock(params: {
   const response = await client.messages.create({
     model: params.model ?? modelFor("PLAN_INGESTION").model,
     max_tokens: 1024,
+    // The same text, the same answer: at the default temperature Baker's A101
+    // came back "FLOOR PLAN" on one walk and "GENERAL NOTES" on the next, from
+    // identical text, and the sheet left the floor plans.
+    temperature: 0,
     system: SYSTEM_PROMPT,
     tools: [
       {

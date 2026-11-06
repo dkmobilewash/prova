@@ -84,6 +84,10 @@ import {
 import { loadAlerts } from "@/lib/alerts-query";
 import { summarizeAlerts } from "@/lib/alerts";
 import { resolveJob } from "./resolve";
+import { wallScope } from "@/lib/estimating/takeoff-item-lines";
+import { loadReviewQueue } from "@/lib/takeoff/reviewQueueQuery";
+import { sameCode } from "@/lib/takeoff/legendMerge";
+import type { ReviewItem } from "@/lib/takeoff/reviewQueue";
 import { cookies } from "next/headers";
 import { gettingStartedChecklist, type GettingStartedStepId } from "@/lib/getting-started";
 import { loadGettingStartedCounts } from "@/lib/getting-started-counts";
@@ -139,6 +143,8 @@ type Input = {
   stage?: string;
   /** contact_lookup's name — a company OR a person, as the person said it. */
   name?: string;
+  /** takeoff_quantities' wall type code, as the person said it. */
+  wallType?: string;
   /** app_help's own words for what the person wants to do. */
   topic?: string;
   /** The bid tools' project name, as the GC wrote it on the invitation.
@@ -246,6 +252,8 @@ export const HANDLERS: Record<
   app_help: appHelp,
   takeoff_currency: takeoffCurrency,
   wall_schedule: wallSchedule,
+  takeoff_quantities: takeoffQuantities,
+  takeoff_review: takeoffReview,
   bid_levelling: bidLevelling,
   bid_compliance: bidCompliance,
   bid_alternates: bidAlternates,
@@ -5055,6 +5063,106 @@ async function wallSchedule(companyId: string, input: Input): Promise<ToolResult
           : "No job being estimated has any wall runs on it yet. Nothing here measures a drawing on its own; a run is a length somebody entered or traced."
         : undefined,
   };
+}
+
+/**
+ * ── TWO READS OVER THE GUIDED TAKEOFF: HOW MUCH OF A TYPE, AND WHAT IS LEFT ──
+ *
+ * `takeoff_quantities` is the proposal's scope by wall type (`wallScope`), the
+ * same items, heights, sides and openings the estimate lines are priced from,
+ * so "how many feet of S6A on Baker" cannot disagree with the GC's page or the
+ * bid. `wall_schedule` reads the older hand-entered wall runs and is not this.
+ *
+ * `takeoff_review` is the job's review queue (`loadReviewQueue`), the one the
+ * stepper counts, summed by kind and sheet. Both are reads; nothing here
+ * confirms, types or prices anything.
+ */
+async function takeoffJob(companyId: string, jobName: string | undefined): Promise<{ id: string; name: string } | ToolResult> {
+  const citations = [{ label: "Jobs", href: "/jobs" }];
+  const wanted = jobName?.trim();
+  if (!wanted) return { data: null, citations, unavailable: "Say which job." };
+  const found = await resolveJob(companyId, wanted);
+  if (found.kind === "none") return { data: null, citations, unavailable: `No job matches "${wanted}".` };
+  if (found.kind === "many") {
+    return { data: { matchingJobs: found.options.map((o) => `${o.label} (${o.detail})`) }, citations, unavailable: `Several jobs match "${wanted}" — ask which one.` };
+  }
+  return { id: found.match.id, name: found.match.name };
+}
+
+async function takeoffQuantities(companyId: string, input: Input): Promise<ToolResult> {
+  const job = await takeoffJob(companyId, input.jobName);
+  if ("data" in job) return job;
+  const citations = [{ label: "Jobs", href: "/jobs" }, { label: `${job.name} — takeoff`, href: `/jobs/${job.id}/takeoff` }];
+  const rows = await prisma.$transaction((tx) => wallScope(tx, companyId, job.id));
+  const all = rows.map((row) => ({
+    wallType: row.code ?? "no type yet",
+    name: row.name,
+    linearFeet: Math.round(row.linearFt),
+    squareFeet: row.squareFeet === null ? null : Math.round(row.squareFeet),
+    heightFt: row.heightFt,
+  }));
+  if (all.length === 0) {
+    return { data: { job: job.name, wallTypes: [] }, citations, unavailable: `Nothing is measured on ${job.name}'s takeoff yet. Run the takeoff first.` };
+  }
+  const code = input.wallType?.trim();
+  if (!code) return { data: { job: job.name, wallTypes: all }, citations };
+  const match = all.filter((row) => row.wallType !== "no type yet" && sameCode(row.wallType, code));
+  if (match.length === 0) {
+    // Named, never a zero: a type nobody confirmed yet may be among the untyped walls.
+    return {
+      data: { job: job.name, wallTypesMeasured: all.map((row) => row.wallType) },
+      citations,
+      unavailable: `No walls on ${job.name}'s takeoff are typed ${code.toUpperCase()}. Typed so far: ${all.map((r) => r.wallType).join(", ")}. Walls still to be typed are in the review queue.`,
+    };
+  }
+  return { data: { job: job.name, wallTypes: match }, citations };
+}
+
+const KIND_WORDS: Record<ReviewItem["kind"], string> = {
+  wall: "walls to keep or drop",
+  type: "wall groups to type",
+  height: "wall types with no height",
+  windows: "window counts to confirm",
+  scale: "floor plans with no scale",
+  price: "estimate lines with no cost or price",
+};
+
+async function takeoffReview(companyId: string, input: Input): Promise<ToolResult> {
+  const job = await takeoffJob(companyId, input.jobName);
+  if ("data" in job) return job;
+  const href = `/takeoff/${job.id}?open=review`;
+  const citations = [{ label: "Jobs", href: "/jobs" }, { label: `${job.name} — review queue`, href }];
+  const { planId, items } = await loadReviewQueue(companyId, job.id);
+  const byKind = new Map<ReviewItem["kind"], ReviewItem[]>();
+  for (const item of items) byKind.set(item.kind, [...(byKind.get(item.kind) ?? []), item]);
+  const left = [...byKind.entries()].map(([kind, list]) => ({
+    what: KIND_WORDS[kind],
+    count: list.length,
+    sheets: [...new Set(list.flatMap((item) => ("sheet" in item ? [item.sheet] : [])))],
+    // The queue's own pre-filled answers, so "S6B suggested from tag S6B on A101" is read out, never guessed.
+    examples: list.slice(0, 5).map((item) => describe(item)),
+  }));
+  return {
+    data: { job: job.name, total: items.length, hasDrawings: planId !== null, left, open: href },
+    citations,
+  };
+}
+
+function describe(item: ReviewItem): string {
+  switch (item.kind) {
+    case "type":
+      return `${item.sheet}: ${item.feet === null ? "a group" : `${Math.round(item.feet)} ft`} at ${item.inches}" thick${item.suggested ? `, suggested ${item.suggested.code} (${item.suggested.from})` : ", no suggestion"}`;
+    case "height":
+      return `${item.name} on ${item.sheet}${item.options[0] ? `, suggested ${Math.round(item.options[0].feet * 100) / 100} ft (${item.options[0].from})` : ""}`;
+    case "price":
+      return `${item.description}: ${item.quantity}${item.unit ? ` ${item.unit}` : ""}`;
+    case "windows":
+      return `${item.sheet}: ${item.tags.length} windows`;
+    case "wall":
+      return `${item.sheet}: ${item.feet === null ? "a wall" : `${Math.round(item.feet)} ft wall`}`;
+    case "scale":
+      return item.sheet;
+  }
 }
 
 /**

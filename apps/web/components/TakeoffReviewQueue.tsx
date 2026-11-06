@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { confirmSheetScales, confirmWallGroup, confirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight } from "@/lib/actions";
+import { confirmSheetScales, confirmSheetSuggestions, confirmWallGroup, confirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
@@ -70,6 +70,57 @@ export function TakeoffReviewQueue({
   const [priced, setPriced] = useState<string | null>(null);
   const left = items.filter((item) => !done.has(item.key));
   const current = left.find((item) => item.key === cursor) ?? left[0] ?? null;
+  // ── ACCEPT ALL SUGGESTIONS ON THIS SHEET ──
+  // Every group on the sheet on show whose type the drawing gave (a printed
+  // tag or the legend), each with the height Enter would take. Library
+  // guesses by thickness stay for a person to look at. One line says what
+  // went in, with Undo.
+  const [accepted, setAccepted] = useState<{ text: string; keys: string[]; undo: SheetSuggestionsUndo } | null>(null);
+  const sheetGroups =
+    current === null || current.kind !== "type"
+      ? []
+      : left.filter((item): item is Extract<ReviewItem, { kind: "type" }> => item.kind === "type" && item.pageNumber === current.pageNumber && item.suggested?.drawn === true);
+  async function acceptSheet() {
+    if (current === null || current.kind !== "type" || sheetGroups.length === 0) return;
+    const groups = sheetGroups;
+    const sheet = current.sheet;
+    setBusy(true);
+    setError(null);
+    setAccepted(null);
+    setDone((was) => new Set([...was, ...groups.map((g) => g.key)]));
+    const result = await confirmSheetSuggestions(
+      jobId,
+      groups.map((g) => {
+        const code = g.suggested!.code;
+        const byLevel = levelHeightFor(code, g.level);
+        return { planId, pageNumber: g.pageNumber, code, inches: g.inches, runs: g.runs, heightFt: (byLevel ?? heightFor(code, heights, g.ceiling))?.feet ?? null, level: byLevel === null ? null : g.level!.label };
+      }),
+    ).catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
+    setBusy(false);
+    if (!result.ok) {
+      setDone((was) => new Set([...was].filter((key) => !groups.some((g) => g.key === key))));
+      return setError(`Accept all on sheet ${sheet}: ${result.error}`);
+    }
+    const feet = groups.reduce((n, g) => n + (g.feet ?? 0), 0);
+    const { accepted: n, failed, undo } = result.value;
+    setAccepted({
+      text: `Accepted ${n} group${n === 1 ? "" : "s"} on sheet ${sheet} · ${Math.round(feet).toLocaleString()} ft${failed.length > 0 ? ` · not accepted: ${failed.join("; ")}` : ""}`,
+      keys: groups.map((g) => g.key),
+      undo,
+    });
+    router.refresh();
+  }
+  async function undoAccept() {
+    if (accepted === null) return;
+    const was = accepted;
+    setBusy(true);
+    const result = await undoSheetSuggestions(jobId, was.undo).catch(() => ({ ok: false as const, error: "it did not undo. Try it again." }));
+    setBusy(false);
+    if (!result.ok) return setError(`Undo: ${result.error}`);
+    setAccepted(null);
+    setDone((done) => new Set([...done].filter((key) => !was.keys.includes(key))));
+    router.refresh();
+  }
   // ── "Groups 3 of 8 · Held walls 0 of 34" ──
   // Every item this queue has shown, by part: the server drops a decided one
   // from `items`, so the total is what was ever seen and done is what is not
@@ -324,6 +375,11 @@ export function TakeoffReviewQueue({
               </a>
             </>
           )}
+          {sheetGroups.length > 1 && (
+            <button type="button" className={button} disabled={busy} onClick={() => void acceptSheet()} data-takeoff="review-queue-accept-sheet" title="Every group whose type a printed tag or the legend gives, with its height; the rest stay here">
+              Accept all suggestions on this sheet ({sheetGroups.length} groups)
+            </button>
+          )}
           {left.length > 1 && (
             <button type="button" className={button} disabled={busy} onClick={() => setCursor(after(current.key))} data-takeoff="review-queue-next">
               Next
@@ -339,6 +395,14 @@ export function TakeoffReviewQueue({
       <button type="button" className="underline" onClick={onClose} data-takeoff="review-queue-close">
         Close
       </button>
+      {accepted !== null && (
+        <span className="flex items-center gap-2" data-takeoff="review-queue-accepted">
+          <span data-takeoff="review-queue-accepted-text">{accepted.text}</span>
+          <button type="button" className="underline" disabled={busy} onClick={() => void undoAccept()} data-takeoff="review-queue-accepted-undo">
+            Undo
+          </button>
+        </span>
+      )}
       {priced !== null && error === null && (
         <span className="text-ink-muted" data-takeoff="review-queue-priced">
           {priced}

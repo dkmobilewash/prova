@@ -92,6 +92,7 @@ export const notYetRegistered: Exclusion[] = [
     reason: "Retrying resets an attempt ceiling that exists to bound a paid stage's spend; a person presses it beside the failed sheet. Never a command.",
   },
   { action: "planIngestFailures", reason: "A read for the panel's list of failed sheets; changes nothing." },
+  { action: "queuedPlanReads", reason: "A read for the reading panel's queue, the runs it pumps while the page is open; changes nothing." },
   {
     action: "planSheets.*",
     reason:

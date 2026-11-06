@@ -362,3 +362,23 @@ export async function latestIngestFor(
   if (!job) return null;
   return ingestViewOf(job.id, job.stage);
 }
+
+/**
+ * ── EVERY PLAN READING STILL TO DO ON A SET, OLDEST FIRST ──
+ *
+ * The reading panel advanced only the newest run, so a run queued behind it —
+ * the wall legend, queued when the free pass closes (`legendAutoStart.ts`) —
+ * waited for the daily cron: a new customer's walk had 65 legend pages
+ * unclaimed and no suggested types until the next day. The panel now asks for
+ * these and advances each in turn while the page is open; the cron stays as
+ * the backup for a closed tab. Excludes the stages with panels of their own.
+ */
+export async function unfinishedIngestsFor(planId: string, exclude: PlanIngestStage[]): Promise<IngestView[]> {
+  const jobs = await prisma.planIngestJob.findMany({
+    where: { planId, finishedAt: null, stage: { notIn: exclude } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, stage: true },
+  });
+  const views = await Promise.all(jobs.map((job) => ingestViewOf(job.id, job.stage)));
+  return views.filter((view) => !view.complete);
+}
