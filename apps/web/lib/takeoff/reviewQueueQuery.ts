@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { aiGate } from "@/lib/ai/settings";
 import { asCostCategory } from "@/lib/cost-category";
 import { pricingRatesFor } from "@/lib/estimating/pricing-rates";
 import { HELD_LABEL } from "@/lib/takeoff/estimateHold";
@@ -11,7 +12,7 @@ import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
 import { sheetCategory } from "@/lib/takeoff/planSet";
 import { storedWindowsOf, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
-import { heightItem, reviewQueue, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { heightItem, reviewQueue, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import { feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/takeoff/wallHeight";
 
 /**
@@ -23,7 +24,7 @@ import { feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/
 export async function loadReviewQueue(
   companyId: string,
   jobId: string,
-): Promise<{ planId: string | null; items: ReviewItem[]; heights: Record<string, CodeHeight>; codes: string[]; scaledSheets: number; floorPlans: number; floorPlansScaled: number }> {
+): Promise<{ planId: string | null; items: ReviewItem[]; heights: Record<string, CodeHeight>; codes: string[]; legend: LegendState; scaledSheets: number; floorPlans: number; floorPlansScaled: number }> {
   const plan = await prisma.takeoffPlan.findFirst({ where: { jobId, companyId }, orderBy: { createdAt: "desc" }, select: { id: true } });
   const unpriced = await prisma.jobLineItem.findMany({
     where: { jobId, job: { companyId }, isDeleted: false, unitPrice: null, budgetedUnitCost: null },
@@ -42,7 +43,7 @@ export async function loadReviewQueue(
     askCost,
     costCategory: asCostCategory(line.costCategory),
   }));
-  if (plan === null) return { planId: null, items: prices, heights: {}, codes: [], scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0 };
+  if (plan === null) return { planId: null, items: prices, heights: {}, codes: [], legend: "read", scaledSheets: 0, floorPlans: 0, floorPlansScaled: 0 };
 
   const [pages, sheetRows] = await Promise.all([
     prisma.takeoffPlanPage.findMany({
@@ -185,6 +186,8 @@ export async function loadReviewQueue(
     items: reviewQueue(items),
     heights,
     codes,
+    // Whether the set's legend was read: with none, every type's height from the drawings is missing.
+    legend: (await prisma.planLegendProposal.count({ where: { planId: plan.id } })) > 0 ? "read" : (await aiGate(companyId, "PLAN_TEXT_READ")).ok ? "unread" : "off",
     scaledSheets: scaled.size,
     floorPlans: floors.length,
     floorPlansScaled: floors.filter((page) => scaled.has(page)).length,
