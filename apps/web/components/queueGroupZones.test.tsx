@@ -48,3 +48,36 @@ describe("a group's height by part of the building, chosen in the queue", () => 
     expect(host.querySelector("[data-takeoff=queue-zones]")).toBeNull();
   });
 });
+
+describe("the type picked on a group nothing names, on all of them (walk v6: 13 groups, two keys each)", () => {
+  function paintRest(rest: string | null) {
+    const onAccept = vi.fn();
+    const onAcceptRest = vi.fn();
+    act(() =>
+      root.render(
+        createElement(QueueGroupConfirm, { label: "Walls · sheet A101", codes: ["A", "K"], suggested: null, heightOf: () => ({ feet: 15, from: "general note" }), onAccept, onSkip: () => {}, rest, onAcceptRest }),
+      ),
+    );
+    return { onAccept, onAcceptRest, button: () => host.querySelector("[data-takeoff=queue-accept-rest]") as HTMLButtonElement | null };
+  }
+
+  it("waits for a type, then A gives it to every one, at the height shown", () => {
+    const { onAccept, onAcceptRest, button } = paintRest("13 groups nothing names on A101");
+    expect(button()!.disabled).toBe(true);
+    press("a");
+    expect(onAcceptRest).not.toHaveBeenCalled();
+    press("2");
+    expect(button()!.textContent).toBe("K on all 13 groups nothing names on A101 (A)");
+    press("a");
+    expect(onAcceptRest).toHaveBeenCalledWith("K", 15);
+    expect(onAccept).not.toHaveBeenCalled();
+  });
+
+  it("is not offered when there is nothing else on the sheet to type", () => {
+    const { onAcceptRest, button } = paintRest(null);
+    expect(button()).toBeNull();
+    press("2");
+    press("a");
+    expect(onAcceptRest).not.toHaveBeenCalled();
+  });
+});
