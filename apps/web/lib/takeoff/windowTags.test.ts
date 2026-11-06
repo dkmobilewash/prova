@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { WindowSymbol } from "./doorWindowSymbols";
 import type { TagSymbol } from "./tagSymbols";
 import type { WallCandidate } from "./wallVectors";
-import { storedWindowsOf, windowsByTag, windowsToStore } from "./windowTags";
+import { joinedFrames, storedWindowsOf, windowsByTag, windowsToStore } from "./windowTags";
 
 // Windows counted by their frames, each typed by the nearest tag within 3 ft.
 // Page 1000 pt wide, 100 ft per page width: 1 ft = 10 pt.
@@ -86,5 +86,31 @@ describe("what a counted sheet stores for the review queue", () => {
     expect(storedWindowsOf({ windows: [{ tag: "A", x1: 0, y1: 0, x2: 1, y2: 0 }, { tag: "B", x1: "x" }], decided: true })).toEqual({ windows: [{ tag: "A", x1: 0, y1: 0, x2: 1, y2: 0 }], decided: true });
     expect(storedWindowsOf(null)).toBeNull();
     expect(storedWindowsOf({ feet: 3 })).toBeNull();
+  });
+});
+
+describe("one window drawn as two frame pieces is one window (Topeka)", () => {
+  // Pieces along the wall at y = 20 ft, in feet, 100 ft per page width.
+  const piece = (fromFt: number, toFt: number, wall = 0): WindowSymbol => ({ kind: "window", x1: fromFt / 100, y1: 0.2, x2: toFt / 100, y2: 0.2, widthFeet: toFt - fromFt, wall, lines: 3 });
+
+  it("joins pieces that touch or overlap on one wall line, keeping the whole span", () => {
+    const got = joinedFrames([piece(10, 12), piece(12.1, 14)], 100);
+    expect(got).toHaveLength(1);
+    expect(got[0]!.first).toBe(0);
+    expect(got[0]!.f.x1 * 100).toBeCloseTo(10, 6);
+    expect(got[0]!.f.x2 * 100).toBeCloseTo(14, 6);
+    expect(got[0]!.f.widthFeet).toBeCloseTo(4, 6);
+  });
+
+  it("keeps two windows with wall between them, and pieces on different walls, apart", () => {
+    expect(joinedFrames([piece(10, 12), piece(13, 15)], 100)).toHaveLength(2);
+    expect(joinedFrames([piece(10, 12), piece(12, 14, 1)], 100)).toHaveLength(2);
+  });
+
+  it("counts a joined window once, lit along its whole span", () => {
+    const frames = [piece(28, 30), piece(30, 32)];
+    const got = run([tag("W1", 30, 21.5)], { frames });
+    expect(got.windows).toHaveLength(1);
+    expect(windowsToStore(got, frames)?.windows[0]).toMatchObject({ tag: "W1", x1: 0.28, x2: 0.32 });
   });
 });
