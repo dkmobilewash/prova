@@ -179,6 +179,11 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       await expect(trades).toBeVisible({ timeout: 30_000 });
       await hydrated(page, '[data-setup="trades"] button');
       await shot("welcome-trade");
+      // AI plan reading is on for a new company (2026-11-06), said with its cost
+      // and an off switch; left on, so the legend is read and the queue suggests.
+      const reading = page.locator('[data-setup="plan-reading"]');
+      await expect(reading).toContainText(/title blocks and wall legends with AI; about \$\d+\.\d\d per plan set/);
+      await expect(reading.getByRole("switch", { name: "AI plan reading" })).toHaveAttribute("aria-checked", "true");
       await trades.getByRole("button", { name: /Framing and drywall/ }).click();
       act();
       // The markup question, answered here: with the four rates set the review

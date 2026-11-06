@@ -3,6 +3,7 @@ import { redirectAwayFromOnboardingIfAsked } from "@/lib/onboarding-gate";
 import { prisma } from "@prova/db";
 import { TradeSetupSteps } from "@/components/TradeSetupSteps";
 import { markupNeeded } from "@/lib/trade-presets";
+import { aiSettingsFor } from "@/lib/ai/settings";
 
 export const metadata = { title: "Welcome" };
 
@@ -46,5 +47,7 @@ export default async function WelcomePage() {
   const asked = await prisma.company.findUniqueOrThrow({ where: { id: company.id }, select: { tradePresetAskedAt: true } });
   const defaults = asked.tradePresetAskedAt === null ? null : await prisma.companyBidDefaults.findUnique({ where: { companyId: company.id } });
   const initial = asked.tradePresetAskedAt === null ? "trade" : markupNeeded(asked, defaults) ? "markup" : "questions";
-  return <TradeSetupSteps initial={initial} />;
+  // AI plan reading: on for a new company, shown on the trade step with its off switch.
+  const planReadingOn = (await aiSettingsFor(company.id)).optedInFeatures.includes("PLAN_TEXT_READ");
+  return <TradeSetupSteps initial={initial} planReadingOn={planReadingOn} />;
 }

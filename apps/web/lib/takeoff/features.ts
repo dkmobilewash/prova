@@ -1,4 +1,4 @@
-import { AI_FEATURE_LABEL } from "@/lib/ai/features";
+import { AI_FEATURE_LABEL, PLAN_READING_SENTENCE } from "@/lib/ai/features";
 
 /**
  * ── EVERY TAKEOFF SWITCH IN ONE LIST, WITH WHAT IT IS AND WHERE IT STANDS ──
@@ -74,8 +74,7 @@ export function takeoffFeatureRows(input: TakeoffFeatureInputs): TakeoffFeatureR
     {
       key: "wallTypesFromDrawings",
       title: AI_FEATURE_LABEL.PLAN_TEXT_READ,
-      explain:
-        "Reads the partition legend off the drawings and proposes each wall type for your library, so found walls can be named and priced. Uses the model, so company AI has to be on.",
+      explain: `${PLAN_READING_SENTENCE} The review queue then suggests each wall's type and height from the legend, for you to confirm. Uses the model, so company AI has to be on.`,
       status: wallTypesStatus(input),
       where: { href: "/settings/assistant#ai-switch", label: "Settings → Assistant" },
       field: "wallTypesFromDrawings",
