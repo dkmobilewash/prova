@@ -6,6 +6,8 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { isSignatureLinkDead } from "@/lib/access-tokens";
 import { formatSignedDate } from "@/lib/signed-date";
+import { GcProposalSections } from "@/components/GcProposalSections";
+import { loadGcProposal, type GcProposal } from "@/lib/estimating/gc-proposal";
 
 export const metadata = { title: "Sign to accept" };
 
@@ -16,6 +18,8 @@ type Snapshot = {
   scope: string | null;
   total: number;
   lineItems: { description: string; quantity: string; unit: string | null; unitPrice: string | null }[];
+  /** Absent on a signature made before the proposal was frozen with it. */
+  proposal?: GcProposal;
 };
 
 export default async function EsignPage({ params }: { params: Promise<{ token: string }> }) {
@@ -99,11 +103,13 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
           // ContractSummary's `frozen` prop.
           frozen
         />
+        {snapshot.proposal && <GcProposalSections proposal={snapshot.proposal} />}
       </main>
     );
   }
 
   const { job } = request;
+  const proposal = await loadGcProposal(job.companyId, job.id);
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
@@ -122,6 +128,7 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
           changeOrderNumber: null,
         }))}
       />
+      <GcProposalSections proposal={proposal} />
 
       <form
         action={signRequestWithToken}
