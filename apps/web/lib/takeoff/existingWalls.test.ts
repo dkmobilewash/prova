@@ -121,6 +121,28 @@ describe("route 2 — the legend's own existing-wall pen", () => {
   });
 });
 
+describe("route 3 — grey against the sheet's black, on a sheet that shows existing work (Baker A100)", () => {
+  // Three new walls drawn black, one grey; the sheet's words say it shows existing work.
+  const fresh = [wall(10, 10, 40, 10), wall(10, 20, 40, 20), wall(10, 30, 40, 30)];
+  const black = fresh.flatMap((w) => faces(w, { gray: 0, width: 0.5 }));
+  const reno = [word("RENOVATION", 60, 80)];
+  const call = (greyPen: { gray?: number; width: number }, words = reno, others = black) =>
+    existingWalls({ walls: [...fresh, run], segments: [...others, ...faces(run, greyPen)], textItems: words, widthPt: W, feetPerUnit: FPU });
+
+  it("sets aside a wall drawn grey, and none of the black ones", () => {
+    const got = call({ gray: 0.6, width: 0.5 });
+    expect(got.map((e) => e.wall)).toEqual([run]);
+    expect(got[0]!.route).toBe("grey");
+  });
+
+  it("not on a sheet that does not say it shows existing work, nor where the sheet's walls are grey themselves, nor for a wall grey on one face only", () => {
+    expect(call({ gray: 0.6, width: 0.5 }, [])).toEqual([]);
+    expect(call({ gray: 0.6, width: 0.5 }, reno, fresh.flatMap((w) => faces(w, { gray: 0.6, width: 0.5 })))).toEqual([]);
+    const half = existingWalls({ walls: [...fresh, run], segments: [...black, faces(run, { gray: 0.6, width: 0.5 })[0]!, faces(run, { gray: 0, width: 0.5 })[1]!], textItems: reno, widthPt: W, feetPerUnit: FPU });
+    expect(half).toEqual([]);
+  });
+});
+
 describe("offeredCandidates: the `existing` kind", () => {
   const sheet = (textItems?: ReturnType<typeof word>[]) => ({ walls: [run], segments: [], widthPt: W, feetPerUnit: FPU, planBoxes: null, textItems });
 
