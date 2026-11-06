@@ -153,7 +153,63 @@ test.describe("Set type in the panel: stays, undoes, clears", () => {
     await expect(untagged().locator('[data-takeoff="group-typed-as"]')).toContainText("ZU1", { timeout: 60_000 });
   });
 
-  test("6. nothing crashed", async () => {
+  test("6. Clear type is undone too: its walls go back on the type they had", async () => {
+    await untagged().locator('[data-takeoff="group-clear-type"]').click();
+    await expect.poll(runOn, { timeout: 30_000 }).toBe("untyped");
+    await expect(page.locator('[data-takeoff="undo"]')).toHaveAttribute("title", /Undo: Clear type/);
+    await page.locator('[data-takeoff="undo"]').click();
+    await expect.poll(runOn, { timeout: 30_000 }).toBe("ZU1");
+    await expect(untagged().locator('[data-takeoff="group-typed-as"]')).toContainText("ZU1", { timeout: 30_000 });
+  });
+
+  const queue = () => page.locator('[data-takeoff="review-queue"]');
+  const left = () => queue().locator('[data-takeoff="review-queue-left"]');
+  const groupOne = async () => {
+    const m = await prisma.takeoffMeasurement.findFirst({ where: { page: { planId }, xs: { equals: [0.1, 0.5] }, ys: { equals: [0.3, 0.3] } }, select: { item: { select: { name: true, wallType: { select: { code: true } } } } } });
+    return m?.item?.wallType?.code ?? (m?.item?.name === "Walls — untyped" ? "untyped" : null);
+  };
+
+  test("7. the review queue: Enter on a group, then Undo — its walls back on Walls — untyped and the group back in the queue", async () => {
+    await page.goto(`/takeoff/${jobId}?open=review`);
+    await expect(queue()).toBeVisible({ timeout: 60_000 });
+    await expect(queue().locator('[data-takeoff="queue-type"]')).toHaveText("ZU1");
+    const before = await left().innerText();
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press("Enter");
+    await expect.poll(groupOne, { timeout: 30_000 }).toBe("ZU1");
+    await expect(left()).not.toHaveText(before);
+    await expect(page.locator('[data-takeoff="undo"]')).toHaveAttribute("title", /Undo: Type ZU1 on A101/);
+    await page.locator('[data-takeoff="undo"]').click();
+    await expect.poll(groupOne, { timeout: 30_000 }).toBe("untyped");
+    await expect(left()).toHaveText(before, { timeout: 30_000 });
+  });
+
+  test("8. a height answered in the queue is undone: the type has no height again, and asks again", async () => {
+    // ZU2 has no height of its own: typed from the panel, it becomes the queue's height item.
+    await page.goto(`/takeoff/${jobId}?page=1`);
+    await untagged().locator('[data-takeoff="group-clear-type"]').click();
+    await expect.poll(runOn, { timeout: 30_000 }).toBe("untyped");
+    await untagged().locator('[data-takeoff="set-type-code"]', { hasText: "ZU2" }).click();
+    await expect.poll(runOn, { timeout: 30_000 }).toBe("ZU2");
+    const zu2 = async () => (await prisma.takeoffItem.findFirst({ where: { jobId, wallType: { code: "ZU2" } }, select: { heightFt: true } }))?.heightFt?.toString() ?? null;
+    expect(await zu2()).toBeNull();
+    await page.goto(`/takeoff/${jobId}?open=review`);
+    await expect(queue()).toBeVisible({ timeout: 60_000 });
+    for (let i = 0; i < 6 && (await queue().locator('[data-takeoff="review-queue-item"]').getAttribute("data-kind")) !== "height"; i += 1) {
+      await queue().locator('[data-takeoff="review-queue-next"]').click();
+    }
+    await expect(queue().locator('[data-takeoff="review-queue-item"]')).toHaveAttribute("data-kind", "height");
+    await queue().locator('[data-takeoff="queue-height"]').fill("9");
+    await queue().locator('[data-takeoff="queue-accept"]').click();
+    await expect.poll(zu2, { timeout: 30_000 }).toBe("9");
+    await expect(page.locator('[data-takeoff="undo"]')).toHaveAttribute("title", /Undo: Height 9 ft/);
+    await page.locator('[data-takeoff="undo"]').click();
+    await expect.poll(zu2, { timeout: 30_000 }).toBeNull();
+    await expect(queue().locator('[data-takeoff="review-queue-item"][data-kind="height"]')).toHaveCount(1, { timeout: 30_000 });
+    await page.screenshot({ path: path.join(SHOTS, "queue-height-undone-1440.png") });
+  });
+
+  test("9. nothing crashed", async () => {
     expect(monitor.crashes).toEqual([]);
   });
 });

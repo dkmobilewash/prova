@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { confirmSheetScales, confirmSheetSuggestions, confirmWallGroup, confirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
+import type { UndoEntry } from "@/lib/takeoff/undoStack";
+import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
@@ -22,7 +23,7 @@ import { inchLabel } from "@/lib/takeoff/wallVectors";
  *
  * A WALL GROUP IS CONFIRMED, NOT FILLED IN (`QueueGroupConfirm`): its walls lit
  * on the plan, the suggested type and height already in place with where each
- * came from, and Enter accepts both (`confirmWallGroup`; `setWallGroupHeight`
+ * came from, and Enter accepts both (`confirmSheetSuggestions` for one group, so Undo can put it back; `setWallGroupHeight`
  * for a group whose type is settled). The queue moves on at once and the save
  * follows; one that fails comes back with its reason. Next (or N) skips
  * without deciding; an item leaves when the row behind it changes, and the
@@ -42,6 +43,7 @@ export function TakeoffReviewQueue({
   doubted = 0,
   onCheckDoubted,
   onClose,
+  onUndoable,
 }: {
   jobId: string;
   planId: string;
@@ -61,6 +63,8 @@ export function TakeoffReviewQueue({
   doubted?: number;
   onCheckDoubted?: () => void;
   onClose: () => void;
+  /** The workspace's undo stack: a group typed or a height set here can be taken back (Undo, ⌘Z). */
+  onUndoable?: (entry: UndoEntry) => void;
 }) {
   // Decided here, before the server's re-render drops it from `items`.
   const [done, setDone] = useState<ReadonlySet<string>>(new Set());
@@ -192,7 +196,7 @@ export function TakeoffReviewQueue({
   }
 
   /** Accept now, save behind: the next item is on screen before the server answers. */
-  function acceptNow(key: string, what: string, run: () => Promise<{ ok: true } | { ok: false; error: string }>) {
+  function acceptNow<R extends { ok: true } | { ok: false; error: string }>(key: string, what: string, run: () => Promise<R>, undoOf?: (saved: Extract<R, { ok: true }>) => UndoEntry) {
     setError(null);
     setCursor(after(key));
     setDone((was) => new Set(was).add(key));
@@ -205,7 +209,31 @@ export function TakeoffReviewQueue({
       setError(`${what}: ${why}`);
     };
     void run().then(
-      (result) => (result.ok ? undefined : back(result.error)),
+      (result) => {
+        if (!result.ok) return back(result.error);
+        if (undoOf === undefined || onUndoable === undefined) return;
+        // ── UNDO PUTS IT BACK, AND THE ITEM BACK IN THE QUEUE ──
+        const entry = undoOf(result as Extract<R, { ok: true }>);
+        onUndoable({
+          ...entry,
+          undo: async () => {
+            const undone = await entry.undo();
+            if (undone.ok)
+              setDone((was) => {
+                const next = new Set(was);
+                next.delete(key);
+                return next;
+              });
+            return undone;
+          },
+          redo: async () => {
+            const again = await entry.redo();
+            if (again.ok) setDone((was) => new Set(was).add(key));
+            return again;
+          },
+          inPlace: true,
+        });
+      },
       () => back("it did not save. Try it again."),
     );
   }
@@ -264,11 +292,27 @@ export function TakeoffReviewQueue({
                 heightOf={(code) => levelHeightFor(code, current.level) ?? heightFor(code, heights, current.ceiling)}
                 heightOptions={(code) => (code === null ? [] : (heightChoices[code.toUpperCase()] ?? []))}
                 onSkip={() => setCursor(after(current.key))}
-                onAccept={(code, heightFt) =>
-                  acceptNow(current.key, `${code} on sheet ${current.sheet}`, () =>
-                    confirmWallGroup(jobId, { planId, pageNumber: current.pageNumber, code: code!, inches: current.inches, runs: current.runs, heightFt, level: levelHeightFor(code, current.level) === null ? null : current.level!.label }),
-                  )
-                }
+                onAccept={(code, heightFt) => {
+                  // One group through the sheet's confirm, for the token Undo puts it back with.
+                  const group = { planId, pageNumber: current.pageNumber, code: code!, inches: current.inches, runs: current.runs, heightFt, level: levelHeightFor(code, current.level) === null ? null : current.level!.label };
+                  acceptNow(
+                    current.key,
+                    `${code} on sheet ${current.sheet}`,
+                    async () => {
+                      const result = await confirmSheetSuggestions(jobId, [group]);
+                      if (!result.ok) return result;
+                      return result.value.accepted === 1 ? result : { ok: false as const, error: result.value.failed[0] ?? "it did not save. Try it again." };
+                    },
+                    (saved) => ({
+                      label: `Type ${code} on ${current.sheet}`,
+                      undo: () => undoSheetSuggestions(jobId, saved.value.undo),
+                      redo: async () => {
+                        const again = await confirmSheetSuggestions(jobId, [group]);
+                        return again.ok ? { ok: true as const } : again;
+                      },
+                    }),
+                  );
+                }}
               />
             ))}
           {current.kind === "height" && (
@@ -287,7 +331,12 @@ export function TakeoffReviewQueue({
               onSkip={() => setCursor(after(current.key))}
               onAccept={(_code, heightFt) => {
                 if (heightFt === null) return setError("Type a height first: H.");
-                acceptNow(current.key, current.name, () => setWallGroupHeight(jobId, current.itemId, heightFt));
+                const itemId = current.itemId;
+                acceptNow(current.key, current.name, () => setWallGroupHeight(jobId, itemId, heightFt), (saved) => ({
+                  label: `Height ${heightFt} ft on ${current.name}`,
+                  undo: () => undoSheetSuggestions(jobId, { moved: [], created: [], items: [{ id: itemId, heightFt: saved.value.was.heightFt, sides: saved.value.was.sides }] }),
+                  redo: () => setWallGroupHeight(jobId, itemId, heightFt),
+                }));
               }}
             />
           )}

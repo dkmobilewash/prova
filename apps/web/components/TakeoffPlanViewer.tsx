@@ -55,6 +55,7 @@ import {
   setWallTypeThickness,
   setWallGroupType,
   clearWallGroupType,
+  undoSheetSuggestions,
 } from "@/lib/actions";
 import type {
   PlanSheet,
@@ -4149,10 +4150,34 @@ export function TakeoffPlanViewer({
   async function clearTypeFor(index: number, group: WallGroup) {
     setSettingType(index);
     setFindError(null);
-    const result = await clearWallGroupType(jobId, { planId, pageNumber, runs: runsOf(group) });
+    const runs = runsOf(group);
+    const key = runsKey(group);
+    const result = await clearWallGroupType(jobId, { planId, pageNumber, runs });
     setSettingType(null);
     if (!result.ok) return setFindError(result.error);
-    setTypedNow((was) => ({ ...was, [runsKey(group)]: null }));
+    setTypedNow((was) => ({ ...was, [key]: null }));
+    // Undone by putting every run back exactly where Clear found it.
+    const moved = result.value.moved;
+    onUndoable?.({
+      label: "Clear type",
+      undo: async () => {
+        const back = await undoSheetSuggestions(jobId, { moved, created: [], items: [] });
+        // Forget the local answer: the rows say what it is again.
+        if (back.ok)
+          setTypedNow((was) => {
+            const next = { ...was };
+            delete next[key];
+            return next;
+          });
+        return back;
+      },
+      redo: async () => {
+        const again = await clearWallGroupType(jobId, { planId, pageNumber, runs });
+        if (again.ok) setTypedNow((was) => ({ ...was, [key]: null }));
+        return again.ok ? { ok: true } : again;
+      },
+      inPlace: true,
+    });
   }
 
   /**
@@ -4329,8 +4354,18 @@ export function TakeoffPlanViewer({
             options={facts.options}
             missing={heightMissing}
             onSet={async (feet) => {
-              const saved = await setWallGroupHeight(jobId, facts.item.id, feet);
-              return saved.ok ? null : saved.error;
+              const itemId = facts.item.id;
+              const saved = await setWallGroupHeight(jobId, itemId, feet);
+              if (!saved.ok) return saved.error;
+              // A height set by mistake is undone like a type (Chrome's re-test).
+              const was = saved.value.was;
+              onUndoable?.({
+                label: `Set height ${feet} ft`,
+                undo: () => undoSheetSuggestions(jobId, { moved: [], created: [], items: [{ id: itemId, heightFt: was.heightFt, sides: was.sides }] }),
+                redo: () => setWallGroupHeight(jobId, itemId, feet),
+                inPlace: true,
+              });
+              return null;
             }}
           />
         )}
