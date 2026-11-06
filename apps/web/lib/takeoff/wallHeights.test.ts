@@ -297,3 +297,16 @@ describe("round 14: a part of the building, a plan sheet's building, and a ceili
     expect(bulkhead).toEqual([]);
   });
 });
+
+describe("a material word may name the deck a wall runs to (training legends)", () => {
+  it("reads TO METAL DECK and TO FLOOR DECK as running to the structure (SLN 3A–5A)", () => {
+    for (const line of ["AND SEAL TIGHT TO METAL DECK ABOVE.", "TO METAL DECK ABOVE. EXTERIOR FACE OF WALL TO RECEIVE PAINT", "EXTEND TO COMPOSITE DECK", "TO FLOOR DECK ABOVE"]) {
+      expect(heightBasis(line)?.kind, line).toBe("to-structure");
+    }
+    // A floor is not a deck: "TO FLOOR" alone says nothing about where the wall stops.
+    expect(heightBasis("FASTENED TO FLOOR")).toBeNull();
+    // Nor is a bottom plate on the slab below (Camp Bow Wow A–E).
+    expect(heightBasis("PLATE FASTENED TO CONC. SLAB")).toBeNull();
+    expect(heightBasis("EXTERIOR CLADDING OVER 5/8\" SHEATHING")).toBeNull();
+  });
+});
