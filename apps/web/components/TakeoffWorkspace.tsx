@@ -1571,6 +1571,7 @@ export function TakeoffWorkspace({
                 planSet={planSet}
                 onShow={onQueueShow}
                 onLeft={setQueueLeft}
+                onUndoable={onUndoable}
                 doubted={doubted.length}
                 onCheckDoubted={() => {
                   setQueueOpen(false);

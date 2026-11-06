@@ -54,6 +54,8 @@ import {
   updateMeasurementGeometry,
   setWallTypeThickness,
   setWallGroupType,
+  clearWallGroupType,
+  undoSheetSuggestions,
 } from "@/lib/actions";
 import type {
   PlanSheet,
@@ -90,7 +92,8 @@ import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUn
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { renovationMarks, showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
-import { DROPPED_LABEL, HELD_LABEL, sameRun } from "@/lib/takeoff/estimateHold";
+import { DROPPED_LABEL, HELD_ITEM, HELD_LABEL, sameRun } from "@/lib/takeoff/estimateHold";
+import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 import { TakeoffHeldWalls } from "./TakeoffHeldWalls";
 import { TakeoffWallReview } from "./TakeoffWallReview";
 import { currentRun, decide, droppedRuns, reviewCounter, reviewOrder, runScores, startReview, undoDecision, viewOfRun, type ReviewState as WallReviewState } from "@/lib/takeoff/wallReview";
@@ -4092,23 +4095,89 @@ export function TakeoffPlanViewer({
 
   /**
    * "Set type": one press names an untyped group from the set's legend. Every
-   * run goes onto that type's item, saved with the job, and the group leaves
-   * the list exactly as "Add these" does — see `setWallGroupType`.
+   * run goes onto that type's item, saved with the job — see
+   * `setWallGroupType`.
+   *
+   * ── AND THE GROUP STAYS, TYPED, WITH UNDO AND CLEAR TYPE ──
+   * Chrome's re-test on Baker: it left the list as "Add these" does, and came
+   * back only on a reload, and a type set by mistake could not be undone. Now
+   * the row shows what its walls are on (`typedItemOf`, read off the sheet's
+   * own measurements, so a reload agrees), Undo and ⌘Z take it back, and
+   * "Clear type" puts its walls back on "Walls — untyped".
    */
   const [settingType, setSettingType] = useState<number | null>(null);
+  /** The code just set, by the group's runs, until the server's rows say so. */
+  const [typedNow, setTypedNow] = useState<Record<string, string | null>>({});
+  const runsKey = (group: WallGroup) => group.runs.map((r) => `${r.x1},${r.y1},${r.x2},${r.y2}`).join(";");
+  const runsOf = (group: WallGroup) => group.runs.map((run) => ({ x1: run.x1, y1: run.y1, x2: run.x2, y2: run.y2 }));
+  /** The typed item every run of the group sits on, or null: untyped, mixed, held or not on the job. */
+  function typedItemOf(group: WallGroup): { id: string; name: string } | null {
+    const rows = sheet?.measurements ?? [];
+    let itemId: string | null = null;
+    for (const run of group.runs) {
+      const m = rows.find((row) => row.kind === "LINEAR" && row.xs.length === 2 && row.xs[0] === run.x1 && row.xs[1] === run.x2 && row.ys[0] === run.y1 && row.ys[1] === run.y2);
+      if (m === undefined || !m.itemId || (itemId !== null && m.itemId !== itemId)) return null;
+      itemId = m.itemId;
+    }
+    const item = itemId === null ? undefined : takeoffItems.find((i) => i.id === itemId);
+    return item === undefined || item.name === UNTYPED_ITEM || item.name === HELD_ITEM ? null : item;
+  }
   async function setTypeFor(index: number, group: WallGroup, code: string) {
     setSettingType(index);
     setFindError(null);
-    const result = await setWallGroupType(jobId, {
-      planId,
-      pageNumber,
-      code,
-      inches: group.inches,
-      runs: group.runs.map((run) => ({ x1: run.x1, y1: run.y1, x2: run.x2, y2: run.y2 })),
-    });
+    const input = { planId, pageNumber, code, inches: group.inches, runs: runsOf(group) };
+    const result = await setWallGroupType(jobId, input);
     setSettingType(null);
     if (!result.ok) return setFindError(result.error);
-    setFound((current) => (current ?? []).filter((_, i) => i !== index));
+    const key = runsKey(group);
+    setTypedNow((was) => ({ ...was, [key]: code }));
+    onUndoable?.({
+      label: `Set type ${code}`,
+      // Set type moves only untyped runs, so clearing them is its exact inverse.
+      undo: async () => {
+        const back = await clearWallGroupType(jobId, { planId, pageNumber, runs: input.runs });
+        if (back.ok) setTypedNow((was) => ({ ...was, [key]: null }));
+        return back.ok ? { ok: true } : back;
+      },
+      redo: async () => {
+        const again = await setWallGroupType(jobId, input);
+        if (again.ok) setTypedNow((was) => ({ ...was, [key]: code }));
+        return again;
+      },
+      inPlace: true,
+    });
+  }
+  async function clearTypeFor(index: number, group: WallGroup) {
+    setSettingType(index);
+    setFindError(null);
+    const runs = runsOf(group);
+    const key = runsKey(group);
+    const result = await clearWallGroupType(jobId, { planId, pageNumber, runs });
+    setSettingType(null);
+    if (!result.ok) return setFindError(result.error);
+    setTypedNow((was) => ({ ...was, [key]: null }));
+    // Undone by putting every run back exactly where Clear found it.
+    const moved = result.value.moved;
+    onUndoable?.({
+      label: "Clear type",
+      undo: async () => {
+        const back = await undoSheetSuggestions(jobId, { moved, created: [], items: [] });
+        // Forget the local answer: the rows say what it is again.
+        if (back.ok)
+          setTypedNow((was) => {
+            const next = { ...was };
+            delete next[key];
+            return next;
+          });
+        return back;
+      },
+      redo: async () => {
+        const again = await clearWallGroupType(jobId, { planId, pageNumber, runs });
+        if (again.ok) setTypedNow((was) => ({ ...was, [key]: null }));
+        return again.ok ? { ok: true } : again;
+      },
+      inPlace: true,
+    });
   }
 
   /**
@@ -4285,8 +4354,18 @@ export function TakeoffPlanViewer({
             options={facts.options}
             missing={heightMissing}
             onSet={async (feet) => {
-              const saved = await setWallGroupHeight(jobId, facts.item.id, feet);
-              return saved.ok ? null : saved.error;
+              const itemId = facts.item.id;
+              const saved = await setWallGroupHeight(jobId, itemId, feet);
+              if (!saved.ok) return saved.error;
+              // A height set by mistake is undone like a type (Chrome's re-test).
+              const was = saved.value.was;
+              onUndoable?.({
+                label: `Set height ${feet} ft`,
+                undo: () => undoSheetSuggestions(jobId, { moved: [], created: [], items: [{ id: itemId, heightFt: was.heightFt, sides: was.sides }] }),
+                redo: () => setWallGroupHeight(jobId, itemId, feet),
+                inPlace: true,
+              });
+              return null;
             }}
           />
         )}
@@ -5069,8 +5148,9 @@ export function TakeoffPlanViewer({
       {slot(panelOpen ? sideSlot : noticeSlot, answerKey === undefined && planCompare !== null && priorStatus !== null && priorStatus.page === pageNumber && (
         <PriorPlanBar status={priorStatus} sheets={planCompare.sheets} pageNumber={pageNumber} jobId={jobId} planId={planId} readOnly={readOnly} />
       ))}
-      {slot(panelOpen ? sideSlot : noticeSlot, answerKey === undefined && setsAsideOn.length > 0 && (
-        <p className="shrink-0 text-xs text-ink-body" data-takeoff="demo-not-counted">
+      {/* At the TOP of the panel, first in its dock (Chrome on E Street A1.1: it sat below the groups). */}
+      {slot(panelOpen ? dockSlot : noticeSlot, answerKey === undefined && setsAsideOn.length > 0 && (
+        <p className="order-first shrink-0 text-xs font-medium text-ink-body" data-takeoff="demo-not-counted">
           Not counted: used to set aside existing walls on {setsAsideOn.join(", ")}.
         </p>
       ))}
@@ -5326,6 +5406,9 @@ export function TakeoffPlanViewer({
                   // sentence, because "Add these" with no explanation is what
                   // sent somebody to the wall-types page to find nothing wrong.
                   const namedOnly = priced === null ? namedTypeFor(group, chosen[index]) : null;
+                  // What its walls are on now: the code just set until the rows say so, then the rows.
+                  const justSet = typedNow[runsKey(group)];
+                  const typedLabel = justSet === null ? null : (justSet ?? typedItemOf(group)?.name ?? null);
                   return (
                   <Fragment key={`${group.inches}-${index}`}>
                   {heading !== null && (
@@ -5450,7 +5533,23 @@ export function TakeoffPlanViewer({
                         is: a type (the verdict's candidates first, the sheet's
                         note before them), a new type from this group, or plain
                         measurements — last, and said in words. */}
-                    {priced === null && namedOnly === null && legendCodes.length > 0 && (
+                    {typedLabel !== null && (
+                      <span className="flex flex-wrap items-center gap-2" data-takeoff="group-typed">
+                        <span className="rounded bg-tag-brand px-1.5 py-0.5 text-xs font-semibold text-tag-brand-ink" data-takeoff="group-typed-as">
+                          {typedLabel}
+                        </span>
+                        <button
+                          type="button"
+                          data-takeoff="group-clear-type"
+                          disabled={settingType !== null}
+                          onClick={() => void clearTypeFor(index, group)}
+                          className="min-h-[36px] rounded-md border border-line-card bg-surface px-2 text-xs font-medium text-ink-body hover:bg-rail-hover disabled:opacity-50"
+                        >
+                          Clear type
+                        </button>
+                      </span>
+                    )}
+                    {typedLabel === null && priced === null && namedOnly === null && legendCodes.length > 0 && (
                       <span className="flex flex-wrap items-center gap-1" data-takeoff="set-type">
                         <span className="text-xs text-ink-muted">Set type</span>
                         {legendCodes.map((code) => (
@@ -5468,7 +5567,7 @@ export function TakeoffPlanViewer({
                         ))}
                       </span>
                     )}
-                    {priced === null && namedOnly === null && (
+                    {typedLabel === null && priced === null && namedOnly === null && (
                       <select
                         aria-label={`What are the ${inchLabel(group.inches)} walls?`}
                         value={chosen[index] ?? ""}
@@ -5537,6 +5636,9 @@ export function TakeoffPlanViewer({
                         />
                       </label>
                     )}
+                    {/* Not on a demolition plan that is not counted: its walls only set
+                        existing ones aside on the new plan (Chrome on E Street A1.1). */}
+                    {setsAsideOn.length === 0 && typedLabel === null && (
                     <button
                       type="button"
                       onClick={() => void onAcceptCluster(index)}
@@ -5561,6 +5663,7 @@ export function TakeoffPlanViewer({
                               ? "Add as plain measurements"
                               : "Add these"}
                     </button>
+                    )}
 
                     {/* ── AND WHY, UNDERNEATH ──
                         Every sentence says WHERE the answer came from, because
