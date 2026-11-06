@@ -217,9 +217,8 @@ export async function loadReviewQueue(
     }));
     const type = item.wallType;
     const own = legendOptions(type === null ? null : { code: type.code, defaultHeightFt: type.defaultHeightFt === null ? null : Number(type.defaultHeightFt), notes: type.notes });
-    // No height of the type's own: the sheet-wide note offers one, and is offered first.
-    const legend = own.length > 0 || general === null ? own : [{ kind: "legend" as const, feet: general.feet, from: general.from }];
-    const queued = heightItem(item, sheets, legend);
+    // The type's own, then the sheet-wide note, then the ceiling (`heightOptionsInOrder`).
+    const queued = heightItem(item, sheets, own, general);
     if (queued !== null) items.push(queued);
   }
 

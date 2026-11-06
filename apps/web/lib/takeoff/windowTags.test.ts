@@ -114,3 +114,19 @@ describe("one window drawn as two frame pieces is one window (Topeka)", () => {
     expect(windowsToStore(got, frames)?.windows[0]).toMatchObject({ tag: "W1", x1: 0.28, x2: 0.32 });
   });
 });
+
+describe("one window offered twice a hand apart is counted once (Topeka, training false 40 -> 28)", () => {
+  // Two frames 3 ft apart with wall between them, so `joinedFrames` keeps both.
+  const at = (fromFt: number, toFt: number): WindowSymbol => ({ kind: "window", x1: fromFt / 100, y1: 0.2, x2: toFt / 100, y2: 0.2, widthFeet: toFt - fromFt, wall: 0, lines: 3 });
+
+  it("drops a same-tag window whose centre is within 4 ft of one already counted", () => {
+    const got = run([tag("W1", 31.5, 21.5)], { frames: [at(29, 31), at(32, 34)] });
+    expect(got.windows).toHaveLength(1);
+    expect(got.byTag.find((t) => t.tag === "W1")?.count).toBe(1);
+  });
+
+  it("keeps two windows of different tags that close, and same-tag windows 5 ft apart", () => {
+    expect(run([tag("W1", 29, 21.5), tag("W2", 33, 21.5)], { frames: [at(29, 31), at(32, 34)] }).windows).toHaveLength(2);
+    expect(run([tag("W1", 32.5, 21.5)], { frames: [at(29, 31), at(34, 36)] }).windows).toHaveLength(2);
+  });
+});

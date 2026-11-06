@@ -17,7 +17,22 @@ import { pointInRing } from "@/lib/takeoff/drawTools";
  * source would be a second fact that could disagree with the height.
  */
 
-export type HeightOption = { kind: "ceiling" | "legend"; feet: number; from: string };
+/** Where a height on offer came from: the type's legend, the set's general note, or the ceiling over the walls' rooms. */
+export type HeightOption = { kind: "ceiling" | "legend" | "note"; feet: number; from: string };
+
+/**
+ * ── ONE ORDER FOR EVERY HEIGHT SUGGESTION ──
+ * The type's own (its legend heights), then the set's general note ("all walls
+ * to deck"), then the ceiling over its rooms; a figure already offered is not
+ * offered again. The review queue's pre-fill (`heightFor`), its height items and
+ * the layer panel's Set height all read this, so the queue saying 15'-0" from
+ * general note A601 while the panel offered "Ceiling 10'-0"" first cannot recur
+ * (Chrome on Baker A101, 2026-11-06). The first entry is the suggestion.
+ */
+export function heightOptionsInOrder(input: { type: readonly HeightOption[]; general: { feet: number; from: string } | null; ceiling: HeightOption | null }): HeightOption[] {
+  const all = [...input.type, ...(input.general === null ? [] : [{ kind: "note" as const, feet: input.general.feet, from: input.general.from }]), ...(input.ceiling === null ? [] : [input.ceiling])];
+  return all.filter((option, i) => all.findIndex((o) => same(o.feet, option.feet)) === i);
+}
 
 const same = (a: number, b: number) => Math.abs(a - b) < 0.005;
 

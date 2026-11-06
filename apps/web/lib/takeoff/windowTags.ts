@@ -88,6 +88,8 @@ export const WINDOW_TAG_WALL_FEET = 6;
 export const WINDOW_FRAME_REACH_FEET = 6;
 /** A tag within this of a frame's line gives that frame its type; farther, the frame is not counted. Training: windows ≤ 2.8 ft, false frames ≥ 3. */
 export const WINDOW_TAG_TYPES_FEET = 3;
+/** Two same-tag windows whose centres are closer than this are one window drawn twice. */
+export const WINDOW_SAME_FEET = 4;
 const W_TAG = /^W\d{1,2}[A-Z]?$/;
 
 /** "W-1", "w 1" and "W1" are one tag. */
@@ -147,6 +149,13 @@ export function windowsByTag(input: {
       if (d <= best) { best = d; tag = t.tag; }
     }
     if (tag === null) continue;
+    // ── ONE WINDOW DRAWN TWICE IS COUNTED ONCE ──
+    // A frame offered twice (two outlines of one window, a sill line beside its
+    // glass) lands two same-tag windows a hand apart. No two real windows' centres
+    // sit closer than a window is wide, so a same-tag centre within
+    // `WINDOW_SAME_FEET` of one already counted is the same window.
+    const cx = (f.x1 + f.x2) / 2, cy = (f.y1 + f.y2) / 2;
+    if (windows.some((w) => w.tag === tag && Math.hypot(w.x - cx, w.y - cy) * input.feetPerUnit < WINDOW_SAME_FEET)) continue;
     windows.push({ tag, x: (f.x1 + f.x2) / 2, y: (f.y1 + f.y2) / 2, row: rowOf.get(tag) ?? null, frame: first, span: { x1: f.x1, y1: f.y1, x2: f.x2, y2: f.y2 } });
   }
   // A schedule with no tag read on this sheet is not a count of zero windows.
