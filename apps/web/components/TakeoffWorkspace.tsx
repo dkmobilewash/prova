@@ -101,6 +101,8 @@ type Props = {
   planSet?: PlanSetRow[];
   /** Each type's height for the queue's pre-filled height, by code. */
   reviewHeights?: Record<string, CodeHeight>;
+  /** Each type's heights by part of the building, to pick from (`loadReviewQueue`). */
+  reviewHeightChoices?: Record<string, CodeHeight[]>;
   /** The codes a queued group can be given: the legend's, else the company's library. */
   reviewCodes?: string[];
   /** Whether this server can label at all (`labellingAllowed`). False on every
@@ -208,6 +210,7 @@ export function TakeoffWorkspace({
   reviewQueue = [],
   planSet = [],
   reviewHeights = {},
+  reviewHeightChoices = {},
   reviewCodes = [],
   labellingAvailable = false,
   finderVersion = "unknown",
@@ -1560,6 +1563,7 @@ export function TakeoffWorkspace({
                 items={reviewQueue}
                 legendCodes={reviewCodes.length > 0 ? reviewCodes : data.legendCodes}
                 heights={reviewHeights}
+                heightChoices={reviewHeightChoices}
                 planSet={planSet}
                 onShow={onQueueShow}
                 onLeft={setQueueLeft}

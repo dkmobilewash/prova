@@ -92,7 +92,11 @@ export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
  */
 export function floorPlansOfTheWork(sheets: readonly WallsSheet[]): number[] {
   const floor = new Set(sheets.filter((s) => sheetCategory(s.sheetNumber, s.title, null) === "floor").map((s) => s.pageNumber));
-  return [...wallsPlan(sheets.map((sheet) => ({ ...sheet, hasScale: true })))]
+  // And as if nothing were found yet: walls stored on a sheet say only which
+  // scale was saved first. The run's own preference ranks them above "not
+  // OVERALL", which is right for counting and wrong for opening — walk v3
+  // opened Baker's A100 OVERALL because its walls were found before A101's.
+  return [...wallsPlan(sheets.map((sheet) => ({ ...sheet, hasScale: true, hasWalls: false, onJob: false })))]
     .filter(([pageNumber, skip]) => (skip === null || skip === "already found") && floor.has(pageNumber))
     .map(([pageNumber]) => pageNumber);
 }

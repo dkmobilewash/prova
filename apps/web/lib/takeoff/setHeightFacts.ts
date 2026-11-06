@@ -2,6 +2,7 @@ import type { PlanPdf } from "@/lib/plan-ingest/planPdf";
 import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
 import { pageLines } from "./planTextRead";
 import { sheetViews } from "./sheetViews";
+import { levelMarks, type LevelMark } from "./levelHeights";
 import { buildingsOf, ceilingNotesFromLines, heightFactsFromText, labelledWallHeights, lettersNotesFromLines, relativeToFloor, resolveHeight, type HeightFact, type HeightReading } from "./wallHeights";
 
 /**
@@ -28,6 +29,8 @@ export type SetHeightFacts = {
   generalNote: HeightFact | null;
   /** One line per sheet that contributed, for the notes: `A301 (section): T.O. ROOF FRAMING 15' 0"`. */
   factSheets: string[];
+  /** Every level marker the sections and elevations print (`levelMarks`), for a wall's floor-to-floor by its plan's level. */
+  levels?: LevelMark[];
 };
 
 const GENERAL = (f: HeightFact) =>
@@ -36,6 +39,7 @@ const GENERAL = (f: HeightFact) =>
 export async function setHeightFacts(doc: PlanPdf, input: { legendPage: number; maxPages?: number }): Promise<SetHeightFacts> {
   const facts: HeightFact[] = [];
   const factSheets: string[] = [];
+  const levels: LevelMark[] = [];
   // A caption's tail is a building only where a PLAN is captioned with it too
   // ("FLOOR PLAN - WAREHOUSE"); a wall section's "- BRICK ON MTL STUD" is not.
   const planBuildings = new Set<string>();
@@ -73,6 +77,7 @@ export async function setHeightFacts(doc: PlanPdf, input: { legendPage: number; 
       }
     }
     const all = heightFactsFromText({ sheet, items });
+    levels.push(...levelMarks(sheet, items));
     facts.push(...all.filter((f) => f.kind === "floor-datum"));
     // An interior elevation names its walls' heights; "SEE SHEET A300" goes there.
     if (/INTERIOR\s+ELEVATIONS?/i.test(views) || /INTERIOR\s+ELEVATIONS?/i.test(r.regionText)) {
@@ -97,7 +102,7 @@ export async function setHeightFacts(doc: PlanPdf, input: { legendPage: number; 
   }
   const generalNote = facts.find((f) => GENERAL(f) && !f.sheet.includes("(p")) ?? facts.find(GENERAL) ?? null;
   const located = facts.map((f) => (f.buildings === undefined ? f : { ...f, buildings: f.buildings.filter((b) => planBuildings.has(b)) }));
-  return { facts: relativeToFloor(located), generalNote, factSheets };
+  return { facts: relativeToFloor(located), generalNote, factSheets, levels };
 }
 
 /** One legend type's height from the set's facts — `resolveHeight` with the set's general note in place. */

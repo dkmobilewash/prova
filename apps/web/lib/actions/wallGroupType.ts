@@ -9,7 +9,7 @@ import { sameCode } from "@/lib/takeoff/legendMerge";
 import { storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { actionFail, actionOk, type ActionResult } from "./shared";
 import { addWallTypeFromLegend } from "./wallLegend";
-import { syncReviewedItems } from "@/lib/estimating/takeoff-item-lines";
+import { syncDecidedItems } from "@/lib/estimating/takeoff-item-lines";
 
 /**
  * ── "SET TYPE": THE ESTIMATOR NAMES WHAT THE DRAWING DID NOT ──
@@ -53,19 +53,22 @@ export async function setWallGroupType(jobId: string, input: WallGroupTypeInput)
  * Set type, then the height on that type's item for the whole job (as
  * `setWallGroupHeight` does), in one transaction and one round trip, so a
  * person confirming suggestions waits on neither. A height equal to the
- * item's own changes nothing. Once takeoff lines are on the estimate, the
- * items the runs left and joined follow (`syncReviewedItems`).
+ * item's own changes nothing. The estimate lines of the items the runs left
+ * and joined are written or updated at once (`syncDecidedItems`), so a
+ * reviewed takeoff is an estimate with no further press.
  */
-export async function confirmWallGroup(jobId: string, input: WallGroupTypeInput & { heightFt: number | null }): Promise<ActionResult> {
+export async function confirmWallGroup(jobId: string, input: WallGroupTypeInput & { heightFt: number | null; level?: string | null }): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const heightFt = input.heightFt;
   if (heightFt !== null && (!Number.isFinite(heightFt) || heightFt <= 0 || heightFt >= 100)) return actionFail("A wall height is a number of feet between 0 and 100.");
-  return typeGroup(context, jobId, input, heightFt);
+  // A level's walls are their own item, so floors with different floor-to-floors can each have theirs.
+  const level = typeof input.level === "string" && /^levels? \d{1,2}(–\d{1,2})?$/.test(input.level) ? input.level : null;
+  return typeGroup(context, jobId, input, heightFt, level);
 }
 
 /** Both actions' work, after each has checked the capability itself. */
-async function typeGroup(context: Awaited<ReturnType<typeof requireCompanyContext>>, jobId: string, input: WallGroupTypeInput, heightFt: number | null): Promise<ActionResult> {
+async function typeGroup(context: Awaited<ReturnType<typeof requireCompanyContext>>, jobId: string, input: WallGroupTypeInput, heightFt: number | null, level: string | null = null): Promise<ActionResult> {
   const companyId = context.company.id;
   const code = String(input.code ?? "").trim().toUpperCase();
   const runs = Array.isArray(input.runs) ? input.runs.filter((r) => [r.x1, r.y1, r.x2, r.y2].every(Number.isFinite)) : [];
@@ -109,6 +112,7 @@ async function typeGroup(context: Awaited<ReturnType<typeof requireCompanyContex
       jobId,
       { id: wallType.id, code: wallType.code, name: wallType.name, hasParts: wallType._count.components > 0, thicknessIn: wallType.thicknessIn === null ? null : Number(wallType.thicknessIn) },
       { defaultHeightFt: wallType.defaultHeightFt, sides: wallType.sides },
+      level,
     );
     await tx.takeoffItem.updateMany({ where: { id: itemId, thicknessIn: null }, data: { thicknessIn: input.inches.toFixed(2) } });
     const untyped = await tx.takeoffItem.findFirst({ where: { jobId, companyId, name: UNTYPED_ITEM }, select: { id: true } });
@@ -130,10 +134,11 @@ async function typeGroup(context: Awaited<ReturnType<typeof requireCompanyContex
     if (heightFt !== null) {
       await tx.takeoffItem.update({ where: { id: itemId }, data: { heightFt: heightFt.toFixed(2) } });
       await tx.takeoffItem.updateMany({ where: { id: itemId, sides: null }, data: { sides: 2 } });
-      await syncReviewedItems(tx, companyId, jobId, [itemId, untyped?.id ?? null]);
     }
+    // The type's line, and the untyped line the runs left, written now.
+    await syncDecidedItems(tx, companyId, jobId, [itemId, untyped?.id ?? null]);
   });
-  revalidatePath(`/jobs/${jobId}/takeoff`);
-  if (heightFt !== null) revalidatePath(`/takeoff/${jobId}`);
+  revalidatePath(`/jobs/${jobId}`, "layout");
+  revalidatePath(`/takeoff/${jobId}`);
   return actionOk;
 }

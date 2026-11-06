@@ -123,22 +123,33 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
   return { kind: "written", ...written };
 }
 
-export async function itemForType(tx: Prisma.TransactionClient, companyId: string, jobId: string, type: MatchableWallType, row: { defaultHeightFt: unknown; sides: number | null }): Promise<string> {
+export async function itemForType(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  jobId: string,
+  type: MatchableWallType,
+  row: { defaultHeightFt: unknown; sides: number | null },
+  /** "levels 2–9": the type's walls on that level get their own item (`A walls · levels 2–9`), for its own height. */
+  level: string | null = null,
+): Promise<string> {
   // A variant (C6 of family C) gets its own item under its full code, priced
   // with the family's assembly — so the family's item is found by its name
   // first, and never falls back onto a variant's.
   const onType = await tx.takeoffItem.findMany({ where: { jobId, companyId, wallTypeId: type.id }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } });
+  const levelName = level === null ? null : `${type.code} walls · ${level}`;
+  const onLevel = (name: string) => name.includes(" walls · level");
   const variantItem = (name: string) => /^(.*) walls$/.test(name) && familyOf(name.replace(/ walls$/, ""), [type.code]) !== null;
   const found =
-    onType.find((i) => i.name === `${type.code} walls`) ??
-    (type.family === undefined ? onType.find((i) => !variantItem(i.name)) : undefined);
+    levelName !== null
+      ? onType.find((i) => i.name === levelName)
+      : (onType.find((i) => i.name === `${type.code} walls`) ?? (type.family === undefined ? onType.find((i) => !variantItem(i.name) && !onLevel(i.name)) : undefined));
   if (found) return found.id;
   const existing = await tx.takeoffItem.findMany({ where: { jobId }, select: { colorHex: true, sortOrder: true }, orderBy: { sortOrder: "desc" } });
   const item = await tx.takeoffItem.create({
     data: {
       companyId,
       jobId,
-      name: `${type.code} walls`,
+      name: levelName ?? `${type.code} walls`,
       type: "LINEAR",
       colorHex: nextItemColor(existing.map((i) => i.colorHex)),
       sortOrder: (existing[0]?.sortOrder ?? -1) + 1,
