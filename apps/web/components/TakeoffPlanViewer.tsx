@@ -5069,8 +5069,9 @@ export function TakeoffPlanViewer({
       {slot(panelOpen ? sideSlot : noticeSlot, answerKey === undefined && planCompare !== null && priorStatus !== null && priorStatus.page === pageNumber && (
         <PriorPlanBar status={priorStatus} sheets={planCompare.sheets} pageNumber={pageNumber} jobId={jobId} planId={planId} readOnly={readOnly} />
       ))}
-      {slot(panelOpen ? sideSlot : noticeSlot, answerKey === undefined && setsAsideOn.length > 0 && (
-        <p className="shrink-0 text-xs text-ink-body" data-takeoff="demo-not-counted">
+      {/* At the TOP of the panel, first in its dock (Chrome on E Street A1.1: it sat below the groups). */}
+      {slot(panelOpen ? dockSlot : noticeSlot, answerKey === undefined && setsAsideOn.length > 0 && (
+        <p className="order-first shrink-0 text-xs font-medium text-ink-body" data-takeoff="demo-not-counted">
           Not counted: used to set aside existing walls on {setsAsideOn.join(", ")}.
         </p>
       ))}
@@ -5537,6 +5538,9 @@ export function TakeoffPlanViewer({
                         />
                       </label>
                     )}
+                    {/* Not on a demolition plan that is not counted: its walls only set
+                        existing ones aside on the new plan (Chrome on E Street A1.1). */}
+                    {setsAsideOn.length === 0 && (
                     <button
                       type="button"
                       onClick={() => void onAcceptCluster(index)}
@@ -5561,6 +5565,7 @@ export function TakeoffPlanViewer({
                               ? "Add as plain measurements"
                               : "Add these"}
                     </button>
+                    )}
 
                     {/* ── AND WHY, UNDERNEATH ──
                         Every sentence says WHERE the answer came from, because
