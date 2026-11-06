@@ -135,6 +135,15 @@ describe("route 3 — grey against the sheet's black, on a sheet that shows exis
     expect(got[0]!.route).toBe("grey");
   });
 
+  it("not a new wall drawn black end to end under a grey hatch — grey is measured by the length it covers, not by its strokes summed (Baker A101)", () => {
+    // 200 short grey pieces piled along the run: far more grey stroke than wall, but the black faces cover all of it.
+    const hatch: StrokeSegment[] = Array.from({ length: 200 }, (_, i) => ({ x1: ft(10 + (i % 29)), y1: ft(50 + (i % 2 ? T / 2 : -T / 2)), x2: ft(11.5 + (i % 29)), y2: ft(50 + (i % 2 ? T / 2 : -T / 2)), gray: 0.67, width: 0.24 }));
+    // Enough other black walls that the sheet's own pen stays black, as Baker's is.
+    const more = [60, 65, 70, 75, 80, 85].map((y) => wall(10, y, 40, y));
+    const got = existingWalls({ walls: [...fresh, ...more, run], segments: [...black, ...more.flatMap((m) => faces(m, { gray: 0, width: 0.5 })), ...faces(run, { gray: 0, width: 0.24 }), ...hatch], textItems: reno, widthPt: W, feetPerUnit: FPU });
+    expect(got).toEqual([]);
+  });
+
   it("not on a sheet that does not say it shows existing work, nor where the sheet's walls are grey themselves, nor for a wall grey on one face only", () => {
     expect(call({ gray: 0.6, width: 0.5 }, [])).toEqual([]);
     expect(call({ gray: 0.6, width: 0.5 }, reno, fresh.flatMap((w) => faces(w, { gray: 0.6, width: 0.5 })))).toEqual([]);
