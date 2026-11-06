@@ -1047,14 +1047,21 @@ test.describe("the full-screen takeoff workspace", () => {
     await expect(tool("Select"), "Esc left Set scale on").toHaveAttribute("aria-pressed", "true");
   });
 
-  test("14. the phone gets a read-only canvas", async () => {
+  test("14. the phone gets a read-only canvas, and says why; 622 px is editable", async () => {
     await page.setViewportSize(PHONE);
     await onWorkspace(jobTwo);
     await expect(page.locator('[data-takeoff="read-only"]'), "no read-only badge on a phone").toBeVisible();
+    // And it says why, and how to edit.
+    await expect(page.locator('[data-takeoff="read-only"]')).toHaveText("read-only below 600 px: widen the window to edit");
     // The tools place things on the drawing by clicking it; 390px cannot be
     // clicked accurately enough to trace a wall.
     await expect(page.getByRole("button", { name: "Set scale", exact: true })).toBeHidden();
     await page.screenshot({ path: path.join(SHOTS, "workspace-390-phone.png"), fullPage: false });
+    // A laptop window with a side panel open (622 px, Chrome on Baker) is editable.
+    await page.setViewportSize({ width: 622, height: 844 });
+    await expect(page.locator('[data-takeoff="read-only"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Select", exact: true }).first()).toBeVisible();
+    await page.screenshot({ path: path.join(SHOTS, "workspace-622-editable.png"), fullPage: false });
     await page.setViewportSize(DESKTOP);
   });
 
