@@ -122,8 +122,8 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
 
   test("3. one press: both groups typed with their heights, their lines written, the third left", async () => {
     await acceptAll().click();
-    // At once, before the save is back; then ZA2's height (it has none of its own) may join.
-    await expect(left()).toHaveText("1 left to review", { timeout: 5_000 });
+    // The two leave at once (1 left); ZA2 has no height of its own, so its height item joins once the save is back (2).
+    await expect(left()).toHaveText(/^[12] left to review$/, { timeout: 5_000 });
     await expect(queue().locator('[data-takeoff="review-queue-accepted-text"]')).toHaveText("Accepted 2 groups on sheet A101 · 130 ft");
     await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(1);
     const zf1 = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, wallType: { code: "ZA1" } }, select: { heightFt: true, _count: { select: { measurements: true } } } });
