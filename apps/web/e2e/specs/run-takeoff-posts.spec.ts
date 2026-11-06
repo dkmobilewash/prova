@@ -17,8 +17,10 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
  * by type, says so, and a second press adds nothing more.
  *
  * The stored walls are SEEDED, in the shape detection writes, because CI
- * cannot run detection on a stubbed upload. The ROOMS company, as in
- * wall-heights.spec.ts.
+ * cannot run detection on a stubbed upload — and seeded AFTER the press, as
+ * walk v6 met it: the scale saved at 15:25:06, the finder done at 15:25:48,
+ * and a press in between used to post nothing and say nothing. The ROOMS
+ * company, as in wall-heights.spec.ts.
  */
 test.describe.configure({ mode: "serial" });
 
@@ -31,6 +33,7 @@ test.describe("Run takeoff puts the sheet's walls on the job", () => {
   let monitor: HealthMonitor;
   let jobId = "";
   let pageId = "";
+  let calibrationId = "";
 
   test.beforeAll(async ({ browser }) => {
     mkdirSync(SHOTS, { recursive: true });
@@ -60,9 +63,7 @@ test.describe("Run takeoff puts the sheet's walls on the job", () => {
     const sheet = await prisma.takeoffPlanPage.create({ data: { planId: plan.id, pageNumber: 1, label: "A101", pageWidthPt: 2592 } });
     pageId = sheet.id;
     const calibration = await prisma.takeoffScaleCalibration.create({ data: { pageId: sheet.id, x1: 0, y1: 0.1, x2: 1, y2: 0.1, declaredDistanceFeet: "144" } });
-    await prisma.takeoffWallProposal.create({
-      data: { pageId: sheet.id, calibrationId: calibration.id, thicknessInches: 4.875, source: "REMAINDER", runs: [{ x1: 0.2, y1: 0.3, x2: 0.5, y2: 0.3, thicknessFeet: 0.40625 }, { x1: 0.5, y1: 0.3, x2: 0.5, y2: 0.45, thicknessFeet: 0.40625 }] },
-    });
+    calibrationId = calibration.id;
     expect(await onJob()).toBe(0);
   });
 
@@ -72,7 +73,13 @@ test.describe("Run takeoff puts the sheet's walls on the job", () => {
     const run = page.locator('[data-takeoff="find-walls"]');
     await expect(run).toBeEnabled({ timeout: 60_000 });
     await run.click();
-    await expect(page.locator('[data-takeoff="posted-note"]')).toHaveText("Put on the job: on the job by type: none typed; untyped 65 ft. Untyped walls wait in Review.", { timeout: 180_000 });
+    // The finder the scale started has not stored the walls yet: it says so and waits.
+    await expect(page.locator('[data-takeoff="posted-note"]')).toHaveText(/^Putting the walls on the job as soon as this sheet’s walls are stored/, { timeout: 180_000 });
+    expect(await onJob()).toBe(0);
+    await prisma.takeoffWallProposal.create({
+      data: { pageId, calibrationId, thicknessInches: 4.875, source: "REMAINDER", runs: [{ x1: 0.2, y1: 0.3, x2: 0.5, y2: 0.3, thicknessFeet: 0.40625 }, { x1: 0.5, y1: 0.3, x2: 0.5, y2: 0.45, thicknessFeet: 0.40625 }] },
+    });
+    await expect(page.locator('[data-takeoff="posted-note"]')).toHaveText("Put on the job: on the job by type: none typed; untyped 65 ft. Untyped walls wait in Review.", { timeout: 30_000 });
     expect(await onJob()).toBe(2);
     expect(await prisma.takeoffMeasurement.count({ where: { pageId, item: { name: "Walls — untyped" } } })).toBe(2);
     await page.screenshot({ path: path.join(SHOTS, "run-takeoff-posted-1440.png") });

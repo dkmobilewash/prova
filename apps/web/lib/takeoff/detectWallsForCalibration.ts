@@ -16,6 +16,7 @@ import { loadWallModel } from "./wallModelFile";
 import { SheetTooDenseError, type StrokeSegment, type WallCandidate } from "./wallVectors";
 import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
+import { stampSuggestions } from "./suggestionStamp";
 import { matchGroups } from "./proposalMatch";
 import { groupsForStage, siblingPages } from "./stageGroups";
 import { aiGate } from "@/lib/ai/settings";
@@ -108,6 +109,8 @@ export type DetectTarget = {
    * (`stageGroups.ts`). Absent, the finder behaves as it always has.
    */
   pairWithThicknesses?: boolean;
+  /** Stored legend and schedule reads only, never the model: a suggestion refresh (`suggestionRefresh.ts`). */
+  noModel?: boolean;
 };
 
 export async function detectWallsForCalibration(
@@ -117,6 +120,8 @@ export async function detectWallsForCalibration(
   const now = clock.now ?? (() => Date.now());
   const budgetMs = clock.budgetMs ?? DETECTION_BUDGET_MS;
   const startedAt = now();
+  // When this run read the legend: a legend saved after it makes its suggestions stale (`suggestionStamp.ts`).
+  const readAt = new Date();
   const spent = () => now() - startedAt;
   const outOfTime = () => spent() >= budgetMs;
 
@@ -220,7 +225,7 @@ export async function detectWallsForCalibration(
     let wallTypes: MatchableWallType[] = target.wallTypes;
     if (planTextOn) {
       try {
-        const legend = await legendForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime });
+        const legend = await legendForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime, noModel: target.noModel });
         if (legend !== null) {
           legendCodes = legend.codes;
           legendPage = legend.page;
@@ -370,7 +375,7 @@ export async function detectWallsForCalibration(
     }
     if (planTextOn) {
       try {
-        const schedule = await doorScheduleForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime });
+        const schedule = await doorScheduleForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime, noModel: target.noModel });
         const doors =
           schedule === null
             ? null
@@ -456,6 +461,9 @@ export async function detectWallsForCalibration(
         matched,
       ),
     });
+    await stampSuggestions(target.planId, target.pageNumber, readAt).catch((error) =>
+      console.error("[takeoff] suggestion stamp not stored", { planId: target.planId, pageNumber: target.pageNumber }, error),
+    );
     return "written";
   } catch (error) {
     // `SheetTooDenseError` IS A FACT ABOUT THE DRAWING rather than a failure: a
