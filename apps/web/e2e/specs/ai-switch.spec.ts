@@ -278,8 +278,18 @@ test.describe("the per-company AI switch", () => {
     const legendRuns = () => prisma.planIngestJob.count({ where: { planId: plan.id, stage: "WALL_LEGEND" } });
     const optIn = (): Locator => box("PLAN_TEXT_READ");
 
-    // OFF UNTIL CHOSEN, asserted first so the end state cannot have been true at
-    // the start: the page opens, says the reading is off, and queues nothing.
+    // ON FOR A NEW COMPANY (2026-11-06, #1023): AI_SWITCH's company was made at
+    // its first sign-in, so the box starts ticked. Untick and save first, so the
+    // end state cannot have been true at the start: the opt-out reaches the row,
+    // the page says reading is off, and nothing is queued.
+    await page.goto("/settings/assistant");
+    await expectHealthy(page, "/settings/assistant, a new company's default", { monitor });
+    await expect(optIn(), "plan reading starts on for a new company").toBeChecked();
+    await optIn().uncheck();
+    await saveAndSettle();
+    const off = await prisma.companyAiSettings.findUniqueOrThrow({ where: { companyId }, select: { optedInFeatures: true } });
+    expect(off.optedInFeatures, "the opt-out must reach the database").not.toContain("PLAN_TEXT_READ");
+
     await page.goto(`/jobs/${job.id}/takeoff`);
     await expectHealthy(page, "takeoff tab, plan reading off", { monitor });
     await expect(page.locator('[data-plan-ingest="legend-stage"]').getByText(/is off for your company/)).toBeVisible();

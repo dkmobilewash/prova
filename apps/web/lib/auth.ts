@@ -220,7 +220,9 @@ export async function adoptCompanyContext(identity: ClerkIdentity) {
         name,
         role: "OWNER",
         company: {
-          create: { name: companyName },
+          // AI plan reading starts ON for a new company (lib/ai/features.ts's
+          // OPT_IN_FEATURES says why here and not as a column default).
+          create: { name: companyName, aiSettings: { create: { optedInFeatures: ["PLAN_TEXT_READ"] } } },
         },
       },
       include: { company: true },

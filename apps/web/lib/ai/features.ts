@@ -178,8 +178,23 @@ export const AI_FEATURE_DESCRIPTION: Record<AiFeatureKey, string> = {
   SHEET_TEXT:
     "Reading the room names, dimensions and scale note off a sheet that was SCANNED rather than exported \u2014 a scan is a picture, so there is no writing in the file to read and nothing else in this app can get at it. ONE OF TWO FEATURES HERE THAT SEND A PICTURE OF YOUR DRAWING, the other being checking which runs are walls. It reads the writing only: the lines are found by measuring the picture, in code, and every length and quantity is still worked out from that geometry rather than from anything the model says. With this off, a scanned sheet behaves as it does today \u2014 it is recognised as a scan and set aside, and you take it off by hand.",
   PLAN_TEXT_READ:
-    "Reads the partition legend off a plan set and proposes each wall type and its parts for your library, with the legend crop beside the reading. New: off until you turn it on. Nothing it proposes is a price.",
+    "Reads your plans' title blocks and wall legends with AI, so the review queue can suggest each wall's type and height — about $0.50 per plan set. On for new companies; off until you turn it on for a company that predates it. Nothing it proposes is a price.",
 };
+
+/**
+ * ── WHAT PLAN READING COSTS, MEASURED ──
+ *
+ * Diego, 2026-11-06: the switch says what it costs. Measured on Baker EOC (65
+ * sheets), from the `AskUsage` rows of two local runs priced at
+ * `packages/integrations/src/pricing.ts`'s rates:
+ *   - the title blocks, `plan-ingestion` on Haiku 4.5: 65 calls, 179,664 in and
+ *     16,694 out = $0.18 + $0.08 = $0.26 (identical across the walk's four runs);
+ *   - the wall legend, `plan-text-read` on Opus 5: 4 calls, 21,460 in and 3,435
+ *     out = $0.11 + $0.09 = $0.19.
+ * $0.46 in all, said as "about $0.50". The title blocks scale with sheets
+ * (about 0.4¢ each), so a 300-sheet set runs nearer $1.40.
+ */
+export const PLAN_READING_SENTENCE = "Reads your plans' title blocks and wall legends with AI; about $0.50 per plan set.";
 
 /**
  * Every feature key, for a settings screen to iterate.
@@ -208,6 +223,13 @@ export const AI_FEATURE_KEYS = Object.keys(AI_FEATURE_LABEL) as AiFeatureKey[];
  * ticks it, because it is new and it writes proposals a person is asked to
  * review. Stored as `CompanyAiSettings.optedInFeatures`; a feature leaves this
  * set when it has earned the default, and the stored list then does nothing.
+ *
+ * PLAN_TEXT_READ is ON FOR A NEW COMPANY (Diego, 2026-11-06): the company is
+ * created with it in that list (`requireCompanyContext`, lib/auth.ts), so the
+ * legend is read and the queue suggests types and heights from the first set.
+ * It stays in this set, which is what keeps every EXISTING company as it was —
+ * no stored row changed, and no column default either, since a default would
+ * opt in an old company the first time anybody saved its AI settings.
  */
 export const OPT_IN_FEATURES: ReadonlySet<AiFeatureKey> = new Set<AiFeatureKey>(["PLAN_TEXT_READ"]);
 
