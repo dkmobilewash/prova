@@ -134,11 +134,18 @@ describe("whole-set takeoff", () => {
       refreshed.push(target.pageNumber);
       return { kind: "replaced" as const };
     };
-    const work = wallsWork({ planId, companyId, ingestJobId: run.id, jobId, startedByUserId: context.id }, { detect, refresh });
+    // A sheet found again has its windows counted too: one found before #1008 never had (Chrome on Baker).
+    const counted: number[] = [];
+    const findWindows = async (input: { pageNumber: number }) => {
+      counted.push(input.pageNumber);
+      return { kind: "counted" as const, windows: 4 };
+    };
+    const work = wallsWork({ planId, companyId, ingestJobId: run.id, jobId, startedByUserId: context.id }, { detect, refresh, findWindows });
     const report = await runIngest({ ports: claimPorts({ jobId: run.id, work }), budgetMs: 10_000 });
     expect(report).toMatchObject({ done: 3, retryable: 0, exhausted: 0 });
     // The sheet already found is found again, not detected as new.
     expect(refreshed).toEqual([2]);
+    expect(counted).toEqual([2]);
     expect(await closeIfSettled(run.id)).toBe(true);
     expect((await ingestViewOf(run.id, "WALLS")).complete).toBe(true);
 
@@ -149,7 +156,7 @@ describe("whole-set takeoff", () => {
     const tasks = await prisma.planIngestTask.findMany({ where: { jobId: run.id }, select: { pageNumber: true, note: true } });
     expect(Object.fromEntries(tasks.map((t) => [t.pageNumber, t.note]))).toEqual({
       1: "walls found",
-      2: "found again; to confirm read again from the wall model, kept and dropped left as decided",
+      2: "found again; to confirm read again from the wall model, kept and dropped left as decided; 4 windows to confirm",
       5: "nothing found",
     });
   });
