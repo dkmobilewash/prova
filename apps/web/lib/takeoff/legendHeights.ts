@@ -12,11 +12,17 @@ export type LegendHeightResult = {
   sentence: string;
   /** Where the drawing gives one height per part of the building: each, with what printed it, for a person to place. */
   options: { feet: number; from: string }[];
+  /** Where the options are by building part: the one each building's plan takes ("WAREHOUSE" → 14'-4"), with its source. */
+  byBuilding?: { building: string; feet: number; from: string }[];
 };
 
 /** The notes lines a type keeps for its height options — read back by `legendOptions` (`wallHeight.ts`). */
 export function heightOptionLines(result: LegendHeightResult): string[] {
-  return result.options.map((o) => `Height option ${Number(o.feet.toFixed(3))} ft: ${o.from}`);
+  return [
+    ...result.options.map((o) => `Height option ${Number(o.feet.toFixed(3))} ft: ${o.from}`),
+    // Read back by `buildingHeights` (`wallHeight.ts`): the queue pre-fills a group with its plan's building's.
+    ...(result.byBuilding ?? []).map((b) => `Height for ${b.building} ${Number(b.feet.toFixed(3))} ft: ${b.from}`),
+  ];
 }
 
 export type LegendTypeForHeight = { code: string; lines: readonly string[]; heightNote: string | null };
@@ -29,7 +35,16 @@ export function legendHeightOf(type: LegendTypeForHeight, set: SetHeightFacts | 
       ? heightSentence(reading)
       : `No height read: ${reading.why} The set could not be read for one (${unread.slice(0, 120)}). Type it on the wall type.`;
   const options = (reading.options ?? []).filter((f) => f.feet !== null).map((f) => ({ feet: f.feet as number, from: `${f.sheet} ${f.phrase}` }));
-  return { heightFt: reading.feet, confidence: reading.feet === null ? null : reading.confidence, generalNoteOnly: reading.generalNoteOnly, sentence, options };
+  // ── ONE HEIGHT PER BUILDING PART (Bunkie: 10'-0" main and addition, 14'-4" warehouses) ──
+  // Each building a PLAN names, asked separately: the zone drawn for it, where that settles it.
+  const byBuilding =
+    set === null || options.length < 2
+      ? []
+      : (set.buildings ?? []).flatMap((building) => {
+          const one = heightOfLegendType(type, set, [building]);
+          return one.feet === null ? [] : [{ building, feet: one.feet, from: one.from === null ? one.why.slice(0, 160) : `${one.from.sheet} ${one.from.phrase}` }];
+        });
+  return { heightFt: reading.feet, confidence: reading.feet === null ? null : reading.confidence, generalNoteOnly: reading.generalNoteOnly, sentence, options, ...(byBuilding.length > 0 ? { byBuilding } : {}) };
 }
 
 /**

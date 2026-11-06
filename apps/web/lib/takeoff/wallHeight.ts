@@ -120,3 +120,17 @@ export function areaLine(input: { linearFt: number; heightFt: number | null; sid
   const sides = input.sides === 1 ? 1 : 2;
   return `${lf} × ${feetLabel(input.heightFt)} × ${sides} side${sides === 1 ? "" : "s"} = ${input.sqFt.toLocaleString()} sf`;
 }
+
+/**
+ * A type's height per building part, read back from the notes the legend add wrote
+ * (`heightOptionLines`: "Height for WAREHOUSE 14.333 ft: A313 T.O. WALL 2 14' - 4\""),
+ * by building. Empty for a type whose sections give it one height.
+ */
+export function buildingHeights(type: { code: string; notes?: string | null } | null | undefined): Record<string, { feet: number; from: string }> {
+  const out: Record<string, { feet: number; from: string }> = {};
+  for (const line of (type?.notes ?? "").split("\n")) {
+    const m = line.match(/^Height for (.+?) ([\d.]+) ft: (.+)$/);
+    if (m && Number(m[2]) > 0) out[m[1]!.toUpperCase()] = { feet: Number(m[2]), from: `legend ${type!.code}, ${m[1]}: ${m[3]} → ${feetLabel(Number(m[2]))}` };
+  }
+  return out;
+}
