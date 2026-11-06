@@ -4,7 +4,7 @@ import { prisma } from "@prova/db";
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { itemForType, UNTYPED_ITEM } from "@/lib/plan-ingest/wallItems";
+import { itemForType, untypedItem, UNTYPED_ITEM } from "@/lib/plan-ingest/wallItems";
 import { sameCode } from "@/lib/takeoff/legendMerge";
 import { storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "./shared";
@@ -48,24 +48,17 @@ export async function setWallGroupType(jobId: string, input: WallGroupTypeInput)
 }
 
 /**
- * ── THE REVIEW QUEUE'S ENTER: A GROUP'S TYPE AND HEIGHT IN ONE PRESS ──
+ * ── A GROUP'S TYPE AND HEIGHT IN ONE PRESS ──
  *
  * Set type, then the height on that type's item for the whole job (as
- * `setWallGroupHeight` does), in one transaction and one round trip, so a
- * person confirming suggestions waits on neither. A height equal to the
- * item's own changes nothing. The estimate lines of the items the runs left
- * and joined are written or updated at once (`syncDecidedItems`), so a
- * reviewed takeoff is an estimate with no further press.
+ * `setWallGroupHeight` does), in one transaction and one round trip. A height
+ * equal to the item's own changes nothing. The estimate lines of the items the
+ * runs left and joined are written or updated at once (`syncDecidedItems`).
+ * The review queue's Enter and "Accept all suggestions on this sheet" both go
+ * through `confirmSheetSuggestions` below — one group or many — for the token
+ * Undo puts it back with.
  */
 export type ConfirmGroupInput = WallGroupTypeInput & { heightFt: number | null; level?: string | null };
-
-export async function confirmWallGroup(jobId: string, input: ConfirmGroupInput): Promise<ActionResult> {
-  const context = await requireCompanyContext();
-  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
-  const checked = checkedHeight(input);
-  if (typeof checked === "string") return actionFail(checked);
-  return typeGroup(context, jobId, input, checked.heightFt, checked.level);
-}
 
 /** The height and level a group may be confirmed with, or why not. */
 function checkedHeight(input: ConfirmGroupInput): { heightFt: number | null; level: string | null } | string {
@@ -250,4 +243,43 @@ async function typeGroup(context: Awaited<ReturnType<typeof requireCompanyContex
   revalidatePath(`/jobs/${jobId}`, "layout");
   revalidatePath(`/takeoff/${jobId}`);
   return actionOk;
+}
+
+/**
+ * ── "CLEAR TYPE": A TYPE SET BY MISTAKE, TAKEN OFF ──
+ *
+ * Chrome's re-test on Baker: a group typed by mistake could not be undone or
+ * cleared. Every run of the group that sits on a typed item goes back onto
+ * "Walls — untyped" with the label the walls stage gives it, and both items'
+ * estimate lines follow. A run held to confirm, dropped, or already untyped is
+ * left as it is. Returns what moved and from where, which is what Undo needs
+ * to put it back.
+ */
+export async function clearWallGroupType(
+  jobId: string,
+  input: { planId: string; pageNumber: number; runs: { x1: number; y1: number; x2: number; y2: number }[] },
+): Promise<ActionResultWith<{ moved: { id: string; itemId: string | null; label: string | null }[] }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const companyId = context.company.id;
+  const runs = Array.isArray(input.runs) ? input.runs.filter((r) => [r.x1, r.y1, r.x2, r.y2].every(Number.isFinite)) : [];
+  if (runs.length === 0 || runs.length > RUNS_MAX) return actionFail("That group has no walls to clear. Reload the page.");
+  const page = await prisma.takeoffPlanPage.findFirst({ where: { planId: input.planId, pageNumber: input.pageNumber, plan: { job: { id: jobId, companyId } } }, select: { id: true } });
+  if (page === null) return actionFail("That sheet is no longer on this job. Reload the page.");
+  const moved = await prisma.$transaction(async (tx) => {
+    const posted = await tx.takeoffMeasurement.findMany({
+      where: { pageId: page.id, kind: "LINEAR", source: "DETECTED", itemId: { not: null }, item: { name: { not: UNTYPED_ITEM } } },
+      select: { id: true, xs: true, ys: true, itemId: true, label: true },
+    });
+    const ours = posted.filter((m) => m.xs.length === 2 && runs.some((r) => m.xs[0] === r.x1 && m.xs[1] === r.x2 && m.ys[0] === r.y1 && m.ys[1] === r.y2));
+    if (ours.length === 0) return [];
+    const untyped = await untypedItem(tx, companyId, jobId);
+    await tx.takeoffMeasurement.updateMany({ where: { id: { in: ours.map((m) => m.id) } }, data: { itemId: untyped, label: "wall, untyped" } });
+    await syncDecidedItems(tx, companyId, jobId, [untyped, ...new Set(ours.map((m) => m.itemId))]);
+    return ours.map((m) => ({ id: m.id, itemId: m.itemId, label: m.label }));
+  });
+  if (moved.length === 0) return actionFail("Nothing on this group is typed now. Reload the page.");
+  revalidatePath(`/jobs/${jobId}`, "layout");
+  revalidatePath(`/takeoff/${jobId}`);
+  return { ok: true, value: { moved } };
 }

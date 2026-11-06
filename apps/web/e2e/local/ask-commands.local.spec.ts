@@ -9,7 +9,7 @@ import { startChangeOrderCommand } from "../../lib/ask/commands/changeOrders";
 import { draftPurchaseOrderCommand } from "../../lib/ask/commands/purchaseOrders";
 import { prepareLienWaiverCommand } from "../../lib/ask/commands/lienWaivers";
 import { startPayApplicationCommand } from "../../lib/ask/commands/payApplications";
-import { postTakeoffToEstimateCommand, setWallHeightCommand } from "../../lib/ask/commands/takeoff";
+import { acceptSheetSuggestionsCommand, postTakeoffToEstimateCommand, setWallHeightCommand } from "../../lib/ask/commands/takeoff";
 import type { CommandDefinition, CommandInput } from "../../lib/ask/commands";
 import { WORKFLOW_EXAMPLES } from "../../components/askExamples";
 
@@ -282,4 +282,59 @@ test("how many linear feet of S6B, and what is left to review: read off the take
   const left = await askRead(`What's left to review on ${TAKEOFF_JOB}?`);
   expect(left.toolsUsed).toContain("takeoff_review");
   expect(left.text).toMatch(/hang,? tape/i);
+});
+
+/** accept-sheet.spec.ts's fixture (#1020) on its own ESTIMATE job: ZA1 and ZA2
+ * tagged on A101, a third group nothing names. Rows only; no PDF is read. */
+const ACCEPT_JOB = "ZZ Click Accept Sheet";
+async function seedAcceptSheetJob(): Promise<string> {
+  const { companyId } = actor;
+  const old = await prisma.job.findFirst({ where: { companyId, name: ACCEPT_JOB }, select: { id: true } });
+  if (old) throw new Error(`${ACCEPT_JOB} is left from an earlier run; this spec runs on a fresh database`);
+  const contact = await prisma.contact.create({ data: { companyId, name: "ZZ Click Accept GC" } });
+  const job = await prisma.job.create({ data: { companyId, contactId: contact.id, name: ACCEPT_JOB, status: "ESTIMATE" } });
+  const plan = await prisma.takeoffPlan.create({ data: { companyId, jobId: job.id, fileUrl: "https://example.test/S02.pdf", fileName: "S02.pdf" } });
+  const ingest = await prisma.planIngestJob.create({ data: { planId: plan.id, companyId, stage: "TITLE_BLOCK", pageCount: 1, startedAt: new Date(), finishedAt: new Date() }, select: { id: true } });
+  await prisma.planSheetText.create({ data: { planId: plan.id, pageNumber: 1, hasTextLayer: true, widthPt: 2592, heightPt: 1728 } });
+  await prisma.planSheetProposal.create({
+    data: { ingestJobId: ingest.id, planId: plan.id, pageNumber: 1, proposedSheetNumber: "A101", proposedTitle: "FIRST FLOOR PLAN", proposedPageType: "PLAN", proposedScale: '1/4" = 1\'-0"', proposedReason: "seeded", proposedConfidence: "HIGH", model: "seed", promptVersion: "n/a" },
+  });
+  await prisma.takeoffPlanTextRead.create({ data: { planId: plan.id, pageNumber: 0, kind: "legend", value: { page: 1, title: "PARTITION TYPES", codes: ["ZA1", "ZA2"], proposals: [], reason: "seeded", confidence: "HIGH" } } });
+  if ((await prisma.wallType.count({ where: { companyId, code: "ZA1" } })) === 0) {
+    await prisma.wallType.create({ data: { companyId, code: "ZA1", name: "Partition to deck", defaultHeightFt: "15", sides: 2, components: { create: [{ description: "hang and finish", unit: "sq ft", basis: "BOARDED_SQFT" }] } } });
+  }
+  if ((await prisma.wallType.count({ where: { companyId, code: "ZA2" } })) === 0) {
+    await prisma.wallType.create({ data: { companyId, code: "ZA2", name: "Partition to ceiling", sides: 2 } });
+  }
+  const sheet = await prisma.takeoffPlanPage.create({ data: { planId: plan.id, pageNumber: 1, label: "A101", pageWidthPt: 2592 } });
+  const calibration = await prisma.takeoffScaleCalibration.create({ data: { pageId: sheet.id, x1: 0, y1: 0.1, x2: 1, y2: 0.1, declaredDistanceFeet: "144" } });
+  const groups = [
+    { tag: "ZA1", inches: 4.875, runs: [{ x1: 0.1, y1: 0.3, x2: 0.5, y2: 0.3 }, { x1: 0.5, y1: 0.3, x2: 0.5, y2: 0.5 }] },
+    { tag: "ZA2", inches: 3.625, runs: [{ x1: 0.2, y1: 0.6, x2: 0.5, y2: 0.6 }] },
+    { tag: null, inches: 6.125, runs: [{ x1: 0.6, y1: 0.2, x2: 0.7, y2: 0.2 }] },
+  ];
+  const at = new Date();
+  const untyped = await prisma.takeoffItem.create({ data: { companyId, jobId: job.id, name: "Walls — untyped", type: "LINEAR", colorHex: "#888888" }, select: { id: true } });
+  for (const g of groups) {
+    await prisma.takeoffWallProposal.create({
+      data: { pageId: sheet.id, calibrationId: calibration.id, thicknessInches: g.inches, createdAt: at, ...(g.tag === null ? { source: "REMAINDER" as const } : { source: "TAG" as const, sourceLabel: g.tag, namedCode: g.tag }), runs: g.runs.map((r) => ({ ...r, thicknessFeet: g.inches / 12 })) },
+    });
+    for (const r of g.runs) {
+      await prisma.takeoffMeasurement.create({ data: { pageId: sheet.id, calibrationId: calibration.id, kind: "LINEAR", source: "DETECTED", xs: [r.x1, r.x2], ys: [r.y1, r.y2], itemId: untyped.id, label: "wall, untyped" } });
+    }
+  }
+  return job.id;
+}
+
+test("accept all suggestions on A101: the card lists the two named groups, the tap types both and leaves the third", async () => {
+  const acceptJobId = await seedAcceptSheetJob();
+  const card = await ask(`accept all suggestions on A101 for ${ACCEPT_JOB}`, acceptSheetSuggestionsCommand, { jobName: ACCEPT_JOB, sheet: "A101" });
+  const panel = page.locator("[data-tour=ai-chat]");
+  await expect(panel.getByText(/Accepted 2 groups on A101/)).toBeVisible();
+  await expect.poll(() => prisma.takeoffItem.count({ where: { jobId: acceptJobId, wallType: { code: { in: ["ZA1", "ZA2"] } } } })).toBe(2);
+  await expect.poll(() => prisma.jobLineItem.count({ where: { jobId: acceptJobId, isDeleted: false, takeoffItem: { wallType: { code: "ZA1" } } } })).toBeGreaterThan(0);
+  // The group nothing names is still on "Walls — untyped".
+  const left = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId: acceptJobId, name: "Walls — untyped" }, select: { _count: { select: { measurements: true } } } });
+  expect(left._count.measurements).toBe(1);
+  await settled(card);
 });

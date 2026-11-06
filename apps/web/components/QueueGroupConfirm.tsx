@@ -51,6 +51,13 @@ export function QueueGroupConfirm({
 }) {
   const [pick, setPick] = useState<Guess | null>(suggested);
   const [typed, setTyped] = useState<string | null>(null);
+  // ── THE BOX HOLDS STILL ONCE SOMEBODY IS IN IT ──
+  // What it showed when it got focus (T or a tap). A pre-fill that arrives
+  // later — a save landing gives the type a height — must not change the box
+  // under the caret: fast-confirm's step 6 typed 9'-6" into a box that had
+  // just become 10'-0", and saved "10'-0"9'-6"". Picking a type or a zone
+  // clears it, so the height still follows the type picked.
+  const [frozen, setFrozen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const heightBox = useRef<HTMLInputElement>(null);
   // The zone picked, by its place in the type's list: picking another type starts over.
@@ -58,10 +65,12 @@ export function QueueGroupConfirm({
   const zones = heightOptions(pick?.code ?? null);
   const zone = zoneAt !== null && zoneAt.code === (pick?.code ?? null) ? (zones[zoneAt.at] ?? null) : null;
   const height = zone ?? heightOf(pick?.code ?? null);
-  const heightText = typed ?? (height === null ? "" : feetLabel(height.feet));
+  const offered = height === null ? "" : feetLabel(height.feet);
+  const heightText = typed ?? frozen ?? offered;
   const takeZone = (at: number) => {
     setError(null);
     setTyped(null);
+    setFrozen(null);
     setZoneAt({ code: pick?.code ?? null, at });
   };
   const choosing = codes.length > 0;
@@ -89,6 +98,7 @@ export function QueueGroupConfirm({
   }
   const choose = (code: string) => {
     setError(null);
+    setFrozen(null);
     setPick(code === suggested?.code ? suggested : { code, from: "picked by you" });
   };
 
@@ -148,6 +158,7 @@ export function QueueGroupConfirm({
           placeholder="none"
           aria-label="Height (T)"
           data-takeoff="queue-height"
+          onFocus={() => setFrozen((was) => was ?? offered)}
           onChange={(event) => setTyped(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") event.currentTarget.blur();
