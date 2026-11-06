@@ -84,7 +84,7 @@ import {
 import { loadAlerts } from "@/lib/alerts-query";
 import { summarizeAlerts } from "@/lib/alerts";
 import { resolveJob } from "./resolve";
-import { wallScope } from "@/lib/estimating/takeoff-item-lines";
+import { wallScopeParts } from "@/lib/estimating/takeoff-item-lines";
 import { loadReviewQueue } from "@/lib/takeoff/reviewQueueQuery";
 import { sameCode } from "@/lib/takeoff/legendMerge";
 import type { ReviewItem } from "@/lib/takeoff/reviewQueue";
@@ -5068,10 +5068,11 @@ async function wallSchedule(companyId: string, input: Input): Promise<ToolResult
 /**
  * ── TWO READS OVER THE GUIDED TAKEOFF: HOW MUCH OF A TYPE, AND WHAT IS LEFT ──
  *
- * `takeoff_quantities` is the proposal's scope by wall type (`wallScope`), the
+ * `takeoff_quantities` is the takeoff's walls by type (`wallScopeParts`), the
  * same items, heights, sides and openings the estimate lines are priced from,
- * so "how many feet of S6A on Baker" cannot disagree with the GC's page or the
- * bid. `wall_schedule` reads the older hand-entered wall runs and is not this.
+ * each row saying whether it is in the price (`inPrice`): the GC's page lists
+ * the priced ones only, so "how many feet of S6A on Baker" cannot disagree with
+ * it or the bid. `wall_schedule` reads the older hand-entered wall runs and is not this.
  *
  * `takeoff_review` is the job's review queue (`loadReviewQueue`), the one the
  * stepper counts, summed by kind and sheet. Both are reads; nothing here
@@ -5093,13 +5094,17 @@ async function takeoffQuantities(companyId: string, input: Input): Promise<ToolR
   const job = await takeoffJob(companyId, input.jobName);
   if ("data" in job) return job;
   const citations = [{ label: "Jobs", href: "/jobs" }, { label: `${job.name} — takeoff`, href: `/jobs/${job.id}/takeoff` }];
-  const rows = await prisma.$transaction((tx) => wallScope(tx, companyId, job.id));
-  const all = rows.map((row) => ({
+  // Every measured wall, each saying whether it is in the price: the GC's scope
+  // reads only the priced ones (a type with no parts prices nothing).
+  const parts = await prisma.$transaction((tx) => wallScopeParts(tx, companyId, job.id));
+  const rows = [...parts.priced.map((row) => ({ row, inPrice: true })), ...parts.unpriced.map((row) => ({ row, inPrice: false }))];
+  const all = rows.map(({ row, inPrice }) => ({
     wallType: row.code ?? "no type yet",
     name: row.name,
     linearFeet: Math.round(row.linearFt),
     squareFeet: row.squareFeet === null ? null : Math.round(row.squareFeet),
     heightFt: row.heightFt,
+    inPrice,
   }));
   if (all.length === 0) {
     return { data: { job: job.name, wallTypes: [] }, citations, unavailable: `Nothing is measured on ${job.name}'s takeoff yet. Run the takeoff first.` };
