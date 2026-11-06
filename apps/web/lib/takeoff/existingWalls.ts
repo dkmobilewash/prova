@@ -33,7 +33,7 @@ import type { StrokeSegment, WallCandidate } from "./wallVectors";
  *   4. GREY AGAINST THE SHEET'S BLACK, where no legend row names the pen: on
  *      a sheet that says it shows existing work (`renovationMarks`), whose
  *      walls are mostly drawn dark, a wall whose faces are nearly all grey
- *      (`GREY_FACE_SHARE`). Still not grey alone — the sheet's words and its
+ *      (`GREY_COVER`, `DARK_COVER_MAX`). Still not grey alone — the sheet's words and its
  *      own new-wall pen must both say so. Measured 2026-11-06: training 920
  *      ft junk / 29 real (worst Baker −29), held-out once 766 / 71.
  *
@@ -56,8 +56,10 @@ export const PEN_WIDTH_RATIO = 1.25;
 export const PEN_FACE_SHARE = 0.6;
 /** A screened pen: grey at least this light (0 black, 1 white) — `existingMarks`'s own cut. */
 export const GREY_PEN = 0.3;
-/** Share of a wall's face strokes, by length, that must be grey for route 3. */
-export const GREY_FACE_SHARE = 0.8;
+/** Route 3: share of a wall's LENGTH its grey faces must cover, overlaps merged. */
+export const GREY_COVER = 0.6;
+/** Route 3: share of a wall's length its DARK faces may cover — a wall drawn black is new, whatever grey lies on it. */
+export const DARK_COVER_MAX = 0.2;
 /** A face stroke sits this close to the wall's face line, in feet (as `dashedFaces`). */
 const ON_FACE_FEET = 0.25;
 
@@ -225,6 +227,23 @@ export function faceStrokes(wall: WallCandidate, side: 1 | -1, segments: readonl
 
 const length = (s: { x1: number; y1: number; x2: number; y2: number }) => Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
 
+/** Share of the wall's length the strokes cover, projected onto it with overlaps merged. */
+function alongCover(wall: WallCandidate, strokes: readonly StrokeSegment[]): number {
+  const l = length(wall);
+  if (l === 0) return 0;
+  const ux = (wall.x2 - wall.x1) / l, uy = (wall.y2 - wall.y1) / l;
+  const spans = strokes
+    .map((s) => {
+      const a = (s.x1 - wall.x1) * ux + (s.y1 - wall.y1) * uy, b = (s.x2 - wall.x1) * ux + (s.y2 - wall.y1) * uy;
+      return [Math.max(0, Math.min(a, b)), Math.min(l, Math.max(a, b))] as const;
+    })
+    .filter(([lo, hi]) => hi > lo)
+    .sort((p, q) => p[0] - q[0]);
+  let covered = 0, end = 0;
+  for (const [lo, hi] of spans) if (hi > end) { covered += hi - Math.max(lo, end); end = hi; }
+  return covered / l;
+}
+
 /** True when at least `PEN_FACE_SHARE` of the wall's face strokes, by length, carry the pen. */
 export function drawnWithPen(wall: WallCandidate, pen: Pen, segments: readonly StrokeSegment[], feetPerUnit: number): boolean {
   const faces = [...faceStrokes(wall, 1, segments, feetPerUnit), ...faceStrokes(wall, -1, segments, feetPerUnit)];
@@ -320,7 +339,8 @@ export function existingWalls(input: {
   // existing walls screened: Baker's A100 draws its new walls black and the
   // building that stays in grey. Not grey alone: the sheet must say it shows
   // existing work (`renovationMarks`), most of its walls must be drawn dark,
-  // and the wall's own faces must be nearly all grey (`GREY_FACE_SHARE`).
+  // and the wall must be drawn grey along most of its length and dark along
+  // almost none of it (`GREY_COVER`, `DARK_COVER_MAX`).
   // Training renovation sheets, cleaned keys: 1,214 ft junk to 55 ft real.
   if (pens.existing === null && showsExistingWork(renovationMarks(input.textItems.map((t) => t.str).join(" ")))) {
     const modal = modalWallPen(walls, segments, feetPerUnit);
@@ -328,9 +348,13 @@ export function existingWalls(input: {
       for (const w of walls) {
         if (found.has(w)) continue;
         const faces = [...faceStrokes(w, 1, segments, feetPerUnit), ...faceStrokes(w, -1, segments, feetPerUnit)];
-        const total = faces.reduce((n, f) => n + length(f), 0);
-        const grey = faces.filter((f) => (f.gray ?? 0) >= GREY_PEN).reduce((n, f) => n + length(f), 0);
-        if (total > 0 && grey / total >= GREY_FACE_SHARE) found.set(w, { wall: w, route: "grey", why: "drawn grey where the sheet draws its walls black, on a sheet that shows existing work" });
+        // BY HOW MUCH OF THE WALL IS COVERED, overlaps merged — never by summed
+        // stroke length: Baker A101's new partition is drawn black end to end
+        // under a grey hatch of 244 short overlapping pieces, 302 ft of grey on
+        // a 29 ft wall, and a sum called that wall grey.
+        const grey = alongCover(w, faces.filter((f) => (f.gray ?? 0) >= GREY_PEN));
+        const dark = alongCover(w, faces.filter((f) => (f.gray ?? 0) < GREY_PEN));
+        if (grey >= GREY_COVER && dark <= DARK_COVER_MAX) found.set(w, { wall: w, route: "grey", why: "drawn grey where the sheet draws its walls black, on a sheet that shows existing work" });
       }
     }
   }
