@@ -10,6 +10,7 @@ import { storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "./shared";
 import { addWallTypeFromLegend } from "./wallLegend";
 import { syncDecidedItems } from "@/lib/estimating/takeoff-item-lines";
+import { sameRunAs } from "@/lib/takeoff/runMatch";
 
 /**
  * ── "SET TYPE": THE ESTIMATOR NAMES WHAT THE DRAWING DID NOT ──
@@ -222,7 +223,9 @@ async function typeGroup(context: Awaited<ReturnType<typeof requireCompanyContex
     const label = `${wallType.code} wall (set by hand)`;
     const data = [];
     for (const run of runs) {
-      const at = posted.filter((m) => m.xs.length === 2 && m.xs[0] === run.x1 && m.xs[1] === run.x2 && m.ys[0] === run.y1 && m.ys[1] === run.y2);
+      // The run already on the job, found again by a re-run a hair off (`sameRunAs`):
+      // matched exactly, it was written a second time and the wall counted twice.
+      const at = posted.filter((m) => sameRunAs(run, m.xs, m.ys));
       if (at.length === 0) {
         data.push({ pageId: page.id, calibrationId: page.calibrations[0]?.id ?? null, kind: "LINEAR" as const, xs: [run.x1, run.x2], ys: [run.y1, run.y2], label, source: "DETECTED" as const, itemId, createdByUserId: context.id });
         continue;
@@ -271,7 +274,7 @@ export async function clearWallGroupType(
       where: { pageId: page.id, kind: "LINEAR", source: "DETECTED", itemId: { not: null }, item: { name: { not: UNTYPED_ITEM } } },
       select: { id: true, xs: true, ys: true, itemId: true, label: true },
     });
-    const ours = posted.filter((m) => m.xs.length === 2 && runs.some((r) => m.xs[0] === r.x1 && m.xs[1] === r.x2 && m.ys[0] === r.y1 && m.ys[1] === r.y2));
+    const ours = posted.filter((m) => runs.some((r) => sameRunAs(r, m.xs, m.ys)));
     if (ours.length === 0) return [];
     const untyped = await untypedItem(tx, companyId, jobId);
     await tx.takeoffMeasurement.updateMany({ where: { id: { in: ours.map((m) => m.id) } }, data: { itemId: untyped, label: "wall, untyped" } });

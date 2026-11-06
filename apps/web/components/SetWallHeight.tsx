@@ -7,11 +7,14 @@ import { feetLabel, type HeightOption } from "@/lib/takeoff/wallHeight";
 /**
  * ── "SET HEIGHT", FOR A WALL GROUP WITH NONE ──
  *
- * One press per figure the job already has — the ceiling over the rooms the
- * walls bound, the type's legend height — or a typed one (`10'-0"`, `10.5`).
+ * One press per figure the job already has — the type's legend height, the
+ * set's general note, the ceiling over the rooms the walls bound, in that
+ * order (`heightOptionsInOrder`) — or a typed one (`10'-0"`, `10.5`).
  * Whatever is chosen goes on the group's item for the whole job
  * (`setWallGroupHeight`); `onSet` returns a sentence when it did not save.
  */
+const OPTION_WORDS: Record<HeightOption["kind"], string> = { legend: "Legend", note: "General note", ceiling: "Ceiling" };
+
 export function SetWallHeight({
   options,
   onSet,
@@ -40,16 +43,16 @@ export function SetWallHeight({
       <span className="text-xs text-ink-muted">Set height</span>
       {options.map((option) => (
         <button
-          key={option.kind}
+          key={`${option.kind}:${option.feet}`}
           type="button"
           className={button}
           disabled={busy}
           title={option.from}
-          aria-label={`Set the height of ${name} to ${feetLabel(option.feet)}, from the ${option.kind === "ceiling" ? "ceiling" : "legend"}`}
+          aria-label={`Set the height of ${name} to ${feetLabel(option.feet)}, from the ${OPTION_WORDS[option.kind].toLowerCase()}`}
           data-takeoff={`set-height-${option.kind}`}
           onClick={() => void set(option.feet)}
         >
-          {option.kind === "ceiling" ? "Ceiling" : "Legend"} {feetLabel(option.feet)}
+          {OPTION_WORDS[option.kind]} {feetLabel(option.feet)}
         </button>
       ))}
       <form

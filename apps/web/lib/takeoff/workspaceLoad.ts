@@ -1,4 +1,5 @@
 import { ensureSheetNames, pairingsForPlan } from "./priorPlanLoad";
+import { storedGeneralHeight } from "./levelReads";
 import { openingsFromJson } from "@/lib/wall-assemblies";
 import { openingThresholdSqFt } from "@/lib/businessScope";
 import { legendOption, legendOptions } from "@/lib/takeoff/wallHeight";
@@ -763,6 +764,8 @@ export async function loadTakeoffWorkspace(
             : Number(component.catalogEntry.defaultUnitPrice),
       })),
     })),
+    /** The set's sheet-wide height rule ("all walls to deck"), for the panel's Set height in the queue's order (`heightOptionsInOrder`). */
+    generalHeight: await storedGeneralHeight(plan.id),
     viewerWallTypes: allWallTypes.map((type) => ({
       id: type.id,
       code: type.code,

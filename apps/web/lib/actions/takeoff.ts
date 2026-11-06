@@ -11,7 +11,8 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { isBlank, labelFromKey, parseNumericInput } from "@/lib/numeric-input";
 import { effectiveSheetNumber, effectiveTitle, type SheetRow } from "@/lib/plan-ingest/sheetIndex";
-import { areaOfTitle, isWholeFloorTitle } from "@/lib/plan-ingest/walls";
+import { areaOfTitle, isWholeFloorTitle, roomsNoteFor } from "@/lib/plan-ingest/walls";
+import { roomsForSheet } from "@/lib/plan-ingest/rooms";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { levelFromTitle } from "@/lib/plan-ingest/sheetLevel";
 import { requireCompanyContext } from "@/lib/auth";
@@ -721,6 +722,7 @@ export async function confirmSheetScales(
  * on their type's item, the rest on "Walls — untyped" for the review queue.
  * A sheet with walls already on the job is left as it is, so pressing it
  * again never counts a wall twice (new-customer run v2, M3: it added nothing).
+ * Then the sheet's rooms, ceilings and windows, as the whole-set run does.
  */
 export async function postSheetWalls(jobId: string, planId: string, pageNumber: number): Promise<ActionResultWith<{ note: string | null; waiting: boolean }>> {
   const context = await requireCompanyContext();
@@ -744,9 +746,21 @@ export async function postSheetWalls(jobId: string, planId: string, pageNumber: 
   if (outcome.kind === "skipped" && outcome.why === "no walls found" && Date.now() - scaledAt < FINDER_WAIT_MS) {
     return { ok: true, value: { note: null, waiting: true } };
   }
+  let note = outcome.kind === "written" ? wallItemsNoteFor(outcome) : null;
+  // ── THEN ITS ROOMS, CEILINGS AND WINDOWS, AS THE WHOLE-SET RUN DOES ──
+  // Walk v7 ran the sheet from here and its bid had no windows item, no
+  // ceiling and no openings off the boards, where v6's whole-set run had all
+  // three (`postAndRooms` in walls.ts). Same step, same switches, no model.
+  if (outcome.kind === "written") {
+    // The note names what was found; a skip or failure is for the log, not the
+    // person (the walls are on the job either way, and the whole-set run can retry).
+    const rooms = await roomsForSheet({ planId, companyId: context.company.id, jobId, pageNumber, userId: context.id }).catch((error) => ({ kind: "failed" as const, error: String(error) }));
+    if (rooms.kind === "written") note = `${note}; ${roomsNoteFor(rooms)}`;
+    else if (rooms.kind === "failed") console.error("[postSheetWalls] rooms after walls failed", { planId, pageNumber, error: rooms.error });
+  }
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath(`/takeoff/${jobId}`);
-  return { ok: true, value: { note: outcome.kind === "written" ? wallItemsNoteFor(outcome) : null, waiting: false } };
+  return { ok: true, value: { note, waiting: false } };
 }
 
 /** How long after a scale is saved its finder may still be storing the walls. Walk v6 took 42 s with six sheets at once. */
