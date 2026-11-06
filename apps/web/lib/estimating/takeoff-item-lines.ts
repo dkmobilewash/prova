@@ -520,6 +520,21 @@ function feetAcross(calibration: {
  * run left and joined are synced, and only once Send to estimate has put
  * takeoff lines there; before that the estimate is not this decision's to start.
  */
+/**
+ * ── A WALL GROUP'S TYPE AND HEIGHT, DECIDED: ITS LINE, NOW ──
+ *
+ * The review queue's Enter (type + height) and Set height write or update the
+ * estimate lines of the items they touched, with no waiting for Send to
+ * estimate: the new-customer walk v3 reviewed every group of Baker and ended
+ * with 0 lines, a $0 bid and Next still saying "Put the takeoff on the
+ * estimate". Only these items, never the whole takeoff — Chrome round 5's
+ * 0 → 11 lines came from one decision running the job's whole sync.
+ */
+export async function syncDecidedItems(tx: Tx, companyId: string, jobId: string, itemIds: readonly (string | null)[]): Promise<void> {
+  const ids = new Set(itemIds.filter((id): id is string => id !== null));
+  if (ids.size > 0) await syncTakeoffItemLines(tx, companyId, jobId, ids);
+}
+
 export async function syncReviewedItems(tx: Tx, companyId: string, jobId: string, itemIds: readonly (string | null)[]): Promise<void> {
   const sent = await tx.jobLineItem.count({ where: { jobId, takeoffItemId: { not: null } } });
   if (sent === 0) return;
