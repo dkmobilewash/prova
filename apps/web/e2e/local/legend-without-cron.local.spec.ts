@@ -52,7 +52,12 @@ test.describe("a new company's wall legend, read with the page open", () => {
 
   test("1. a fresh company with plan reading on, and a job", async () => {
     const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY ?? "" });
-    await clerk.users.createUser({ emailAddress: [EMAIL], firstName: "Legend", lastName: "Walk", skipPasswordRequirement: true });
+    // The development instance requires a username and a phone (walk v2, O1): a Clerk test number nobody holds.
+    const free = Array.from({ length: 99 }, (_, i) => `+120155501${String(i + 1).padStart(2, "0")}`).sort(() => Math.random() - 0.5);
+    let phone = "";
+    for (const candidate of free) if ((await clerk.users.getUserList({ phoneNumber: [candidate] })).totalCount === 0) { phone = candidate; break; }
+    expect(phone, "every Clerk test number is taken; delete some walk users").not.toBe("");
+    await clerk.users.createUser({ emailAddress: [EMAIL], phoneNumber: [phone], username: `legend${Date.now()}`, firstName: "Legend", lastName: "Walk", skipPasswordRequirement: true });
     await signInAs(page, EMAIL);
     await page.goto("/dashboard");
     const user = await expect.poll(async () => prisma.user.findFirst({ where: { email: EMAIL }, select: { companyId: true } }), { timeout: 60_000 }).not.toBeNull().then(() => prisma.user.findFirstOrThrow({ where: { email: EMAIL }, select: { companyId: true } }));
