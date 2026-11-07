@@ -1,4 +1,4 @@
-import { clusterByThickness, type StrokeSegment, type WallCandidate } from "./wallVectors";
+import { clusterByThickness, segmentGeometry, type StrokeSegment, type WallCandidate } from "./wallVectors";
 import type { FoundOnSheet } from "./findWallsOnSheet";
 import { planTextTagByRun, siblingTag } from "./planTextTags";
 import { MIN_VOTES } from "./planCompare";
@@ -72,6 +72,7 @@ export function hatchedRuns(walls: readonly WallCandidate[], strokes: readonly S
   if (!(feetPerUnit > 0)) return out;
   const steepest = Math.cos((HATCH_MAX_DEGREES * Math.PI) / 180), shallowest = Math.cos((HATCH_MIN_DEGREES * Math.PI) / 180);
   const slack = 1 / 12 / feetPerUnit;
+  const geometry = segmentGeometry(strokes);
   for (const w of walls) {
     if (w.curved) continue;
     const dx = w.x2 - w.x1, dy = w.y2 - w.y1, len = Math.hypot(dx, dy);
@@ -83,11 +84,22 @@ export function hatchedRuns(walls: readonly WallCandidate[], strokes: readonly S
       const along = px * ux + py * uy, across = Math.abs(px * -uy + py * ux);
       return along >= -slack && along <= len + slack && across <= half;
     };
+    // The band's bounding box: a stroke `inside` must have both ends in it, so
+    // one end outside is refused before the rotated test — never a different answer.
+    const cx = [-slack, len + slack].flatMap((a) => [-half, half].map((c) => w.x1 + a * ux - c * uy));
+    const cy = [-slack, len + slack].flatMap((a) => [-half, half].map((c) => w.y1 + a * uy + c * ux));
+    // A hair wider than the band, so rounding at its edge can only let a stroke through to the exact test.
+    const eps = 1e-9;
+    const minX = Math.min(...cx) - eps, maxX = Math.max(...cx) + eps, minY = Math.min(...cy) - eps, maxY = Math.max(...cy) + eps;
+    const inBox = (x: number, y: number) => x >= minX && x <= maxX && y >= minY && y <= maxY;
     const angles: number[] = [], along: number[] = [];
-    for (const s of strokes) {
+    for (let k = 0; k < strokes.length; k += 1) {
+      const s = strokes[k];
       if (s.curved) continue;
-      const sx = s.x2 - s.x1, sy = s.y2 - s.y1, sl = Math.hypot(sx, sy);
+      const sl = geometry.length[k];
       if (sl === 0 || sl > 4 * half) continue;
+      if (!inBox(s.x1, s.y1) || !inBox(s.x2, s.y2)) continue;
+      const sx = s.x2 - s.x1, sy = s.y2 - s.y1;
       const cos = Math.abs((sx * ux + sy * uy) / sl);
       if (cos > shallowest || cos < steepest) continue;
       // Direction without sense, 0–180°.
