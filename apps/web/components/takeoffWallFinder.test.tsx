@@ -354,7 +354,7 @@ describe("the ghost lines over the sheet", () => {
     // once guarded from the other end — marks repeating past `DISTINCT_MARKS`
     // with nothing said — is answered by the notice the panel shows whenever
     // the list is that long, pinned below.
-    expect(code).toMatch(/shownGroups\s*=\s*found \?\? \[\]/);
+    expect(code).toMatch(/shownGroups\s*=\s*\(found \?\? \[\]\)\.flatMap\(/);
     expect(code).toMatch(/\{found\.length > DISTINCT_MARKS && \(/);
   });
 

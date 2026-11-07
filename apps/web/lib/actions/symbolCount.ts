@@ -104,7 +104,13 @@ export async function saveSymbolCountAcrossSheets(jobId: string, planId: string,
  * type's count item ("Windows — A"), and the suggestion is marked decided so a
  * re-run never offers it again. Keeping none is a decision too: nothing posts.
  */
-export async function confirmWindows(jobId: string, planId: string, pageNumber: number, kept: readonly number[]): Promise<ActionResult> {
+/**
+ * What Undo needs to take a window confirm back (Chrome on Baker: "Confirm 9" could
+ * not be undone): the counts it wrote, and the count items it made for them.
+ */
+export type WindowsUndo = { measurements: string[]; items: string[] };
+
+export async function confirmWindows(jobId: string, planId: string, pageNumber: number, kept: readonly number[]): Promise<ActionResultWith<{ undo: WindowsUndo }>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company, id: userId } = context;
@@ -114,7 +120,7 @@ export async function confirmWindows(jobId: string, planId: string, pageNumber: 
   const read = await prisma.takeoffPlanTextRead.findUnique({ where, select: { value: true } });
   const stored = storedWindowsOf(read?.value);
   if (stored === null) return actionFail("Those windows are no longer suggested on this sheet. Reload the page.");
-  if (stored.decided) return actionOk;
+  if (stored.decided) return { ok: true, value: { undo: { measurements: [], items: [] } } };
   if (!kept.every((i) => Number.isInteger(i) && stored.windows[i] !== undefined)) return actionFail("Those windows did not come through. Reload the page.");
   // ponytail: decided is claimed before the counts are written, so a double submit posts once; a failure after it needs the counts redone by hand.
   await prisma.takeoffPlanTextRead.update({ where, data: { value: { ...stored, decided: true } } });
@@ -124,6 +130,8 @@ export async function confirmWindows(jobId: string, planId: string, pageNumber: 
     update: {},
     select: { id: true, calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } } },
   });
+  const itemsBefore = new Set((await prisma.takeoffItem.findMany({ where: { jobId, companyId: company.id }, select: { id: true } })).map((i) => i.id));
+  const undo: WindowsUndo = { measurements: [], items: [] };
   const byTag = new Map<string, { xs: number[]; ys: number[] }>();
   for (const i of new Set(kept)) {
     const w = stored.windows[i]!;
@@ -134,10 +142,49 @@ export async function confirmWindows(jobId: string, planId: string, pageNumber: 
   }
   for (const [tag, at] of byTag) {
     const label = windowItemName(tag);
-    await prisma.takeoffMeasurement.create({
-      data: { itemId: await countItemFor(company.id, jobId, label), pageId: page.id, calibrationId: page.calibrations[0]?.id ?? null, kind: "COUNT", xs: at.xs, ys: at.ys, label, createdByUserId: userId },
+    const itemId = await countItemFor(company.id, jobId, label);
+    const made = await prisma.takeoffMeasurement.create({
+      data: { itemId, pageId: page.id, calibrationId: page.calibrations[0]?.id ?? null, kind: "COUNT", xs: at.xs, ys: at.ys, label, createdByUserId: userId },
+      select: { id: true },
     });
+    undo.measurements.push(made.id);
+    if (itemId !== null && !itemsBefore.has(itemId) && !undo.items.includes(itemId)) undo.items.push(itemId);
   }
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
+  return { ok: true, value: { undo } };
+}
+
+/**
+ * ── UNDO FOR A WINDOW CONFIRM ──
+ *
+ * The counts it wrote go, a count item it made goes when it is left with no count
+ * and no live estimate line, and the sheet's windows are offered again. The undo
+ * is a claim from the browser, so only counts on this job's sheet and items of
+ * this job are touched.
+ */
+export async function undoConfirmWindows(jobId: string, planId: string, pageNumber: number, undo: WindowsUndo): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+  const plan = await prisma.takeoffPlan.findFirst({ where: { id: planId, jobId, companyId: company.id }, select: { id: true } });
+  if (!plan) return actionFail("That plan is no longer on this job. Reload the page.");
+  const ids = (Array.isArray(undo?.measurements) ? undo.measurements : []).filter((id): id is string => typeof id === "string");
+  const items = (Array.isArray(undo?.items) ? undo.items : []).filter((id): id is string => typeof id === "string");
+  const where = { planId_pageNumber_kind: { planId: plan.id, pageNumber, kind: WINDOWS_SUGGESTED } };
+  await prisma.$transaction(async (tx) => {
+    await tx.takeoffMeasurement.deleteMany({ where: { id: { in: ids }, kind: "COUNT", page: { planId: plan.id, pageNumber } } });
+    for (const id of items) {
+      const item = await tx.takeoffItem.findFirst({ where: { id, jobId, companyId: company.id, type: "COUNT" }, select: { id: true } });
+      if (item === null) continue;
+      const counts = await tx.takeoffMeasurement.count({ where: { itemId: id } });
+      const lines = await tx.jobLineItem.count({ where: { takeoffItemId: id, isDeleted: false } });
+      if (counts === 0 && lines === 0) await tx.takeoffItem.delete({ where: { id } });
+    }
+    const read = await tx.takeoffPlanTextRead.findUnique({ where, select: { value: true } });
+    const stored = storedWindowsOf(read?.value);
+    if (stored !== null && stored.decided) await tx.takeoffPlanTextRead.update({ where, data: { value: { ...stored, decided: false } } });
+  });
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
   return actionOk;
