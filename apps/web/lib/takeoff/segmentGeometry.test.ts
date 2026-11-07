@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { angleOf, lengthOf, segmentGeometry, type StrokeSegment } from "./wallVectors";
 
@@ -26,15 +25,5 @@ describe("each stroke's direction and length, computed once per array (ELEVEN03:
     const after = segmentGeometry(grown);
     expect(after).not.toBe(before);
     expect(after.length[4]).toBe(7);
-  });
-});
-
-describe("Run takeoff gives the server a turn between its heavy phases", () => {
-  it("yields before the finder, before the set-asides and before the grouping", () => {
-    const source = readFileSync(new URL("./detectWallsForCalibration.ts", import.meta.url), "utf8").replace(/\/\/.*$/gm, "");
-    expect(source).toMatch(/await yieldToRequests\(\);\s*const detected = detectForSheet\(/);
-    expect(source).toMatch(/await yieldToRequests\(\);\s*let offered = offer\(\);/);
-    expect(source).toMatch(/await yieldToRequests\(\);\s*const found = \{ \.\.\.detected\.found/);
-    expect(source).toMatch(/function yieldToRequests\(\): Promise<void> \{\s*return new Promise\(\(resolve\) => setImmediate\(resolve\)\);/);
   });
 });

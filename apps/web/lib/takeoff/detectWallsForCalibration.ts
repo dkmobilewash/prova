@@ -259,13 +259,6 @@ export async function detectWallsForCalibration(
     const pairWithThicknesses = target.pairWithThicknesses !== false;
     const pairings: WallCandidate[] = [];
     const scored: ScoredPairing[] = [];
-    // ── LET THE SERVER BREATHE BETWEEN THE HEAVY PHASES ──
-    // Each phase is synchronous CPU work — on ELEVEN03 A4.B.2 the finder alone
-    // is seconds — and a whole set runs dozens of sheets back to back. Without
-    // a turn of the event loop between phases every request queued behind them
-    // waits for the whole sheet (86 s lost in 463 s on ELEVEN03). Changes no
-    // result: the same calls in the same order, with a turn in between.
-    await yieldToRequests();
     const detected = detectForSheet({
       segments: strokes.segments,
       textItems,
@@ -314,7 +307,6 @@ export async function detectWallsForCalibration(
         ...(user === null ? {} : { user }),
         ...(priorPlan === undefined ? {} : { priorPlan }),
       });
-    await yieldToRequests();
     let offered = offer();
     // ── PLAN COMPARISON, ON A PAIRED SHEET WITH THE COMPANY'S SWITCH ON — see `priorPlan.ts` ──
     //
@@ -357,7 +349,6 @@ export async function detectWallsForCalibration(
       }
       target.onBoundary({ pairings, segments: detected.found.inUnits, held });
     }
-    await yieldToRequests();
     const found = { ...detected.found, walls: offered.offeredRuns, groups: detected.found.regroup(offered.offeredRuns) };
     // The groups: the finder's own when it paired with the thicknesses, else
     // rebuilt here with them — same runs, same feet, named with the types.
@@ -523,9 +514,4 @@ export function detectWallsAfterResponse(target: DetectTarget): void {
   } catch {
     // Not in a request scope. See above.
   }
-}
-
-/** One turn of the event loop, so requests queued behind a heavy phase run before the next. */
-function yieldToRequests(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
 }
