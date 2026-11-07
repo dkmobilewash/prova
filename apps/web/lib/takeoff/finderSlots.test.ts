@@ -82,3 +82,30 @@ describe("wall finders", () => {
     await Promise.all([running, ...queued]);
   });
 });
+
+describe("a background finder waits for a quiet moment", () => {
+  it("DOES NOT START WHILE A PERSON'S ACTION IS IN FLIGHT, nor right after; an urgent one does (ELEVEN03: Accept all starved past a minute)", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "Date"] });
+    try {
+      const { asUserWork } = await import("./detectWallsForCalibration");
+      const started: string[] = [];
+      const action = gate();
+      const accepting = asUserWork(() => action.shut);
+      const background = oneFinderSlot(async () => void started.push("background"), "plan:7");
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(started).toEqual([]);
+      // An urgent one (a whole-set run's sheet) starts beside the waiting holder.
+      await oneFinderSlot(async () => void started.push("urgent"), "plan:8", true);
+      expect(started).toEqual(["urgent"]);
+      action.open();
+      await accepting;
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(started).toEqual(["urgent"]);
+      await vi.advanceTimersByTimeAsync(1_500);
+      await background;
+      expect(started).toEqual(["urgent", "background"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

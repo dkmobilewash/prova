@@ -525,24 +525,75 @@ const FINDERS_AT_ONCE = 1;
 // finders from the job page's bundle and Run takeoff asks to hurry one from the
 // workspace's, and with module state those were two different queues — the hurry
 // found nothing and A3.2 waited its turn (ELEVEN03: 102 s).
-const slots = ((globalThis as unknown as { __provaFinderSlots?: { running: number; waiting: { key: string | null; go: () => void }[] } }).__provaFinderSlots ??= { running: 0, waiting: [] });
+type FinderSlots = { running: number; waiting: { key: string | null; go: (hurried: boolean) => void }[]; userWork: number; lastUserWork: number; holderQuietWaiting: boolean };
+const slots = ((globalThis as unknown as { __provaFinderSlots?: FinderSlots }).__provaFinderSlots ??= { running: 0, waiting: [], userWork: 0, lastUserWork: 0, holderQuietWaiting: false });
+
+/**
+ * ── A BACKGROUND FINDER WAITS FOR A QUIET MOMENT ──
+ *
+ * A finder is one synchronous call of 10–20 s on a big sheet, and nothing else on
+ * the server runs meanwhile. Started between the database calls of an Accept all,
+ * one after another, they starved it past a minute (ELEVEN03, 15 groups). So a
+ * finder started after a scale save does not start while a person's action is in
+ * flight, nor for `QUIET_MS` after one (the page refresh that follows). It cannot
+ * stop one already running — that is the finder's own speed.
+ */
+const QUIET_MS = 2_000;
+export function beginUserWork(): { end: () => void } {
+  slots.userWork += 1;
+  let ended = false;
+  return {
+    end: () => {
+      if (ended) return;
+      ended = true;
+      slots.userWork -= 1;
+      slots.lastUserWork = Date.now();
+    },
+  };
+}
+export async function asUserWork<T>(work: () => Promise<T>): Promise<T> {
+  const working = beginUserWork();
+  try {
+    return await work();
+  } finally {
+    working.end();
+  }
+}
+async function quietMoment(): Promise<void> {
+  while (slots.userWork > 0 || Date.now() - slots.lastUserWork < QUIET_MS) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}
 const findersWaiting = slots.waiting;
 export async function oneFinderSlot<T>(work: () => Promise<T>, key: string | null = null, urgent = false): Promise<T> {
+  let hurried = false;
   // A finished finder hands its slot straight to the next in line, so a new
   // arrival can never slip in between and make it three.
-  if (slots.running >= FINDERS_AT_ONCE) {
+  if (urgent && slots.running >= FINDERS_AT_ONCE && slots.holderQuietWaiting) {
+    // The holder is only waiting for quiet and holds no sheet: an urgent one starts beside it.
+    slots.running += 1;
+  } else if (slots.running >= FINDERS_AT_ONCE) {
     await new Promise<void>((resolve) => {
       // An urgent one (a whole-set run's sheet, on a deadline) goes to the front.
-      if (urgent) findersWaiting.unshift({ key, go: resolve });
-      else findersWaiting.push({ key, go: resolve });
+      const go = (asked: boolean) => ((hurried = asked), resolve());
+      if (urgent) findersWaiting.unshift({ key, go });
+      else findersWaiting.push({ key, go });
     });
   } else slots.running += 1;
+  if (!urgent && !hurried) {
+    slots.holderQuietWaiting = true;
+    try {
+      await quietMoment();
+    } finally {
+      slots.holderQuietWaiting = false;
+    }
+  }
   try {
     return await work();
   } finally {
     // Over the limit (a hurried one ran beside it): this slot ends rather than passing on.
     const next = slots.running > FINDERS_AT_ONCE ? undefined : findersWaiting.shift();
-    if (next) next.go();
+    if (next) next.go(false);
     else slots.running -= 1;
   }
 }
@@ -559,7 +610,7 @@ export function hurryFinder(planId: string, pageNumber: number): boolean {
   // ELEVEN03's 27.6 s): one extra finder, only for the sheet somebody is waiting on.
   const [entry] = findersWaiting.splice(at, 1);
   slots.running += 1;
-  entry!.go();
+  entry!.go(true);
   return true;
 }
 

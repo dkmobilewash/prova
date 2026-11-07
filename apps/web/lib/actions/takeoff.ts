@@ -21,7 +21,7 @@ import type { Opening, TakeoffLine } from "@/lib/takeoff";
 import { recipeCostCategory, recipeLines, type RecipeArgs, type RecipeInput } from "@/lib/takeoff-recipes";
 import { documentUrlProblem } from "@/lib/document-uploads";
 import { parseFeetInches } from "@/lib/feet-inches";
-import { detectWallsAfterResponse, hurryFinder } from "@/lib/takeoff/detectWallsForCalibration";
+import { beginUserWork, detectWallsAfterResponse, hurryFinder } from "@/lib/takeoff/detectWallsForCalibration";
 import {
   calibrationNotices,
   calibrationRefusal,
@@ -728,44 +728,50 @@ export async function confirmSheetScales(
  * Then the sheet's rooms, ceilings and windows, as the whole-set run does.
  */
 export async function postSheetWalls(jobId: string, planId: string, pageNumber: number): Promise<ActionResultWith<{ note: string | null; waiting: boolean }>> {
-  const context = await requireCompanyContext();
-  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
-  const page = await prisma.takeoffPlanPage.findFirst({
-    where: { planId, pageNumber, plan: { jobId, companyId: context.company.id } },
-    select: {
-      id: true,
-      measurements: { where: { kind: "LINEAR", source: "DETECTED" }, select: { id: true }, take: 1 },
-      calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true } },
-    },
-  });
-  if (page === null) return actionFail("That sheet is no longer on this job. Reload the page.");
-  if (page.measurements.length > 0) return { ok: true, value: { note: null, waiting: false } };
-  const outcome = await wallItemsForSheet({ planId, companyId: context.company.id, jobId, pageNumber, userId: context.id });
-  // THE FINDER SAVING A SCALE STARTS MAY NOT HAVE STORED THE WALLS YET. Walk v6:
-  // A101's scale at 15:25:06, its walls stored at 15:25:48, and Run takeoff
-  // pressed in between posted nothing and said nothing (the STUCK of v2–v6).
-  // While the scale is young, "no walls found" means "not yet": the viewer asks again.
-  const scaledAt = page.calibrations[0]?.createdAt.getTime() ?? 0;
-  if (outcome.kind === "skipped" && outcome.why === "no walls found" && Date.now() - scaledAt < FINDER_WAIT_MS) {
-    // Its finder may be queued behind a batch Confirm: this sheet is the one in front of somebody.
-    hurryFinder(planId, pageNumber);
-    return { ok: true, value: { note: null, waiting: true } };
+  // A person's action: background wall finders wait for it (`beginUserWork`).
+  const working = beginUserWork();
+  try {
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+    const page = await prisma.takeoffPlanPage.findFirst({
+      where: { planId, pageNumber, plan: { jobId, companyId: context.company.id } },
+      select: {
+        id: true,
+        measurements: { where: { kind: "LINEAR", source: "DETECTED" }, select: { id: true }, take: 1 },
+        calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true } },
+      },
+    });
+    if (page === null) return actionFail("That sheet is no longer on this job. Reload the page.");
+    if (page.measurements.length > 0) return { ok: true, value: { note: null, waiting: false } };
+    const outcome = await wallItemsForSheet({ planId, companyId: context.company.id, jobId, pageNumber, userId: context.id });
+    // THE FINDER SAVING A SCALE STARTS MAY NOT HAVE STORED THE WALLS YET. Walk v6:
+    // A101's scale at 15:25:06, its walls stored at 15:25:48, and Run takeoff
+    // pressed in between posted nothing and said nothing (the STUCK of v2–v6).
+    // While the scale is young, "no walls found" means "not yet": the viewer asks again.
+    const scaledAt = page.calibrations[0]?.createdAt.getTime() ?? 0;
+    if (outcome.kind === "skipped" && outcome.why === "no walls found" && Date.now() - scaledAt < FINDER_WAIT_MS) {
+      // Its finder may be queued behind a batch Confirm: this sheet is the one in front of somebody.
+      hurryFinder(planId, pageNumber);
+      return { ok: true, value: { note: null, waiting: true } };
+    }
+    let note = outcome.kind === "written" ? wallItemsNoteFor(outcome) : null;
+    // ── THEN ITS ROOMS, CEILINGS AND WINDOWS, AS THE WHOLE-SET RUN DOES ──
+    // Walk v7 ran the sheet from here and its bid had no windows item, no
+    // ceiling and no openings off the boards, where v6's whole-set run had all
+    // three (`postAndRooms` in walls.ts). Same step, same switches, no model.
+    if (outcome.kind === "written") {
+      // The note names what was found; a skip or failure is for the log, not the
+      // person (the walls are on the job either way, and the whole-set run can retry).
+      const rooms = await roomsForSheet({ planId, companyId: context.company.id, jobId, pageNumber, userId: context.id }).catch((error) => ({ kind: "failed" as const, error: String(error) }));
+      if (rooms.kind === "written") note = `${note}; ${roomsNoteFor(rooms)}`;
+      else if (rooms.kind === "failed") console.error("[postSheetWalls] rooms after walls failed", { planId, pageNumber, error: rooms.error });
+    }
+    revalidatePath(`/jobs/${jobId}`);
+    revalidatePath(`/takeoff/${jobId}`);
+    return { ok: true, value: { note, waiting: false } };
+  } finally {
+    working.end();
   }
-  let note = outcome.kind === "written" ? wallItemsNoteFor(outcome) : null;
-  // ── THEN ITS ROOMS, CEILINGS AND WINDOWS, AS THE WHOLE-SET RUN DOES ──
-  // Walk v7 ran the sheet from here and its bid had no windows item, no
-  // ceiling and no openings off the boards, where v6's whole-set run had all
-  // three (`postAndRooms` in walls.ts). Same step, same switches, no model.
-  if (outcome.kind === "written") {
-    // The note names what was found; a skip or failure is for the log, not the
-    // person (the walls are on the job either way, and the whole-set run can retry).
-    const rooms = await roomsForSheet({ planId, companyId: context.company.id, jobId, pageNumber, userId: context.id }).catch((error) => ({ kind: "failed" as const, error: String(error) }));
-    if (rooms.kind === "written") note = `${note}; ${roomsNoteFor(rooms)}`;
-    else if (rooms.kind === "failed") console.error("[postSheetWalls] rooms after walls failed", { planId, pageNumber, error: rooms.error });
-  }
-  revalidatePath(`/jobs/${jobId}`);
-  revalidatePath(`/takeoff/${jobId}`);
-  return { ok: true, value: { note, waiting: false } };
 }
 
 /** How long after a scale is saved its finder may still be storing the walls. Walk v6 took 42 s with six sheets at once. */
