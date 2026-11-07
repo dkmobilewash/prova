@@ -1,13 +1,14 @@
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { Session } from "node:inspector/promises";
-import { it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { groupsForStage } from "../stageGroups";
 
 /** Times and CPU-profiles the Run-takeoff path on one sheet. FP_PDF, FP_PAGE, FP_FPU, FP_OUT (.cpuprofile). Keyless. */
-it.skipIf(!process.env.FP_PDF)("profile", { timeout: 1_800_000 }, async () => {
+describe.skipIf(!process.env.FP_PDF)("the Run-takeoff path on one sheet, timed", () => {
+it("profile", { timeout: 1_800_000 }, async () => {
   const page = Number(process.env.FP_PAGE), fpu = Number(process.env.FP_FPU);
   const t = (label: string, t0: number) => console.log(`FP ${label.padEnd(22)} ${(performance.now() - t0).toFixed(0)} ms`);
   let t0 = performance.now();
@@ -15,6 +16,7 @@ it.skipIf(!process.env.FP_PDF)("profile", { timeout: 1_800_000 }, async () => {
   t("open pdf", t0); t0 = performance.now();
   const strokes = await doc.pageStrokes(page);
   t(`strokes (${strokes.segments.length})`, t0); t0 = performance.now();
+  expect(strokes.segments.length, "the sheet parsed to no strokes").toBeGreaterThan(0);
   const text = await doc.pageText(page);
   const textItems = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
   t(`text (${textItems.length})`, t0);
@@ -38,4 +40,5 @@ it.skipIf(!process.env.FP_PDF)("profile", { timeout: 1_800_000 }, async () => {
   console.log(`FP HASH runs=${hash(offered.offeredRuns.map((r) => [r.x1, r.y1, r.x2, r.y2, r.thicknessFeet, r.lengthFeet]))} setAside=${hash(offered.setAside)} groups=${hash(g.groups)}`);
   console.log(`FP RESULT runs=${offered.offeredRuns.length} ft=${offered.offeredRuns.reduce((n, r) => n + r.lengthFeet, 0).toFixed(1)} groups=${g.groups.length}`);
   await doc.close();
+});
 });
