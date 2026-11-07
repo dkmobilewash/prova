@@ -1056,7 +1056,23 @@ export function TakeoffPlanViewer({
   // 12 and the queue 20 — 7-3/8" 77 ft, 11-1/2" 62 ft, 9-3/4" 50 ft were behind a
   // "Show the other" press). Past `DISTINCT_MARKS` the marks repeat, and the panel
   // says so below the list.
-  const shownGroups = found ?? [];
+  // ── AND THE SAME LENGTHS: A HELD RUN IS NOT PART OF A GROUP TO TYPE ──
+  // A run on "Walls — to confirm" waits for a yes or no (the queue's Held walls),
+  // so the queue's group leaves it out — and the panel counted it (Chrome on Baker
+  // A101: 5" 46 ft here, 43 there; 12-1/8" 24 against 18; a 9-3/4" group whose
+  // every run was held, listed here only). Shown the same: its held runs leave the
+  // group's length, and a group with nothing else is not a group to type.
+  const heldIds = new Set(takeoffItems.filter((item) => item.name === HELD_ITEM).map((item) => item.id));
+  const heldRuns = (sheets.find((s) => s.pageNumber === pageNumber)?.measurements ?? []).filter(
+    (m) => m.kind === "LINEAR" && typeof m.itemId === "string" && heldIds.has(m.itemId),
+  );
+  const shownGroups = (found ?? []).flatMap((group) => {
+    if (heldRuns.length === 0) return [group];
+    const runs = group.runs.filter((run) => !heldRuns.some((m) => sameRunAs(run, m.xs, m.ys)));
+    if (runs.length === group.runs.length) return [group];
+    if (runs.length === 0) return [];
+    return [{ ...group, runs, feet: runs.reduce((sum, run) => sum + run.lengthFeet, 0) }];
+  });
   /**
    * The same groups, read under the condition each proposes into.
    *

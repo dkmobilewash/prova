@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ReviewItem } from "@/lib/takeoff/reviewQueue";
+import type { UndoEntry } from "@/lib/takeoff/undoStack";
 
 type WindowsItem = Extract<ReviewItem, { kind: "windows" }>;
 
@@ -24,6 +25,7 @@ export function QueueWindowsConfirm({
   onShow,
   onAccept,
   onSkip,
+  onUndoable,
 }: {
   item: WindowsItem;
   /** The windows still lit and the one zoomed to, for the plan. */
@@ -31,6 +33,8 @@ export function QueueWindowsConfirm({
   /** The kept windows, as indexes into `item.runs`. */
   onAccept: (kept: number[]) => void;
   onSkip: () => void;
+  /** "Not a window" goes on the workspace's Undo stack, beside the confirms (Chrome on Baker). */
+  onUndoable?: (entry: UndoEntry) => void;
 }) {
   const [dropped, setDropped] = useState<ReadonlySet<number>>(new Set());
   // An index into the kept windows, or null while all are shown.
@@ -49,6 +53,23 @@ export function QueueWindowsConfirm({
     const target = kept[at ?? 0];
     if (target === undefined) return;
     setDropped((was) => new Set(was).add(target));
+    // Nothing is saved until Confirm, so its Undo only puts the window back in the list.
+    onUndoable?.({
+      label: `Not a window: ${item.tags[target] ?? "window"} on ${item.sheet}`,
+      undo: async () => {
+        setDropped((was) => {
+          const next = new Set(was);
+          next.delete(target);
+          return next;
+        });
+        return { ok: true };
+      },
+      redo: async () => {
+        setDropped((was) => new Set(was).add(target));
+        return { ok: true };
+      },
+      inPlace: true,
+    });
     // Stay on the window that slid into this place; none left shows them all.
     setAt((was) => (kept.length <= 1 ? null : Math.min(was ?? 0, kept.length - 2)));
   };
