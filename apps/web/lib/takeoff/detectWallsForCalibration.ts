@@ -1,9 +1,8 @@
 import type { PriorLine } from "./planCompare";
 import { after } from "next/server";
 import { prisma } from "@prova/db";
-import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
 import { storedRasterFor } from "@/lib/plan-ingest/raster";
-import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
+import { openSharedPlanPdf } from "@/lib/plan-ingest/sharedPlanPdf";
 import { pagesToSample } from "./sheetTemplate";
 import { storePlanCaptions } from "./levelReads";
 import { inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
@@ -127,8 +126,12 @@ export async function detectWallsForCalibration(
 
   // SCOPED BY COMPANY in the read itself, not by a check afterwards — this runs
   // detached from the request, so there is no context left to trust.
-  const read = await readPlanBytes(target.planId, target.companyId);
-  if (!read.ok) return "unreadable";
+  // BORROWED, not read: every finder used to fetch and open the whole set, so
+  // Confirm on 35 sheets held 35 copies (ELEVEN03, 342 MB: 5.07 GB peak). The
+  // plan's one open copy is shared (`openSharedPlanPdf`) and `close` gives it back.
+  const shared = await openSharedPlanPdf(target.planId, target.companyId);
+  if (!shared.ok) return "unreadable";
+  const doc = shared.pdf;
 
   // THE DOWNLOAD IS THE EXPENSIVE PART and it has already happened, so this is
   // the first honest place to ask. Giving up here is the only hard stop: past
@@ -140,14 +143,11 @@ export async function detectWallsForCalibration(
       afterMs: spent(),
       reading: "the plan file",
     });
+    await doc.close();
     return "out-of-time";
   }
 
-  // ONE DOCUMENT FOR BOTH LAYERS. `openPlanPdf` hands the bytes to pdfjs as a
-  // VIEW and pdfjs DETACHES the buffer behind it, so a second open on the same
-  // Buffer throws `Cannot perform Construct on a detached ArrayBuffer` — the
-  // trap `PlanPdf.pageStrokes` documents.
-  const doc = await openPlanPdf(read.bytes);
+  // ONE DOCUMENT FOR BOTH LAYERS: text and strokes both come off `doc`.
   try {
     if (target.pageNumber < 1 || target.pageNumber > doc.pageCount) return "no-such-page";
 
@@ -484,7 +484,7 @@ export async function detectWallsForCalibration(
     );
     return "failed";
   } finally {
-    // pdfjs holds per-document state, which `PlanPdf.close` exists for.
+    // Gives the shared copy back; the last loan out closes it after a while.
     await doc.close().catch(() => {});
   }
 }
@@ -502,10 +502,36 @@ export async function detectWallsForCalibration(
  * this catches `after()` itself, so an action that calls it cannot be made to
  * fail by anything detection does.
  */
+/**
+ * ── TWO FINDERS AT A TIME PER SERVER INSTANCE ──
+ *
+ * Confirm scales saves one calibration per sheet, and each save starts a finder
+ * here: 35 sheets started 35 at once, and the floor plan the person was waiting
+ * on queued behind all of them (Topeka: its printed-scale Apply waited ~49 s).
+ * The rest wait their turn. A waiting finder's time does not count against its
+ * own budget (`DETECTION_BUDGET_MS` starts when it starts).
+ */
+const FINDERS_AT_ONCE = 2;
+let findersRunning = 0;
+const findersWaiting: (() => void)[] = [];
+export async function oneFinderSlot<T>(work: () => Promise<T>): Promise<T> {
+  // A finished finder hands its slot straight to the next in line, so a new
+  // arrival can never slip in between and make it three.
+  if (findersRunning >= FINDERS_AT_ONCE) await new Promise<void>((resolve) => findersWaiting.push(resolve));
+  else findersRunning += 1;
+  try {
+    return await work();
+  } finally {
+    const next = findersWaiting.shift();
+    if (next) next();
+    else findersRunning -= 1;
+  }
+}
+
 export function detectWallsAfterResponse(target: DetectTarget): void {
   try {
     after(() =>
-      detectWallsForCalibration(target).catch((error) => {
+      oneFinderSlot(() => detectWallsForCalibration(target)).catch((error) => {
         // Unreachable in practice — the function above catches everything — and
         // kept because "unreachable" is a claim about today's code.
         console.error("[takeoff] detection after response failed", { planId: target.planId }, error);

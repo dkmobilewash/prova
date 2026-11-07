@@ -7,8 +7,8 @@ import {
 import { aiGate } from "@/lib/ai/settings";
 import { claimPlanSheet, markPlanSheetFailure } from "@/lib/ask/planSheetSpend";
 import { recordAskUsage } from "@/lib/ask/usage";
-import { openPlanPdf } from "./planPdf";
-import { readPlanBytes } from "./planBytes";
+import type { PlanPdf } from "./planPdf";
+import { openSharedPlanPdf } from "./sharedPlanPdf";
 import { gridText, looksLikeTable, tableRowsFromPage } from "./scheduleTable";
 import type { StageCtx, StageWork } from "./stages";
 
@@ -57,9 +57,10 @@ import type { StageCtx, StageWork } from "./stages";
 export type ScheduleRowsDeps = {
   /** The newest title-block proposal for this page, or null when none exists. */
   loadPageType: (planId: string, pageNumber: number) => Promise<{ pageType: string | null; title: string | null } | null>;
-  /** Takes the company too, because `readPlanBytes` scopes the plan to it —
+  /** Takes the company too, because `openSharedPlanPdf` scopes the plan to it —
    *  a plan id alone would read another tenant's file. */
-  loadBytes: (planId: string, companyId: string) => Promise<Buffer>;
+  /** The plan, borrowed from the one open copy (`openSharedPlanPdf`); throws a refusal as a sentence. */
+  openPdf: (planId: string, companyId: string) => Promise<PlanPdf>;
   /** The per-company switch with its feature ALREADY BOUND — not `typeof aiGate`.
    *  A dep the caller passes a feature to is one that can be passed the wrong
    *  feature, and this stage would compile while checking whether the Ask box was
@@ -102,8 +103,7 @@ export function scheduleRowsWork(ctx: StageCtx, deps: ScheduleRowsDeps = realDep
     // The whole affordability of this stage is this line.
     if (sheet.pageType !== "SCHEDULE") return { ok: true };
 
-    const bytes = await deps.loadBytes(ctx.planId, ctx.companyId);
-    const pdf = await openPlanPdf(bytes);
+    const pdf = await deps.openPdf(ctx.planId, ctx.companyId);
     let grid: string;
     let gridRowCount: number;
     try {
@@ -194,13 +194,13 @@ const realDeps: ScheduleRowsDeps = {
       title: proposal.acceptedTitle ?? proposal.proposedTitle,
     };
   },
-  loadBytes: async (planId, companyId) => {
-    // `readPlanBytes` returns a RESULT rather than throwing, so the refusal
+  openPdf: async (planId, companyId) => {
+    // `openSharedPlanPdf` returns a RESULT rather than throwing, so the refusal
     // it carries (a missing file, a blob that is not ours) reaches the screen
     // as a sentence instead of a redacted digest.
-    const bytes = await readPlanBytes(planId, companyId);
-    if (!bytes.ok) throw new Error(bytes.error);
-    return bytes.bytes;
+    const shared = await openSharedPlanPdf(planId, companyId);
+    if (!shared.ok) throw new Error(shared.error);
+    return shared.pdf;
   },
   gate: (companyId) => aiGate(companyId, "SCHEDULE_READ"),
   claim: claimPlanSheet,

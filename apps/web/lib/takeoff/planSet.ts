@@ -41,6 +41,11 @@ export function sheetCategory(number: string | null, title: string | null, pageT
   if (/\bELEV(ATIONS?)?\b/i.test(t) || pageType === "ELEVATION") return "elevations";
   if (/\bDETAILS?\b|\bSECTIONS?\b/i.test(t) || pageType === "DETAIL" || pageType === "SECTION") return "details";
   const score = takeoffRank(number, title).score;
+  // A title that says nothing scores only the A-series tie-break (5). When the
+  // title block's reader called the page OTHER, that is not a floor plan: on
+  // ELEVEN03 it put 51 code, UL, ANSI, ADA and TAS sheets in the scale step's
+  // "80 floor plans", so the step could never finish (29 were real).
+  if (pageType === "OTHER" && score <= 5) return "other";
   if (score > 0 || (pageType === "PLAN" && score >= 0)) return "floor";
   return "other";
 }

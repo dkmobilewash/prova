@@ -26,6 +26,13 @@ vi.mock("@/lib/plan-ingest/planBytes", () => ({
   readPlanBytes: (planId: string, companyId: string) => readPlanBytes(planId, companyId),
 }));
 vi.mock("@/lib/plan-ingest/planPdf", () => ({ openPlanPdf: (bytes: unknown) => openPlanPdf(bytes) }));
+// The shared copy, without its sharing: each test hands in its own document.
+vi.mock("@/lib/plan-ingest/sharedPlanPdf", () => ({
+  openSharedPlanPdf: async (planId: string, companyId: string) => {
+    const read = await readPlanBytes(planId, companyId);
+    return read.ok ? { ok: true, pdf: await openPlanPdf(read.bytes) } : read;
+  },
+}));
 // No scanned sheets here: every page reads its strokes and text from the file.
 vi.mock("@/lib/plan-ingest/raster", () => ({ storedRasterFor: async () => null }));
 vi.mock("@prova/db", () => ({
