@@ -12,7 +12,7 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
 /**
  * ── A PLAN SET OVER 100 MB GOES IN PARTS, WITH PROGRESS, AND RESUMES ──
  *
- * Diego, 2026-11-06: plan uploads up to 1 GB, straight to storage in parts, so a
+ * Diego, 2026-11-06: plan uploads go straight to storage in parts, so a
  * slow connection does not fail the upload. A 101 MB PDF (generated here: the
  * bytes do not matter, the size does) goes through `uploadPlanSetFile`'s parts.
  * Then the same with one part that keeps failing: the upload stops, says so,
@@ -89,14 +89,14 @@ test.describe("a big plan set uploads in resumable parts", () => {
     await page.goto(`/jobs/${jobId}/addendum`);
     const upload = page.locator('[data-addendum="upload"]');
     const stub = await stubDocumentUpload(page);
-    // 501 MB, sparse: the default reading limit is 500 MB (`planProcessMaxBytes`).
+    // 251 MB, sparse: plan sets are capped at 250 MB (`planProcessMaxBytes`).
     const file = path.join(dir, "ZZ-E2E too big.pdf");
     writeFileSync(file, "%PDF-1.7\n");
-    truncateSync(file, 501 * MB);
+    truncateSync(file, 251 * MB);
     await upload.locator('input[type="file"]').setInputFiles(file);
     await upload.getByRole("button", { name: "Add a drawing" }).click();
     await expect(upload.getByRole("alert").filter({ hasText: "too large" })).toHaveText(
-      "This set is too large to process on the current plan; split it or contact support. (It is 501.0 MB; the current limit is 500.0 MB.)",
+      "This set is too large to process on the current plan; split it or contact support. (It is 251.0 MB; the current limit is 250.0 MB.)",
     );
     await expect(upload.locator('[data-takeoff="plan-upload-resume"]')).toHaveCount(0);
     expect(stub.partsSent()).toEqual([]);

@@ -1,9 +1,9 @@
 /**
  * ── A BIG PLAN SET, UPLOADED IN PARTS, THAT PICKS UP WHERE IT STOPPED ──
  *
- * Diego, 2026-11-06: plan sets up to 1 GB, straight to storage, with progress,
- * and a slow or dropped connection must not lose the upload. One `put` of a
- * 342 MB file over a hotel connection is one request that fails as a whole.
+ * Diego, 2026-11-06: big plan sets go straight to storage, with progress, and a
+ * slow or dropped connection must not lose the upload. One `put` of a 200 MB
+ * file over a hotel connection is one request that fails as a whole.
  *
  * So the file goes as a multipart upload (Vercel Blob's own: parts of at least
  * 5 MB, then one "complete"), a few parts at a time, each retried on its own.

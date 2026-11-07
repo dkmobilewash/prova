@@ -41,7 +41,7 @@ export async function uploadDocumentFile(
 ): Promise<DocumentUploadOutcome> {
   // THE PURPOSE IS PASSED, and it is the whole point of this line. Without it the
   // browser would refuse a 40MB drawing set against the shared 15MB default while the
-  // token the very next call mints allows 1 GB — a form that says no to a file the
+  // token the very next call mints allows 250MB — a form that says no to a file the
   // store would have taken, which is a harder failure to diagnose than no check.
   const problem = documentFileProblem(file, purpose);
   if (problem) return { ok: false, error: problem };
@@ -100,7 +100,8 @@ export async function uploadPlanSetFile(
   options: { onProgress?: (progress: Progress) => void; signal?: AbortSignal } = {},
 ): Promise<DocumentUploadOutcome> {
   const purpose: DocumentUploadPurpose = "plan-takeoff";
-  const problem = documentFileProblem(file, purpose) ?? planTooLargeProblem(file.size);
+  // The size sentence first: for a plan set it says what to do, the generic one does not.
+  const problem = planTooLargeProblem(file.size) ?? documentFileProblem(file, purpose);
   if (problem) return { ok: false, error: problem };
   const fresh = documentUploadPathname(purpose, ownerId, file.name);
   if (!fresh) return { ok: false, error: "That record cannot take an attachment." };

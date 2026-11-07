@@ -88,17 +88,14 @@ export function isAllowedDocumentType(
 export const DOCUMENT_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
 
 /**
- * PLAN SETS ONLY — 1 GB (Diego, 2026-11-06; it was 250MB), because 15MB refuses every
- * real one and 250MB refused ELEVEN03's permit set (342MB) on a pilot's first upload.
- * Above 100MB the browser sends it in resumable parts (`uploadPlanSetFile`).
+ * PLAN SETS ONLY — 250MB, because 15MB refuses every real one. Above 100MB the browser
+ * sends it in resumable parts (`uploadPlanSetFile`).
  *
- * WHAT 1 GB MEANS ON THE SERVER: the reading stages hold the file in memory per
- * slice (below), so a 1 GB set is about 1 GB of RSS on top of the function's
- * baseline. Vercel's default function memory is 2 GB; Pro can raise it to 4 GB
- * in the dashboard. Measured locally on the 342MB set in the PR; not measured
- * on a Vercel function, which a laptop cannot.
- *
- * (Was: 250MB.)
+ * IT STAYS 250MB (Diego, 2026-11-06), after a day at 1 GB on a branch: the full
+ * ELEVEN03 walk (342MB) peaked the local server at 5.07 GB RSS, more than even a 4 GB
+ * Pro function, so the server cannot read sets that big yet. A bigger set gets the
+ * plain "too large to process" sentence (`planTooLargeProblem`) rather than a read
+ * that dies. Raise this only after that peak is measured down.
  *
  * A drawing set is 20–100MB and routinely more; the step-1 plan says so and Diego
  * approved 250MB for this purpose alone as part of step 0. It then shipped without it
@@ -116,8 +113,8 @@ export const DOCUMENT_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
  * pdfjs is LAZY — it parses the objects a page needs and `page.cleanup()` releases
  * them — so the cost is the buffer, not the document, and it does not grow with how
  * many pages a slice reads. `Buffer.from(arrayBuffer)` is a VIEW rather than a copy,
- * so the fetch does not transiently double it either. A 250MB set is therefore about
- * 250MB of RSS on top of the function's baseline, which fits.
+ * so the fetch does not transiently double it either. That holds for ONE read; see the
+ * 5.07 GB above for what a whole walk, with several readings at once, measured.
  *
  * WHAT THE MEASUREMENT DOES NOT COVER: a Vercel function's real ceiling, which cannot
  * be tested from a laptop. If a large set ever kills an invocation, the number to
@@ -126,26 +123,24 @@ export const DOCUMENT_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
  * whole document anyway (203 requests, 25.8MB served for a 12.9MB file), so ranging
  * bounds nothing here.
  */
-export const PLAN_SET_UPLOAD_MAX_BYTES = 1024 * 1024 * 1024;
+export const PLAN_SET_UPLOAD_MAX_BYTES = 250 * 1024 * 1024;
 
 /**
- * ── HOW BIG A SET THE SERVER CAN READ, WHICH IS SMALLER THAN WHAT IT STORES ──
+ * ── HOW BIG A SET THE SERVER WILL READ ──
  *
- * Diego, 2026-11-06: until the Vercel plan is upgraded (4 GB functions), a set too
- * big for the server must say so, not time out in silence. Reading holds the whole
- * file in memory: measured locally, RSS ≈ 610 MB + 1.2 × the file (Topeka 109 MB →
- * 742 MB; ELEVEN03 342 MB → 1,020 MB), and the default function has 2 GB with page
- * rendering on top. 500 MB keeps that near 1.2 GB. NOT measured on a Vercel function.
+ * Diego, 2026-11-06: a set too big for the server must say so, not time out in
+ * silence. 250MB, the same as the upload cap: the full ELEVEN03 walk (342MB) peaked
+ * the local server at 5.07 GB RSS, and what holds that memory is being profiled.
  *
- * `NEXT_PUBLIC_PLAN_PROCESS_MAX_MB` raises it (1024 once functions have 4 GB). Public
- * because the uploader refuses before a byte is sent, so nobody uploads for twenty
- * minutes to be told no; `readPlanBytes` refuses again, before downloading, for every
- * reading stage.
+ * `NEXT_PUBLIC_PLAN_PROCESS_MAX_MB` LOWERS it (it never passes the upload cap; raise
+ * both together once the peak is down). Public because the uploader refuses before
+ * a byte is sent, so nobody uploads for twenty minutes to be told no; `readPlanBytes`
+ * refuses again, before downloading, for every reading stage.
  */
-export const PLAN_PROCESS_DEFAULT_MAX_MB = 500;
+export const PLAN_PROCESS_DEFAULT_MAX_MB = 250;
 export function planProcessMaxBytes(raw: string | undefined = process.env.NEXT_PUBLIC_PLAN_PROCESS_MAX_MB): number {
   const mb = Number(raw);
-  return (Number.isFinite(mb) && mb > 0 ? Math.min(mb, PLAN_SET_UPLOAD_MAX_BYTES / (1024 * 1024)) : PLAN_PROCESS_DEFAULT_MAX_MB) * 1024 * 1024;
+  return Math.min(Number.isFinite(mb) && mb > 0 ? mb : PLAN_PROCESS_DEFAULT_MAX_MB, PLAN_SET_UPLOAD_MAX_BYTES / (1024 * 1024)) * 1024 * 1024;
 }
 /** Null when the server can read a set this size; otherwise the sentence to show. */
 export function planTooLargeProblem(bytes: number, maxBytes: number = planProcessMaxBytes()): string | null {

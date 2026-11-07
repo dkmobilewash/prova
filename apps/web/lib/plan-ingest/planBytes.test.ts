@@ -10,21 +10,21 @@ const MB = 1024 * 1024;
 describe("a plan set too large for the server to read", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("is 500 MB by default, raised by NEXT_PUBLIC_PLAN_PROCESS_MAX_MB but never past the 1 GB upload ceiling", () => {
-    expect(planProcessMaxBytes(undefined)).toBe(500 * MB);
-    expect(planProcessMaxBytes("1024")).toBe(1024 * MB);
-    expect(planProcessMaxBytes("5000")).toBe(1024 * MB);
-    expect(planProcessMaxBytes("nonsense")).toBe(500 * MB);
-    expect(planTooLargeProblem(342 * MB, 500 * MB)).toBeNull();
-    expect(planTooLargeProblem(612 * MB, 500 * MB)).toBe(
-      "This set is too large to process on the current plan; split it or contact support. (It is 612.0 MB; the current limit is 500.0 MB.)",
+  it("is 250 MB by default, lowered by NEXT_PUBLIC_PLAN_PROCESS_MAX_MB but never past the 250 MB upload ceiling", () => {
+    expect(planProcessMaxBytes(undefined)).toBe(250 * MB);
+    expect(planProcessMaxBytes("100")).toBe(100 * MB);
+    expect(planProcessMaxBytes("1024")).toBe(250 * MB);
+    expect(planProcessMaxBytes("nonsense")).toBe(250 * MB);
+    expect(planTooLargeProblem(109 * MB)).toBeNull();
+    expect(planTooLargeProblem(342 * MB)).toBe(
+      "This set is too large to process on the current plan; split it or contact support. (It is 342.0 MB; the current limit is 250.0 MB.)",
     );
   });
 
   it("IS REFUSED FROM THE SIZE HEADER, BEFORE THE BODY IS DOWNLOADED, with the sentence that says what to do", async () => {
     let bodyRead = false;
     const body = new ReadableStream({ pull: () => { bodyRead = true; } }, { highWaterMark: 0 });
-    vi.stubGlobal("fetch", async () => new Response(body, { headers: { "content-length": String(612 * MB) } }));
+    vi.stubGlobal("fetch", async () => new Response(body, { headers: { "content-length": String(342 * MB) } }));
     const read = await readPlanBytes("plan_1", "co_1");
     expect(read).toEqual({ ok: false, error: expect.stringContaining("too large to process on the current plan; split it or contact support") });
     expect(bodyRead).toBe(false);
