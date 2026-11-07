@@ -80,7 +80,8 @@ export function TakeoffReviewQueue({
   // tag or the legend), each with the height Enter would take. Library
   // guesses by thickness stay for a person to look at. One line says what
   // went in, with Undo.
-  const [accepted, setAccepted] = useState<{ text: string; keys: string[]; undo: SheetSuggestionsUndo; known: Set<string> } | null>(null);
+  // `record` is shared with the toolbar's Undo stack: whichever undoes it first, the other has nothing left to undo.
+  const [accepted, setAccepted] = useState<{ text: string; keys: string[]; record: { undo: SheetSuggestionsUndo; live: boolean }; known: Set<string> } | null>(null);
   const sheetGroups = current === null || current.kind !== "type" ? [] : sheetSuggestionGroups(left, current.pageNumber, heights, planId);
   type TypeItem = Extract<ReviewItem, { kind: "type" }>;
   const heightOfGroup = (g: TypeItem, code: string | null) => levelHeightFor(code, g.level) ?? forCode(g.building?.heights ?? {}, code) ?? heightFor(code, heights, g.ceiling);
@@ -118,21 +119,51 @@ export function TakeoffReviewQueue({
     }
     const feet = groups.reduce((n, g) => n + (g.feet ?? 0), 0);
     const { accepted: n, failed, undo } = result.value;
+    const keys = groups.map((g) => g.key);
+    const record = { undo, live: true };
     setAccepted({
       text: `Accepted ${n} group${n === 1 ? "" : "s"} on sheet ${sheet} · ${Math.round(feet).toLocaleString()} ft${failed.length > 0 ? ` · not accepted: ${failed.join("; ")}` : ""}`,
-      keys: groups.map((g) => g.key),
-      undo,
+      keys,
+      record,
       known,
+    });
+    // ── AND ON THE TOOLBAR'S UNDO STACK, beside the one-group accepts ──
+    // Chrome on Baker: after Accept all the toolbar Undo stayed grey, and only the
+    // inline link could take it back.
+    onUndoable?.({
+      label: `Accept all on ${sheet} (${n} group${n === 1 ? "" : "s"})`,
+      undo: async () => {
+        if (!record.live) return { ok: true };
+        const back = await undoSheetSuggestions(jobId, record.undo).catch(() => ({ ok: false as const, error: "it did not undo. Try it again." }));
+        if (!back.ok) return back;
+        record.live = false;
+        forgetAfter.current = known;
+        setAccepted((was) => (was?.record === record ? null : was));
+        setDone((done) => new Set([...done].filter((key) => !keys.includes(key))));
+        return { ok: true };
+      },
+      redo: async () => {
+        const again = await confirmSheetSuggestions(jobId, groups.map((g) => g.group)).catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
+        if (!again.ok) return again;
+        // A fresh token: what the redo wrote is what the next Undo takes back.
+        record.undo = again.value.undo;
+        record.live = true;
+        setDone((was) => new Set([...was, ...keys]));
+        return { ok: true };
+      },
+      inPlace: true,
     });
     router.refresh();
   }
   async function undoAccept() {
     if (accepted === null) return;
     const was = accepted;
+    if (!was.record.live) return setAccepted(null);
     setBusy(true);
-    const result = await undoSheetSuggestions(jobId, was.undo).catch(() => ({ ok: false as const, error: "it did not undo. Try it again." }));
+    const result = await undoSheetSuggestions(jobId, was.record.undo).catch(() => ({ ok: false as const, error: "it did not undo. Try it again." }));
     setBusy(false);
     if (!result.ok) return setError(`Undo: ${result.error}`);
+    was.record.live = false;
     forgetAfter.current = was.known;
     setAccepted(null);
     setDone((done) => new Set([...done].filter((key) => !was.keys.includes(key))));

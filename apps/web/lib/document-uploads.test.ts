@@ -173,7 +173,7 @@ group("what may be uploaded, and how much of it", () => {
     // saying "every OTHER purpose" read as a rule about the product when it was
     // a description of the rows that happened to exist, so a second legitimate
     // exemption looked like a violation.
-    expect(PLAN_SET_UPLOAD_MAX_BYTES).toBe(250 * 1024 * 1024);
+    expect(PLAN_SET_UPLOAD_MAX_BYTES).toBe(350 * 1024 * 1024);
     expect(uploadMaxBytesFor("plan-takeoff")).toBe(PLAN_SET_UPLOAD_MAX_BYTES);
     expect(SPEC_SECTION_UPLOAD_MAX_BYTES).toBe(50 * 1024 * 1024);
     expect(uploadMaxBytesFor("bid-spec-section")).toBe(SPEC_SECTION_UPLOAD_MAX_BYTES);
@@ -205,10 +205,13 @@ group("what may be uploaded, and how much of it", () => {
     expect(documentFileProblem(fortyMb, "compliance-document")).toContain("15.0 MB");
     expect(documentFileProblem(fortyMb, "plan-takeoff")).toBeNull();
     expect(documentFileProblem(fortyMb)).toContain("15.0 MB");
+    // ELEVEN03's 342 MB permit set, and exactly 350 MB, are accepted (Diego, 2026-11-07).
+    expect(documentFileProblem({ type: "application/pdf", size: 342_447_290 }, "plan-takeoff")).toBeNull();
+    expect(documentFileProblem({ type: "application/pdf", size: 350 * 1024 * 1024 }, "plan-takeoff")).toBeNull();
     // And the ceiling still bites for a plan set, one byte over.
     expect(
       documentFileProblem({ type: "application/pdf", size: PLAN_SET_UPLOAD_MAX_BYTES + 1 }, "plan-takeoff"),
-    ).toContain("over the 250.0 MB limit");
+    ).toContain("over the 350.0 MB limit");
   });
 
   it("makes the TOKEN ROUTE resolve the ceiling per purpose, not from the default", async () => {

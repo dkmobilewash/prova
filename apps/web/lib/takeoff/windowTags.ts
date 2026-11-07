@@ -102,6 +102,33 @@ function nearestOnRun(p: { x: number; y: number }, w: { x1: number; y1: number; 
   return { x, y, d: Math.hypot(p.x - x, p.y - y) };
 }
 
+/**
+ * ── WHICH TAG SYMBOLS NAME WINDOWS ON THIS SHEET ──
+ *
+ * One definition, used by `windowsByTag` to type the frames and by the frame
+ * finder to decide whether the sheet tags every window. A schedule's mark, or
+ * a W-numbered tag even where the schedule read has no such row (the tag is
+ * the drawing's own statement: Baker's W5), or, where every mark is a single
+ * letter, a single letter in a symbol of a scheduled mark's shape (Topeka's
+ * read has A, D, E and F; its plans tag B and C in the same hexagons). Never a
+ * wall code spelled like one.
+ */
+export function windowTagVocabulary(
+  symbols: readonly TagSymbol[],
+  windowRows: readonly { mark: string }[],
+  wallCodesIn: readonly string[],
+): { vocabulary: TaggedWindows["vocabulary"]; isTag: (s: TagSymbol) => boolean } {
+  const marks = new Set(windowRows.filter((r) => typeof r.mark === "string" && normaliseTag(r.mark) !== "").map((r) => normaliseTag(r.mark)));
+  const wallCodes = new Set(wallCodesIn.map(normaliseTag));
+  const isWTag = (s: TagSymbol) => s.rejected === null && W_TAG.test(normaliseTag(s.text)) && !wallCodes.has(normaliseTag(s.text));
+  const vocabulary: TaggedWindows["vocabulary"] = marks.size > 0 ? "schedule" : symbols.filter(isWTag).length >= WINDOW_TAGS_MEAN_ALL ? "w-tags" : null;
+  const scheduled = (s: TagSymbol) => marks.has(normaliseTag(s.text)) && (s.rejected === null || s.rejected === "sheet-reference");
+  const letters = marks.size > 0 && [...marks].every((m) => /^[A-Z]$/.test(m));
+  const shapes = new Set(symbols.filter(scheduled).map((s) => s.shape));
+  const likeScheduled = (s: TagSymbol) => letters && s.rejected === null && /^[A-Z]$/.test(normaliseTag(s.text)) && shapes.has(s.shape) && !wallCodes.has(normaliseTag(s.text));
+  return { vocabulary, isTag: (s) => scheduled(s) || isWTag(s) || likeScheduled(s) };
+}
+
 export function windowsByTag(input: {
   /** `tagSymbols` over the sheet, in page POINTS. */
   symbols: readonly TagSymbol[];
@@ -120,24 +147,8 @@ export function windowsByTag(input: {
     .filter((r) => typeof r.mark === "string" && normaliseTag(r.mark) !== "")
     .map((r) => ({ mark: r.mark.trim(), ...widthAndHeight(r.size ?? null), description: r.description ?? null }));
   const rowOf = new Map(rows.map((r) => [normaliseTag(r.mark), r]));
-  const wallCodes = new Set((input.wallCodes ?? []).map(normaliseTag));
-  const isWTag = (s: TagSymbol) => s.rejected === null && W_TAG.test(normaliseTag(s.text)) && !wallCodes.has(normaliseTag(s.text));
-  const wTags = input.symbols.filter(isWTag);
-  const vocabulary: TaggedWindows["vocabulary"] = rowOf.size > 0 ? "schedule" : wTags.length >= WINDOW_TAGS_MEAN_ALL ? "w-tags" : null;
+  const { vocabulary, isTag } = windowTagVocabulary(input.symbols, input.windowRows, input.wallCodes ?? []);
   if (vocabulary === null || !(input.feetPerUnit > 0)) return { counted: false, vocabulary: null, windows: [], byTag: [] };
-
-  // A schedule's mark, or a W-numbered tag even where the schedule read has no
-  // such row: the tag is the drawing's own statement, and a row the reader
-  // missed (Baker's W5) shows as a window with no row rather than vanishing.
-  const scheduled = (s: TagSymbol) => rowOf.has(normaliseTag(s.text)) && (s.rejected === null || s.rejected === "sheet-reference");
-  // ── A TAG SHAPED LIKE THE SCHEDULE'S IS ONE, WHERE THE READ MISSED ITS ROW ──
-  // Topeka's schedule read has A, D, E and F; its plans tag B and C windows in
-  // the same hexagons. Where every mark is a single letter, a single letter in a
-  // symbol of a scheduled mark's shape is a window tag too (never a wall code).
-  const letters = rows.length > 0 && rows.every((r) => /^[A-Z]$/.test(normaliseTag(r.mark)));
-  const shapes = new Set(input.symbols.filter(scheduled).map((s) => s.shape));
-  const likeScheduled = (s: TagSymbol) => letters && s.rejected === null && /^[A-Z]$/.test(normaliseTag(s.text)) && shapes.has(s.shape) && !wallCodes.has(normaliseTag(s.text));
-  const isTag = (s: TagSymbol) => scheduled(s) || isWTag(s) || likeScheduled(s);
   // Every tag of the vocabulary, where it was read and where its leader points.
   const tags = input.symbols.filter(isTag).map((s) => ({ tag: normaliseTag(s.text), points: [{ x: s.x / W, y: s.y / W }, ...(s.leader ? [{ x: s.leader.x / W, y: s.leader.y / W }] : [])] }));
   const reach = WINDOW_TAG_TYPES_FEET / input.feetPerUnit;

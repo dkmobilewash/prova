@@ -100,6 +100,19 @@ describe("window symbols", () => {
     expect(windowSymbols(interior, [...box, partition], FPU, [far], true)).toHaveLength(0);
   });
 
+  it("a sheet tagged by its schedule's marks: an interior frame needs glass inside the wall, a tag alone is not enough (Topeka)", () => {
+    // Glass between the partition's faces (0.4 ft thick): a window.
+    const glass: StrokeSegment[] = [-0.15, 0, 0.15].map((o) => ({ x1: 0.6 + ft(o), y1: 0.5, x2: 0.6 + ft(o), y2: 0.54 }));
+    // Three lines beside the partition, none inside it — casework, a counter — with a tag right there.
+    const beside: StrokeSegment[] = [0.3, 0.45, 0.6].map((o) => ({ x1: 0.6 + ft(o), y1: 0.5, x2: 0.6 + ft(o), y2: 0.54 }));
+    const tag = { x: 0.6 + ft(1.5), y: 0.52 };
+    expect(windowSymbols(glass, [...box, partition], FPU, [tag], true, true)).toHaveLength(1);
+    expect(windowSymbols(beside, [...box, partition], FPU, [tag], true, false)).toHaveLength(1);
+    expect(windowSymbols(beside, [...box, partition], FPU, [tag], true, true)).toHaveLength(0);
+    // An exterior window keeps its tag's word for it, as before.
+    expect(windowSymbols(triple(0.4), [...box, partition], FPU, [{ x: 0.52, y: 0.4 + ft(1) }], true, true)).toHaveLength(1);
+  });
+
   it("finds a window in an exterior wall and measures it", () => {
     const windows = windowSymbols(triple(0.4), [...box, partition], FPU);
     expect(windows).toHaveLength(1);
