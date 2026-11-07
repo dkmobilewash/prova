@@ -494,3 +494,28 @@ describe("a sheet with two drawings at two scales", () => {
     expect(d.scales[0]!.viewScales).toBeUndefined();
   });
 });
+
+describe("the real stage, borrowing the plan's shared copy", () => {
+  it("BORROWS PER PAGE AND GIVES IT BACK, and only a page with no text layer asks for the copy that decodes images", async () => {
+    const bytes = planSetPdf([sheetWithTitleBlock({ sheetNumber: "A-101", title: "FIRST FLOOR PLAN", titleSize: 18 }), scannedSheet()]);
+    const asked: boolean[] = [];
+    let out = 0;
+    const borrow = vi.fn(async (_plan: string, _company: string, options: { images?: boolean } = {}) => {
+      asked.push(options.images === true);
+      out += 1;
+      const pdf = await openPlanPdf(Buffer.from(bytes), { images: options.images === true });
+      return { ok: true as const, pdf: { ...pdf, close: async () => { out -= 1; await pdf.close(); } } };
+    });
+    const d = deps({ borrow });
+    const work = pageInventoryWork(CTX, d.deps);
+    expect(await work(task(1))).toEqual({ ok: true });
+    expect(asked).toEqual([false]);
+    expect(await work(task(2))).toEqual({ ok: true });
+    expect(asked).toEqual([false, false, true]);
+    expect(out, "every loan is given back").toBe(0);
+    // The bytes are never read on this path: the shared copy is the only reader.
+    expect(d.readPlanBytes).not.toHaveBeenCalled();
+    expect(d.saved.find((row) => row.pageNumber === 1)?.hasTextLayer).toBe(true);
+    expect(d.saved.find((row) => row.pageNumber === 2)?.hasTextLayer).toBe(false);
+  });
+});

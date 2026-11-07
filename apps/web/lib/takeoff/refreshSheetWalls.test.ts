@@ -7,7 +7,7 @@ const deleteDetected = vi.fn(async () => ({ count: 0 }));
 const deleteProposals = vi.fn(async () => ({ count: 0 }));
 const findMany = vi.fn<(a: unknown) => Promise<unknown[]>>(async () => []);
 const update = vi.fn<(a: unknown) => Promise<unknown>>(async () => ({}));
-vi.mock("./detectWallsForCalibration", () => ({ detectWallsForCalibration: (t: unknown) => detect(t) }));
+vi.mock("./detectWallsForCalibration", () => ({ detectWallsForCalibration: (t: unknown) => detect(t), oneFinderSlot: <T,>(work: () => Promise<T>) => work() }));
 vi.mock("@/lib/plan-ingest/wallItems", () => ({ wallItemsForSheet: (i: unknown) => (wallItems as (x: unknown) => unknown)(i) }));
 vi.mock("@prova/db", () => ({
   prisma: {

@@ -17,6 +17,8 @@ const good = { x1: 0.2, y1: 0.6, x2: 0.5, y2: 0.6, thicknessFeet: 0.33 };
 const doubtedA = { x1: 0.25, y1: 0.7, x2: 0.45, y2: 0.7, thicknessFeet: 0.33 };
 const doubtedB = { x1: 0.6, y1: 0.7, x2: 0.8, y2: 0.7, thicknessFeet: 0.33 };
 vi.mock("./detectWallsForCalibration", () => ({
+  // The one finder slot, passed straight through: these cases are about what a refresh writes.
+  oneFinderSlot: <T,>(work: () => Promise<T>) => work(),
   detectWallsForCalibration: async (t: { onBoundary?: (b: unknown) => void }) => {
     t.onBoundary?.({ pairings: [], segments: [], held: [doubtedA, doubtedB] });
     return "written";

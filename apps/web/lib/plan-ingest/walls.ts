@@ -1,7 +1,7 @@
 import { showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
-import { detectWallsForCalibration, type DetectedBoundary, type DetectOutcome, type DetectTarget } from "@/lib/takeoff/detectWallsForCalibration";
+import { detectWallsForCalibration, oneFinderSlot, type DetectedBoundary, type DetectOutcome, type DetectTarget } from "@/lib/takeoff/detectWallsForCalibration";
 import { takeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import { sheetCategory } from "@/lib/takeoff/planSet";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
@@ -339,7 +339,8 @@ export type WallsDeps = {
 };
 
 const realDeps: WallsDeps = {
-  detect: (target) => detectWallsForCalibration(target),
+  // In the one finder slot, at the front: a whole-set run's sheet has a deadline (`oneFinderSlot`).
+  detect: (target) => oneFinderSlot(() => detectWallsForCalibration(target), `${target.planId}:${target.pageNumber}`, true),
   findRooms: (input) => roomsForSheet(input),
   findWindows: (input) => windowsForSheet(input),
   writeWallItems: (input) => wallItemsForSheet(input),

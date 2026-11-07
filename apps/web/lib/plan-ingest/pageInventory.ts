@@ -4,6 +4,7 @@ import { sheetNumberFrom } from "./sheetNumber";
 import { aiGate } from "../ai/settings";
 import { nameSheet } from "../takeoff/realplan/nameSheet";
 import { readPlanBytes } from "./planBytes";
+import { openSharedPlanPdf, type SharedPlanPdf } from "./sharedPlanPdf";
 import { hasTextLayer, openPlanPdf, titleBlockText, type PlanPdf, type PlanPageText } from "./planPdf";
 import { dimensionLabels, metricDimensionLabels } from "./dimensionLabels";
 import { readSheetScale } from "../takeoff/scaleFromDimensions";
@@ -72,6 +73,12 @@ export type PageInventoryDeps = {
   readPlanBytes: (planId: string, companyId: string) => Promise<ReadPlanBytes>;
   /** Open a document for reading. */
   openPdf: (bytes: Buffer) => Promise<PlanPdf>;
+  /**
+   * Borrow the plan's one open copy (`openSharedPlanPdf`). When given, it is used
+   * instead of `readPlanBytes` + `openPdf`: ELEVEN03 (342 MB) peaked at 5.07 GB
+   * with every reader holding its own copy.
+   */
+  borrow?: (planId: string, companyId: string, options?: { images?: boolean }) => Promise<SharedPlanPdf>;
   /** Record what one page says. Idempotent — see `PlanSheetText`'s header. */
   saveSheetText: (row: SheetTextRow) => Promise<void>;
   /**
@@ -171,13 +178,13 @@ function pastTheEnd(pageNumber: number, pageCount: number): string {
  * exactly one Server Action slice or one cron tick — long enough to amortise the
  * fetch over many pages, short enough that nothing has to invalidate it.
  *
- * It is not explicitly destroyed, and that is deliberate rather than overlooked.
- * The legacy pdfjs build spawns no worker in Node, so an open document is ordinary
- * heap; when the invocation ends this closure becomes unreachable and it is
- * collected with it. Adding a disposer would mean threading a teardown through
- * `runIngest`, which exists to know nothing about what a stage does. If a
- * long-lived container ever shows this holding memory, the fix is that disposer —
- * not a re-open per page, which is the cost this design exists to avoid.
+ * THE REAL STAGE NO LONGER USES THAT CLOSURE (2026-11-07). It left each slice's
+ * copy to the collector, and in a long-lived server (`next start` locally, Fluid
+ * Compute on Vercel) the ELEVEN03 walk showed those copies piling up with every
+ * other reader's: 5.07 GB peak. It borrows the plan's one open copy per page
+ * instead (`deps.borrow`, `openSharedPlanPdf`) and gives it back, so nothing is
+ * re-read and nothing waits for the collector. The closure remains for callers
+ * that inject bytes, which is what the tests below do.
  */
 export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realDeps): StageWork {
   let opened: Promise<ReadPlanBytes | { ok: true; pdf: PlanPdf }> | null = null;
@@ -201,9 +208,12 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
     return result as { ok: true; pdf: PlanPdf };
   }
 
-  return async (task) => {
-    const doc = await document();
-    if (!doc.ok) return { ok: false, error: doc.error };
+  async function readPage(
+    task: Parameters<StageWork>[0],
+    doc: { ok: true; pdf: PlanPdf },
+    /** Strokes WITH image counts, for a page with no text layer (`isScannedSheet`). */
+    countedStrokes: (pageNumber: number) => ReturnType<PlanPdf["pageStrokes"]> = (pageNumber) => doc.pdf.pageStrokes(pageNumber),
+  ): ReturnType<StageWork> {
 
     if (task.pageNumber < 1 || task.pageNumber > doc.pdf.pageCount) {
       return { ok: false, error: pastTheEnd(task.pageNumber, doc.pdf.pageCount) };
@@ -214,7 +224,7 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
     // A page with no text layer is either a scan or a drawing with its
     // lettering outlined; the operator counts tell which (`isScannedSheet`).
     // Only then: for a normal sheet the operator list is the expensive read.
-    const operators = readable ? null : await doc.pdf.pageStrokes(task.pageNumber);
+    const operators = readable ? null : await countedStrokes(task.pageNumber);
     const block = readable ? titleBlockText(page) : null;
 
     // ── THE SCALE THE SHEET DECLARES ABOUT ITSELF ──
@@ -261,6 +271,35 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
     // refusal here would spend three attempts and leave a Retry button that can
     // never succeed, on every scanned page of the set.
     return { ok: true };
+  }
+
+  return async (task) => {
+    // The real stage borrows the plan's one open copy for this page and gives it
+    // back (`openSharedPlanPdf`), so slices neither re-read the file nor leave a
+    // copy for the collector.
+    if (deps.borrow) {
+      const shared = await deps.borrow(ctx.planId, ctx.companyId);
+      if (!shared.ok) return { ok: false, error: shared.error };
+      // The shared copy skips images; a page with no text layer needs them counted,
+      // so it borrows the copy that decodes them (opened only when such a page appears).
+      const countedStrokes = async (pageNumber: number) => {
+        const withImages = await deps.borrow!(ctx.planId, ctx.companyId, { images: true });
+        if (!withImages.ok) throw new Error(withImages.error);
+        try {
+          return await withImages.pdf.pageStrokes(pageNumber);
+        } finally {
+          await withImages.pdf.close();
+        }
+      };
+      try {
+        return await readPage(task, { ok: true, pdf: shared.pdf }, countedStrokes);
+      } finally {
+        await shared.pdf.close();
+      }
+    }
+    const doc = await document();
+    if (!doc.ok) return { ok: false, error: doc.error };
+    return readPage(task, doc);
   };
 }
 
@@ -451,6 +490,8 @@ export const realDeps: PageInventoryDeps = {
   readPlanBytes,
 
   openPdf: openPlanPdf,
+
+  borrow: openSharedPlanPdf,
 
   saveSheetText: async (row) => {
     const { planId, pageNumber, ...rest } = row;

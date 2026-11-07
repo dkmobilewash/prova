@@ -15,6 +15,14 @@ describe("sorting a set", () => {
     expect(sheetCategory("A601", "DOOR SCHEDULE", "SCHEDULE")).toBe("schedules");
     expect(sheetCategory("G001", "COVER SHEET", "COVER")).toBe("cover");
     expect(sheetCategory("E101", "LEVEL 1 PLAN", "PLAN")).toBe("other");
+    // ELEVEN03: the reader said OTHER and the title names nothing a sub prices.
+    for (const [n, t] of [["A1.1", "CODE SHEET"], ["A1.3A", "UL SHEETS_L521"], ["A1.6A", "ICC ANSI SHEET 2 (2017)"], ["A1.7", "2010 ADA SHEET 1"], ["A1.8", "TAS SHEET 1"], ["A4.E", "PERSPECTIVES"]]) {
+      expect(sheetCategory(n, t, "OTHER"), `${n} ${t}`).toBe("other");
+    }
+    // …while a plan the reader called PLAN, or a title that says plan, stays a floor plan.
+    expect(sheetCategory("A3.9", "UNIT D1", "PLAN")).toBe("floor");
+    expect(sheetCategory("A2.1", "FIRST FLOOR PLAN", "OTHER")).toBe("floor");
+    expect(sheetCategory("A3.9", "UNIT D1", null)).toBe("floor");
   });
 
   it("a floor plan that carries elevations too is still the floor plan", () => {
