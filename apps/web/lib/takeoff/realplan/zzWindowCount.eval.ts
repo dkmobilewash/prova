@@ -102,6 +102,9 @@ describe.skipIf(DIR === "" || SPEC === "" || CACHE === "" || OUT === "")("window
         tagged: result.tagged.windows.map((w) => ({ x: w.x, y: w.y, kind: "window", tag: w.tag, framed: w.frame !== null })),
         countedByTag: result.tagged.counted,
         frames,
+        // For sorting misses by cause: each frame's span, and every tag symbol read (text, where, its leader, why refused).
+        frameSpans: result.windows.map((f) => [f.x1, f.y1, f.x2, f.y2]),
+        tagSymbolsRead: tagSymbols({ segments: strokes.segments, text: items, unitsPerPaperInch: 72 }).map((t) => ({ text: t.text.trim(), x: t.x / W, y: t.y / W, leader: t.leader ? [t.leader.x / W, t.leader.y / W] : null, rejected: t.rejected, shape: t.shape })),
         // Against the reviewer's marks, when the sheet has them: windows counted by tag, and the frames alone as before.
         score: key === null ? null : { byTag: scoreOpenings(key, result.tagged.counted ? tagged : [], "window", fpu), framesOnly: scoreOpenings(key, frames, "window", fpu) },
       }) + "\n",
