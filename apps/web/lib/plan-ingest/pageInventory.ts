@@ -78,7 +78,7 @@ export type PageInventoryDeps = {
    * instead of `readPlanBytes` + `openPdf`: ELEVEN03 (342 MB) peaked at 5.07 GB
    * with every reader holding its own copy.
    */
-  borrow?: (planId: string, companyId: string) => Promise<SharedPlanPdf>;
+  borrow?: (planId: string, companyId: string, options?: { images?: boolean }) => Promise<SharedPlanPdf>;
   /** Record what one page says. Idempotent — see `PlanSheetText`'s header. */
   saveSheetText: (row: SheetTextRow) => Promise<void>;
   /**
@@ -208,7 +208,12 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
     return result as { ok: true; pdf: PlanPdf };
   }
 
-  async function readPage(task: Parameters<StageWork>[0], doc: { ok: true; pdf: PlanPdf }): ReturnType<StageWork> {
+  async function readPage(
+    task: Parameters<StageWork>[0],
+    doc: { ok: true; pdf: PlanPdf },
+    /** Strokes WITH image counts, for a page with no text layer (`isScannedSheet`). */
+    countedStrokes: (pageNumber: number) => ReturnType<PlanPdf["pageStrokes"]> = (pageNumber) => doc.pdf.pageStrokes(pageNumber),
+  ): ReturnType<StageWork> {
 
     if (task.pageNumber < 1 || task.pageNumber > doc.pdf.pageCount) {
       return { ok: false, error: pastTheEnd(task.pageNumber, doc.pdf.pageCount) };
@@ -219,7 +224,7 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
     // A page with no text layer is either a scan or a drawing with its
     // lettering outlined; the operator counts tell which (`isScannedSheet`).
     // Only then: for a normal sheet the operator list is the expensive read.
-    const operators = readable ? null : await doc.pdf.pageStrokes(task.pageNumber);
+    const operators = readable ? null : await countedStrokes(task.pageNumber);
     const block = readable ? titleBlockText(page) : null;
 
     // ── THE SCALE THE SHEET DECLARES ABOUT ITSELF ──
@@ -275,8 +280,19 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
     if (deps.borrow) {
       const shared = await deps.borrow(ctx.planId, ctx.companyId);
       if (!shared.ok) return { ok: false, error: shared.error };
+      // The shared copy skips images; a page with no text layer needs them counted,
+      // so it borrows the copy that decodes them (opened only when such a page appears).
+      const countedStrokes = async (pageNumber: number) => {
+        const withImages = await deps.borrow!(ctx.planId, ctx.companyId, { images: true });
+        if (!withImages.ok) throw new Error(withImages.error);
+        try {
+          return await withImages.pdf.pageStrokes(pageNumber);
+        } finally {
+          await withImages.pdf.close();
+        }
+      };
       try {
-        return await readPage(task, { ok: true, pdf: shared.pdf });
+        return await readPage(task, { ok: true, pdf: shared.pdf }, countedStrokes);
       } finally {
         await shared.pdf.close();
       }

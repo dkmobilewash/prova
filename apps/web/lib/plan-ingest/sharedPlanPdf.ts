@@ -37,14 +37,21 @@ class ReadRefused extends Error {}
 
 export type SharedPlanPdf = { ok: true; pdf: PlanPdf } | { ok: false; error: string };
 
-export async function openSharedPlanPdf(planId: string, companyId: string): Promise<SharedPlanPdf> {
-  const key = `${companyId}:${planId}`;
+/**
+ * `images` defaults to false: the readers want text and strokes, and decoding the
+ * set's embedded images was most of ELEVEN03's memory (`openPlanPdf`). The one
+ * reader that needs images counted (the inventory, on a page with no text layer)
+ * asks for them and gets a separate shared copy, opened only then.
+ */
+export async function openSharedPlanPdf(planId: string, companyId: string, options: { images?: boolean } = {}): Promise<SharedPlanPdf> {
+  const images = options.images === true;
+  const key = `${companyId}:${planId}:${images ? "images" : "vector"}`;
   let entry = open.get(key);
   if (entry === undefined) {
     const opening = (async () => {
       const read = await readPlanBytes(planId, companyId);
       if (!read.ok) throw new ReadRefused(read.error);
-      return openPlanPdf(read.bytes);
+      return openPlanPdf(read.bytes, { images });
     })();
     const fresh: Entry = { opening, loans: 0, idle: null };
     opening.catch(() => {

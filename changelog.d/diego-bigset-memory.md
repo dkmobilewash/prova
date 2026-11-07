@@ -8,7 +8,15 @@ reads in one walk); each scale saved started a wall finder after the response
 slice and left it for the collector. Now the first reader of a plan opens it and
 every other reader borrows that one copy (`openSharedPlanPdf`); the copy closes
 30 s after the last reader gives it back. Wall finders started after a scale
-save run two at a time per server instance.
+save run two at a time per server instance, floor plans first, and the sheet the
+workspace is waiting on jumps the line.
+
+Most of what was left was pdfjs decoding the set's embedded images, which no
+reader of text or strokes uses: measured on ELEVEN03, a walk over its sheets went
+from a 2.65 GB footprint to 1.0 GB with images skipped, and every sheet's stroke
+count stayed the same. The shared copy skips them; the inventory borrows a copy
+that decodes them only for a page with no text layer, where the scan check
+counts images.
 
 The scale step listed 80 "floor plans" on ELEVEN03 and could never finish: 51
 were code, UL, ANSI, ADA, TAS and perspective sheets, which the title-block

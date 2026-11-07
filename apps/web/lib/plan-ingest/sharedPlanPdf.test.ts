@@ -5,7 +5,7 @@ const { readPlanBytes, openPlanPdf, closed } = vi.hoisted(() => {
   return {
     closed,
     readPlanBytes: vi.fn(async (planId: string) => ({ ok: true as const, bytes: Buffer.from(planId) })),
-    openPlanPdf: vi.fn(async (bytes: Buffer) => ({ pageCount: 3, close: async () => void closed.push(bytes.toString()) })),
+    openPlanPdf: vi.fn(async (bytes: Buffer, _options?: { images?: boolean }) => ({ pageCount: 3, close: async () => void closed.push(bytes.toString()) })),
   };
 });
 vi.mock("./planBytes", () => ({ readPlanBytes }));
@@ -49,6 +49,15 @@ describe("openSharedPlanPdf", () => {
     await b.pdf.close();
     await vi.advanceTimersByTimeAsync(30_000);
     expect(closed).toContain("plan_b");
+  });
+
+  it("skips images by default, and the copy that decodes them is a separate one, opened only when asked for", async () => {
+    openPlanPdf.mockClear();
+    await openSharedPlanPdf("plan_e", "co_1");
+    await openSharedPlanPdf("plan_e", "co_1");
+    expect(openPlanPdf.mock.calls.map((call) => call[1])).toEqual([{ images: false }]);
+    await openSharedPlanPdf("plan_e", "co_1", { images: true });
+    expect(openPlanPdf.mock.calls.map((call) => call[1])).toEqual([{ images: false }, { images: true }]);
   });
 
   it("keeps companies apart, and a refused read is a sentence that is not kept", async () => {

@@ -513,25 +513,38 @@ export async function detectWallsForCalibration(
  */
 const FINDERS_AT_ONCE = 2;
 let findersRunning = 0;
-const findersWaiting: (() => void)[] = [];
-export async function oneFinderSlot<T>(work: () => Promise<T>): Promise<T> {
+const findersWaiting: { key: string | null; go: () => void }[] = [];
+export async function oneFinderSlot<T>(work: () => Promise<T>, key: string | null = null): Promise<T> {
   // A finished finder hands its slot straight to the next in line, so a new
   // arrival can never slip in between and make it three.
-  if (findersRunning >= FINDERS_AT_ONCE) await new Promise<void>((resolve) => findersWaiting.push(resolve));
+  if (findersRunning >= FINDERS_AT_ONCE) await new Promise<void>((resolve) => findersWaiting.push({ key, go: resolve }));
   else findersRunning += 1;
   try {
     return await work();
   } finally {
     const next = findersWaiting.shift();
-    if (next) next();
+    if (next) next.go();
     else findersRunning -= 1;
   }
+}
+
+/**
+ * The sheet somebody is waiting on goes to the front of the line. Confirm on 47
+ * sheets queued 47 finders; the workspace's Run takeoff then waited 251 s for its
+ * own sheet's finder at the back (ELEVEN03). Returns whether one was waiting.
+ */
+export function hurryFinder(planId: string, pageNumber: number): boolean {
+  const at = findersWaiting.findIndex((entry) => entry.key === `${planId}:${pageNumber}`);
+  if (at <= 0) return at === 0;
+  const [entry] = findersWaiting.splice(at, 1);
+  findersWaiting.unshift(entry!);
+  return true;
 }
 
 export function detectWallsAfterResponse(target: DetectTarget): void {
   try {
     after(() =>
-      oneFinderSlot(() => detectWallsForCalibration(target)).catch((error) => {
+      oneFinderSlot(() => detectWallsForCalibration(target), `${target.planId}:${target.pageNumber}`).catch((error) => {
         // Unreachable in practice — the function above catches everything — and
         // kept because "unreachable" is a claim about today's code.
         console.error("[takeoff] detection after response failed", { planId: target.planId }, error);

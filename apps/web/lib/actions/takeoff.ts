@@ -21,7 +21,7 @@ import type { Opening, TakeoffLine } from "@/lib/takeoff";
 import { recipeCostCategory, recipeLines, type RecipeArgs, type RecipeInput } from "@/lib/takeoff-recipes";
 import { documentUrlProblem } from "@/lib/document-uploads";
 import { parseFeetInches } from "@/lib/feet-inches";
-import { detectWallsAfterResponse } from "@/lib/takeoff/detectWallsForCalibration";
+import { detectWallsAfterResponse, hurryFinder } from "@/lib/takeoff/detectWallsForCalibration";
 import {
   calibrationNotices,
   calibrationRefusal,
@@ -687,7 +687,10 @@ export async function confirmSheetScales(
   );
   let confirmed = 0;
   let skipped = 0;
-  for (const pageNumber of new Set(pages)) {
+  // Floor plans first: each save queues its sheet's wall finder, and the floor
+  // plans are the ones somebody opens next.
+  const inOrder = [...new Set(pages)].sort((a, b) => Number(rows.get(a)?.category !== "floor") - Number(rows.get(b)?.category !== "floor"));
+  for (const pageNumber of inOrder) {
     const row = rows.get(pageNumber);
     const offer = data.scalePrefillByPage[pageNumber];
     const allowed = row !== undefined && offer !== undefined && (usePrinted ? row.printedFix : row.confidence === "high");
@@ -744,6 +747,8 @@ export async function postSheetWalls(jobId: string, planId: string, pageNumber: 
   // While the scale is young, "no walls found" means "not yet": the viewer asks again.
   const scaledAt = page.calibrations[0]?.createdAt.getTime() ?? 0;
   if (outcome.kind === "skipped" && outcome.why === "no walls found" && Date.now() - scaledAt < FINDER_WAIT_MS) {
+    // Its finder may be queued behind a batch Confirm: this sheet is the one in front of somebody.
+    hurryFinder(planId, pageNumber);
     return { ok: true, value: { note: null, waiting: true } };
   }
   let note = outcome.kind === "written" ? wallItemsNoteFor(outcome) : null;
