@@ -73,8 +73,11 @@ describe("the saved-label restore", () => {
   });
 
   it("does not restore into a review that already has work", () => {
-    // Unchanged and worth keeping next to the rest: the baseline guard is what
-    // stops a reopen overwriting a reviewer mid-sheet.
-    expect(source).toContain("if (decided > baselineDecided.current.count) return;");
+    // The baseline guard is what stops a reopen overwriting a reviewer mid-sheet.
+    // Its rule lives in `restoreGate` (tested there on Hutto A102's sequence,
+    // which the old in-line count of every candidate got wrong); here, that the
+    // effect still asks it and stops when the review is not untouched.
+    expect(source).toContain("const gate = restoreGate(baselineDecided.current, sheetKey, current);");
+    expect(source).toContain("if (!gate.untouched) return;");
   });
 });
