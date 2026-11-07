@@ -70,3 +70,15 @@ describe("openSharedPlanPdf", () => {
     expect((await openSharedPlanPdf("plan_d", "co_1")).ok).toBe(true);
   });
 });
+
+describe("one copy for the process", () => {
+  it("A SECOND COPY OF THE MODULE BORROWS THE SAME DOCUMENT (Next bundles each route on its own: ELEVEN03 read the plan from two chunks)", async () => {
+    readPlanBytes.mockClear();
+    await openSharedPlanPdf("plan_x", "co_1");
+    vi.resetModules();
+    const other = await import("./sharedPlanPdf");
+    expect(other.openSharedPlanPdf).not.toBe(openSharedPlanPdf);
+    await other.openSharedPlanPdf("plan_x", "co_1");
+    expect(readPlanBytes).toHaveBeenCalledTimes(1);
+  });
+});

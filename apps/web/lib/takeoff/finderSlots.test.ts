@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@prova/db", () => ({ prisma: {} }));
-const { oneFinderSlot } = await import("./detectWallsForCalibration");
+const { oneFinderSlot, hurryFinder } = await import("./detectWallsForCalibration");
 
-describe("wall finders started after a scale save", () => {
-  it("RUN TWO AT A TIME: Confirm on 35 sheets no longer starts 35 finders at once, and every one still runs", async () => {
+const gate = () => {
+  let open!: () => void;
+  const shut = new Promise<void>((resolve) => (open = resolve));
+  return { shut, open };
+};
+
+describe("wall finders", () => {
+  it("RUN ONE AT A TIME: Confirm on 35 sheets no longer starts 35 finders at once, and every one still runs", async () => {
     let running = 0;
     let most = 0;
     const done: number[] = [];
@@ -19,33 +25,41 @@ describe("wall finders started after a scale save", () => {
         }),
       ),
     );
-    expect(most).toBe(2);
+    expect(most).toBe(1);
     expect(done).toHaveLength(35);
   });
 
   it("a finder that throws still frees its slot", async () => {
     await expect(oneFinderSlot(async () => { throw new Error("boom"); })).rejects.toThrow("boom");
-    await expect(oneFinderSlot(async () => { throw new Error("boom"); })).rejects.toThrow("boom");
     expect(await oneFinderSlot(async () => "ran")).toBe("ran");
   });
-});
 
-describe("the sheet somebody is waiting on", () => {
-  it("JUMPS THE LINE: the workspace's sheet runs next, not after every other queued finder", async () => {
-    const { hurryFinder } = await import("./detectWallsForCalibration");
+  it("THE SHEET SOMEBODY IS WAITING ON JUMPS THE LINE, and an urgent one (a whole-set run's sheet) goes first", async () => {
     const order: string[] = [];
-    let release!: () => void;
-    const blocker = new Promise<void>((resolve) => (release = resolve));
-    // Two running (the limit), then ten queued behind them.
-    const running = [oneFinderSlot(() => blocker, "plan:1"), oneFinderSlot(() => blocker, "plan:2")];
-    const queued = Array.from({ length: 10 }, (_, i) =>
-      oneFinderSlot(async () => void order.push(`plan:${i + 3}`), `plan:${i + 3}`),
-    );
-    expect(hurryFinder("plan", 12)).toBe(true);
+    const g = gate();
+    const running = oneFinderSlot(() => g.shut, "plan:1");
+    const queued = Array.from({ length: 10 }, (_, i) => oneFinderSlot(async () => void order.push(`plan:${i + 2}`), `plan:${i + 2}`));
+    expect(hurryFinder("plan", 9)).toBe(true);
     expect(hurryFinder("plan", 99)).toBe(false);
-    release();
-    await Promise.all([...running, ...queued]);
-    expect(order[0]).toBe("plan:12");
-    expect(order).toHaveLength(10);
+    const urgent = oneFinderSlot(async () => void order.push("urgent"), "plan:50", true);
+    g.open();
+    await Promise.all([running, ...queued, urgent]);
+    expect(order.slice(0, 2)).toEqual(["urgent", "plan:9"]);
+    expect(order).toHaveLength(11);
+  });
+
+  it("IS ONE QUEUE FOR THE PROCESS, whichever copy of the module asks (Next bundles each route on its own: ELEVEN03's hurry found nothing)", async () => {
+    vi.resetModules();
+    const other = await import("./detectWallsForCalibration");
+    expect(other.hurryFinder).not.toBe(hurryFinder);
+    const order: string[] = [];
+    const g = gate();
+    const running = oneFinderSlot(() => g.shut, "plan:1");
+    const queued = Array.from({ length: 5 }, (_, i) => oneFinderSlot(async () => void order.push(`plan:${i + 2}`), `plan:${i + 2}`));
+    // Queued through the first copy, hurried through the second.
+    expect(other.hurryFinder("plan", 6)).toBe(true);
+    g.open();
+    await Promise.all([running, ...queued]);
+    expect(order[0]).toBe("plan:6");
   });
 });

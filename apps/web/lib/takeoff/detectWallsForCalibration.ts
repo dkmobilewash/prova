@@ -503,28 +503,43 @@ export async function detectWallsForCalibration(
  * fail by anything detection does.
  */
 /**
- * ── TWO FINDERS AT A TIME PER SERVER INSTANCE ──
+ * ── ONE FINDER AT A TIME PER SERVER INSTANCE ──
  *
  * Confirm scales saves one calibration per sheet, and each save starts a finder
  * here: 35 sheets started 35 at once, and the floor plan the person was waiting
  * on queued behind all of them (Topeka: its printed-scale Apply waited ~49 s).
  * The rest wait their turn. A waiting finder's time does not count against its
  * own budget (`DETECTION_BUDGET_MS` starts when it starts).
+ *
+ * ONE, because finding walls is CPU work on Node's one thread: a second at the
+ * same time finishes no sooner, and holds a second sheet's parse in memory (two
+ * at once put ELEVEN03's finder phase at 3.2 GB). Every finder goes through here:
+ * after a scale save (in turn), a whole-set run's sheet and a refresh somebody
+ * pressed (at the front), and the sheet Run takeoff is waiting on (`hurryFinder`).
  */
-const FINDERS_AT_ONCE = 2;
-let findersRunning = 0;
-const findersWaiting: { key: string | null; go: () => void }[] = [];
-export async function oneFinderSlot<T>(work: () => Promise<T>, key: string | null = null): Promise<T> {
+const FINDERS_AT_ONCE = 1;
+// ON `globalThis`, for the reason `sharedPlanPdf.ts` gives: Confirm scales queues
+// finders from the job page's bundle and Run takeoff asks to hurry one from the
+// workspace's, and with module state those were two different queues — the hurry
+// found nothing and A3.2 waited its turn (ELEVEN03: 102 s).
+const slots = ((globalThis as unknown as { __provaFinderSlots?: { running: number; waiting: { key: string | null; go: () => void }[] } }).__provaFinderSlots ??= { running: 0, waiting: [] });
+const findersWaiting = slots.waiting;
+export async function oneFinderSlot<T>(work: () => Promise<T>, key: string | null = null, urgent = false): Promise<T> {
   // A finished finder hands its slot straight to the next in line, so a new
   // arrival can never slip in between and make it three.
-  if (findersRunning >= FINDERS_AT_ONCE) await new Promise<void>((resolve) => findersWaiting.push({ key, go: resolve }));
-  else findersRunning += 1;
+  if (slots.running >= FINDERS_AT_ONCE) {
+    await new Promise<void>((resolve) => {
+      // An urgent one (a whole-set run's sheet, on a deadline) goes to the front.
+      if (urgent) findersWaiting.unshift({ key, go: resolve });
+      else findersWaiting.push({ key, go: resolve });
+    });
+  } else slots.running += 1;
   try {
     return await work();
   } finally {
     const next = findersWaiting.shift();
     if (next) next.go();
-    else findersRunning -= 1;
+    else slots.running -= 1;
   }
 }
 

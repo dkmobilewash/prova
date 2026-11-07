@@ -31,7 +31,12 @@ import { readPlanBytes } from "./planBytes";
 const IDLE_MS = 30_000;
 
 type Entry = { opening: Promise<PlanPdf>; loans: number; idle: ReturnType<typeof setTimeout> | null };
-const open = new Map<string, Entry>();
+// ON `globalThis`, NOT IN THE MODULE: Next's production server bundles each route
+// on its own, so a module can be loaded once per route bundle — the ELEVEN03
+// profile read the plan from two chunks (3400.js and 5349.js), two copies of a
+// cache meant to hold one. The process has one `globalThis`.
+const shared = globalThis as unknown as { __provaSharedPlans?: Map<string, Entry> };
+const open = (shared.__provaSharedPlans ??= new Map<string, Entry>());
 
 class ReadRefused extends Error {}
 
