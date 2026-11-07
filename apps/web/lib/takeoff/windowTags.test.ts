@@ -130,3 +130,14 @@ describe("one window offered twice a hand apart is counted once (Topeka, trainin
     expect(run([tag("W1", 32.5, 21.5)], { frames: [at(29, 31), at(34, 36)] }).windows).toHaveLength(2);
   });
 });
+
+describe("the frame finder reads the same window tags windowsByTag types with (Topeka's A to F)", () => {
+  it("a sheet tagged by its schedule's marks tags every window, and its interior frames need glass", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync(new URL("./doorsWindows.ts", import.meta.url), "utf8").replace(/\/\/.*$/gm, "");
+    expect(src).toMatch(/const vocab = windowTagVocabulary\(symbols, input\.windowRows \?\? \[\], input\.wallCodes \?\? \[\]\);/);
+    expect(src).toMatch(/const everyWindowTagged = tagsNameEveryWindow\(tagWords\) \|\| scheduleTagged\.length >= WINDOW_TAGS_MEAN_ALL;/);
+    expect(src).toMatch(/const byScheduleOnly = !tagsNameEveryWindow\(tagWords\) && scheduleTagged\.length >= WINDOW_TAGS_MEAN_ALL;/);
+    expect(src).toMatch(/windowSymbols\(input\.segments, input\.walls, input\.feetPerUnit, windowTags, everyWindowTagged, byScheduleOnly\)/);
+  });
+});
