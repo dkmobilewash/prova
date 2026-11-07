@@ -1,9 +1,11 @@
-import { upload } from "@vercel/blob/client";
+import { completeMultipartUpload, createMultipartUpload, upload, uploadPart } from "@vercel/blob/client";
+import { resumableUpload, uploadKey, type MultipartCalls, type Progress, type SavedUpload } from "@/lib/resumableUpload";
 import {
   documentDisplayFileName,
   documentFileProblem,
   documentUploadErrorMessage,
   documentUploadPathname,
+  planTooLargeProblem,
   type DocumentUploadPurpose,
 } from "@/lib/document-uploads";
 
@@ -29,7 +31,8 @@ import {
  */
 export type DocumentUploadOutcome =
   | { ok: true; fileUrl: string; fileName: string | null }
-  | { ok: false; error: string };
+  /** `resumable`: the bytes stopped on the way (Resume can pick up), as against a refusal. */
+  | { ok: false; error: string; resumable?: true };
 
 export async function uploadDocumentFile(
   purpose: DocumentUploadPurpose,
@@ -77,4 +80,90 @@ export async function uploadDocumentFile(
 export function singleFileFrom(formData: FormData, key: string): File | null {
   const value = formData.get(key);
   return value instanceof File && value.size > 0 ? value : null;
+}
+
+/**
+ * ── A PLAN SET: PROGRESS ALWAYS, AND IN RESUMABLE PARTS WHEN IT IS BIG ──
+ *
+ * Up to 100 MB, the one upload every other form uses, with its progress. Above
+ * that (Vercel's own threshold for multipart), the parts `resumableUpload`
+ * sends a few at a time and picks up after a dropped connection or a reload:
+ * the parts already stored are saved in this browser under the file's identity.
+ * Both are minted by the same route, so the type, the size ceiling and the owner
+ * check are the token's, as before.
+ */
+export const RESUMABLE_FROM_BYTES = 100 * 1024 * 1024;
+
+export async function uploadPlanSetFile(
+  ownerId: string,
+  file: File,
+  options: { onProgress?: (progress: Progress) => void; signal?: AbortSignal } = {},
+): Promise<DocumentUploadOutcome> {
+  const purpose: DocumentUploadPurpose = "plan-takeoff";
+  // The size sentence first: for a plan set it says what to do, the generic one does not.
+  const problem = planTooLargeProblem(file.size) ?? documentFileProblem(file, purpose);
+  if (problem) return { ok: false, error: problem };
+  const fresh = documentUploadPathname(purpose, ownerId, file.name);
+  if (!fresh) return { ok: false, error: "That record cannot take an attachment." };
+  const clientPayload = JSON.stringify({ purpose, ownerId, contentType: file.type });
+
+  if (file.size <= RESUMABLE_FROM_BYTES) {
+    try {
+      const blob = await upload(fresh, file, {
+        access: "public",
+        contentType: file.type,
+        handleUploadUrl: "/api/documents/upload",
+        clientPayload,
+        onUploadProgress: (p) => options.onProgress?.({ loaded: p.loaded, total: p.total, percent: Math.floor(p.percentage) }),
+        abortSignal: options.signal,
+      });
+      return { ok: true, fileUrl: blob.url, fileName: documentDisplayFileName(file.name) };
+    } catch (err) {
+      return { ok: false, error: documentUploadErrorMessage(err), resumable: true };
+    }
+  }
+
+  const key = uploadKey(ownerId, file);
+  const saved = readSaved(key);
+  const pathname = saved?.pathname ?? fresh;
+  const calls: MultipartCalls = {
+    token: async () => {
+      const res = await fetch("/api/documents/upload", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type: "blob.generate-client-token", payload: { pathname, clientPayload, multipart: true } }),
+        signal: options.signal,
+      });
+      if (!res.ok) throw new Error("That file was refused before it was sent.");
+      return ((await res.json()) as { clientToken: string }).clientToken;
+    },
+    create: (token) => createMultipartUpload(pathname, { access: "public", token, contentType: file.type }),
+    part: (token, ids, partNumber, body) => uploadPart(pathname, body, { access: "public", token, key: ids.key, uploadId: ids.uploadId, partNumber, abortSignal: options.signal }),
+    complete: (token, ids, parts) => completeMultipartUpload(pathname, parts, { access: "public", token, key: ids.key, uploadId: ids.uploadId, contentType: file.type }),
+  };
+  try {
+    const blob = await resumableUpload({ file, pathname, calls, saved, save: (state) => writeSaved(key, state), onProgress: options.onProgress, signal: options.signal });
+    return { ok: true, fileUrl: blob.url, fileName: documentDisplayFileName(file.name) };
+  } catch (err) {
+    // The parts already stored stay saved: Resume, or the same file chosen again, picks up there.
+    return { ok: false, error: `${documentUploadErrorMessage(err)} The parts already sent are kept: press Resume to pick up where it stopped.`, resumable: true };
+  }
+}
+
+// In this browser only, and only as a convenience: a lost entry means the upload starts over.
+function readSaved(key: string): SavedUpload | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw === null ? null : (JSON.parse(raw) as SavedUpload);
+  } catch {
+    return null;
+  }
+}
+function writeSaved(key: string, state: SavedUpload | null): void {
+  try {
+    if (state === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, JSON.stringify(state));
+  } catch {
+    // Private mode or a full store: the upload still runs, it just cannot resume after a reload.
+  }
 }
