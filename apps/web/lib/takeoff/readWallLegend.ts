@@ -1,3 +1,4 @@
+import { isProviderOutage, PLAN_READING_UNAVAILABLE } from "@/lib/ai/providerOutage";
 import { extractWallLegend, extractWallLegendBySight, type WallLegendRead, type WallLegendSightRead } from "@prova/integrations";
 import type { ModelUsageReporter } from "@prova/integrations/src/anthropic";
 import { mergeLegendReads, type MergedType } from "./legendMerge";
@@ -107,7 +108,7 @@ export async function readWallLegend(input: {
  */
 export type WallLegendSightResult =
   | { ok: true; types: MergedType[]; sight: WallLegendSightRead; reason: string; confidence: WallLegendSightRead["confidence"] }
-  | { ok: false; error: string };
+  | { ok: false; error: string; outage?: true };
 
 export async function readWallLegendBySight(input: {
   companyId: string;
@@ -133,7 +134,9 @@ export async function readWallLegendBySight(input: {
       model: gate.model,
       onUsage: input.onUsage,
     });
-  } catch {
+  } catch (err) {
+    // The provider refused it (out of credit, rate limit, 5xx): said as that, so the caller gives the sheet back.
+    if (isProviderOutage(err)) return { ok: false, error: PLAN_READING_UNAVAILABLE, outage: true };
     return { ok: false, error: `The wall legend on page ${input.pageNumber} could not be read from the drawing. Nothing was changed.` };
   }
   return { ok: true, types: mergeLegendReads({ text: input.text, sight, where: input.where }), sight, reason: sight.reason, confidence: sight.confidence };

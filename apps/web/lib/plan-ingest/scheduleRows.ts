@@ -5,7 +5,8 @@ import {
   type ScheduleRowsRead,
 } from "@prova/integrations";
 import { aiGate } from "@/lib/ai/settings";
-import { claimPlanSheet, markPlanSheetFailure } from "@/lib/ask/planSheetSpend";
+import { claimPlanSheet, markPlanSheetFailure, releasePlanSheet } from "@/lib/ask/planSheetSpend";
+import { isProviderOutage, PLAN_READING_UNAVAILABLE } from "@/lib/ai/providerOutage";
 import { recordAskUsage } from "@/lib/ask/usage";
 import type { PlanPdf } from "./planPdf";
 import { openSharedPlanPdf } from "./sharedPlanPdf";
@@ -68,6 +69,8 @@ export type ScheduleRowsDeps = {
   gate: (companyId: string) => ReturnType<typeof aiGate>;
   claim: typeof claimPlanSheet;
   markFailure: typeof markPlanSheetFailure;
+  /** Gives a claimed sheet back after a provider outage (`releasePlanSheet`). */
+  release: typeof releasePlanSheet;
   extract: typeof extractScheduleRows;
   saveProposal: (row: ScheduleProposalRow) => Promise<void>;
   recordUsage: typeof recordAskUsage;
@@ -154,7 +157,13 @@ export function scheduleRowsWork(ctx: StageCtx, deps: ScheduleRowsDeps = realDep
             usage,
           }),
       });
-    } catch {
+    } catch (err) {
+      if (isProviderOutage(err)) {
+        // The provider refused it (out of credit, rate limit, 5xx, no connection): the sheet is
+        // given back and the page retries by itself (`providerOutage.ts`).
+        await deps.release(claimed.claim);
+        return { ok: false, error: PLAN_READING_UNAVAILABLE, outage: true };
+      }
       // MARKED, NEVER RELEASED. The provider bills a call that produced nothing
       // usable; releasing would let the cap be defeated by inducing failures,
       // and the figure is what lets an owner ask for a credit.
@@ -205,6 +214,7 @@ const realDeps: ScheduleRowsDeps = {
   gate: (companyId) => aiGate(companyId, "SCHEDULE_READ"),
   claim: claimPlanSheet,
   markFailure: markPlanSheetFailure,
+  release: releasePlanSheet,
   extract: extractScheduleRows,
   recordUsage: recordAskUsage,
 

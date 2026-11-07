@@ -157,3 +157,25 @@ export async function markPlanSheetFailure(claim: PlanSheetClaim): Promise<void>
     console.error("[plan-ingest] a failed plan sheet could not be marked; the claim stands regardless", err);
   }
 }
+
+/**
+ * ── GIVEN BACK, BUT ONLY WHEN THE PROVIDER REFUSED THE CALL ──
+ *
+ * The rule above is "mark, never release", for failures a customer could cause or
+ * that billed tokens. A provider outage (`isProviderOutage`: out of credit, 429,
+ * 5xx, no connection) is neither — the request was refused before any model ran —
+ * so the sheet it claimed is returned. The page retries by itself; charging for
+ * every retry of an outage is what the 2026-11-07 credit failure did.
+ *
+ * Bookkeeping, like the mark: a failure to write it is logged and swallowed.
+ */
+export async function releasePlanSheet(claim: PlanSheetClaim): Promise<void> {
+  try {
+    await prisma.askAllowancePeriod.updateMany({
+      where: { companyId: claim.companyId, periodStart: claim.periodStart, planSheetsUsed: { gt: 0 } },
+      data: { planSheetsUsed: { decrement: 1 } },
+    });
+  } catch (err) {
+    console.error("[plan-ingest] a plan sheet claimed during a provider outage could not be given back", err);
+  }
+}
