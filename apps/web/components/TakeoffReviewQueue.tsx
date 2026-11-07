@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/actions/shared";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
-import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
+import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
@@ -420,7 +420,17 @@ export function TakeoffReviewQueue({
               item={current}
               onShow={onShow}
               onSkip={() => setCursor(after(current.key))}
-              onAccept={(kept) => acceptNow(current.key, `windows on sheet ${current.sheet}`, () => confirmWindows(jobId, planId, current.pageNumber, kept))}
+              onAccept={(kept) => {
+                // On the same Undo stack as the groups (Chrome on Baker: "Confirm 9" could not be undone).
+                const pageNumber = current.pageNumber;
+                const confirm = () => confirmWindows(jobId, planId, pageNumber, kept);
+                acceptNow(current.key, `windows on sheet ${current.sheet}`, confirm, {
+                  label: `Confirm ${kept.length} ${kept.length === 1 ? "window" : "windows"} on ${current.sheet}`,
+                  undo: (saved) => undoConfirmWindows(jobId, planId, pageNumber, saved.value.undo),
+                  redo: confirm,
+                });
+              }}
+              onUndoable={onUndoable}
             />
           )}
           {current.kind === "scale" && (

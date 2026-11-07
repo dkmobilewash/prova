@@ -430,7 +430,7 @@ describe("nothing a sheet found is out of reach", () => {
 
   it("LISTS EVERY GROUP, with no fold: the review queue walks them all (Chrome on Baker: 12 listed, 20 in the queue)", () => {
     const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-    expect(code).toMatch(/const shownGroups = found \?\? \[\];/);
+    expect(code).toMatch(/const shownGroups = \(found \?\? \[\]\)\.flatMap\(/);
     expect(code, "a fold is back: some groups are a press away again").not.toMatch(/\.slice\(0, SHOWN_AT_FIRST\)|Show the other/);
   });
 
