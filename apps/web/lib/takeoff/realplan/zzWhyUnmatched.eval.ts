@@ -124,7 +124,9 @@ describe.skipIf(DIR === "" || LABELS === "" || SET === "")("why a decision found
     console.log(`  splits re-applied ${result.splitsReapplied ?? "?"}`);
     console.log(`  restore says     ${result.message ?? "(nothing)"}`);
 
-    const unmatched = (result.unmatched ?? []) as {
+    // `unmatched` is a COUNT now; the decisions that matched no candidate are in
+    // `carried` (kept, not shown). Listing the count crashed: "unmatched is not iterable".
+    const unmatched = ((result as { carried?: unknown[] }).carried ?? []) as {
       x1: number;
       y1: number;
       x2: number;
@@ -132,7 +134,7 @@ describe.skipIf(DIR === "" || LABELS === "" || SET === "")("why a decision found
       lengthFeet: number;
       verdict?: string;
     }[];
-    console.log(`\n  UNMATCHED ${unmatched.length}`);
+    console.log(`\n  UNMATCHED ${unmatched.length} (restore counted ${(result as { unmatched?: number }).unmatched ?? "?"})`);
     for (const one of unmatched) {
       // The nearest candidate by midpoint, with the two numbers the target
       // test actually uses, so the refusal is readable rather than guessed.

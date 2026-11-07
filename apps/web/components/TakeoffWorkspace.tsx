@@ -18,6 +18,7 @@ import { Spinner } from "@/components/Spinner";
 import { AnswerKeyPanel } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
 import { restoreSaved, type SavedSheet } from "@/lib/takeoff/restoreSaved";
+import { restoreGate, type RestoreBaseline } from "@/lib/takeoff/restoreGate";
 import { addOpening, addTraced, removeOpening, removeTraced, startReview, tracedWall, type ReviewState } from "@/lib/takeoff/answerKeyReview";
 import { crossingPoint, splitCandidate } from "@/lib/takeoff/splitCandidate";
 import { labelSheetKey } from "@/lib/takeoff/labelRows";
@@ -1035,7 +1036,7 @@ export function TakeoffWorkspace({
     sourceFinderVersion: string | null;
   } | null>(null);
   const triedSaved = useRef<string>("");
-  const baselineDecided = useRef<{ key: string; count: number }>({ key: "", count: 0 });
+  const baselineDecided = useRef<RestoreBaseline>({ key: "", count: 0 });
   useEffect(() => {
     // The sheet's own number, and the scale the calibration gives — the same
     // two the save uses, so a file written on this sheet is read back for it.
@@ -1066,14 +1067,11 @@ export function TakeoffWorkspace({
     // of `decided > 0` skipped the restore on every sheet in existence. It
     // looked like a cautious guard and was an off switch.
     //
-    // The baseline is whatever the sheet opened with, captured once. A review
-    // is untouched while it still equals that, which is what must never be
-    // overwritten.
-    const decided = Object.keys(current.verdicts).length + current.traced.length;
-    if (baselineDecided.current.key !== sheetKey) {
-      baselineDecided.current = { key: sheetKey, count: decided };
-    }
-    if (decided > baselineDecided.current.count) return;
+    // The baseline is what the sheet had when its candidates arrived, and only
+    // real decisions count (`restoreGate`: Hutto A102 reopened with 0 of 450).
+    const gate = restoreGate(baselineDecided.current, sheetKey, current);
+    baselineDecided.current = gate.baseline;
+    if (!gate.untouched) return;
     let cancelled = false;
     void (async () => {
       try {
