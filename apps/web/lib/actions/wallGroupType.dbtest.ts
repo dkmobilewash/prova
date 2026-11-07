@@ -13,7 +13,7 @@ vi.mock("@/lib/estimating/takeoff-item-lines", async (actual) => {
   const real = await actual<typeof import("@/lib/estimating/takeoff-item-lines")>();
   return { ...real, syncDecidedItems: async (...args: Parameters<typeof real.syncDecidedItems>) => ((syncCalls += 1), real.syncDecidedItems(...args)) };
 });
-const { clearWallGroupType, confirmSheetSuggestions, setWallGroupType } = await import("./wallGroupType");
+const { clearWallGroupType, confirmSheetSuggestions, setWallGroupType, undoSheetSuggestions } = await import("./wallGroupType");
 const { wallItemsForSheet, UNTYPED_ITEM } = await import("@/lib/plan-ingest/wallItems");
 
 let companyId = "";
@@ -125,5 +125,55 @@ describe("Set type", () => {
     expect(syncCalls).toBe(1);
     // And the lines are there: C's item carries a live line for its board.
     expect(await prisma.jobLineItem.count({ where: { jobId, isDeleted: false, takeoffItem: { wallType: { code: "C" } } } })).toBeGreaterThan(0);
+  });
+});
+
+describe("Undo of an accept that added a library type (Chrome on Baker: C8B stayed, with an empty \"C8B walls\")", () => {
+  let proposalId = "";
+  beforeAll(async () => {
+    const run = await prisma.planIngestJob.create({ data: { planId, companyId, stage: "WALL_LEGEND", pageCount: 20 } });
+    const read = { types: [{ code: "C8B", name: "Partition C8B", lines: ['6" METAL STUDS @ 16" O.C.', '5/8" GYP. BD. EACH SIDE'] }], uno: [], reason: "r", confidence: "HIGH" as const };
+    proposalId = (await prisma.planLegendProposal.create({ data: { ingestJobId: run.id, planId, pageNumber: 10, ...legendProposalFrom({ pageNumber: 10, sheetTitle: null, model: "m", read, crops: [] }) } })).id;
+  });
+  const c8b = () => prisma.wallType.findFirst({ where: { companyId, code: "C8B" }, select: { id: true } });
+  const walls = (y: number) => [{ x1: 0.1, y1: y, x2: 0.6, y2: y }];
+
+  it("TAKES BACK THE TYPE AND THE EMPTY ITEM the accept made, and offers the legend read again", async () => {
+    const pageId = await sheet(11, walls(0.5));
+    await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 11, userId: null });
+    expect(await c8b()).toBeNull();
+    const result = await confirmSheetSuggestions(jobId, [{ planId, pageNumber: 11, code: "C8B", inches: 7, runs: walls(0.5), heightFt: 10 }]);
+    if (!result.ok) throw new Error(result.error);
+    expect(await c8b()).not.toBeNull();
+    expect(await prisma.takeoffItem.count({ where: { jobId, name: "C8B walls" } })).toBe(1);
+    expect((await prisma.planLegendProposal.findUnique({ where: { id: proposalId } }))?.status).toBe("ACCEPTED");
+
+    expect(await undoSheetSuggestions(jobId, result.value.undo)).toEqual({ ok: true });
+    expect(await c8b()).toBeNull();
+    expect(await prisma.takeoffItem.count({ where: { jobId, name: "C8B walls" } })).toBe(0);
+    expect((await prisma.planLegendProposal.findUnique({ where: { id: proposalId } }))?.status).toBe("PROPOSED");
+    // The walls are back where they were: on "Walls — untyped".
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId }, include: { item: true } });
+    expect(rows.map((r) => r.item?.name)).toEqual([UNTYPED_ITEM]);
+  });
+
+  it("KEEPS a type another accept still uses, and a forged claim removes nothing", async () => {
+    await sheet(12, walls(0.6));
+    await sheet(13, walls(0.7));
+    await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 12, userId: null });
+    await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 13, userId: null });
+    const first = await confirmSheetSuggestions(jobId, [{ planId, pageNumber: 12, code: "C8B", inches: 7, runs: walls(0.6), heightFt: 10 }]);
+    const second = await confirmSheetSuggestions(jobId, [{ planId, pageNumber: 13, code: "C8B", inches: 7, runs: walls(0.7), heightFt: 10 }]);
+    if (!first.ok || !second.ok) throw new Error("accept failed");
+    expect(first.value.undo.createdTypes).toHaveLength(1);
+    expect(second.value.undo.createdTypes).toHaveLength(0);
+    // Undo the first while the second still has walls on C8B: the type and its item stay.
+    await undoSheetSuggestions(jobId, first.value.undo);
+    expect(await c8b()).not.toBeNull();
+    expect(await prisma.takeoffItem.count({ where: { jobId, name: "C8B walls" } })).toBe(1);
+    // A forged undo naming the library's C (used, and not in that legend read) removes nothing.
+    const c = await prisma.wallType.findFirst({ where: { companyId, code: "C" }, select: { id: true } });
+    await undoSheetSuggestions(jobId, { moved: [], created: [], items: [], createdTypes: [{ id: c!.id, proposalId, reopen: true }] });
+    expect(await prisma.wallType.count({ where: { id: c!.id } })).toBe(1);
   });
 });

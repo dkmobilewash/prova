@@ -2,6 +2,7 @@
 
 import { formatFeetInches } from "@/lib/feet-inches";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { clearDraft, loadDraft, otherDrafts, saveDraft } from "@/lib/takeoff/draftStore";
 import {
   draftFrom,
@@ -519,6 +520,7 @@ export function TakeoffWorkspace({
   // serialises it: `busy` is why two ⌘Z presses cannot race two inverse
   // actions onto one row.
   const [undoState, setUndoState] = useState<UndoState>(EMPTY_UNDO);
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -569,11 +571,14 @@ export function TakeoffWorkspace({
         // The numbers on screen came from the server; after an undo they are
         // one measurement out of date.
         if (outcome.result.ok && !outcome.inPlace) window.location.reload();
+        // In place (the queue's accepts): the page's server numbers are refreshed
+        // instead, so the counts follow ("Prices 2 of 12" stayed until a reload).
+        else if (outcome.result.ok) router.refresh();
       } finally {
         setBusy(false);
       }
     },
-    [busy, undoState],
+    [busy, undoState, router],
   );
 
   useEffect(() => {

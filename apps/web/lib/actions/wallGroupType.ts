@@ -92,6 +92,13 @@ export type SheetSuggestionsUndo = {
   moved: { id: string; itemId: string | null; label: string | null }[];
   created: string[];
   items: { id: string; heightFt: string | null; sides: number | null }[];
+  /** Job items the accept made ("C8B walls"); Undo removes one left empty. */
+  createdItems?: string[];
+  /**
+   * Library types the accept added from the legend, with the legend read they came
+   * from. Undo removes one nothing uses (Chrome on Baker: C8B stayed in the library).
+   */
+  createdTypes?: { id: string; proposalId: string; reopen: boolean }[];
 };
 const GROUPS_MAX = 200;
 
@@ -117,9 +124,10 @@ export async function confirmSheetSuggestions(jobId: string, groups: ConfirmGrou
   // measurement on the job: Topeka's Accept all (A-201, 516 runs on the job)
   // took 10.8 s, most of it the same read over again per group.
   const touched = new Set<string>();
+  const createdTypes: { id: string; proposalId: string; reopen: boolean }[] = [];
   for (const group of groups) {
     const checked = checkedHeight(group);
-    const result = typeof checked === "string" ? actionFail(checked) : await typeGroup(context, jobId, group, checked.heightFt, checked.level, touched);
+    const result = typeof checked === "string" ? actionFail(checked) : await typeGroup(context, jobId, group, checked.heightFt, checked.level, touched, createdTypes);
     if (result.ok) accepted += 1;
     else failed.push(`${String(group.code)}: ${result.error}`);
   }
@@ -139,6 +147,8 @@ export async function confirmSheetSuggestions(jobId: string, groups: ConfirmGrou
       const same = String(old.heightFt ?? "") === String(i.heightFt ?? "") && old.sides === i.sides;
       return same ? [] : [{ id: i.id, heightFt: old.heightFt === null ? null : String(old.heightFt), sides: old.sides }];
     }),
+    createdItems: after.items.filter((i) => !height.has(i.id)).map((i) => i.id),
+    createdTypes,
   };
   return { ok: true, value: { accepted, failed, undo } };
 }
@@ -172,11 +182,53 @@ export async function undoSheetSuggestions(jobId: string, undo: SheetSuggestions
       await tx.takeoffItem.update({ where: { id: item.id }, data: { heightFt: feet === null ? null : feet.toFixed(2), sides: Number.isInteger(item.sides) ? item.sides : null } });
       touched.add(item.id);
     }
+    // The items the accept made: their lines are synced away with the rest, and
+    // then an item with no runs left and no live line goes too ("C8B walls", empty).
+    const madeHere = (Array.isArray(undo?.createdItems) ? undo.createdItems : []).filter((id) => typeof id === "string" && jobItems.has(id));
+    for (const id of madeHere) touched.add(id);
     await syncDecidedItems(tx, companyId, jobId, [...touched]);
+    for (const id of madeHere) {
+      const runs = await tx.takeoffMeasurement.count({ where: { itemId: id } });
+      const lines = await tx.jobLineItem.count({ where: { takeoffItemId: id, isDeleted: false } });
+      if (runs === 0 && lines === 0) await tx.takeoffItem.delete({ where: { id } });
+    }
   });
+  // ── A LIBRARY TYPE THE ACCEPT ADDED, TAKEN BACK IF NOTHING USES IT ──
+  // The payload comes from the browser, so it is a claim, checked here: the user
+  // may add types (`MANAGE_ESTIMATING`), THIS user accepted that legend read, on a
+  // plan of THIS job, the type's code is one it defines, and no run or takeoff
+  // item on any job uses the type. Then the type goes and the legend read is
+  // offered again, as it was before the accept.
+  const removedTypes = can(context, "MANAGE_ESTIMATING") ? await removeAddedTypes(context.id, companyId, jobId, undo?.createdTypes) : 0;
   revalidatePath(`/jobs/${jobId}`, "layout");
   revalidatePath(`/takeoff/${jobId}`);
+  if (removedTypes > 0) revalidatePath("/wall-types");
   return actionOk;
+}
+
+async function removeAddedTypes(userId: string, companyId: string, jobId: string, claimed: unknown): Promise<number> {
+  const list = (Array.isArray(claimed) ? claimed : []).filter(
+    (t): t is { id: string; proposalId: string; reopen: boolean } => typeof t?.id === "string" && typeof t?.proposalId === "string",
+  );
+  let removed = 0;
+  for (const { id, proposalId, reopen } of list.slice(0, GROUPS_MAX)) {
+    const type = await prisma.wallType.findFirst({
+      where: { id, companyId },
+      select: { id: true, code: true, _count: { select: { runs: true, takeoffItems: true } } },
+    });
+    if (type === null || type._count.runs > 0 || type._count.takeoffItems > 0) continue;
+    const proposal = await prisma.planLegendProposal.findFirst({
+      where: { id: proposalId, acceptedByUserId: userId, plan: { job: { id: jobId, companyId } } },
+      select: { id: true, merged: true },
+    });
+    if (proposal === null || !storedLegendTypesFromJson(proposal.merged).some((t) => sameCode(t.code, type.code))) continue;
+    await prisma.$transaction(async (tx) => {
+      await tx.wallType.delete({ where: { id: type.id } });
+      if (reopen === true) await tx.planLegendProposal.update({ where: { id: proposal.id }, data: { status: "PROPOSED", acceptedByUserId: null, acceptedAt: null } });
+    });
+    removed += 1;
+  }
+  return removed;
 }
 
 /** Both actions' work, after each has checked the capability itself. */
@@ -188,6 +240,8 @@ async function typeGroup(
   level: string | null = null,
   /** When given, the items whose lines need writing are added here and written once by the caller. */
   touched?: Set<string>,
+  /** When given, a library type this adds from the legend is recorded here, for Undo. */
+  addedTypes?: { id: string; proposalId: string; reopen: boolean }[],
 ): Promise<ActionResult> {
   const companyId = context.company.id;
   const code = String(input.code ?? "").trim().toUpperCase();
@@ -208,6 +262,8 @@ async function typeGroup(
     const found = proposals.map((p) => ({ id: p.id, type: storedLegendTypesFromJson(p.merged).find((t) => sameCode(t.code, code)) })).find((p) => p.type !== undefined);
     if (found === undefined || found.type === undefined) return actionFail(`${code} isn't a type this set's legend defines.`);
     const read = found.type.assembly.read;
+    // Adding the type marks a PROPOSED legend read accepted; Undo puts that back.
+    const reopen = (await prisma.planLegendProposal.findUnique({ where: { id: found.id }, select: { status: true } }))?.status === "PROPOSED";
     const added = await addWallTypeFromLegend(jobId, found.id, {
       code,
       name: found.type.name ?? `Wall type ${code}`,
@@ -222,6 +278,7 @@ async function typeGroup(
     if (!added.ok) return actionFail(added.error);
     type = await prisma.wallType.findFirst({ where: { companyId, code: { equals: code, mode: "insensitive" } }, select: { id: true, code: true, name: true, thicknessIn: true, defaultHeightFt: true, sides: true, _count: { select: { components: true } } } });
     if (type === null) return actionFail(`${code} could not be added to your library. Try it again.`);
+    addedTypes?.push({ id: type.id, proposalId: found.id, reopen });
   }
   const wallType = type;
 
