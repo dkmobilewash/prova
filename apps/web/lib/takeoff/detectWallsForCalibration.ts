@@ -261,6 +261,10 @@ export async function detectWallsForCalibration(
     const pairWithThicknesses = target.pairWithThicknesses !== false;
     const pairings: WallCandidate[] = [];
     const scored: ScoredPairing[] = [];
+    // A breath for the server between the finder's synchronous stages (the second
+    // session's spots): requests waiting behind a big sheet get their turn here.
+    // Results are unchanged; nothing is read or written across the pause.
+    await new Promise((resolve) => setImmediate(resolve));
     const detected = detectForSheet({
       segments: strokes.segments,
       textItems,
@@ -309,6 +313,7 @@ export async function detectWallsForCalibration(
         ...(user === null ? {} : { user }),
         ...(priorPlan === undefined ? {} : { priorPlan }),
       });
+    await new Promise((resolve) => setImmediate(resolve));
     let offered = offer();
     // ── PLAN COMPARISON, ON A PAIRED SHEET WITH THE COMPANY'S SWITCH ON — see `priorPlan.ts` ──
     //
@@ -351,6 +356,7 @@ export async function detectWallsForCalibration(
       }
       target.onBoundary({ pairings, segments: detected.found.inUnits, held });
     }
+    await new Promise((resolve) => setImmediate(resolve));
     const found = { ...detected.found, walls: offered.offeredRuns, groups: detected.found.regroup(offered.offeredRuns) };
     // The groups: the finder's own when it paired with the thicknesses, else
     // rebuilt here with them — same runs, same feet, named with the types.

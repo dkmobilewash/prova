@@ -240,6 +240,20 @@ describe("THE STAGE POSTS THE VIEWER'S LIST, NOT THE FINDER'S", () => {
     expect(runs.some(onTaggedWall)).toBe(true);
   });
 
+  it("LETS A WAITING REQUEST IN between the finder's synchronous stages (ELEVEN03: a big sheet held every request for its whole run)", async () => {
+    openPlanPdf.mockResolvedValue(sheet([]));
+    const order: string[] = [];
+    // A request that arrived as the finder began: it gets a turn before the finder finishes.
+    setImmediate(() => order.push("request"));
+    const done = detectWallsForCalibration(target, { now: tickingClock(0), budgetMs: 45_000 }).then((outcome) => order.push(`finder ${outcome}`));
+    await done;
+    expect(order).toEqual(["request", "finder written"]);
+    const yields = vi.spyOn(globalThis, "setImmediate");
+    await detectWallsForCalibration(target, { now: tickingClock(0), budgetMs: 45_000 });
+    expect(yields.mock.calls.length).toBeGreaterThanOrEqual(3);
+    yields.mockRestore();
+  });
+
   it("THE USER'S WORK AREA REACHES THE ESTIMATE: a WORK_AREA row round the room leaves the wall outside it unposted", async () => {
     // The room spans x 200..740 pt; the box covers x 150..780, y 100..560 in page-width units (1224 pt wide).
     exclusionRows.mockResolvedValueOnce([{ kind: "WORK_AREA", xs: [150 / 1224, 780 / 1224, 780 / 1224, 150 / 1224], ys: [100 / 1224, 100 / 1224, 560 / 1224, 560 / 1224] }]);
