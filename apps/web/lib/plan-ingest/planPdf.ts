@@ -194,7 +194,15 @@ export function storableText(raw: string): string {
     .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "�");
 }
 
-export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
+/**
+ * `images: false` skips decoding embedded images. Text and strokes are unchanged
+ * (measured on ELEVEN03: every sheet's stroke count identical), and memory is not:
+ * one walk over its sheets peaked at a 2.65 GB footprint decoding images and
+ * 1.0 GB without. An image over `maxImageSize` is REMOVED from the operator list,
+ * so `imageOperators` reads 0 on such a document — the inventory's scan check
+ * (`isScannedSheet`) needs a document that decodes them, and asks for one.
+ */
+export async function openPlanPdf(bytes: Buffer, options: { images?: boolean } = {}): Promise<PlanPdf> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   // THE WORKER, IMPORTED FOR ITS SIDE EFFECT, AND THIS LINE IS THE WHOLE FEATURE
   // WORKING IN A DEPLOYED RUNTIME.
@@ -249,6 +257,7 @@ export async function openPlanPdf(bytes: Buffer): Promise<PlanPdf> {
     // operators, so the missing-standard-fonts warning is irrelevant here — the
     // same reasoning `quoteFixtures.test.ts` records.
     useSystemFonts: false,
+    maxImageSize: options.images === false ? 1 : -1,
     verbosity: 0,
   }).promise;
 

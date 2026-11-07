@@ -1,5 +1,5 @@
-import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
-import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
+
+import { openSharedPlanPdf } from "@/lib/plan-ingest/sharedPlanPdf";
 import { storeGeneralHeight, storeLevelMarks } from "./levelReads";
 import { heightOfLegendType, heightSentence, setHeightFacts, type SetHeightFacts } from "./setHeightFacts";
 
@@ -85,9 +85,9 @@ export async function legendHeightsFor(input: {
   let set: SetHeightFacts | null = null;
   let unread: string | null = null;
   try {
-    const bytes = await readPlanBytes(input.planId, input.companyId);
+    const bytes = await openSharedPlanPdf(input.planId, input.companyId);
     if (!bytes.ok) throw new Error(bytes.error);
-    const pdf = await openPlanPdf(bytes.bytes);
+    const pdf = bytes.pdf;
     try {
       set = await setHeightFacts(pdf, { legendPage: input.legendPage });
       // Kept for the queue: a wall's floor-to-floor by its plan's level. Never at the height's cost.

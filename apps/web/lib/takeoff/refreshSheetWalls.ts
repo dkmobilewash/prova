@@ -1,7 +1,7 @@
 import { prisma } from "@prova/db";
 import { wallItemsForSheet } from "@/lib/plan-ingest/wallItems";
 import { isHeldRun, PERSON_LABELS } from "./estimateHold";
-import { detectWallsForCalibration, type DetectTarget } from "./detectWallsForCalibration";
+import { detectWallsForCalibration, oneFinderSlot, type DetectTarget } from "./detectWallsForCalibration";
 
 /**
  * ── AN EXCLUSION MADE AFTER THE WALLS WERE POSTED STILL HAS TO REACH THE ESTIMATE ──
@@ -36,7 +36,8 @@ export type RefreshOutcome =
 
 export async function refreshSheetWalls(target: DetectTarget & { jobId: string; userId: string | null }): Promise<RefreshOutcome> {
   let held: readonly Line[] = [];
-  const outcome = await detectWallsForCalibration({ ...target, onBoundary: (seen) => (held = seen.held) });
+  // Somebody pressed for it: the one finder slot, at the front.
+  const outcome = await oneFinderSlot(() => detectWallsForCalibration({ ...target, onBoundary: (seen) => (held = seen.held) }), `${target.planId}:${target.pageNumber}`, true);
   if (outcome !== "written" && outcome !== "nothing-found") return { kind: "failed" };
   // Nothing left on the sheet writes no proposals, so the old ones would stand.
   if (outcome === "nothing-found") await prisma.takeoffWallProposal.deleteMany({ where: { pageId: target.pageId, calibrationId: target.calibrationId } });
