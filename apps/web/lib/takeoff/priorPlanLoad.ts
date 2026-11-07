@@ -4,9 +4,9 @@ import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { alignViews, longFaces } from "./viewAlign";
 import type { PairChoice, Pairing } from "./priorPlan";
 import { KEYLESS_MODEL, KEYLESS_PROMPT_VERSION, keylessSheetName } from "@/lib/plan-ingest/pageInventory";
-import { hasTextLayer, openPlanPdf } from "@/lib/plan-ingest/planPdf";
+import { hasTextLayer } from "@/lib/plan-ingest/planPdf";
 import type { SheetStrokes } from "@/lib/takeoff/sheetStrokes";
-import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
+import { openSharedPlanPdf } from "@/lib/plan-ingest/sharedPlanPdf";
 
 /**
  * ── A SET INVENTORIED BEFORE ITS SHEETS WERE NAMED ──
@@ -27,13 +27,13 @@ export async function ensureSheetNames(planId: string, companyId: string): Promi
     select: { id: true },
   });
   if (inventory === null) return 0;
-  const bytes = await readPlanBytes(planId, companyId);
+  const bytes = await openSharedPlanPdf(planId, companyId);
   if (!bytes.ok) return 0;
   const scales = new Map(
     (await prisma.planSheetScaleReading.findMany({ where: { planId }, select: { pageNumber: true, source: true, scaleName: true } }))
       .map((r) => [r.pageNumber, r.source === "PRINTED" || r.source === "DIMENSIONS" ? r.scaleName : null]),
   );
-  const doc = await openPlanPdf(bytes.bytes);
+  const doc = bytes.pdf;
   let named = 0;
   try {
     for (let pageNumber = 1; pageNumber <= doc.pageCount; pageNumber += 1) {
@@ -148,9 +148,9 @@ export async function suggestPriorPlan(input: { planId: string; companyId: strin
   const calibration = page?.calibrations[0];
   const feetPerUnit = calibration === undefined ? null : feetPerPageWidth({ ...calibration, declaredDistanceFeet: Number(calibration.declaredDistanceFeet) });
   if (candidates.length === 0 || feetPerUnit === null) return null;
-  const bytes = await readPlanBytes(input.planId, input.companyId);
+  const bytes = await openSharedPlanPdf(input.planId, input.companyId);
   if (!bytes.ok) return null;
-  const doc = await openPlanPdf(bytes.bytes);
+  const doc = bytes.pdf;
   try {
     if (input.pageNumber > doc.pageCount) return null;
     const own = await doc.pageStrokes(input.pageNumber);

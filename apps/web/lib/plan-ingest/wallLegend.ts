@@ -10,8 +10,8 @@ import { refreshSuggestionsAfterResponse } from "@/lib/takeoff/suggestionRefresh
 import { legendCropRects, type CropRect } from "@/lib/takeoff/legendSight";
 import { pageLines } from "@/lib/takeoff/planTextRead";
 import { tagSymbols } from "@/lib/takeoff/tagSymbols";
-import { openPlanPdf } from "./planPdf";
-import { readPlanBytes } from "./planBytes";
+import type { PlanPdf } from "./planPdf";
+import { openSharedPlanPdf } from "./sharedPlanPdf";
 import type { StageCtx, StageWork } from "./stages";
 
 /**
@@ -36,7 +36,8 @@ const LEGEND_RANK_CEILING = 2;
 
 export type WallLegendDeps = {
   loadPageTitle: (planId: string, pageNumber: number) => Promise<string | null>;
-  loadBytes: (planId: string, companyId: string) => Promise<Buffer>;
+  /** The plan, borrowed from the one open copy (`openSharedPlanPdf`); throws a refusal as a sentence. */
+  openPdf: (planId: string, companyId: string) => Promise<PlanPdf>;
   gate: (companyId: string) => ReturnType<typeof aiGate>;
   claim: typeof claimPlanSheet;
   markFailure: typeof markPlanSheetFailure;
@@ -59,8 +60,7 @@ export type WallLegendProposalRow = {
 export function wallLegendWork(ctx: StageCtx, deps: WallLegendDeps = realDeps): StageWork {
   return async (task) => {
     const title = await deps.loadPageTitle(ctx.planId, task.pageNumber);
-    const bytes = await deps.loadBytes(ctx.planId, ctx.companyId);
-    const pdf = await openPlanPdf(bytes);
+    const pdf = await deps.openPdf(ctx.planId, ctx.companyId);
     let lines: string[];
     let crops: (codes: string[]) => CropRect[];
     try {
@@ -133,10 +133,13 @@ const realDeps: WallLegendDeps = {
     });
     return proposal === null ? null : (proposal.acceptedTitle ?? proposal.proposedTitle);
   },
-  loadBytes: async (planId, companyId) => {
-    const bytes = await readPlanBytes(planId, companyId);
-    if (!bytes.ok) throw new Error(bytes.error);
-    return bytes.bytes;
+  openPdf: async (planId, companyId) => {
+    // `openSharedPlanPdf` returns a RESULT rather than throwing, so the refusal
+    // it carries (a missing file, a blob that is not ours) reaches the screen
+    // as a sentence instead of a redacted digest.
+    const shared = await openSharedPlanPdf(planId, companyId);
+    if (!shared.ok) throw new Error(shared.error);
+    return shared.pdf;
   },
   gate: (companyId) => aiGate(companyId, "PLAN_TEXT_READ"),
   claim: claimPlanSheet,

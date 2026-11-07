@@ -19,10 +19,12 @@ describe("legendHeightsFor", () => {
     await legendHeightsFor({ planId: "plan_a", companyId: "c", legendPage: 9, types: [type("P30")] });
     expect(readPlanBytes).toHaveBeenCalledTimes(1);
     expect(setHeightFacts).toHaveBeenCalledTimes(1);
-    // Another plan, or another legend page, is read on its own.
+    // Another plan, or another legend page, gets its own facts; the second page of
+    // plan_a borrows the plan's copy that is still open (`openSharedPlanPdf`).
     await legendHeightsFor({ planId: "plan_b", companyId: "c", legendPage: 9, types: [type("P13")] });
     await legendHeightsFor({ planId: "plan_a", companyId: "c", legendPage: 2, types: [type("P13")] });
-    expect(readPlanBytes).toHaveBeenCalledTimes(3);
+    expect(setHeightFacts).toHaveBeenCalledTimes(3);
+    expect(readPlanBytes).toHaveBeenCalledTimes(2);
   });
 
   it("a read that failed is not kept: the next type tries again", async () => {

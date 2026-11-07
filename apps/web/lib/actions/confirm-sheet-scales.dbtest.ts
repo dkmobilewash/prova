@@ -14,7 +14,11 @@ const context = { company: { id: "", name: "Scales Co" }, id: "", role: "OWNER" 
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 const detected: number[] = [];
-vi.mock("@/lib/takeoff/detectWallsForCalibration", () => ({ detectWallsAfterResponse: (t: { pageNumber: number }) => detected.push(t.pageNumber) }));
+vi.mock("@/lib/takeoff/detectWallsForCalibration", () => ({
+  detectWallsAfterResponse: (t: { pageNumber: number }) => detected.push(t.pageNumber),
+  beginUserWork: () => ({ end: () => {} }),
+  hurryFinder: () => false,
+}));
 
 const { confirmSheetScales } = await import("./takeoff");
 
