@@ -1158,6 +1158,31 @@ export function lengthOf(segment: StrokeSegment): number {
   return Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1);
 }
 
+/**
+ * ── EVERY STROKE'S DIRECTION AND LENGTH, COMPUTED ONCE PER ARRAY ──
+ *
+ * `inAHatchSeries` and `drawnCoverage` scan every stroke of the sheet for every
+ * candidate: ELEVEN03 A4.B.2 (82,825 strokes, 443 runs) spent 1.6 s of a 7 s
+ * sheet in `angleOf` and `lengthOf` alone, recomputing the same two numbers
+ * tens of millions of times while the server's event loop waited. Same
+ * formulas, same values, looked up instead. Keyed by the array; rebuilt if its
+ * length ever changes, so a mutated array cannot read stale numbers.
+ */
+const geometryCache = new WeakMap<readonly StrokeSegment[], { length: Float64Array; angle: Float64Array }>();
+export function segmentGeometry(segments: readonly StrokeSegment[]): { length: Float64Array; angle: Float64Array } {
+  const hit = geometryCache.get(segments);
+  if (hit !== undefined && hit.length.length === segments.length) return hit;
+  const length = new Float64Array(segments.length);
+  const angle = new Float64Array(segments.length);
+  for (let k = 0; k < segments.length; k += 1) {
+    length[k] = lengthOf(segments[k]);
+    angle[k] = angleOf(segments[k]);
+  }
+  const made = { length, angle };
+  geometryCache.set(segments, made);
+  return made;
+}
+
 /** Smallest difference between two directions in [0, π). */
 function angleGap(a: number, b: number): number {
   const raw = Math.abs(a - b);
@@ -2055,11 +2080,13 @@ function inAHatchSeries(
 ): boolean {
   const a = segments[aIndex];
   const b = segments[bIndex];
-  const direction = angleOf(a);
+  const geometry = segmentGeometry(segments);
+  const direction = geometry.angle[aIndex];
 
   // Signed offsets along the normal of `a`, so "beyond b" and "before a" are
   // distinguishable rather than both reading as distance.
-  const aLen = lengthOf(a);
+  const aLen = geometry.length[aIndex];
+  const bLen = geometry.length[bIndex];
   const nx = -(a.y2 - a.y1) / aLen;
   const ny = (a.x2 - a.x1) / aLen;
   const offsetOf = (segment: StrokeSegment) => {
@@ -2077,10 +2104,11 @@ function inAHatchSeries(
   for (let k = 0; k < segments.length; k += 1) {
     if (k === aIndex || k === bIndex) continue;
     const other = segments[k];
-    if (lengthOf(other) === 0) continue;
-    if (angleGap(angleOf(other), direction) > PARALLEL_TOLERANCE_RAD) continue;
+    const otherLen = geometry.length[k];
+    if (otherLen === 0) continue;
+    if (angleGap(geometry.angle[k], direction) > PARALLEL_TOLERANCE_RAD) continue;
     // It has to be alongside the pair, not somewhere else on the sheet.
-    if (overlapAlong(a, other) < Math.min(aLen, lengthOf(other)) * 0.5) continue;
+    if (overlapAlong(a, other) < Math.min(aLen, otherLen) * 0.5) continue;
     // AND IT HAS TO LOOK LIKE THE PAIR — IN BOTH DIRECTIONS.
     //
     // Too SHORT: a fixture drawn in the next room is a short parallel line,
@@ -2104,9 +2132,8 @@ function inAHatchSeries(
     // scale, which is why one rule covers both: hatching is a fill whose
     // strokes resemble each other, and a member 2.7 times the pair's own face
     // is not one of them.
-    const otherLen = lengthOf(other);
-    if (otherLen < Math.min(aLen, lengthOf(b)) * SERIES_MEMBER_RATIO) continue;
-    if (otherLen > Math.max(aLen, lengthOf(b)) * SERIES_MEMBER_LONGEST) continue;
+    if (otherLen < Math.min(aLen, bLen) * SERIES_MEMBER_RATIO) continue;
+    if (otherLen > Math.max(aLen, bLen) * SERIES_MEMBER_LONGEST) continue;
 
     const where = offsetOf(other);
     // ── IT MUST CONTINUE THE SPACING, NOT MERELY BE NEARBY ──

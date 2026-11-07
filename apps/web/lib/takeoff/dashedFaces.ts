@@ -115,5 +115,20 @@ export function bothFacesDashed(wall: WallCandidate, segments: readonly StrokeSe
 
 /** Convenience for callers holding strokes in points. */
 export function bothFacesDashedInPoints(wall: WallCandidate, segmentsInPoints: readonly StrokeSegment[], widthPt: number, feetPerUnit: number): boolean {
-  return bothFacesDashed(wall, segmentsInPoints.map(inPageWidthUnits(widthPt)), feetPerUnit);
+  return bothFacesDashed(wall, inUnitsOnce(segmentsInPoints, widthPt), feetPerUnit);
+}
+
+/**
+ * The sheet's strokes in page-width units, converted once per array and width.
+ * `offeredCandidates` asks this of every run, and converting the whole sheet
+ * each time was 0.64 s of ELEVEN03 A4.B.2's set-asides (439 runs × 82,825
+ * strokes) plus the garbage it made. Same conversion, same values.
+ */
+const unitsCache = new WeakMap<readonly StrokeSegment[], { widthPt: number; units: StrokeSegment[] }>();
+function inUnitsOnce(segmentsInPoints: readonly StrokeSegment[], widthPt: number): StrokeSegment[] {
+  const hit = unitsCache.get(segmentsInPoints);
+  if (hit !== undefined && hit.widthPt === widthPt && hit.units.length === segmentsInPoints.length) return hit.units;
+  const units = segmentsInPoints.map(inPageWidthUnits(widthPt));
+  unitsCache.set(segmentsInPoints, { widthPt, units });
+  return units;
 }

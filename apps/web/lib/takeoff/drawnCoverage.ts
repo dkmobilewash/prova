@@ -1,4 +1,4 @@
-import { angleOf, lengthOf, type StrokeSegment, type WallCandidate } from "./wallVectors";
+import { angleOf, lengthOf, segmentGeometry, type StrokeSegment, type WallCandidate } from "./wallVectors";
 
 /**
  * ── IS THERE ACTUALLY A LINE ALONG THIS WALL, OR ONLY THINGS THAT LINE UP? ──
@@ -115,9 +115,11 @@ export function drawnCoverage(
   const ny = (wall.x2 - wall.x1) / len;
   const band = halfBandUnits * FACE_BAND;
   const spans: [number, number][] = [];
-  for (const seg of strokes) {
-    if (!(lengthOf(seg) > 0)) continue;
-    const gap = Math.abs(((angleOf(seg) - dir + Math.PI / 2) % Math.PI) - Math.PI / 2);
+  const geometry = segmentGeometry(strokes);
+  for (let k = 0; k < strokes.length; k += 1) {
+    const seg = strokes[k];
+    if (!(geometry.length[k] > 0)) continue;
+    const gap = Math.abs(((geometry.angle[k] - dir + Math.PI / 2) % Math.PI) - Math.PI / 2);
     if (gap > PARALLEL_RAD) continue;
     const a1 = seg.x1 - wall.x1;
     const b1 = seg.y1 - wall.y1;
