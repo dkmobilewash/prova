@@ -16,6 +16,7 @@ import type { IngestView } from "@/lib/plan-ingest/runner";
  */
 const startPlanIngest = vi.fn();
 const advancePlanIngest = vi.fn();
+vi.mock("@/lib/plan-ingest/advanceOverHttp", () => ({ advanceOverHttp: (...a: unknown[]) => advancePlanIngest(...a) }));
 vi.mock("@/lib/actions", () => ({
   startPlanIngest: (...a: unknown[]) => startPlanIngest(...a),
   advancePlanIngest: (...a: unknown[]) => advancePlanIngest(...a),

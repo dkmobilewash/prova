@@ -7,7 +7,13 @@ import { legendProposalFrom } from "@/lib/takeoff/legendProposalBuild";
 const context = { company: { id: "" }, id: "", role: "OWNER" as string, jobFunction: null as string | null };
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-const { clearWallGroupType, setWallGroupType } = await import("./wallGroupType");
+// The line writes, watched: Accept all writes them once for all its groups.
+let syncCalls = 0;
+vi.mock("@/lib/estimating/takeoff-item-lines", async (actual) => {
+  const real = await actual<typeof import("@/lib/estimating/takeoff-item-lines")>();
+  return { ...real, syncDecidedItems: async (...args: Parameters<typeof real.syncDecidedItems>) => ((syncCalls += 1), real.syncDecidedItems(...args)) };
+});
+const { clearWallGroupType, confirmSheetSuggestions, setWallGroupType } = await import("./wallGroupType");
 const { wallItemsForSheet, UNTYPED_ITEM } = await import("@/lib/plan-ingest/wallItems");
 
 let companyId = "";
@@ -103,5 +109,21 @@ describe("Set type", () => {
     const cleared = await clearWallGroupType(jobId, { planId, pageNumber: 4, runs: rerun });
     expect(cleared.ok && cleared.value.moved).toHaveLength(1);
     expect(await prisma.takeoffMeasurement.count({ where: { pageId, item: { name: UNTYPED_ITEM } } })).toBe(1);
+  });
+
+  it("ACCEPT ALL WRITES THE LINES ONCE, for every group it took (Topeka: 10.8 s, the job re-read per group)", async () => {
+    const a = [{ x1: 0.1, y1: 0.95, x2: 0.3, y2: 0.95 }];
+    const b = [{ x1: 0.5, y1: 0.95, x2: 0.8, y2: 0.95 }];
+    await sheet(6, [...a, ...b]);
+    await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 6, userId: null });
+    syncCalls = 0;
+    const result = await confirmSheetSuggestions(jobId, [
+      { planId, pageNumber: 6, code: "C", inches: 7, runs: a, heightFt: 10 },
+      { planId, pageNumber: 6, code: "C", inches: 7, runs: b, heightFt: 10 },
+    ]);
+    expect(result.ok && result.value.accepted).toBe(2);
+    expect(syncCalls).toBe(1);
+    // And the lines are there: C's item carries a live line for its board.
+    expect(await prisma.jobLineItem.count({ where: { jobId, isDeleted: false, takeoffItem: { wallType: { code: "C" } } } })).toBeGreaterThan(0);
   });
 });

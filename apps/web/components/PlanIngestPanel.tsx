@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
-  advancePlanIngest,
   planIngestFailures,
   queuedPlanReads,
   retryPlanIngestPage,
   startPlanIngest,
 } from "@/lib/actions";
+import { advanceOverHttp } from "@/lib/plan-ingest/advanceOverHttp";
 // The TYPE from the database-free module, never from claim.ts — see its comment
 // on IngestView. A client component that could reach prisma fails the build.
 import type { IngestView } from "@/lib/plan-ingest/runner";
@@ -120,6 +120,19 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
    */
   const lastSettled = useRef<{ jobId: string; settled: number } | null>(null);
 
+  /**
+   * ── ONE RUN AT A TIME, AND THE ONE A PERSON IS WAITING ON FIRST ──
+   *
+   * The run this page is pumping. A loop whose run is no longer it stops at its
+   * next slice. Starting the title blocks takes it from the wall legend, which
+   * the free pass queues behind itself: on Topeka (137 sheets) the title blocks
+   * were offered only once the legend's 82 s were done, and the sheet list, the
+   * floor plans and their scales all wait on the title blocks. The legend picks
+   * up again when they finish (`drain`, oldest first) — it is wanted at the
+   * review queue, minutes later.
+   */
+  const pumping = useRef<{ jobId: string } | null>(null);
+
   const loadFailures = useCallback(async (jobId: string) => {
     const result = await planIngestFailures(jobId);
     if (!alive.current) return;
@@ -135,9 +148,12 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
    * once. This asks for the next slice only once the last has answered.
    */
   const pump = useCallback(
-    async (jobId: string, idle: number) => {
-      if (!alive.current) return;
-      const result = await advancePlanIngest(jobId);
+    async (jobId: string, idle: number, mine: { jobId: string } | null = pumping.current) => {
+      // A token per loop, not the job id: a slice scheduled before the title
+      // blocks took over must not become a second loop when the legend resumes.
+      if (!alive.current || pumping.current !== mine || mine === null || mine.jobId !== jobId) return;
+      // Over a plain request, so a long slice does not hold up this page's actions (`advanceOverHttp`).
+      const result = await advanceOverHttp(jobId);
       if (!alive.current) return;
 
       if (!result.ok) {
@@ -172,7 +188,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
         return;
       }
 
-      setTimeout(() => void pump(jobId, nextIdle), SLICE_GAP_MS);
+      setTimeout(() => void pump(jobId, nextIdle, mine), SLICE_GAP_MS);
     },
     [loadFailures],
   );
@@ -202,7 +218,8 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
     setView(next);
     setRunning(true);
     lastSettled.current = null;
-    void pump(next.jobId, 0);
+    pumping.current = { jobId: next.jobId };
+    void pump(next.jobId, 0, pumping.current);
   }, [planId, pump]);
   const drainRef = useRef(drain);
   drainRef.current = drain;
@@ -219,7 +236,8 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       if (!started.ok) return setError(started.error);
       setView(started.value);
       setRunning(true);
-      void pump(started.value.jobId, 0);
+      pumping.current = { jobId: started.value.jobId };
+      void pump(started.value.jobId, 0, pumping.current);
     });
   }
 
@@ -227,7 +245,8 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
     if (!view) return;
     setError(null);
     setRunning(true);
-    void pump(view.jobId, 0);
+    pumping.current = { jobId: view.jobId };
+    void pump(view.jobId, 0, pumping.current);
   }
 
   /**
@@ -259,7 +278,9 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       setView(started.value);
       setFailures([]);
       setRunning(true);
-      void pump(started.value.jobId, 0);
+      lastSettled.current = null;
+      pumping.current = { jobId: started.value.jobId };
+      void pump(started.value.jobId, 0, pumping.current);
     });
   }
 
@@ -284,7 +305,8 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       setView(started.value);
       setFailures([]);
       setRunning(true);
-      void pump(started.value.jobId, 0);
+      pumping.current = { jobId: started.value.jobId };
+      void pump(started.value.jobId, 0, pumping.current);
     });
   }
 
@@ -297,7 +319,8 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       setView(started.value);
       setFailures([]);
       setRunning(true);
-      void pump(started.value.jobId, 0);
+      pumping.current = { jobId: started.value.jobId };
+      void pump(started.value.jobId, 0, pumping.current);
     });
   }
 
@@ -309,7 +332,8 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       if (!result.ok) return setError(result.error);
       setFailures((current) => current.filter((failure) => failure.pageNumber !== pageNumber));
       setRunning(true);
-      void pump(view.jobId, 0);
+      pumping.current = { jobId: view.jobId };
+      void pump(view.jobId, 0, pumping.current);
     });
   }
 
@@ -486,7 +510,8 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
               offer to re-read the title blocks it has just read, and charge for
               it. `STAGE_SPENDS` is what decides, rather than the stage name, so
               a third stage added later inherits the rule instead of the label. */}
-          {freePassDone && !running && (
+          {/* Offered while the legend still reads, too: pressing it takes the loop (`pumping`). */}
+          {freePassDone && (
             <div className="mt-1 border-t border-line-card pt-3" data-plan-ingest="next-stage">
               <p className="mb-2 text-sm text-ink-body">
                 Nothing was charged for that — it only opened the file and recorded what is on each page.
