@@ -349,10 +349,13 @@ describe("the ghost lines over the sheet", () => {
     expect(code, "the overlay is drawing groups the panel does not list").not.toMatch(
       /<FoundWalls\s+clusters=\{found\}/,
     );
-    // And the list it follows is still the truncated one rather than having
-    // been quietly widened to all of them, which would restore the defect from
-    // the other end.
-    expect(code).toMatch(/shownGroups\s*=\s*showingAll\s*\?\s*\(found \?\? \[\]\)\s*:\s*\(found \?\? \[\]\)\.slice\(0, SHOWN_AT_FIRST\)/);
+    // And the list it follows is EVERY group, as the review queue walks them
+    // (Chrome on Baker: the panel listed 12 of the queue's 20). The defect this
+    // once guarded from the other end — marks repeating past `DISTINCT_MARKS`
+    // with nothing said — is answered by the notice the panel shows whenever
+    // the list is that long, pinned below.
+    expect(code).toMatch(/shownGroups\s*=\s*found \?\? \[\]/);
+    expect(code).toMatch(/\{found\.length > DISTINCT_MARKS && \(/);
   });
 
   // ── SIX COLOURS WERE LABELLING NINETEEN GROUPS ──
@@ -406,7 +409,7 @@ describe("the ghost lines over the sheet", () => {
     // over a string proves the string exists; only the derivation proves
     // anybody can see it.
     expect(code, "the repeat warning is in the file but can never render").toMatch(
-      /\{showingAll && found\.length > DISTINCT_MARKS && \(/,
+      /\{found\.length > DISTINCT_MARKS && \(/,
     );
   });
 

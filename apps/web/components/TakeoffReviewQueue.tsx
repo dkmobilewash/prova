@@ -80,7 +80,7 @@ export function TakeoffReviewQueue({
   // tag or the legend), each with the height Enter would take. Library
   // guesses by thickness stay for a person to look at. One line says what
   // went in, with Undo.
-  const [accepted, setAccepted] = useState<{ text: string; keys: string[]; undo: SheetSuggestionsUndo } | null>(null);
+  const [accepted, setAccepted] = useState<{ text: string; keys: string[]; undo: SheetSuggestionsUndo; known: Set<string> } | null>(null);
   const sheetGroups = current === null || current.kind !== "type" ? [] : sheetSuggestionGroups(left, current.pageNumber, heights, planId);
   type TypeItem = Extract<ReviewItem, { kind: "type" }>;
   const heightOfGroup = (g: TypeItem, code: string | null) => levelHeightFor(code, g.level) ?? forCode(g.building?.heights ?? {}, code) ?? heightFor(code, heights, g.ceiling);
@@ -104,6 +104,8 @@ export function TakeoffReviewQueue({
     setBusy(true);
     setError(null);
     setAccepted(null);
+    const known = seenKeys();
+    forgetAfter.current = null;
     setDone((was) => new Set([...was, ...groups.map((g) => g.key)]));
     const result = await confirmSheetSuggestions(
       jobId,
@@ -120,6 +122,7 @@ export function TakeoffReviewQueue({
       text: `Accepted ${n} group${n === 1 ? "" : "s"} on sheet ${sheet} · ${Math.round(feet).toLocaleString()} ft${failed.length > 0 ? ` · not accepted: ${failed.join("; ")}` : ""}`,
       keys: groups.map((g) => g.key),
       undo,
+      known,
     });
     router.refresh();
   }
@@ -130,6 +133,7 @@ export function TakeoffReviewQueue({
     const result = await undoSheetSuggestions(jobId, was.undo).catch(() => ({ ok: false as const, error: "it did not undo. Try it again." }));
     setBusy(false);
     if (!result.ok) return setError(`Undo: ${result.error}`);
+    forgetAfter.current = was.known;
     setAccepted(null);
     setDone((done) => new Set([...done].filter((key) => !was.keys.includes(key))));
     router.refresh();
@@ -142,6 +146,22 @@ export function TakeoffReviewQueue({
   for (const item of items) {
     const part = QUEUE_PART[item.kind];
     seen.current.set(part, (seen.current.get(part) ?? new Set()).add(item.key));
+  }
+  // ── WHAT AN UNDONE ACCEPT BROUGHT, FORGOTTEN ──
+  // Accepting a new type writes its estimate lines, and their prices join the
+  // queue; Undo takes the lines away and those items leave `items` — which the
+  // count above reads as done ("Prices 2 of 12" after the undos, Chrome on Baker).
+  // So an Undo forgets what was first seen after its accept and is gone now.
+  const forgetAfter = useRef<Set<string> | null>(null);
+  if (forgetAfter.current !== null) {
+    const now = new Set(items.map((item) => item.key));
+    for (const [part, keys] of seen.current) {
+      for (const key of keys) if (!forgetAfter.current.has(key) && !now.has(key)) keys.delete(key);
+      if (keys.size === 0) seen.current.delete(part);
+    }
+  }
+  function seenKeys(): Set<string> {
+    return new Set([...seen.current.values()].flatMap((keys) => [...keys]));
   }
   const progress = [...seen.current].map(([part, keys]) => {
     const open = left.filter((item) => keys.has(item.key)).length;
@@ -224,6 +244,8 @@ export function TakeoffReviewQueue({
     setError(null);
     setCursor(after(key));
     setDone((was) => new Set(was).add(key));
+    const known = seenKeys();
+    forgetAfter.current = null;
     const back = (why: string) => {
       setDone((was) => {
         const next = new Set(was);
@@ -255,6 +277,7 @@ export function TakeoffReviewQueue({
         if (done === null) return { ok: true };
         const undone = await undoable.undo(done);
         if (undone.ok) {
+          forgetAfter.current = known;
           setDone((was) => {
             const next = new Set(was);
             next.delete(key);
