@@ -88,14 +88,15 @@ export function isAllowedDocumentType(
 export const DOCUMENT_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
 
 /**
- * PLAN SETS ONLY — 250MB, because 15MB refuses every real one. Above 100MB the browser
+ * PLAN SETS ONLY — 350MB, because 15MB refuses every real one. Above 100MB the browser
  * sends it in resumable parts (`uploadPlanSetFile`).
  *
- * IT STAYS 250MB (Diego, 2026-11-06), after a day at 1 GB on a branch: the full
- * ELEVEN03 walk (342MB) peaked the local server at 5.07 GB RSS, more than even a 4 GB
- * Pro function, so the server cannot read sets that big yet. A bigger set gets the
- * plain "too large to process" sentence (`planTooLargeProblem`) rather than a read
- * that dies. Raise this only after that peak is measured down.
+ * 350MB (Diego, 2026-11-07), up from 250MB once the peak was measured down: the full
+ * ELEVEN03 walk (342MB) peaked at 5.07 GB RSS before #1059 and at 1.72 GB after it,
+ * with the heap capped as a 2 GB function caps it. A day at 1 GB on a branch had
+ * been taken back for that 5 GB. A bigger set gets the plain "too large to process"
+ * sentence (`planTooLargeProblem`) rather than a read that dies. Raise this again
+ * only with a measured peak for the bigger set.
  *
  * A drawing set is 20–100MB and routinely more; the step-1 plan says so and Diego
  * approved 250MB for this purpose alone as part of step 0. It then shipped without it
@@ -123,21 +124,21 @@ export const DOCUMENT_UPLOAD_MAX_BYTES = 15 * 1024 * 1024;
  * whole document anyway (203 requests, 25.8MB served for a 12.9MB file), so ranging
  * bounds nothing here.
  */
-export const PLAN_SET_UPLOAD_MAX_BYTES = 250 * 1024 * 1024;
+export const PLAN_SET_UPLOAD_MAX_BYTES = 350 * 1024 * 1024;
 
 /**
  * ── HOW BIG A SET THE SERVER WILL READ ──
  *
  * Diego, 2026-11-06: a set too big for the server must say so, not time out in
- * silence. 250MB, the same as the upload cap: the full ELEVEN03 walk (342MB) peaked
- * the local server at 5.07 GB RSS, and what holds that memory is being profiled.
+ * silence. 350MB, the same as the upload cap: the full ELEVEN03 walk (342MB) peaks at
+ * 1.72 GB with the heap capped as a 2 GB function (#1059; it was 5.07 GB before).
  *
  * `NEXT_PUBLIC_PLAN_PROCESS_MAX_MB` LOWERS it (it never passes the upload cap; raise
  * both together once the peak is down). Public because the uploader refuses before
  * a byte is sent, so nobody uploads for twenty minutes to be told no; `readPlanBytes`
  * refuses again, before downloading, for every reading stage.
  */
-export const PLAN_PROCESS_DEFAULT_MAX_MB = 250;
+export const PLAN_PROCESS_DEFAULT_MAX_MB = 350;
 export function planProcessMaxBytes(raw: string | undefined = process.env.NEXT_PUBLIC_PLAN_PROCESS_MAX_MB): number {
   const mb = Number(raw);
   return Math.min(Number.isFinite(mb) && mb > 0 ? mb : PLAN_PROCESS_DEFAULT_MAX_MB, PLAN_SET_UPLOAD_MAX_BYTES / (1024 * 1024)) * 1024 * 1024;
@@ -163,7 +164,7 @@ export function planTooLargeProblem(bytes: number, maxBytes: number = planProces
  * nowhere else to go — there is one surface that reads it, and a refusal here is
  * a feature a contractor cannot use rather than a redirect.
  *
- * NOT the plan-set ceiling either, and that is the half worth stating: 250MB
+ * NOT the plan-set ceiling either, and that is the half worth stating: 350MB
  * would let an entire drawing set through the spec door, where it would be read
  * as ONE document and charge a month's spec allowance to a single call. The
  * ceiling is what stops that, not a check on content.

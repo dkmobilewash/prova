@@ -41,7 +41,7 @@ export async function uploadDocumentFile(
 ): Promise<DocumentUploadOutcome> {
   // THE PURPOSE IS PASSED, and it is the whole point of this line. Without it the
   // browser would refuse a 40MB drawing set against the shared 15MB default while the
-  // token the very next call mints allows 250MB — a form that says no to a file the
+  // token the very next call mints allows 350MB — a form that says no to a file the
   // store would have taken, which is a harder failure to diagnose than no check.
   const problem = documentFileProblem(file, purpose);
   if (problem) return { ok: false, error: problem };

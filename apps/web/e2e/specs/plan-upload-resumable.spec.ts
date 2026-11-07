@@ -89,14 +89,14 @@ test.describe("a big plan set uploads in resumable parts", () => {
     await page.goto(`/jobs/${jobId}/addendum`);
     const upload = page.locator('[data-addendum="upload"]');
     const stub = await stubDocumentUpload(page);
-    // 251 MB, sparse: plan sets are capped at 250 MB (`planProcessMaxBytes`).
+    // 351 MB, sparse: plan sets are capped at 350 MB (`planProcessMaxBytes`).
     const file = path.join(dir, "ZZ-E2E too big.pdf");
     writeFileSync(file, "%PDF-1.7\n");
-    truncateSync(file, 251 * MB);
+    truncateSync(file, 351 * MB);
     await upload.locator('input[type="file"]').setInputFiles(file);
     await upload.getByRole("button", { name: "Add a drawing" }).click();
     await expect(upload.getByRole("alert").filter({ hasText: "too large" })).toHaveText(
-      "This set is too large to process on the current plan; split it or contact support. (It is 251.0 MB; the current limit is 250.0 MB.)",
+      "This set is too large to process on the current plan; split it or contact support. (It is 351.0 MB; the current limit is 350.0 MB.)",
     );
     await expect(upload.locator('[data-takeoff="plan-upload-resume"]')).toHaveCount(0);
     expect(stub.partsSent()).toEqual([]);
