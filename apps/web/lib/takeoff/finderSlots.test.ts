@@ -34,18 +34,36 @@ describe("wall finders", () => {
     expect(await oneFinderSlot(async () => "ran")).toBe("ran");
   });
 
-  it("THE SHEET SOMEBODY IS WAITING ON JUMPS THE LINE, and an urgent one (a whole-set run's sheet) goes first", async () => {
+  it("THE SHEET SOMEBODY IS WAITING ON STARTS AT ONCE, beside the running one, and the line goes back to one at a time after", async () => {
     const order: string[] = [];
+    let running = 0;
+    let most = 0;
     const g = gate();
-    const running = oneFinderSlot(() => g.shut, "plan:1");
-    const queued = Array.from({ length: 10 }, (_, i) => oneFinderSlot(async () => void order.push(`plan:${i + 2}`), `plan:${i + 2}`));
-    expect(hurryFinder("plan", 9)).toBe(true);
+    const track = (name: string, work: () => Promise<void> = async () => {}) => async () => {
+      running += 1;
+      most = Math.max(most, running);
+      order.push(name);
+      await work();
+      running -= 1;
+    };
+    const first = oneFinderSlot(track("plan:1", () => g.shut), "plan:1");
+    const queued = Array.from({ length: 6 }, (_, i) => oneFinderSlot(track(`plan:${i + 2}`), `plan:${i + 2}`));
+    expect(hurryFinder("plan", 5)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // It ran while plan:1 still holds its slot.
+    expect(order).toEqual(["plan:1", "plan:5"]);
     expect(hurryFinder("plan", 99)).toBe(false);
-    const urgent = oneFinderSlot(async () => void order.push("urgent"), "plan:50", true);
+    const urgent = oneFinderSlot(track("urgent"), "plan:50", true);
     g.open();
-    await Promise.all([running, ...queued, urgent]);
-    expect(order.slice(0, 2)).toEqual(["urgent", "plan:9"]);
-    expect(order).toHaveLength(11);
+    await Promise.all([first, ...queued, urgent]);
+    expect(order[2]).toBe("urgent");
+    expect(order).toHaveLength(8);
+    expect(most).toBe(2);
+    // And after: one at a time again.
+    running = 0;
+    most = 0;
+    await Promise.all(Array.from({ length: 5 }, (_, i) => oneFinderSlot(track(`after:${i}`, () => new Promise((r) => setTimeout(r, 2))))));
+    expect(most).toBe(1);
   });
 
   it("IS ONE QUEUE FOR THE PROCESS, whichever copy of the module asks (Next bundles each route on its own: ELEVEN03's hurry found nothing)", async () => {
@@ -56,10 +74,11 @@ describe("wall finders", () => {
     const g = gate();
     const running = oneFinderSlot(() => g.shut, "plan:1");
     const queued = Array.from({ length: 5 }, (_, i) => oneFinderSlot(async () => void order.push(`plan:${i + 2}`), `plan:${i + 2}`));
-    // Queued through the first copy, hurried through the second.
+    // Queued through the first copy, hurried through the second: it runs before plan:1 frees its slot.
     expect(other.hurryFinder("plan", 6)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(order).toEqual(["plan:6"]);
     g.open();
     await Promise.all([running, ...queued]);
-    expect(order[0]).toBe("plan:6");
   });
 });

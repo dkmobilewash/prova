@@ -197,7 +197,9 @@ export async function detectWallsForCalibration(
         break;
       }
       try {
-        const other = await doc.pageStrokes(pageNumber);
+        // The sheet itself is one of the samples (`pagesToSample` includes it), and
+        // its strokes are already read above: the same strokes, not parsed twice.
+        const other = pageNumber === target.pageNumber && raster === null ? strokes : await doc.pageStrokes(pageNumber);
         sampledSheets.push(other.segments.map(inPageWidthUnits(other.widthPt)));
       } catch {
         // ONE BAD PAGE MUST NOT COST THE SHEET IN FRONT OF SOMEBODY. The
@@ -515,7 +517,8 @@ export async function detectWallsForCalibration(
  * same time finishes no sooner, and holds a second sheet's parse in memory (two
  * at once put ELEVEN03's finder phase at 3.2 GB). Every finder goes through here:
  * after a scale save (in turn), a whole-set run's sheet and a refresh somebody
- * pressed (at the front), and the sheet Run takeoff is waiting on (`hurryFinder`).
+ * pressed (at the front), and the sheet Run takeoff is waiting on, which starts at
+ * once beside the running one (`hurryFinder`).
  */
 const FINDERS_AT_ONCE = 1;
 // ON `globalThis`, for the reason `sharedPlanPdf.ts` gives: Confirm scales queues
@@ -537,7 +540,8 @@ export async function oneFinderSlot<T>(work: () => Promise<T>, key: string | nul
   try {
     return await work();
   } finally {
-    const next = findersWaiting.shift();
+    // Over the limit (a hurried one ran beside it): this slot ends rather than passing on.
+    const next = slots.running > FINDERS_AT_ONCE ? undefined : findersWaiting.shift();
     if (next) next.go();
     else slots.running -= 1;
   }
@@ -550,9 +554,12 @@ export async function oneFinderSlot<T>(work: () => Promise<T>, key: string | nul
  */
 export function hurryFinder(planId: string, pageNumber: number): boolean {
   const at = findersWaiting.findIndex((entry) => entry.key === `${planId}:${pageNumber}`);
-  if (at <= 0) return at === 0;
+  if (at < 0) return false;
+  // It starts NOW, beside the one running, not after it (that wait was 7 s of
+  // ELEVEN03's 27.6 s): one extra finder, only for the sheet somebody is waiting on.
   const [entry] = findersWaiting.splice(at, 1);
-  findersWaiting.unshift(entry!);
+  slots.running += 1;
+  entry!.go();
   return true;
 }
 
