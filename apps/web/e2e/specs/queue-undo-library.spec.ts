@@ -107,6 +107,9 @@ test.describe("Undo takes back the library type its accept added; the counts fol
   test("3. Enter adds ZQ8B to the library and the job; Undo takes both back, and the counts follow without a reload", async () => {
     await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await expect(queue().locator('[data-takeoff="queue-type"]')).toHaveText(CODE);
+    // ZQ8B has no height yet: the first Enter asks for one, the second leaves it for later.
+    await page.keyboard.press("Enter");
+    await expect(queue()).toContainText("Enter again to leave it for later");
     await page.keyboard.press("Enter");
     await expect.poll(library, { timeout: 30_000 }).toBe(1);
     await expect.poll(jobItem, { timeout: 30_000 }).toBe(1);
