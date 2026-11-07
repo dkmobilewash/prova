@@ -1,8 +1,8 @@
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
-import { doorSymbols, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
+import { doorSymbols, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, WINDOW_TAGS_MEAN_ALL, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
 import { joinOpeningsToSchedule, widthAndHeight, type OpeningJoin, type PlacedMark, type ScheduledOpening } from "./openingMarks";
 import { tagSymbols, type TextForSymbol } from "./tagSymbols";
-import { windowsByTag, type TaggedWindows } from "./windowTags";
+import { windowsByTag, windowTagVocabulary, type TaggedWindows } from "./windowTags";
 
 /**
  * ── ONE SHEET'S DOORS AND WINDOWS, FROM ITS SYMBOLS, JOINED TO ITS SCHEDULE ──
@@ -81,9 +81,19 @@ export function doorsAndWindowsForSheet(input: {
   const W = input.widthPt;
   const doorMarks = symbols.filter((s) => s.rejected === null && !WINDOW_TAG.test(s.text.trim().toUpperCase())).map((s) => ({ x: s.x / W, y: s.y / W }));
   const doors = onlyMarkedDoors(doorSymbols(input.segments, input.walls, input.feetPerUnit), doorMarks, input.feetPerUnit);
-  const windowTags = symbols.filter((s) => s.rejected === null && WINDOW_TAG.test(s.text.trim().toUpperCase())).map((s) => ({ x: s.x / W, y: s.y / W }));
+  const wTagged = symbols.filter((s) => s.rejected === null && WINDOW_TAG.test(s.text.trim().toUpperCase()));
   const tagWords = symbols.filter((s) => s.rejected === null).map((s) => s.text);
-  const windows = windowSymbols(input.segments, input.walls, input.feetPerUnit, windowTags, tagsNameEveryWindow(tagWords));
+  // ── A SHEET TAGGED BY ITS WINDOW SCHEDULE TAGS EVERY WINDOW, AS W-NUMBERS DO ──
+  // Topeka tags its windows A to F, the schedule's own marks, so the W-number
+  // test never saw them: every frame had to sit on a wall the exterior test
+  // accepts, and a courtyard plan's outside walls often read as inside — 15
+  // of its 22 unread windows. The same vocabulary `windowsByTag` types with.
+  const vocab = windowTagVocabulary(symbols, input.windowRows ?? [], input.wallCodes ?? []);
+  const scheduleTagged = vocab.vocabulary === "schedule" ? symbols.filter(vocab.isTag) : [];
+  const windowTags = [...new Set([...wTagged, ...scheduleTagged])].map((s) => ({ x: s.x / W, y: s.y / W }));
+  const everyWindowTagged = tagsNameEveryWindow(tagWords) || scheduleTagged.length >= WINDOW_TAGS_MEAN_ALL;
+  const byScheduleOnly = !tagsNameEveryWindow(tagWords) && scheduleTagged.length >= WINDOW_TAGS_MEAN_ALL;
+  const windows = windowSymbols(input.segments, input.walls, input.feetPerUnit, windowTags, everyWindowTagged, byScheduleOnly);
   const tagged = windowsByTag({ symbols, widthPt: W, windowRows: input.windowRows ?? [], frames: windows, walls: input.walls, feetPerUnit: input.feetPerUnit, wallCodes: input.wallCodes ?? [] });
   const rows = scheduledOpenings(input.scheduleRows);
   if (rows.length === 0) return { doors, windows, join: null, unplacedMarks: [], tagged };

@@ -358,6 +358,12 @@ export function windowSymbols(
    * and that wall has no tag. See `tagsNameEveryWindow`.
    */
   tagsNameEvery = false,
+  /**
+   * A TAGGED frame on an interior wall must still have glass inside the wall.
+   * Set where the sheet tags every window by its schedule's marks (Topeka's
+   * A to F), which is what lets a window sit on an interior wall at all.
+   */
+  interiorNeedsGlass = false,
 ): WindowSymbol[] {
   if (!(feetPerUnit > 0)) return [];
   const minLen = NARROWEST_WINDOW_FEET / feetPerUnit, maxLen = WIDEST_WINDOW_FEET / feetPerUnit;
@@ -487,7 +493,13 @@ export function windowSymbols(
     // An interior window needs its tag right beside it. The tag's usual reach
     // let Bunkie's interior wall pieces take tags meant for the wall outside.
     if (!exterior[wall] && !tags.some((t) => Math.hypot(t.x - c.mx, t.y - c.my) <= INTERIOR_TAG_REACH_FEET / feetPerUnit)) return;
-    if (!tagged.has(ci)) {
+    // ── A TAG DOES NOT MAKE GLASS ──
+    // On an exterior wall a tag beside a frame is enough. On an interior wall,
+    // where a sheet tagged by its schedule's marks now lets windows sit, a tag
+    // near casework, a counter or a door frame would make it a window; so
+    // there a tagged frame must still have a glass line inside the wall.
+    const interiorTagged = tagged.has(ci) && interiorNeedsGlass && !exterior[wall];
+    if (!tagged.has(ci) || interiorTagged) {
       // ── GLASS INSIDE THE WALL, OR IT IS NOT A WINDOW ──
       // Joplin A-101 (2026-10-29, by eye over 54 candidates): the exterior
       // wall's two faces plus a parallel roof, sill or rated-wall line read as
@@ -500,6 +512,10 @@ export function windowSymbols(
       // tags are what keep them, not this rule.)
       const half = walls[wall]!.thicknessFeet / 2 / feetPerUnit;
       if (!fromWall.some((o) => o < half - inside) || fromWall.some((o) => o > half + 2 * inside)) return;
+      // The gap test below rejected 13 of Topeka's real interior windows (the
+      // finder's run passes through them), so a tagged interior frame is held
+      // to the glass test only.
+      if (interiorTagged) { out.push({ kind: "window", x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, widthFeet: (aHi - aLo) * feetPerUnit, wall, lines: offs.length }); return; }
       // ── IN A GAP OF THE WALL, NOT ON A WALL ──
       // A window's frame lines ARE the wall's faces where the wall stops; a
       // rated wall's hatch and a desk against the wall sit under faces that
