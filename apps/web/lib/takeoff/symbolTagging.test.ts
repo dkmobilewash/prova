@@ -314,3 +314,27 @@ describe("the prefix a plan drops", () => {
     expect(prefixlessVocabulary(["P1"])).toBeNull();
   });
 });
+
+describe("a numbered series that runs past a numeric legend is a keynote list (E Street, MHK)", () => {
+  const legend = ["1", "2", "3", "4"];
+  // Keynote circles numbered 1–7 beside every wall; the wall tags are squares 1–4.
+  const keynotes = ["1", "2", "3", "4", "5", "6", "7", "1", "2", "4"].map((t, i) => symbol(t, { shape: "circle", x: 200 + i * 300, y: 400 }));
+  const tags = ["2", "3"].map((t, i) => symbol(t, { shape: "square", x: 200 + i * 600, y: 1000 }));
+  const walls = [...keynotes.map((k) => runAt(k.x, k.y)), ...tags.map((t) => runAt(t.x, t.y))];
+  const run = (symbols: TagSymbol[], codes = legend) => tagsFromSymbols({ symbols, legendCodes: codes, shape: null, walls, feetPerUnit: FEET_PER_UNIT, widthPt: WIDTH_PT });
+
+  it("refuses the shape whose numbers run past the legend; the shape that stays inside it still tags", () => {
+    const got = run([...keynotes, ...tags]);
+    expect(got.tags.map((t) => t.name).sort()).toEqual(["2", "3"]);
+  });
+
+  it("one stray number past the legend is not a series (a type the legend read missed)", () => {
+    const oneStray = [...keynotes.filter((k) => k.text === "1" || k.text === "2" || k.text === "5"), ...tags];
+    expect(run(oneStray).tags.length).toBeGreaterThan(2);
+  });
+
+  it("a lettered legend is untouched by numbered symbols", () => {
+    const lettered = [...keynotes, symbol("A", { shape: "square", x: 200, y: 1000 })];
+    expect(run(lettered, ["A", "B"]).tags.map((t) => t.name)).toEqual(["A"]);
+  });
+});

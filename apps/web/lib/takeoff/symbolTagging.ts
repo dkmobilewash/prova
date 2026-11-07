@@ -83,6 +83,9 @@ export type SymbolTagReport = {
  * what that legend draws its tags in, or null where no shape dominated, in
  * which case shape is not used at all rather than guessed.
  */
+/** Distinct numbers outside a numeric legend that make a symbol shape a keynote series (E Street's squares run to 17, MHK's circles to 7). */
+export const KEYNOTE_SERIES_MIN_OUTSIDE = 2;
+
 export function tagsFromSymbols(input: {
   symbols: readonly TagSymbol[];
   legendCodes: readonly string[];
@@ -116,8 +119,28 @@ export function tagsFromSymbols(input: {
   // Joplin's "A3" over "A-621" read 133 ft of wall as type A3. A one-part
   // symbol whose text merely looks like a sheet number keeps its chance.
   const isCallout = (s: TagSymbol) => s.split && s.parts.length === 2 && s.parts.some((p) => SHEET_REFERENCE.test(p.replace(/\s+/g, "").toUpperCase()));
+  // ── A NUMBERED SERIES THAT RUNS PAST THE LEGEND IS A KEYNOTE LIST ──
+  //
+  // Where the legend names its types by bare numbers (E Street 1–4, MHK 1–4),
+  // the plan's keynotes are bare numbers too. E Street numbers its keynote
+  // squares 1 to 17 and MHK its circles 1 to 7; each was the plan's commonest
+  // numbered shape, so keynotes 1–4 typed walls (175 and 109 ft, none of it on
+  // a wall the key types). A shape holding two or more numbers the legend does
+  // not define is that series, and none of its symbols names a wall.
+  const bare = (t: string) => /^\d{1,3}$/.test(t.trim());
+  const numericLegend = legendCodes.length > 0 && legendCodes.every((c) => bare(c));
+  const seriesShapes = new Set<SymbolShape>();
+  if (numericLegend) {
+    const outside = new Map<SymbolShape, Set<string>>();
+    for (const sym of symbols) {
+      const t = sym.text.trim();
+      if (!bare(t) || known.has(t.toUpperCase())) continue;
+      (outside.get(sym.shape) ?? outside.set(sym.shape, new Set()).get(sym.shape)!).add(t);
+    }
+    for (const [shape, numbers] of outside) if (numbers.size >= KEYNOTE_SERIES_MIN_OUTSIDE) seriesShapes.add(shape);
+  }
   const couldBeTags = symbols.filter(
-    (s) => s.rejected === null || (s.rejected === "sheet-reference" && !isCallout(s) && codeOf(s) !== undefined),
+    (s) => !seriesShapes.has(s.shape) && (s.rejected === null || (s.rejected === "sheet-reference" && !isCallout(s) && codeOf(s) !== undefined)),
   );
   const tags: WallTypeTag[] = [];
   const anchoredByLeader = new Set<WallTypeTag>();
