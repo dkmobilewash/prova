@@ -86,10 +86,15 @@ export function QueueGroupConfirm({
   // count stood still for an answer (walk v3: "the count did not move"). The
   // first Enter goes to the height; a second Enter leaves it for later.
   const [askedHeight, setAskedHeight] = useState(false);
+  // Which accept asked for the height: "A" (every group nothing names) or this one.
+  // Enter in the height box then finishes THAT accept — it took only this group,
+  // after "A" had said all of them (ELEVEN03 A3.2: 15 groups promised, 1 taken).
+  const [askedForAll, setAskedForAll] = useState(false);
   function accept(all = false) {
     if (choosing && pick === null) return setError("Pick a type: 1–9.");
     if (choosing && heightText.trim() === "" && !askedHeight) {
       setAskedHeight(true);
+      setAskedForAll(all);
       setError(null);
       heightBox.current?.focus();
       return;
@@ -156,7 +161,7 @@ export function QueueGroupConfirm({
         className="inline-flex items-center gap-1"
         onSubmit={(event) => {
           event.preventDefault();
-          accept();
+          accept(askedHeight && askedForAll);
         }}
       >
         <span className="text-ink-muted">Height</span>
@@ -227,7 +232,8 @@ export function QueueGroupConfirm({
       </span>
       {askedHeight && pick !== null && heightText.trim() === "" && (
         <span className="text-ink-body" data-takeoff="queue-ask-height">
-          {pick.code} has no height yet: type the height of every {pick.code} wall on this job, or Enter again to leave it for later.
+          {pick.code} has no height yet: type the height of every {pick.code} wall on this job, or Enter again to leave it for later
+          {askedForAll && rest !== null ? ` — on all ${rest}` : ""}.
         </span>
       )}
       {error !== null && (
