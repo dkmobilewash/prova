@@ -112,12 +112,18 @@ export async function confirmSheetSuggestions(jobId: string, groups: ConfirmGrou
   const before = await snapshot();
   let accepted = 0;
   const failed: string[] = [];
+  // ── THE LINES ARE WRITTEN ONCE, FOR EVERY GROUP ──
+  // Each group used to rewrite its type's lines, and that reads every item and
+  // measurement on the job: Topeka's Accept all (A-201, 516 runs on the job)
+  // took 10.8 s, most of it the same read over again per group.
+  const touched = new Set<string>();
   for (const group of groups) {
     const checked = checkedHeight(group);
-    const result = typeof checked === "string" ? actionFail(checked) : await typeGroup(context, jobId, group, checked.heightFt, checked.level);
+    const result = typeof checked === "string" ? actionFail(checked) : await typeGroup(context, jobId, group, checked.heightFt, checked.level, touched);
     if (result.ok) accepted += 1;
     else failed.push(`${String(group.code)}: ${result.error}`);
   }
+  if (touched.size > 0) await prisma.$transaction((tx) => syncDecidedItems(tx, companyId, jobId, [...touched]));
   const after = await snapshot();
   const was = new Map(before.runs.map((m) => [m.id, m]));
   const height = new Map(before.items.map((i) => [i.id, i]));
@@ -174,7 +180,15 @@ export async function undoSheetSuggestions(jobId: string, undo: SheetSuggestions
 }
 
 /** Both actions' work, after each has checked the capability itself. */
-async function typeGroup(context: Awaited<ReturnType<typeof requireCompanyContext>>, jobId: string, input: WallGroupTypeInput, heightFt: number | null, level: string | null = null): Promise<ActionResult> {
+async function typeGroup(
+  context: Awaited<ReturnType<typeof requireCompanyContext>>,
+  jobId: string,
+  input: WallGroupTypeInput,
+  heightFt: number | null,
+  level: string | null = null,
+  /** When given, the items whose lines need writing are added here and written once by the caller. */
+  touched?: Set<string>,
+): Promise<ActionResult> {
   const companyId = context.company.id;
   const code = String(input.code ?? "").trim().toUpperCase();
   const runs = Array.isArray(input.runs) ? input.runs.filter((r) => [r.x1, r.y1, r.x2, r.y2].every(Number.isFinite)) : [];
@@ -243,7 +257,10 @@ async function typeGroup(context: Awaited<ReturnType<typeof requireCompanyContex
       await tx.takeoffItem.updateMany({ where: { id: itemId, sides: null }, data: { sides: 2 } });
     }
     // The type's line, and the untyped line the runs left, written now.
-    await syncDecidedItems(tx, companyId, jobId, [itemId, untyped?.id ?? null]);
+    if (touched !== undefined) {
+      touched.add(itemId);
+      if (untyped) touched.add(untyped.id);
+    } else await syncDecidedItems(tx, companyId, jobId, [itemId, untyped?.id ?? null]);
   });
   revalidatePath(`/jobs/${jobId}`, "layout");
   revalidatePath(`/takeoff/${jobId}`);
