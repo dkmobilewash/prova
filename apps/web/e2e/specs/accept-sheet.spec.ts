@@ -153,6 +153,32 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
     await expect(acceptAll()).toHaveText("Accept all suggestions on this sheet (2 groups)");
   });
 
+  test("4b. THE TOOLBAR UNDO takes Accept all back too, and Redo puts it back (Chrome on Baker: it stayed grey)", async () => {
+    const undo = page.locator('[data-takeoff="undo"]');
+    const redo = page.locator('[data-takeoff="redo"]');
+    await acceptAll().click();
+    await expect(queue().locator('[data-takeoff="review-queue-accepted-text"]')).toHaveText("Accepted 2 groups on sheet A101 · 130 ft");
+    await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(2);
+    await expect(undo).toBeEnabled({ timeout: 30_000 });
+    await expect(undo).toHaveAttribute("title", /Undo: Accept all on A101 \(2 groups\)/);
+    await undo.click();
+    await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(5);
+    expect(await linesOf("ZA1")).toBe(0);
+    // The inline line goes with it, and the groups are back to accept.
+    await expect(queue().locator('[data-takeoff="review-queue-accepted"]')).toHaveCount(0, { timeout: 30_000 });
+    await expect(left()).toHaveText("4 left to review", { timeout: 30_000 });
+    await expect(acceptAll()).toHaveText("Accept all suggestions on this sheet (2 groups)");
+    // Redo accepts them again; the next Undo takes that back in full.
+    await redo.click();
+    await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(2);
+    expect(await linesOf("ZA1")).toBeGreaterThan(0);
+    await expect(undo).toBeEnabled({ timeout: 30_000 });
+    await undo.click();
+    await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(5);
+    expect(await linesOf("ZA1")).toBe(0);
+    await expect(left()).toHaveText("4 left to review", { timeout: 30_000 });
+  });
+
   test("5. the two groups nothing names take one type in one go, and Undo takes both back", async () => {
     await acceptAll().click();
     await expect(queue().locator('[data-takeoff="review-queue-accepted-text"]')).toHaveText("Accepted 2 groups on sheet A101 · 130 ft");
