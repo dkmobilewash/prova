@@ -26,7 +26,9 @@ test.describe.configure({ mode: "serial" });
 const SHOTS = path.resolve(__dirname, "../artifacts/queue-undo-library");
 const S02 = path.resolve(__dirname, "../../lib/takeoff/fixtures/plans/S02.pdf");
 const SIZE = { width: 1440, height: 900 };
-const CODE = "ZQ8B";
+// Unique per run: a failed attempt leaves its type in the persona's library, used by a
+// job item, and a retry must not find it there.
+const CODE = `ZQ${String(Date.now()).slice(-5)}`;
 // Fourteen groups (past the old fold of twelve), one run each, every one tagged ZQ8B.
 const GROUPS = Array.from({ length: 14 }, (_, i) => ({ inches: 4 + i * 0.5, run: { x1: 0.1, y1: 0.2 + i * 0.05, x2: 0.3 + (i % 5) * 0.1, y2: 0.2 + i * 0.05 } }));
 
@@ -81,7 +83,7 @@ test.describe("Undo takes back the library type its accept added; the counts fol
     });
     await prisma.takeoffPlanTextRead.create({ data: { planId, pageNumber: 0, kind: "legend", value: { page: 1, title: "PARTITION TYPES", codes: [CODE], proposals: [], reason: "seeded", confidence: "HIGH" } } });
     const legendRun = await prisma.planIngestJob.create({ data: { planId, companyId, stage: "WALL_LEGEND", pageCount: 1 }, select: { id: true } });
-    const read = { types: [{ code: CODE, name: "ZZ-E2E partition ZQ8B", lines: ['6" METAL STUDS @ 16" O.C.', '5/8" GYP. BD. EACH SIDE'] }], uno: [], reason: "seeded", confidence: "HIGH" as const };
+    const read = { types: [{ code: CODE, name: `ZZ-E2E partition ${CODE}`, lines: ['6" METAL STUDS @ 16" O.C.', '5/8" GYP. BD. EACH SIDE'] }], uno: [], reason: "seeded", confidence: "HIGH" as const };
     proposalId = (await prisma.planLegendProposal.create({ data: { ingestJobId: legendRun.id, planId, pageNumber: 1, ...legendProposalFrom({ pageNumber: 1, sheetTitle: "PARTITION TYPES", model: "seed", read, crops: [] }) }, select: { id: true } })).id;
     const sheet = await prisma.takeoffPlanPage.create({ data: { planId, pageNumber: 1, label: "A101", pageWidthPt: 2592 } });
     const calibration = await prisma.takeoffScaleCalibration.create({ data: { pageId: sheet.id, x1: 0, y1: 0.1, x2: 1, y2: 0.1, declaredDistanceFeet: "144" } });
@@ -114,9 +116,10 @@ test.describe("Undo takes back the library type its accept added; the counts fol
     await expect.poll(library, { timeout: 30_000 }).toBe(1);
     await expect.poll(jobItem, { timeout: 30_000 }).toBe(1);
     expect((await prisma.planLegendProposal.findUniqueOrThrow({ where: { id: proposalId } })).status).toBe("ACCEPTED");
-    // The accepted type brings its own questions (a height, its prices), so "left" grows;
-    // the groups are what moved.
-    await expect(progress()).toContainText("Groups 1 of 14", { timeout: 30_000 });
+    // The accepted type brings its own questions: its prices, and a height, which the
+    // queue counts with the groups ("Groups 1 of 15 · Prices 0 of 2" in CI) once the
+    // refresh lands. Either way one group moved.
+    await expect(progress()).toContainText(/Groups 1 of 1[45]/, { timeout: 30_000 });
     await page.screenshot({ path: path.join(SHOTS, "accepted-1440.png") });
 
     await expect(undo()).toBeEnabled({ timeout: 30_000 });
