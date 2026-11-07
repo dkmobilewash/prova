@@ -41,8 +41,14 @@ import { E2E_BLOB_STORE_ID } from "./fakeBlobToken.mjs";
  * own comment) — a confusing sentence that says nothing about what this
  * suite is checking.
  */
-export async function stubDocumentUpload(page: Page): Promise<{ uploadedUrls: () => string[] }> {
+export async function stubDocumentUpload(
+  page: Page,
+  /** For a resumable plan upload: fail a part's upload (to test Resume), by part number and attempt. */
+  options: { failPart?: (partNumber: number, attempt: number) => boolean } = {},
+): Promise<{ uploadedUrls: () => string[]; partsSent: () => number[] }> {
   const uploaded: string[] = [];
+  const partsSent: number[] = [];
+  const attempts = new Map<number, number>();
 
   await page.route("**/api/documents/upload", async (route) => {
     let body: { type?: string } = {};
@@ -72,6 +78,28 @@ export async function stubDocumentUpload(page: Page): Promise<{ uploadedUrls: ()
       const url = new URL(request.url());
       const pathname = url.searchParams.get("pathname") ?? url.pathname.replace(/^\/api\/blob\/?/, "");
       const fileUrl = `https://${E2E_BLOB_STORE_ID}.public.blob.vercel-storage.com/${pathname}`;
+      // A plan set over 100 MB goes in parts (`lib/resumableUpload.ts`): create,
+      // one call per part, then complete — which answers as a put does.
+      const mpu = request.headers()["x-mpu-action"];
+      if (mpu === "create") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ key: pathname, uploadId: "e2e-stub-upload" }) });
+        return;
+      }
+      if (mpu === "upload") {
+        const partNumber = Number(request.headers()["x-mpu-part-number"] ?? "0");
+        const attempt = (attempts.get(partNumber) ?? 0) + 1;
+        attempts.set(partNumber, attempt);
+        if (options.failPart?.(partNumber, attempt)) {
+          // A refusal the Blob SDK does not retry on its own (a 503 or a network
+          // error it retries ten times with backoff, which outlasts a test), so
+          // the failure reaches `resumableUpload` as a token running out would.
+          await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: { code: "forbidden", message: "stubbed refusal" } }) });
+          return;
+        }
+        partsSent.push(partNumber);
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ etag: `e2e-part-${partNumber}`, partNumber }) });
+        return;
+      }
       uploaded.push(fileUrl);
       await route.fulfill({
         status: 200,
@@ -88,5 +116,5 @@ export async function stubDocumentUpload(page: Page): Promise<{ uploadedUrls: ()
     },
   );
 
-  return { uploadedUrls: () => [...uploaded] };
+  return { uploadedUrls: () => [...uploaded], partsSent: () => [...partsSent] };
 }
