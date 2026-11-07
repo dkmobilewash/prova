@@ -428,17 +428,10 @@ describe("nothing a sheet found is out of reach", () => {
    */
   const viewer = readFileSync(resolve(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8");
 
-  it("OFFERS THE GROUPS BELOW THE FOLD, as a control rather than a sentence", () => {
-    expect(viewer, "the hidden groups are not reachable").toContain("Show the other");
-    expect(viewer).toContain("onClick={() => setShowingAll(true)}");
-  });
-
-  it("shows ALL of them once asked, not another page of them", () => {
-    expect(viewer).toContain("showingAll ? (found ?? []) : (found ?? []).slice(0, SHOWN_AT_FIRST)");
-  });
-
-  it("names the footage behind the control, so pressing it is not a leap", () => {
-    expect(viewer).toContain("found.slice(SHOWN_AT_FIRST).reduce((f, c) => f + c.feet, 0)");
+  it("LISTS EVERY GROUP, with no fold: the review queue walks them all (Chrome on Baker: 12 listed, 20 in the queue)", () => {
+    const code = viewer.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).toMatch(/const shownGroups = found \?\? \[\];/);
+    expect(code, "a fold is back: some groups are a press away again").not.toMatch(/\.slice\(0, SHOWN_AT_FIRST\)|Show the other/);
   });
 
   it("STOPS PROMISING EACH GROUP ITS OWN COLOUR", () => {
@@ -461,12 +454,6 @@ describe("nothing a sheet found is out of reach", () => {
     // And it still says WHY somebody should look, which is the whole posture:
     // a found wall is a proposal and the drawing is the check.
     expect(headline).toMatch(/real walls/);
-  });
-
-  it("forgets that it was expanded when the sheet is read again", () => {
-    // A stale `true` across a re-run would show a fold that is not there, and
-    // across a sheet change would show another sheet's.
-    expect(viewer).toContain("setShowingAll(false)");
   });
 
   it("reads the file it thinks it is reading", () => {

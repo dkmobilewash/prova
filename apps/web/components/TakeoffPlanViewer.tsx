@@ -23,7 +23,7 @@ import { Spinner } from "@/components/Spinner";
 import { SubmitButton } from "@/components/SubmitButton";
 import { canvasPlan } from "@/lib/takeoff/canvasPlan";
 import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
-import { DISTINCT_MARKS, DOOR_COLOUR, LAYER_COLOURS, ROOM_COLOUR, SHOWN_AT_FIRST, markFor } from "@/lib/takeoff/clusterMarks";
+import { DISTINCT_MARKS, DOOR_COLOUR, LAYER_COLOURS, ROOM_COLOUR, markFor } from "@/lib/takeoff/clusterMarks";
 import { TakeoffLayerPanel, type Layer } from "@/components/TakeoffLayerPanel";
 import { defaultLayerName, layerKeyOf } from "@/lib/takeoff/layerKey";
 import { postSheetWalls, renameTakeoffLayer, setWallGroupHeight } from "@/lib/actions";
@@ -1048,13 +1048,15 @@ export function TakeoffPlanViewer({
   const [chosen, setChosen] = useState<Record<number, string>>({});
   /** A height typed for a group whose type has no default — the posting refuses without one. */
   const [groupHeight, setGroupHeight] = useState<Record<number, string>>({});
-  /** Whether the groups below the fold are showing. See `SHOWN_AT_FIRST`. */
-  const [showingAll, setShowingAll] = useState(false);
   /** The rows on screen. Indexes into this ARE the indexes into `found`,
    *  because it only ever truncates — every handler, the colour and the
    *  overlay all key off the same number, and a slice that reordered would
    *  silently hover one group and add another. */
-  const shownGroups = showingAll ? (found ?? []) : (found ?? []).slice(0, SHOWN_AT_FIRST);
+  // EVERY GROUP, as the review queue walks them (Chrome on Baker: the panel listed
+  // 12 and the queue 20 — 7-3/8" 77 ft, 11-1/2" 62 ft, 9-3/4" 50 ft were behind a
+  // "Show the other" press). Past `DISTINCT_MARKS` the marks repeat, and the panel
+  // says so below the list.
+  const shownGroups = found ?? [];
   /**
    * The same groups, read under the condition each proposes into.
    *
@@ -3264,7 +3266,6 @@ export function TakeoffPlanViewer({
     setFound(stored);
     setFoundOnPage(pageNumber);
     setChosen({});
-    setShowingAll(false);
   }, [pageNumber, storedWallsByPage, foundRaw, foundOnPage, preferStored]);
 
   /**
@@ -3712,7 +3713,6 @@ export function TakeoffPlanViewer({
       setFound(storedNow);
       setFoundOnPage(pageNumber);
       setChosen({});
-      setShowingAll(false);
       seeded.current.add(pageNumber);
       void postWhenStored(pageNumber);
       return;
@@ -3723,7 +3723,6 @@ export function TakeoffPlanViewer({
     setRooms(null);
     setChosen({});
     setPostedDoorMarks([]);
-    setShowingAll(false);
     try {
       const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
       // ── WHAT THE DRAFTER CALLED EACH LINE, WHERE THE EXPORT SAYS SO ──
@@ -5860,17 +5859,6 @@ export function TakeoffPlanViewer({
                   because the cut landed by cluster order rather than by size.
                   Both halves are fixed: `wallGroups` orders by footage, and
                   the rest of the list is one press away. */}
-              {found.length > SHOWN_AT_FIRST && !showingAll && (
-                <button
-                  type="button"
-                  onClick={() => setShowingAll(true)}
-                  className="mt-2 text-xs text-link underline hover:text-link-hover"
-                >
-                  Show the other {found.length - SHOWN_AT_FIRST}{" "}
-                  {found.length - SHOWN_AT_FIRST === 1 ? "group" : "groups"}, holding{" "}
-                  {Math.round(found.slice(SHOWN_AT_FIRST).reduce((f, c) => f + c.feet, 0)).toLocaleString()} ft
-                </button>
-              )}
               {/* ── THE SCHEDULE'S DOORS THAT NO RUN ON THIS SHEET CARRIES ──
                   A door schedule covers the building; this sheet is one floor
                   plan. A row placed nowhere here is either on another sheet or
@@ -5893,7 +5881,7 @@ export function TakeoffPlanViewer({
                   list is long enough for it to be true, which on the default
                   twelve it never is. Same rule as the template filter's count:
                   state the limit rather than let somebody discover it. */}
-              {showingAll && found.length > DISTINCT_MARKS && (
+              {found.length > DISTINCT_MARKS && (
                 <p className="mt-2 text-xs text-ink-muted">
                   The last {found.length - DISTINCT_MARKS}{" "}
                   {found.length - DISTINCT_MARKS === 1 ? "group repeats a mark" : "groups repeat marks"} used
