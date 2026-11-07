@@ -1164,7 +1164,7 @@ export function TakeoffPlanViewer({
       if (postWait.current !== mine) return;
       if (posted.ok && posted.value.waiting) {
         setPostedNote({ page: sheetAt, text: "", failed: false, waiting: true });
-        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
         if (postWait.current !== mine) return;
         continue;
       }

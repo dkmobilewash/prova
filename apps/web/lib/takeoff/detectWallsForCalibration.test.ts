@@ -26,6 +26,13 @@ vi.mock("@/lib/plan-ingest/planBytes", () => ({
   readPlanBytes: (planId: string, companyId: string) => readPlanBytes(planId, companyId),
 }));
 vi.mock("@/lib/plan-ingest/planPdf", () => ({ openPlanPdf: (bytes: unknown) => openPlanPdf(bytes) }));
+// The shared copy, without its sharing: each test hands in its own document.
+vi.mock("@/lib/plan-ingest/sharedPlanPdf", () => ({
+  openSharedPlanPdf: async (planId: string, companyId: string) => {
+    const read = await readPlanBytes(planId, companyId);
+    return read.ok ? { ok: true, pdf: await openPlanPdf(read.bytes) } : read;
+  },
+}));
 // No scanned sheets here: every page reads its strokes and text from the file.
 vi.mock("@/lib/plan-ingest/raster", () => ({ storedRasterFor: async () => null }));
 vi.mock("@prova/db", () => ({
@@ -231,6 +238,20 @@ describe("THE STAGE POSTS THE VIEWER'S LIST, NOT THE FINDER'S", () => {
     const runs = postedRuns();
     expect(runs).toHaveLength(5);
     expect(runs.some(onTaggedWall)).toBe(true);
+  });
+
+  it("LETS A WAITING REQUEST IN between the finder's synchronous stages (ELEVEN03: a big sheet held every request for its whole run)", async () => {
+    openPlanPdf.mockResolvedValue(sheet([]));
+    const order: string[] = [];
+    // A request that arrived as the finder began: it gets a turn before the finder finishes.
+    setImmediate(() => order.push("request"));
+    const done = detectWallsForCalibration(target, { now: tickingClock(0), budgetMs: 45_000 }).then((outcome) => order.push(`finder ${outcome}`));
+    await done;
+    expect(order).toEqual(["request", "finder written"]);
+    const yields = vi.spyOn(globalThis, "setImmediate");
+    await detectWallsForCalibration(target, { now: tickingClock(0), budgetMs: 45_000 });
+    expect(yields.mock.calls.length).toBeGreaterThanOrEqual(3);
+    yields.mockRestore();
   });
 
   it("THE USER'S WORK AREA REACHES THE ESTIMATE: a WORK_AREA row round the room leaves the wall outside it unposted", async () => {

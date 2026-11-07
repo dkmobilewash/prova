@@ -54,7 +54,7 @@ describe.skipIf(PDF === "" || DIR === "" || OUT === "" || CACHE === "")("the leg
       { planId: "p", companyId: "c", ingestJobId: "i", jobId: "j", startedByUserId: null },
       {
         loadPageTitle: async (_plan, page) => titles.get(page) ?? null,
-        loadBytes: async () => Buffer.from(bytes),
+        openPdf: async () => openPlanPdf(Buffer.from(bytes)),
         gate: async () => ({ ok: true, settings: { aiEnabled: true, disabledFeatures: [], optedInFeatures: ["PLAN_TEXT_READ"], planSheetsPerMonth: 100_000, modelOverride: null }, model, modelSource: "default" }) as never,
         claim: (async () => ({ ok: true, claim: null })) as never,
         markFailure: (async () => {}) as never,
