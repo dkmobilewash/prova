@@ -3,9 +3,8 @@
 import { prisma, type PlanIngestStage } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { pdfPageCount } from "@/lib/ask/pageCount";
 import { claimPorts, closeIfSettled, ingestViewOf, unfinishedIngestsFor } from "@/lib/plan-ingest/claim";
-import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
+import { openSharedPlanPdf } from "@/lib/plan-ingest/sharedPlanPdf";
 import { runIngestLanes, MAX_ATTEMPTS, MODEL_LANES, type IngestView } from "@/lib/plan-ingest/runner";
 import { isRunnableStage, stageWork, STAGE_SPENDS } from "@/lib/plan-ingest/stages";
 import { wallsSheetsFor, wallsTaskPages } from "@/lib/plan-ingest/walls";
@@ -112,12 +111,16 @@ export async function startPlanIngest(planId: string, stage: PlanIngestStage): P
     return { ok: false, error: "That kind of plan reading isn't built yet." };
   }
 
-  const file = await readPlanBytes(planId, companyId);
-  if (!file.ok) return { ok: false, error: file.error };
-
-  const pageCount = pdfPageCount(file.bytes);
+  // The page count from the plan's one open copy, which the reading stages are
+  // about to borrow anyway (`openSharedPlanPdf`). Reading the whole file here
+  // for a count held a second 327 MB copy beside it: ELEVEN03's peak with the
+  // heap capped as a 2 GB function caps it, 2.1 GB.
+  const shared = await openSharedPlanPdf(planId, companyId).catch(() => null);
+  if (shared !== null && !shared.ok) return { ok: false, error: shared.error };
+  const pageCount = shared === null ? null : shared.pdf.pageCount;
+  if (shared !== null) await shared.pdf.close();
   if (pageCount === null) {
-    // `pdfPageCount` returns null when the page tree cannot be read, which is a
+    // The count is null when the document cannot be opened at all, which is a
     // real state rather than a fault — the same one the Ask box charges a flat ten
     // pages for. Here there is nothing to charge and nothing to enumerate, so it
     // refuses and says which file to look at rather than starting a run over a

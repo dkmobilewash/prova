@@ -3,8 +3,8 @@
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
-import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
+
+import { openSharedPlanPdf } from "@/lib/plan-ingest/sharedPlanPdf";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { compareSheets, measurementsNearChanges, type Seg } from "@/lib/takeoff/sheetCompare";
 import { earlierVersionsFor } from "@/lib/takeoff/sheetRevisions";
@@ -28,9 +28,9 @@ export type RevisionCompare = {
 };
 
 async function strokesOf(planId: string, companyId: string, pageNumber: number) {
-  const read = await readPlanBytes(planId, companyId);
+  const read = await openSharedPlanPdf(planId, companyId);
   if (!read.ok) return read;
-  const doc = await openPlanPdf(read.bytes);
+  const doc = read.pdf;
   try {
     const s = await doc.pageStrokes(pageNumber);
     const W = s.widthPt;

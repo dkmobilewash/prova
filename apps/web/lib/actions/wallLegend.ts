@@ -8,8 +8,8 @@ import { claimPlanSheet, markPlanSheetFailure } from "@/lib/ask/planSheetSpend";
 import { recordAskUsage } from "@/lib/ask/usage";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
-import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
+
+import { openSharedPlanPdf } from "@/lib/plan-ingest/sharedPlanPdf";
 import { sameCode } from "@/lib/takeoff/legendMerge";
 import { storedLegendTypes, storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { assemblyFromSight } from "@/lib/takeoff/legendSight";
@@ -232,9 +232,9 @@ export async function readLegendBySight(
   if (proposal === null) return actionFail(NO_PROPOSAL) as ActionResultWith<never>;
 
   // The page's words, for the model to read beside the pictures.
-  const bytes = await readPlanBytes(proposal.planId, companyId);
+  const bytes = await openSharedPlanPdf(proposal.planId, companyId);
   if (!bytes.ok) return actionFail(bytes.error) as ActionResultWith<never>;
-  const pdf = await openPlanPdf(bytes.bytes);
+  const pdf = bytes.pdf;
   let lines: string[];
   try {
     lines = await pageLines(pdf, proposal.pageNumber);

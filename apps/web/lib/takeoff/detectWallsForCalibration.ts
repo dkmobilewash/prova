@@ -1,9 +1,8 @@
 import type { PriorLine } from "./planCompare";
 import { after } from "next/server";
 import { prisma } from "@prova/db";
-import { readPlanBytes } from "@/lib/plan-ingest/planBytes";
 import { storedRasterFor } from "@/lib/plan-ingest/raster";
-import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
+import { openSharedPlanPdf } from "@/lib/plan-ingest/sharedPlanPdf";
 import { pagesToSample } from "./sheetTemplate";
 import { storePlanCaptions } from "./levelReads";
 import { inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
@@ -127,8 +126,12 @@ export async function detectWallsForCalibration(
 
   // SCOPED BY COMPANY in the read itself, not by a check afterwards — this runs
   // detached from the request, so there is no context left to trust.
-  const read = await readPlanBytes(target.planId, target.companyId);
-  if (!read.ok) return "unreadable";
+  // BORROWED, not read: every finder used to fetch and open the whole set, so
+  // Confirm on 35 sheets held 35 copies (ELEVEN03, 342 MB: 5.07 GB peak). The
+  // plan's one open copy is shared (`openSharedPlanPdf`) and `close` gives it back.
+  const shared = await openSharedPlanPdf(target.planId, target.companyId);
+  if (!shared.ok) return "unreadable";
+  const doc = shared.pdf;
 
   // THE DOWNLOAD IS THE EXPENSIVE PART and it has already happened, so this is
   // the first honest place to ask. Giving up here is the only hard stop: past
@@ -140,14 +143,11 @@ export async function detectWallsForCalibration(
       afterMs: spent(),
       reading: "the plan file",
     });
+    await doc.close();
     return "out-of-time";
   }
 
-  // ONE DOCUMENT FOR BOTH LAYERS. `openPlanPdf` hands the bytes to pdfjs as a
-  // VIEW and pdfjs DETACHES the buffer behind it, so a second open on the same
-  // Buffer throws `Cannot perform Construct on a detached ArrayBuffer` — the
-  // trap `PlanPdf.pageStrokes` documents.
-  const doc = await openPlanPdf(read.bytes);
+  // ONE DOCUMENT FOR BOTH LAYERS: text and strokes both come off `doc`.
   try {
     if (target.pageNumber < 1 || target.pageNumber > doc.pageCount) return "no-such-page";
 
@@ -197,7 +197,9 @@ export async function detectWallsForCalibration(
         break;
       }
       try {
-        const other = await doc.pageStrokes(pageNumber);
+        // The sheet itself is one of the samples (`pagesToSample` includes it), and
+        // its strokes are already read above: the same strokes, not parsed twice.
+        const other = pageNumber === target.pageNumber && raster === null ? strokes : await doc.pageStrokes(pageNumber);
         sampledSheets.push(other.segments.map(inPageWidthUnits(other.widthPt)));
       } catch {
         // ONE BAD PAGE MUST NOT COST THE SHEET IN FRONT OF SOMEBODY. The
@@ -259,6 +261,10 @@ export async function detectWallsForCalibration(
     const pairWithThicknesses = target.pairWithThicknesses !== false;
     const pairings: WallCandidate[] = [];
     const scored: ScoredPairing[] = [];
+    // A breath for the server between the finder's synchronous stages (the second
+    // session's spots): requests waiting behind a big sheet get their turn here.
+    // Results are unchanged; nothing is read or written across the pause.
+    await new Promise((resolve) => setImmediate(resolve));
     const detected = detectForSheet({
       segments: strokes.segments,
       textItems,
@@ -307,6 +313,7 @@ export async function detectWallsForCalibration(
         ...(user === null ? {} : { user }),
         ...(priorPlan === undefined ? {} : { priorPlan }),
       });
+    await new Promise((resolve) => setImmediate(resolve));
     let offered = offer();
     // ── PLAN COMPARISON, ON A PAIRED SHEET WITH THE COMPANY'S SWITCH ON — see `priorPlan.ts` ──
     //
@@ -349,6 +356,7 @@ export async function detectWallsForCalibration(
       }
       target.onBoundary({ pairings, segments: detected.found.inUnits, held });
     }
+    await new Promise((resolve) => setImmediate(resolve));
     const found = { ...detected.found, walls: offered.offeredRuns, groups: detected.found.regroup(offered.offeredRuns) };
     // The groups: the finder's own when it paired with the thicknesses, else
     // rebuilt here with them — same runs, same feet, named with the types.
@@ -484,7 +492,7 @@ export async function detectWallsForCalibration(
     );
     return "failed";
   } finally {
-    // pdfjs holds per-document state, which `PlanPdf.close` exists for.
+    // Gives the shared copy back; the last loan out closes it after a while.
     await doc.close().catch(() => {});
   }
 }
@@ -502,10 +510,120 @@ export async function detectWallsForCalibration(
  * this catches `after()` itself, so an action that calls it cannot be made to
  * fail by anything detection does.
  */
+/**
+ * ── ONE FINDER AT A TIME PER SERVER INSTANCE ──
+ *
+ * Confirm scales saves one calibration per sheet, and each save starts a finder
+ * here: 35 sheets started 35 at once, and the floor plan the person was waiting
+ * on queued behind all of them (Topeka: its printed-scale Apply waited ~49 s).
+ * The rest wait their turn. A waiting finder's time does not count against its
+ * own budget (`DETECTION_BUDGET_MS` starts when it starts).
+ *
+ * ONE, because finding walls is CPU work on Node's one thread: a second at the
+ * same time finishes no sooner, and holds a second sheet's parse in memory (two
+ * at once put ELEVEN03's finder phase at 3.2 GB). Every finder goes through here:
+ * after a scale save (in turn), a whole-set run's sheet and a refresh somebody
+ * pressed (at the front), and the sheet Run takeoff is waiting on, which starts at
+ * once beside the running one (`hurryFinder`).
+ */
+const FINDERS_AT_ONCE = 1;
+// ON `globalThis`, for the reason `sharedPlanPdf.ts` gives: Confirm scales queues
+// finders from the job page's bundle and Run takeoff asks to hurry one from the
+// workspace's, and with module state those were two different queues — the hurry
+// found nothing and A3.2 waited its turn (ELEVEN03: 102 s).
+type FinderSlots = { running: number; waiting: { key: string | null; go: (hurried: boolean) => void }[]; userWork: number; lastUserWork: number; holderQuietWaiting: boolean };
+const slots = ((globalThis as unknown as { __provaFinderSlots?: FinderSlots }).__provaFinderSlots ??= { running: 0, waiting: [], userWork: 0, lastUserWork: 0, holderQuietWaiting: false });
+
+/**
+ * ── A BACKGROUND FINDER WAITS FOR A QUIET MOMENT ──
+ *
+ * A finder is one synchronous call of 10–20 s on a big sheet, and nothing else on
+ * the server runs meanwhile. Started between the database calls of an Accept all,
+ * one after another, they starved it past a minute (ELEVEN03, 15 groups). So a
+ * finder started after a scale save does not start while a person's action is in
+ * flight, nor for `QUIET_MS` after one (the page refresh that follows). It cannot
+ * stop one already running — that is the finder's own speed.
+ */
+const QUIET_MS = 2_000;
+export function beginUserWork(): { end: () => void } {
+  slots.userWork += 1;
+  let ended = false;
+  return {
+    end: () => {
+      if (ended) return;
+      ended = true;
+      slots.userWork -= 1;
+      slots.lastUserWork = Date.now();
+    },
+  };
+}
+export async function asUserWork<T>(work: () => Promise<T>): Promise<T> {
+  const working = beginUserWork();
+  try {
+    return await work();
+  } finally {
+    working.end();
+  }
+}
+async function quietMoment(): Promise<void> {
+  while (slots.userWork > 0 || Date.now() - slots.lastUserWork < QUIET_MS) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+}
+const findersWaiting = slots.waiting;
+export async function oneFinderSlot<T>(work: () => Promise<T>, key: string | null = null, urgent = false): Promise<T> {
+  let hurried = false;
+  // A finished finder hands its slot straight to the next in line, so a new
+  // arrival can never slip in between and make it three.
+  if (urgent && slots.running >= FINDERS_AT_ONCE && slots.holderQuietWaiting) {
+    // The holder is only waiting for quiet and holds no sheet: an urgent one starts beside it.
+    slots.running += 1;
+  } else if (slots.running >= FINDERS_AT_ONCE) {
+    await new Promise<void>((resolve) => {
+      // An urgent one (a whole-set run's sheet, on a deadline) goes to the front.
+      const go = (asked: boolean) => ((hurried = asked), resolve());
+      if (urgent) findersWaiting.unshift({ key, go });
+      else findersWaiting.push({ key, go });
+    });
+  } else slots.running += 1;
+  if (!urgent && !hurried) {
+    slots.holderQuietWaiting = true;
+    try {
+      await quietMoment();
+    } finally {
+      slots.holderQuietWaiting = false;
+    }
+  }
+  try {
+    return await work();
+  } finally {
+    // Over the limit (a hurried one ran beside it): this slot ends rather than passing on.
+    const next = slots.running > FINDERS_AT_ONCE ? undefined : findersWaiting.shift();
+    if (next) next.go(false);
+    else slots.running -= 1;
+  }
+}
+
+/**
+ * The sheet somebody is waiting on goes to the front of the line. Confirm on 47
+ * sheets queued 47 finders; the workspace's Run takeoff then waited 251 s for its
+ * own sheet's finder at the back (ELEVEN03). Returns whether one was waiting.
+ */
+export function hurryFinder(planId: string, pageNumber: number): boolean {
+  const at = findersWaiting.findIndex((entry) => entry.key === `${planId}:${pageNumber}`);
+  if (at < 0) return false;
+  // It starts NOW, beside the one running, not after it (that wait was 7 s of
+  // ELEVEN03's 27.6 s): one extra finder, only for the sheet somebody is waiting on.
+  const [entry] = findersWaiting.splice(at, 1);
+  slots.running += 1;
+  entry!.go(true);
+  return true;
+}
+
 export function detectWallsAfterResponse(target: DetectTarget): void {
   try {
     after(() =>
-      detectWallsForCalibration(target).catch((error) => {
+      oneFinderSlot(() => detectWallsForCalibration(target), `${target.planId}:${target.pageNumber}`).catch((error) => {
         // Unreachable in practice — the function above catches everything — and
         // kept because "unreachable" is a claim about today's code.
         console.error("[takeoff] detection after response failed", { planId: target.planId }, error);

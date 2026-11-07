@@ -12,8 +12,8 @@ import { readFinishSchedule, type FinishSchedule } from "@/lib/takeoff/finishSch
 import { sheetRooms } from "@/lib/takeoff/sheetRooms";
 import type { WallCandidate } from "@/lib/takeoff/wallVectors";
 import { roomRows, writeRoomRows, type RoomToSave } from "@/lib/takeoff/roomRows";
-import { openPlanPdf, type PlanPdf } from "./planPdf";
-import { readPlanBytes } from "./planBytes";
+import { type PlanPdf } from "./planPdf";
+import { openSharedPlanPdf } from "./sharedPlanPdf";
 import { sheetNumberFrom } from "./sheetNumber";
 import { tableRowsFromPage } from "./scheduleTable";
 
@@ -149,9 +149,9 @@ export async function windowsForSheet(input: { planId: string; companyId: string
   if (mine.length === 0) return { kind: "skipped", why: "no walls found" };
   const newest = mine[0]!.createdAt.getTime();
   const runs = mine.filter((p) => p.createdAt.getTime() === newest).flatMap((p) => p.runs as { x1: number; y1: number; x2: number; y2: number; thicknessFeet: number }[]);
-  const read = await readPlanBytes(input.planId, input.companyId);
+  const read = await openSharedPlanPdf(input.planId, input.companyId);
   if (!read.ok) return { kind: "skipped", why: read.error };
-  const doc = await openPlanPdf(read.bytes);
+  const doc = read.pdf;
   try {
     const text = await doc.pageText(input.pageNumber);
     const strokes = await doc.pageStrokes(input.pageNumber);
@@ -195,9 +195,9 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
   if (mine.length === 0) return { kind: "skipped", why: "no walls found" };
   const newest = mine[0]!.createdAt.getTime();
   const runs = mine.filter((p) => p.createdAt.getTime() === newest).flatMap((p) => p.runs as { x1: number; y1: number; x2: number; y2: number; thicknessFeet: number }[]);
-  const read = await readPlanBytes(input.planId, input.companyId);
+  const read = await openSharedPlanPdf(input.planId, input.companyId);
   if (!read.ok) return { kind: "failed", error: read.error };
-  const doc = await openPlanPdf(read.bytes);
+  const doc = read.pdf;
   try {
     const text = await doc.pageText(input.pageNumber);
     // What this step's own detection read, so a whole-set room is the viewer's.

@@ -4,6 +4,7 @@ import { prisma } from "@prova/db";
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
+import { beginUserWork } from "@/lib/takeoff/detectWallsForCalibration";
 import { itemForType, untypedItem, UNTYPED_ITEM } from "@/lib/plan-ingest/wallItems";
 import { sameCode } from "@/lib/takeoff/legendMerge";
 import { storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
@@ -44,11 +45,17 @@ export type WallGroupTypeInput = {
 };
 
 export async function setWallGroupType(jobId: string, input: WallGroupTypeInput): Promise<ActionResult> {
-  const context = await requireCompanyContext();
-  // The takeoff tab's capability, as its other writes. Adding a NEW type to
-  // the library is still estimating's, and `addWallTypeFromLegend` says so.
-  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
-  return typeGroup(context, jobId, input, null);
+  // A person's action: background wall finders wait for it (`beginUserWork`).
+  const working = beginUserWork();
+  try {
+    const context = await requireCompanyContext();
+    // The takeoff tab's capability, as its other writes. Adding a NEW type to
+    // the library is still estimating's, and `addWallTypeFromLegend` says so.
+    if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+    return typeGroup(context, jobId, input, null);
+  } finally {
+    working.end();
+  }
 }
 
 /**
@@ -103,107 +110,119 @@ export type SheetSuggestionsUndo = {
 const GROUPS_MAX = 200;
 
 export async function confirmSheetSuggestions(jobId: string, groups: ConfirmGroupInput[]): Promise<ActionResultWith<{ accepted: number; failed: string[]; undo: SheetSuggestionsUndo }>> {
-  const context = await requireCompanyContext();
-  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
-  if (!Array.isArray(groups) || groups.length === 0 || groups.length > GROUPS_MAX) return actionFail("No suggestions to accept on this sheet. Reload the page.");
-  const companyId = context.company.id;
-  const pages = await prisma.takeoffPlanPage.findMany({
-    where: { plan: { job: { id: jobId, companyId } }, OR: [...new Map(groups.map((g) => [`${g.planId}:${g.pageNumber}`, { planId: g.planId, pageNumber: g.pageNumber }])).values()] },
-    select: { id: true },
-  });
-  if (pages.length === 0) return actionFail("That sheet is no longer on this job. Reload the page.");
-  const snapshot = async () => ({
-    runs: await prisma.takeoffMeasurement.findMany({ where: { pageId: { in: pages.map((p) => p.id) }, kind: "LINEAR", source: "DETECTED" }, select: { id: true, itemId: true, label: true } }),
-    items: await prisma.takeoffItem.findMany({ where: { jobId, companyId }, select: { id: true, heightFt: true, sides: true } }),
-  });
-  const before = await snapshot();
-  let accepted = 0;
-  const failed: string[] = [];
-  // ── THE LINES ARE WRITTEN ONCE, FOR EVERY GROUP ──
-  // Each group used to rewrite its type's lines, and that reads every item and
-  // measurement on the job: Topeka's Accept all (A-201, 516 runs on the job)
-  // took 10.8 s, most of it the same read over again per group.
-  const touched = new Set<string>();
-  const createdTypes: { id: string; proposalId: string; reopen: boolean }[] = [];
-  for (const group of groups) {
-    const checked = checkedHeight(group);
-    const result = typeof checked === "string" ? actionFail(checked) : await typeGroup(context, jobId, group, checked.heightFt, checked.level, touched, createdTypes);
-    if (result.ok) accepted += 1;
-    else failed.push(`${String(group.code)}: ${result.error}`);
+  // A person's action: background wall finders wait for it (`beginUserWork`).
+  const working = beginUserWork();
+  try {
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+    if (!Array.isArray(groups) || groups.length === 0 || groups.length > GROUPS_MAX) return actionFail("No suggestions to accept on this sheet. Reload the page.");
+    const companyId = context.company.id;
+    const pages = await prisma.takeoffPlanPage.findMany({
+      where: { plan: { job: { id: jobId, companyId } }, OR: [...new Map(groups.map((g) => [`${g.planId}:${g.pageNumber}`, { planId: g.planId, pageNumber: g.pageNumber }])).values()] },
+      select: { id: true },
+    });
+    if (pages.length === 0) return actionFail("That sheet is no longer on this job. Reload the page.");
+    const snapshot = async () => ({
+      runs: await prisma.takeoffMeasurement.findMany({ where: { pageId: { in: pages.map((p) => p.id) }, kind: "LINEAR", source: "DETECTED" }, select: { id: true, itemId: true, label: true } }),
+      items: await prisma.takeoffItem.findMany({ where: { jobId, companyId }, select: { id: true, heightFt: true, sides: true } }),
+    });
+    const before = await snapshot();
+    let accepted = 0;
+    const failed: string[] = [];
+    // ── THE LINES ARE WRITTEN ONCE, FOR EVERY GROUP ──
+    // Each group used to rewrite its type's lines, and that reads every item and
+    // measurement on the job: Topeka's Accept all (A-201, 516 runs on the job)
+    // took 10.8 s, most of it the same read over again per group.
+    const touched = new Set<string>();
+    const createdTypes: { id: string; proposalId: string; reopen: boolean }[] = [];
+    for (const group of groups) {
+      const checked = checkedHeight(group);
+      const result = typeof checked === "string" ? actionFail(checked) : await typeGroup(context, jobId, group, checked.heightFt, checked.level, touched, createdTypes);
+      if (result.ok) accepted += 1;
+      else failed.push(`${String(group.code)}: ${result.error}`);
+    }
+    if (touched.size > 0) await prisma.$transaction((tx) => syncDecidedItems(tx, companyId, jobId, [...touched]));
+    const after = await snapshot();
+    const was = new Map(before.runs.map((m) => [m.id, m]));
+    const height = new Map(before.items.map((i) => [i.id, i]));
+    const undo: SheetSuggestionsUndo = {
+      moved: after.runs.flatMap((m) => {
+        const old = was.get(m.id);
+        return old !== undefined && (old.itemId !== m.itemId || old.label !== m.label) ? [{ id: m.id, itemId: old.itemId, label: old.label }] : [];
+      }),
+      created: after.runs.filter((m) => !was.has(m.id)).map((m) => m.id),
+      items: after.items.flatMap((i) => {
+        const old = height.get(i.id);
+        if (old === undefined) return [];
+        const same = String(old.heightFt ?? "") === String(i.heightFt ?? "") && old.sides === i.sides;
+        return same ? [] : [{ id: i.id, heightFt: old.heightFt === null ? null : String(old.heightFt), sides: old.sides }];
+      }),
+      createdItems: after.items.filter((i) => !height.has(i.id)).map((i) => i.id),
+      createdTypes,
+    };
+    return { ok: true, value: { accepted, failed, undo } };
+  } finally {
+    working.end();
   }
-  if (touched.size > 0) await prisma.$transaction((tx) => syncDecidedItems(tx, companyId, jobId, [...touched]));
-  const after = await snapshot();
-  const was = new Map(before.runs.map((m) => [m.id, m]));
-  const height = new Map(before.items.map((i) => [i.id, i]));
-  const undo: SheetSuggestionsUndo = {
-    moved: after.runs.flatMap((m) => {
-      const old = was.get(m.id);
-      return old !== undefined && (old.itemId !== m.itemId || old.label !== m.label) ? [{ id: m.id, itemId: old.itemId, label: old.label }] : [];
-    }),
-    created: after.runs.filter((m) => !was.has(m.id)).map((m) => m.id),
-    items: after.items.flatMap((i) => {
-      const old = height.get(i.id);
-      if (old === undefined) return [];
-      const same = String(old.heightFt ?? "") === String(i.heightFt ?? "") && old.sides === i.sides;
-      return same ? [] : [{ id: i.id, heightFt: old.heightFt === null ? null : String(old.heightFt), sides: old.sides }];
-    }),
-    createdItems: after.items.filter((i) => !height.has(i.id)).map((i) => i.id),
-    createdTypes,
-  };
-  return { ok: true, value: { accepted, failed, undo } };
 }
 
 /** Undo for `confirmSheetSuggestions`: only rows of this job are touched, whatever the client sends. */
 export async function undoSheetSuggestions(jobId: string, undo: SheetSuggestionsUndo): Promise<ActionResult> {
-  const context = await requireCompanyContext();
-  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
-  const companyId = context.company.id;
-  const moved = Array.isArray(undo?.moved) ? undo.moved.slice(0, RUNS_MAX * GROUPS_MAX) : [];
-  const created = Array.isArray(undo?.created) ? undo.created.filter((id) => typeof id === "string") : [];
-  const items = Array.isArray(undo?.items) ? undo.items : [];
-  const onJob = { page: { plan: { job: { id: jobId, companyId } } } };
-  await prisma.$transaction(async (tx) => {
-    const ours = new Set((await tx.takeoffMeasurement.findMany({ where: { id: { in: [...moved.map((m) => m.id), ...created] }, ...onJob }, select: { id: true } })).map((m) => m.id));
-    const jobItems = new Set((await tx.takeoffItem.findMany({ where: { jobId, companyId }, select: { id: true } })).map((i) => i.id));
-    const touched = new Set<string>();
-    const now = await tx.takeoffMeasurement.findMany({ where: { id: { in: [...ours] } }, select: { id: true, itemId: true } });
-    for (const m of now) if (m.itemId !== null) touched.add(m.itemId);
-    for (const m of moved) {
-      if (!ours.has(m.id) || (m.itemId !== null && !jobItems.has(m.itemId))) continue;
-      await tx.takeoffMeasurement.update({ where: { id: m.id }, data: { itemId: m.itemId, label: m.label } });
-      if (m.itemId !== null) touched.add(m.itemId);
-    }
-    const gone = created.filter((id) => ours.has(id));
-    if (gone.length > 0) await tx.takeoffMeasurement.deleteMany({ where: { id: { in: gone } } });
-    for (const item of items) {
-      if (!jobItems.has(item.id)) continue;
-      const feet = item.heightFt === null ? null : Number(item.heightFt);
-      if (feet !== null && !(feet > 0 && feet < 100)) continue;
-      await tx.takeoffItem.update({ where: { id: item.id }, data: { heightFt: feet === null ? null : feet.toFixed(2), sides: Number.isInteger(item.sides) ? item.sides : null } });
-      touched.add(item.id);
-    }
-    // The items the accept made: their lines are synced away with the rest, and
-    // then an item with no runs left and no live line goes too ("C8B walls", empty).
-    const madeHere = (Array.isArray(undo?.createdItems) ? undo.createdItems : []).filter((id) => typeof id === "string" && jobItems.has(id));
-    for (const id of madeHere) touched.add(id);
-    await syncDecidedItems(tx, companyId, jobId, [...touched]);
-    for (const id of madeHere) {
-      const runs = await tx.takeoffMeasurement.count({ where: { itemId: id } });
-      const lines = await tx.jobLineItem.count({ where: { takeoffItemId: id, isDeleted: false } });
-      if (runs === 0 && lines === 0) await tx.takeoffItem.delete({ where: { id } });
-    }
-  });
-  // ── A LIBRARY TYPE THE ACCEPT ADDED, TAKEN BACK IF NOTHING USES IT ──
-  // The payload comes from the browser, so it is a claim, checked here: the user
-  // may add types (`MANAGE_ESTIMATING`), THIS user accepted that legend read, on a
-  // plan of THIS job, the type's code is one it defines, and no run or takeoff
-  // item on any job uses the type. Then the type goes and the legend read is
-  // offered again, as it was before the accept.
-  const removedTypes = can(context, "MANAGE_ESTIMATING") ? await removeAddedTypes(context.id, companyId, jobId, undo?.createdTypes) : 0;
-  revalidatePath(`/jobs/${jobId}`, "layout");
-  revalidatePath(`/takeoff/${jobId}`);
-  if (removedTypes > 0) revalidatePath("/wall-types");
-  return actionOk;
+  // A person's action: background wall finders wait for it (`beginUserWork`).
+  const working = beginUserWork();
+  try {
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+    const companyId = context.company.id;
+    const moved = Array.isArray(undo?.moved) ? undo.moved.slice(0, RUNS_MAX * GROUPS_MAX) : [];
+    const created = Array.isArray(undo?.created) ? undo.created.filter((id) => typeof id === "string") : [];
+    const items = Array.isArray(undo?.items) ? undo.items : [];
+    const onJob = { page: { plan: { job: { id: jobId, companyId } } } };
+    await prisma.$transaction(async (tx) => {
+      const ours = new Set((await tx.takeoffMeasurement.findMany({ where: { id: { in: [...moved.map((m) => m.id), ...created] }, ...onJob }, select: { id: true } })).map((m) => m.id));
+      const jobItems = new Set((await tx.takeoffItem.findMany({ where: { jobId, companyId }, select: { id: true } })).map((i) => i.id));
+      const touched = new Set<string>();
+      const now = await tx.takeoffMeasurement.findMany({ where: { id: { in: [...ours] } }, select: { id: true, itemId: true } });
+      for (const m of now) if (m.itemId !== null) touched.add(m.itemId);
+      for (const m of moved) {
+        if (!ours.has(m.id) || (m.itemId !== null && !jobItems.has(m.itemId))) continue;
+        await tx.takeoffMeasurement.update({ where: { id: m.id }, data: { itemId: m.itemId, label: m.label } });
+        if (m.itemId !== null) touched.add(m.itemId);
+      }
+      const gone = created.filter((id) => ours.has(id));
+      if (gone.length > 0) await tx.takeoffMeasurement.deleteMany({ where: { id: { in: gone } } });
+      for (const item of items) {
+        if (!jobItems.has(item.id)) continue;
+        const feet = item.heightFt === null ? null : Number(item.heightFt);
+        if (feet !== null && !(feet > 0 && feet < 100)) continue;
+        await tx.takeoffItem.update({ where: { id: item.id }, data: { heightFt: feet === null ? null : feet.toFixed(2), sides: Number.isInteger(item.sides) ? item.sides : null } });
+        touched.add(item.id);
+      }
+      // The items the accept made: their lines are synced away with the rest, and
+      // then an item with no runs left and no live line goes too ("C8B walls", empty).
+      const madeHere = (Array.isArray(undo?.createdItems) ? undo.createdItems : []).filter((id) => typeof id === "string" && jobItems.has(id));
+      for (const id of madeHere) touched.add(id);
+      await syncDecidedItems(tx, companyId, jobId, [...touched]);
+      for (const id of madeHere) {
+        const runs = await tx.takeoffMeasurement.count({ where: { itemId: id } });
+        const lines = await tx.jobLineItem.count({ where: { takeoffItemId: id, isDeleted: false } });
+        if (runs === 0 && lines === 0) await tx.takeoffItem.delete({ where: { id } });
+      }
+    });
+    // ── A LIBRARY TYPE THE ACCEPT ADDED, TAKEN BACK IF NOTHING USES IT ──
+    // The payload comes from the browser, so it is a claim, checked here: the user
+    // may add types (`MANAGE_ESTIMATING`), THIS user accepted that legend read, on a
+    // plan of THIS job, the type's code is one it defines, and no run or takeoff
+    // item on any job uses the type. Then the type goes and the legend read is
+    // offered again, as it was before the accept.
+    const removedTypes = can(context, "MANAGE_ESTIMATING") ? await removeAddedTypes(context.id, companyId, jobId, undo?.createdTypes) : 0;
+    revalidatePath(`/jobs/${jobId}`, "layout");
+    revalidatePath(`/takeoff/${jobId}`);
+    if (removedTypes > 0) revalidatePath("/wall-types");
+    return actionOk;
+  } finally {
+    working.end();
+  }
 }
 
 async function removeAddedTypes(userId: string, companyId: string, jobId: string, claimed: unknown): Promise<number> {
