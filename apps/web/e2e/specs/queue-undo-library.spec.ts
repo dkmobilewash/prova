@@ -114,7 +114,9 @@ test.describe("Undo takes back the library type its accept added; the counts fol
     await expect.poll(library, { timeout: 30_000 }).toBe(1);
     await expect.poll(jobItem, { timeout: 30_000 }).toBe(1);
     expect((await prisma.planLegendProposal.findUniqueOrThrow({ where: { id: proposalId } })).status).toBe("ACCEPTED");
-    await expect(left()).toHaveText(/^1[34] left to review$/, { timeout: 30_000 });
+    // The accepted type brings its own questions (a height, its prices), so "left" grows;
+    // the groups are what moved.
+    await expect(progress()).toContainText("Groups 1 of 14", { timeout: 30_000 });
     await page.screenshot({ path: path.join(SHOTS, "accepted-1440.png") });
 
     await expect(undo()).toBeEnabled({ timeout: 30_000 });
