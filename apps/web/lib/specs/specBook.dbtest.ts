@@ -66,7 +66,7 @@ const dir = mkdtempSync(join(tmpdir(), "spec-book-"));
 process.env.TAKEOFF_LOCAL_PLAN_DIR = dir;
 
 const { findSpecBookSections, readSpecTrade, addSpecDriverToProposal, recordSpecBook, findDrawingSpecs } = await import("@/lib/actions/specBook");
-const { loadSpecBookView } = await import("./specBookQuery");
+const { loadSpecBookView, loadSpecSaysByCode } = await import("./specBookQuery");
 
 let companyId = "", otherCompanyId = "", jobId = "", otherJobId = "", bookId = "", planId = "";
 
@@ -201,11 +201,22 @@ describe("a whole spec book on a job", () => {
     // The drawings say 25 ga; the legend's A1 is 20 ga — heavier, so no conflict.
     const a1 = view.wallTypes.find((w) => w.code === "A1")!;
     expect(a1.conflicts).toEqual([]);
-    expect(a1.applies).toContain('09 22 16 (sheet G001, also on A101): 25 ga min, 16" o.c. max');
-    expect(a1.applies).toContain("09 21 16 (sheet G001): Type X, Level 5 at the lobby");
+    expect(a1.applies).toContain('09 22 16, sheet G001, also on A101: 25 ga min, 16" o.c. max');
+    expect(a1.applies).toContain("09 21 16, sheet G001: Type X, Level 5 at the lobby");
 
     expect(await findDrawingSpecs(jobId)).toMatchObject({ ok: true, value: { notes: 3 } });
     expect(await prisma.specBook.count({ where: { jobId, fileUrl: "local:plan.pdf" } })).toBe(1);
+  });
+
+  it("says, per legend type, what the spec and the drawings require that changes its price, each with its source", async () => {
+    const says = await loadSpecSaysByCode(jobId, companyId);
+    const line = (code: string) => (says[code] ?? []).map((s) => `${s.text} (${s.source})`);
+    // A1 is rated: Type X from the book and from the drawing's note, and the drawing's Level 5 at the lobby.
+    expect(line("A1")).toEqual(expect.arrayContaining(["Type X board (09 21 16)", "Type X board (09 21 16, sheet G001)", "Level 5 finish at the lobby (09 21 16, sheet G001)"]));
+    // B is not rated: no Type X — the drawing's note is "FOR ALL FIRE RATED PARTITIONS" — but the same Level 5.
+    expect(line("B").some((t) => t.startsWith("Type X"))).toBe(false);
+    expect(line("B")).toContain("Level 5 finish at the lobby (09 21 16, sheet G001)");
+    expect(await loadSpecSaysByCode(otherJobId, companyId)).toEqual({});
   });
 
   it("answers another company's book and section as if they were not there", async () => {

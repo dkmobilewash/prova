@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { specTradeReadFrom, type SpecTradeRead } from "@prova/integrations/src/specTrade";
-import { checkWallType, gaugeFrom, spacingFrom, thicknessFrom } from "./specTradeFacts";
+import { checkWallType, gaugeFrom, linePart, spacingFrom, specSays, specSaysLine, thicknessFrom } from "./specTradeFacts";
 
-const empty: SpecTradeRead = { products: [], studs: [], boards: [], fireRatings: [], ceilings: [], finishLevels: [], priceDrivers: [], reason: "" };
+const empty: SpecTradeRead = { products: [], studs: [], boards: [], fireRatings: [], ceilings: [], finishLevels: [], priceDrivers: [], requirements: [], reason: "" };
 
 const board: SpecTradeRead = {
   ...empty,
@@ -89,5 +89,42 @@ describe("the reader's reply into a read", () => {
     expect(read.finishLevels).toEqual([{ level: 5, where: "lobby", quote: "Level 5 at lobby" }]);
     expect(read.priceDrivers).toEqual([]);
     expect(specTradeReadFrom(null)).toEqual(empty);
+  });
+});
+
+describe("what the spec says that changes a wall type's price", () => {
+  const abuse: SpecTradeRead = {
+    ...empty,
+    boards: [...board.boards, { kind: "abuse-resistant", thickness: "5/8 inch", where: "at corridors", quote: "q" }],
+    finishLevels: [{ level: 5, where: "THE LOBBY", quote: "q" }],
+  };
+  const drawn = [
+    { sectionNumber: "09 21 16", read: abuse },
+    { sectionNumber: "09 22 16, sheet A100", read: framing },
+  ];
+
+  it("a rated wall gets Type X; every board wall abuse board and Level 5 where they apply; studs heavier than 25 ga and deflection track, with the legend's lighter gauge said", () => {
+    const says = specSays(['3 5/8" 25 GA. MTL. STUDS @ 16" O.C.', '5/8" TYPE X GYP. BD. EACH SIDE', "1 HR"], drawn);
+    expect(specSaysLine(says)).toBe(
+      "Spec says: Type X board (09 21 16); abuse-resistant board at corridors (09 21 16); Level 5 finish at the lobby (09 21 16); 20 ga studs minimum, the legend says 25 ga (09 22 16, sheet A100); deflection track (09 22 16, sheet A100)",
+    );
+  });
+
+  it("an unrated wall gets no Type X; a CMU wall gets nothing; a type with no legend words gets every item with its where", () => {
+    expect(specSays(['3 5/8" 20 GA. MTL. STUDS @ 16" O.C.', '5/8" GYP. BD. EACH SIDE'], drawn).map((s) => s.text)).toEqual([
+      "abuse-resistant board at corridors",
+      "Level 5 finish at the lobby",
+      "20 ga studs minimum",
+      "deflection track",
+    ]);
+    expect(specSays(["8\" CMU"], drawn)).toEqual([]);
+    expect(specSays(null, drawn).map((s) => s.text)[0]).toBe("Type X board at all fire-rated assemblies");
+    expect(specSaysLine([])).toBe("");
+  });
+
+  it("an estimate line is board or framing by its words", () => {
+    expect(linePart("C8B — 5/8\" gypsum board")).toBe("board");
+    expect(linePart("S6A studs, 3 5/8\" 20 ga")).toBe("framing");
+    expect(linePart("Insulation")).toBeNull();
   });
 });

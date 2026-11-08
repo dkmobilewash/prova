@@ -24,9 +24,60 @@ describe("notes rebuilt per column from the text layer", () => {
   });
 });
 
+describe("notes measured against a hand key (2026-11-08): the three layouts that cut notes short", () => {
+  it("a column's heading never takes the lines of the lettered notes under it", () => {
+    const items = sheet([
+      [40, 100, "GENERAL NOTES"],
+      [40, 111, "CONTRACTORS ARE ADVISED THAT INFORMATION MAY OCCUR"],
+      [40, 122, "IN OTHER PORTIONS OF THE DOCUMENTS."],
+      [40, 140, "H."],
+      [58, 140, "INSTALL ALL SUSPENSION SYSTEMS FOR ACOUSTICAL PANEL"],
+      [58, 151, "CEILINGS PER THE SPECIFICATION AND ASTM C636."],
+      [40, 165, "I."],
+      [58, 165, "ALL GYPSUM BOARD CEILINGS TO BE TEXTURED AND"],
+      [58, 176, "PAINTED UNLESS NOTED OTHERWISE."],
+    ]);
+    const texts = notesFrom(items).map((n) => n.text);
+    expect(texts).toContain("H. INSTALL ALL SUSPENSION SYSTEMS FOR ACOUSTICAL PANEL CEILINGS PER THE SPECIFICATION AND ASTM C636.");
+    expect(texts).toContain("I. ALL GYPSUM BOARD CEILINGS TO BE TEXTURED AND PAINTED UNLESS NOTED OTHERWISE.");
+  });
+
+  it("a note number or bullet set wide of its text still opens that note", () => {
+    const items = sheet([
+      [40, 100, "6."],
+      [64, 100, "ALL LAY-IN CEILING TILES ARE TO HAVE HOLD"],
+      [64, 111, "DOWN CLIPS TO PREVENT ACCESS ABOVE THE CEILING."],
+      [40, 130, "E."],
+      [58, 130, "PROVIDE OWNER'S STOCK IN THE FOLLOWING QUANTITIES:"],
+      [58, 141, "-"],
+      [70, 141, "ACOUSTICAL CEILING TILE: 200 SQUARE FEET OF EACH TYPE."],
+    ]);
+    const texts = notesFrom(items).map((n) => n.text);
+    expect(texts).toContain("6. ALL LAY-IN CEILING TILES ARE TO HAVE HOLD DOWN CLIPS TO PREVENT ACCESS ABOVE THE CEILING.");
+    expect(texts).toContain("E. PROVIDE OWNER'S STOCK IN THE FOLLOWING QUANTITIES: - ACOUSTICAL CEILING TILE: 200 SQUARE FEET OF EACH TYPE.");
+  });
+});
+
 describe("which notes are this trade's requirements", () => {
+  it("keeps an obligation about this trade's element with no number in it, and every kept note as a requirement", () => {
+    expect(isTradeRequirement("M. ALL GYPSUM BOARD CEILINGS TO BE TEXTURED AND PAINTED UNLESS NOTED OTHERWISE.")).toBe(true);
+    expect(isTradeRequirement("A. A HEAVY DUTY T-BAR GRID SYSTEM SHALL BE USED.")).toBe(true);
+    expect(isTradeRequirement("CONTRACTOR SHALL USE METAL STUDS WITH AN E.S. REPORT NUMBER")).toBe(true);
+    expect(isTradeRequirement("H. INSTALL ALL SUSPENSION SYSTEMS FOR ACOUSTICAL PANEL CEILINGS PER IBC SECTION 808.")).toBe(true);
+    // A broad word in a numbered note is not enough (measured: false hits 11 -> 35).
+    expect(isTradeRequirement("F. DIMENSIONS ARE TO STRUCTURAL GRIDLINE OR FACE OF STUD UNLESS NOTED OTHERWISE.")).toBe(false);
+    expect(isTradeRequirement("12. DIMENSIONS SHALL BE VERIFIED BY LAYING OUT THE PARTITIONS.")).toBe(false);
+    // Siding and other trades' obligations.
+    expect(isTradeRequirement("PRE-FINISHED METAL WALL PANEL, 22 GA. PAC-CLAD, ON 2 1/2\" METAL STUDS. INSTALL WITH CONCEALED CLIPS.")).toBe(false);
+    expect(isTradeRequirement("PROVIDE 1/2\" COLD WATER SUPPLY CONCEALED IN PARTITION; STUB OUT AND PROVIDE SHUTOFF VALVE")).toBe(false);
+    const read = factsFromNote("M. ALL GYPSUM BOARD CEILINGS TO BE TEXTURED AND PAINTED UNLESS NOTED OTHERWISE.");
+    expect(read.requirements).toEqual([{ quote: "M. ALL GYPSUM BOARD CEILINGS TO BE TEXTURED AND PAINTED UNLESS NOTED OTHERWISE." }]);
+  });
+
+
   it("keeps a requirement with something to measure, and drops labels, legends, other trades and glued keynotes", () => {
     expect(isTradeRequirement('4. USE TYPE "X" GWB FOR ALL FIRE RATED PARTITIONS')).toBe(true);
+    expect(factsFromNote('4. USE TYPE "X" GWB FOR ALL FIRE RATED PARTITIONS').boards[0].where).toBe("FOR ALL FIRE RATED PARTITIONS");
     expect(isTradeRequirement("C. LEVEL 5 FINISH SHALL BE PROVIDED AT THE LOBBY WALLS.")).toBe(true);
     // A wall legend's assembly line names no requirement.
     expect(isTradeRequirement('(2) LAYERS 5/8" TYPE X GYP. BOARD EACH SIDE')).toBe(false);

@@ -139,3 +139,63 @@ export function checkWallType(type: { code: string; lines: readonly string[] }, 
 
 /** A stored `facts` JSON back into a read — malformed rows read as empty, never throw. */
 export { specTradeReadFrom as specTradeReadFromJson } from "@prova/integrations/src/specTrade";
+
+export type SpecSay = { text: string; source: string; part: "board" | "framing" };
+
+/**
+ * ── WHAT THE SPEC SAYS ABOUT ONE WALL TYPE THAT CHANGES ITS PRICE ──
+ *
+ * The short list a person pricing or typing walls needs beside the type, not the whole read:
+ * Type X, abuse- or impact-resistant board, a Level 5 finish, studs heavier than 25 ga, deflection
+ * track — each naming where it came from (a section, or a drawing's sheet). `lines` are the wall
+ * type's own legend words; null when the type has none (a company type the drawings never
+ * legended), and then every board and framing item applies, since nothing says otherwise.
+ */
+export function specSays(lines: readonly string[] | null, sections: readonly SectionFacts[]): SpecSay[] {
+  const wall = lines === null ? null : readPartitionAssembly({ lines, where: "" }).read;
+  const joined = (lines ?? []).join(" ");
+  const hasBoard = lines === null || wall!.boardThicknessIn !== null || wall!.layersPerSide !== null || /gyp|gwb|board/i.test(joined);
+  const hasStuds = lines === null || wall!.studWidthIn !== null || wall!.studGauge !== null || /stud/i.test(joined);
+  const rated = wall !== null && (wall.hourlyRating ?? 0) > 0;
+  const out: SpecSay[] = [];
+  const add = (text: string, source: string, part: SpecSay["part"]) => {
+    if (!out.some((s) => s.text === text && s.source === source)) out.push({ text, source, part });
+  };
+  const at = (where: string | null) => (where ? ` ${/^(at|in)\b/i.test(where) ? "" : "at "}${where.toLowerCase()}` : "");
+
+  for (const { sectionNumber: source, read } of sections) {
+    if (hasBoard) {
+      for (const b of read.boards) {
+        // Type X: on a rated wall, or where the spec makes it typical; a type with no legend words gets it named with its "where".
+        if (isTypeX(b.kind) && (rated || b.where === null || wall === null)) add(`Type X board${rated ? "" : at(b.where)}`, source, "board");
+        if (/abuse|impact/i.test(b.kind)) add(`${/impact/i.test(b.kind) ? "impact" : "abuse"}-resistant board${at(b.where)}`, source, "board");
+      }
+      for (const f of read.finishLevels) if (f.level === 5) add(`Level 5 finish${at(f.where)}`, source, "board");
+    }
+    if (hasStuds) {
+      const gauges = read.studs.map((s) => (s.gauge === null ? null : gaugeFrom(s.gauge))).filter((n): n is number => n !== null);
+      const minimum = gauges.length > 0 ? Math.max(...gauges) : null;
+      // Heavier than the 25 ga a partition bid assumes is what costs: 22, 20, 18…
+      if (minimum !== null && minimum < 25) {
+        const legend = wall?.studGauge ?? null;
+        add(`${minimum} ga studs minimum${legend !== null && legend > minimum ? `, the legend says ${legend} ga` : ""}`, source, "framing");
+      }
+      const deflection = [...read.priceDrivers, ...read.studs].some((d) => /deflection|slotted/i.test(JSON.stringify(d)));
+      if (deflection) add("deflection track", source, "framing");
+    }
+  }
+  return out;
+}
+
+/** "Spec says: Type X board (09 21 16); 20 ga studs minimum (09 22 16, sheet A100)". Empty when nothing applies. */
+export function specSaysLine(says: readonly SpecSay[]): string {
+  if (says.length === 0) return "";
+  return `Spec says: ${says.map((s) => `${s.text} (${s.source})`).join("; ")}`;
+}
+
+/** Which part of a wall an estimate line prices, from its words: board lines get board items, stud and track lines framing. */
+export function linePart(description: string): SpecSay["part"] | null {
+  if (/\b(stud|track|runner|framing|deflection)/i.test(description)) return "framing";
+  if (/\b(board|gyp|gwb|drywall|finish|tape)/i.test(description)) return "board";
+  return null;
+}
