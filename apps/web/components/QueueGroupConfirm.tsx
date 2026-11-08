@@ -150,7 +150,7 @@ export function QueueGroupConfirm({
         <span className="inline-flex items-center gap-1">
           <span className="text-ink-muted">Type</span>
           <span className="rounded bg-tag-brand px-1.5 py-0.5 font-semibold text-tag-brand-ink" data-takeoff="queue-type">
-            {pick?.code ?? "—"}
+            {pick?.variant ?? pick?.code ?? "—"}
           </span>
           <span className="text-ink-muted" data-takeoff="queue-type-from">
             {pick?.from ?? "nothing on the drawing names it: 1–9"}
