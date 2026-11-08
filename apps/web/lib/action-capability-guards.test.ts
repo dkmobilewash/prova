@@ -2152,6 +2152,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   quoteRead: () => import("./actions/quoteRead"),
   addendumRead: () => import("./actions/addendumRead"),
   specRead: () => import("./actions/specRead"),
+  specBook: () => import("./actions/specBook"),
   // The Ask box. Only `checkAssistantConnection` lands in MUST_ASSERT: it
   // is reachable from /settings/assistant alone, which demands
   // MANAGE_COMPLIANCE. The card actions (confirm, cancel, settle, load)

@@ -7,9 +7,8 @@ import { aiGate } from "@/lib/ai/settings";
 import { recordAskUsage } from "@/lib/ask/usage";
 import { claimSpecPages, markSpecFailure } from "@/lib/ask/specSpend";
 import { requireCompanyContext } from "@/lib/auth";
-import { documentUrlProblem } from "@/lib/document-uploads";
 import { can } from "@/lib/permissions";
-import { readStoredSpecSection } from "@/lib/specs/read-stored-section";
+import { sectionPdf } from "@/lib/specs/sectionBytes";
 import { newRequirements } from "@/lib/submittal-proposals";
 import { actionFail, type ActionResultWith } from "./shared";
 
@@ -38,13 +37,18 @@ export async function readSubmittalRequirements(jobId: string, bidSpecSectionId:
       id: bidSpecSectionId,
       OR: [{ job: { id: jobId, companyId: company.id } }, { bidInvitation: { wonJobId: jobId, companyId: company.id } }],
     },
-    select: { id: true, fileUrl: true, fileName: true, sectionNumber: true },
+    select: {
+      id: true,
+      fileUrl: true,
+      fileName: true,
+      sectionNumber: true,
+      pageFrom: true,
+      pageTo: true,
+      specBook: { select: { fileUrl: true, jobId: true } },
+    },
   });
   if (!section) return fail("That spec section is no longer on this job.");
-  if (!section.fileUrl) return fail("There's no document on that section yet. Attach the PDF first.");
-
-  const problem = documentUrlProblem(section.fileUrl, "bid-spec-section", company.id, process.env);
-  if (problem) return fail(problem);
+  if (!section.fileUrl && !section.specBook) return fail("There's no document on that section yet. Attach the PDF first.");
 
   const gate = await aiGate(company.id, "SUBMITTAL_READ");
   if (!gate.ok) return fail(`${gate.error} You can still add submittals by hand.`);
@@ -59,7 +63,8 @@ export async function readSubmittalRequirements(jobId: string, bidSpecSectionId:
   if (claimed.count === 0) return fail("That section is being read right now. Give it a moment.");
 
   try {
-    const read = await readStoredSpecSection(section.fileUrl);
+    // Its own file, or its pages of the spec book (`sectionBytes.ts`), checked there.
+    const read = await sectionPdf(section, company.id);
     if (!read.ok) return fail(read.error);
 
     const spend = await claimSpecPages(company.id, gate.settings.specPagesPerMonth, read.mediaType, read.buffer);
