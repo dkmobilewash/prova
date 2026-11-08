@@ -10,7 +10,10 @@ import { recordAskUsage } from "@/lib/ask/usage";
 import { claimSpecPages, markSpecFailure, releaseSpecPages } from "@/lib/ask/specSpend";
 import { isProviderOutage } from "@/lib/ai/providerOutage";
 import { documentDisplayFileName, documentUrlProblem } from "@/lib/document-uploads";
-import { readJobFileBytes } from "@/lib/plan-ingest/planBytes";
+import { readJobFileBytes, readPlanBytes } from "@/lib/plan-ingest/planBytes";
+import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
+import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
+import { DRAWING_NOTES_MODEL, DRAWING_NOTES_VERSION, drawingSpecNotes, searchesSheet } from "@/lib/specs/drawingSpecs";
 import { findSpecSections } from "@/lib/specs/specBookSections";
 import { pdfPageLines, sectionPdf } from "@/lib/specs/sectionBytes";
 import { quoteIsInDocument } from "@/lib/specs/quoteMatch";
@@ -232,4 +235,125 @@ export async function addSpecDriverToProposal(
   revalidatePath(`/jobs/${jobId}/proposal`);
   paths(jobId);
   return actionOk;
+}
+
+export type DrawingSpecsResult = { notes: number; sheets: string[]; plans: number };
+
+/**
+ * Division 09/07 requirements printed ON THE DRAWINGS — general notes, partition notes, spec
+ * sheets — found from each plan set's text layer with NO model call (`lib/specs/drawingSpecs.ts`)
+ * and filed like a spec book's sections: the plan set is the "book", each sheet's notes a section
+ * on that sheet's page, the notes' facts its reading. So the Specs panel, the wall-type check and
+ * Add to proposal treat them exactly as a spec section, with the sheet as the source. Pressing it
+ * again replaces what it found before. Costs nothing: no allowance, no switch.
+ */
+export async function findDrawingSpecs(jobId: string): Promise<ActionResultWith<DrawingSpecsResult>> {
+  const fail = (m: string) => actionFail(m) as ActionResultWith<DrawingSpecsResult>;
+  const context = await requireCompanyContext();
+  if (!can(context, "MANAGE_ESTIMATING")) return fail(NOT_YOURS);
+  const { company } = context;
+  const job = await prisma.job.findFirst({ where: { id: jobId, companyId: company.id }, select: { id: true } });
+  if (!job) return fail("That job is not on your account.");
+  const plans = await prisma.takeoffPlan.findMany({ where: { jobId, companyId: company.id }, select: { id: true, fileUrl: true, fileName: true } });
+  if (plans.length === 0) return fail("There are no drawings on this job yet. Upload the plans on the Takeoff tab first.");
+
+  let notes = 0;
+  const sheets: string[] = [];
+  for (const plan of plans) {
+    const bytes = await readPlanBytes(plan.id, company.id);
+    if (!bytes.ok) return fail(bytes.error);
+    const named = await prisma.planSheetProposal.findMany({
+      where: { planId: plan.id },
+      orderBy: { createdAt: "desc" },
+      select: { pageNumber: true, acceptedSheetNumber: true, proposedSheetNumber: true },
+    });
+    const numberOf = new Map<number, string | null>();
+    for (const row of named) if (!numberOf.has(row.pageNumber)) numberOf.set(row.pageNumber, row.acceptedSheetNumber ?? row.proposedSheetNumber);
+
+    // ponytail: one pass over every page's text in this request; a 300-sheet set may want the ingest runner's slices.
+    const found = new Map<string, { page: number; sheet: string; sectionNumber: string; texts: string[]; also: Set<string>; read: SpecTradeRead }>();
+    const firstSheetOf = new Map<string, string>();
+    let pdf;
+    try {
+      pdf = await openPlanPdf(bytes.bytes);
+    } catch {
+      return fail("That plan set couldn't be opened as a PDF.");
+    }
+    try {
+      for (let page = 1; page <= pdf.pageCount; page++) {
+        const text = await pdf.pageText(page);
+        const sheet = numberOf.get(page) ?? sheetNumberFrom(text).sheetNumber;
+        if (!searchesSheet(sheet)) continue;
+        const label = sheet ?? `page ${page}`;
+        for (const note of drawingSpecNotes(text.items)) {
+          const first = firstSheetOf.get(note.text);
+          if (first !== undefined) {
+            // The same note printed on another sheet: one requirement, both sheets named.
+            for (const entry of found.values()) if (entry.texts.includes(note.text)) entry.also.add(label);
+            continue;
+          }
+          firstSheetOf.set(note.text, label);
+          const key = `${page}|${note.sectionNumber}`;
+          const entry = found.get(key) ?? { page, sheet: label, sectionNumber: note.sectionNumber, texts: [], also: new Set<string>(), read: emptyRead() };
+          entry.texts.push(note.text);
+          entry.read = mergeReads(entry.read, note.read);
+          found.set(key, entry);
+          notes += 1;
+        }
+      }
+    } finally {
+      await pdf.close();
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.specBook.deleteMany({ where: { jobId, fileUrl: plan.fileUrl } });
+      if (found.size === 0) return;
+      const book = await tx.specBook.create({
+        data: { jobId, fileUrl: plan.fileUrl, fileName: `${plan.fileName ?? "Plan set"} — notes on the drawings` },
+      });
+      for (const entry of found.values()) {
+        const also = [...entry.also].filter((s) => s !== entry.sheet);
+        const section = await tx.bidSpecSection.create({
+          data: {
+            jobId,
+            specBookId: book.id,
+            sectionNumber: entry.sectionNumber,
+            title: `Notes on sheet ${entry.sheet}${also.length > 0 ? `, also on ${also.join(", ")}` : ""}`,
+            pageFrom: entry.page,
+            pageTo: entry.page,
+          },
+        });
+        await tx.specTradeReading.create({
+          data: {
+            bidSpecSectionId: section.id,
+            facts: { ...entry.read, reason: `Read from the text printed on sheet ${entry.sheet}, with no AI.` },
+            readingReason: `Read from the text printed on sheet ${entry.sheet}, with no AI.`,
+            pagesCharged: 0,
+            model: DRAWING_NOTES_MODEL,
+            promptVersion: DRAWING_NOTES_VERSION,
+          },
+        });
+        if (!sheets.includes(entry.sheet)) sheets.push(entry.sheet);
+      }
+    });
+  }
+  paths(jobId);
+  return { ok: true, value: { notes, sheets, plans: plans.length } };
+}
+
+function emptyRead(): SpecTradeRead {
+  return { products: [], studs: [], boards: [], fireRatings: [], ceilings: [], finishLevels: [], priceDrivers: [], reason: "" };
+}
+
+function mergeReads(a: SpecTradeRead, b: SpecTradeRead): SpecTradeRead {
+  return {
+    products: [...a.products, ...b.products],
+    studs: [...a.studs, ...b.studs],
+    boards: [...a.boards, ...b.boards],
+    fireRatings: [...a.fireRatings, ...b.fireRatings],
+    ceilings: [...a.ceilings, ...b.ceilings],
+    finishLevels: [...a.finishLevels, ...b.finishLevels],
+    priceDrivers: [...a.priceDrivers, ...b.priceDrivers],
+    reason: "",
+  };
 }

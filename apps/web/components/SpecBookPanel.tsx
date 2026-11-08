@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { SpecTradeRead } from "@prova/integrations/src/specTrade";
-import { addSpecDriverToProposal, findSpecBookSections, readSpecTrade, recordSpecBook } from "@/lib/actions";
+import { addSpecDriverToProposal, findDrawingSpecs, findSpecBookSections, readSpecTrade, recordSpecBook } from "@/lib/actions";
 import { uploadPlanSetFile } from "@/lib/document-upload-client";
 import { Spinner } from "@/components/Spinner";
 import type { WallTypeSpecCheck } from "@/lib/specs/specTradeFacts";
@@ -22,6 +22,8 @@ export type PanelSection = {
   title: string | null;
   pages: string | null;
   fromBook: boolean;
+  /** Found in a plan sheet's printed notes: no AI read, the notes themselves shown. */
+  fromDrawings: boolean;
   reading: { id: string; facts: SpecTradeRead; on: string } | null;
 };
 
@@ -36,9 +38,11 @@ export function SpecBookPanel({
   sections,
   wallTypes,
   hasLegend,
+  hasPlans,
 }: {
   jobId: string;
-  books: { id: string; fileName: string | null; sectionCount: number }[];
+  hasPlans: boolean;
+  books: { id: string; fileName: string | null; sectionCount: number; fromDrawings: boolean }[];
   sections: PanelSection[];
   wallTypes: WallTypeSpecCheck[];
   hasLegend: boolean;
@@ -97,7 +101,24 @@ export function SpecBookPanel({
     await findAndRead(book.value.bookId);
   }
 
-  const bookSections = sections.filter((s) => s.fromBook);
+  async function lookOnDrawings() {
+    setError(null);
+    setMessage(null);
+    setBusy("Reading the notes printed on the drawings…");
+    const found = await findDrawingSpecs(jobId).catch(() => ({ ok: false as const, error: "That did not go through." }));
+    setBusy(null);
+    if (!found.ok) return setError(found.error);
+    const { notes, sheets } = found.value;
+    setMessage(
+      notes === 0
+        ? "No Division 09 or 07 requirements found in the notes printed on the drawings."
+        : `Found ${notes} requirement${notes === 1 ? "" : "s"} printed on ${sheets.length} sheet${sheets.length === 1 ? "" : "s"}: ${sheets.join(", ")}. Read from the drawings' own text, with no AI.`,
+    );
+    router.refresh();
+  }
+
+  const bookSections = sections.filter((s) => s.fromBook && !s.fromDrawings);
+  const drawingSections = sections.filter((s) => s.fromDrawings);
   return (
     <section className="mt-4 rounded-lg border border-line-card bg-surface p-4" data-spec="book-panel">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
@@ -111,6 +132,11 @@ export function SpecBookPanel({
         <button type="button" className={primary} disabled={busy !== null} onClick={() => input.current?.click()} data-spec="upload">
           Upload the spec book
         </button>
+        {hasPlans && (
+          <button type="button" className={btn} disabled={busy !== null} onClick={() => void lookOnDrawings()} data-spec="drawings">
+            Look for specs on the drawings
+          </button>
+        )}
         <input
           ref={input}
           type="file"
@@ -133,7 +159,7 @@ export function SpecBookPanel({
       {message && <p className="mt-2 text-sm text-tag-green-ink" data-spec="message">{message}</p>}
       {error && <p className="mt-2 text-sm text-tag-rose-ink" data-spec="error">{error}</p>}
 
-      {books.map((book) => (
+      {books.filter((b) => !b.fromDrawings).map((book) => (
         <div key={book.id} className="mt-3 flex flex-wrap items-center gap-2 text-sm text-ink-body" data-spec="book" data-sections={book.sectionCount}>
           <span className="font-medium text-ink">{book.fileName ?? "Spec book"}</span>
           <span className="text-xs text-ink-muted">· {book.sectionCount} section{book.sectionCount === 1 ? "" : "s"} for your trades</span>
@@ -151,6 +177,18 @@ export function SpecBookPanel({
             <SectionRow key={s.id} section={s} busy={busy !== null} onRead={async () => setMessage(await readAll([s.id]))} />
           ))}
         </ul>
+      )}
+
+      {drawingSections.length > 0 && (
+        <div className="mt-4" data-spec="drawing-notes">
+          <h3 className="text-sm font-semibold text-ink">Printed on the drawings</h3>
+          <p className="text-xs text-ink-muted">General and partition notes on the plan sheets, found in their text with no AI. Open the sheet to read each note in place.</p>
+          <ul className="mt-1 flex flex-col divide-y divide-line-card rounded-md border border-line-card">
+            {drawingSections.map((s) => (
+              <SectionRow key={s.id} section={s} busy={busy !== null} onRead={async () => {}} />
+            ))}
+          </ul>
+        </div>
       )}
 
       {wallTypes.length > 0 && (
@@ -199,13 +237,24 @@ function SectionRow({ section, busy, onRead }: { section: PanelSection; busy: bo
         <p className="text-sm text-ink-body">
           <span className="font-medium text-ink">{section.sectionNumber}</span>
           {section.title ? ` ${section.title}` : ""}
-          {section.pages && <span className="text-xs text-ink-muted"> · pages {section.pages}</span>}
-          {section.reading && <span className="text-xs text-ink-muted"> · read {section.reading.on}</span>}
+          {section.pages && <span className="text-xs text-ink-muted"> · {section.fromDrawings ? "page" : "pages"} {section.pages}</span>}
+          {section.reading && !section.fromDrawings && <span className="text-xs text-ink-muted"> · read {section.reading.on}</span>}
         </p>
-        <button type="button" className={btn} disabled={busy} onClick={() => void onRead()} data-spec="read">
-          {section.reading ? "Read again" : "Read it"}
-        </button>
+        {!section.fromDrawings && (
+          <button type="button" className={btn} disabled={busy} onClick={() => void onRead()} data-spec="read">
+            {section.reading ? "Read again" : "Read it"}
+          </button>
+        )}
       </div>
+      {section.fromDrawings && f && (
+        <ul className="flex flex-col gap-1">
+          {[...new Set([...f.studs, ...f.boards, ...f.fireRatings, ...f.ceilings, ...f.finishLevels, ...f.priceDrivers, ...f.products].map((i) => i.quote))].map((q) => (
+            <li key={q} className="border-l-2 border-line-card pl-2 text-xs text-ink-body" data-spec="note">
+              {q}
+            </li>
+          ))}
+        </ul>
+      )}
       {f && facts.length === 0 && f.priceDrivers.length === 0 && (
         <p className="text-xs text-ink-muted">Nothing for your trade found in this section. {f.reason}</p>
       )}
