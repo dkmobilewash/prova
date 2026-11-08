@@ -4,7 +4,7 @@ import { isRoomBoundary } from "@/lib/takeoff/roomClose";
 import { formatFeetInches } from "@/lib/feet-inches";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { clearDraft, loadDraft, otherDrafts, saveDraft } from "@/lib/takeoff/draftStore";
+import { clearDraft, clearSheetDrafts, loadDraft, otherDrafts, saveDraft } from "@/lib/takeoff/draftStore";
 import {
   draftFrom,
   hasUnsavedWork,
@@ -979,6 +979,16 @@ export function TakeoffWorkspace({
     // lasted one render and the sheet offered to restore work that was
     // already saved.
     if (savedSignature !== undefined && savedSignature === reviewSignature(keyState)) return;
+    // ── NOR FOR A REVIEW NOBODY HAS TOUCHED ──
+    // The finder's own pre-marks are not work to protect. Written as a draft the
+    // moment the candidates landed, they were offered on the next open as
+    // "Restore unsaved review (86 decisions)" — beside a saved file of 450 — and
+    // pressing it put the 86 over the 450 (Chrome on Hutto A102). Asked of the
+    // same rule the saved-file restore uses, read-only.
+    if (restoreGate(baselineDecided.current, `${draftSet}#${page}`, keyState).untouched) {
+      draftHolds.current = true;
+      return;
+    }
     const draft = draftFrom({ state: keyState, set: draftSet, page, finderVersion });
     // Nothing to keep, or kept: either way a reload loses nothing.
     draftHolds.current = draft === null || saveDraft(draft);
@@ -1075,6 +1085,8 @@ export function TakeoffWorkspace({
     baselineDecided.current = gate.baseline;
     if (!gate.untouched) return;
     let cancelled = false;
+    // Said while it comes, so the pre-marks on screen meanwhile are not read as the result.
+    setSavedNotice({ page, note: "Loading the saved review for this sheet…" });
     void (async () => {
       try {
         const response = await fetch(
@@ -1090,6 +1102,7 @@ export function TakeoffWorkspace({
         if (saved === null || saved === undefined) {
           // The server has answered: there is no file. THAT is definite.
           triedSaved.current = sheetKey;
+          setSavedNotice((was) => (was?.page === page && was.note.startsWith("Loading the saved review") ? null : was));
           return;
         }
         const fresh = keyStateRef.current;
@@ -1116,6 +1129,15 @@ export function TakeoffWorkspace({
             sourceFinderVersion: got.sourceFinderVersion,
           });
           setSavedNotice({ page, note: got.message });
+          // ── AND A DRAFT OF ONLY THE PRE-MARKS IS NOT A REVIEW TO OFFER BACK ──
+          // Any draft of this sheet holding no more decisions than the sheet opened
+          // with goes, under whichever build wrote it; one with real work stays offered.
+          const premarks = baselineDecided.current.count;
+          // Re-asked rather than nulled: a draft with real work beside the pre-marks one stays offered.
+          if (clearSheetDrafts(draftSet, page, (d) => d !== null && d.counts.decided + d.counts.traced <= premarks) > 0) {
+            const left = loadDraft(draftSet, page, finderVersion) ?? otherDrafts(draftSet, page, finderVersion).at(-1) ?? null;
+            setRestorable(left === null ? null : { page, offer: restoreOffer(left) });
+          }
           // ── WHAT CAME OFF DISK IS NOT UNSAVED WORK ──
           //
           // Without this the leave-page warning arms the moment a sheet is
@@ -1134,8 +1156,10 @@ export function TakeoffWorkspace({
     })();
     return () => {
       cancelled = true;
+      // A request given up is not "loading" any more; a later run says so again if it asks again.
+      setSavedNotice((was) => (was?.page === page && was.note.startsWith("Loading the saved review") ? null : was));
     };
-  }, [keyMode, draftSet, page, data, readNumberByPage, currentSheet, keyState]);
+  }, [keyMode, draftSet, page, data, readNumberByPage, currentSheet, keyState, finderVersion]);
 
   // ── OFFERED ON OPENING, NOT RESTORED BEHIND THEIR BACK ──
   useEffect(() => {
@@ -1227,9 +1251,12 @@ export function TakeoffWorkspace({
   }, [draftSet, page, finderVersion, setKeyState, currentSheet]);
 
   const clearReviewDraft = useCallback(() => {
-    clearDraft(draftSet, page, finderVersion);
+    // Every build's draft of this sheet: the offer may have come from an older one
+    // (`otherDrafts`), which clearing the current key left behind to be offered again.
+    clearSheetDrafts(draftSet, page);
     setRestorable(null);
-  }, [draftSet, page, finderVersion]);
+    setDraftNote(null);
+  }, [draftSet, page]);
 
   // ── AND A WARNING BEFORE THE PAGE GOES ──
   //
