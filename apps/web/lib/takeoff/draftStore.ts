@@ -94,3 +94,35 @@ export function otherDrafts(set: string, page: number, finderVersion: string): R
   }
   return out;
 }
+
+/**
+ * Every draft of one sheet, under any build, removed — or only those `which` picks.
+ *
+ * `clearDraft` takes one finder version, and a sheet can hold drafts under several:
+ * the offer falls back to an older build's (`otherDrafts`), so Discard cleared the
+ * current key, left the one it had offered, and the sheet offered it again (Chrome
+ * on Hutto A102: "Discard does nothing").
+ */
+export function clearSheetDrafts(set: string, page: number, which: (draft: ReviewDraft | null) => boolean = () => true): number {
+  const where = store();
+  if (where === null) return 0;
+  const prefix = `takeoff-review-draft:${set}:${page}:`;
+  const doomed: string[] = [];
+  try {
+    for (let i = 0; i < where.length; i += 1) {
+      const key = where.key(i);
+      if (key === null || !key.startsWith(prefix)) continue;
+      let parsed: ReviewDraft | null = null;
+      try {
+        parsed = JSON.parse(where.getItem(key) ?? "null") as ReviewDraft | null;
+      } catch {
+        parsed = null;
+      }
+      if (which(parsed)) doomed.push(key);
+    }
+    for (const key of doomed) where.removeItem(key);
+  } catch {
+    // Nothing to do and nothing to say: a stale draft is not dangerous.
+  }
+  return doomed.length;
+}
