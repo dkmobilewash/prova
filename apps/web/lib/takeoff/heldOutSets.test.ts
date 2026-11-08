@@ -123,7 +123,9 @@ describe("the sets that must never reach training", () => {
     // anything. 12 to 13 later the same day: Evergreen, the scanned key.
     // 16 to 20 on 2026-11-04: round 10's four (Cattaraugus, Washington
     // Village, 4259 Fulton Rd, EH Hutto), before a label was written.
-    expect(HELD_OUT_SETS).toHaveLength(20);
+    // 20 to 22 on 2026-11-08: round 16's two tagged new builds (USU ASPIRE
+    // EVR, Riverbend), before a label was written.
+    expect(HELD_OUT_SETS).toHaveLength(22);
   });
 
   it("refuses the three that were declared held out in round 7 and only listed in round 9", () => {
@@ -256,5 +258,21 @@ describe("round 10's held-out sets", () => {
 
   it("allows the nine training sets, including the library and courthouse that are NOT held out", () => {
     for (const file of TRAINING) expect(isHeldOut(file), file).toBe(false);
+  });
+});
+
+describe("round 16 (2026-11-08), by the real file names on disk", () => {
+  // Taken from the folder, not typed from the request: a match that misses the
+  // file refuses nothing. Note the two spaces before "100" in Riverbend's name.
+  it("holds out the two tagged new builds", () => {
+    for (const file of ["USU-ASPIRE-EVR-BID-DRAWINGS-20230307.pdf", "RIVERBEND CD BID Drawings  100 percent (2).pdf"]) {
+      expect(isHeldOut(file), file).toBe(true);
+    }
+  });
+
+  it("keeps the three renovations in training", () => {
+    for (const file of ["SchroederES04-124972DSAApprovedPlans.pdf", "2026-03-05-cmb-pd-cd-set.pdf", "Wendell-Drawings.pdf"]) {
+      expect(isHeldOut(file), file).toBe(false);
+    }
   });
 });
