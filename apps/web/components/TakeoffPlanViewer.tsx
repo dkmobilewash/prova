@@ -188,7 +188,7 @@ import type { PriorLine } from "@/lib/takeoff/planCompare";
 import { PriorPlanBar, type PriorStatus } from "@/components/PriorPlanBar";
 import { type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 import { sheetRooms, splitToWalls } from "@/lib/takeoff/sheetRooms";
-import { ROOM_BOUNDARY_LABEL, isRoomBoundary, snapToWallEnd, wallEnds } from "@/lib/takeoff/roomClose";
+import { ROOM_BOUNDARY_LABEL, isRoomBoundary, openRoomTags, snapToWallEnd, wallEnds } from "@/lib/takeoff/roomClose";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -3512,7 +3512,8 @@ export function TakeoffPlanViewer({
     if (!sheet) return;
     const pageId = sheet.id;
     const here = () => sheetIdRef.current === pageId;
-    const openBefore = rooms?.unplacedTags.length ?? 0;
+    // Open or sharing: a line that closes a room or divides two is the same success.
+    const openBefore = rooms === null ? 0 : openRoomTags(rooms).length;
     const save = async () => {
       const body = new FormData();
       body.set("kind", "LINEAR");
@@ -3548,7 +3549,7 @@ export function TakeoffPlanViewer({
       },
     });
     const after = await refind();
-    if (after !== null && after.unplacedTags.length >= openBefore) {
+    if (after !== null && openRoomTags(after).length >= openBefore) {
       setFindError("That line closed no room yet. Its ends must meet walls, and a room open on two sides needs a line on each.");
     }
   }
@@ -7078,16 +7079,19 @@ export function TakeoffPlanViewer({
                   />
                 ))}
               {/* ── AN OPEN ROOM SAYS SO WHERE ITS TAG IS ──
-                  A tag on no closed region: the room has no floor yet. Close room closes it. */}
+                  A tag on no closed region has no floor yet; one sharing a region
+                  with another tag has no boundary between them (SW A110's sales
+                  areas 101/102, divided on the drawing by a dimension string only).
+                  Close room closes either. */}
               {rooms !== null &&
                 roomsOnPage === pageNumber &&
                 !hiddenLayers.has("rooms") &&
-                rooms.unplacedTags.map((t, i) => {
+                openRoomTags(rooms).map(({ tag: t, shared }, i) => {
                   const at = t.numberAt ?? t;
-                  const word = `open room${t.name ? ` · ${t.name}` : ""}`;
+                  const word = `${shared ? "shares a room" : "open room"}${t.name ? ` · ${t.name}` : ""}`;
                   const size = 11 * onePx;
                   return (
-                    <g key={`open-${i}`} data-takeoff="open-room" data-room-name={t.name} data-room-number={t.number ?? ""} pointerEvents="none">
+                    <g key={`open-${i}`} data-takeoff="open-room" data-open={shared ? "shared" : "unclosed"} data-room-name={t.name} data-room-number={t.number ?? ""} pointerEvents="none">
                       <rect x={at.x - size * 0.3} y={at.y - size * 1.9} width={word.length * size * 0.58 + size * 0.6} height={size * 1.4} rx={size * 0.3} fill="#fef3c7" stroke="#d97706" strokeWidth={STROKE_PX} vectorEffect="non-scaling-stroke" />
                       <text x={at.x} y={at.y - size * 0.85} fontSize={size} fill="#92400e" fontWeight={600}>
                         {word}

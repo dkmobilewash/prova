@@ -52,3 +52,12 @@ export function snapToWallEnd(p: Point, ends: readonly Point[], reach: number): 
   }
   return best === null ? { ...p, snapped: false } : { x: best.x, y: best.y, snapped: true };
 }
+
+/**
+ * The tags an estimator is shown as open rooms: unplaced ones in the region that
+ * reaches the outside, and ones sharing a region with another tag.
+ */
+export function openRoomTags(result: { unplacedTags: readonly RoomTagLike[]; mergedTags: readonly RoomTagLike[] }): { tag: RoomTagLike; shared: boolean }[] {
+  return [...result.unplacedTags.filter((t) => t.leaks === true).map((tag) => ({ tag, shared: false })), ...result.mergedTags.map((tag) => ({ tag, shared: true }))];
+}
+type RoomTagLike = { name: string; number: string | null; x: number; y: number; numberAt?: { x: number; y: number } | null; leaks?: true };

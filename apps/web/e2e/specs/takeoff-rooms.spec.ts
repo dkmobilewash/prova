@@ -297,7 +297,7 @@ test.describe("find the rooms", () => {
    */
   test("close room: a line across the garage door closes it, with its area; Undo opens it again", async () => {
     const rows = page.locator('[data-takeoff="room-row"]');
-    const open = page.locator('[data-takeoff="open-room"]');
+    const open = page.locator('[data-takeoff="open-room"][data-open="unclosed"]');
     const rowsBefore = await rows.count();
     const openBefore = await open.count();
     expect(openBefore, "S05's garage should be an open room before anything is drawn").toBeGreaterThanOrEqual(1);

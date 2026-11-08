@@ -404,7 +404,15 @@ export function roomsFromWalls(input: {
       };
       const room = (placed.numberAt && roomAt(placed.numberAt)) ?? roomAt(placed);
       if (!room) {
-        unplacedTags.push(placed);
+        // ── WHETHER IT LEAKS, OR SITS IN A CELL ──
+        // A room left open shares the paper's region, the one reaching the grid's
+        // edge. A tag in a small closed cell or on ink is a schedule's or a note's
+        // text: SW A110's hardware schedule gave thirteen of those.
+        const at = placed.numberAt ?? placed;
+        const cx = Math.floor((at.x - x0) / unitsPerCellX), cy = Math.floor((at.y - y0) / unitsPerCellY);
+        const id = cx >= 0 && cy >= 0 && cx < size.width && cy < size.height ? label[cy * size.width + cx] : -1;
+        const leaks = id >= 0 && regions.some((r) => r.id === id && r.open);
+        unplacedTags.push(leaks ? { ...placed, leaks: true } : placed);
         continue;
       }
       const list = tagsOfRoom.get(room);

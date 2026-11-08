@@ -63,6 +63,8 @@ export function TakeoffRoomsPanel({
   onClear: () => void;
 }) {
   const router = useRouter();
+  /** Open rooms only: an unplaced tag in a closed cell is a schedule's text, not a room (`openRoomTags`). */
+  const openTags = result.unplacedTags.filter((t) => t.leaks === true);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const section = useRef<HTMLDivElement | null>(null);
@@ -268,14 +270,14 @@ export function TakeoffRoomsPanel({
           {jobSummary.map((s) => `${s.label}: ${Math.round(s.squareFeet).toLocaleString()} sf`).join(" · ")}
         </p>
       )}
-      {(result.unplacedTags.length > 0 || result.mergedTags.length > 0) && (
+      {(openTags.length > 0 || result.mergedTags.length > 0) && (
         <p className="mt-2 text-xs text-ink-muted" data-takeoff="rooms-missed">
-          {result.unplacedTags.length > 0 && (
+          {openTags.length > 0 && (
             <>
               <span className="font-medium text-ink-label" data-takeoff="open-rooms">
-                {result.unplacedTags.length} open room{result.unplacedTags.length === 1 ? "" : "s"}:
+                {openTags.length} open room{openTags.length === 1 ? "" : "s"}:
               </span>{" "}
-              {result.unplacedTags.map((t) => [t.name, t.number].filter(Boolean).join(" ")).join(", ")} — a side is
+              {openTags.map((t) => [t.name, t.number].filter(Boolean).join(" ")).join(", ")} — a side is
               not closed. Pick Close room (in ⋯) and drag a line across the open side, wall end to wall end.{" "}
             </>
           )}
@@ -283,7 +285,7 @@ export function TakeoffRoomsPanel({
             <>
               <span className="font-medium text-ink-label">Share one room:</span>{" "}
               {result.mergedTags.map((t) => [t.name, t.number].filter(Boolean).join(" ")).join(", ")} — open to each
-              other on the drawing.
+              other on the drawing. If they are separate rooms, Close room draws the line between them.
             </>
           )}
         </p>
