@@ -1,4 +1,5 @@
 import type { PriorLine } from "./planCompare";
+import { splitVariant, VARIANT_NOTES, variantNotes } from "./variantMark";
 import { after } from "next/server";
 import { prisma } from "@prova/db";
 import { storedRasterFor } from "@/lib/plan-ingest/raster";
@@ -379,6 +380,19 @@ export async function detectWallsForCalibration(
         }
       } catch (error) {
         console.error("[takeoff] sibling-sheet tags failed; grouping without them", { planId: target.planId, page: target.pageNumber }, error);
+      }
+    }
+    // ── WHAT A MARKED TAG MEANS, FOR THE QUEUE (`variantMark.ts`) ──
+    // "C6*" types as C6; the words printed with it ride beside the groups so the
+    // suggestion can say "C6 (C6* at tub/shower locations, see legend)". Only a
+    // sheet that prints one gets a row, and a failed write costs the words only.
+    if (groups.some((g) => g.source.kind === "TAG" && splitVariant(g.source.tag).mark !== "")) {
+      try {
+        const value = variantNotes(textItems);
+        const where = { planId_pageNumber_kind: { planId: target.planId, pageNumber: target.pageNumber, kind: VARIANT_NOTES } };
+        await prisma.takeoffPlanTextRead.upsert({ where, create: { planId: target.planId, pageNumber: target.pageNumber, kind: VARIANT_NOTES, value }, update: { value, computedAt: new Date() } });
+      } catch (error) {
+        console.error("[takeoff] variant notes not saved; the suggestion shows the bare mark", { planId: target.planId, page: target.pageNumber }, error);
       }
     }
     if (planTextOn) {
