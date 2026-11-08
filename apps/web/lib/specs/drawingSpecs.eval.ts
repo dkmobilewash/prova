@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "@/lib/plan-ingest/planPdf";
 import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
 import { drawingSpecNotes, searchesSheet } from "./drawingSpecs";
@@ -18,8 +18,10 @@ const DIR = process.env.REAL_PLAN_DIR ?? "";
 const OUT = process.env.DRAWING_SPECS_OUT ?? "";
 const SETS = (process.env.DRAWING_SPECS_SETS ?? "").split(",").filter(Boolean);
 
-it.skipIf(DIR === "" || OUT === "" || SETS.length === 0)("lists every requirement kept, by set and sheet", async () => {
+describe.skipIf(DIR === "" || OUT === "" || SETS.length === 0)("specs printed on real drawings", () => {
+it("lists every requirement kept, by set and sheet", async () => {
   const out: string[] = [];
+  const pagesRead: number[] = [];
   for (const set of SETS) {
     const pdf = await openPlanPdf(readFileSync(join(DIR, set)));
     let kept = 0;
@@ -32,8 +34,12 @@ it.skipIf(DIR === "" || OUT === "" || SETS.length === 0)("lists every requiremen
         out.push(`${set}\tp${page}\t${sheet ?? "?"}\t${note.sectionNumber}\t${note.text}`);
       }
     }
+    for (let n = 1; n <= pdf.pageCount; n++) pagesRead.push(n);
     out.push(`# ${set}: ${kept} kept of ${pdf.pageCount} pages`);
     await pdf.close();
   }
   writeFileSync(OUT, out.join("\n") + "\n");
+  // A mistyped folder or set name must fail, not read as "no specs printed anywhere".
+  expect(pagesRead.length).toBeGreaterThan(0);
 }, 900_000);
+});
