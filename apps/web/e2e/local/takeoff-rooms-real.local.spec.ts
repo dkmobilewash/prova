@@ -138,4 +138,53 @@ test.describe("find the rooms on a real sheet", () => {
     writeFileSync(path.join(OUT, `p${PAGE}-rooms.txt`), `${rows} rows, ${named} named\n${sf.join("\n")}\n`);
     expect(rows).toBeGreaterThan(0);
   });
+
+  /**
+   * ── CLOSE THE OPEN ROOMS WITH THE CLOSE-ROOM TOOL ──
+   *
+   * Without `REAL_CLOSE_LINES` this only REPORTS the open rooms — each badge's
+   * name and its place on the sheet in page-width units — into
+   * `p<page>-open-rooms.json`, which is how the lines are chosen in the first
+   * place. With it (a JSON list of [x1, y1, x2, y2] in page-width units), each
+   * line is dragged with Close room, and the step requires every open room to
+   * close, with an area, and Undo to open the last one again.
+   */
+  test("open rooms, then Close room on each", async () => {
+    const svg = await overlay().boundingBox();
+    if (!svg) throw new Error("no sheet on screen");
+    const open = page.locator('[data-takeoff="open-room"]');
+    const openRooms = await open.evaluateAll((nodes, origin) =>
+      nodes.map((n) => {
+        const r = (n as Element).getBoundingClientRect();
+        return { name: n.getAttribute("data-room-name"), number: n.getAttribute("data-room-number"), x: (r.left - origin.x) / origin.width, y: (r.bottom - origin.y) / origin.width };
+      }), svg);
+    console.log(`open rooms on p${PAGE}: ${JSON.stringify(openRooms)}`);
+    writeFileSync(path.join(OUT, `p${PAGE}-open-rooms.json`), JSON.stringify(openRooms, null, 2));
+    const lines = JSON.parse(process.env.REAL_CLOSE_LINES ?? "[]") as [number, number, number, number][];
+    if (lines.length === 0) return;
+    const rows = page.locator('[data-takeoff="room-row"]');
+    const rowsBefore = await rows.count();
+    await page.locator('[data-takeoff="rail-more"]').click();
+    await page.getByRole("button", { name: "Close room", exact: true }).click();
+    for (const [x1, y1, x2, y2] of lines) {
+      const before = await open.count();
+      const box = await settledOverlayBox();
+      await overlay().hover({ position: { x: x1 * box.width, y: y1 * box.width } });
+      await page.mouse.down();
+      await overlay().hover({ position: { x: ((x1 + x2) / 2) * box.width, y: ((y1 + y2) / 2) * box.width } });
+      await overlay().hover({ position: { x: x2 * box.width, y: y2 * box.width } });
+      await page.mouse.up();
+      await expect(open, `the line ${[x1, y1, x2, y2].join(", ")} closed no room`).toHaveCount(before - 1, { timeout: 120_000 });
+    }
+    await expect(open).toHaveCount(openRooms.length - lines.length);
+    expect(await rows.count()).toBeGreaterThanOrEqual(rowsBefore + lines.length);
+    const sf = await page.locator('[data-takeoff="room-sf"]').allTextContents();
+    const names = await page.locator('[data-takeoff="room-row"]').evaluateAll((n) => n.map((r) => (r as HTMLElement).innerText.replace(/\s+/g, " ").slice(0, 80)));
+    console.log(`after Close room: ${names.join(" | ")}`);
+    writeFileSync(path.join(OUT, `p${PAGE}-closed.txt`), `${names.join("\n")}\n`);
+    await page.screenshot({ path: path.join(OUT, `p${PAGE}-03-closed.png`), fullPage: false });
+    expect(sf.every((t) => Number(t.replace(/,/g, "")) > 9)).toBe(true);
+    await page.locator('[data-takeoff="undo"]').click();
+    await expect(open, "Undo left the last room closed").toHaveCount(openRooms.length - lines.length + 1, { timeout: 120_000 });
+  });
 });

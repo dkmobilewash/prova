@@ -331,7 +331,7 @@ export function printedScalesFromProposals(
   return byPage;
 }
 
-export type ToolId = "pan" | "hand" | "calibrate" | "linear" | "area" | "rect" | "count" | "cutout" | "edit" | "symbol" | "split" | "exclude" | "workarea";
+export type ToolId = "pan" | "hand" | "calibrate" | "linear" | "area" | "rect" | "count" | "cutout" | "edit" | "symbol" | "split" | "exclude" | "workarea" | "close";
 
 /**
  * The measuring vocabulary, and it is deliberately the same three primitives
@@ -381,6 +381,7 @@ export const TOOLS: { id: ToolId; label: string; hint: string }[] = [
     hint:
       "Click round an opening INSIDE an area you have already saved, to take it off that area. Pick the area first.",
   },  { id: "exclude", label: "Exclude like this", hint: "After Find the walls: click one wall that is not in the job. Every wall on this sheet drawn the same way is set aside, with a count and an undo." },
+  { id: "close", label: "Close room", hint: "After Find the rooms: drag a straight line across a room's open side, from wall end to wall end. The ends snap to the walls; the room closes and its area and perimeter update." },
   { id: "split", label: "Split area", hint: "After Find the rooms: drag a line across a room from wall to wall. Each part takes the tag inside it and its own finish." },
   { id: "workarea", label: "Work area", hint: "Click round the area of work and close the shape. Walls outside it are set aside; walls across its edge are cut at it." },
 ];
@@ -433,6 +434,7 @@ export const TOOL_ICONS: Record<ToolId, string> = {
   exclude: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M5.6 5.6l12.8 12.8",
   split: "M4 4h16v16H4zM12 4v16",
   workarea: "M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4",
+  close: "M4 20V4h16v16M4 20h16M2 20h2M20 20h2",
 };
 
 /**

@@ -281,6 +281,60 @@ test.describe("find the rooms", () => {
     await expectHealthy(page, "rooms found", { monitor, signedIn: false });
   });
 
+  /**
+   * ── "CLOSE ROOM" ON THE ONE ROOM S05 LEAVES OPEN ──
+   *
+   * The garage (377.41 sf in `truth/S05.json`) stays open: its 16-ft overhead
+   * door, wall W1 from x = 26 to 42 ft at y = 0, is wider than any door seal,
+   * and the 2-ft stub from 42 to the corner is shorter than any wall kept.
+   * Where that is on the sheet comes from the generator's own placement
+   * (`generator/spec/S05.json`: origin 486,370 pt, 13.5 pt per foot, on a
+   * 1728 x 1296 pt page, y measured up from the bottom), so the drag is aimed
+   * by arithmetic rather than by a pixel somebody once looked at.
+   *
+   * The counts before are read, not assumed, so the step proves the line did
+   * it: one more room, one fewer open tag, and Undo puts both back.
+   */
+  test("close room: a line across the garage door closes it, with its area; Undo opens it again", async () => {
+    const rows = page.locator('[data-takeoff="room-row"]');
+    const open = page.locator('[data-takeoff="open-room"]');
+    const rowsBefore = await rows.count();
+    const openBefore = await open.count();
+    expect(openBefore, "S05's garage should be an open room before anything is drawn").toBeGreaterThanOrEqual(1);
+    await expect(page.locator('[data-takeoff="open-rooms"]')).toContainText(`${openBefore} open room`);
+
+    await page.locator('[data-takeoff="rail-more"]').click();
+    await page.getByRole("button", { name: "Close room", exact: true }).click();
+    const box = await settledOverlayBox();
+    const at = (xFt: number, yFt: number) => ({ x: ((486 + xFt * 13.5) / 1728) * box.width, y: ((1296 - (370 + yFt * 13.5)) / 1728) * box.width });
+    // ── THE OPEN SIDE IS JAMB TO CORNER, NOT JAMB TO JAMB ──
+    // The first run of this step dragged across the door alone, 26 to 42 ft,
+    // and closed nothing: the 2 ft of W1 between the door and the corner is
+    // shorter than any wall the finder keeps, so the open side the room step
+    // sees runs on to the corner at 44 ft. Which is what an estimator looking
+    // at the sheet draws. A hair inside each end, so the snap carries the line
+    // to the wall ends.
+    await overlay().hover({ position: at(26.2, 0.1) });
+    await page.mouse.down();
+    await overlay().hover({ position: at(35, 0.05) });
+    await overlay().hover({ position: at(43.8, 0.1) });
+    await page.mouse.up();
+
+    await expect(rows, "the line closed no room").toHaveCount(rowsBefore + 1, { timeout: 60_000 });
+    await expect(open).toHaveCount(openBefore - 1);
+    const sf = (await page.locator('[data-takeoff="room-sf"]').allTextContents()).map((t) => Number(t.replace(/,/g, "")));
+    // To the walls' inside faces, so a little under the key's 377.41.
+    expect(sf.some((n) => n > 330 && n < 400), `no garage-sized room among ${sf.join(", ")}`).toBe(true);
+    await page.screenshot({ path: path.join(SHOTS, "02b-garage-closed.png") });
+
+    await page.locator('[data-takeoff="undo"]').click();
+    await expect(rows, "Undo left the garage closed").toHaveCount(rowsBefore, { timeout: 60_000 });
+    await expect(open).toHaveCount(openBefore);
+    // Back to the arrow, so the next step's clicks select rather than draw.
+    await page.getByRole("button", { name: "Select", exact: true }).click();
+    await expectHealthy(page, "room closed and undone", { monitor, signedIn: false });
+  });
+
   test("rename one, save: the rooms are areas on the sheet", async () => {
     const first = page.locator('[data-takeoff="room-row"]').first();
     await first.getByLabel("Room name").fill("ZZ RENAMED");

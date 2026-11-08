@@ -272,9 +272,11 @@ export function TakeoffRoomsPanel({
         <p className="mt-2 text-xs text-ink-muted" data-takeoff="rooms-missed">
           {result.unplacedTags.length > 0 && (
             <>
-              <span className="font-medium text-ink-label">Not enclosed:</span>{" "}
-              {result.unplacedTags.map((t) => [t.name, t.number].filter(Boolean).join(" ")).join(", ")} — a wall is
-              missing; draw it with the Line tool and find the rooms again.{" "}
+              <span className="font-medium text-ink-label" data-takeoff="open-rooms">
+                {result.unplacedTags.length} open room{result.unplacedTags.length === 1 ? "" : "s"}:
+              </span>{" "}
+              {result.unplacedTags.map((t) => [t.name, t.number].filter(Boolean).join(" ")).join(", ")} — a side is
+              not closed. Pick Close room (in ⋯) and drag a line across the open side, wall end to wall end.{" "}
             </>
           )}
           {result.mergedTags.length > 0 && (
