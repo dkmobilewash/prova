@@ -173,12 +173,12 @@ export function specSays(lines: readonly string[] | null, sections: readonly Sec
       for (const f of read.finishLevels) if (f.level === 5) add(`Level 5 finish${at(f.where)}`, source, "board");
     }
     if (hasStuds) {
-      const gauges = read.studs.map((s) => (s.gauge === null ? null : gaugeFrom(s.gauge))).filter((n): n is number => n !== null);
-      const minimum = gauges.length > 0 ? Math.max(...gauges) : null;
-      // Heavier than the 25 ga a partition bid assumes is what costs: 22, 20, 18…
-      if (minimum !== null && minimum < 25) {
+      // Every stated gauge heavier than the 25 ga a partition bid assumes is what costs: 22, 20, 18…
+      // Each on its own — a section that says 20 ga for walls and 25 ga for struts still says 20 ga.
+      const heavy = [...new Set(read.studs.map((s) => (s.gauge === null ? null : gaugeFrom(s.gauge))).filter((n): n is number => n !== null && n < 25))].sort((a, b) => b - a);
+      for (const g of heavy) {
         const legend = wall?.studGauge ?? null;
-        add(`${minimum} ga studs minimum${legend !== null && legend > minimum ? `, the legend says ${legend} ga` : ""}`, source, "framing");
+        add(`${g} ga studs${legend !== null && legend > g ? `, the legend says ${legend} ga` : ""}`, source, "framing");
       }
       const deflection = [...read.priceDrivers, ...read.studs].some((d) => /deflection|slotted/i.test(JSON.stringify(d)));
       if (deflection) add("deflection track", source, "framing");
@@ -187,7 +187,7 @@ export function specSays(lines: readonly string[] | null, sections: readonly Sec
   return out;
 }
 
-/** "Spec says: Type X board (09 21 16); 20 ga studs minimum (09 22 16, sheet A100)". Empty when nothing applies. */
+/** "Spec says: Type X board (09 21 16); 20 ga studs (09 22 16, sheet A100)". Empty when nothing applies. */
 export function specSaysLine(says: readonly SpecSay[]): string {
   if (says.length === 0) return "";
   // The same item from two places (the book and a drawing's note) is said once, with both sources.

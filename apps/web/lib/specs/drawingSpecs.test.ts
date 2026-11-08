@@ -67,6 +67,10 @@ describe("which notes are this trade's requirements", () => {
     // A broad word in a numbered note is not enough (measured: false hits 11 -> 35).
     expect(isTradeRequirement("F. DIMENSIONS ARE TO STRUCTURAL GRIDLINE OR FACE OF STUD UNLESS NOTED OTHERWISE.")).toBe(false);
     expect(isTradeRequirement("12. DIMENSIONS SHALL BE VERIFIED BY LAYING OUT THE PARTITIONS.")).toBe(false);
+    // Another trade's systems, and a note explaining the drawings' symbols (measured false hits, 2026-11-08).
+    expect(isTradeRequirement("3. G.C. SHALL PROVIDE UL APPROVED FIRERESISTIVE PENETRATION SYSTEMS WHERE PLUMBING IS LOCATED IN A FIRE-RATED PARTITION ASSEMBLY.")).toBe(false);
+    expect(isTradeRequirement('THE NUMBER IN THE BOTTOM HALF OF THE PARTITION TYPE SYMBOL INDICATES THE 1 HOUR "FIRE RESISTIVE RATING" REQUIRED.')).toBe(false);
+    expect(isTradeRequirement("10. ATTACH ALL LIGHT FIXTURES TO THE CEILING GRID RUNNERS TO RESIST A HORIZONTAL FORCE.")).toBe(true);
     // Siding and other trades' obligations.
     expect(isTradeRequirement("PRE-FINISHED METAL WALL PANEL, 22 GA. PAC-CLAD, ON 2 1/2\" METAL STUDS. INSTALL WITH CONCEALED CLIPS.")).toBe(false);
     expect(isTradeRequirement("PROVIDE 1/2\" COLD WATER SUPPLY CONCEALED IN PARTITION; STUB OUT AND PROVIDE SHUTOFF VALVE")).toBe(false);
