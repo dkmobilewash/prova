@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { prisma } from "@prova/db";
 import type { SpecTradeRead } from "@prova/integrations";
 import { buildSpecBookFixture } from "./fixtures/specBookFixture";
+import { buildDrawingNotesFixture } from "./fixtures/drawingNotesFixture";
 
 /**
  * A whole spec book through the real actions and rows: the fixture book is found
@@ -64,7 +65,7 @@ vi.mock("@prova/integrations", async (actual) => ({
 const dir = mkdtempSync(join(tmpdir(), "spec-book-"));
 process.env.TAKEOFF_LOCAL_PLAN_DIR = dir;
 
-const { findSpecBookSections, readSpecTrade, addSpecDriverToProposal, recordSpecBook } = await import("@/lib/actions/specBook");
+const { findSpecBookSections, readSpecTrade, addSpecDriverToProposal, recordSpecBook, findDrawingSpecs } = await import("@/lib/actions/specBook");
 const { loadSpecBookView } = await import("./specBookQuery");
 
 let companyId = "", otherCompanyId = "", jobId = "", otherJobId = "", bookId = "", planId = "";
@@ -72,6 +73,7 @@ let companyId = "", otherCompanyId = "", jobId = "", otherJobId = "", bookId = "
 describe("a whole spec book on a job", () => {
   beforeAll(async () => {
     writeFileSync(join(dir, "manual.pdf"), await buildSpecBookFixture());
+    writeFileSync(join(dir, "plan.pdf"), await buildDrawingNotesFixture());
     companyId = (await prisma.company.create({ data: { name: "Book Co" } })).id;
     otherCompanyId = (await prisma.company.create({ data: { name: "Other Book Co" } })).id;
     context.company.id = companyId;
@@ -179,10 +181,37 @@ describe("a whole spec book on a job", () => {
     outage = false;
   });
 
+  it("finds the requirements printed on the drawings with no model call, each with its sheet, and a second press replaces them", async () => {
+    const before = sectionsSent.length;
+    const found = await findDrawingSpecs(jobId);
+    expect(found).toEqual({ ok: true, value: { notes: 3, sheets: ["G001"], plans: 1 } });
+    expect(sectionsSent.length).toBe(before);
+    const book = await prisma.specBook.findFirstOrThrow({ where: { jobId, fileUrl: "local:plan.pdf" }, include: { sections: { include: { tradeReadings: true }, orderBy: { sectionNumber: "asc" } } } });
+    expect(book.sections.map((s) => [s.sectionNumber, s.title, s.pageFrom])).toEqual([
+      ["09 21 16", "Notes on sheet G001", 1],
+      ["09 22 16", "Notes on sheet G001, also on A101", 1],
+    ]);
+    const framing = book.sections[1].tradeReadings[0];
+    expect([framing.model, framing.pagesCharged]).toEqual(["drawing-text", 0]);
+    expect((framing.facts as SpecTradeRead).studs.map((s) => [s.gauge, s.spacing])).toEqual([["25 GA", '16" O.C.']]);
+
+    const view = await loadSpecBookView(jobId, companyId);
+    expect(view.sections.filter((s) => s.fromDrawings).map((s) => s.title)).toEqual(["Notes on sheet G001", "Notes on sheet G001, also on A101"]);
+    expect(view.books.find((b) => b.id === book.id)?.fromDrawings).toBe(true);
+    // The drawings say 25 ga; the legend's A1 is 20 ga — heavier, so no conflict.
+    const a1 = view.wallTypes.find((w) => w.code === "A1")!;
+    expect(a1.conflicts).toEqual([]);
+    expect(a1.applies).toContain('09 22 16 (sheet G001, also on A101): 25 ga min, 16" o.c. max');
+
+    expect(await findDrawingSpecs(jobId)).toMatchObject({ ok: true, value: { notes: 3 } });
+    expect(await prisma.specBook.count({ where: { jobId, fileUrl: "local:plan.pdf" } })).toBe(1);
+  });
+
   it("answers another company's book and section as if they were not there", async () => {
     const theirs = await prisma.specBook.create({ data: { jobId: otherJobId, fileUrl: "local:manual.pdf" } });
     expect(await findSpecBookSections(theirs.id)).toEqual({ ok: false, error: "That spec book is no longer on this job." });
     const section = await prisma.bidSpecSection.create({ data: { jobId: otherJobId, sectionNumber: "09 21 16" } });
     expect(await readSpecTrade(section.id)).toEqual({ ok: false, error: "That spec section is no longer here." });
+    expect(await findDrawingSpecs(otherJobId)).toEqual({ ok: false, error: "That job is not on your account." });
   });
 });
