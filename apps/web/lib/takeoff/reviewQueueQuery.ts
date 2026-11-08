@@ -15,7 +15,9 @@ import { storedGeneralHeight, storedLevels } from "@/lib/takeoff/levelReads";
 import { storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { levelHeight, runLevels } from "@/lib/takeoff/levelHeights";
 import { heightBasis } from "@/lib/takeoff/wallHeights";
-import { GENERAL_HEIGHT_KEY, heightItem, reviewQueue, splitByLevel, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { roomPitched, runPitched } from "@/lib/takeoff/roofParts";
+import { storedRoofParts } from "@/lib/takeoff/roofPartsRead";
+import { GENERAL_HEIGHT_KEY, heightItem, reviewQueue, splitByLevel, splitByRoof, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import { storedWindowsOf, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
 import { refreshSuggestionsAfterResponse } from "@/lib/takeoff/suggestionRefresh";
 import { buildingHeights, feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/takeoff/wallHeight";
@@ -130,6 +132,7 @@ export async function loadReviewQueue(
   }
   // ── EACH WALL'S LEVEL: its plan's caption, and the level markers the set prints ──
   const levelsRead = await storedLevels(plan.id);
+  const roofRead = await storedRoofParts(plan.id);
   // The types whose height is the storey: those whose own words run them to the structure.
   const toStructure = (lines: readonly string[]) => lines.some((line) => heightBasis(line)?.kind === "to-structure");
   const legendTypes = (await prisma.planLegendProposal.findMany({ where: { planId: plan.id }, select: { merged: true } })).flatMap((p) => storedLegendTypesFromJson(p.merged));
@@ -176,15 +179,27 @@ export async function loadReviewQueue(
     }
     const captions = levelsRead.captions.get(page.pageNumber);
     const fpu = sheet.feetPerUnit;
-    items.push(
-      ...(captions === undefined || fpu === null
+    const byLevel =
+      captions === undefined || fpu === null
         ? typed
         : typed.flatMap((item) =>
             item.kind === "type"
               ? splitByLevel(item, (runs) => runLevels(runs, captions, fpu), (levels) => levelHeight(levelsRead.marks, levels), structureCodes, fpu)
               : [item],
-          )),
-    );
+          );
+    // ── THE ROOF OVER EACH WALL: the roof plan's reading over this floor plan, by the saved rooms ──
+    const roof = roofRead.get(page.pageNumber);
+    const pageRooms = roomsOn(page.pageNumber);
+    if (roof === undefined || fpu === null || pageRooms.length === 0) items.push(...byLevel);
+    else {
+      const pitchedSet = new Set(roof.mask.pitched);
+      const read = pageRooms.map((r) => ({ xs: r.xs, ys: r.ys, pitched: roomPitched(roof.mask, r, pitchedSet) }));
+      const said = (kind: "pitched" | "flat"): CodeHeight => {
+        const h = roof.heights[kind];
+        return { feet: h.feet, from: `roof plan ${roof.mask.roofSheet}: ${kind === "pitched" ? "standing seams, a pitched roof" : "no seams, a flat roof"} → ${h.from} = ${feetLabel(h.feet)}` };
+      };
+      items.push(...byLevel.flatMap((item) => (item.kind === "type" ? splitByRoof(item, (runs) => runs.map((run) => runPitched(run, read, fpu)), { pitched: said("pitched"), flat: said("flat") }, structureCodes, fpu) : [item])));
+    }
   }
 
   // ── WALL GROUPS WITH NO HEIGHT ──

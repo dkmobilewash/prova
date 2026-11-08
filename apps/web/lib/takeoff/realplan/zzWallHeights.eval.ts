@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { WallLegendRead } from "@prova/integrations/src/wallLegend";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
@@ -10,9 +10,13 @@ import { sheetStrokes } from "../sheetStrokes";
 import { shapeFromLegend, tagSymbols } from "../tagSymbols";
 import { legendVocabulary, tagsFromSymbols } from "../symbolTagging";
 import { propagateTypes } from "../typePropagation";
-import { buildingsOf, resolveHeight } from "../wallHeights";
+import { buildingsOf, heightBasis, resolveHeight } from "../wallHeights";
 import { sheetViews } from "../sheetViews";
 import { heightOfLegendType, setHeightFacts } from "../setHeightFacts";
+import { roofPartsFor } from "../roofPartsRead";
+import { roomPitched, runPitched } from "../roofParts";
+import { roomsFromWalls } from "../roomsFromWalls";
+
 import { generalHeightOf } from "../legendHeights";
 import { levelHeight, runLevels } from "../levelHeights";
 import { tagByRun } from "../wallTags";
@@ -70,7 +74,46 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || LEGEND_PAGE === 0)("
     expect(doc.pageCount).toBeGreaterThan(0);
 
     // ── FACTS, FROM THE SHEETS THAT CARRY THEM — the app's own walk (`setHeightFacts`) ──
-    const { facts, generalNote, factSheets, levels: levelsAll = [] } = await setHeightFacts(doc, { legendPage: LEGEND_PAGE });
+    const setAll = await setHeightFacts(doc, { legendPage: LEGEND_PAGE });
+    const { facts, generalNote, factSheets, levels: levelsAll = [] } = setAll;
+    // ── THE ROOF OVER EACH RUN (`roofParts.ts`), as the queue reads it: per run of the WALLS stage ──
+    if (PLAN_PAGE > 0 && process.env.HEIGHT_RUNS_DIR) {
+      const roofs = await roofPartsFor(doc, setAll);
+      const roof = roofs.get(PLAN_PAGE);
+      const runsPath = join(process.env.HEIGHT_RUNS_DIR, `${basename(SET)}__p${PLAN_PAGE}.runs.json`);
+      console.log(`ROOF_PAGES ${[...roofs.keys()].join(",") || "none"}; this plan ${roof === undefined ? "no roof reading" : `roof ${roof.mask.roofSheet}, ${roof.mask.pitched.length} pitched cells, pitched ${roof.heights.pitched.feet.toFixed(3)} (${roof.heights.pitched.from}) / flat ${roof.heights.flat.feet.toFixed(3)} (${roof.heights.flat.from})`}`);
+      if (roof !== undefined && existsSync(runsPath)) {
+        const doc2 = JSON.parse(readFileSync(runsPath, "utf8")) as { feetPerUnit: number; runs: { x1: number; y1: number; x2: number; y2: number; thicknessIn: number; type: string | null }[] };
+        const planText = await doc.pageText(PLAN_PAGE);
+        // The product reads SAVED rooms; here, the room finder over the stage's own runs.
+        const rooms = roomsFromWalls({ walls: doc2.runs.map((r) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, thicknessFeet: r.thicknessIn / 12 })), feetPerUnit: doc2.feetPerUnit, text: planText.items, widthPt: planText.widthPt }).rooms;
+        const set = new Set(roof.mask.pitched);
+        const read = rooms.map((r) => ({ xs: r.xs, ys: r.ys, pitched: roomPitched(roof.mask, r, set) }));
+        const structure = text.types.filter((t) => [...t.lines, sight?.types.find((x: SightType) => x.code.toUpperCase() === t.code.toUpperCase())?.heightNote ?? ""].some((l) => heightBasis(l)?.kind === "to-structure")).map((t) => t.code.toUpperCase());
+        // A room-by-room key (HEIGHT_ROOM_PARTS, Chrome's Joplin key): each key wall's truth, the taller of its rooms' parts.
+        if (process.env.HEIGHT_ROOM_PARTS && LABEL !== "") {
+          const part = new Map<string, string>();
+          for (const line of readFileSync(process.env.HEIGHT_ROOM_PARTS, "utf8").split("\n")) {
+            const m = /^([\d.]+)\s*\|[^|]*\|\s*(LOWER|ADMIN|CENTRAL|can't tell)\s*\|/.exec(line.trim());
+            if (m) part.set(m[1]!, m[2]!);
+          }
+          const partFt: Record<string, number> = { LOWER: 12, ADMIN: 12 + 4 / 12, CENTRAL: 16 + 8 / 12 };
+          const lab = JSON.parse(readFileSync(LABEL, "utf8")) as LabelFile & { traced?: { x1: number; y1: number; x2: number; y2: number; thicknessFeet?: number }[] };
+          const keyWalls = [...lab.verdicts.filter((v) => v.verdict === "wall"), ...(lab.traced ?? [])];
+          const keyRooms = roomsFromWalls({ walls: keyWalls, feetPerUnit: lab.feetPerUnit, text: planText.items, widthPt: planText.widthPt }).rooms;
+          const inR = (x: number, y: number, xs: number[], ys: number[]) => { let h = false; for (let i = 0, j = xs.length - 1; i < xs.length; j = i, i += 1) if (ys[i]! > y !== ys[j]! > y && x < ((xs[j]! - xs[i]!) * (y - ys[i]!)) / (ys[j]! - ys[i]!) + xs[i]!) h = !h; return h; };
+          const truth = keyWalls.flatMap((w) => {
+            const L = Math.hypot(w.x2 - w.x1, w.y2 - w.y1); if (L === 0) return [];
+            const nx = -(w.y2 - w.y1) / L, ny = (w.x2 - w.x1) / L, off = (((w as { thicknessFeet?: number }).thicknessFeet ?? 0.5) / 2 + 1.5) / lab.feetPerUnit, mx = (w.x1 + w.x2) / 2, my = (w.y1 + w.y2) / 2;
+            const sides = [1, -1].map((sg) => { const r = keyRooms.find((q) => inR(mx + sg * nx * off, my + sg * ny * off, q.xs, q.ys)); return r === undefined ? "outside" : r.tag?.number ? (part.get(r.tag.number) ?? "unknown") : "unknown"; });
+            if (sides.some((t) => t === "unknown" || t === "can't tell") || sides.every((t) => t === "outside")) return [];
+            return [{ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, feet: Math.max(...sides.filter((t) => t !== "outside").map((t) => partFt[t]!)) }];
+          });
+          console.log(`ROOM_PART_TRUTH_JSON ${JSON.stringify(truth)}`);
+        }
+        console.log(`ROOF_RUNS_JSON ${JSON.stringify({ pitched: roof.heights.pitched.feet, flat: roof.heights.flat.feet, codes: structure, runs: doc2.runs.map((r) => ({ k: `${r.x1.toFixed(5)},${r.y1.toFixed(5)},${r.x2.toFixed(5)},${r.y2.toFixed(5)}`, roof: runPitched({ ...r, thicknessFeet: r.thicknessIn / 12 }, read, doc2.feetPerUnit) })) })}`);
+      }
+    }
     console.log(`\n=== ${SET}: legend p${LEGEND_PAGE}, ${text.types.length} types`);
     console.log(`  facts: ${factSheets.join(" || ") || "none"}`);
     console.log(`  general note: ${generalNote === null ? "none" : `${generalNote.sheet} "${generalNote.phrase}"`}`);

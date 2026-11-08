@@ -138,6 +138,42 @@ export function splitByLevel(
   }));
 }
 
+/**
+ * ── A GROUP SPLIT BY THE ROOF OVER ITS WALLS (`roofParts.ts`) ──
+ *
+ * For a type that runs to the structure on a set whose sections print more than
+ * one level: each wall takes the roof over the rooms either side of it — the
+ * taller where they differ — and the group splits into the walls under a
+ * pitched roof and those under a flat one, each offered its height with the
+ * roof plan named. Walls with no room either side stay in the group as they
+ * were. A group already split by level is left alone: one split per group.
+ */
+export function splitByRoof(
+  item: Extract<ReviewItem, { kind: "type" }>,
+  pitchedOf: (runs: readonly QueueRun[]) => (boolean | null)[],
+  heights: { pitched: CodeHeight; flat: CodeHeight },
+  codes: readonly string[],
+  feetPerUnit: number | null,
+): ReviewItem[] {
+  if (item.level !== undefined) return [item];
+  // Only a type that runs to the structure takes the roof's height; any other group is not split.
+  if (levelHeightFor(item.suggested?.code ?? null, { label: "", height: heights.pitched, codes: [...codes] }) === null) return [item];
+  const reads = pitchedOf(item.runs);
+  const by = new Map<string, QueueRun[]>();
+  item.runs.forEach((run, i) => {
+    const k = reads[i] === true ? "pitched" : reads[i] === false ? "flat" : "";
+    by.set(k, [...(by.get(k) ?? []), run]);
+  });
+  if (by.size === 1 && by.has("")) return [item];
+  return [...by].map(([k, runs]) => ({
+    ...item,
+    key: by.size === 1 ? item.key : `${item.key}:R${k || "-"}`,
+    runs,
+    feet: feetOf(runs, feetPerUnit),
+    ...(k === "" ? {} : { level: { label: k === "pitched" ? "under the pitched roof" : "under the flat roof", height: k === "pitched" ? heights.pitched : heights.flat, codes: [...codes] } }),
+  }));
+}
+
 export type QueueSheet = { pageNumber: number; sheet: string; feetPerUnit: number | null };
 
 /** A held run, as a queue item. */
