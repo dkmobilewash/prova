@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { areaByFamily, assignCeilings, ceilingHeightFacts, pairTagsToRoomTags, readCeilingDefaults, readCeilingLegend, readCeilingTags, readKeynoteCeilings, readSetLegendPage, roomTagsUnderCeilingCodes } from "./ceilingTags";
+import { areaByFamily, assignCeilings, ceilingHeightFacts, pairTagsToRoomTags, type CeilingTag, readCeilingDefaults, readCeilingLegend, readCeilingTags, readKeynoteCeilings, readSetLegendPage, roomTagsUnderCeilingCodes } from "./ceilingTags";
 import type { PositionedText } from "./roomTags";
 
 const W = 2592;
@@ -118,6 +118,35 @@ describe("pairTagsToRoomTags", () => {
     expect(by[0]).toMatchObject({ family: "GYP", heightFeet: 10, source: "tag" });
     expect(by[1]).toMatchObject({ family: "ACT", heightFeet: 8, source: "tag" });
     expect(by[2], "the 9'-0\" GWB tag is 40+ ft from every room, so FAR gets the note").toMatchObject({ family: "ACT", heightFeet: 9, source: "note" });
+  });
+});
+
+describe("one identical height mark per room (MHK's row of toilets)", () => {
+  const none = { heightFeet: null, family: null, phrase: null };
+  // A bare height mark, as `readCeilingTags` returns one off a hexagon (page-width units).
+  const mark = (h: number, x: number, y: number): CeilingTag => ({ x, y, heightFeet: h, code: null, family: null, familyFrom: null, phrase: `${h}'-0"`, roomName: null });
+  it("a room that collected several identical marks keeps the nearest and passes the rest to rooms with none", () => {
+    // Four toilets in a row, each with a 9'-0" mark; the room tags sit low, so every mark is nearest 115A.
+    const tags = [0.30, 0.31, 0.32, 0.33].map((x) => mark(9, x, 0.40));
+    // 115A's tag sits just under the row of marks; 115B–D's sit lower, so nearest-tag hands all four to 115A.
+    const rooms = [
+      { name: "TLT.", number: "115A", x: 0.315 * W, y: 0.41 * W },
+      { name: "TLT.", number: "115B", x: 0.30 * W, y: 0.45 * W },
+      { name: "TLT.", number: "115C", x: 0.32 * W, y: 0.45 * W },
+      { name: "TLT.", number: "115D", x: 0.34 * W, y: 0.45 * W },
+    ];
+    const by = pairTagsToRoomTags(rooms, tags, W, 100, none);
+    expect(by.map((r) => r.heightFeet)).toEqual([9, 9, 9, 9]);
+    expect(by.every((r) => r.tags.length === 1)).toBe(true);
+  });
+
+  it("two DIFFERENT heights in one room — a ceiling and its soffit — stay together (Joplin)", () => {
+    const tags = [mark(9, 0.30, 0.40), mark(12, 0.31, 0.40)];
+    const rooms = [{ name: "LOBBY", number: "100", x: 0.30 * W, y: 0.41 * W }, { name: "OFFICE", number: "101", x: 0.40 * W, y: 0.41 * W }];
+    const by = pairTagsToRoomTags(rooms, tags, W, 100, none);
+    expect(by[0]!.tags).toHaveLength(2);
+    expect(by[0]!.heightFeet).toBe(12);
+    expect(by[1]!.tags).toHaveLength(0);
   });
 });
 
