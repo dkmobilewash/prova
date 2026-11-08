@@ -4,7 +4,7 @@ import { prisma } from "@prova/db";
 import { WALL_LEGEND_SIGHT_PROMPT_VERSION, type WallLegendRead } from "@prova/integrations";
 import { revalidatePath } from "next/cache";
 import { aiGate } from "@/lib/ai/settings";
-import { claimPlanSheet, markPlanSheetFailure } from "@/lib/ask/planSheetSpend";
+import { claimPlanSheet, markPlanSheetFailure, releasePlanSheet } from "@/lib/ask/planSheetSpend";
 import { recordAskUsage } from "@/lib/ask/usage";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
@@ -270,7 +270,9 @@ export async function readLegendBySight(
       }),
   });
   if (!read.ok) {
-    await markPlanSheetFailure(claimed.claim);
+    // A provider outage was not a read: the sheet is given back (`releasePlanSheet`).
+    if (read.outage === true) await releasePlanSheet(claimed.claim);
+    else await markPlanSheetFailure(claimed.claim);
     return actionFail(read.error) as ActionResultWith<never>;
   }
   const merged = storedLegendTypes(text, read.sight, where);

@@ -1,3 +1,4 @@
+import { PLAN_READING_UNAVAILABLE } from "@/lib/ai/providerOutage";
 import { type PlanIngestStage, prisma } from "@prova/db";
 import {
   MAX_ATTEMPTS,
@@ -154,7 +155,7 @@ export function claimPorts(options: {
       });
     },
 
-    fail: async (task, error, retryAt, exhausted) => {
+    fail: async (task, error, retryAt, exhausted, refundAttempt = false) => {
       // The job remembers the latest failure even after the task's own
       // `error` is cleared by the next claim — see `PlanIngestJob.lastError`.
       await prisma.planIngestJob.update({
@@ -177,6 +178,8 @@ export function claimPorts(options: {
           // of the two, and belt-and-braces is right here because a page that
           // retries forever is a bill.
           nextAttemptAt: exhausted ? null : retryAt,
+          // A provider outage was not this page's attempt (`WorkOutcome.outage`).
+          ...(refundAttempt ? { attempts: { decrement: 1 } } : {}),
         },
       });
     },
@@ -299,6 +302,9 @@ export async function ingestViewOf(jobId: string, stage: IngestView["stage"]): P
     percent: progress.percent,
     complete: progress.complete,
     waiting: progress.complete ? false : await hasWaitingWork(jobId),
+    outage: progress.complete
+      ? false
+      : (await prisma.planIngestTask.count({ where: { jobId, finishedAt: null, error: PLAN_READING_UNAVAILABLE } })) > 0,
   };
 }
 

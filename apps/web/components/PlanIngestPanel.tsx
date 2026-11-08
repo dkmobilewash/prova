@@ -8,6 +8,7 @@ import {
   startPlanIngest,
 } from "@/lib/actions";
 import { advanceOverHttp } from "@/lib/plan-ingest/advanceOverHttp";
+import { PLAN_READING_UNAVAILABLE } from "@/lib/ai/providerOutage";
 // The TYPE from the database-free module, never from claim.ts — see its comment
 // on IngestView. A client component that could reach prisma fails the build.
 import type { IngestView } from "@/lib/plan-ingest/runner";
@@ -50,6 +51,8 @@ const SLICE_GAP_MS = 400;
  * ask again 400ms later, forever, for as long as the tab is open. Three strikes
  * then stop, and the panel says why. */
 const MAX_IDLE_SLICES = 3;
+/** While the model's provider refuses reads, how often the panel looks again by itself. */
+const OUTAGE_POLL_MS = 15_000;
 
 export type PlanIngestPanelProps = {
   planId: string;
@@ -182,6 +185,14 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
       const moved = last === null || last.jobId !== jobId || settled > last.settled;
       lastSettled.current = { jobId, settled };
       const nextIdle = moved ? 0 : idle + 1;
+      // ── AN OUTAGE IS WAITED OUT HERE, NOT BY SOMEBODY PRESSING KEEP READING ──
+      // The pages are in their outage backoff (`OUTAGE_BACKOFF_MS`); look again
+      // every 15 s until the provider answers, and say so once (2026-11-07: the
+      // walk pressed Keep reading 107 times while the account was out of credit).
+      if (next.outage === true && nextIdle >= MAX_IDLE_SLICES) {
+        setTimeout(() => void pump(jobId, 0, mine), OUTAGE_POLL_MS);
+        return;
+      }
       if (nextIdle >= MAX_IDLE_SLICES) {
         setRunning(false);
         void loadFailures(jobId);
@@ -248,6 +259,24 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
     pumping.current = { jobId: view.jobId };
     void pump(view.jobId, 0, pumping.current);
   }
+
+  // ── AN OUTAGE RESUMES ITSELF ──
+  // A reading opened while the provider is refusing reads would otherwise wait
+  // for Keep reading, which an outage hides: it is picked up by itself instead,
+  // once, after the same 15 s, and the pump then keeps looking (`OUTAGE_POLL_MS`).
+  const outageResume = useRef(false);
+  useEffect(() => {
+    if (view?.outage !== true || view.complete || running || outageResume.current) return;
+    outageResume.current = true;
+    const timer = setTimeout(() => {
+      outageResume.current = false;
+      onResume();
+    }, OUTAGE_POLL_MS);
+    return () => {
+      clearTimeout(timer);
+      outageResume.current = false;
+    };
+  }, [view?.outage, view?.complete, running]); // eslint-disable-line react-hooks/exhaustive-deps -- onResume reads the current view
 
   /**
    * THE SECOND STAGE, WHICH NOTHING STARTED UNTIL NOW.
@@ -483,6 +512,11 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
               {queued.map((q) => `${READING[q.stage] ?? q.stage} (${q.finished + q.exhausted} of ${q.total})`).join(", then ")}
             </p>
           )}
+          {view.outage === true && !view.complete && (
+            <p role="status" className="mb-2 rounded-md border border-tag-amber bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink" data-plan-ingest="outage">
+              {PLAN_READING_UNAVAILABLE}
+            </p>
+          )}
           <p className="mb-3 text-sm text-ink-body" data-plan-ingest="state">
             {view.complete
               ? view.exhausted > 0
@@ -495,7 +529,7 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
                   : "Paused. Nothing is lost — pick it up whenever."}
           </p>
 
-          {!running && !view.complete && (
+          {!running && !view.complete && view.outage !== true && (
             <button
               type="button"
               onClick={onResume}

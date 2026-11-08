@@ -1,7 +1,8 @@
 import { prisma } from "@prova/db";
 import { extractSheetTitleBlock, PLAN_SHEET_PROMPT_VERSION, type SheetTitleBlock } from "@prova/integrations";
 import { aiGate } from "@/lib/ai/settings";
-import { claimPlanSheet, markPlanSheetFailure } from "@/lib/ask/planSheetSpend";
+import { claimPlanSheet, markPlanSheetFailure, releasePlanSheet } from "@/lib/ask/planSheetSpend";
+import { isProviderOutage, PLAN_READING_UNAVAILABLE } from "@/lib/ai/providerOutage";
 import { recordAskUsage } from "@/lib/ask/usage";
 import type { StageCtx, StageWork } from "./stages";
 
@@ -45,6 +46,8 @@ export type TitleBlockDeps = {
   gate: (companyId: string) => ReturnType<typeof aiGate>;
   claim: typeof claimPlanSheet;
   markFailure: typeof markPlanSheetFailure;
+  /** Gives a claimed sheet back after a provider outage (`releasePlanSheet`). */
+  release: typeof releasePlanSheet;
   extract: typeof extractSheetTitleBlock;
   saveProposal: (row: ProposalRow) => Promise<void>;
   recordUsage: typeof recordAskUsage;
@@ -127,6 +130,12 @@ export function titleBlockWork(ctx: StageCtx, deps: TitleBlockDeps = realDeps): 
           }),
       });
     } catch (err) {
+      if (isProviderOutage(err)) {
+        // The provider refused it (out of credit, rate limit, 5xx, no connection): the sheet is
+        // given back and the page retries by itself (`providerOutage.ts`).
+        await deps.release(claimed.claim);
+        return { ok: false, error: PLAN_READING_UNAVAILABLE, outage: true };
+      }
       // MARKED, NEVER RELEASED — the rule every metered caller here follows, and
       // the reason `failedPlanSheets` exists: the provider bills a call that
       // produced nothing usable, releasing would let the cap be defeated by
@@ -174,6 +183,7 @@ const realDeps: TitleBlockDeps = {
   gate: (companyId) => aiGate(companyId, "PLAN_INGESTION"),
   claim: claimPlanSheet,
   markFailure: markPlanSheetFailure,
+  release: releasePlanSheet,
   extract: extractSheetTitleBlock,
   recordUsage: recordAskUsage,
 

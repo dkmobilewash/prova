@@ -110,6 +110,19 @@ function withinTime(work: Promise<WorkOutcome>, ms: number, task: ClaimedTask): 
  */
 export const BACKOFF_MS = [30_000, 300_000, 900_000] as const;
 
+/**
+ * The wait before a page tries again after a provider outage, by how many outages
+ * in a row it has met: short at first (a blip), then every five minutes (an
+ * account out of credit), so a long outage is not a storm of refused calls.
+ */
+export const OUTAGE_BACKOFF_MS = [15_000, 30_000, 60_000, 120_000, 300_000] as const;
+export function outageBackoffFor(outagesInARow: number): number {
+  return OUTAGE_BACKOFF_MS[Math.min(Math.max(outagesInARow, 1), OUTAGE_BACKOFF_MS.length) - 1];
+}
+// ponytail: per server instance; a restart starts the wait short again, which only
+// means one earlier retry. Kept on globalThis because Next bundles routes apart.
+const outages = ((globalThis as unknown as { __provaIngestOutages?: Map<string, number> }).__provaIngestOutages ??= new Map<string, number>());
+
 export function backoffFor(attempts: number): number {
   const index = Math.min(Math.max(attempts, 1), BACKOFF_MS.length) - 1;
   return BACKOFF_MS[index];
@@ -125,7 +138,9 @@ export type ClaimedTask = {
 
 /** What doing one page came to. A SENTENCE on failure, never an error object:
  *  it is stored and rendered beside a Retry button for a person to read. */
-export type WorkOutcome = { ok: true } | { ok: false; error: string };
+/** `outage`: the model's provider refused the call (`isProviderOutage`) — the page
+ *  retries by itself and never runs out of attempts (see the loop). */
+export type WorkOutcome = { ok: true } | { ok: false; error: string; outage?: true };
 
 export type RunnerPorts = {
   /**
@@ -150,7 +165,8 @@ export type RunnerPorts = {
    * `exhausted` is computed HERE rather than by the port, so the ceiling is one
    * decision in one place and a second caller cannot pick a different one.
    */
-  fail: (task: ClaimedTask, error: string, retryAt: Date | null, exhausted: boolean) => Promise<void>;
+  /** `refundAttempt`: the attempt does not count (a provider outage, `WorkOutcome.outage`). */
+  fail: (task: ClaimedTask, error: string, retryAt: Date | null, exhausted: boolean, refundAttempt?: boolean) => Promise<void>;
 };
 
 export type RunReport = {
@@ -248,10 +264,25 @@ export async function runIngest(options: {
     }
 
     if (outcome.ok) {
+      outages.delete(claimed.id);
       await ports.finish(claimed, new Date(now()));
       report.done += 1;
       continue;
     }
+
+    // ── A PROVIDER OUTAGE NEVER RUNS A PAGE OUT OF ATTEMPTS ──
+    // The provider refused the call (out of credit, rate limit, 5xx): it is not the
+    // page's fault, so the attempt is given back, the page is never exhausted, and
+    // it is tried again after a growing wait — no Keep reading for anybody to press
+    // (2026-11-07: pressed 107 times while the account was out of credit).
+    if (outcome.outage === true) {
+      const seen = (outages.get(claimed.id) ?? 0) + 1;
+      outages.set(claimed.id, seen);
+      await ports.fail(claimed, outcome.error, new Date(now() + outageBackoffFor(seen)), false, true);
+      report.retryable += 1;
+      continue;
+    }
+    outages.delete(claimed.id);
 
     const retryAt = exhausted ? null : new Date(now() + backoffFor(claimed.attempts));
     await ports.fail(claimed, outcome.error, retryAt, exhausted);
@@ -284,6 +315,9 @@ export type IngestView = {
   /** True when every remaining page is inside its backoff window — so the panel
    *  can say "waiting to retry" rather than showing a bar that looks stalled. */
   waiting: boolean;
+  /** True while the model's provider is refusing reads (`PLAN_READING_UNAVAILABLE` on an
+   *  unfinished page): the panel shows one banner and keeps retrying by itself. */
+  outage?: boolean;
 };
 
 /**

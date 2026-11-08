@@ -228,3 +228,38 @@ describe("a page whose work never returns", () => {
     expect(WORK_TIMEOUT_BEFORE_LEASE_MS).toBeLessThan(CLAIM_LEASE_MS);
   });
 });
+
+describe("a provider outage (WorkOutcome.outage)", () => {
+  it("NEVER RUNS A PAGE OUT OF ATTEMPTS: the attempt is given back, and it retries after 15 s, then 30 s", async () => {
+    const calls: { exhausted: boolean; refund: boolean | undefined; retryInMs: number | null }[] = [];
+    const outage = async (): Promise<WorkOutcome> => ({ ok: false, error: "Plan reading is temporarily unavailable; we'll retry automatically, and you won't be charged.", outage: true });
+    const queue = [task({ id: "page-7", attempts: 3 }), task({ id: "page-7", attempts: 3 })];
+    const p: RunnerPorts = {
+      claim: async () => queue.shift() ?? null,
+      work: outage,
+      finish: async () => {},
+      fail: async (_t, _error, retryAt, exhausted, refund) => void calls.push({ exhausted, refund, retryInMs: retryAt === null ? null : retryAt.getTime() - 1_000 }),
+    };
+    // At attempts 3 (the ceiling) an ordinary failure would exhaust the page; an outage does not.
+    const report = await runIngest({ ports: p, now: () => 1_000 });
+    expect(report).toMatchObject({ exhausted: 0, retryable: 2 });
+    expect(calls).toEqual([
+      { exhausted: false, refund: true, retryInMs: 15_000 },
+      { exhausted: false, refund: true, retryInMs: 30_000 },
+    ]);
+  });
+
+  it("a page that reads after an outage starts its wait short again next time", async () => {
+    const calls: number[] = [];
+    let n = 0;
+    const queue = [task({ id: "page-8" }), task({ id: "page-8" }), task({ id: "page-8" })];
+    const p: RunnerPorts = {
+      claim: async () => queue.shift() ?? null,
+      work: async () => (n++ === 1 ? { ok: true } : { ok: false, error: "x", outage: true }),
+      finish: async () => {},
+      fail: async (_t, _e, retryAt) => void calls.push((retryAt?.getTime() ?? 0) - 1_000),
+    };
+    await runIngest({ ports: p, now: () => 1_000 });
+    expect(calls).toEqual([15_000, 15_000]);
+  });
+});

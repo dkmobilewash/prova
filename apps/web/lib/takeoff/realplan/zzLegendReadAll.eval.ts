@@ -58,6 +58,7 @@ describe.skipIf(PDF === "" || DIR === "" || OUT === "" || CACHE === "")("the leg
         gate: async () => ({ ok: true, settings: { aiEnabled: true, disabledFeatures: [], optedInFeatures: ["PLAN_TEXT_READ"], planSheetsPerMonth: 100_000, modelOverride: null }, model, modelSource: "default" }) as never,
         claim: (async () => ({ ok: true, claim: null })) as never,
         markFailure: (async () => {}) as never,
+        release: (async () => {}) as never,
         recordUsage: (async () => {}) as never,
         extract: async (input) => {
           const key = `${set.replace(/\W+/g, "_")}-p${input.pageNumber}-${WALL_LEGEND_PROMPT_VERSION}.json`;

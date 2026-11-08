@@ -1,7 +1,8 @@
 import { Prisma, prisma } from "@prova/db";
 import { extractWallLegend, WALL_LEGEND_PROMPT_VERSION, type WallLegendRead } from "@prova/integrations/src/wallLegend";
 import { aiGate } from "@/lib/ai/settings";
-import { claimPlanSheet, markPlanSheetFailure } from "@/lib/ask/planSheetSpend";
+import { claimPlanSheet, markPlanSheetFailure, releasePlanSheet } from "@/lib/ask/planSheetSpend";
+import { isProviderOutage, PLAN_READING_UNAVAILABLE } from "@/lib/ai/providerOutage";
 import { recordAskUsage } from "@/lib/ask/usage";
 import { legendHeightsFor } from "@/lib/takeoff/legendHeights";
 import { legendPages } from "@/lib/takeoff/legendPages";
@@ -41,6 +42,8 @@ export type WallLegendDeps = {
   gate: (companyId: string) => ReturnType<typeof aiGate>;
   claim: typeof claimPlanSheet;
   markFailure: typeof markPlanSheetFailure;
+  /** Gives a claimed sheet back after a provider outage (`releasePlanSheet`). */
+  release: typeof releasePlanSheet;
   extract: typeof extractWallLegend;
   saveProposal: (row: WallLegendProposalRow) => Promise<void>;
   recordUsage: typeof recordAskUsage;
@@ -100,7 +103,13 @@ export function wallLegendWork(ctx: StageCtx, deps: WallLegendDeps = realDeps): 
             usage,
           }),
       });
-    } catch {
+    } catch (err) {
+      if (isProviderOutage(err)) {
+        // The provider refused it (out of credit, rate limit, 5xx, no connection): the sheet is
+        // given back and the page retries by itself (`providerOutage.ts`).
+        await deps.release(claimed.claim);
+        return { ok: false, error: PLAN_READING_UNAVAILABLE, outage: true };
+      }
       await deps.markFailure(claimed.claim);
       return { ok: false, error: "The wall legend on this sheet could not be read. Try it again." };
     }
@@ -144,6 +153,7 @@ const realDeps: WallLegendDeps = {
   gate: (companyId) => aiGate(companyId, "PLAN_TEXT_READ"),
   claim: claimPlanSheet,
   markFailure: markPlanSheetFailure,
+  release: releasePlanSheet,
   extract: extractWallLegend,
   recordUsage: recordAskUsage,
   saveProposal: async (row) => {

@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { titleBlockWork, titleFieldOverHeading, type ProposalRow, type TitleBlockDeps } from "./titleBlock";
 import type { ClaimedTask } from "./runner";
 import type { StageCtx } from "./stages";
+import { creditError } from "@/lib/ai/providerOutage.testutil";
+import { PLAN_READING_UNAVAILABLE } from "@/lib/ai/providerOutage";
 
 /**
  * `TITLE_BLOCK`, WITH NO DATABASE, NO MODEL AND NO MONEY SPENT.
@@ -51,6 +53,7 @@ function deps(over: Partial<TitleBlockDeps> = {}) {
     gate: vi.fn(async () => ({ ok: true as const, settings: { planSheetsPerMonth: 1500 }, model: "claude-haiku-4-5" })),
     claim: vi.fn(async () => ({ ok: true as const, claim: { companyId: "co_1", periodStart: new Date(0) }, sheetsLeft: 1_499 })),
     markFailure: vi.fn(async () => {}),
+    release: vi.fn(async () => {}),
     // THE FAKE REPORTS USAGE, because the real one does: `extractSheetTitleBlock`
     // calls `reportUsage(params.onUsage, …)` before it even checks whether the
     // response was usable. A fake that skipped that would make the usage
@@ -225,4 +228,24 @@ it("THE READ IS ASKED AT TEMPERATURE 0, so the same text gets the same answer (A
   const call = src.slice(src.indexOf("client.messages.create({"), src.indexOf("system: SYSTEM_PROMPT"));
   expect(call, "the title-block call was not found where this test looks").toContain("max_tokens");
   expect(call).toMatch(/\btemperature: 0,/);
+});
+
+describe("a title-block read the provider refused (2026-11-07: the account was out of credit)", () => {
+  it("GIVES THE SHEET BACK instead of charging it, and says so in the one sentence, marked as an outage", async () => {
+    const d = deps({ extract: vi.fn(async () => { throw creditError(); }) as unknown as TitleBlockDeps["extract"] });
+    const outcome = await titleBlockWork(CTX, d.deps)(task());
+    expect(outcome).toEqual({ ok: false, error: PLAN_READING_UNAVAILABLE, outage: true });
+    expect(d.deps.release).toHaveBeenCalledTimes(1);
+    expect(d.deps.markFailure).not.toHaveBeenCalled();
+    expect(d.saved).toEqual([]);
+  });
+
+  it("an ordinary failure is still charged and said as before", async () => {
+    const d = deps({ extract: vi.fn(async () => { throw new Error("not JSON"); }) as unknown as TitleBlockDeps["extract"] });
+    const outcome = await titleBlockWork(CTX, d.deps)(task());
+    expect(outcome).toMatchObject({ ok: false });
+    expect((outcome as { outage?: boolean }).outage).toBeUndefined();
+    expect(d.deps.markFailure).toHaveBeenCalledTimes(1);
+    expect(d.deps.release).not.toHaveBeenCalled();
+  });
 });
