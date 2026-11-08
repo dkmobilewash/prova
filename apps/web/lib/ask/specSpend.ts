@@ -172,3 +172,20 @@ export async function markSpecFailure(claim: SpecClaim, pages: number): Promise<
     console.error("[spec-read] a failed spec read could not be marked; the claim stands regardless", err);
   }
 }
+
+/**
+ * Give a claim back when the PROVIDER refused the call (out of credit, rate limit,
+ * 5xx, no connection — `isProviderOutage`), so the company is not charged for a
+ * read that never happened: `releasePlanSheet`'s rule (#1066) for spec pages.
+ * Never below zero; a failure to write it is logged and swallowed.
+ */
+export async function releaseSpecPages(claim: SpecClaim, pages: number): Promise<void> {
+  try {
+    await prisma.askAllowancePeriod.updateMany({
+      where: { companyId: claim.companyId, periodStart: claim.periodStart, specPagesUsed: { gte: pages } },
+      data: { specPagesUsed: { decrement: pages } },
+    });
+  } catch (err) {
+    console.error("[spec-read] spec pages claimed during a provider outage could not be given back", err);
+  }
+}

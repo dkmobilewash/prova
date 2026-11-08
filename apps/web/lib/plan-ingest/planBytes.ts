@@ -29,6 +29,18 @@ export async function readPlanBytes(planId: string, companyId: string): Promise<
     select: { fileUrl: true, jobId: true },
   });
   if (!plan) return { ok: false, error: "That plan set is no longer on file, so nothing was read." };
+  return readJobFileBytes(plan.fileUrl, plan.jobId, planId);
+}
+
+/**
+ * The same read for any file stored under a job's plan-set path — a plan set, or a
+ * spec book (`SpecBook`), which is uploaded the same way and held to the same rules,
+ * `local:` included. The CALLER proves the row is the company's; this proves the URL
+ * is ours and this job's.
+ */
+export async function readJobFileBytes(fileUrl: string, jobId: string, logId: string): Promise<PlanBytes> {
+  const plan = { fileUrl, jobId };
+  const planId = logId;
 
   // ── A PLAN HELD ON THIS MACHINE, FOR CONFIDENTIAL DRAWINGS ──
   //

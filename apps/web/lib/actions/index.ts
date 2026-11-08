@@ -96,6 +96,7 @@ export * from "./quoteRead";
 export * from "./addendumRead";
 export * from "./specRead";
 export * from "./submittalRead";
+export * from "./specBook";
 export * from "./proposalDrafts";
 export * from "./projectLookup";
 export * from "./leadSearch";

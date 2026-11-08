@@ -69,7 +69,10 @@ export const JOB_TAB_ROUTES = [
 export function jobDocumentLinks(principal: Principal, jobId: string) {
   return [
     ...(can(principal, "MANAGE_ESTIMATING")
-      ? [{ href: `/jobs/${jobId}/proposal`, label: "Proposal", detail: "" }]
+      ? [
+          { href: `/jobs/${jobId}/proposal`, label: "Proposal", detail: "" },
+          { href: `/jobs/${jobId}/specs`, label: "Specs", detail: "Spec book" },
+        ]
       : []),
     ...(can(principal, "MANAGE_COMPLIANCE")
       ? [{ href: `/jobs/${jobId}/certified-payroll`, label: "Certified payroll", detail: "WH-347" }]
