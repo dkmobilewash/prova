@@ -35,6 +35,8 @@ export type PositionedText = {
 };
 
 export type RoomTag = {
+  /** On an unplaced tag only: it sits in the region that reaches the outside — an open room, not a cell's text. */
+  leaks?: true;
   /** Top-down, as printed, joined with one space: `STAFF TLT.`, `(E) OFFICE`. */
   name: string;
   number: string | null;
@@ -68,7 +70,9 @@ const NAME_TEXT = /^(?=(?:.*\p{L}){2})[\p{L}0-9 #./&+()'-]+$|^#\d+$/u;
 /** A detail callout printed on the sheet, `A1/ A-621`. Joplin prints these over its room names. */
 const DRAWING_REFERENCE = /^[A-Z]{1,2}\d{0,2}\s*\/\s*[A-Z]{1,2}-?\d/;
 /** A drafter's aside: it is printed near a tag and is never part of a room's name. */
-const DRAFTING_WORD = /^(?:ALIGN|TYP\.?|TYPICAL|SIM\.?|SIMILAR|NEW|DESCRIPTION|EQ\.?|V\.?I\.?F\.?)$/i;
+// ABOVE/BELOW ("A1 ABOVE", a ceiling-item callout), EXISTING (a NEW | EXISTING phase line) and MARK (a schedule's
+// column head) read as rooms that never close: SW A110 merged RETAIL SALES with an "ABOVE", Baker A101 showed "EXISTING".
+const DRAFTING_WORD = /^(?:ALIGN|TYP\.?|TYPICAL|SIM\.?|SIMILAR|NEW|DESCRIPTION|EQ\.?|V\.?I\.?F\.?|ABOVE|BELOW|EXISTING|MARK)$/i;
 /** A sheet number, `A-411`: it reads as a room number and names no room. */
 const SHEET_NUMBER = /^[A-Z]{1,2}-\d{3}$/;
 
