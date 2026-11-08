@@ -23,6 +23,22 @@ import { openFinders } from "../lib/finders";
 const SET = process.env.REAL_SET_PDF ?? "";
 const PAGE = Number(process.env.REAL_SET_PAGE ?? "0");
 const OUT = process.env.REAL_SHEET_OUT ?? "";
+/**
+ * ── KNOWN CASES: THE LINES AN ESTIMATOR DRAWS, AND THE ROOMS THEY MUST GIVE ──
+ *
+ * SW Grand Junction A110 (page 5, 1/4" = 1'-0", so REAL_HALF_FEET=72): the
+ * sales floor — WHOLESALE SALES 102, TINT AREA 103, RETAIL SALES 101 — has no
+ * drawn boundary between its areas, only dimension strings, and leaks at the
+ * bottom-left corner where the west wall stops short of the south wall. One
+ * Close-room line down that corner closes the floor, and the dimension strings
+ * then divide it: all three sales areas come back as named rooms with areas.
+ * Found with the room step's own grid (the shortest path from the tag to the
+ * paper's edge), not by eye. Page-width units.
+ */
+const CASES: Record<string, { lines: [number, number, number, number][]; named: string[] }> = {
+  "SW-Grand-Junction-CO.pdf#5": { lines: [[0.0775, 0.555, 0.0775, 0.6]], named: ["WHOLESALE SALES", "TINT AREA", "RETAIL SALES"] },
+};
+const CASE = CASES[`${path.basename(SET)}#${PAGE}`] ?? null;
 /** Feet across HALF the sheet's width: 144 for a 36-inch sheet at 1/8" = 1'-0". */
 const HALF_FEET = Number(process.env.REAL_HALF_FEET ?? "144");
 
@@ -160,7 +176,7 @@ test.describe("find the rooms on a real sheet", () => {
       }), svg);
     console.log(`open rooms on p${PAGE}: ${JSON.stringify(openRooms)}`);
     writeFileSync(path.join(OUT, `p${PAGE}-open-rooms.json`), JSON.stringify(openRooms, null, 2));
-    const lines = JSON.parse(process.env.REAL_CLOSE_LINES ?? "[]") as [number, number, number, number][];
+    const lines = process.env.REAL_CLOSE_LINES ? (JSON.parse(process.env.REAL_CLOSE_LINES) as [number, number, number, number][]) : (CASE?.lines ?? []);
     if (lines.length === 0) return;
     const rows = page.locator('[data-takeoff="room-row"]');
     const rowsBefore = await rows.count();
@@ -174,17 +190,21 @@ test.describe("find the rooms on a real sheet", () => {
       await overlay().hover({ position: { x: ((x1 + x2) / 2) * box.width, y: ((y1 + y2) / 2) * box.width } });
       await overlay().hover({ position: { x: x2 * box.width, y: y2 * box.width } });
       await page.mouse.up();
-      await expect(open, `the line ${[x1, y1, x2, y2].join(", ")} closed no room`).toHaveCount(before - 1, { timeout: 120_000 });
+      // One fewer for an open room closed; two fewer for two rooms that shared a region and are divided.
+      await expect.poll(() => open.count(), { timeout: 120_000, message: `the line ${[x1, y1, x2, y2].join(", ")} closed no room` }).toBeLessThan(before);
     }
-    await expect(open).toHaveCount(openRooms.length - lines.length);
-    expect(await rows.count()).toBeGreaterThanOrEqual(rowsBefore + lines.length);
+    const left = await open.count();
+    expect(await rows.count()).toBeGreaterThan(rowsBefore);
     const sf = await page.locator('[data-takeoff="room-sf"]').allTextContents();
     const names = await page.locator('[data-takeoff="room-row"]').evaluateAll((n) => n.map((r) => (r as HTMLElement).innerText.replace(/\s+/g, " ").slice(0, 80)));
     console.log(`after Close room: ${names.join(" | ")}`);
     writeFileSync(path.join(OUT, `p${PAGE}-closed.txt`), `${names.join("\n")}\n`);
     await page.screenshot({ path: path.join(OUT, `p${PAGE}-03-closed.png`), fullPage: false });
     expect(sf.every((t) => Number(t.replace(/,/g, "")) > 9)).toBe(true);
+    // The case's rooms, each a named row with an area: read off the name inputs, which carry the tag.
+    const rowNames = await page.locator('[data-takeoff="room-row"]').evaluateAll((n) => n.map((r) => ((r as HTMLElement).querySelector("input") as HTMLInputElement | null)?.value ?? ""));
+    for (const name of CASE?.named ?? []) expect(rowNames, `${name} is not a room after Close room`).toContain(name);
     await page.locator('[data-takeoff="undo"]').click();
-    await expect(open, "Undo left the last room closed").toHaveCount(openRooms.length - lines.length + 1, { timeout: 120_000 });
+    await expect.poll(() => open.count(), { timeout: 120_000, message: "Undo left the last room closed" }).toBeGreaterThan(left);
   });
 });
