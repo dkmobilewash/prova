@@ -1131,7 +1131,11 @@ export function TakeoffWorkspace({
           // Any draft of this sheet holding no more decisions than the sheet opened
           // with goes, under whichever build wrote it; one with real work stays offered.
           const premarks = baselineDecided.current.count;
-          if (clearSheetDrafts(draftSet, page, (d) => d !== null && d.counts.decided + d.counts.traced <= premarks) > 0) setRestorable(null);
+          // Re-asked rather than nulled: a draft with real work beside the pre-marks one stays offered.
+          if (clearSheetDrafts(draftSet, page, (d) => d !== null && d.counts.decided + d.counts.traced <= premarks) > 0) {
+            const left = loadDraft(draftSet, page, finderVersion) ?? otherDrafts(draftSet, page, finderVersion).at(-1) ?? null;
+            setRestorable(left === null ? null : { page, offer: restoreOffer(left) });
+          }
           // ── WHAT CAME OFF DISK IS NOT UNSAVED WORK ──
           //
           // Without this the leave-page warning arms the moment a sheet is
@@ -1153,7 +1157,7 @@ export function TakeoffWorkspace({
       // A request given up is not "loading" any more; a later run says so again if it asks again.
       setSavedNotice((was) => (was?.page === page && was.note.startsWith("Loading the saved review") ? null : was));
     };
-  }, [keyMode, draftSet, page, data, readNumberByPage, currentSheet, keyState]);
+  }, [keyMode, draftSet, page, data, readNumberByPage, currentSheet, keyState, finderVersion]);
 
   // ── OFFERED ON OPENING, NOT RESTORED BEHIND THEIR BACK ──
   useEffect(() => {

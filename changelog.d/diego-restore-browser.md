@@ -11,7 +11,9 @@ nothing came back was the browser draft around it:
   pressing it put the 86 over them. A review nobody has touched (the same rule
   the saved-file restore uses, `restoreGate`) is no longer written as a draft,
   and after a saved file is restored, any draft of the sheet holding no more than
-  the pre-marks is removed, under whichever build wrote it.
+  the pre-marks is removed, under whichever build wrote it; a draft with real work
+  beside it stays offered (the first cut withdrew that offer too, caught in the
+  browser).
 - Between the candidates landing and the file arriving the panel showed
   "86 of 450 reviewed" and nothing else — read as "restored 0". It says "Loading
   the saved review for this sheet…" while the file comes.
