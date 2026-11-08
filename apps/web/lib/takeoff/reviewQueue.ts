@@ -1,4 +1,5 @@
 import type { CostCategoryValue } from "@/lib/bid-recap";
+import { variantLabel } from "./variantMark";
 import { ceilingOption, heightOptionsInOrder, type CeilingRoom, type HeightOption } from "./wallHeight";
 import type { WallGroup } from "./wallGroups";
 import { plainTag } from "./planTextTags";
@@ -38,7 +39,8 @@ import { familyOf } from "./wallTypeMatch";
 export type QueueRun = { x1: number; y1: number; x2: number; y2: number };
 /** A pre-filled answer and where it came from, in words: `tag S6B on A101`. */
 /** A suggested type and where it came from. `drawn`: read off the drawing — a printed tag or the legend — not a library guess by thickness, so "Accept all suggestions on this sheet" may take it. */
-export type Guess = { code: string; from: string; drawn?: true };
+/** `variant`: the label for a code read off a marked tag, "C6 (C6* at tub/shower locations, see legend)" (`variantMark.ts`). */
+export type Guess = { code: string; from: string; drawn?: true; variant?: string };
 /** A type's height for the queue, by code: the job's item height, else its legend height. */
 export type CodeHeight = { feet: number; from: string };
 export type ReviewItem =
@@ -251,9 +253,17 @@ export function heightItem(
  * defines it, since "Set type" adds it from there. A thickness several types
  * share suggests nothing: that is the question, not an answer.
  */
-export function suggestType(group: WallGroup, sheet: string, legendCodes: readonly string[]): Guess | null {
+export function suggestType(
+  group: WallGroup,
+  sheet: string,
+  legendCodes: readonly string[],
+  /** The sheet's words beside its marked tags (`VARIANT_NOTES`). */
+  notes: Readonly<Record<string, string>> = {},
+): Guess | null {
   const tag = group.source.kind === "TAG" ? plainTag(group.source.tag) : null;
   const found = typeSource(group);
+  // A marked tag ("C6*") types as its code and says what the mark means.
+  const variant = tag === null || found === null ? null : variantLabel(found.type.code, tag, notes);
   if (found !== null) {
     const detail =
       found.source === "tag" || found.source === "tag-variant"
@@ -263,7 +273,7 @@ export function suggestType(group: WallGroup, sheet: string, legendCodes: readon
           : found.source === "thickness"
             ? `: ${inchLabel(group.inches)}`
             : "";
-    return { code: found.type.code, from: `${SOURCE_WORDS[found.source]}${detail}`, ...(found.source === "thickness" ? {} : { drawn: true as const }) };
+    return { code: found.type.code, from: `${SOURCE_WORDS[found.source]}${detail}`, ...(found.source === "thickness" ? {} : { drawn: true as const }), ...(variant === null ? {} : { variant }) };
   }
   if (tag !== null && group.candidates.length === 0) {
     const code = legendCodes.find((c) => c.toUpperCase() === tag.toUpperCase());

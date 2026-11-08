@@ -1,4 +1,5 @@
 import { tagByRun, type WallTypeTag } from "./wallTags";
+import { splitVariant } from "./variantMark";
 import { SHEET_REFERENCE, type TagSymbol, type SymbolShape } from "./tagSymbols";
 import type { WallCandidate } from "./wallVectors";
 
@@ -111,6 +112,12 @@ export function tagsFromSymbols(input: {
     for (const c of candidates) {
       const code = known.get(c);
       if (code !== undefined) return code;
+    }
+    // ── A PRINTED VARIANT MARK: "C6*" IS C6, AND KEEPS ITS MARK (`variantMark.ts`) ──
+    for (const c of candidates) {
+      const { code, mark } = splitVariant(c);
+      const plain = mark === "" ? undefined : known.get(code);
+      if (plain !== undefined) return `${plain}${mark}`;
     }
     return undefined;
   };

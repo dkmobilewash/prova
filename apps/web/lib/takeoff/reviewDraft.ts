@@ -164,10 +164,23 @@ export function restoreDraft(draft: ReviewDraft, start: ReviewState, feetPerUnit
     };
   }
   const verdicts: Record<string, Verdict> = { ...fresh.verdicts };
+  const starting = startingVerdicts(fresh);
   for (const [id, verdict] of Object.entries(draft.verdicts)) {
     // Only ids this review actually has. The fingerprint makes a stray id
     // nearly impossible, and "nearly" is not a reason to write one in.
-    if (id in verdicts) verdicts[id] = verdict;
+    if (!(id in verdicts)) continue;
+    // ── THE FINDER'S STARTING MARK IS NOT A DECISION, AND MUST NOT UNDO ONE ──
+    //
+    // Hutto A102 (Chrome, 2026-11-08): the saved file restored 239 walls, then
+    // "Restore unsaved review" put back a draft from an earlier session in which
+    // 13 duplicate halves had never been decided — they held the rule's
+    // not-a-wall pre-mark. The draft's value replaced the saved "wall" on all
+    // 13, and the save wrote 226: ~272 ft of walls nobody had rejected. A draft
+    // value equal to where the finder starts a candidate (unreviewed, or
+    // not-a-wall for the shorter of a duplicate pair) is what the reviewer did
+    // NOT touch, so it yields to a decision already on screen.
+    if (verdict === starting[id] && verdicts[id] !== starting[id]) continue;
+    verdicts[id] = verdict;
   }
   const withTraced = withTraces({ ...fresh, verdicts }, draft.traced);
   // Types only for walls the restored state still accepts or traces.
@@ -177,6 +190,14 @@ export function restoreDraft(draft: ReviewDraft, start: ReviewState, feetPerUnit
     ok: true,
     state: (draft.openings ?? []).length === 0 ? typed : { ...typed, openings: draft.openings!.map((o) => ({ ...o })) },
   };
+}
+
+/** Where `startReview` starts each candidate: not-a-wall for the shorter of a duplicate pair, else unreviewed. */
+export function startingVerdicts(state: ReviewState): Record<string, Verdict> {
+  const out: Record<string, Verdict> = {};
+  for (const c of state.candidates) out[c.id] = "unreviewed";
+  for (const pair of state.duplicates ?? []) if (pair.drop in out) out[pair.drop] = "not-a-wall";
+  return out;
 }
 
 /** What the restore offer says, before anything is restored. */

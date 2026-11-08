@@ -7,6 +7,7 @@ import {
   nextUnreviewed,
   progressOf,
   setVerdict,
+  sweepVerdict,
   startReview,
   type Candidate,
 } from "./answerKeyReview";
@@ -219,5 +220,19 @@ describe("what can and cannot reach the key", () => {
     const state = startReview([candidate("c1", 20), candidate("c2", 30, "single")]);
     expect(progressOf(state).reviewed).toBe(0);
     expect(keyFromReview(state, about).walls).toHaveLength(0);
+  });
+});
+
+describe("a box sweep (Hutto A102, 2026-11-08)", () => {
+  it("decides only what is undecided, and says how many decided ones it left", () => {
+    const fresh = startReview([candidate("c10", 30), candidate("c50", 40), candidate("c90", 50)]);
+    const decided = setVerdict(setVerdict(fresh, ["c10"], "wall"), ["c50"], "not-a-wall");
+    const ids = candidatesInBox(decided, { x1: 0, y1: 0, x2: 1, y2: 1 });
+    const rejected = sweepVerdict(decided, ids, "not-a-wall");
+    expect(rejected.state.verdicts).toEqual({ c10: "wall", c50: "not-a-wall", c90: "not-a-wall" });
+    expect([rejected.changed, rejected.kept]).toEqual([1, 2]);
+    const accepted = sweepVerdict(decided, ids, "wall");
+    expect(accepted.state.verdicts.c50, "a sweep reversed a rejection").toBe("not-a-wall");
+    expect(accepted.state.verdicts.c90).toBe("wall");
   });
 });
