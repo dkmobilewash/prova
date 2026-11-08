@@ -11,6 +11,7 @@ import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
 import { forCode, QUEUE_PART, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
+import { specSaysLine, type SpecSay } from "@/lib/specs/specTradeFacts";
 
 /**
  * ── THE JOB'S ONE REVIEW QUEUE, ONE ITEM AT A TIME ──
@@ -38,6 +39,7 @@ export function TakeoffReviewQueue({
   heights = {},
   legend = "read",
   heightChoices = {},
+  specSays = {},
   planSet,
   onShow,
   onLeft,
@@ -56,6 +58,8 @@ export function TakeoffReviewQueue({
   legend?: LegendState;
   /** Each type's heights by part of the building (Joplin's three roofs), offered as choices. */
   heightChoices?: Readonly<Record<string, readonly CodeHeight[]>>;
+  /** What the spec says that changes the price, per type code; "*" for a group no type is suggested for. */
+  specSays?: Readonly<Record<string, readonly SpecSay[]>>;
   planSet: PlanSetRow[];
   onShow: (item: ReviewItem | null) => void;
   /** Told how many are left whenever that changes, so the top bar's count is this one. */
@@ -375,6 +379,7 @@ export function TakeoffReviewQueue({
                 <span className="text-ink-muted">No wall types to pick from: add them on the Wall types page.</span>
               </>
             ) : (
+              <>
               <QueueGroupConfirm
                 key={current.key}
                 label={`Walls · sheet ${current.sheet}${current.level ? ` · ${current.level.label}` : ""}${current.building ? ` · ${current.building.name.toLowerCase()}` : ""} · ${inchLabel(current.inches)}${current.feet !== null ? ` · ${Math.round(current.feet)} ft` : ""}`}
@@ -419,6 +424,17 @@ export function TakeoffReviewQueue({
                   );
                 }}
               />
+              {/* What the spec says that changes this type's price, beside the type it is about. */}
+              {(() => {
+                const code = current.suggested?.code ?? null;
+                const line = specSaysLine((code === null ? specSays["*"] : forCode(specSays, code)) ?? []);
+                return line === "" ? null : (
+                  <span className="basis-full text-xs text-tag-amber-ink" data-takeoff="review-queue-spec-says">
+                    {code === null ? line : `${code} · ${line}`}
+                  </span>
+                );
+              })()}
+              </>
             ))}
           {current.kind === "height" && (
             <QueueGroupConfirm

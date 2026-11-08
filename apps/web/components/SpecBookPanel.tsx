@@ -248,7 +248,7 @@ function SectionRow({ section, busy, onRead }: { section: PanelSection; busy: bo
       </div>
       {section.fromDrawings && f && (
         <ul className="flex flex-col gap-1">
-          {[...new Set([...f.studs, ...f.boards, ...f.fireRatings, ...f.ceilings, ...f.finishLevels, ...f.priceDrivers, ...f.products].map((i) => i.quote))].map((q) => (
+          {[...new Set([...f.studs, ...f.boards, ...f.fireRatings, ...f.ceilings, ...f.finishLevels, ...f.priceDrivers, ...f.products, ...(f.requirements ?? [])].map((i) => i.quote))].map((q) => (
             <li key={q} className="border-l-2 border-line-card pl-2 text-xs text-ink-body" data-spec="note">
               {q}
             </li>

@@ -49,7 +49,9 @@ function segments(items: readonly TextItem[]): { x: number; right: number; y: nu
     let cur: { x: number; right: number; y: number; h: number; text: string } | null = null;
     for (const it of row) {
       const h = Math.max(it.height, 4);
-      if (cur && it.x - cur.right <= h * 1.5) {
+      // A bare note number or bullet ("6.", "-", "•") is set wide of its text; it still belongs to it.
+      const bare = cur !== null && /^(?:\(?(?:\d{1,2}|[A-Za-z])[.)]|[-•–·*])$/.test(cur.text);
+      if (cur && it.x - cur.right <= h * (bare ? 4 : 1.5)) {
         cur.text += (it.x - cur.right > h * 0.15 ? " " : "") + it.str.trim();
         cur.right = it.x + it.width;
       } else {
@@ -76,9 +78,21 @@ export function notesFrom(items: readonly TextItem[]): Note[] {
   const done: Note[] = [];
   for (const s of segs) {
     const marker = MARKER.test(s.text);
-    const at = marker
-      ? -1
-      : open.findIndex((o) => s.y - o.lastY > 0 && s.y - o.lastY <= o.h * 1.8 && s.x >= o.x - o.h * 0.5 && s.x <= o.x + o.h * 4);
+    const inColumn = (o: (typeof open)[number]) => s.x >= o.x - o.h * 0.5 && s.x <= o.x + o.h * 4;
+    if (marker) {
+      // A new note in this column ends the one above it — a heading or the previous note — so the
+      // lines under it cannot be claimed by the note above (which once took every continuation line
+      // on a sheet and left each lettered note with only its first line).
+      for (let i = open.length - 1; i >= 0; i--) if (inColumn(open[i])) done.push(...open.splice(i, 1).map((o) => o.note));
+    }
+    // Continuing: the MOST RECENT open note in this column on the row above, never just the first found.
+    let at = -1;
+    if (!marker) {
+      for (let i = 0; i < open.length; i++) {
+        const o = open[i];
+        if (s.y - o.lastY > 0 && s.y - o.lastY <= o.h * 1.8 && inColumn(o) && (at < 0 || o.lastY > open[at].lastY)) at = i;
+      }
+    }
     if (at >= 0) {
       const o = open[at];
       o.note.text = `${o.note.text} ${s.text}`.replace(/(\w)- (\w)/g, "$1$2");
@@ -101,15 +115,26 @@ const TRADE =
 const REQUIRES =
   /\b(SHALL|PROVIDE[DS]?|REQUIRED|INSTALL(?:ED)?|USE[D]?|U\.?N\.?O\.?|UNLESS OTHERWISE|ALL\b[^.]{0,80}\b(?:TO BE|SHALL)\b)\b|\b(?:MIN(?:IMUM)?|MAX(?:IMUM)?)\.?\s*(?=\d|OF\s+\d)|\d\S*\s*(?:MIN|MAX)\.?\b/i;
 // Another trade's work that shares this trade's words: wood framing, plywood, roofing, structural steel.
-const NOT_THIS_TRADE = /\b(PLYWOOD|LUMBER|2X\d*|LVL|LSL|TJI|ROOFING|MEMBRANE|SIMPSON|NAILS?|NAILING|JOISTS?|RAFTERS?|SHEAR\s*WALLS?|ANCHOR\s*BOLTS?|PIPE|DRAIN|CONDUIT|DUCT)\b/i;
+const NOT_THIS_TRADE = /\b(PLYWOOD|LUMBER|2X\d*|LVL|LSL|TJI|ROOFING|MEMBRANE|SIMPSON|NAILS?|NAILING|JOISTS?|RAFTERS?|SHEAR\s*WALLS?|ANCHOR\s*BOLTS?|PIPE|DRAIN|CONDUIT|DUCT|ALARMS?|STROBES?|VALVES?|HOODS?|EXHAUST)\b/i;
 // A code analysis cites the building code about the building; it is not a requirement on this work.
-const CODE_ANALYSIS = /\b(IBC|OSSC|CBC|OCCUPANCY|CHAPTER\s+\d+)\b/i;
+// Code-analysis wording, not a mere citation: a requirement note may cite "IBC SECTION 808" and still be one.
+const CODE_ANALYSIS = /\b(OCCUPANCY|CHAPTER\s+\d+|TABLE\s+\d{3,4})\b/i;
 const CLEARLY_THIS_TRADE = /\b(GYP(?:SUM)?|GWB|DRYWALL|WALLBOARD|(?:METAL|STEEL|MTL\.?|STL\.?)\s*STUDS?|ACOUSTICAL|CEILING\s*(?:TILE|GRID)|FIREPROOFING|SFRM|EIFS|PLASTER)\b/i;
 const TOKEN =
   /(\b\d{2}\s*(?:GA\.?|GAUGE|GAGE|MILS?)\b|\b\d+\s*-?\s*\d*\/?\d+\s*(?:"|''|IN\.?|INCH)|TYPE\s*['"]?\s*[XC]\b|LEVEL\s*[0-5]\b|\bUL\b|\b[UVWXY]\d{3}\b|O\.?\s*C\.?\b|DEFLECTION|SLOTTED|ABUSE|IMPACT|MOISTURE|MOLD|\bL\/\d{3}\b|\d\s*-?\s*(?:HR|HOUR)\b|NO\s+SUBSTITUTIONS?)/i;
 
 /** True when a note states a requirement this trade prices, with something to measure it by. */
+// Plainly this trade's element, for a note that states a requirement without a number in it.
+const TRADE_ELEMENT =
+  /\b(GYP(?:SUM)?|GWB|DRYWALL|WALLBOARD|(?:METAL|STEEL|MTL\.?|STL\.?)\s*STUDS?|ACOUSTICAL|(?:CEILING|T-?BAR)\s*GRID|SUSPENDED\s*CEILINGS?|SUSPENSION\s*SYSTEMS?|BULKHEADS?|FURRING|DEFLECTION\s*TRACK|SHAFT\s*WALL|FIREPROOFING|SFRM|EIFS|PLASTER|LAY-IN)\b/i;
+// A requirement stated as an order or an obligation: "SHALL", "MUST", "ALL … TO BE", or a note that opens with a verb.
+const OBLIGES =
+  /\b(SHALL|MUST|PROVIDE[DS]?|ALL\b[^.]{0,80}\bTO BE|ARE TO|IS TO)\b|^(?:\(?[\dA-Za-z]{1,2}[.)]\s*)?(?:INSTALL|PROVIDE|WRAP|CENTER|ATTACH|APPLY|EXTEND|SECURE|FURNISH|MAINTAIN|ERECT|REPAIR|PATCH|SEAL|USE)\b(?!\s+OF\b)/i;
+// Prefinished metal wall or soffit panels: siding, which carries a gauge and "studs" but is not this work.
+const METAL_PANELS = /\b(?:PRE-?FINISHED\s+METAL|METAL\s+(?:WALL|SOFFIT)\s+PANELS?|KYNAR|PAC-CLAD)\b/i;
+
 export function isTradeRequirement(text: string): boolean {
+  if (METAL_PANELS.test(text)) return false;
   if (text.length < 20 || text.length > 900) return false;
   // An abbreviations table row: short code | expansion pairs, no sentence.
   if (/^[A-Z.&/]{1,6}\s+[A-Z ,/&-]+$/.test(text) && !REQUIRES.test(text)) return false;
@@ -121,7 +146,11 @@ export function isTradeRequirement(text: string): boolean {
   // stretch with no sentence in it. Its parts belong to different things, so it is no one note.
   if (/(?:\s\d{1,2}){3}\s/.test(` ${text} `)) return false;
   if (text.length > 250 && (text.match(/\.(?:\s|$)/g) ?? []).length < 2) return false;
-  return TRADE.test(text) && REQUIRES.test(text) && TOKEN.test(text);
+  if (TRADE.test(text) && REQUIRES.test(text) && TOKEN.test(text)) return true;
+  // No number in it, but an obligation about this trade's own element: still a requirement it prices.
+  // (Letting a numbered note qualify on a broad word — STUD, GRID, PARTITION — was measured and refused:
+  // false hits went from 11 to 35 on the key sets, every one a dimension or coordination note.)
+  return TRADE_ELEMENT.test(text) && OBLIGES.test(text);
 }
 
 /** Which section a note belongs with: a number it prints, else its trade's usual one. */
@@ -144,7 +173,7 @@ const MANUFACTURERS = [
 
 /** One note's facts, in the spec-book reader's shape, the note itself the quote. */
 export function factsFromNote(text: string): SpecTradeRead {
-  const read: SpecTradeRead = { products: [], studs: [], boards: [], fireRatings: [], ceilings: [], finishLevels: [], priceDrivers: [], reason: "" };
+  const read: SpecTradeRead = { products: [], studs: [], boards: [], fireRatings: [], ceilings: [], finishLevels: [], priceDrivers: [], requirements: [{ quote: text }], reason: "" };
   const quote = text;
   const pick = (re: RegExp) => text.match(re)?.[0].trim() ?? null;
 
@@ -165,7 +194,7 @@ export function factsFromNote(text: string): SpecTradeRead {
     if (/MOLD/i.test(text)) kinds.push("mold-resistant");
     if (/SHAFT\s*(?:WALL|LINER)/i.test(text)) kinds.push("shaftliner");
     if (/CEMENT\s*BOARD|CEMENTITIOUS\s*BACKER/i.test(text)) kinds.push("cement board");
-    const where = pick(/\b(?:AT|IN)\s+(?:ALL\s+)?(?:RATED|WET|CORRIDOR|TOILET|RESTROOM|SHAFT|EXTERIOR|LOBBY)[^.,;]{0,40}/i);
+    const where = pick(/\b(?:AT|IN|FOR)\s+(?:ALL\s+)?(?:FIRE[-\s]?)?(?:RATED|WET|CORRIDOR|TOILET|RESTROOM|SHAFT|EXTERIOR|LOBBY)[^.,;]{0,40}/i);
     for (const kind of kinds.length > 0 ? kinds : thickness ? ["gypsum board"] : []) read.boards.push({ kind, thickness, where, quote });
   }
   for (const m of text.matchAll(/\b(?:UL\s*(?:DESIGN|DES\.?|ASSEMBLY|NO\.?|#)?\s*)([UVWXY]\d{3})\b/gi)) {
@@ -215,15 +244,12 @@ export function searchesSheet(sheetNumber: string | null): boolean {
   return /^(?:G|GN|GI|A|AD|AE|AF|AS|I|ID|N|X)[-.\s]?\d/i.test(sheetNumber.trim()) || /^(?:G|A|I)\d/i.test(sheetNumber.trim());
 }
 
-/** Every trade requirement on one sheet, each with its facts. Notes with no fact read, and repeats, are dropped. */
+/** Every trade requirement on one sheet, each with whatever facts code reads out of it; repeats are dropped. */
 export function drawingSpecNotes(items: readonly TextItem[]): DrawingSpecNote[] {
   const seen = new Set<string>();
   return notesFrom(items)
     .filter((n) => isTradeRequirement(n.text))
     .filter((n) => !seen.has(n.text) && seen.add(n.text) !== undefined)
-    .map((n) => ({ sectionNumber: sectionForNote(n.text), text: n.text, read: factsFromNote(n.text) }))
-    .filter((n) => {
-      const r = n.read;
-      return r.studs.length + r.boards.length + r.fireRatings.length + r.ceilings.length + r.finishLevels.length + r.priceDrivers.length > 0;
-    });
+    // Every kept note is a requirement in its own words (`requirements`), with whatever facts code reads out of it.
+    .map((n) => ({ sectionNumber: sectionForNote(n.text), text: n.text, read: factsFromNote(n.text) }));
 }

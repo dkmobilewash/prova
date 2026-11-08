@@ -45,6 +45,12 @@ export type SpecTradeRead = {
   ceilings: SpecCeiling[];
   finishLevels: SpecFinishLevel[];
   priceDrivers: SpecPriceDriver[];
+  /**
+   * Requirements kept in their own words with no structured field — "ALL GYPSUM BOARD CEILINGS TO
+   * BE TEXTURED AND PAINTED". Written by the drawing-notes finder (`apps/web/lib/specs/drawingSpecs.ts`),
+   * never asked of the model; absent on older reads, so it is optional.
+   */
+  requirements?: Quoted[];
   reason: string;
 };
 
@@ -175,6 +181,7 @@ export function specTradeReadFrom(input: unknown): SpecTradeRead {
       const why = text(o.why);
       return label === null || why === null ? null : { label, why, quote };
     }),
+    requirements: items("requirements", (_o, quote) => ({ quote })),
     reason: text(raw.reason) ?? "",
   };
 }

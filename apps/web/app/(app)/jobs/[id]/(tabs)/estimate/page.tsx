@@ -43,6 +43,8 @@ import {
   formatLoggedHours,
 } from "@/lib/wip";
 import { jobEarnedRevenue, jobOverUnderBilling } from "@/lib/company-financials";
+import { loadSpecSaysByCode } from "@/lib/specs/specBookQuery";
+import { linePart, specSaysLine } from "@/lib/specs/specTradeFacts";
 import { lineItemCostToDate, unassignedLaborCost } from "@/lib/labor-job-cost";
 import { fringeScheduleInput } from "@/lib/labor-cost";
 import { laborCostApplyDecision } from "@/lib/estimating/labor-cost-apply";
@@ -166,6 +168,8 @@ export default async function JobEstimatePage({
         orderBy: { createdAt: "asc" },
         include: {
           originChangeOrder: true,
+          // The wall type a takeoff line prices, for what the spec says about it.
+          takeoffItem: { select: { wallType: { select: { code: true } } } },
           costEntries: { orderBy: { incurredAt: "desc" } },
           craftClassification: { include: { unionLocal: true } },
         },
@@ -432,6 +436,15 @@ export default async function JobEstimatePage({
     ]),
   );
 
+  // What the spec says that changes a line's price, by the wall type it prices and the part it is
+  // (board or framing) — the same notes the review queue shows beside the type.
+  const specSaysByCode = await loadSpecSaysByCode(job.id, company.id);
+  const specSaysFor = (item: (typeof job.lineItems)[number]): string => {
+    const code = item.takeoffItem?.wallType?.code;
+    if (!code) return "";
+    const part = linePart(item.description);
+    return specSaysLine((specSaysByCode[code.toUpperCase()] ?? []).filter((s) => part === null || s.part === part));
+  };
   const lineItemWip = job.lineItems.map((item) => ({
     item,
     wip: calculateLineItemWip({
@@ -903,6 +916,11 @@ export default async function JobEstimatePage({
                     <span className={estimateLineGrid}>
                       <span className="min-w-0 break-words">
                         {item.description}
+                        {specSaysFor(item) !== "" && (
+                          <span className="block text-xs text-tag-amber-ink" data-estimate="spec-says">
+                            {specSaysFor(item)}
+                          </span>
+                        )}
                         <span className="block text-xs text-ink-muted sm:hidden">
                           {item.quantity.toString()} {item.unit ?? ""} @{" "}
                           {item.unitPrice != null ? money(Number(item.unitPrice)) : "cost-only"}

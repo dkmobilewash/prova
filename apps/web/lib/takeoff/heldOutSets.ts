@@ -163,6 +163,20 @@ export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: str
     match: "EH Hutto TX",
     why: "extended-stay hotel, new build — held out 2026-11-04 (round 10), before a label was written",
   },
+  {
+    // ── ROUND 16, HELD OUT 2026-11-08 BEFORE A LABEL WAS WRITTEN ──
+    //
+    // Five sets landed that day. Diego asked for at least two tagged new-build
+    // sets held out (held-out types and heights were thin) and every single-line
+    // set in training. None of the five draws walls single-line, so the three
+    // renovations go to training and both tagged new builds are held out.
+    match: "USU-ASPIRE-EVR-BID-DRAWINGS",
+    why: "university lab expansion, new build, PS partition tags + window schedule — held out 2026-11-08 (round 16), before a label was written",
+  },
+  {
+    match: "RIVERBEND CD BID Drawings",
+    why: "multifamily housing, new build, diamond wall tags + window tags — held out 2026-11-08 (round 16), before a label was written",
+  },
 ];
 
 /** Punctuation and extension removed, so one spelling matches another. */

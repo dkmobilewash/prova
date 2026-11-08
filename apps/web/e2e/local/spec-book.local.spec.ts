@@ -243,6 +243,28 @@ test.describe("the spec book on a new company's job", () => {
       note(`Wall after drawings ${await w.getAttribute("data-code")} (${await w.getAttribute("data-conflicts")} conflicts): ${(await w.innerText()).replace(/\s+/g, " ")}`);
     }
 
+    // What the spec says, on the estimate's lines for wall type A1 (board line and stud line).
+    const a1 = await prisma.wallType.upsert({
+      where: { companyId_code: { companyId, code: "A1" } },
+      create: { companyId, code: "A1", name: "A1 partition" },
+      update: {},
+    });
+    const item = await prisma.takeoffItem.create({ data: { companyId, jobId, name: "A1", type: "LINEAR", colorHex: "#888888", wallTypeId: a1.id } });
+    await prisma.jobLineItem.createMany({
+      data: [
+        { jobId, description: 'A1 — 5/8" gypsum board', quantity: 1200, unit: "SF", takeoffItemId: item.id },
+        { jobId, description: 'A1 — 3 5/8" metal studs', quantity: 300, unit: "LF", takeoffItemId: item.id },
+      ],
+    });
+    await page.goto(`/jobs/${jobId}/estimate`);
+    const estimateSays = page.locator('[data-estimate="spec-says"]');
+    await expect(estimateSays.first()).toBeVisible({ timeout: 30_000 });
+    for (const s of await estimateSays.all()) note(`Estimate: ${(await s.innerText()).trim()}`);
+    await estimateSays.first().scrollIntoViewIfNeeded();
+    await shot("estimate-spec-says");
+    await page.goto(`/jobs/${jobId}/specs`);
+    await hydrated('[data-spec="upload"]');
+
     // Price items onto the proposal.
     const drivers = page.locator('[data-spec="driver"]');
     const driverCount = await drivers.count();
