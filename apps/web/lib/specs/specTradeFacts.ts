@@ -190,7 +190,10 @@ export function specSays(lines: readonly string[] | null, sections: readonly Sec
 /** "Spec says: Type X board (09 21 16); 20 ga studs minimum (09 22 16, sheet A100)". Empty when nothing applies. */
 export function specSaysLine(says: readonly SpecSay[]): string {
   if (says.length === 0) return "";
-  return `Spec says: ${says.map((s) => `${s.text} (${s.source})`).join("; ")}`;
+  // The same item from two places (the book and a drawing's note) is said once, with both sources.
+  const sources = new Map<string, string[]>();
+  for (const s of says) sources.set(s.text, [...(sources.get(s.text) ?? []), s.source]);
+  return `Spec says: ${[...sources].map(([text, from]) => `${text} (${from.join("; ")})`).join("; ")}`;
 }
 
 /** Which part of a wall an estimate line prices, from its words: board lines get board items, stud and track lines framing. */

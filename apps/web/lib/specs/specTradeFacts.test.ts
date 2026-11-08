@@ -120,6 +120,12 @@ describe("what the spec says that changes a wall type's price", () => {
     expect(specSays(["8\" CMU"], drawn)).toEqual([]);
     expect(specSays(null, drawn).map((s) => s.text)[0]).toBe("Type X board at all fire-rated assemblies");
     expect(specSaysLine([])).toBe("");
+    expect(
+      specSaysLine([
+        { text: "Type X board", source: "09 21 16", part: "board" },
+        { text: "Type X board", source: "09 21 16, sheet G001", part: "board" },
+      ]),
+    ).toBe("Spec says: Type X board (09 21 16; 09 21 16, sheet G001)");
   });
 
   it("an estimate line is board or framing by its words", () => {
