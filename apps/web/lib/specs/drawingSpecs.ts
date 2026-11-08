@@ -115,7 +115,7 @@ const TRADE =
 const REQUIRES =
   /\b(SHALL|PROVIDE[DS]?|REQUIRED|INSTALL(?:ED)?|USE[D]?|U\.?N\.?O\.?|UNLESS OTHERWISE|ALL\b[^.]{0,80}\b(?:TO BE|SHALL)\b)\b|\b(?:MIN(?:IMUM)?|MAX(?:IMUM)?)\.?\s*(?=\d|OF\s+\d)|\d\S*\s*(?:MIN|MAX)\.?\b/i;
 // Another trade's work that shares this trade's words: wood framing, plywood, roofing, structural steel.
-const NOT_THIS_TRADE = /\b(PLYWOOD|LUMBER|2X\d*|LVL|LSL|TJI|ROOFING|MEMBRANE|SIMPSON|NAILS?|NAILING|JOISTS?|RAFTERS?|SHEAR\s*WALLS?|ANCHOR\s*BOLTS?|PIPE|DRAIN|CONDUIT|DUCT|ALARMS?|STROBES?|VALVES?|HOODS?|EXHAUST|PLUMBING|ELECTRICAL)\b/i;
+const NOT_THIS_TRADE = /\b(PLYWOOD|LUMBER|2X\d*|LVL|LSL|TJI|ROOFING|MEMBRANE|SIMPSON|NAILS?|NAILING|JOISTS?|RAFTERS?|SHEAR\s*WALLS?|ANCHOR\s*BOLTS?|PIPE|DRAIN|CONDUIT|DUCT|ALARMS?|STROBES?|VALVES?|HOODS?|EXHAUST)\b/i;
 // A code analysis cites the building code about the building; it is not a requirement on this work.
 // Code-analysis wording, not a mere citation: a requirement note may cite "IBC SECTION 808" and still be one.
 const CODE_ANALYSIS = /\b(OCCUPANCY|CHAPTER\s+\d+|TABLE\s+\d{3,4})\b/i;
@@ -135,9 +135,6 @@ const METAL_PANELS = /\b(?:PRE-?FINISHED\s+METAL|METAL\s+(?:WALL|SOFFIT)\s+PANEL
 
 export function isTradeRequirement(text: string): boolean {
   if (METAL_PANELS.test(text)) return false;
-  // A note explaining the drawings' own conventions ("THE ALPHANUMERIC DESIGNATION IN EACH PARTITION TYPE
-  // SYMBOL DESCRIBES…") says how to read a sheet, not what to build, unless it also gives an order.
-  if (/\b(SYMBOLS?|DESIGNATIONS?|ALPHANUMERIC)\b/i.test(text) && !/\b(SHALL|PROVIDE|USE|INSTALL)\b/i.test(text)) return false;
   if (text.length < 20 || text.length > 900) return false;
   // An abbreviations table row: short code | expansion pairs, no sentence.
   if (/^[A-Z.&/]{1,6}\s+[A-Z ,/&-]+$/.test(text) && !REQUIRES.test(text)) return false;

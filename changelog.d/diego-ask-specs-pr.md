@@ -1,4 +1,4 @@
-### Ask answers questions about a job's spec, with the section or sheet for every item; drawing specs' false hits cut from 7 to 4
+### Ask answers questions about a job's spec, with the section or sheet for every item
 
 **New read-only Ask tool, `spec_requirements`.** It answers from the job's spec reads: a spec book's sections and the Division 09/07 notes printed on its drawings, through the same loader the Specs page and the "spec says" notes use. Examples:
 - "What board does the spec call for on Baker?"
@@ -17,7 +17,4 @@
 
 **The "spec says" notes now list each stated stud gauge heavier than 25 ga** on its own. A section stating 20 ga walls and 25 ga struts used to say nothing about studs.
 
-**Drawing specs' false hits, on the 73-item hand key: 7 → 4, found unchanged at 50.**
-- Plumbing and electrical systems count as another trade's work.
-- A note that only explains the drawings' symbols is not a requirement.
-- On six unseen sets, the only notes dropped were three already judged false.
+The drawing-spec false-hit changes first written here moved to their own PR (drawing specs round 3), so this one waits on its routing eval alone.
