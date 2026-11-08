@@ -161,7 +161,7 @@ import { takeoffSheetVerdict, type TakeoffSheetVerdict } from "@/lib/takeoff/tak
 import {
   candidatesFromSheet,
   candidatesInBox,
-  setVerdict,
+  sweepVerdict,
   type Candidate,
   type ReviewState,
 } from "@/lib/takeoff/answerKeyReview";
@@ -6440,9 +6440,16 @@ export function TakeoffPlanViewer({
                     // the one that does that. Accepting in bulk is rarer and
                     // riskier — a box of walls usually contains something that
                     // is not one — so it asks for a modifier.
-                    answerKey.onState(
-                      setVerdict(answerKey.state, ids, keyShift ? "wall" : "not-a-wall"),
-                    );
+                    // ── BUT ONLY WHAT IS STILL UNDECIDED (`sweepVerdict`) ──
+                    // Hutto A102: a stray drag after a restore rejected 13 accepted walls.
+                    const swept = sweepVerdict(answerKey.state, ids, keyShift ? "wall" : "not-a-wall");
+                    if (swept.changed > 0) answerKey.onState(swept.state);
+                    if (swept.kept > 0) {
+                      setFindError(
+                        `${swept.changed > 0 ? `${keyShift ? "Accepted" : "Rejected"} ${swept.changed} undecided; ` : ""}left ${swept.kept} already decided as ${swept.kept === 1 ? "it was" : "they were"}. ` +
+                          `A box only decides what is still undecided — press ${keyShift ? "A" : "R"} on a run to change one you decided.`,
+                      );
+                    }
                   } else {
                     answerKey.onFocus(null);
                   }
