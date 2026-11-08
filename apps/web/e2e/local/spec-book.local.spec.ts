@@ -7,6 +7,7 @@ import { prisma } from "@prova/db";
 import { HealthMonitor } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { buildSpecBookFixture } from "../../lib/specs/fixtures/specBookFixture";
+import { buildDrawingNotesFixture } from "../../lib/specs/fixtures/drawingNotesFixture";
 
 /**
  * ── THE SPEC BOOK, WALKED: a new company uploads the project manual and sees its sections read ──
@@ -59,6 +60,7 @@ test.describe("the spec book on a new company's job", () => {
   test("upload, find, read, check the legend, add to the proposal", async ({ browser }) => {
     mkdirSync(OUT, { recursive: true });
     writeFileSync(path.join(DIR, BOOK), await buildSpecBookFixture());
+    writeFileSync(path.join(DIR, "riverbend-plans.pdf"), await buildDrawingNotesFixture());
     page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
     new HealthMonitor(page);
     const t0 = Date.now();
@@ -107,7 +109,7 @@ test.describe("the spec book on a new company's job", () => {
     const jobId = page.url().match(/\/jobs\/new\/([^/]+)\/items$/)![1]!;
 
     // The plan set's legend, as the legend stage stores it: three invented types.
-    const plan = await prisma.takeoffPlan.create({ data: { companyId, jobId, fileUrl: "local:none.pdf", fileName: "plans.pdf" } });
+    const plan = await prisma.takeoffPlan.create({ data: { companyId, jobId, fileUrl: "local:riverbend-plans.pdf", fileName: "riverbend-plans.pdf" } });
     const run = await prisma.planIngestJob.create({ data: { planId: plan.id, companyId, stage: "WALL_LEGEND", pageCount: 1 } });
     const type = (code: string, lines: string[]) => ({ code, name: null, lines, assembly: {}, from: "text", disagreements: [] });
     await prisma.planLegendProposal.create({
@@ -226,6 +228,20 @@ test.describe("the spec book on a new company's job", () => {
     }
     await walls.first().scrollIntoViewIfNeeded();
     await shot("wall-types");
+
+    // Specs printed on the drawings: the plan set's own notes, no model call.
+    await page.locator('[data-spec="drawings"]').click();
+    await expect(message).toContainText(/printed on \d+ sheet|No Division 09/, { timeout: 120_000 });
+    note(`Drawings: "${(await message.innerText()).trim()}"`);
+    await page.waitForTimeout(2000);
+    const printed = page.locator('[data-spec="drawing-notes"] [data-spec="section"]');
+    await expect(printed.first()).toBeVisible({ timeout: 30_000 });
+    for (const s of await printed.all()) note(`Printed: ${(await s.innerText()).replace(/\s+/g, " ").slice(0, 300)}`);
+    await page.locator('[data-spec="drawing-notes"]').scrollIntoViewIfNeeded();
+    await shot("drawing-notes");
+    for (const w of await walls.all()) {
+      note(`Wall after drawings ${await w.getAttribute("data-code")} (${await w.getAttribute("data-conflicts")} conflicts): ${(await w.innerText()).replace(/\s+/g, " ")}`);
+    }
 
     // Price items onto the proposal.
     const drivers = page.locator('[data-spec="driver"]');

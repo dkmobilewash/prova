@@ -91,8 +91,10 @@ export function checkWallType(type: { code: string; lines: readonly string[] }, 
       }
     }
     if (hasBoard && read.finishLevels.length > 0) {
-      const typical = read.finishLevels.find((f) => f.where === null || /unless|typical|all\b/i.test(f.where)) ?? read.finishLevels[0];
-      parts.push(`Level ${typical.level}`);
+      const typical = read.finishLevels.find((f) => f.where === null || /unless|typical|all\b/i.test(f.where));
+      // With no typical level, the one stated is only for somewhere, and the line says where.
+      const only = read.finishLevels[0];
+      parts.push(typical ? `Level ${typical.level}` : `Level ${only.level} at ${only.where!.toLowerCase().replace(/^the\s+/, "the ")}`);
     }
 
     if (hasStuds && read.studs.length > 0) {
