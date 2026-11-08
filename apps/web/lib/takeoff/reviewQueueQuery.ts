@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { VARIANT_NOTES } from "./variantMark";
 import { aiGate } from "@/lib/ai/settings";
 import { asCostCategory } from "@/lib/cost-category";
 import { pricingRatesFor } from "@/lib/estimating/pricing-rates";
@@ -143,6 +144,11 @@ export async function loadReviewQueue(
     rooms
       .filter((r) => r.page.pageNumber === pageNumber)
       .map((r) => ({ xs: r.xs, ys: r.ys, heightFeet: r.ceilingHeightFeet, name: [r.roomNumber, r.roomName].filter(Boolean).join(" ") || (r.label ?? "room"), from: r.ceilingFrom }));
+  // The words each sheet prints beside its marked tags ("C6*  TYP AT TUB/SHOWER LOCATIONS"), saved by the walls stage.
+  const notesByPage = new Map<number, Record<string, string>>();
+  for (const read of await prisma.takeoffPlanTextRead.findMany({ where: { planId: plan.id, kind: VARIANT_NOTES }, select: { pageNumber: true, value: true } })) {
+    if (read.value !== null && typeof read.value === "object" && !Array.isArray(read.value)) notesByPage.set(read.pageNumber, Object.fromEntries(Object.entries(read.value as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string")));
+  }
   for (const page of pages) {
     const sheet = sheetOf(page.pageNumber, page.calibrations[0]);
     for (const m of page.measurements) {
@@ -159,7 +165,7 @@ export async function loadReviewQueue(
       id: row.id,
       inches: row.thicknessInches,
       runs: storedRunsOrNull(row.runs) ?? [],
-      suggested: named === null ? null : suggestType(named[at]!, sheet.sheet, legendCodes),
+      suggested: named === null ? null : suggestType(named[at]!, sheet.sheet, legendCodes, notesByPage.get(page.pageNumber)),
       rooms: roomsOn(page.pageNumber),
     }));
     const typed = typeItems(sheet, page.measurements.filter((m) => m.label !== HELD_LABEL), groups);
