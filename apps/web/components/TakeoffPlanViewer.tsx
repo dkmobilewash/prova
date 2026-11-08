@@ -478,7 +478,12 @@ export function TakeoffPlanViewer({
    * and the set's sheets for the picker. Null when the company has it off.
    * See `lib/takeoff/priorPlan.ts`.
    */
-  planCompare?: { pairs: Record<number, Pairing>; sheets: { pageNumber: number; sheetNumber: string | null; title: string | null }[] } | null;
+  planCompare?: {
+    pairs: Record<number, Pairing>;
+    sheets: { pageNumber: number; sheetNumber: string | null; title: string | null }[];
+    /** What the server's Run takeoff set aside on each paired page (`storedPriorsOf`). */
+    stored?: Record<number, { demoPage: number; sheet: string; n: number; feet: number; why: string | null }>;
+  } | null;
   /** The set's door schedule rows as the ingest read them, for the join; empty when none. */
   /** The set's WINDOW schedule rows, so windows are counted by their tags (`windowsByTag`). */
   windowScheduleRows?: StoredScheduleRow[];
@@ -1257,9 +1262,17 @@ export function TakeoffPlanViewer({
   // A sheet paired with its demolition plan, walls set aside: the prompt to
   // draw a work area or exclude existing walls is already answered (Chrome on
   // E Street A2.1). Unpaired, or nothing set aside, the prompt stays.
+  // The browser's own comparison when it made one on this page, else what the server's Run takeoff stored.
+  const storedPrior = planCompare?.stored?.[pageNumber];
+  const shownPrior: PriorStatus | null =
+    priorStatus !== null && priorStatus.page === pageNumber
+      ? priorStatus
+      : storedPrior !== undefined
+        ? { page: pageNumber, pairing: planCompare?.pairs[pageNumber] ?? null, sheet: storedPrior.sheet, n: storedPrior.n, feet: storedPrior.feet, why: storedPrior.why }
+        : null;
   const existingAside =
-    priorStatus !== null && priorStatus.page === pageNumber && priorStatus.why === null && priorStatus.n > 0 && priorStatus.sheet !== null
-      ? { sheet: priorStatus.sheet, n: priorStatus.n, feet: priorStatus.feet }
+    shownPrior !== null && shownPrior.why === null && shownPrior.n > 0 && shownPrior.sheet !== null
+      ? { sheet: shownPrior.sheet, n: shownPrior.n, feet: shownPrior.feet }
       : null;
   // The new plans this demolition plan is paired with: it is not counted itself.
   const setsAsideOn =
@@ -4595,7 +4608,7 @@ export function TakeoffPlanViewer({
           <SetWallHeight
             name={facts.item.name}
             options={facts.options}
-            missing={heightMissing}
+            missing={group === firstWithoutHeight ? heightMissing : null}
             onSet={async (feet) => {
               const itemId = facts.item.id;
               const saved = await setWallGroupHeight(jobId, itemId, feet);
@@ -4615,6 +4628,12 @@ export function TakeoffPlanViewer({
       </span>
     );
   }
+  /**
+   * The one group that carries "No height from the drawings… Turn it on". Every
+   * group said it (walk, 2026-11-08: seven times down the layers on Green Bay A3.1
+   * with plan reading off); the reason is the sheet's, so the first group says it.
+   */
+  const firstWithoutHeight = ordered.find(({ group }) => wallFactsOf(group)?.item.heightFt === null)?.group ?? null;
   const layers: Layer[] = !fill
     ? []
     : [
@@ -5369,7 +5388,13 @@ export function TakeoffPlanViewer({
         </p>
       ))}
       {/* In the panel, never over the plan ("This sheet shows existing work…"). */}
-      {dock(panelOpen ? sideSlot : noticeSlot, answerKey === undefined && (
+      {/* ── THE RENOVATION FACTS GO AT THE TOP OF THE PANEL ──
+          Walk, 2026-11-08 (E Street, plan comparison on): "Compared with demolition plan
+          A1.1 · N walls set aside" and the existing-work prompt docked in `sideSlot`, which
+          sits under every layer and the quantities — off the bottom of a panel that opens
+          on the layers. They are the facts a renovation estimator needs first, so they take
+          the layer panel's banner where there is one. */}
+      {dock(panelOpen ? (bannerSlot ?? sideSlot) : noticeSlot, answerKey === undefined && (
         <TakeoffExclusionBar
           feet={found === null ? null : found.reduce((sum, group) => sum + group.feet, 0)}
           aside={userAside}
@@ -5388,8 +5413,8 @@ export function TakeoffPlanViewer({
           onClear={(kind) => void onClearExclusions(kind)}
         />
       ))}
-      {slot(panelOpen ? sideSlot : noticeSlot, answerKey === undefined && planCompare !== null && priorStatus !== null && priorStatus.page === pageNumber && (
-        <PriorPlanBar status={priorStatus} sheets={planCompare.sheets} pageNumber={pageNumber} jobId={jobId} planId={planId} readOnly={readOnly} />
+      {slot(panelOpen ? (bannerSlot ?? sideSlot) : noticeSlot, answerKey === undefined && planCompare !== null && shownPrior !== null && (
+        <PriorPlanBar status={shownPrior} sheets={planCompare.sheets} pageNumber={pageNumber} jobId={jobId} planId={planId} readOnly={readOnly} />
       ))}
       {/* At the TOP of the panel, first in its dock (Chrome on E Street A1.1: it sat below the groups). */}
       {slot(panelOpen ? dockSlot : noticeSlot, answerKey === undefined && setsAsideOn.length > 0 && (

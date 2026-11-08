@@ -1363,7 +1363,7 @@ export function TakeoffWorkspace({
             /
           </span>
           <span className="truncate text-sm text-ink" data-takeoff="workspace-sheet">
-            {data.sheetLabelByPage[page] ?? `Sheet ${page}`}
+            {data.sheetLabelByPage[page] ?? readNumberByPage[page] ?? `Sheet ${page}`}
           </span>
           {/* WHICH PLAN SET, because a job can have several revisions and a
               measurement taken off the wrong one is wrong quietly. */}
@@ -2097,7 +2097,7 @@ export function TakeoffWorkspace({
           ) : (
             <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-xs">
             <span className="font-semibold text-ink">
-              {data.sheetLabelByPage[page] ?? `Sheet ${page}`}
+              {data.sheetLabelByPage[page] ?? readNumberByPage[page] ?? `Sheet ${page}`}
             </span>
             <Fact label="Page">{page}</Fact>
             <Fact label="Scale">
@@ -2175,7 +2175,7 @@ export function TakeoffWorkspace({
                           }}
                           className="rounded-md border border-line-card px-2 py-1 text-xs text-ink-body hover:bg-rail"
                         >
-                          {data.sheetLabelByPage[pageNumber] ?? `Sheet ${pageNumber}`}
+                          {data.sheetLabelByPage[pageNumber] ?? readNumberByPage[pageNumber] ?? `Sheet ${pageNumber}`}
                         </button>
                       </li>
                     ))}
