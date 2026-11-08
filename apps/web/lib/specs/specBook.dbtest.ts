@@ -202,6 +202,7 @@ describe("a whole spec book on a job", () => {
     const a1 = view.wallTypes.find((w) => w.code === "A1")!;
     expect(a1.conflicts).toEqual([]);
     expect(a1.applies).toContain('09 22 16 (sheet G001, also on A101): 25 ga min, 16" o.c. max');
+    expect(a1.applies).toContain("09 21 16 (sheet G001): Type X, Level 5 at the lobby");
 
     expect(await findDrawingSpecs(jobId)).toMatchObject({ ok: true, value: { notes: 3 } });
     expect(await prisma.specBook.count({ where: { jobId, fileUrl: "local:plan.pdf" } })).toBe(1);
