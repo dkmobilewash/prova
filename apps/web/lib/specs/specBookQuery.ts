@@ -1,7 +1,7 @@
 import { prisma } from "@prova/db";
 import { specTradeReadFrom, type SpecTradeRead } from "@prova/integrations/src/specTrade";
 import { loadLegendProposals } from "@/lib/plan-ingest/legendProposalsQuery";
-import { checkWallType, type WallTypeSpecCheck } from "./specTradeFacts";
+import { checkWallType, specSays, type SectionFacts, type SpecSay, type WallTypeSpecCheck } from "./specTradeFacts";
 
 /**
  * What the Specs tab shows: the job's spec books, every section with its newest
@@ -79,12 +79,7 @@ export async function loadSpecBookView(jobId: string, companyId: string): Promis
       for (const type of proposal.types) if (!types.has(type.code)) types.set(type.code, { code: type.code, lines: type.lines });
     }
   }
-  // A drawing's notes are named by their sheet, so a wall's line says where to look: "09 21 16 (sheet G001)".
-  const facts = sections.flatMap((s) =>
-    s.reading
-      ? [{ sectionNumber: s.fromDrawings && s.title ? `${s.sectionNumber} (${s.title.replace(/^Notes on /, "")})` : s.sectionNumber, read: s.reading.facts }]
-      : [],
-  );
+  const facts = labelledFacts(sections);
   return {
     books: books.map((b) => ({ id: b.id, fileName: b.fileName, createdAt: b.createdAt, sectionCount: b._count.sections, fromDrawings: drawingBooks.has(b.id) })),
     hasPlans: plans.length > 0,
@@ -92,4 +87,59 @@ export async function loadSpecBookView(jobId: string, companyId: string): Promis
     wallTypes: facts.length === 0 ? [] : [...types.values()].map((t) => checkWallType(t, facts)),
     hasLegend: types.size > 0,
   };
+}
+
+/** A drawing's notes are named by their sheet, so a wall's line says where to look: "09 21 16, sheet G001". */
+function labelledFacts(sections: readonly Pick<SpecSectionView, "sectionNumber" | "title" | "fromDrawings" | "reading">[]): SectionFacts[] {
+  return sections.flatMap((s) =>
+    s.reading
+      ? [{ sectionNumber: s.fromDrawings && s.title ? `${s.sectionNumber}, ${s.title.replace(/^Notes on /, "")}` : s.sectionNumber, read: s.reading.facts }]
+      : [],
+  );
+}
+
+/**
+ * What the spec says that changes the price, per wall type code (upper-cased), for the review
+ * queue and the estimate: every legend type on the job's plan sets and every company type, from
+ * the job's spec reads — a spec book's sections and the notes printed on the drawings. `*` is for
+ * a wall whose type is not known yet. Empty when the job has no spec read.
+ */
+export async function loadSpecSaysByCode(jobId: string, companyId: string): Promise<Record<string, SpecSay[]>> {
+  const [rows, plans, library] = await Promise.all([
+    prisma.bidSpecSection.findMany({
+      where: { OR: [{ job: { id: jobId, companyId } }, { bidInvitation: { wonJobId: jobId, companyId } }] },
+      select: {
+        sectionNumber: true,
+        title: true,
+        specBook: { select: { fileUrl: true } },
+        tradeReadings: { orderBy: { createdAt: "desc" }, take: 1, select: { facts: true } },
+      },
+    }),
+    prisma.takeoffPlan.findMany({ where: { jobId, companyId }, select: { id: true, fileUrl: true } }),
+    prisma.wallType.findMany({ where: { companyId }, select: { code: true } }),
+  ]);
+  const planFiles = new Set(plans.map((p) => p.fileUrl));
+  const facts = labelledFacts(
+    rows.map((r) => ({
+      sectionNumber: r.sectionNumber,
+      title: r.title,
+      fromDrawings: r.specBook !== null && planFiles.has(r.specBook.fileUrl),
+      reading: r.tradeReadings[0] ? { id: "", on: new Date(0), facts: specTradeReadFrom(r.tradeReadings[0].facts) } : null,
+    })),
+  );
+  if (facts.length === 0) return {};
+  const lines = new Map<string, string[] | null>();
+  for (const plan of plans) {
+    for (const proposal of await loadLegendProposals(plan.id)) {
+      if (proposal.status === "REJECTED") continue;
+      for (const t of proposal.types) if (!lines.has(t.code.toUpperCase())) lines.set(t.code.toUpperCase(), t.lines);
+    }
+  }
+  for (const t of library) if (!lines.has(t.code.toUpperCase())) lines.set(t.code.toUpperCase(), null);
+  const out: Record<string, SpecSay[]> = { "*": specSays(null, facts) };
+  for (const [code, words] of lines) {
+    const says = specSays(words, facts);
+    if (says.length > 0) out[code] = says;
+  }
+  return out;
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { splitVariant, variantLabel, variantNotes } from "@/lib/takeoff/variantMark";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { pickOnClick } from "@/lib/takeoff/clickPick";
@@ -4634,6 +4635,8 @@ export function TakeoffPlanViewer({
    * with plan reading off); the reason is the sheet's, so the first group says it.
    */
   const firstWithoutHeight = ordered.find(({ group }) => wallFactsOf(group)?.item.heightFt === null)?.group ?? null;
+  /** The words this sheet prints beside its marked tags, read off the words a Find already holds (`variantMark.ts`). */
+  const variantNotesHere = variantNotes(wordsRef.current);
   const layers: Layer[] = !fill
     ? []
     : [
@@ -5745,7 +5748,7 @@ export function TakeoffPlanViewer({
                     {/* THE TAG IS THE GROUP'S NAME NOW, not a list of every name
                         in a bucket. A group either carries one tag or carries
                         none, because the tags are what split it. */}
-                    <ClusterTag names={group.source.kind === "TAG" ? [group.source.tag] : []} />
+                    <ClusterTag names={group.source.kind === "TAG" ? [group.source.tag] : []} notes={variantNotesHere} />
                     <span className="text-sm text-ink-body">
                       {group.runs.length} {group.runs.length === 1 ? "run" : "runs"} ·{" "}
                       {Math.round(group.feet).toLocaleString()} ft
@@ -7814,7 +7817,7 @@ export function SheetPager({
  * can render it, which is the #665 lesson — a census proves the code is there,
  * only rendering proves somebody can see it.
  */
-export function ClusterTag({ names }: { names: readonly string[] }) {
+export function ClusterTag({ names, notes = {}, code = null }: { names: readonly string[]; notes?: Readonly<Record<string, string>>; code?: string | null }) {
   const sentence = tagSentence(names);
   if (sentence === null) return null;
   // ── A TYPE CARRIED ALONG THE WALL READS WEAKER THAN ONE PRINTED BESIDE IT ──
@@ -7829,7 +7832,8 @@ export function ClusterTag({ names }: { names: readonly string[] }) {
       data-carried={carried ? "1" : undefined}
       title={carried ? "Same wall as a run the drawing tagged — the type was carried along the wall" : sentence}
     >
-      {names.map(plainTag).join(" / ")}
+      {/* A marked tag says what the mark means: "C6 (C6* at tub/shower locations, see legend)". */}
+      {names.map((n) => variantLabel(code ?? splitVariant(plainTag(n)).code, plainTag(n), notes) ?? plainTag(n)).join(" / ")}
       {carried && <span className="ml-1 font-normal text-ink-muted">same wall</span>}
     </span>
   );

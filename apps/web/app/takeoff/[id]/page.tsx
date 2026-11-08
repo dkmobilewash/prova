@@ -8,6 +8,7 @@ import { NoAccess } from "@/components/NoAccess";
 import { TakeoffWorkspace } from "@/components/TakeoffWorkspace";
 import { loadTakeoffWorkspace, takeoffSavedSignature, workspaceForClient } from "@/lib/takeoff/workspaceLoad";
 import { loadReviewQueue } from "@/lib/takeoff/reviewQueueQuery";
+import { loadSpecSaysByCode } from "@/lib/specs/specBookQuery";
 import { planSetFromLoaded } from "@/lib/takeoff/planSet";
 
 /**
@@ -46,6 +47,7 @@ export default async function TakeoffWorkspacePage({
   const data = await loadTakeoffWorkspace(company, job);
   const savedAt = await takeoffSavedSignature(company.id, job.id);
   const queue = await loadReviewQueue(company.id, job.id);
+  const specSays = await loadSpecSaysByCode(job.id, company.id);
 
   if (data === null) {
     // No drawing on this job. The tab offers an uploader because that is where
@@ -108,6 +110,7 @@ export default async function TakeoffWorkspacePage({
       reviewHeights={queue.heights}
       reviewLegend={queue.legend}
       reviewHeightChoices={queue.heightChoices}
+      reviewSpecSays={specSays}
       reviewCodes={queue.codes}
       planSet={planSetFromLoaded(data)}
       /* ── ANSWER-KEY MODE FROM THE URL ──

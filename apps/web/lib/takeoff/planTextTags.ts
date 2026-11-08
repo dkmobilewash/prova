@@ -1,4 +1,5 @@
 import { bareTextTags } from "./bareTextTags";
+import { splitVariant } from "./variantMark";
 import { legendVocabulary, prefixlessVocabulary, tagsFromSymbols } from "./symbolTagging";
 import { SHEET_REFERENCE, tagSymbols, type SymbolShape, type TextForSymbol } from "./tagSymbols";
 import { propagateTypes } from "./typePropagation";
@@ -214,7 +215,8 @@ export function planTextTagByRun(input: {
   // through here as a wall tag and typed a 91 ft brick wall A3.
   const bare = bareTextTags({ text, vocabulary: new Set(vocabulary.keys()), symbols, walls, feetPerUnit, widthPt }).filter((b) => !callout(b));
   const bareTags: WallTypeTag[] = bare.map((b) => ({
-    name: vocabulary.get(b.text.toUpperCase()) ?? b.text.toUpperCase(),
+    // The legend's spelling of the code, with any printed variant mark kept ("C6*").
+    name: (({ code, mark }) => `${vocabulary.get(code.toUpperCase()) ?? code.toUpperCase()}${mark}`)(splitVariant(b.text)),
     x: b.x,
     y: b.y,
   }));
