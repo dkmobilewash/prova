@@ -183,6 +183,9 @@ async function rawCandidates(pdf: string, page: number, feetPerUnit: number): Pr
 
 const norm = (s: string | null | undefined) => (s ?? "").toUpperCase().replace(/[^A-Z0-9#]+/g, " ").trim();
 
+/** Key wall inside a merged region, feet, below which the merge is one space split by a virtual line. */
+const LEAK_WALL_FEET = 3;
+
 /** `keySf` null = a tags-only key: the room's existence and place are known, its size is not. */
 type Row = { id: string; keySf: number | null; gotSf: number | null; why?: "OPEN" | "MERGED" | "MERGED-NO-WALL" };
 
@@ -193,9 +196,9 @@ function score(
   merged: { name: string; number: string | null; x: number; y: number }[],
   key: Key,
   join: "number" | "name",
-  /** When the key knows its walls: a merged pair with NO wall between the two
-   *  tags is one physical space the model split with a virtual boundary, which
-   *  no wall-based detector can separate. Reported apart from a real leak. */
+  /** When the key knows its walls: a merged region with no key wall inside it
+   *  is one physical space the model split with a virtual boundary, which no
+   *  wall-based detector can separate. Reported apart from a real leak. */
   keyWalls: FoundWall[] = [],
 ): Row[] {
   const keyOf = (t: { name: string; number: string | null }) =>
@@ -232,21 +235,34 @@ function score(
     seen.add(k);
     rows.push({ id: k.number ?? `#${key.rooms.indexOf(k)}`, keySf: k.areaSf, gotSf: null, why: "OPEN" });
   }
-  const crosses = (p: { x: number; y: number }, q: { x: number; y: number }, w: FoundWall) => {
-    const ccw = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number) => (cy - ay) * (bx - ax) > (by - ay) * (cx - ax);
-    return (
-      ccw(p.x, p.y, w.x1, w.y1, w.x2, w.y2) !== ccw(q.x, q.y, w.x1, w.y1, w.x2, w.y2) &&
-      ccw(p.x, p.y, q.x, q.y, w.x1, w.y1) !== ccw(p.x, p.y, q.x, q.y, w.x2, w.y2)
-    );
+  // ── A LEAK IS A WALL INSIDE THE MERGED REGION, NOT A WALL ACROSS THE TAG-TO-TAG LINE ──
+  // The old test asked whether the straight line between a tag and its nearest
+  // merged partner crossed a key wall. In the Tallinn flats that line clipped a
+  // 1.5 ft stub between a hall and the living room it opens into — one region,
+  // no wall inside it — and called it a leak. What makes a merge a leak is a key
+  // wall standing INSIDE the region the detector found: one the walls should
+  // have closed against. A region's polygon is traced inside the wall faces, so
+  // a bounding wall's centreline sits outside it; only a wall the region spills
+  // past has its middle within. Below `LEAK_WALL_FEET` of such wall, it is a
+  // stub or a jamb, not a boundary.
+  // Feet of key wall whose middle lies inside the region. The region carries its
+  // own scale: its square feet over its area in page units is feet-per-unit squared.
+  const wallFeetInside = (r: RoomFromWalls) => {
+    let twice = 0;
+    for (let i = 0, j = r.xs.length - 1; i < r.xs.length; j = i, i += 1) twice += r.xs[j] * r.ys[i] - r.xs[i] * r.ys[j];
+    const units = Math.abs(twice) / 2;
+    if (units === 0) return 0;
+    const fpu = Math.sqrt(r.squareFeet / units);
+    return keyWalls.reduce((sum, w) => (inside({ x: (w.x1 + w.x2) / 2, y: (w.y1 + w.y2) / 2 }, r) ? sum + Math.hypot(w.x2 - w.x1, w.y2 - w.y1) * fpu : sum), 0);
   };
   for (const t of merged) {
     const k = keyOf(t);
     if (!k || seen.has(k)) continue;
     seen.add(k);
-    // the nearest other merged tag is its partner in the shared region
-    const partner = merged.filter((u) => u !== t).sort((a, b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0];
-    const wallBetween = partner ? keyWalls.some((w) => crosses(t, partner, w)) : true;
-    rows.push({ id: k.number ?? `#${key.rooms.indexOf(k)}`, keySf: k.areaSf, gotSf: null, why: keyWalls.length && !wallBetween ? "MERGED-NO-WALL" : "MERGED" });
+    const region = rooms.find((r) => inside(t, r)) ?? null;
+    const feet = region === null ? 0 : wallFeetInside(region);
+    if (process.env.ROOM_MERGE_DEBUG === "1") console.log(`   merge ${k.number ?? k.name}: region ${region ? Math.round(region.squareFeet) : "—"} sf, key wall inside ${feet.toFixed(1)} ft`);
+    rows.push({ id: k.number ?? `#${key.rooms.indexOf(k)}`, keySf: k.areaSf, gotSf: null, why: keyWalls.length && feet < LEAK_WALL_FEET ? "MERGED-NO-WALL" : "MERGED" });
   }
   const errs = rows.filter((r) => r.gotSf !== null && r.keySf !== null).map((r) => Math.abs((r.gotSf as number) - (r.keySf as number)) / (r.keySf as number));
   errs.sort((a, b) => a - b);
