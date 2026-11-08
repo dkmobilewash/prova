@@ -50,6 +50,7 @@ import { TOOL_KEYS } from "@/lib/takeoff-plan-view";
 import { TakeoffExportButtons } from "@/components/TakeoffExportButtons";
 import { TakeoffWallReview } from "@/components/TakeoffWallReview";
 import { TakeoffReviewQueue } from "@/components/TakeoffReviewQueue";
+import type { SpecSay } from "@/lib/specs/specTradeFacts";
 import { focusOf, legendMissing, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { reviewWall } from "@/lib/actions";
@@ -110,6 +111,8 @@ type Props = {
   reviewLegend?: LegendState;
   /** Each type's heights by part of the building, to pick from (`loadReviewQueue`). */
   reviewHeightChoices?: Record<string, CodeHeight[]>;
+  /** What the spec says that changes the price, per type code (`loadSpecSaysByCode`), shown beside a group being typed. */
+  reviewSpecSays?: Record<string, SpecSay[]>;
   /** The codes a queued group can be given: the legend's, else the company's library. */
   reviewCodes?: string[];
   /** Whether this server can label at all (`labellingAllowed`). False on every
@@ -223,6 +226,7 @@ export function TakeoffWorkspace({
   reviewHeights = {},
   reviewLegend = "read",
   reviewHeightChoices = {},
+  reviewSpecSays = {},
   reviewCodes = [],
   labellingAvailable = false,
   finderVersion = "unknown",
@@ -1612,6 +1616,7 @@ export function TakeoffWorkspace({
                 heights={reviewHeights}
                 legend={reviewLegend}
                 heightChoices={reviewHeightChoices}
+                specSays={reviewSpecSays}
                 planSet={planSet}
                 onShow={onQueueShow}
                 onLeft={setQueueLeft}

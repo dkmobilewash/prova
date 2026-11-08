@@ -116,6 +116,8 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: for each named room still open on the training sheets, reports the wall extension that closes it and what is drawn along that gap. Skips without its env and asserts rooms were found",
     "zzReviewSim.eval.ts":
       "calls no model: plays the labels as a reviewer stepping through runs in review order and counts runs looked at to reach +10% of the key. Skips without its env and asserts sheets were read",
+    "drawingSpecsScore.eval.ts":
+      "calls no model: scores the drawing-notes finder against a hand key of every Division 09/07 requirement a person read off named REAL sets (DRAWING_SPECS_KEY, kept outside the repo with the plans) — found, missed and false per set. Guarded by a skip on its inputs plus a non-zero key-length assertion, so an empty key cannot score a clean pass",
     "drawingSpecs.eval.ts":
       "calls no model: lists every Division 09/07 requirement the drawing-notes finder keeps on named REAL plan sets under REAL_PLAN_DIR (DRAWING_SPECS_SETS), from the text layer alone, for a person to judge note by note; writes only to DRAWING_SPECS_OUT, outside the repo. Guarded by a skip on all three plus a non-zero page assertion, so a mistyped folder fails rather than reporting a clean nothing",
     "scaleAudit.eval.ts":
