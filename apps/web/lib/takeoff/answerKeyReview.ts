@@ -388,6 +388,22 @@ export function candidatesInBox(
 }
 
 /**
+ * ── A SWEEP DECIDES WHAT IS UNDECIDED, AND NEVER REVERSES A DECISION ──
+ *
+ * The box is for clearing a field of hatching or a schedule off the sheet, and
+ * it rejected EVERY candidate whose middle it caught, decided or not. Hutto A102
+ * (Chrome, 2026-11-08): after "Restored 450", two drags — a pan, by the look of
+ * it, since a bare drag is how every other viewer moves — rejected 13 accepted
+ * walls, ~272 ft, and the save wrote them as not-a-wall. Nobody had changed a
+ * wall decision. A decided wall is reversed by pressing R on it, one at a time,
+ * on purpose; the sweep only answers the candidates still waiting.
+ */
+export function sweepVerdict(state: ReviewState, ids: readonly string[], verdict: "wall" | "not-a-wall"): { state: ReviewState; changed: number; kept: number } {
+  const open = ids.filter((id) => state.verdicts[id] === "unreviewed");
+  return { state: open.length === 0 ? state : setVerdict(state, open, verdict), changed: open.length, kept: ids.length - open.length };
+}
+
+/**
  * The key, as it would be saved right now.
  *
  * ── UNREVIEWED IS NOT ACCEPTED ──

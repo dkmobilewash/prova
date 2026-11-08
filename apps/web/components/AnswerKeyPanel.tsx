@@ -950,7 +950,7 @@ export function AnswerKeyPanel({
             <p>
               <b>A</b> wall · <b>R</b> not a wall · <b>U</b> not sure · <b>S</b> split ·{" "}
               <b>N</b> next · <b>H</b> hide overlays · <b>T</b> trace a missed wall ·
-              drag a box to reject many · shift-drag to accept many
+              drag a box to reject the undecided · shift-drag to accept them
             </p>
           </div>
         ) : null}
@@ -1290,7 +1290,7 @@ export function AnswerKeyPanel({
         <span className="font-semibold text-ink-body">R</span> not a wall ·{" "}
         <span className="font-semibold text-ink-body">N</span> next ·{" "}
         <span className="font-semibold text-ink-body">H</span> hide overlays · drag a box on the
-        sheet to decide many at once
+        sheet to decide the undecided at once
       </p>
 
       <ul className="flex flex-col gap-1">
