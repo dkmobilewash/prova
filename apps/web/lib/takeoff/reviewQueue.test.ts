@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { QUEUE_PART, focusOf, heightFor, legendMissing, levelHeightFor, splitByLevel, heightItem, orderedCodes, reviewQueue, suggestType, typeItems, wallItem, windowsItem, type ReviewItem } from "./reviewQueue";
+import { QUEUE_PART, focusOf, heightFor, legendMissing, levelHeightFor, splitByLevel, splitByRoof, heightItem, orderedCodes, reviewQueue, suggestType, typeItems, wallItem, windowsItem, type ReviewItem } from "./reviewQueue";
 import type { WallGroup } from "./wallGroups";
 import { propagatedTag } from "./planTextTags";
 
@@ -100,6 +100,30 @@ describe("the drawing's type is pre-filled with its source (suggest, don't post)
     expect(orderedCodes(["IW-1", "IW-2", "IW-4"], "IW-4")).toEqual(["IW-4", "IW-1", "IW-2"]);
     expect(orderedCodes(["IW-1", "IW-2"], "C6")).toEqual(["C6", "IW-1", "IW-2"]);
     expect(orderedCodes(["IW-1", "IW-2"], null)).toEqual(["IW-1", "IW-2"]);
+  });
+});
+
+describe("a group under two roofs is one item per roof (roof plan seams, `roofParts.ts`)", () => {
+  const run = (x: number) => ({ x1: x, y1: 0.1, x2: x + 0.1, y2: 0.1 });
+  const typed = (code: string | null) => ({ kind: "type", key: "type:46:g", pageNumber: 46, sheet: "A-101", inches: 5, runs: [run(0.1), run(0.3), run(0.6)], feet: 30, suggested: code === null ? null : { code, drawn: true }, ceiling: null }) as unknown as Extract<ReviewItem, { kind: "type" }>;
+  const heights = { pitched: { feet: 16 + 8 / 12, from: "roof plan A-201: standing seams" }, flat: { feet: 12 + 4 / 12, from: "roof plan A-201: no seams" } };
+  const reads = () => [true, false, null];
+
+  it("splits a to-structure type into pitched, flat and unplaced, each pitched or flat offered its roof's height", () => {
+    const got = splitByRoof(typed("A"), reads, heights, ["A"], 100);
+    expect(got.map((i) => i.kind === "type" && [i.key, i.level?.label ?? null, i.runs.length])).toEqual([
+      ["type:46:g:Rpitched", "under the pitched roof", 1],
+      ["type:46:g:Rflat", "under the flat roof", 1],
+      ["type:46:g:R-", null, 1],
+    ]);
+    expect(levelHeightFor("A", (got[0] as { level?: Parameters<typeof levelHeightFor>[1] }).level)?.feet).toBeCloseTo(16.667, 2);
+  });
+
+  it("leaves alone a type that does not run to the structure, a group already split by level, and a group no room places", () => {
+    expect(splitByRoof(typed("K"), reads, heights, ["A"], 100)).toEqual([typed("K")]);
+    const byLevel = { ...typed("A"), level: { label: "level 1", height: null, codes: ["A"] } };
+    expect(splitByRoof(byLevel, reads, heights, ["A"], 100)).toEqual([byLevel]);
+    expect(splitByRoof(typed("A"), () => [null, null, null], heights, ["A"], 100)).toEqual([typed("A")]);
   });
 });
 
