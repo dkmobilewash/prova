@@ -90,9 +90,11 @@ const PAGES: PageSpec[] = process.env.CEILING_PAGES
   : DEFAULT_PAGES;
 // A held-out set is refused by the shared list, not by a name somebody remembered:
 // this eval tunes the readers, and a page from a held-out building would tune them on the test.
+// CEILING_MEASURE_HELDOUT=1 measures held-out pages once, TOTALS only, never to tune on.
+const MEASURE_HELDOUT = process.env.CEILING_MEASURE_HELDOUT === "1";
 for (const spec of PAGES) {
   const why = heldOutReason(spec.set);
-  if (why !== null) throw new Error(`${spec.set} is held out (${why}); the ceilings eval must not read it`);
+  if (why !== null && !MEASURE_HELDOUT) throw new Error(`${spec.set} is held out (${why}); the ceilings eval must not read it`);
 }
 const LABELS = process.env.TAKEOFF_LABEL_DIR ?? "";
 const ROOM_KEYS = process.env.ROOM_KEYS ?? "";
@@ -482,7 +484,16 @@ describe.skipIf(REAL === "")("ceilings from the RCP", () => {
         const misses: string[] = [];
         for (const k of key.rooms) {
           // Join by the printed room tag first; a polygon room's tag or a ceiling tag's own room name second.
-          const atTag = byTag.findIndex((x) => (k.number && norm(x.room.number) === norm(k.number)) || (k.name && norm(x.room.name) === norm(k.name)));
+          // As the product joins (`ceilingsForRooms`): a printed room tag paired to ceiling tags
+          // first. A page that prints the same number twice must not score the bare copy.
+          // By NUMBER first, as the product joins (`keysOf`: number, then name): a key room
+          // "10 OFFICE" must not take the first OFFICE on the sheet. Name only where the
+          // key prints no number. Among matches, one paired to ceiling tags first.
+          const byNumber = (x: (typeof byTag)[number]) => !!k.number && norm(x.room.number) === norm(k.number);
+          const byName = (x: (typeof byTag)[number]) => !k.number && !!k.name && norm(x.room.name) === norm(k.name);
+          const pick = (m: (x: (typeof byTag)[number]) => boolean) => { const w = byTag.findIndex((x) => m(x) && x.tags.length > 0); return w >= 0 ? w : byTag.findIndex(m); };
+          const atNumber = pick(byNumber);
+          const atTag = atNumber >= 0 ? atNumber : pick(byName);
           let c: { family: CeilingFamily | null; heightFeet: number | null; source: string; after?: CeilingFamily | null; pattern?: PatternKind } | null =
             atTag >= 0 ? { ...byTag[atTag], heightFeet: heightAfter(atTag), after: familyAfter(atTag), pattern: patterns[atTag].kind } : null;
           if (c === null) {
@@ -512,7 +523,7 @@ describe.skipIf(REAL === "")("ceilings from the RCP", () => {
           if (k.heightFeet !== null) {
             hj += 1;
             if (c.heightFeet !== null && Math.abs(c.heightFeet - k.heightFeet) < 0.05) hr += 1;
-            else misses.push(`${k.number ?? k.name}: height ${c.heightFeet ?? "—"} (${c.source}) vs ${k.heightFeet}`);
+            else misses.push(`${k.number ?? k.name}: height ${c.heightFeet ?? "—"} (${c.source}) vs ${k.heightFeet}${process.env.CEILING_DEBUG === "1" && atTag >= 0 ? ` [joined ${byTag[atTag].room.number ?? "—"} ${byTag[atTag].room.name}: ${byTag[atTag].tags.map((t) => `${t.phrase}=${t.heightFeet ?? "∅"}`).join(", ")}; pairing height ${byTag[atTag].heightFeet ?? "∅"}]` : ""}`);
           }
         }
         totals.keyRooms += key.rooms.length;

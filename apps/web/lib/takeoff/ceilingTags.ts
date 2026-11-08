@@ -510,6 +510,31 @@ export function pairTagsToRoomTags(
     }
     if (best !== null) best.own.push(t);
   }
+  // ── ONE HEIGHT MARK PER ROOM WHEN THEY ARE THE SAME MARK ──
+  // MHK prints a "9'-0"" in each of four toilets in a row; nearest-tag gave
+  // three to 115A and none to 115B–D. Where one room collected several
+  // identical height-only marks, the nearest stays and each extra goes to the
+  // nearest room tag, within reach, that has no height. Two DIFFERENT heights
+  // in one room are a ceiling and its soffit (Joplin) and stay together.
+  const heightOnly = (t: CeilingTag) => t.heightFeet !== null && t.family === null && t.code === null && t.roomName === null;
+  const hasHeight = (x: (typeof rooms)[number]) => x.own.some((t) => t.heightFeet !== null);
+  for (const x of rooms) {
+    const marks = x.own.filter(heightOnly);
+    const sameValue = marks.length > 1 && marks.every((m) => Math.abs(m.heightFeet! - marks[0]!.heightFeet!) < 0.01);
+    if (!sameValue) continue;
+    const byDistance = [...marks].sort((a, b) => Math.hypot(a.x - x.u, a.y - x.v) - Math.hypot(b.x - x.u, b.y - x.v));
+    for (const extra of byDistance.slice(1)) {
+      let to: (typeof rooms)[number] | null = null, toD = maxUnits;
+      for (const y of rooms) {
+        if (y === x || hasHeight(y)) continue;
+        const d = Math.hypot(y.u - extra.x, y.v - extra.y);
+        if (d <= toD) { to = y; toD = d; }
+      }
+      if (to === null) continue;
+      x.own.splice(x.own.indexOf(extra), 1);
+      to.own.push(extra);
+    }
+  }
   return rooms.map(({ r, own }) => {
     const heights = [...new Set(own.map((t) => t.heightFeet).filter((h): h is number => h !== null))];
     // A material that stays (E Street's `EXISTING GYPSUM BOARD CEILING TO REMAIN`) outranks a
