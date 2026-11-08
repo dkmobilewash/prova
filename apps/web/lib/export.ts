@@ -846,8 +846,10 @@ export const EXPORT_OMISSIONS: ExportOmission[] = [
       "file does not contain, and re-reading is what produces a current one. Omitted because " +
       "no dataset has been written, not because it would be meaningless. Nothing here is an " +
       "assertion about the bid: whether the bid carries a cost the section demands is the " +
-      "estimator's judgement about an estimate the model never saw.",
-    models: ["BidSpecSection", "BidSpecReading", "SubmittalSpecReading", "SubmittalProposal"],
+      "estimator's judgement about an estimate the model never saw. A whole spec book uploaded " +
+      "to a job (SpecBook) and each section's trade read (SpecTradeReading) are the same pair " +
+      "again — the book is a file this export does not carry, the read is re-made by reading.",
+    models: ["BidSpecSection", "BidSpecReading", "SubmittalSpecReading", "SubmittalProposal", "SpecBook", "SpecTradeReading"],
   },
   {
     key: "retainage-and-backcharges",

@@ -109,11 +109,23 @@ model BidSpecSection {
 
   readings  BidSpecReading[]
   submittalReadings SubmittalSpecReading[]
+  tradeReadings     SpecTradeReading[]
+
+  /// SET ONLY ON A SECTION FOUND IN A WHOLE SPEC BOOK (`lib/specs/specBookSections.ts`):
+  /// the book it came from and its pages there, 1-based and inclusive. The pages
+  /// are never copied out — a reader slices the book (`lib/specs/sectionBytes.ts`),
+  /// so `fileUrl` stays null and deleting the section deletes no file. Null on a
+  /// section uploaded by hand as its own PDF.
+  specBookId String?
+  specBook   SpecBook? @relation(fields: [specBookId], references: [id], onDelete: Cascade)
+  pageFrom   Int?
+  pageTo     Int?
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
   @@index([bidInvitationId, sectionNumber])
   @@index([jobId])
+  @@index([specBookId])
 }
 
 /// One read run over one section — immutable, append-only.
@@ -292,4 +304,50 @@ enum SubmittalProposalStatus {
   PROPOSED
   ACCEPTED
   DISMISSED
+}
+
+// ── A WHOLE SPEC BOOK, AND WHAT ITS TRADE SECTIONS SAY ──
+// A customer sends the project manual as one PDF, hundreds of pages, of which
+// this sub's work is in five or six sections. `SpecBook` is that file; the
+// sections found in it are ordinary `BidSpecSection` rows pointing back here with
+// their page range, so the cost reader, the submittal reader and the Specs page
+// all work on them unchanged. Stored under the job's plan-set path, so it shares
+// the plan set's size ceiling and its `local:` rule for confidential files.
+
+/// One uploaded spec book on a job. Cascades from Job, so it is never a RESTRICT
+/// child for the cleanup scripts.
+model SpecBook {
+  id       String  @id @default(cuid())
+  jobId    String
+  job      Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  fileUrl  String
+  fileName String?
+
+  sections BidSpecSection[]
+
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+}
+
+/// One structured read of one trade section (`packages/integrations/src/specTrade.ts`):
+/// studs, board, ratings, ceilings, finish levels, products and what changes the
+/// price — each with the sentence it came from. Immutable and append-only like
+/// `BidSpecReading`; the newest row is the section's read. Numbers are not in
+/// here as the model saw them: `lib/specs/specTradeFacts.ts` parses them from the
+/// printed words at read time.
+model SpecTradeReading {
+  id               String         @id @default(cuid())
+  bidSpecSectionId String
+  bidSpecSection   BidSpecSection @relation(fields: [bidSpecSectionId], references: [id], onDelete: Cascade)
+
+  facts         Json
+  readingReason String
+  pagesCharged  Int
+  model         String
+  promptVersion String
+
+  createdAt DateTime @default(now())
+
+  @@index([bidSpecSectionId, createdAt])
 }

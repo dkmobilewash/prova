@@ -67,18 +67,19 @@ describe("jobDocumentLinks", () => {
     jobDocumentLinks({ role, jobFunction }, "job-1").map((l) => l.label);
 
   it("offers each document only to whoever its page lets in", () => {
-    expect(labels("OWNER", null)).toEqual(["Proposal", "Certified payroll"]);
-    // proposal/page.tsx: MANAGE_ESTIMATING. certified-payroll/page.tsx: MANAGE_COMPLIANCE.
-    expect(labels("MEMBER", "ESTIMATOR")).toEqual(["Proposal"]);
+    expect(labels("OWNER", null)).toEqual(["Proposal", "Specs", "Certified payroll"]);
+    // proposal/page.tsx and specs/page.tsx: MANAGE_ESTIMATING. certified-payroll/page.tsx: MANAGE_COMPLIANCE.
+    expect(labels("MEMBER", "ESTIMATOR")).toEqual(["Proposal", "Specs"]);
     expect(labels("MEMBER", "PAYROLL_COMPLIANCE")).toEqual(["Certified payroll"]);
     // ACCOUNTING sees job money but cannot open the proposal page.
     expect(labels("MEMBER", "ACCOUNTING")).toEqual([]);
     expect(labels("MEMBER", "FIELD")).toEqual([]);
   });
 
-  it("links the job's own proposal and certified payroll", () => {
+  it("links the job's own proposal, specs and certified payroll", () => {
     expect(jobDocumentLinks({ role: "OWNER", jobFunction: null }, "job-1").map((l) => l.href)).toEqual([
       "/jobs/job-1/proposal",
+      "/jobs/job-1/specs",
       "/jobs/job-1/certified-payroll",
     ]);
   });

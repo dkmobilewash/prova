@@ -22,6 +22,7 @@ export async function loadJobSpecSections(jobId: string, companyId: string) {
       fileName: true,
       fileUrl: true,
       jobId: true,
+      specBookId: true,
       submittalReadings: {
         orderBy: { createdAt: "desc" },
         take: 1,
