@@ -188,6 +188,7 @@ import type { PriorLine } from "@/lib/takeoff/planCompare";
 import { PriorPlanBar, type PriorStatus } from "@/components/PriorPlanBar";
 import { type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
 import { sheetRooms, splitToWalls } from "@/lib/takeoff/sheetRooms";
+import { ROOM_BOUNDARY_LABEL, isRoomBoundary, snapToWallEnd, wallEnds } from "@/lib/takeoff/roomClose";
 
 /**
  * THE MEASURING SURFACE — a PDF page rendered to a canvas, with an SVG
@@ -908,6 +909,8 @@ export function TakeoffPlanViewer({
   const [renovationOnPage, setRenovationOnPage] = useState<{ page: number; marks: string[] } | null>(null);
   /** The Split area line being dragged, page-width units. */
   const [splitLine, setSplitLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  /** "Close room": the line being dragged, its ends already snapped to wall ends. */
+  const [closeLine, setCloseLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [symbolBox, setSymbolBox] = useState<SymbolBox | null>(null);
   const [symbols, setSymbols] = useState<{ page: number; matches: SymbolMatch[]; dropped: Set<number>; ms: number; busy: boolean; error: string | null; label?: string | null; tag?: string | null; choices?: SymbolBox[] } | null>(null);
   /** The boxed symbol as a template, kept so "Find on all sheets" lays the same one over the rest of the set. */
@@ -2459,6 +2462,19 @@ export function TakeoffPlanViewer({
       onSelect?.(null);
       return;
     }
+    // ── "CLOSE ROOM" DRAGS A LINE ACROSS A ROOM'S OPEN SIDE, END TO END ──
+    if (tool === "close") {
+      if (rooms === null || roomsOnPage !== pageNumber) {
+        setFindError(say("Find the rooms on this sheet first, then drag a line across an open room's open side."));
+        return;
+      }
+      const raw = pointAt(event);
+      if (!raw) return;
+      event.preventDefault();
+      const at = snapClose(raw);
+      setCloseLine({ x1: at.x, y1: at.y, x2: at.x, y2: at.y });
+      return;
+    }
     // ── "SPLIT AREA" DRAGS A LINE ACROSS A ROOM ──
     if (tool === "split") {
       if (rooms === null || roomsOnPage !== pageNumber) {
@@ -3466,8 +3482,78 @@ export function TakeoffPlanViewer({
    * room the finder left open. Pure and synchronous; no PDF is re-read.
    */
   const [roomCeilings, setRoomCeilings] = useState<Map<number, RoomCeiling> | null>(null);
-  async function onFindRooms() {
-    if (!pageSize || feetPerUnit === null) return;
+  /**
+   * ── THE CLOSE-ROOM LINES THIS BROWSER KNOWS ABOUT ──
+   * Read off the sheet's rows whenever they arrive, and patched the moment a
+   * line is saved or undone — the rows only catch up after the action's
+   * re-render, seconds later, and the rooms should not wait for them.
+   */
+  const boundariesRef = useRef<Map<string, { kind: string; xs: number[]; ys: number[] }>>(new Map());
+  const boundaryRowsKey = (sheet?.measurements ?? []).filter(isRoomBoundary).map((m) => m.id).join(",");
+  useEffect(() => {
+    boundariesRef.current = new Map((sheet?.measurements ?? []).filter(isRoomBoundary).map((m) => [m.id, { kind: m.kind, xs: m.xs, ys: m.ys }]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the boundary rows themselves
+  }, [boundaryRowsKey, sheet?.id]);
+  /** What the room step reads as drawn: every hand-drawn line, with the Close-room ones as this browser knows them. */
+  const drawnForRooms = () => [...(sheet?.measurements ?? []).filter((m) => !isRoomBoundary(m)), ...boundariesRef.current.values()];
+  /** A Close-room end, on the nearest wall end within 12 screen pixels. */
+  function snapClose(raw: { x: number; y: number }) {
+    const ends = wallEnds({ pairings: pairingsRef.current, runs: runsRef.current, drawn: drawnForRooms() });
+    return snapToWallEnd(raw, ends, 12 * onePx);
+  }
+  const findRoomsRef = useRef<() => Promise<RoomsFromWallsResult | null>>(async () => null);
+  /**
+   * ── SAVE THE LINE, FIND THE ROOMS AGAIN, AND SAY IF NOTHING CLOSED ──
+   * Saved like a hand-drawn line with no item (`ROOM_BOUNDARY_LABEL`), so it
+   * is on the job after a reload and Undo deletes it. A line that closed no
+   * room is kept — a room open on two sides needs two — and the screen says so.
+   */
+  async function closeRoomWith(line: { x1: number; y1: number; x2: number; y2: number }) {
+    if (!sheet) return;
+    const pageId = sheet.id;
+    const here = () => sheetIdRef.current === pageId;
+    const openBefore = rooms?.unplacedTags.length ?? 0;
+    const save = async () => {
+      const body = new FormData();
+      body.set("kind", "LINEAR");
+      body.set("pageId", pageId);
+      body.set("label", ROOM_BOUNDARY_LABEL);
+      body.set("points", JSON.stringify({ xs: [line.x1, line.x2], ys: [line.y1, line.y2] }));
+      return saveTakeoffMeasurement(jobId, body);
+    };
+    const refind = async () => (here() ? findRoomsRef.current() : null);
+    setFindError(null);
+    const saved = await save();
+    if (!saved.ok) return setFindError(saved.error);
+    let id = saved.value.id;
+    boundariesRef.current.set(id, { kind: "LINEAR", xs: [line.x1, line.x2], ys: [line.y1, line.y2] });
+    onUndoable?.({
+      label: "Close room",
+      inPlace: true,
+      undo: async () => {
+        const gone = await deleteTakeoffMeasurement(jobId, id);
+        if (gone.ok) {
+          boundariesRef.current.delete(id);
+          await refind();
+        }
+        return gone;
+      },
+      redo: async () => {
+        const again = await save();
+        if (!again.ok) return again;
+        id = again.value.id;
+        boundariesRef.current.set(id, { kind: "LINEAR", xs: [line.x1, line.x2], ys: [line.y1, line.y2] });
+        await refind();
+        return { ok: true };
+      },
+    });
+    const after = await refind();
+    if (after !== null && after.unplacedTags.length >= openBefore) {
+      setFindError("That line closed no room yet. Its ends must meet walls, and a room open on two sides needs a line on each.");
+    }
+  }
+  async function onFindRooms(): Promise<RoomsFromWallsResult | null> {
+    if (!pageSize || feetPerUnit === null) return null;
     // ── WALLS SHOWN FROM A STORED RUN HAVE NOT BEEN READ IN THIS BROWSER ──
     //
     // A sheet whose walls the whole-set run stored opens with them drawn, and
@@ -3490,7 +3576,7 @@ export function TakeoffPlanViewer({
     const result = sheetRooms({
       pairings: pairingsRef.current,
       runs: runsRef.current,
-      drawn: sheet?.measurements ?? [],
+      drawn: drawnForRooms(),
       segments: detected === null ? [] : detected.segments.map(inPageWidthUnits(detected.widthPt)),
       doorLeaves: openings?.page === pageNumber ? openings.result.doors.map((d) => ({ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y })) : [],
       splits: splitLinesFrom(exclusionRowsRef.current),
@@ -3547,7 +3633,9 @@ export function TakeoffPlanViewer({
     } catch {
       setRoomCeilings(new Map());
     }
+    return result;
   }
+  findRoomsRef.current = onFindRooms;
   /**
    * ── THE ROOM FINISH SCHEDULE, WHEREVER IN THE SET IT IS ──
    * glen-hazel's sits on A-105 while the plan is A-102, so every page's text is
@@ -4450,7 +4538,7 @@ export function TakeoffPlanViewer({
   const noticeTarget = panelOpen ? dockSlot : noticeSlot;
   /** The measuring tools need a scale; the rest do not. */
   function toolDisabled(id: ToolId): boolean {
-    return !calibration && (id === "linear" || id === "area" || id === "rect" || id === "cutout");
+    return !calibration && (id === "linear" || id === "area" || id === "rect" || id === "cutout" || id === "close");
   }
   // A tool key arrives through the workspace's `takeoff-shortcut` event, whose
   // listener is set up once; the ref is how it reaches this render's scale.
@@ -6225,6 +6313,14 @@ export function TakeoffPlanViewer({
                   if (raw) setSplitLine({ ...splitLine, x2: raw.x, y2: raw.y });
                   return;
                 }
+                if (closeLine !== null) {
+                  const raw = pointAt(event);
+                  if (raw) {
+                    const at = snapClose(raw);
+                    setCloseLine({ ...closeLine, x2: at.x, y2: at.y });
+                  }
+                  return;
+                }
                 if (keyBox !== null) {
                   const raw = pointAt(event);
                   if (raw) setKeyBox({ ...keyBox, x2: raw.x, y2: raw.y });
@@ -6245,6 +6341,13 @@ export function TakeoffPlanViewer({
               }}
               onPointerUp={(event) => {
                 rectDragRef.current = null;
+                if (closeLine !== null) {
+                  const line = closeLine;
+                  setCloseLine(null);
+                  if (Math.hypot(line.x2 - line.x1, line.y2 - line.y1) <= 0.002) return;
+                  void closeRoomWith(line);
+                  return;
+                }
                 if (splitLine !== null) {
                   const line = splitLine;
                   setSplitLine(null);
@@ -6974,6 +7077,27 @@ export function TakeoffPlanViewer({
                     onMouseLeave={() => setHoveredRoom(null)}
                   />
                 ))}
+              {/* ── AN OPEN ROOM SAYS SO WHERE ITS TAG IS ──
+                  A tag on no closed region: the room has no floor yet. Close room closes it. */}
+              {rooms !== null &&
+                roomsOnPage === pageNumber &&
+                !hiddenLayers.has("rooms") &&
+                rooms.unplacedTags.map((t, i) => {
+                  const at = t.numberAt ?? t;
+                  const word = `open room${t.name ? ` · ${t.name}` : ""}`;
+                  const size = 11 * onePx;
+                  return (
+                    <g key={`open-${i}`} data-takeoff="open-room" data-room-name={t.name} data-room-number={t.number ?? ""} pointerEvents="none">
+                      <rect x={at.x - size * 0.3} y={at.y - size * 1.9} width={word.length * size * 0.58 + size * 0.6} height={size * 1.4} rx={size * 0.3} fill="#fef3c7" stroke="#d97706" strokeWidth={STROKE_PX} vectorEffect="non-scaling-stroke" />
+                      <text x={at.x} y={at.y - size * 0.85} fontSize={size} fill="#92400e" fontWeight={600}>
+                        {word}
+                      </text>
+                    </g>
+                  );
+                })}
+              {closeLine !== null && (
+                <line data-takeoff="close-line" x1={closeLine.x1} y1={closeLine.y1} x2={closeLine.x2} y2={closeLine.y2} stroke="#d97706" strokeWidth={STROKE_PX * 2} vectorEffect="non-scaling-stroke" />
+              )}
 
               {draft.xs.length > 0 && (
                 <Shape

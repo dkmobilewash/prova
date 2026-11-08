@@ -1,5 +1,6 @@
 "use client";
 
+import { isRoomBoundary } from "@/lib/takeoff/roomClose";
 import { formatFeetInches } from "@/lib/feet-inches";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -740,7 +741,8 @@ export function TakeoffWorkspace({
    * asking the items would always answer zero.
    */
   const unassignedCount = useMemo(
-    () => sheets.reduce((n, sheet) => n + sheet.measurements.filter((m) => m.itemId === null).length, 0),
+    // A Close-room line is a boundary, not loose geometry waiting for an item: moving it onto one would bid it.
+    () => sheets.reduce((n, sheet) => n + sheet.measurements.filter((m) => m.itemId === null && !isRoomBoundary(m)).length, 0),
     [sheets],
   );
 
@@ -748,7 +750,7 @@ export function TakeoffWorkspace({
   const unassignedHere = useMemo(
     () =>
       (sheets.find((sheet) => sheet.pageNumber === page)?.measurements ?? [])
-        .filter((m) => m.itemId === null || m.itemId === undefined)
+        .filter((m) => (m.itemId === null || m.itemId === undefined) && !isRoomBoundary(m))
         .map((m) => m.id),
     [sheets, page],
   );
