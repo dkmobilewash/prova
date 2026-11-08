@@ -31,13 +31,15 @@ export default async function JobSpecsPage({ params }: { params: Promise<{ id: s
         jobId={job.id}
         books={book.books}
         hasLegend={book.hasLegend}
+        hasPlans={book.hasPlans}
         wallTypes={book.wallTypes}
         sections={book.sections.map((section) => ({
           id: section.id,
           sectionNumber: section.sectionNumber,
           title: section.title,
-          pages: section.pageFrom === null ? null : `${section.pageFrom}–${section.pageTo}`,
+          pages: section.pageFrom === null ? null : section.pageFrom === section.pageTo ? `${section.pageFrom}` : `${section.pageFrom}–${section.pageTo}`,
           fromBook: section.specBookId !== null,
+          fromDrawings: section.fromDrawings,
           reading: section.reading
             ? { id: section.reading.id, facts: section.reading.facts, on: formatCalendarDate(section.reading.on) }
             : null,
