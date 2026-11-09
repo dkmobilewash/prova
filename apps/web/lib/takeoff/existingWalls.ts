@@ -84,7 +84,8 @@ export const LEGEND_EXISTING = new RegExp(
   String.raw`^(?:${EXIST}(?:\s+[A-Z0-9"'/.\-]+){0,2}\s+(?:${WALL_WORD}|CONSTRUCTION)(?:\s+TO\s+REMAIN)?|(?:${EXIST}\s+)?(?:${WALL_WORD}|CONSTRUCTION)\s+TO\s+REMAIN)\.?$`,
   "i",
 );
-export const LEGEND_NEW = new RegExp(String.raw`^NEW(?:\s+[A-Z0-9"'/.\-]+){0,2}\s+(?:${WALL_WORD}|CONSTRUCTION)\.?$`, "i");
+// "NEW WALL TO BE PROVIDED" (Schroeder A1.01) and "… TO BE CONSTRUCTED" say the same as "NEW WALL".
+export const LEGEND_NEW = new RegExp(String.raw`^NEW(?:\s+[A-Z0-9"'/.\-]+){0,2}\s+(?:${WALL_WORD}|CONSTRUCTION)(?:\s+TO\s+BE\s+(?:PROVIDED|CONSTRUCTED|BUILT|INSTALLED))?\.?$`, "i");
 const DEMOLITION = /\b(?:DEMO(?:LISH(?:ED)?|LITION)?|REMOVED?|TO\s+BE\s+REMOVED)\b/i;
 
 /** A short label naming an existing wall beside it — and not a fixture. */
@@ -258,6 +259,34 @@ export function drawnWithPen(wall: WallCandidate, pen: Pen, segments: readonly S
   return pen.dashed ? bothFacesDashed(wall, segments, feetPerUnit) : true;
 }
 
+/** A paper-white fill is no fill: Schroeder's existing walls are outlines filled white. */
+export const WHITE_FILL = 0.95;
+/** How a wall is drawn: filled or not along most of its length, and its outline's grey. */
+export type WallStyle = { filled: boolean; gray: number; dashed: boolean };
+
+export function wallStyle(wall: WallCandidate, segments: readonly StrokeSegment[], feetPerUnit: number): WallStyle | null {
+  const faces = [...faceStrokes(wall, 1, segments, feetPerUnit), ...faceStrokes(wall, -1, segments, feetPerUnit)];
+  if (faces.length === 0) return null;
+  const filledEdges = faces.filter((s) => s.fill !== undefined && s.fill < WHITE_FILL);
+  const outline = faces.filter((s) => s.fill === undefined);
+  const grays = (outline.length > 0 ? outline : faces).map((s) => s.gray ?? 0).sort((a, b) => a - b);
+  return { filled: alongCover(wall, filledEdges) >= PEN_FACE_SHARE, gray: grays[Math.floor(grays.length / 2)]!, dashed: bothFacesDashed(wall, segments, feetPerUnit) };
+}
+
+/**
+ * The legend's two samples as a classifier, where they are drawn as DIFFERENT
+ * kinds: one filled and one not, or the same fill with outlines a grey apart.
+ * Null where the two cannot be told apart by kind — the old pen match stands.
+ */
+export function legendKinds(existing: Pen, fresh: Pen): ((style: WallStyle) => "existing" | "new" | null) | null {
+  const filled = (p: Pen) => p.fill !== undefined && p.fill < WHITE_FILL;
+  // Only the inversion the pen match cannot see: NEW drawn filled, EXISTING as a plain outline.
+  // An existing poché against new outlines (Murray A101, Bunkie A100) is the pen match's own case —
+  // it matches the poché's shade — and two unfilled samples are told apart by grey AND width there.
+  if (filled(fresh) && !filled(existing)) return (st) => (st.filled ? "new" : Math.abs(st.gray - existing.gray) <= PEN_GRAY_SLACK ? "existing" : null);
+  return null;
+}
+
 /** The pen most of the sheet's walls are drawn with, by face length. */
 export function modalWallPen(walls: readonly WallCandidate[], segments: readonly StrokeSegment[], feetPerUnit: number): Pen | null {
   const feet = new Map<string, { pen: Pen; n: number }>();
@@ -321,7 +350,22 @@ export function existingWalls(input: {
 
   // ── 2. THE LEGEND'S OWN PEN ──
   const pens = legendPens(rows, input.pageSegments ?? segments, widthPt);
-  if (pens.existing !== null) {
+  // ── 2a. BOTH ROWS, DRAWN AS DIFFERENT KINDS: THE SHEET'S OWN LEGEND DECIDES ──
+  // Schroeder A1.01 draws NEW walls grey-filled and EXISTING walls as plain
+  // outlines — the opposite of "grey is existing". Its swatches are drawn at
+  // another pen width and fill shade than its plan (0.48 pt and 0.75 in the
+  // legend, 0.24 pt and 0.50 on the walls), so what is matched is the KIND of
+  // drawing: filled or not, then the outline's grey. A wall drawn like the new
+  // sample stays; one drawn like the existing sample is set aside.
+  const kinds = pens.existing !== null && pens.fresh !== null ? legendKinds(pens.existing.pen, pens.fresh.pen) : null;
+  if (kinds !== null && pens.existing !== null) {
+    const row = pens.existing.row;
+    for (const w of walls) {
+      if (found.has(w)) continue;
+      const style = wallStyle(w, segments, feetPerUnit);
+      if (style !== null && kinds(style) === "existing") found.set(w, { wall: w, route: "legend", why: `drawn like the legend's "${row}" sample (an outline, grey ${style.gray.toFixed(2)}), not its filled "${pens.fresh!.row}" sample` });
+    }
+  } else if (pens.existing !== null) {
     const other = pens.fresh?.pen ?? modalWallPen(walls, segments, feetPerUnit);
     const distinct = other === null || !samePen(pens.existing.pen, other);
     if (distinct) {
