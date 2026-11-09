@@ -338,7 +338,14 @@ export async function detectWallsForCalibration(
               newRuns: offered.offeredRuns,
               feetPerUnit: target.feetPerUnit,
             });
-            if (prior.lines !== null) offered = offer({ lines: prior.lines, sheet: sheetName(pairings.sheets, pairing.demoPage) });
+            const sheet = sheetName(pairings.sheets, pairing.demoPage);
+            if (prior.lines !== null) offered = offer({ lines: prior.lines, sheet });
+            // Kept for the screen, which otherwise never hears what was set aside (`PRIOR_PLAN_READ`).
+            const aside = prior.lines === null ? [] : offered.setAsideLines.filter((l) => l.kind === "on-prior-plan");
+            const { PRIOR_PLAN_READ } = await import("./priorPlanLoad");
+            const value = { demoPage: pairing.demoPage, sheet, n: aside.length, feet: aside.reduce((sum, l) => sum + l.lengthFeet, 0), why: prior.lines === null ? prior.why : null };
+            const where = { planId_pageNumber_kind: { planId: target.planId, pageNumber: target.pageNumber, kind: PRIOR_PLAN_READ } };
+            await prisma.takeoffPlanTextRead.upsert({ where, create: { planId: target.planId, pageNumber: target.pageNumber, kind: PRIOR_PLAN_READ, value }, update: { value, computedAt: new Date() } });
           }
         }
       } catch (error) {
