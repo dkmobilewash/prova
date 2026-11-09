@@ -1,4 +1,4 @@
-import { ensureSheetNames, pairingsForPlan } from "./priorPlanLoad";
+import { ensureSheetNames, pairingsForPlan, storedPriorsOf } from "./priorPlanLoad";
 import { storedGeneralHeight } from "./levelReads";
 import { openingsFromJson } from "@/lib/wall-assemblies";
 import { openingThresholdSqFt } from "@/lib/businessScope";
@@ -662,7 +662,7 @@ export async function loadTakeoffWorkspace(
   // or there is nothing to pair by (`ensureSheetNames`). Never fails the page.
   if (roomFinder?.planCompareOn) await ensureSheetNames(plan.id, company.id).catch((err) => console.error("[plan-compare] sheet names", err));
   const planCompare = roomFinder?.planCompareOn
-    ? await pairingsForPlan(plan.id).then((p) => ({ pairs: Object.fromEntries(p.byPage), sheets: p.sheets }))
+    ? await pairingsForPlan(plan.id).then(async (p) => ({ pairs: Object.fromEntries(p.byPage), sheets: p.sheets, stored: await storedPriorsOf(plan.id) }))
     : null;
   // The door schedule rows the ingest read, newest per page, for the doors
   // panel's join — only for a company whose switch is on.

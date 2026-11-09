@@ -248,6 +248,28 @@ export default async function JobTakeoffPage({
           scale, nothing below can be measured. The job stepper's Plans and
           Scale steps land here. */}
       {isEstimateStage && <PlanSetScales jobId={job.id} planId={plan.id} rows={planSetFromLoaded(loaded)} reading={sheetRows.length === 0} />}
+      {/* ── A RENOVATION SET, AND THE SWITCH THAT HANDLES IT IS OFF ──
+          Walk, 2026-11-08 (Green Bay and E Street, plan reading off): nothing named a
+          sheet, nothing paired a demolition plan, and the proposal priced existing walls
+          while its own exclusions left them out. The free pass already marks the pages
+          that show existing work, with no model; plan comparison, which names the sheets
+          and sets existing walls aside, is off until an owner finds it in Settings. */}
+      {isEstimateStage &&
+        (await (async () => {
+          const on = (await prisma.company.findUnique({ where: { id: company.id }, select: { planCompareOn: true } }))?.planCompareOn === true;
+          if (on) return null;
+          const sheets = await prisma.planSheetText.count({ where: { planId: plan.id, renovationMarks: { isEmpty: false } } });
+          if (sheets === 0) return null;
+          return (
+            <p className="rounded-md border border-line-card bg-tag-amber px-3 py-2 text-sm text-tag-amber-ink" data-takeoff="renovation-compare-offer">
+              {sheets} sheet{sheets === 1 ? "" : "s"} in this set show existing work. Turn on <b>Compare renovation sheets with their demolition plan</b> so each
+              new floor plan is paired with its demolition plan and the walls it keeps are set aside as existing to remain — it uses no AI.{" "}
+              <a href="/settings?tab=estimating#plan-compare" className="underline">
+                Settings → Estimating (owner)
+              </a>
+            </p>
+          );
+        })())}
 
       {/* ── THE DRAWING FIRST, 2026-10-16 ──
           It used to be LAST, under the revision form, the ingest panel, the
@@ -356,6 +378,10 @@ export default async function JobTakeoffPage({
           planId={plan.id}
           existing={await latestIngestFor(plan.id, { not: ["WALLS", "RASTER", "WALL_LEGEND"] })}
           scheduleSheetCount={scheduleSheetCount}
+          reading={await (async () => {
+            const gate = await aiGate(company.id, "PLAN_INGESTION");
+            return gate.ok ? { on: true, why: null } : { on: false, why: gate.error };
+          })()}
           legend={{
             on: (await aiGate(company.id, "PLAN_TEXT_READ")).ok,
             reviewHref: `/jobs/${job.id}/takeoff/legend`,
