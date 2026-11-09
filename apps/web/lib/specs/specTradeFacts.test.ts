@@ -106,7 +106,7 @@ describe("what the spec says that changes a wall type's price", () => {
   it("a rated wall gets Type X; every board wall abuse board and Level 5 where they apply; studs heavier than 25 ga and deflection track, with the legend's lighter gauge said", () => {
     const says = specSays(['3 5/8" 25 GA. MTL. STUDS @ 16" O.C.', '5/8" TYPE X GYP. BD. EACH SIDE', "1 HR"], drawn);
     expect(specSaysLine(says)).toBe(
-      "Spec says: Type X board (09 21 16); abuse-resistant board at corridors (09 21 16); Level 5 finish at the lobby (09 21 16); 20 ga studs minimum, the legend says 25 ga (09 22 16, sheet A100); deflection track (09 22 16, sheet A100)",
+      "Spec says: Type X board (09 21 16); abuse-resistant board at corridors (09 21 16); Level 5 finish at the lobby (09 21 16); 20 ga studs, the legend says 25 ga (09 22 16, sheet A100); deflection track (09 22 16, sheet A100)",
     );
   });
 
@@ -114,7 +114,7 @@ describe("what the spec says that changes a wall type's price", () => {
     expect(specSays(['3 5/8" 20 GA. MTL. STUDS @ 16" O.C.', '5/8" GYP. BD. EACH SIDE'], drawn).map((s) => s.text)).toEqual([
       "abuse-resistant board at corridors",
       "Level 5 finish at the lobby",
-      "20 ga studs minimum",
+      "20 ga studs",
       "deflection track",
     ]);
     expect(specSays(["8\" CMU"], drawn)).toEqual([]);
