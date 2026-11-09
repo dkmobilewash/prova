@@ -37,7 +37,7 @@ const field =
  * bid-creation stepper (`/jobs/new/[jobId]/items`), not straight to the
  * job's own page. See `BidWizardSteps` for why.
  */
-export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
+export function NewJobForm({ contacts, then }: { contacts: GcOption[]; then?: "plans" }) {
   const [isNewContact, setIsNewContact] = useState(contacts.length === 0);
 
   return (
@@ -51,6 +51,8 @@ export function NewJobForm({ contacts }: { contacts: GcOption[] }) {
           formData.delete("contactName");
           formData.delete("contactEmail");
         }
+        // Started from "New job": after the job is made, straight to its plan upload.
+        if (then) formData.set("then", then);
         return createJob(formData);
       }}
       className="flex flex-col gap-4"

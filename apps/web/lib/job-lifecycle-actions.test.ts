@@ -193,6 +193,36 @@ beforeEach(() => {
   context.jobFunction = null;
 });
 
+/* --------------------------------------------- "New job": straight to the plans */
+
+describe("createJob from the New job button (2026-11-08)", () => {
+  const start = () => {
+    const fd = new FormData();
+    fd.set("jobName", "Riverbend Clinic");
+    fd.set("contactId", "con_turner");
+    fd.set("then", "plans");
+    return fd;
+  };
+
+  it("lands on the job's Takeoff tab, its plan upload, for someone that tab lets in", async () => {
+    await expect(createJob(start())).rejects.toThrow(/NEXT_REDIRECT/);
+    expect(redirects.at(-1)).toBe(`/jobs/${db.jobs.at(-1)!.id}/takeoff`);
+  });
+
+  it("keeps the scope-items step for someone the Takeoff tab would refuse, and without the flag", async () => {
+    context.role = "MEMBER";
+    context.jobFunction = "FIELD";
+    await expect(createJob(start())).rejects.toThrow(/NEXT_REDIRECT/);
+    expect(redirects.at(-1)).toBe(`/jobs/new/${db.jobs.at(-1)!.id}/items`);
+    context.role = "OWNER";
+    context.jobFunction = null;
+    const plain = start();
+    plain.delete("then");
+    await expect(createJob(plain)).rejects.toThrow(/NEXT_REDIRECT/);
+    expect(redirects.at(-1)).toBe(`/jobs/new/${db.jobs.at(-1)!.id}/items`);
+  });
+});
+
 /* ------------------------------------------------------- FIX 2: the GC picker */
 
 describe("createJob no longer mints a duplicate GC on every job", () => {
