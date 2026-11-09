@@ -200,6 +200,7 @@ export type ToolName =
   | "wall_schedule"
   | "takeoff_quantities"
   | "takeoff_review"
+  | "spec_requirements"
   | "bid_levelling"
   | "bid_compliance"
   | "bid_alternates"
@@ -955,6 +956,24 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "What is left in a job's takeoff review queue, the one the job's Next button counts: wall groups to type (with the type the drawing suggests and where that came from), wall types with no height, window counts to confirm, floor plans with no scale, and estimate lines with no cost. Answers 'what's left to review on Baker?' and 'is the Riverside takeoff done?'. Needs the job. Read out the counts and the suggestions as given, and point to `open` for the queue; the suggestions are suggestions to confirm, never answers. Reads only; it never confirms anything.",
     input_schema: { type: "object" as const, properties: { jobName: { type: "string", description: "The job, as the person named it." } } },
+  },
+  {
+    name: "spec_requirements",
+    // The job's Specs page, gated on MANAGE_ESTIMATING.
+    capability: "MANAGE_ESTIMATING",
+    description:
+      "What a job's specification requires, from the spec book's sections C-Stream read and the Division 09/07 notes printed on its drawings: board type and thickness, stud gauge and spacing, finish levels, ceilings, fire ratings, named products, and the items that change the price (Type X, abuse-resistant board, Level 5, heavier studs, deflection track). Answers 'what board does the spec call for on Baker?', 'does Hutto need Level 5 anywhere?', 'what stud gauge is specified?' and 'any spec items not in my estimate?'. Needs the job; topic narrows it: board, studs, finish_level, ceilings, fire_rating, products, price_items, not_in_estimate, or all. NAME THE SOURCE OF EVERY ITEM — a section ('09 21 16') or the sheet it is printed on ('09 22 16, sheet A100') — and quote it when asked why. Use lightestGaugeAllowed, widestSpacingAllowedInches and level5Anywhere as given; never work a gauge out yourself. For not_in_estimate, read out notOnEstimate and say how it was matched (howMatched): by the words on the estimate lines, so a line under another name is not seen, and nothing here knows what anything costs. If nothing has been read, say so and point to the job's Specs page. Reads only; it changes nothing.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        jobName: { type: "string", description: "The job, as the person named it." },
+        topic: {
+          type: "string",
+          enum: ["board", "studs", "finish_level", "ceilings", "fire_rating", "products", "price_items", "not_in_estimate", "all"],
+          description: "What the question is about; all when it is about the spec in general.",
+        },
+      },
+    },
   },
   {
     name: "bid_levelling",

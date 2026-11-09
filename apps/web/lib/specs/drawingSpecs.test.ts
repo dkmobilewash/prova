@@ -67,6 +67,22 @@ describe("which notes are this trade's requirements", () => {
     // A broad word in a numbered note is not enough (measured: false hits 11 -> 35).
     expect(isTradeRequirement("F. DIMENSIONS ARE TO STRUCTURAL GRIDLINE OR FACE OF STUD UNLESS NOTED OTHERWISE.")).toBe(false);
     expect(isTradeRequirement("12. DIMENSIONS SHALL BE VERIFIED BY LAYING OUT THE PARTITIONS.")).toBe(false);
+    // Another trade's systems, and a note explaining the drawings' symbols (measured false hits, 2026-11-08).
+    expect(isTradeRequirement("3. G.C. SHALL PROVIDE UL APPROVED FIRERESISTIVE PENETRATION SYSTEMS WHERE PLUMBING IS LOCATED IN A FIRE-RATED PARTITION ASSEMBLY.")).toBe(false);
+    expect(isTradeRequirement('THE NUMBER IN THE BOTTOM HALF OF THE PARTITION TYPE SYMBOL INDICATES THE 1 HOUR "FIRE RESISTIVE RATING" REQUIRED.')).toBe(false);
+    expect(isTradeRequirement("10. ATTACH ALL LIGHT FIXTURES TO THE CEILING GRID RUNNERS TO RESIST A HORIZONTAL FORCE.")).toBe(true);
+    // Round 3 (three new training sets): painting is another trade; a rated partition is this trade's
+    // assembly; a passing mention of a joist or a duct does not drop a requirement about deflection track or a ceiling.
+    expect(isTradeRequirement("1. CONTRACTOR SHALL PAINT ALL INTERIOR SURFACES INCLUDING DRYWALL AND PLASTER.")).toBe(false);
+    expect(isTradeRequirement("NEW GYP. BD. CEILING TYP. PROVIDE NEW PAINT FINISH. PER DETAIL")).toBe(false);
+    expect(isTradeRequirement("B. U.N.O., ALL GWB CEILINGS SHALL RECEIVE FLAT FINISH.")).toBe(false);
+    expect(isTradeRequirement("M. ALL GYPSUM BOARD CEILINGS TO BE TEXTURED AND PAINTED UNLESS NOTED OTHERWISE.")).toBe(true);
+    expect(isTradeRequirement("9. ALL RATED PARTITIONS SHALL BE IDENTIFIED ABOVE HUNG CEILINGS.")).toBe(true);
+    expect(isTradeRequirement("3. ALL SOUND RATED PARTITIONS SHALL EXTEND TO DECK AND BE SEALED WITH ACOUSTIC SEALANT, INCLUDING AT PIPING.")).toBe(true);
+    expect(isTradeRequirement('BOTTOM OF JOIST ABOVE. PROVIDE DEFLECTION TRACK AT TOP OF PARTITION - ALLOW 1" DEFLECTION')).toBe(true);
+    expect(isTradeRequirement("5. DO NOT USE DUCTS, PIPES AND CONDUIT TO SUPPORT CEILING SYSTEM. PROVIDE BRACING.")).toBe(true);
+    expect(isTradeRequirement("7. FIRE DAMPERS SHALL BE PROVIDED WHERE AIR DUCTS PENETRATE FIRE-RATED PARTITIONS.")).toBe(false);
+    expect(isTradeRequirement("14. PROVIDE FIRE RATED GLAZING IN PANELS LOCATED WITHIN A RATED WALL.")).toBe(false);
     // Siding and other trades' obligations.
     expect(isTradeRequirement("PRE-FINISHED METAL WALL PANEL, 22 GA. PAC-CLAD, ON 2 1/2\" METAL STUDS. INSTALL WITH CONCEALED CLIPS.")).toBe(false);
     expect(isTradeRequirement("PROVIDE 1/2\" COLD WATER SUPPLY CONCEALED IN PARTITION; STUB OUT AND PROVIDE SHUTOFF VALVE")).toBe(false);
@@ -104,7 +120,7 @@ describe("which notes are this trade's requirements", () => {
   });
 
   it("searches general, architectural and interiors sheets only", () => {
-    for (const n of ["G001", "A0.1", "A-101", "AD101", "I201", null]) expect(searchesSheet(n), String(n)).toBe(true);
+    for (const n of ["G001", "A0.1", "A-101", "AD101", "AX1.01", "AS1.01", "I201", null]) expect(searchesSheet(n), String(n)).toBe(true);
     for (const n of ["S0.1", "E1.0", "M201", "P301", "FP201", "C800", "T0.01"]) expect(searchesSheet(n), n).toBe(false);
   });
 });

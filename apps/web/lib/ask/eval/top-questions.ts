@@ -450,6 +450,7 @@ export const TOP_QUESTIONS: TopQuestion[] = [
   t("q-wall-quantities", "how much board and how many studs are we carrying on Riverside?", "wall_schedule", ESTIMATOR),
   t("q-takeoff-lf", "how many linear feet of S6A did we take off on Riverside?", "takeoff_quantities", ESTIMATOR),
   t("q-takeoff-left", "what's left to review on the Riverside takeoff?", "takeoff_review", ESTIMATOR),
+  t("q-spec-board", "what board does the spec call for on Riverside?", "spec_requirements", ESTIMATOR),
   t("q-quotes-comparable", "are those three framing quotes actually bidding the same scope?", "bid_levelling", ESTIMATOR),
   t("q-bid-responsive", "have we missed anything that would get our bid thrown out?", "bid_compliance", ESTIMATOR),
   t("q-alternates-in", "what are we at on Harbor lofts with the alternates in?", "bid_alternates", ESTIMATOR),
@@ -541,8 +542,9 @@ export const CENSUS_REFUSALS = 2;
  * -> 131 the same day: `start_pay_application`, `bill_retainage`, `prepare_lien_waiver`.
  * -> 133: `run_takeoff` and `post_takeoff_to_estimate`.
  * -> 136 on 2026-11-06: `takeoff_quantities`, `takeoff_review`, `set_wall_height`.
- * -> 137 the same day: `accept_sheet_suggestions`. */
-export const TOTAL_QUESTIONS = 137;
+ * -> 137 the same day: `accept_sheet_suggestions`.
+ * -> 138 on 2026-11-08: `spec_requirements`. */
+export const TOTAL_QUESTIONS = 138;
 
 /**
  * The routable ninety-seven, as eval cases, so the model half of the

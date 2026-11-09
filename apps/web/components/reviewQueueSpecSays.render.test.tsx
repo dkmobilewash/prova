@@ -36,7 +36,7 @@ const group = (key: string, suggested: string | null): ReviewItem => ({
 const says: Record<string, SpecSay[]> = {
   A1: [
     { text: "Type X board", source: "09 21 16", part: "board" },
-    { text: "20 ga studs minimum", source: "09 22 16, sheet A100", part: "framing" },
+    { text: "20 ga studs", source: "09 22 16, sheet A100", part: "framing" },
   ],
   "*": [{ text: "Level 5 finish at the lobby", source: "09 21 16, sheet G001", part: "board" }],
 };
@@ -71,7 +71,7 @@ function mount(items: ReviewItem[]): string {
 
 describe("the review queue's spec-says line", () => {
   it("names the suggested type and what the spec says about it, with each source", () => {
-    expect(mount([group("g1", "A1")])).toBe("A1 · Spec says: Type X board (09 21 16); 20 ga studs minimum (09 22 16, sheet A100)");
+    expect(mount([group("g1", "A1")])).toBe("A1 · Spec says: Type X board (09 21 16); 20 ga studs (09 22 16, sheet A100)");
   });
 
   it("with no suggested type, says what holds whatever the type; with nothing said, shows no line", () => {
