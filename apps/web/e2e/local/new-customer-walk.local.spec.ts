@@ -32,6 +32,17 @@ import { openItems } from "../lib/finders";
 const DIR = process.env.WALK_PLAN_DIR ?? "";
 const SET = process.env.WALK_SET ?? "";
 const OUT = process.env.WALK_OUT ?? "";
+/**
+ * WALK_NO_AI=1: the customer runs without plan reading — the owner turns AI off
+ * under Settings → Assistant before the first set, so the walk uses the trade's
+ * preset types and the sheets' printed scales, and never waits on a model.
+ * WALK_RENO=1: a renovation set — the walk records and takes the suggested
+ * demolition pairing, and what is set aside as existing, on the way.
+ */
+const NO_AI = process.env.WALK_NO_AI === "1";
+const RENO = process.env.WALK_RENO === "1";
+/** WALK_PLAN_COMPARE=1: the owner also turns on "Compare renovation sheets with their demolition plan" (no model). */
+const PLAN_COMPARE = process.env.WALK_PLAN_COMPARE === "1";
 const SIZE = { width: 1440, height: 900 };
 const EMAIL = `walk-${Date.now()}+clerk_test@example.com`;
 
@@ -222,6 +233,47 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
     });
 
     // ── 3. CREATE THE JOB ──
+    if (NO_AI) {
+      await step("Turn plan reading off", async () => {
+        await page.goto("/settings/assistant");
+        act();
+        const box = page.locator('input[name="aiEnabled"]');
+        await hydrated(page, 'input[name="aiEnabled"]');
+        await shot("ai-settings-before");
+        if (await box.isChecked()) {
+          await box.uncheck();
+          act();
+          await page.getByRole("button", { name: /Save AI settings/ }).click();
+          act();
+          await page.waitForTimeout(2000);
+        }
+        await page.reload();
+        await hydrated(page, 'input[name="aiEnabled"]');
+        if (await page.locator('input[name="aiEnabled"]').isChecked()) stuck("AI is still on after unticking Use AI and saving");
+        await shot("ai-settings-off");
+        note(`Settings → Assistant: "${(await text(page.locator("main").first())).replace(/\s+/g, " ").slice(0, 260)}"`);
+      });
+    }
+
+    if (PLAN_COMPARE) {
+      await step("Turn plan comparison on", async () => {
+        await page.goto("/settings?tab=estimating#plan-compare");
+        act();
+        const form = page.locator('[data-settings="plan-compare"]');
+        await hydrated(page, '[data-settings="plan-compare"]');
+        const box = form.locator('input[name="planCompareOn"]');
+        if (!(await box.isChecked())) {
+          await box.check();
+          act();
+          await form.getByRole("button", { name: "Save" }).click();
+          act();
+          await expect(form.getByText("Saved.")).toBeVisible({ timeout: 30_000 }).catch(() => stuck("plan comparison did not say Saved."));
+        }
+        await shot("plan-compare-on");
+        note(`Settings → Estimating: "${(await text(form)).replace(/\s+/g, " ").slice(0, 300)}"`);
+      });
+    }
+
     await step("Create the job", async () => {
       await shot("home");
       const start = page.getByRole("link", { name: /new job|start a job|add a job|first job|new bid|start a bid/i }).first();
@@ -236,7 +288,8 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       await page.waitForURL(/\/jobs\/new/, { timeout: 30_000 });
       await hydrated(page, 'input[name="jobName"]');
       await shot("new-job");
-      await page.locator('input[name="jobName"]').fill("Baker EOC");
+      // Named after the set, so a renovation walk on Green Bay does not read "Baker EOC" in every header.
+      await page.locator('input[name="jobName"]').fill(SET.replace(/\.pdf$/i, "").replace(/[-_]+/g, " ").slice(0, 60));
       act();
       const addNew = page.getByRole("button", { name: "+ Add a new GC" });
       if (await seen(addNew, 2000)) {
@@ -313,7 +366,13 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const panel = page.locator('[data-plan-ingest="panel"]');
       if (await seen(panel, 30_000)) note(`Reading the set: "${(await text(panel)).slice(0, 200)}"`);
       const titles = page.getByRole("button", { name: /Read the title blocks/ });
-      if (await seen(titles, 900_000)) {
+      if (NO_AI) {
+        // Without plan reading nothing reads the title blocks: record what the panel says instead of waiting on it.
+        await page.waitForTimeout(5000);
+        await shot("ingest-no-ai");
+        note(`Plan reading off — the panel says: "${(await text(panel).catch(() => "")).replace(/\s+/g, " ").slice(0, 400)}"`);
+        if (await titles.isVisible().catch(() => false)) note(`It still offers "${await text(titles)}" — pressing it would call a model, so left alone.`);
+      } else if (await seen(titles, 900_000)) {
         note(`Offered: "${await text(titles)}" — pressed, as a new user following the panel would.`);
         await shot("ingest-inventory-done");
         await titles.click();
@@ -326,6 +385,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const keep = page.getByRole("button", { name: /Keep reading/ });
       let pauses = 0;
       for (;;) {
+        if (NO_AI) break;
         const done = await prisma.planIngestJob.count({ where: { plan: { jobId }, stage: "TITLE_BLOCK", finishedAt: { not: null } } });
         if (done > 0) break;
         if (Date.now() - t0 > 1_200_000) {
@@ -493,6 +553,24 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       }
       await expect(run).toBeEnabled({ timeout: 300_000 });
       await shot("workspace", tab);
+      if (RENO) {
+        // ── THE SUGGESTED DEMOLITION PAIRING, TAKEN AS OFFERED ──
+        const prior = tab.locator('[data-takeoff="prior-plan"]');
+        if (await seen(prior, 20_000)) {
+          note(`Demolition pairing on "${(await text(tab.locator("header").first())).slice(0, 60)}": "${(await text(prior)).replace(/\s+/g, " ").slice(0, 300)}"`);
+          const accept = tab.locator('[data-takeoff="prior-plan-accept"]');
+          if (await accept.isVisible().catch(() => false)) {
+            await shot("demolition-suggested", tab);
+            await accept.click();
+            act();
+            await tab.waitForTimeout(3000);
+            note(`After taking the suggestion: "${(await text(prior)).replace(/\s+/g, " ").slice(0, 300)}"`);
+          }
+        } else {
+          stuck("no demolition-plan pairing shown in the workspace before Run takeoff on a renovation set");
+        }
+        await shot("demolition-paired", tab);
+      }
       note(`Run button: "${await text(run)}"`);
       await run.click();
       act();
@@ -502,6 +580,22 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       await expect(run).toHaveText(/^(Find the walls|Run takeoff)/, { timeout: 1_800_000 });
       await tab.waitForTimeout(2000);
       await shot("takeoff-done", tab);
+      if (RENO) {
+        // ── WHAT WAS SET ASIDE AS EXISTING, AND WHAT STILL ASKS ──
+        const said = async (sel: string) => ((await tab.locator(sel).first().isVisible().catch(() => false)) ? (await text(tab.locator(sel).first())).replace(/\s+/g, " ").slice(0, 300) : null);
+        const aside = (await said('[data-takeoff="existing-aside"]')) ?? (await said('[data-takeoff="prior-plan-aside"]'));
+        const prompt = await said('[data-takeoff="renovation-prompt"]');
+        // Where the pairing sits matters as much as what it says: on screen, or below every layer.
+        const bar = tab.locator('[data-takeoff="prior-plan"]').first();
+        if (await bar.isVisible().catch(() => false)) {
+          const onScreen = await bar.evaluate((el) => { const r = el.getBoundingClientRect(); return r.top >= 0 && r.top < window.innerHeight; });
+          note(`Pairing after the run (${onScreen ? "on screen" : "below the fold — scroll the panel to see it"}): "${(await text(bar)).replace(/\s+/g, " ").slice(0, 300)}"`);
+          if (!onScreen) stuck("the demolition pairing and what it set aside sit below the layer list, off screen");
+        } else note("No pairing bar after the run.");
+        note(`Existing walls: ${aside === null ? "nothing says any were set aside" : `"${aside}"`}${prompt === null ? "" : `; the sheet still asks: "${prompt}"`}`);
+        if (aside === null && prompt !== null) stuck(`existing walls not set aside after Run takeoff on a renovation sheet; it asks the estimator to "${prompt.slice(0, 120)}"`);
+        await shot("existing-aside", tab);
+      }
       const found = await text(tab.locator("body").getByText(/^Walls on this sheet/));
       const sheet = await text(tab.locator("header").first());
       let measured = await prisma.takeoffMeasurement.count({ where: { page: { plan: { jobId } } } });
@@ -538,6 +632,10 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
         await page.locator('[data-takeoff="whole-set"]').scrollIntoViewIfNeeded().catch(() => {});
         await shot("whole-set-done");
         note(`Whole set: ${Math.round((Date.now() - t0) / 1000)} s. "${(await text(page.locator('[data-takeoff="whole-set"]'))).slice(0, 700)}"`);
+        if (RENO) {
+          const reno = page.locator('[data-takeoff="whole-set-renovation"]');
+          if (await reno.isVisible().catch(() => false)) note(`Whole set, renovation: "${(await text(reno)).replace(/\s+/g, " ").slice(0, 400)}"`);
+        }
         measured = await prisma.takeoffMeasurement.count({ where: { page: { plan: { jobId } } } });
       }
       if (measured === 0) {

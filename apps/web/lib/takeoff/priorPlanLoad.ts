@@ -184,3 +184,26 @@ export function linedUpDemo(
   if (best === undefined || best.votes < SECOND_PLAN_MIN_VOTES || best.votes === voted[1]?.votes) return null;
   return best;
 }
+
+/**
+ * ── WHAT THE SERVER'S COMPARISON SET ASIDE, KEPT FOR THE SCREEN ──
+ *
+ * Run takeoff compares a paired sheet on the server (`detectWallsForCalibration`)
+ * and sets the existing walls aside there; the screen only ever heard about a
+ * comparison the browser made itself. Walk, 2026-11-08 (E Street A2.1, paired with
+ * A1.1 DEMOLITION - FLOOR PLAN): walls were set aside and nothing said so. Stored
+ * per page in `TakeoffPlanTextRead` under this kind; no migration.
+ */
+export const PRIOR_PLAN_READ = "prior-plan";
+export type StoredPrior = { demoPage: number; sheet: string; n: number; feet: number; why: string | null };
+
+export async function storedPriorsOf(planId: string): Promise<Record<number, StoredPrior>> {
+  const out: Record<number, StoredPrior> = {};
+  for (const row of await prisma.takeoffPlanTextRead.findMany({ where: { planId, kind: PRIOR_PLAN_READ }, select: { pageNumber: true, value: true } })) {
+    const v = row.value as Partial<StoredPrior> | null;
+    if (v && typeof v.demoPage === "number" && typeof v.sheet === "string" && typeof v.n === "number" && typeof v.feet === "number") {
+      out[row.pageNumber] = { demoPage: v.demoPage, sheet: v.sheet, n: v.n, feet: v.feet, why: typeof v.why === "string" ? v.why : null };
+    }
+  }
+  return out;
+}

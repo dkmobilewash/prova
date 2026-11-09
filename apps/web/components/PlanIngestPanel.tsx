@@ -74,6 +74,11 @@ export type PlanIngestPanelProps = {
    * review screen is, and how many wall types the newest reads define.
    */
   legend: { on: boolean; reviewHref: string; typeCount: number };
+  /**
+   * Whether the title blocks may be read (`aiGate(…, "PLAN_INGESTION")`), and the
+   * refusal when not. Optional: a caller that omits it keeps the old offer.
+   */
+  reading?: { on: boolean; why: string | null };
 };
 
 type Failure = { pageNumber: number; attempts: number; error: string | null };
@@ -87,7 +92,7 @@ const READING: Record<string, string> = {
   SHEET_INDEX: "The sheet index",
 };
 
-export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }: PlanIngestPanelProps) {
+export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend, reading = { on: true, why: null } }: PlanIngestPanelProps) {
   const [view, setView] = useState<IngestView | null>(existing);
   const [error, setError] = useState<string | null>(null);
   const [failures, setFailures] = useState<Failure[]>([]);
@@ -545,7 +550,25 @@ export function PlanIngestPanel({ planId, existing, scheduleSheetCount, legend }
               it. `STAGE_SPENDS` is what decides, rather than the stage name, so
               a third stage added later inherits the rule instead of the label. */}
           {/* Offered while the legend still reads, too: pressing it takes the loop (`pumping`). */}
-          {freePassDone && (
+          {/* ── PLAN READING OFF: SAY SO, RATHER THAN OFFER A READ THAT REFUSES EVERY SHEET ──
+              Walk, 2026-11-08 (Green Bay, AI off): the panel still offered "Read the title
+              blocks — uses 76 sheets", and pressing it would have failed all 76 with the
+              AI-off sentence. The sheets keep their page numbers; the viewer reads each
+              printed sheet number as it is opened. */}
+          {freePassDone && !reading.on && (
+            <div className="mt-1 border-t border-line-card pt-3 text-sm text-ink-body" data-plan-ingest="reading-off">
+              <p>Nothing was charged for that — it only opened the file and recorded what is on each page.</p>
+              <p className="mt-2 text-ink-muted">
+                Plan reading is off, so the title blocks are not read: sheets are listed by page, and each sheet&apos;s
+                printed number shows when you open it. Scales printed on the sheets still work.{" "}
+                {reading.why ?? ""}{" "}
+                <a href="/settings/assistant#ai-switch" className="underline">
+                  Settings → Assistant
+                </a>
+              </p>
+            </div>
+          )}
+          {freePassDone && reading.on && (
             <div className="mt-1 border-t border-line-card pt-3" data-plan-ingest="next-stage">
               <p className="mb-2 text-sm text-ink-body">
                 Nothing was charged for that — it only opened the file and recorded what is on each page.

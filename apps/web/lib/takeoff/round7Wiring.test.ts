@@ -33,6 +33,6 @@ describe("A100 says it isn't counted on load, beside the walls total", () => {
     // to the canvas's notice stack, the bar beside the layers — so the order is
     // asserted through the wrapper. Still: on load, and still before the bar.
     // The bar goes through `dock`, which never renders it loose on the plan.
-    expect(viewer).toMatch(/answerKey === undefined && notCounted !== null && \(\s*<p data-takeoff="not-counted-sheet"[^>]*>\s*\{notCounted\}\s*<\/p>\s*\)\)\}\s*\{\/\*[^*]*\*\/\}\s*\{dock\(panelOpen \? sideSlot : noticeSlot, answerKey === undefined && \(\s*<TakeoffExclusionBar/);
+    expect(viewer).toMatch(/answerKey === undefined && notCounted !== null && \(\s*<p data-takeoff="not-counted-sheet"[^>]*>\s*\{notCounted\}\s*<\/p>\s*\)\)\}\s*(?:\{\/\*[^*]*\*\/\}\s*)+\{dock\(panelOpen \? \(bannerSlot \?\? sideSlot\) : noticeSlot, answerKey === undefined && \(\s*<TakeoffExclusionBar/);
   });
 });
