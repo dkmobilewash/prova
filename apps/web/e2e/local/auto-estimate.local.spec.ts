@@ -155,10 +155,23 @@ test.describe("Baker's legend types to a priced estimate", () => {
     await shot("estimate-after-runs");
     const before = await estimateLines(jobId);
     for (const l of before) note(`line: ${l.description} — ${l.quantity} ${l.unit ?? ""} @ ${l.unitPrice ?? "unpriced"}`);
-    const board = before.filter((l) => /gypsum board/.test(l.description));
-    expect(board.length).toBeGreaterThan(0);
-    expect(board.every((l) => l.unitPrice !== null && l.priceBasis === "COMPANY_CATALOG")).toBe(true);
-    expect(before.filter((l) => !/gypsum board/.test(l.description)).every((l) => l.unitPrice === null)).toBe(true);
+    // The book prices 5/8in TYPE X board per sheet and nothing else: those lines take it, and every
+    // other line — C8B's plain board included — waits for a person's cost.
+    const inBook = (d: string) => /type X gypsum board/.test(d);
+    expect(before.filter((l) => inBook(l.description)).length).toBe(2);
+    expect(before.filter((l) => inBook(l.description)).every((l) => l.unitPrice?.toString() === "17.16" && l.priceBasis === "COMPANY_CATALOG")).toBe(true);
+    expect(before.filter((l) => !inBook(l.description)).every((l) => l.unitPrice === null)).toBe(true);
+    // The hand calculation (lib/estimating/autoEstimate.eval.ts), line by line.
+    const hand: [RegExp, number][] = [
+      [/^S6B — .*metal stud/, 96], [/^S6B — .*track/, 252], [/^S6B — .*gypsum board/, 83], [/^S6B — .*screws/, 2.52], [/^S6B — joint tape/, 933], [/^S6B — joint compound/, 353],
+      [/^C8B — .*gypsum board/, 33], [/^C8B — .*insulation/, 1008], [/^C8B — .*screws/, 1.01], [/^C8B — joint tape/, 373], [/^C8B — joint compound/, 142],
+      [/^S6A — .*metal stud/, 33], [/^S6A — .*track, bottom/, 63], [/^S6A — .*deflection track/, 63], [/^S6A — .*gypsum board/, 116], [/^S6A — .*screws/, 3.53], [/^S6A — joint tape/, 653], [/^S6A — joint compound/, 247],
+    ];
+    for (const [re, want] of hand) {
+      const got = Number(before.find((l) => re.test(l.description))?.quantity ?? NaN);
+      note(`hand ${re.source}: ${got} vs ${want}`);
+      expect(Math.abs(got - want) / want, re.source).toBeLessThanOrEqual(0.02);
+    }
 
     // ── 3. PRICE THESE N MATERIALS ──
     const heading = (await page.locator('[data-estimate="price-these"] h2').innerText()).trim();

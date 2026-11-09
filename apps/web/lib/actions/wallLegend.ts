@@ -204,7 +204,7 @@ export async function addWallTypeFromLegend(
               description: c.description,
               unit: c.unit,
               basis: c.basis,
-              factor: c.factor.toFixed(4),
+              factor: c.factor.toFixed(6),
               wastePercent: c.wastePercent.toFixed(2),
               roundUp: c.roundUp,
               sortOrder: index,
