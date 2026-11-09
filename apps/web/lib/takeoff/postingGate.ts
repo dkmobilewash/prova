@@ -1,6 +1,7 @@
 import { isPropagatedTag, isSiblingTag } from "./planTextTags";
 import { settledType, verdictFor, type WallGroup } from "./wallGroups";
 import type { MatchableWallType } from "./wallTypeMatch";
+import { autoPosts } from "./autoPost";
 
 /**
  * ── SUGGEST, DON'T POST: NO WALL TYPE IS PRICED WITHOUT A PERSON ──
@@ -21,24 +22,13 @@ import type { MatchableWallType } from "./wallTypeMatch";
 export type PostSource = "tag" | "tag-variant" | "carried" | "sibling" | "note" | "thickness";
 
 /**
- * Measured on the 7 training sheets with type keys (labels-snap-r12b), every
- * training sheet run, correct share of the keyed footage each source typed.
- * Held-out (measured once): printed legend-code tags 47.6%, carried 9.1%.
+ * Whether each source posts without a person: read off its measurement in
+ * `autoPost.ts` (≥97% training AND ≥95% held-out). Every source is off until
+ * one measures past that bar; the numbers live beside the rule there.
  */
-export const POSTS: Record<PostSource, boolean> = {
-  /** A printed tag naming a code the legend defines: 1,022 ft, 95.6% (5 of 6 sheets 100%; Joplin 65%). */
-  tag: false,
-  /** A printed tag the reader made a variant of a legend family (Joplin's A3 of A): 435 ft, 76.8%. */
-  "tag-variant": false,
-  /** A tag carried along the wall past where it was printed: 164 ft, 82.0%. */
-  carried: false,
-  /** A tag read off another sheet of the same floor (Green Bay A3.1 from A3.2): 278 ft, 71.9%. */
-  sibling: false,
-  /** The legend's or sheet's "unless noted otherwise": 1,086 ft, 90.6%. */
-  note: false,
-  /** The one type in the library at that thickness: none on the keyed sheets, so unmeasured. */
-  thickness: false,
-};
+export const POSTS: Record<PostSource, boolean> = Object.fromEntries(
+  (["tag", "tag-variant", "carried", "sibling", "note", "thickness"] as const).map((s) => [s, autoPosts(s)]),
+) as Record<PostSource, boolean>;
 
 /** The type the drawing gives a group and how, before the gate; null where it gives none. */
 export function typeSource(group: WallGroup): { type: MatchableWallType; source: PostSource } | null {
@@ -60,10 +50,14 @@ export function typeSource(group: WallGroup): { type: MatchableWallType; source:
   return null;
 }
 
-/** The type the whole-set run posts a group as, or null: the drawing's type, where its source passes `POSTS`. */
-export function postedType(group: WallGroup): MatchableWallType | null {
+/**
+ * The type the whole-set run posts a group as, and from which source, or null: the drawing's
+ * type, where its source passes `POSTS` and the company has "Auto-post proven items" on.
+ */
+export function postedType(group: WallGroup, autoPostOn = true): { type: MatchableWallType; source: PostSource } | null {
+  if (!autoPostOn) return null;
   const found = typeSource(group);
-  return found !== null && POSTS[found.source] ? found.type : null;
+  return found !== null && POSTS[found.source] ? found : null;
 }
 
 /** How each source is named beside its suggestion. */

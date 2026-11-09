@@ -113,6 +113,23 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
       const legend = legendAt(legendPath ?? "-");
       const wallTypes = typesFrom(legend);
       const legendCodes = wallTypes.map((t) => t.code);
+      // Every printed word on the sheet that is a legend code (or a code with a variant mark), as a point in
+      // page-width units: the tags a run could be read from, whatever symbol or leader carries them.
+      const normCode = (c: string) => c.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const codes = new Set(legendCodes.map(normCode));
+      const tagPoints = items
+        .map((i) => ({ code: normCode(i.str), x: (i.x + i.width / 2) / W, y: (i.y - i.height / 2) / W }))
+        .filter((t) => t.code !== "" && codes.has(t.code));
+      const nearestTagFeet = (r: { x1: number; y1: number; x2: number; y2: number }, which: (code: string) => boolean): number | null => {
+        let best = Infinity;
+        for (const t of tagPoints) {
+          if (!which(t.code)) continue;
+          const dx = r.x2 - r.x1, dy = r.y2 - r.y1, len2 = dx * dx + dy * dy;
+          const k = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((t.x - r.x1) * dx + (t.y - r.y1) * dy) / len2));
+          best = Math.min(best, Math.hypot(t.x - (r.x1 + k * dx), t.y - (r.y1 + k * dy)) * fpu);
+        }
+        return Number.isFinite(best) ? best : null;
+      };
       const vocabulary = tagVocabulary(legendCodes, legendCodes);
       const planText = vocabulary.length === 0 ? undefined : { legendCodes: vocabulary };
       // THE PRODUCT'S PATH, not the finder on the whole sheet: `detectForSheet`
@@ -186,7 +203,16 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
           JSON.stringify({
             set, page, feetPerUnit: fpu, heldOut, legend: legend === null ? null : legendCodes, units: "page-width",
             totalFt: total, typedFt: typed, by,
-            runs: [...posted].map(([r, as]) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFt: r.lengthFeet, thicknessIn: r.thicknessFeet * 12, type: as?.code ?? null, source: as?.source ?? null, posted: as?.posted ?? false, hatched: staged.hatched.has(r) })),
+            runs: [...posted].map(([r, as]) => ({
+              x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFt: r.lengthFeet, thicknessIn: r.thicknessFeet * 12, type: as?.code ?? null, source: as?.source ?? null, posted: as?.posted ?? false, hatched: staged.hatched.has(r),
+              // ── THE SECOND SIGNALS, FOR THE AUTO-POST CUT (`autoPost.ts`) ──
+              // The type's own legend thickness, and how far the nearest printed tag of ANOTHER
+              // type (and of any type) sits from the run, in feet: a type agrees with the drawing
+              // when the wall is drawn at its thickness and no other type is tagged beside it.
+              typeThicknessIn: as === null ? null : (wallTypes.find((t) => t.code === as.code)?.thicknessIn ?? null),
+              otherTagFeet: as === null ? null : nearestTagFeet(r, (code) => code !== normCode(as.code)),
+              anyTagFeet: nearestTagFeet(r, () => true),
+            })),
           }),
         );
       }

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/actions/shared";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
-import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
+import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, undoAutoPost, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
@@ -12,6 +12,7 @@ import { forCode, QUEUE_PART, heightFor, legendMissing, levelHeightFor, sheetSug
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
 import { specSaysLine, type SpecSay } from "@/lib/specs/specTradeFacts";
+import { queueHeader } from "@/lib/takeoff/autoPost";
 
 /**
  * ── THE JOB'S ONE REVIEW QUEUE, ONE ITEM AT A TIME ──
@@ -47,6 +48,7 @@ export function TakeoffReviewQueue({
   onCheckDoubted,
   onClose,
   onUndoable,
+  autoPosted = [],
 }: {
   jobId: string;
   planId: string;
@@ -70,6 +72,8 @@ export function TakeoffReviewQueue({
   onClose: () => void;
   /** The workspace's undo stack: a group typed or a height set here can be taken back (Undo, ⌘Z). */
   onUndoable?: (entry: UndoEntry) => void;
+  /** What proven sources posted without the queue, per sheet (`autoPost.ts`): the header's footage, each with Undo. */
+  autoPosted?: readonly { pageNumber: number; sheet: string; feet: number }[];
 }) {
   // Decided here, before the server's re-render drops it from `items`.
   const [done, setDone] = useState<ReadonlySet<string>>(new Set());
@@ -77,6 +81,7 @@ export function TakeoffReviewQueue({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [priced, setPriced] = useState<string | null>(null);
+  const [undone, setUndone] = useState<ReadonlySet<number>>(new Set());
   const left = items.filter((item) => !done.has(item.key));
   const current = left.find((item) => item.key === cursor) ?? left[0] ?? null;
   // ── ACCEPT ALL SUGGESTIONS ON THIS SHEET ──
@@ -342,6 +347,37 @@ export function TakeoffReviewQueue({
       <span className="font-semibold" data-takeoff="review-queue-left">
         {left.length === 0 ? "Nothing left to review" : `${left.length} left to review`}
       </span>
+      {(() => {
+        // "312 ft posted automatically · 4 groups need you", and each sheet's auto-posts can be taken back.
+        const shown = autoPosted.filter((a) => !undone.has(a.pageNumber));
+        const header = queueHeader(shown.reduce((n, a) => n + a.feet, 0), left.filter((item) => item.kind === "type").length);
+        if (header === null) return null;
+        return (
+          <span className="contents" data-takeoff="review-queue-auto">
+            <span>{header}</span>
+            {shown.map((a) => (
+              <button
+                key={a.pageNumber}
+                type="button"
+                className={button}
+                disabled={busy}
+                data-takeoff="review-queue-auto-undo"
+                onClick={async () => {
+                  setBusy(true);
+                  setError(null);
+                  const result = await undoAutoPost(jobId, planId, a.pageNumber).catch(() => ({ ok: false as const, error: "it did not undo. Try it again." }));
+                  setBusy(false);
+                  if (!result.ok) return setError(result.error);
+                  setUndone((was) => new Set(was).add(a.pageNumber));
+                  router.refresh();
+                }}
+              >
+                Undo {a.sheet} ({Math.round(a.feet)} ft)
+              </button>
+            ))}
+          </span>
+        );
+      })()}
       {progress.length > 0 && (
         <span className="text-ink-muted" data-takeoff="review-queue-progress">
           {progress.join(" · ")}

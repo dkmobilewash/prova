@@ -5,6 +5,7 @@ import { asCostCategory } from "@/lib/cost-category";
 import { pricingRatesFor } from "@/lib/estimating/pricing-rates";
 import { HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
+import { AUTO_MARK } from "@/lib/takeoff/autoPost";
 import { groupsFromProposals, storedRunsOrNull } from "@/lib/takeoff/wallProposal";
 import { storedLegendCodes } from "@/lib/takeoff/planTextRead";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
@@ -32,7 +33,7 @@ import { buildingHeights, feetLabel, legendOption, legendOptions, type CeilingRo
 export async function loadReviewQueue(
   companyId: string,
   jobId: string,
-): Promise<{ planId: string | null; items: ReviewItem[]; heights: Record<string, CodeHeight>; heightChoices: Record<string, CodeHeight[]>; codes: string[]; legend: LegendState; scaledSheets: number; floorPlans: number; floorPlansScaled: number }> {
+): Promise<{ planId: string | null; items: ReviewItem[]; heights: Record<string, CodeHeight>; heightChoices: Record<string, CodeHeight[]>; codes: string[]; legend: LegendState; scaledSheets: number; floorPlans: number; floorPlansScaled: number; autoPosted?: { pageNumber: number; sheet: string; feet: number }[] }> {
   const plan = await prisma.takeoffPlan.findFirst({ where: { jobId, companyId }, orderBy: { createdAt: "desc" }, select: { id: true } });
   const unpriced = await prisma.jobLineItem.findMany({
     // Never "Walls — untyped": those runs are this queue's type items, and the
@@ -257,8 +258,18 @@ export async function loadReviewQueue(
     .map((row) => row.pageNumber);
   for (const pageNumber of floors) if (!scaled.has(pageNumber)) items.push({ kind: "scale", key: `scale:${pageNumber}`, pageNumber, sheet: sheetOf(pageNumber).sheet });
 
+  // ── WHAT POSTED ITSELF: the proven sources' runs (`autoPost.ts`), per sheet, for the queue's header and Undo ──
+  const autoRuns = await prisma.takeoffMeasurement.findMany({ where: { kind: "LINEAR", source: "DETECTED", label: { contains: AUTO_MARK }, page: { planId: plan.id } }, select: { xs: true, ys: true, page: { select: { pageNumber: true } } } });
+  const autoByPage = new Map<number, number>();
+  for (const run of autoRuns) {
+    const page = pages.find((p) => p.pageNumber === run.page.pageNumber);
+    const fpu = sheetOf(run.page.pageNumber, page?.calibrations[0]).feetPerUnit;
+    if (fpu === null || run.xs.length !== 2) continue;
+    autoByPage.set(run.page.pageNumber, (autoByPage.get(run.page.pageNumber) ?? 0) + Math.hypot(run.xs[1]! - run.xs[0]!, run.ys[1]! - run.ys[0]!) * fpu);
+  }
   return {
     planId: plan.id,
+    autoPosted: [...autoByPage].map(([pageNumber, feet]) => ({ pageNumber, sheet: sheetOf(pageNumber).sheet, feet })),
     items: reviewQueue(items),
     heights,
     heightChoices,

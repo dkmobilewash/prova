@@ -3,7 +3,8 @@ import { nextItemColor } from "@/lib/takeoff/itemColors";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
 import type { WallGroup } from "@/lib/takeoff/wallGroups";
-import { postedType } from "@/lib/takeoff/postingGate";
+import { postedType, SOURCE_WORDS, type PostSource } from "@/lib/takeoff/postingGate";
+import { autoLabel } from "@/lib/takeoff/autoPost";
 import { familyOf, type MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { isPropagatedTag, isSiblingTag, plainTag } from "@/lib/takeoff/planTextTags";
 
@@ -67,9 +68,14 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
   // The type each group is posted as: the drawing's, where its source is one
   // that is right 95% of the time (`postingGate.ts`); everything else waits in
   // the review queue with that type offered first.
+  const autoPostOn = (await prisma.company.findUnique({ where: { id: input.companyId }, select: { autoPostOn: true } }))?.autoPostOn === true;
+  const autoFrom = new Map<WallGroup, PostSource>();
   const typeOf = (group: WallGroup): MatchableWallType | null => {
-    const posted = postedType(group);
-    if (posted !== null) return posted;
+    const posted = postedType(group, autoPostOn);
+    if (posted !== null) {
+      autoFrom.set(group, posted.source);
+      return posted.type;
+    }
     // Remembered for the job: an estimator's "Set type" gave an item this
     // thickness and type, and detection matched the group to that item.
     // Never over a tag: a drawing's tag the library lacks is a question, not this.
@@ -92,10 +98,13 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
       // The label says HOW the type was settled: the tag, the tag carried
       // along the wall, the legend's U.N.O., or the thickness alone — the
       // last being the weakest, a company with one type that thick.
+      const auto = autoFrom.get(group);
       const label =
         type === null
           ? "wall, untyped"
-          : group.source.kind === "TAG"
+          : auto !== undefined
+            ? autoLabel(type.code, SOURCE_WORDS[auto])
+            : group.source.kind === "TAG"
             ? isPropagatedTag(group.source.tag) ? `${plainTag(group.source.tag)} wall (carried)` : isSiblingTag(group.source.tag) ? `${type.code} wall (tag on another sheet)` : `${type.code} wall`
             : setForJob.has(group)
               ? `${type.code} wall (set for this job)`
