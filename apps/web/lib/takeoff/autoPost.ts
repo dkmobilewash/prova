@@ -39,6 +39,27 @@ export const EVIDENCE: Record<PostSource, SourceEvidence> = {
   thickness: { trainingPct: null, trainingFt: 0, heldOutPct: 10.2, heldOutFt: 32, measured: "2026-11-08", trainingSheets: 9, heldOutSheets: 7 },
 };
 
+/**
+ * ── THE NARROWER, TWO-SIGNAL SOURCES, MEASURED 2026-11-09: NONE CLEARS, SO NONE IS BUILT ──
+ *
+ * Same runs (runs-ap, 16 sheets) and labels; held-out measured once. Precision is of
+ * the footage the rule would post.
+ *
+ * | source | training | held-out |
+ * | --- | --- | --- |
+ * | type: printed tag AND drawn thickness = the type's legend thickness ±1/2" AND no other type's tag within 3 ft | 78 ft, 97.3% (2 ft wrong) | 0 ft — unproven |
+ * | type: "unless noted" AND thickness ±1/2" AND no tag within 3 ft | 0 ft | 0 ft |
+ * | height: a figure printed on the type ("fixed") | 0 ft | 142 ft, 17.6% |
+ * | height: the type's own rule, exactly one section level | 172 ft, 100% | 0 ft — unproven |
+ *
+ * The thickness signal is what starves both type rules: most legends print no
+ * thickness (Joplin 0 of 5 types, OReillys 0/6, Baker 2/8, Hutto 4/14), so the
+ * second signal cannot agree, and on the sets that do print it no keyed held-out
+ * footage passes. Windows (tag AND an exterior frame within 2 ft) and doors (after
+ * ROUND 17's key) are measured by the window eval's owner. Touch-free stays 0.0% in
+ * every group: no source posts.
+ */
+
 /** Whether a source's own measurement clears the bar — both numbers, held-out measured. */
 export function clearsBar(e: SourceEvidence): boolean {
   return e.trainingPct !== null && e.heldOutPct !== null && e.trainingPct >= BAR.trainingPct && e.heldOutPct >= BAR.heldOutPct;
