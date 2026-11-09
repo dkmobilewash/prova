@@ -52,6 +52,8 @@ export async function ensureSheetNames(planId: string, companyId: string): Promi
   } finally {
     await doc.close();
   }
+  // The same set-level pass the free pass runs when it closes (`keylessTitles.ts`).
+  if (named > 0) await (await import("@/lib/plan-ingest/keylessTitles")).cleanKeylessTitles(planId);
   return named;
 }
 

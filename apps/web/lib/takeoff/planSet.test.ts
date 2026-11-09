@@ -23,6 +23,13 @@ describe("sorting a set", () => {
     expect(sheetCategory("A3.9", "UNIT D1", "PLAN")).toBe("floor");
     expect(sheetCategory("A2.1", "FIRST FLOOR PLAN", "OTHER")).toBe("floor");
     expect(sheetCategory("A3.9", "UNIT D1", null)).toBe("floor");
+    // With plan reading off (no page type): a keyless title that names no plan is not one to
+    // scale (walk, 2026-11-08, E Street and Green Bay), while no title stays a floor plan.
+    for (const [n, t] of [["A8.2", "GUARDRAIL ATTACHMENT"], ["A5.1", "OFFICE 7 - NORTH"], ["A2.4", "SKYLIGHT PERFORMANCE"], ["A1.0", "ARCHITECTURAL INFORMATION"]]) {
+      expect(sheetCategory(n, t, null), `${n} ${t}`).toBe("other");
+    }
+    expect(sheetCategory("A4.1", "ENLARGED PLANS", null)).toBe("floor");
+    expect(sheetCategory("A3.1", null, null)).toBe("floor");
   });
 
   it("a floor plan that carries elevations too is still the floor plan", () => {
