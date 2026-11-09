@@ -32,5 +32,9 @@ describe("plan comparison runs only where it was switched on and paired", () => 
   it("the switch is off by default in the schema", () => {
     const schema = readFileSync(new URL("../../../../packages/db/prisma/schema/company.prisma", import.meta.url), "utf8");
     expect(schema).toMatch(/planCompareOn\s+Boolean\s+@default\(false\)/);
+    // ON for a NEW company, set where the company is created; the column stays false so no
+    // existing company changes and no migration runs (Diego, 2026-11-08).
+    const auth = read("../auth.ts");
+    expect(auth).toMatch(/company: \{[\s\S]{0,1200}create: \{ name: companyName, planCompareOn: true,/);
   });
 });
