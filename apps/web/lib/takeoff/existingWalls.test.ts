@@ -113,6 +113,18 @@ describe("route 2 — the legend's own existing-wall pen", () => {
     const got = existingWalls({ walls: [a, b, c], segments: [...faces(a, black), ...poche(a, 0.75), ...faces(b, black), ...faces(c, black), ...poche(c, 1)], pageSegments: page, textItems: legend, widthPt: W, feetPerUnit: FPU });
     expect(got.map((e) => [e.wall, e.why])).toEqual([[a, 'drawn with the legend\'s "EXISTING WALL" pen (filled grey 0.75)']]);
   });
+  it("NEW drawn FILLED, EXISTING as an outline (Schroeder A1.01): the legend's kinds decide, not grey = existing", () => {
+    // Legend: EXISTING an unfilled grey outline at 0.48 pt; NEW a grey-filled band with a black outline.
+    const rows = [word("EXISTING WALL TO REMAIN", 62, 90), word("NEW WALL TO BE PROVIDED", 62, 92)];
+    const page = [...swatch(90, { gray: 0.5, width: 0.48 }, 2), ...swatch(92, { gray: 0, width: 0.48 }, 2).map((sg) => ({ ...sg, fill: 0.75 }))];
+    // Plan: existing outlines at 0.24 pt (a narrower pen than the swatch); a new wall filled 0.50 with the SAME grey outline.
+    const outline = (w: WallCandidate) => faces(w, { gray: 0.5, width: 0.24 });
+    const filledNew = [...outline(b), ...faces(b, { gray: 0.5, width: 0.24 }).map((sg) => ({ ...sg, fill: 0.5 }))];
+    const got = existingWalls({ walls: [a, b, c], segments: [...outline(a), ...filledNew, ...faces(c, { gray: 0, width: 0.5 })], pageSegments: page, textItems: rows, widthPt: W, feetPerUnit: FPU });
+    expect(got.map((e) => e.wall)).toEqual([a]);
+    expect(got[0]!.why).toContain("not its filled");
+  });
+
   it("with no NEW WALL row the sheet's usual wall pen stands in for it: a legend pen that most walls share sets nothing aside", () => {
     const mostlyGrey = [...swatch(90, grey), ...faces(a, grey), ...faces(b, grey), ...faces(c, grey)];
     expect(ask([legend[0]], mostlyGrey)).toHaveLength(0);
