@@ -537,6 +537,7 @@ describe("read-tool capabilities match the pages they cite", () => {
     // take VIEW_JOB_COSTS (the takeoff page's requireCapability).
     takeoff_quantities: "VIEW_JOB_COSTS",
     takeoff_review: "VIEW_JOB_COSTS",
+    spec_requirements: "MANAGE_ESTIMATING",
     // All three bid-day tools cite /bids and take its gate.
     bid_levelling: ROUTE_CAPABILITY["/bids"],
     bid_compliance: ROUTE_CAPABILITY["/bids"],

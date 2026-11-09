@@ -67,7 +67,8 @@ describe("the hundred questions", () => {
     // 131 with the three billing-tab hand-offs, same day.
     // 133 with run_takeoff and post_takeoff_to_estimate.
     // 136 with takeoff_quantities, takeoff_review and set_wall_height; 137 with accept_sheet_suggestions.
-    expect(TOTAL_QUESTIONS).toBe(137);
+    // 138 with spec_requirements, 2026-11-08.
+    expect(TOTAL_QUESTIONS).toBe(138);
     expect(TOP_QUESTIONS).toHaveLength(TOTAL_QUESTIONS);
   });
 
