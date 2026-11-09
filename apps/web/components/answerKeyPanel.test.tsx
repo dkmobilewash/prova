@@ -220,7 +220,7 @@ describe("round 13: marking windows", () => {
     expect(onState.mock.calls.at(-1)![0].openings[1]).toEqual({ id: "o2", x: 0.2, y: 0.1, kind: "window", tag: "W3" });
     expect(onFocusOpening).toHaveBeenLastCalledWith(null);
     act(() => (q(host, "key-mark-windows") as HTMLButtonElement).click());
-    expect(onMarking).toHaveBeenCalledWith(false);
+    expect(onMarking).toHaveBeenCalledWith(false, "window");
   });
 
   it("0 is no tag shown", async () => {

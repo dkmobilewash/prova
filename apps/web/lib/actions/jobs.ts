@@ -50,7 +50,8 @@ import { parseNumericInput } from "@/lib/numeric-input";
  * Components render." On success this redirects, which never returns.
  */
 export async function createJob(formData: FormData): Promise<ActionResult> {
-  const { company } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  const { company } = context;
 
   const jobName = String(formData.get("jobName") ?? "").trim();
   const scope = String(formData.get("scope") ?? "").trim();
@@ -91,6 +92,9 @@ export async function createJob(formData: FormData): Promise<ActionResult> {
   // this action. The job exists in the database the moment this redirect
   // fires, so leaving the wizard here is never data loss: `/jobs/${id}`
   // still opens the same ESTIMATE-stage job directly, stepper or not.
+  // Started from "New job" (`lib/new-job-entry.ts`): the job's Takeoff tab, where its plans are
+  // uploaded and the stepper says what is next. Only for someone that tab lets in.
+  if (formData.get("then") === "plans" && can(context, "VIEW_JOB_COSTS")) redirect(`/jobs/${created.value.jobId}/takeoff`);
   redirect(`/jobs/new/${created.value.jobId}/items`);
 }
 

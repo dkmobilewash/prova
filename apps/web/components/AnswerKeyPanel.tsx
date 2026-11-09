@@ -121,7 +121,11 @@ export type AnswerKeyPanelProps = {
    * and the window tags read on this sheet for the picker's 1–9.
    */
   marking?: boolean;
-  onMarking?: (next: boolean) => void;
+  /** Which kind a click marks while `marking` (round 17 adds doors for the door answer key). */
+  markKind?: "window" | "door";
+  onMarking?: (next: boolean, kind?: "window" | "door") => void;
+  /** The door schedule's marks read for this set, for the door picker's 1–9; empty means typed only. */
+  doorMarks?: readonly string[];
   focusedOpening?: string | null;
   onFocusOpening?: (id: string | null) => void;
   windowTags?: readonly string[];
@@ -177,7 +181,9 @@ export function AnswerKeyPanel({
   onTracing,
   traceReady,
   marking = false,
+  markKind = "window",
   onMarking,
+  doorMarks = [],
   focusedOpening = null,
   onFocusOpening,
   windowTags = [],
@@ -389,7 +395,8 @@ export function AnswerKeyPanel({
       // ── ROUND 13: WHILE MARKING, A NUMBER IS THE WINDOW'S TAG ──
       // 1–9 the sheet's nth window tag, 0 "no tag shown".
       if (/^[0-9]$/.test(key) && marking && focusedOpening !== null) {
-        const tag = key === "0" ? NO_TAG : windowTags[Number(key) - 1];
+        // A door takes the schedule's nth mark; a window the sheet's nth tag.
+        const tag = key === "0" ? NO_TAG : (markKind === "door" ? doorMarks : windowTags)[Number(key) - 1];
         if (tag !== undefined) {
           event.preventDefault();
           giveTag(focusedOpening, tag);
@@ -727,62 +734,74 @@ export function AnswerKeyPanel({
           removes it. The newest mark takes its tag from the keys: 1–9 the
           window tags read on this sheet, 0 when no tag is shown, or typed. */}
       <div className="rounded-md border border-line-card bg-surface p-2" data-takeoff="key-windows">
-        <button
-          type="button"
-          onClick={() => onMarking?.(!marking)}
-          data-takeoff="key-mark-windows"
-          aria-pressed={marking}
-          className={marking ? "text-[11px] font-medium text-ink" : "text-[11px] text-link hover:text-link-hover"}
-        >
-          {marking ? "Marking windows — click each one" : "Mark windows"}
-        </button>
-        <span className="ml-2 text-[11px] text-ink-muted" data-takeoff="key-window-count">
-          {(() => {
-            const n = (state.openings ?? []).filter((o) => o.kind === "window").length;
-            return `${n} window${n === 1 ? "" : "s"} marked`;
-          })()}
-        </span>
-        {marking && focusedOpening !== null && (state.openings ?? []).some((o) => o.id === focusedOpening) && (
-          <div data-takeoff="key-window-tag" className="mt-1 flex flex-wrap items-center gap-1 text-xs">
-            <span className="text-ink-muted">Tag</span>
-            {windowTags.map((tag, at) => (
+        {/* ── ROUND 17: DOORS TOO, ONE KIND ARMED AT A TIME ──
+            The door answer key marks each door on its leaf with its printed mark. The two
+            buttons arm one kind; arming one disarms the other (and tracing). */}
+        {(["window", "door"] as const).map((kind) => {
+          const armed = marking && markKind === kind;
+          const n = (state.openings ?? []).filter((o) => o.kind === kind).length;
+          return (
+            <span key={kind} className="mr-3 inline-flex items-baseline gap-2">
               <button
-                key={tag}
                 type="button"
-                data-takeoff="key-window-tag-code"
-                onClick={() => giveTag(focusedOpening, tag)}
+                onClick={() => onMarking?.(!armed, kind)}
+                data-takeoff={kind === "window" ? "key-mark-windows" : "key-mark-doors"}
+                aria-pressed={armed}
+                className={armed ? "text-[11px] font-medium text-ink" : "text-[11px] text-link hover:text-link-hover"}
+              >
+                {armed ? `Marking ${kind}s — click each one` : `Mark ${kind}s`}
+              </button>
+              <span className="text-[11px] text-ink-muted" data-takeoff={kind === "window" ? "key-window-count" : "key-door-count"}>
+                {`${n} ${kind}${n === 1 ? "" : "s"} marked`}
+              </span>
+            </span>
+          );
+        })}
+        {marking && focusedOpening !== null && (state.openings ?? []).some((o) => o.id === focusedOpening) && (() => {
+          const choices = markKind === "door" ? doorMarks : windowTags;
+          const word = markKind === "door" ? "Mark" : "Tag";
+          return (
+            <div data-takeoff="key-window-tag" data-kind={markKind} className="mt-1 flex flex-wrap items-center gap-1 text-xs">
+              <span className="text-ink-muted">{word}</span>
+              {choices.map((tag, at) => (
+                <button
+                  key={tag}
+                  type="button"
+                  data-takeoff="key-window-tag-code"
+                  onClick={() => giveTag(focusedOpening, tag)}
+                  className="rounded-md border border-line-card px-2 py-1 text-ink-label hover:bg-rail-hover"
+                >
+                  {at < 9 ? `${tag} (${at + 1})` : tag}
+                </button>
+              ))}
+              <button
+                type="button"
+                data-takeoff="key-window-no-tag"
+                onClick={() => giveTag(focusedOpening, NO_TAG)}
                 className="rounded-md border border-line-card px-2 py-1 text-ink-label hover:bg-rail-hover"
               >
-                {at < 9 ? `${tag} (${at + 1})` : tag}
+                {markKind === "door" ? "No mark shown (0)" : "No tag shown (0)"}
               </button>
-            ))}
-            <button
-              type="button"
-              data-takeoff="key-window-no-tag"
-              onClick={() => giveTag(focusedOpening, NO_TAG)}
-              className="rounded-md border border-line-card px-2 py-1 text-ink-label hover:bg-rail-hover"
-            >
-              No tag shown (0)
-            </button>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const input = event.currentTarget.elements.namedItem("tag") as HTMLInputElement | null;
-                if (input !== null && input.value.trim() !== "") {
-                  giveTag(focusedOpening, input.value);
-                  input.value = "";
-                }
-              }}
-            >
-              <input
-                name="tag"
-                data-takeoff="key-window-tag-other"
-                placeholder={windowTags.length === 0 ? "type the tag" : "other"}
-                className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-ink"
-              />
-            </form>
-          </div>
-        )}
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const input = event.currentTarget.elements.namedItem("tag") as HTMLInputElement | null;
+                  if (input !== null && input.value.trim() !== "") {
+                    giveTag(focusedOpening, input.value);
+                    input.value = "";
+                  }
+                }}
+              >
+                <input
+                  name="tag"
+                  data-takeoff="key-window-tag-other"
+                  placeholder={choices.length === 0 ? `type the ${word.toLowerCase()}` : "other"}
+                  className="w-20 rounded-md border border-line-card bg-canvas px-2 py-1 text-ink"
+                />
+              </form>
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── WHAT WAS SET ASIDE, AND HOW TO SEE IT ANYWAY ──

@@ -909,7 +909,8 @@ export function TakeoffWorkspace({
   const [tracingByPage, setTracingByPage] = useState<Record<number, true>>({});
   const [traceReady, setTraceReady] = useState(false);
   /** Round 13: window marking armed, the mark the tag picker is on, and the window tags read — per sheet. */
-  const [markingByPage, setMarkingByPage] = useState<Record<number, true>>({});
+  /** Which kind of opening a click marks, per sheet; absent when not marking (round 17 adds doors). */
+  const [markingByPage, setMarkingByPage] = useState<Record<number, "window" | "door">>({});
   const [openingFocus, setOpeningFocus] = useState<string | null>(null);
   const [windowTagsByPage, setWindowTagsByPage] = useState<Record<number, string[]>>({});
   const [keyStateByPage, setKeyStateByPage] = useState<Record<number, ReviewState>>({});
@@ -1714,16 +1715,16 @@ export function TakeoffWorkspace({
                       // used to own it is not mounted until candidates exist —
                       // so before a find, the key did nothing and said nothing.
                       onTracing: (next) => {
-                        if (next) setMarkingByPage((prev) => setOnThisSheet<true>(prev, page, null));
+                        if (next) setMarkingByPage((prev) => setOnThisSheet<"window" | "door">(prev, page, null));
                         setTracingByPage((prev) => setOnThisSheet(prev, page, next ? true : null));
                       },
                       onTraceReady: setTraceReady,
-                      marking: onThisSheet(markingByPage, page) ?? false,
+                      marking: onThisSheet(markingByPage, page) !== null,
                       focusedOpening: openingFocus,
                       onWindowTags: (tags) => setWindowTagsByPage((prev) => setOnThisSheet(prev, page, tags)),
                       onPoint: (at) =>
                         setKeyStateByPage((prev) => {
-                          const next = addOpening(onThisSheet(prev, page) ?? startReview([]), { ...at, kind: "window" });
+                          const next = addOpening(onThisSheet(prev, page) ?? startReview([]), { ...at, kind: onThisSheet(markingByPage, page) ?? "window" });
                           setOpeningFocus(next.openings![next.openings!.length - 1]!.id);
                           return setOnThisSheet(prev, page, next);
                         }),
@@ -1968,16 +1969,18 @@ export function TakeoffWorkspace({
                 draftNote={draftNote}
                 tracing={onThisSheet(tracingByPage, page) ?? false}
                 onTracing={(next) => {
-                  if (next) setMarkingByPage((prev) => setOnThisSheet<true>(prev, page, null));
+                  if (next) setMarkingByPage((prev) => setOnThisSheet<"window" | "door">(prev, page, null));
                   setTracingByPage((prev) => setOnThisSheet(prev, page, next ? true : null));
                 }}
                 traceReady={traceReady}
-                marking={onThisSheet(markingByPage, page) ?? false}
-                onMarking={(next) => {
-                  // Marking and tracing both take the next click; one at a time.
+                marking={onThisSheet(markingByPage, page) !== null}
+                markKind={onThisSheet(markingByPage, page) ?? "window"}
+                onMarking={(next, kind = "window") => {
+                  // Marking and tracing both take the next click; one at a time, and one kind at a time.
                   if (next) setTracingByPage((prev) => setOnThisSheet<true>(prev, page, null));
-                  setMarkingByPage((prev) => setOnThisSheet(prev, page, next ? true : null));
+                  setMarkingByPage((prev) => setOnThisSheet<"window" | "door">(prev, page, next ? kind : null));
                 }}
+                doorMarks={[...new Set(data.doorScheduleRows.map((r) => r.mark.trim()).filter((m) => m !== ""))]}
                 focusedOpening={openingFocus}
                 onFocusOpening={setOpeningFocus}
                 windowTags={onThisSheet(windowTagsByPage, page) ?? []}
