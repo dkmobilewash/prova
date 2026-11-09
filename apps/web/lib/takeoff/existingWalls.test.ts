@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { existingWalls, isWallTag, LEGEND_EXISTING, legendPens, textRows } from "./existingWalls";
+import { existingWalls, isWallTag, LEGEND_EXISTING, legendPens, nicHatch, textRows } from "./existingWalls";
 import { offeredCandidates } from "./offeredCandidates";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
@@ -185,5 +185,31 @@ describe("offeredCandidates: the `existing` kind", () => {
     expect(got.setAsideLines.map((l) => [l.kind, l.why, l.lengthFeet])).toEqual([["existing", 'tagged "(E) WALL" 1 ft away', 30]]);
     expect(got.offPlanPaired).toBe(0);
     expect(offeredCandidates(sheet()).candidates).toHaveLength(1);
+  });
+});
+
+describe("route 4 — inside a hatched area labelled NOT IN CONTRACT (Wendell A101.2)", () => {
+  // A hatched block x 60..90 ft, y 10..40 ft: diagonals every 2 ft.
+  // Lines y = x - c, clipped to the block, every 2 ft of c.
+  const hatch: StrokeSegment[] = Array.from({ length: 31 }, (_, i) => 20 + i * 2).flatMap((c) => {
+    const xa = Math.max(60, 10 + c), xb = Math.min(90, 40 + c);
+    return xb - xa < 2 ? [] : [{ x1: ft(xa), y1: ft(xa - c), x2: ft(xb), y2: ft(xb - c), gray: 0.5, width: 0.2 }];
+  });
+  const inside = wall(65, 25, 80, 25); // both sides hatched
+  const edge = wall(60, 10, 60, 40); // the block's edge: one side outside the hatch
+  const outside = wall(10, 25, 40, 25);
+  const segs = [...hatch, ...faces(inside, { gray: 0, width: 0.5 }), ...faces(edge, { gray: 0, width: 0.5 }), ...faces(outside, { gray: 0, width: 0.5 })];
+  const label = (xFt: number, yFt: number) => [{ str: "NOT IN CONTRACT", x: xFt * 10 - 30, y: yFt * 10, width: 60, height: 8 }];
+
+  it("sets aside a wall inside the labelled hatch, not the hatch's edge, not a wall elsewhere", () => {
+    const got = existingWalls({ walls: [inside, edge, outside], segments: segs, textItems: label(75, 20), widthPt: W, feetPerUnit: FPU });
+    expect(got.map((e) => e.wall)).toEqual([inside]);
+    expect(got[0]!.route).toBe("nic");
+  });
+
+  it("a NOT IN CONTRACT label in no hatch sets nothing aside", () => {
+    expect(existingWalls({ walls: [inside, edge, outside], segments: segs, textItems: label(25, 50), widthPt: W, feetPerUnit: FPU })).toEqual([]);
+    expect(nicHatch(segs, [{ x: ft(25), y: ft(50) }], FPU)).toBeNull();
+    expect(nicHatch(segs, [{ x: ft(75), y: ft(20) }], FPU)).not.toBeNull();
   });
 });
