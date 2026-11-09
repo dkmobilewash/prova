@@ -86,7 +86,16 @@ export async function priceMaterial(jobId: string, lineIds: string[], formData: 
       for (const line of lines) {
         await tx.jobLineItem.update({
           where: { id: line.id },
-          data: { budgetedUnitCost: cost, currentEstimatedUnitCost: cost, unitPrice: unitPrice(Number(line.quantity)), costCategory: "MATERIAL", sourceCatalogEntryId: entry.id, priceBasis: "COMPANY_CATALOG" },
+          data: {
+            budgetedUnitCost: cost,
+            currentEstimatedUnitCost: cost,
+            unitPrice: unitPrice(Number(line.quantity)),
+            costCategory: "MATERIAL",
+            // The new entry has no production rate, so the line keeps the one its wall-type part gave it.
+            productionRate: undefined,
+            sourceCatalogEntryId: entry.id,
+            priceBasis: "COMPANY_CATALOG",
+          },
         });
       }
       // The parts behind these lines, and any other part of the company's that is the same material in the same unit.
