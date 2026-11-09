@@ -135,8 +135,11 @@ test.describe("Baker's legend types to a priced estimate", () => {
     // The schedule is a closed disclosure until somebody opens it.
     const openSchedule = async () => {
       const addRun = page.getByRole("button", { name: "Add run" });
-      if (!(await addRun.isVisible())) await page.getByRole("heading", { name: "Wall schedule" }).click();
-      await expect(addRun).toBeVisible();
+      // A refresh after a save can re-render the disclosure closed, so open it until the button shows.
+      await expect(async () => {
+        if (!(await addRun.isVisible())) await page.getByRole("heading", { name: "Wall schedule" }).click();
+        await expect(addRun).toBeVisible({ timeout: 2000 });
+      }).toPass({ timeout: 30_000 });
     };
     await openSchedule();
     for (const [typeCode, lf, h] of [["S6B", "120", "10"], ["C8B", "80", "12"], ["S6A", "60", "14"]] as const) {
