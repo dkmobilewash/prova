@@ -20,7 +20,8 @@ import { BidWizardSteps } from "@/components/BidWizardSteps";
  * the one step that must exist as a page rather than a URL segment under
  * one: `createJob` is what mints the id the other two steps are keyed on.
  */
-export default async function NewJobPage() {
+export default async function NewJobPage({ searchParams }: { searchParams: Promise<{ then?: string }> }) {
+  const then = (await searchParams).then === "plans" ? ("plans" as const) : undefined;
   const { company } = await requireCompanyContext();
 
   const contacts = await prisma.contact.findMany({
@@ -52,10 +53,14 @@ export default async function NewJobPage() {
         route="/dashboard"
         parent={{ href: "/jobs", label: "Jobs" }}
         title="New job"
-        subtitle="It starts as a bid. Name it and pick the GC — you'll add the work itself on the next screen."
+        subtitle={
+          then === "plans"
+            ? "It starts as a bid. Name it and pick the GC — next you upload the plans."
+            : "It starts as a bid. Name it and pick the GC — you'll add the work itself on the next screen."
+        }
       />
       <BidWizardSteps current={1} />
-      <NewJobForm contacts={options} />
+      <NewJobForm contacts={options} then={then} />
     </PageShell>
   );
 }
