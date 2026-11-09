@@ -10,6 +10,8 @@ describe("plan comparison runs only where it was switched on and paired", () => 
     const server = read("./detectWallsForCalibration.ts");
     expect(server).toMatch(/select: \{ planCompareOn: true \}[\s\S]{0,120}if \(company\?\.planCompareOn === true\)/);
     expect(server).toMatch(/pairings\.byPage\.get\(target\.pageNumber\)/);
+    // What it set aside is kept for the screen (`PRIOR_PLAN_READ`), which never heard otherwise.
+    expect(server).toMatch(/kind: PRIOR_PLAN_READ, value/);
     expect(server).toMatch(/if \(prior\.lines !== null\) offered = offer\(\{ lines: prior\.lines/);
   });
 
@@ -22,7 +24,9 @@ describe("plan comparison runs only where it was switched on and paired", () => 
     const viewer = read("../../components/TakeoffPlanViewer.tsx");
     expect(viewer).toMatch(/const pairing = offered !== null && raster === undefined \? planCompare\?\.pairs\[pageNumber\] : undefined;/);
     expect(viewer).toMatch(/offered = offerHere\(\{ lines: lines\.lines, sheet \}\)/);
-    expect(viewer).toMatch(/<PriorPlanBar status=\{priorStatus\}/);
+    // The browser's own comparison, else what the server's Run takeoff stored (walk, 2026-11-08: E Street A2.1).
+    expect(viewer).toMatch(/<PriorPlanBar status=\{shownPrior\}/);
+    expect(viewer).toMatch(/const storedPrior = planCompare\?\.stored\?\.\[pageNumber\];/);
   });
 
   it("the switch is off by default in the schema", () => {
