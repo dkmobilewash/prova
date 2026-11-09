@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { newJobHref } from "@/lib/new-job-entry";
 import { cookies } from "next/headers";
 import { Card, PageShell } from "@prova/ui";
 import type { JobStatus } from "@prova/db";
@@ -29,6 +30,7 @@ import {
   PhoneTiles,
   RunningCard,
   ShortcutChips,
+  NewJobButton,
   type JobCardData,
   type NeedItem,
   type Shortcut,
@@ -409,7 +411,10 @@ export default async function TodayPage() {
                 </h1>
                 <p className="mt-1 text-[15px] text-ink-muted">{dateLine}</p>
               </div>
-              {!onlyChecklist && <ShortcutChips newJob={!isNewAccount} others={isNewAccount ? [] : chips} />}
+              <div className="mt-4 flex flex-wrap items-center gap-2.5 md:mt-0 md:justify-end">
+                <NewJobButton href={newJobHref(showsJobMoney)} plans={showsJobMoney} />
+                {!onlyChecklist && <ShortcutChips newJob={false} others={isNewAccount ? [] : chips} />}
+              </div>
             </div>
 
             {/* On a phone the foreman's one big action stays first, and the

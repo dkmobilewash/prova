@@ -161,8 +161,8 @@ const BUSY_ROWS = {
 /** Every section the page has for a company in use, in page order. */
 const POPULATED_ORDER = [
   'data-home="greeting"',
-  'data-tour="dashboard-ask"',
   'data-tour="dashboard-new-job"',
+  'data-tour="dashboard-ask"',
   'data-home="phone-tiles"',
   // Declutter (2026-10-13): what needs you and the money lead, directly
   // under the greeting; the six area boxes moved below them.
@@ -193,19 +193,26 @@ beforeEach(() => {
 });
 
 describe("/dashboard on a company with no jobs", () => {
-  it("shows the getting-started checklist as the ONE start — no empty state, no search box", async () => {
+  // The New job button joined the checklist on 2026-11-08: a renovation walk found no clear way to
+  // start a job from Home, because the checklist's own "Add a job" sits among six steps. It is the
+  // one action a brand-new company has, so it is on the page beside the checklist; everything with
+  // nothing to say yet (search, the empty state, the needs block, zeros) still stays off.
+  it("shows the getting-started checklist and the New job button — no empty state, no search box", async () => {
     const html = await render();
     expect(html, "the real page rendered").toContain('data-home="greeting"');
     expect(html).toContain("getting-started-heading");
     for (const competing of [
       'data-tour="dashboard-jobs-empty"',
       'data-tour="dashboard-ask"',
-      'data-tour="dashboard-new-job"',
       'data-tour="dashboard-needs-attention"',
       "$0.00",
     ]) {
       expect(html, `a new account should not also see ${competing}`).not.toContain(competing);
     }
+    // The owner can open the Takeoff tab, so the button says where it goes: the job's plan upload.
+    expect(html).toContain('data-tour="dashboard-new-job"');
+    expect(html).toContain('href="/jobs/new?then=plans"');
+    expect(html).toContain("upload plans");
   });
 
   it("once the checklist is hidden, leads with the jobs empty state and nothing with nothing to say", async () => {
