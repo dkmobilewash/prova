@@ -1,6 +1,7 @@
 
 import { openSharedPlanPdf } from "@/lib/plan-ingest/sharedPlanPdf";
 import { storeGeneralHeight, storeLevelMarks } from "./levelReads";
+import { storeRoofParts } from "./roofPartsRead";
 import { heightOfLegendType, heightSentence, setHeightFacts, type SetHeightFacts } from "./setHeightFacts";
 
 /** What the library learned about a type's height — shown on the review row and kept in the type's notes. */
@@ -94,6 +95,8 @@ export async function legendHeightsFor(input: {
       await storeLevelMarks(input.planId, set.levels ?? []).catch((error) => console.error("[takeoff] level marks not stored", { planId: input.planId }, error));
       // And the sheet-wide rule, for walls whose type has none (`generalHeightOf`).
       await storeGeneralHeight(input.planId, generalHeightOf(set)).catch((error) => console.error("[takeoff] general height not stored", { planId: input.planId }, error));
+      // And the roof plan's pitched/flat reading per floor plan, where the sections print two levels or more.
+      await storeRoofParts(input.planId, pdf, set).catch((error) => console.error("[takeoff] roof parts not stored", { planId: input.planId }, error));
     } finally {
       await pdf.close();
     }
