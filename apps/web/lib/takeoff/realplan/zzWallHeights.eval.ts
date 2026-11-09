@@ -88,7 +88,13 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || LEGEND_PAGE === 0)("
         // The product reads SAVED rooms; here, the room finder over the stage's own runs.
         const rooms = roomsFromWalls({ walls: doc2.runs.map((r) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, thicknessFeet: r.thicknessIn / 12 })), feetPerUnit: doc2.feetPerUnit, text: planText.items, widthPt: planText.widthPt }).rooms;
         const set = new Set(roof.mask.pitched);
-        const read = rooms.map((r) => ({ xs: r.xs, ys: r.ys, pitched: roomPitched(roof.mask, r, set) }));
+        const read = rooms.map((r) => ({ xs: r.xs, ys: r.ys, pitched: roomPitched(roof.mask, { ...r, named: r.tag !== null }, set), tag: r.tag?.number ?? null }));
+        const inRoom = (x: number, y: number, xs: number[], ys: number[]) => { let h = false; for (let i = 0, j = xs.length - 1; i < xs.length; j = i, i += 1) if (ys[i]! > y !== ys[j]! > y && x < ((xs[j]! - xs[i]!) * (y - ys[i]!)) / (ys[j]! - ys[i]!) + xs[i]!) h = !h; return h; };
+        const sidesOf = (r: { x1: number; y1: number; x2: number; y2: number; thicknessIn: number }) => {
+          const L = Math.hypot(r.x2 - r.x1, r.y2 - r.y1); if (L === 0) return [];
+          const nx = -(r.y2 - r.y1) / L, ny = (r.x2 - r.x1) / L, off = (r.thicknessIn / 24 + 1.5) / doc2.feetPerUnit, mx = (r.x1 + r.x2) / 2, my = (r.y1 + r.y2) / 2;
+          return [1, -1].map((sg) => { const q = read.find((x) => inRoom(mx + sg * nx * off, my + sg * ny * off, x.xs, x.ys)); return q === undefined ? null : { tag: q.tag, pitched: q.pitched }; });
+        };
         const structure = text.types.filter((t) => [...t.lines, sight?.types.find((x: SightType) => x.code.toUpperCase() === t.code.toUpperCase())?.heightNote ?? ""].some((l) => heightBasis(l)?.kind === "to-structure")).map((t) => t.code.toUpperCase());
         // A room-by-room key (HEIGHT_ROOM_PARTS, Chrome's Joplin key): each key wall's truth, the taller of its rooms' parts.
         if (process.env.HEIGHT_ROOM_PARTS && LABEL !== "") {
@@ -107,11 +113,11 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || LEGEND_PAGE === 0)("
             const nx = -(w.y2 - w.y1) / L, ny = (w.x2 - w.x1) / L, off = (((w as { thicknessFeet?: number }).thicknessFeet ?? 0.5) / 2 + 1.5) / lab.feetPerUnit, mx = (w.x1 + w.x2) / 2, my = (w.y1 + w.y2) / 2;
             const sides = [1, -1].map((sg) => { const r = keyRooms.find((q) => inR(mx + sg * nx * off, my + sg * ny * off, q.xs, q.ys)); return r === undefined ? "outside" : r.tag?.number ? (part.get(r.tag.number) ?? "unknown") : "unknown"; });
             if (sides.some((t) => t === "unknown" || t === "can't tell") || sides.every((t) => t === "outside")) return [];
-            return [{ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, feet: Math.max(...sides.filter((t) => t !== "outside").map((t) => partFt[t]!)) }];
+            return [{ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, feet: Math.max(...sides.filter((t) => t !== "outside").map((t) => partFt[t]!)), sides }];
           });
           console.log(`ROOM_PART_TRUTH_JSON ${JSON.stringify(truth)}`);
         }
-        console.log(`ROOF_RUNS_JSON ${JSON.stringify({ pitched: roof.heights.pitched.feet, flat: roof.heights.flat.feet, codes: structure, runs: doc2.runs.map((r) => ({ k: `${r.x1.toFixed(5)},${r.y1.toFixed(5)},${r.x2.toFixed(5)},${r.y2.toFixed(5)}`, roof: runPitched({ ...r, thicknessFeet: r.thicknessIn / 12 }, read, doc2.feetPerUnit) })) })}`);
+        console.log(`ROOF_RUNS_JSON ${JSON.stringify({ pitched: roof.heights.pitched.feet, flat: roof.heights.flat.feet, codes: structure, runs: doc2.runs.map((r) => ({ k: `${r.x1.toFixed(5)},${r.y1.toFixed(5)},${r.x2.toFixed(5)},${r.y2.toFixed(5)}`, roof: runPitched({ ...r, thicknessFeet: r.thicknessIn / 12 }, read, doc2.feetPerUnit), sides: sidesOf(r) })) })}`);
       }
     }
     console.log(`\n=== ${SET}: legend p${LEGEND_PAGE}, ${text.types.length} types`);

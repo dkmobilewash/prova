@@ -195,7 +195,8 @@ export async function loadReviewQueue(
           );
     // ── THE ROOF OVER EACH WALL: the roof plan's reading over this floor plan, by the saved rooms ──
     const roof = roofRead.get(page.pageNumber);
-    const pageRooms = roomsOn(page.pageNumber);
+    // A room nobody named does not vote on the roof over its walls (`roomPitched`).
+    const pageRooms = rooms.filter((r) => r.page.pageNumber === page.pageNumber).map((r) => ({ xs: r.xs, ys: r.ys, named: Boolean(r.roomNumber || r.roomName) }));
     if (roof === undefined || fpu === null || pageRooms.length === 0) items.push(...byLevel);
     else {
       const pitchedSet = new Set(roof.mask.pitched);
