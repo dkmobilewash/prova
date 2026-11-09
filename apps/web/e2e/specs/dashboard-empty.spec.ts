@@ -44,6 +44,9 @@ test.describe("dashboard, brand-new empty company", () => {
     // once the checklist is hidden, which is not this persona's state.
     await expect(page.getByRole("link", { name: "Add a job" })).toHaveAttribute("href", "/jobs/new");
     await expect(page.locator(dataTour("dashboard-jobs-empty"))).toHaveCount(0);
+    // 2026-11-08: the one New job button sits beside the checklist (a renovation walk found no clear
+    // way to start a job from Home). For this owner it says where it goes: the job's plan upload.
+    await expect(page.locator(dataTour("dashboard-new-job"))).toHaveAttribute("href", "/jobs/new?then=plans");
     // The tour is offered on the first login, beside the checklist — not only
     // after the checklist is hidden, which almost nobody does on day one.
     await expect(page.getByRole("region", { name: "Tour of C Stream" })).toBeVisible();
