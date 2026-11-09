@@ -55,6 +55,12 @@ describe("a wall takes the roof over its rooms, the taller where they differ", (
     expect(west.pitched).toBe(true);
     expect(east.pitched).toBe(false);
   });
+  it("a region no tag names does not vote — the yard or the eaves under the seams (Joplin: 93 ft wrong)", () => {
+    const yard = { ...room(2, 44), named: false };
+    expect(roomPitched(mask, yard)).toBeNull();
+    expect(runPitched({ ...line(45, 5, 45, 35), thicknessFeet: 0.5 }, [{ ...yard, pitched: roomPitched(mask, yard) }, east], FPU)).toBe(false);
+  });
+
   it("between a pitched and a flat room: the pitched roof's height; inside one room: that room's; no room: nothing", () => {
     expect(runPitched({ ...line(45, 5, 45, 35), thicknessFeet: 0.5 }, [west, east], FPU)).toBe(true);
     expect(runPitched({ ...line(91.5, 5, 91.5, 35), thicknessFeet: 0.5 }, [west, east], FPU)).toBe(false);

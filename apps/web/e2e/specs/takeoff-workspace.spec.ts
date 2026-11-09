@@ -121,8 +121,30 @@ test.describe("the full-screen takeoff workspace", () => {
    * say WHICH layout it is asserting.
    */
   async function onWorkspace(jobId: string): Promise<void> {
-    await page.goto(`/takeoff/${jobId}`);
-    await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
+    // ── A BOUNCE OFF THE WORKSPACE IS RETRIED ONCE, AND SAID IF IT HAPPENS TWICE ──
+    //
+    // Step 16 failed three times (main ae6bffce and #1062 on 2026-11-07, #1078 on
+    // 2026-11-08, run 42535888700), each time the only failure: the goto to
+    // /takeoff/<job> landed on the DASHBOARD ("Good evening, E2E" in the snapshot),
+    // seconds after the Clerk test client logged "FAPI request failed after 4
+    // attempts". Step 15 had opened the same job a moment earlier, and nothing in
+    // the workspace redirects anywhere: the session check bounced through sign-in,
+    // which lands on the dashboard and drops the target. That is the test's sign-in
+    // infrastructure, not the page, so the helper opens the workspace again when the
+    // browser has been taken somewhere else — and a second bounce fails naming where
+    // it went, instead of a bare "element not found".
+    for (let attempt = 1; ; attempt += 1) {
+      await page.goto(`/takeoff/${jobId}`);
+      const shown = await page
+        .locator('[data-takeoff="workspace"]')
+        .waitFor({ state: "visible", timeout: 30_000 })
+        .then(() => true, () => false);
+      if (shown) break;
+      const at = new URL(page.url()).pathname;
+      if (attempt >= 2 || at.startsWith("/takeoff/")) {
+        throw new Error(`the workspace for ${jobId} did not open (attempt ${attempt}, the browser is on ${at})`);
+      }
+    }
     await expect
       .poll(async () => port().locator("canvas").evaluate((n) => (n as HTMLCanvasElement).width), {
         timeout: 60_000,
