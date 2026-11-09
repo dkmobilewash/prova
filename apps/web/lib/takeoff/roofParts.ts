@@ -133,8 +133,15 @@ const inRing = (x: number, y: number, xs: readonly number[], ys: readonly number
   return hit;
 };
 
-/** A room is under a pitched roof when most of the mask's cells inside it are. Null when none fall inside. */
-export function roomPitched(mask: RoofMask, room: { xs: readonly number[]; ys: readonly number[] }, set: ReadonlySet<number> = new Set(mask.pitched)): boolean | null {
+/**
+ * A room is under a pitched roof when most of the mask's cells inside it are.
+ * Null when none fall inside, and for a region no tag names (`named: false`):
+ * on Joplin those were the yard between wings and the eaves outside, read
+ * pitched off the overhanging seams — 93 ft of wrong heights, cut to 0 by not
+ * letting them vote (64 ft wrong fewer in all, 3 ft right more).
+ */
+export function roomPitched(mask: RoofMask, room: { xs: readonly number[]; ys: readonly number[]; named?: boolean }, set: ReadonlySet<number> = new Set(mask.pitched)): boolean | null {
+  if (room.named === false) return null;
   let n = 0, yes = 0;
   for (let r = 0; r < mask.rows; r += 1) for (let c = 0; c < mask.cols; c += 1) {
     const x = mask.x0 + (c + 0.5) * mask.cellUnits, y = mask.y0 + (r + 0.5) * mask.cellUnits;
