@@ -104,10 +104,17 @@ function labelledFacts(sections: readonly Pick<SpecSectionView, "sectionNumber" 
  * the job's spec reads — a spec book's sections and the notes printed on the drawings. `*` is for
  * a wall whose type is not known yet. Empty when the job has no spec read.
  */
-export async function loadSpecSaysByCode(jobId: string, companyId: string): Promise<Record<string, SpecSay[]>> {
-  const [rows, plans, library] = await Promise.all([
+/**
+ * A job's spec reads, each named by its source — "09 21 16" for a spec book's section,
+ * "09 21 16, sheet G001" for notes printed on a drawing — with the plans whose legends they are
+ * checked against. One loader for the "spec says" notes and for Ask's spec answers, so the two
+ * cannot read different things.
+ */
+export async function loadJobSpecFacts(jobId: string, companyId: string): Promise<{ facts: SectionFacts[]; plans: { id: string }[] }> {
+  const [rows, plans] = await Promise.all([
     prisma.bidSpecSection.findMany({
       where: { OR: [{ job: { id: jobId, companyId } }, { bidInvitation: { wonJobId: jobId, companyId } }] },
+      orderBy: { sectionNumber: "asc" },
       select: {
         sectionNumber: true,
         title: true,
@@ -116,7 +123,6 @@ export async function loadSpecSaysByCode(jobId: string, companyId: string): Prom
       },
     }),
     prisma.takeoffPlan.findMany({ where: { jobId, companyId }, select: { id: true, fileUrl: true } }),
-    prisma.wallType.findMany({ where: { companyId }, select: { code: true } }),
   ]);
   const planFiles = new Set(plans.map((p) => p.fileUrl));
   const facts = labelledFacts(
@@ -127,6 +133,14 @@ export async function loadSpecSaysByCode(jobId: string, companyId: string): Prom
       reading: r.tradeReadings[0] ? { id: "", on: new Date(0), facts: specTradeReadFrom(r.tradeReadings[0].facts) } : null,
     })),
   );
+  return { facts, plans: plans.map((p) => ({ id: p.id })) };
+}
+
+export async function loadSpecSaysByCode(jobId: string, companyId: string): Promise<Record<string, SpecSay[]>> {
+  const [{ facts, plans }, library] = await Promise.all([
+    loadJobSpecFacts(jobId, companyId),
+    prisma.wallType.findMany({ where: { companyId }, select: { code: true } }),
+  ]);
   if (facts.length === 0) return {};
   const lines = new Map<string, string[] | null>();
   for (const plan of plans) {

@@ -86,6 +86,8 @@ import { summarizeAlerts } from "@/lib/alerts";
 import { resolveJob } from "./resolve";
 import { wallScopeParts } from "@/lib/estimating/takeoff-item-lines";
 import { loadReviewQueue } from "@/lib/takeoff/reviewQueueQuery";
+import { loadJobSpecFacts } from "@/lib/specs/specBookQuery";
+import { asSpecTopic, specAnswer } from "@/lib/specs/specAnswer";
 import { sameCode } from "@/lib/takeoff/legendMerge";
 import type { ReviewItem } from "@/lib/takeoff/reviewQueue";
 import { cookies } from "next/headers";
@@ -254,6 +256,7 @@ export const HANDLERS: Record<
   wall_schedule: wallSchedule,
   takeoff_quantities: takeoffQuantities,
   takeoff_review: takeoffReview,
+  spec_requirements: specRequirements,
   bid_levelling: bidLevelling,
   bid_compliance: bidCompliance,
   bid_alternates: bidAlternates,
@@ -5151,6 +5154,32 @@ async function takeoffReview(companyId: string, input: Input): Promise<ToolResul
     data: { job: job.name, total: items.length, hasDrawings: planId !== null, left, open: href },
     citations,
   };
+}
+
+/**
+ * "What board does the spec call for on Baker?" — the job's spec reads (a spec book's sections and the
+ * notes printed on its drawings, `loadJobSpecFacts`) shaped by `specAnswer`, every item with its source.
+ * The estimate lines are read only for "not in my estimate", matched by their words. Reads only.
+ */
+async function specRequirements(companyId: string, input: Input): Promise<ToolResult> {
+  const job = await takeoffJob(companyId, input.jobName);
+  if ("data" in job) return job;
+  const href = `/jobs/${job.id}/specs`;
+  const citations = [{ label: "Jobs", href: "/jobs" }, { label: `${job.name} — specs`, href }];
+  const { facts } = await loadJobSpecFacts(job.id, companyId);
+  if (facts.length === 0) {
+    return {
+      data: { job: job.name, open: href },
+      citations,
+      unavailable: `No spec has been read on ${job.name} yet. On its Specs page, upload the spec book or press Look for specs on the drawings.`,
+    };
+  }
+  const topic = asSpecTopic(input.topic);
+  const lines =
+    topic === "not_in_estimate"
+      ? await prisma.jobLineItem.findMany({ where: { jobId: job.id, job: { companyId }, isDeleted: false }, select: { description: true } })
+      : [];
+  return { data: { job: job.name, topic, ...specAnswer(facts, topic, lines), open: href }, citations };
 }
 
 function describe(item: ReviewItem): string {
