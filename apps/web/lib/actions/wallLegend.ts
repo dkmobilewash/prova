@@ -18,6 +18,11 @@ import { heightOptionLines, legendHeightOf, legendHeightsFor, type LegendHeightR
 import { sightFieldsFor } from "@/lib/takeoff/legendProposal";
 import { readWallLegendBySight } from "@/lib/takeoff/readWallLegend";
 import { actionFail, isUniqueConstraintError, type ActionResultWith } from "./shared";
+import { completeAssembly } from "@/lib/estimating/assemblyAccessories";
+import { standardsFrom } from "@/lib/estimating/assemblyStandards";
+import { catalogByMaterial, catalogFor } from "@/lib/estimating/materialKey";
+import { loadJobSpecFacts } from "@/lib/specs/specBookQuery";
+import { specSays } from "@/lib/specs/specTradeFacts";
 
 /**
  * ── "ADD THESE WALL TYPES TO YOUR LIBRARY" ──
@@ -154,8 +159,25 @@ export async function addWallTypeFromLegend(
   const height =
     (await legendHeightsFor({ planId: proposal.planId, companyId, legendPage: proposal.pageNumber, types: [{ code, lines: original.lines, heightNote: sight.heightNote }] })).get(code.toUpperCase()) ??
     legendHeightOf({ code, lines: original.lines, heightNote: sight.heightNote }, null, "no reading");
+  // ── MADE COMPLETE: screws, tape, compound, deflection track; gaps filled from the spec ──
+  const [defaults, specFacts, catalogEntries] = await Promise.all([
+    prisma.companyBidDefaults.findUnique({ where: { companyId }, select: { assemblyStandards: true, defaultWastePercent: true } }),
+    loadJobSpecFacts(jobId, companyId),
+    prisma.lineItemCatalogEntry.findMany({ where: { companyId }, select: { id: true, description: true, unit: true } }),
+  ]);
+  const standards = standardsFrom(defaults?.assemblyStandards, defaults?.defaultWastePercent == null ? null : Number(defaults.defaultWastePercent));
+  const complete = completeAssembly({
+    components: assembly.components,
+    lines: original.lines,
+    says: specSays(original.lines, specFacts.facts),
+    standards,
+    spacingFromStandard: fields.studSpacingIn === null,
+  });
+  const catalog = catalogByMaterial(catalogEntries);
   const notes = [
     `Read off ${where} of the plan set. Check against the drawing before pricing.`,
+    ...complete.conflicts,
+    ...complete.needsPerson,
     height.sentence,
     ...heightOptionLines(height),
     ...original.lines,
@@ -173,11 +195,12 @@ export async function addWallTypeFromLegend(
           thicknessIn: thicknessIn === null ? null : thicknessIn.toFixed(2),
           defaultHeightFt: height.heightFt === null ? null : height.heightFt.toFixed(2),
           sides: 2,
-          studSpacingIn: (fields.studSpacingIn ?? 16).toFixed(2),
+          studSpacingIn: (fields.studSpacingIn ?? standards.studSpacingIn).toFixed(2),
           sortOrder: sortFrom,
           notes,
           components: {
-            create: assembly.components.map((c, index) => ({
+            create: complete.components.map((c, index) => ({
+              catalogEntryId: catalogFor(catalog, c),
               description: c.description,
               unit: c.unit,
               basis: c.basis,
@@ -205,7 +228,7 @@ export async function addWallTypeFromLegend(
   revalidatePath("/wall-types");
   revalidatePath(`/jobs/${jobId}/takeoff/legend`);
   revalidatePath(`/jobs/${jobId}/takeoff`);
-  return { ok: true, value: { code, componentCount: assembly.components.length, height } };
+  return { ok: true, value: { code, componentCount: complete.components.length, height } };
 }
 
 

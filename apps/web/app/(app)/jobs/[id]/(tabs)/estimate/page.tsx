@@ -71,6 +71,8 @@ import { WallSchedule } from "@/components/WallSchedule";
 import { estimatedHours, productionBackCheck } from "@/lib/labor-productivity";
 import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallTypeInput } from "@/lib/wall-assemblies";
 import { BidRecapPanel, type RecapLineView } from "@/components/BidRecapPanel";
+import { PriceTheseMaterials } from "@/components/PriceTheseMaterials";
+import { unpricedMaterials } from "@/lib/estimating/materialKey";
 import { RECAP_RATE_KEYS, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
 import {
   addLineItem,
@@ -877,6 +879,14 @@ export default async function JobEstimatePage({
             </div>
           )}
           <div className="mb-6 flex justify-end">{proposalLink}</div>
+          <PriceTheseMaterials
+            jobId={job.id}
+            materials={unpricedMaterials(
+              job.lineItems
+                .filter((l) => l.wallTypeComponentId !== null && l.unitPrice == null && l.costCategory !== "LABOR")
+                .map((l) => ({ id: l.id, description: l.description, unit: l.unit, quantity: Number(l.quantity) })),
+            )}
+          />
 
           <section className="mb-10" data-tour="job-line-items">
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
