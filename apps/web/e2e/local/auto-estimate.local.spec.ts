@@ -132,7 +132,15 @@ test.describe("Baker's legend types to a priced estimate", () => {
     // ── 2. THE ESTIMATE'S WALL SCHEDULE: THREE RUNS ──
     await page.goto(`/jobs/${jobId}/estimate`);
     await hydrated('input[name="lengthFt"]');
+    // The schedule is a closed disclosure until somebody opens it.
+    const openSchedule = async () => {
+      const addRun = page.getByRole("button", { name: "Add run" });
+      if (!(await addRun.isVisible())) await page.getByRole("heading", { name: "Wall schedule" }).click();
+      await expect(addRun).toBeVisible();
+    };
+    await openSchedule();
     for (const [typeCode, lf, h] of [["S6B", "120", "10"], ["C8B", "80", "12"], ["S6A", "60", "14"]] as const) {
+      await openSchedule();
       const form = page.locator("form").filter({ has: page.locator('input[name="lengthFt"][placeholder], input[name="lengthFt"]') }).filter({ hasText: "Add run" }).first();
       const id = types.find((t) => t.code === typeCode)!.id;
       await form.locator('select[name="wallTypeId"]').selectOption(id);
@@ -169,6 +177,7 @@ test.describe("Baker's legend types to a priced estimate", () => {
     // ── 4. A HEIGHT CHANGE MOVES THE MATERIALS ──
     const s6bBoard = async () => Number((await estimateLines(jobId)).find((l) => /^S6B — .*gypsum board/.test(l.description))?.quantity ?? 0);
     const was = await s6bBoard();
+    await openSchedule();
     const editForm = page.locator("form").filter({ has: page.locator('input[name="label"][value="S6B walls"]') }).first();
     await expect(editForm).toBeVisible();
     await editForm.locator('input[name="heightFt"]').fill("12");
