@@ -311,7 +311,7 @@ const distanceToRun = (px: number, py: number, w: { x1: number; y1: number; x2: 
   return Math.hypot(px - (w.x1 + t * dx), py - (w.y1 + t * dy));
 };
 
-export type ExistingWall = { wall: WallCandidate; route: "tag" | "legend" | "grey"; why: string };
+export type ExistingWall = { wall: WallCandidate; route: "tag" | "legend" | "grey" | "nic"; why: string };
 
 export function existingWalls(input: {
   /** The finder's runs, page-width units. */
@@ -402,7 +402,75 @@ export function existingWalls(input: {
       }
     }
   }
+  // ── 4. INSIDE A HATCHED AREA LABELLED NOT IN CONTRACT ──
+  // Wendell A101.2 hatches the part of the building outside this contract and
+  // labels it NOT IN CONTRACT. The area is read off the HATCH, not off a room
+  // label (a room named (E) OFFICE says what the room is, and its walls are as
+  // often new: the area route removed 2026-10-30): the hatched cells the label
+  // sits in, joined. Only a wall with BOTH sides in that hatch goes; the area's
+  // edge is a wall the contract may build.
+  const nic = rows.filter((r) => NIC_WORDS.test(r.str));
+  if (nic.length > 0) {
+    const area = nicHatch(segments, nic.map((r) => ({ x: (r.x + r.width / 2) / widthPt, y: (r.y - r.height / 2) / widthPt })), feetPerUnit);
+    if (area !== null) {
+      for (const w of walls) {
+        if (found.has(w)) continue;
+        const L = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+        if (L === 0) continue;
+        const nx = -(w.y2 - w.y1) / L, ny = (w.x2 - w.x1) / L, off = (w.thicknessFeet / 2 + NIC_SIDE_FEET) / feetPerUnit;
+        const pts = [0.25, 0.5, 0.75].flatMap((t) => [1, -1].map((sg) => ({ x: w.x1 + (w.x2 - w.x1) * t + sg * nx * off, y: w.y1 + (w.y2 - w.y1) * t + sg * ny * off })));
+        if (pts.every((p) => area(p.x, p.y))) found.set(w, { wall: w, route: "nic", why: `inside the hatched area labelled "${nic[0]!.str}"` });
+      }
+    }
+  }
   return [...found.values()];
+}
+
+/** The words that put an area outside the contract. */
+export const NIC_WORDS = /^(?:NOT\s+IN\s+CONTRACT|N\.?\s?I\.?\s?C\.?|BY\s+OTHERS|NOT\s+IN\s+SCOPE)$/i;
+/** A hatch cell, feet; a wall's sides are looked at this far beyond its faces. */
+export const NIC_CELL_FEET = 3;
+export const NIC_SIDE_FEET = 1.5;
+
+/**
+ * The hatched area round a label: cells crossed by two or more diagonal lines,
+ * joined to the cell the label sits in (or one cell from it). Null when the
+ * label sits in no hatch.
+ */
+export function nicHatch(segments: readonly StrokeSegment[], labels: readonly { x: number; y: number }[], feetPerUnit: number): ((x: number, y: number) => boolean) | null {
+  const cell = NIC_CELL_FEET / feetPerUnit;
+  const count = new Map<string, number>();
+  for (const s of segments) {
+    const dx = s.x2 - s.x1, dy = s.y2 - s.y1, len = Math.hypot(dx, dy);
+    if (len * feetPerUnit < 2) continue;
+    const cos = Math.abs(dx) / len;
+    if (cos < Math.cos((70 * Math.PI) / 180) || cos > Math.cos((20 * Math.PI) / 180)) continue;
+    const seen = new Set<string>();
+    const steps = Math.ceil(len / (cell / 2));
+    for (let k = 0; k <= steps; k += 1) {
+      const key = `${Math.floor((s.x1 + (dx * k) / steps) / cell)},${Math.floor((s.y1 + (dy * k) / steps) / cell)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      count.set(key, (count.get(key) ?? 0) + 1);
+    }
+  }
+  const hatched = (key: string) => (count.get(key) ?? 0) >= 2;
+  const area = new Set<string>();
+  for (const label of labels) {
+    const [cx, cy] = [Math.floor(label.x / cell), Math.floor(label.y / cell)];
+    const start = [-1, 0, 1].flatMap((i) => [-1, 0, 1].map((j) => `${cx + i},${cy + j}`)).find(hatched);
+    if (start === undefined) continue;
+    const queue = [start];
+    area.add(start);
+    while (queue.length > 0) {
+      const [x, y] = queue.pop()!.split(",").map(Number) as [number, number];
+      for (const [i, j] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const k = `${x + i},${y + j}`;
+        if (!area.has(k) && hatched(k)) { area.add(k); queue.push(k); }
+      }
+    }
+  }
+  return area.size === 0 ? null : (x, y) => area.has(`${Math.floor(x / cell)},${Math.floor(y / cell)}`);
 }
 
 /** One sentence for the panel, from the routes that fired. */
@@ -412,5 +480,6 @@ export function existingSentence(list: readonly ExistingWall[]): string {
   if (n("tag") > 0) parts.push(`${n("tag")} tagged (E) or EXISTING beside the wall`);
   if (n("legend") > 0) parts.push(`${n("legend")} drawn with the legend's existing-wall pen`);
   if (n("grey") > 0) parts.push(`${n("grey")} drawn grey where the sheet draws its walls black`);
-  return `${parts.join("; ")} — existing work, not a wall to take off`;
+  if (n("nic") > 0) parts.push(`${n("nic")} inside a hatched area labelled NOT IN CONTRACT`);
+  return `${parts.join("; ")} — ${n("nic") === list.length ? "outside this contract" : "existing work"}, not a wall to take off`;
 }
