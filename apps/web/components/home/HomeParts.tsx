@@ -68,7 +68,7 @@ export function ShortcutChips({ newJob, others }: { newJob: boolean; others: { i
         </SearchChip>
       </span>
       {newJob && (
-        <Link href="/jobs/new" data-tour="dashboard-new-job" className={CHIP_PRIMARY}>
+        <Link href="/jobs/new" className={CHIP_PRIMARY}>
           <span aria-hidden>+</span> New job
         </Link>
       )}
@@ -81,6 +81,20 @@ export function ShortcutChips({ newJob, others }: { newJob: boolean; others: { i
         </ShortcutLink>
       ))}
     </div>
+  );
+}
+
+/**
+ * THE ONE WAY TO START A JOB FROM HOME, at every width and for every company — a brand-new one
+ * whose checklist is showing included, which used to see no button at all (renovation walk,
+ * 2026-11-08). For someone who can open the Takeoff tab it says "upload plans" and lands there
+ * after the job is named (`lib/new-job-entry.ts`).
+ */
+export function NewJobButton({ href, plans }: { href: string; plans: boolean }) {
+  return (
+    <Link href={href} data-tour="dashboard-new-job" data-home="new-job" className={`${CHIP_PRIMARY} justify-center`}>
+      <span aria-hidden>+</span> New job{plans ? <span className="font-normal"> — upload plans</span> : null}
+    </Link>
   );
 }
 
