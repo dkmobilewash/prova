@@ -115,26 +115,35 @@ const TRADE =
 const REQUIRES =
   /\b(SHALL|PROVIDE[DS]?|REQUIRED|INSTALL(?:ED)?|USE[D]?|U\.?N\.?O\.?|UNLESS OTHERWISE|ALL\b[^.]{0,80}\b(?:TO BE|SHALL)\b)\b|\b(?:MIN(?:IMUM)?|MAX(?:IMUM)?)\.?\s*(?=\d|OF\s+\d)|\d\S*\s*(?:MIN|MAX)\.?\b/i;
 // Another trade's work that shares this trade's words: wood framing, plywood, roofing, structural steel.
-const NOT_THIS_TRADE = /\b(PLYWOOD|LUMBER|2X\d*|LVL|LSL|TJI|ROOFING|MEMBRANE|SIMPSON|NAILS?|NAILING|JOISTS?|RAFTERS?|SHEAR\s*WALLS?|ANCHOR\s*BOLTS?|PIPE|DRAIN|CONDUIT|DUCT|ALARMS?|STROBES?|VALVES?|HOODS?|EXHAUST)\b/i;
+const NOT_THIS_TRADE = /\b(PLYWOOD|LUMBER|2X\d*|LVL|LSL|TJI|ROOFING|MEMBRANE|SIMPSON|NAILS?|NAILING|JOISTS?|RAFTERS?|SHEAR\s*WALLS?|ANCHOR\s*BOLTS?|PIPES?|PIPING|DRAINS?|CONDUITS?|DUCTS?|DUCTWORK|DAMPERS?|GLAZING|ALARMS?|STROBES?|VALVES?|HOODS?|EXHAUST|PLUMBING|ELECTRICAL)\b/i;
 // A code analysis cites the building code about the building; it is not a requirement on this work.
 // Code-analysis wording, not a mere citation: a requirement note may cite "IBC SECTION 808" and still be one.
 const CODE_ANALYSIS = /\b(OCCUPANCY|CHAPTER\s+\d+|TABLE\s+\d{3,4})\b/i;
-const CLEARLY_THIS_TRADE = /\b(GYP(?:SUM)?|GWB|DRYWALL|WALLBOARD|(?:METAL|STEEL|MTL\.?|STL\.?)\s*STUDS?|ACOUSTICAL|CEILING\s*(?:TILE|GRID)|FIREPROOFING|SFRM|EIFS|PLASTER)\b/i;
+const CLEARLY_THIS_TRADE =
+  /\b(GYP(?:SUM)?|GWB|DRYWALL|WALLBOARD|(?:METAL|STEEL|MTL\.?|STL\.?)\s*STUDS?|ACOUSTICAL|ACOUSTIC\s+SEALANT|CEILING\s*(?:TILES?|GRID|SYSTEMS?|SUSPENSION)|DEFLECTION\s+TRACK|FIREPROOFING|SFRM|EIFS|PLASTER)\b/i;
 const TOKEN =
   /(\b\d{2}\s*(?:GA\.?|GAUGE|GAGE|MILS?)\b|\b\d+\s*-?\s*\d*\/?\d+\s*(?:"|''|IN\.?|INCH)|TYPE\s*['"]?\s*[XC]\b|LEVEL\s*[0-5]\b|\bUL\b|\b[UVWXY]\d{3}\b|O\.?\s*C\.?\b|DEFLECTION|SLOTTED|ABUSE|IMPACT|MOISTURE|MOLD|\bL\/\d{3}\b|\d\s*-?\s*(?:HR|HOUR)\b|NO\s+SUBSTITUTIONS?)/i;
 
 /** True when a note states a requirement this trade prices, with something to measure it by. */
 // Plainly this trade's element, for a note that states a requirement without a number in it.
 const TRADE_ELEMENT =
-  /\b(GYP(?:SUM)?|GWB|DRYWALL|WALLBOARD|(?:METAL|STEEL|MTL\.?|STL\.?)\s*STUDS?|ACOUSTICAL|(?:CEILING|T-?BAR)\s*GRID|SUSPENDED\s*CEILINGS?|SUSPENSION\s*SYSTEMS?|BULKHEADS?|FURRING|DEFLECTION\s*TRACK|SHAFT\s*WALL|FIREPROOFING|SFRM|EIFS|PLASTER|LAY-IN)\b/i;
+  /\b(GYP(?:SUM)?|GWB|DRYWALL|WALLBOARD|(?:METAL|STEEL|MTL\.?|STL\.?)\s*STUDS?|ACOUSTICAL|(?:CEILING|T-?BAR)\s*GRID|SUSPENDED\s*CEILINGS?|SUSPENSION\s*SYSTEMS?|BULKHEADS?|FURRING|DEFLECTION\s*TRACK|SHAFT\s*WALL|FIREPROOFING|SFRM|EIFS|PLASTER|LAY-IN|CEILING\s+(?:TILES?|SYSTEMS?|ASSEMBL(?:Y|IES)|ACCESS\s+PANELS?)|ACCESS\s+PANELS?\s+IN\s+(?:CEILINGS?|PARTITIONS?)|(?:FIRE|SMOKE|SOUND|STC|ACOUSTICAL?)?(?:\s*(?:AND\/OR|\/|AND)\s*(?:FIRE|SMOKE|SOUND))?[-\s]*RATED\s+(?:PARTITIONS?|WALLS?|CEILING\s+ASSEMBL(?:Y|IES))|(?:STC|SOUND)\s+(?:WALLS?|PARTITIONS?))\b/i;
 // A requirement stated as an order or an obligation: "SHALL", "MUST", "ALL … TO BE", or a note that opens with a verb.
 const OBLIGES =
   /\b(SHALL|MUST|PROVIDE[DS]?|ALL\b[^.]{0,80}\bTO BE|ARE TO|IS TO)\b|^(?:\(?[\dA-Za-z]{1,2}[.)]\s*)?(?:INSTALL|PROVIDE|WRAP|CENTER|ATTACH|APPLY|EXTEND|SECURE|FURNISH|MAINTAIN|ERECT|REPAIR|PATCH|SEAL|USE)\b(?!\s+OF\b)/i;
 // Prefinished metal wall or soffit panels: siding, which carries a gauge and "studs" but is not this work.
+const PAINTING =
+  /\b(?:SHALL\s+PAINT|TO\s+PAINT|PROVIDE\s+(?:\(N\)\s*|NEW\s+)?PAINT|PAINT(?:ING)?\s+(?:SHALL|SCOPE|INSTALLATION)|RECEIVING\s+PAINT|PRIMER|LATEX|RECEIVE\s+(?:A\s+)?(?:FLAT|EGGSHELL|SATIN|SEMI-?GLOSS|GLOSS)\s+FINISH)\b/i;
 const METAL_PANELS = /\b(?:PRE-?FINISHED\s+METAL|METAL\s+(?:WALL|SOFFIT)\s+PANELS?|KYNAR|PAC-CLAD)\b/i;
 
 export function isTradeRequirement(text: string): boolean {
   if (METAL_PANELS.test(text)) return false;
+  // Painting is another trade, even on drywall: "CONTRACTOR SHALL PAINT…", "PROVIDE NEW PAINT FINISH",
+  // "PAINT INSTALLATION SHALL…", "ALL GWB CEILINGS SHALL RECEIVE FLAT FINISH" (a sheen is the painter's).
+  if (PAINTING.test(text)) return false;
+  // A note explaining the drawings' own conventions ("THE ALPHANUMERIC DESIGNATION IN EACH PARTITION TYPE
+  // SYMBOL DESCRIBES…") says how to read a sheet, not what to build, unless it also gives an order.
+  if (/\b(SYMBOLS?|DESIGNATIONS?|ALPHANUMERIC)\b/i.test(text) && !/\b(SHALL|PROVIDE|USE|INSTALL)\b/i.test(text)) return false;
   if (text.length < 20 || text.length > 900) return false;
   // An abbreviations table row: short code | expansion pairs, no sentence.
   if (/^[A-Z.&/]{1,6}\s+[A-Z ,/&-]+$/.test(text) && !REQUIRES.test(text)) return false;
@@ -241,7 +250,8 @@ export type DrawingSpecNote = { sectionNumber: string; text: string; read: SpecT
  */
 export function searchesSheet(sheetNumber: string | null): boolean {
   if (sheetNumber === null) return true;
-  return /^(?:G|GN|GI|A|AD|AE|AF|AS|I|ID|N|X)[-.\s]?\d/i.test(sheetNumber.trim()) || /^(?:G|A|I)\d/i.test(sheetNumber.trim());
+  // Any architectural series (A, AD, AX, AS…), general, interiors.
+  return /^(?:G|GN|GI|A[A-Z]?|I|ID|N|X)[-.\s]?\d/i.test(sheetNumber.trim());
 }
 
 /** Every trade requirement on one sheet, each with whatever facts code reads out of it; repeats are dropped. */

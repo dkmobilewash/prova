@@ -64,6 +64,7 @@ const LABELS: Record<ToolName, string> = {
   wall_schedule: "the wall schedule",
   takeoff_quantities: "the takeoff",
   takeoff_review: "the review queue",
+  spec_requirements: "the spec",
   bid_levelling: "the quotes you collected",
   bid_compliance: "your bid form",
   bid_alternates: "the alternates on your bid",

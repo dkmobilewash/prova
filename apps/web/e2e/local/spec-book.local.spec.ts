@@ -283,6 +283,31 @@ test.describe("the spec book on a new company's job", () => {
     await expect(page.getByText(clauses[0]!.text).first()).toBeVisible({ timeout: 30_000 });
     await shot("proposal");
 
+    // ── ASK ABOUT THE SPEC, with the real model (ASK_REAL=1 and a key with credit) ──
+    // The four questions, each answered from the reads above; every answer must name a source.
+    if (process.env.ASK_REAL === "1") {
+      const asks: [string, RegExp][] = [
+        ["What board does the spec call for on Riverbend?", /Type X|09 21 16/i],
+        ["Does Riverbend need Level 5 anywhere?", /Level 5/i],
+        ["What stud gauge is specified on Riverbend?", /\b2[05]\s*(?:ga|gauge)/i],
+        ["Any spec items not in my estimate on Riverbend?", /estimate/i],
+      ];
+      for (const [question, expected] of asks) {
+        await page.goto("/ai");
+        const box = page.getByRole("textbox", { name: "Ask about your jobs" });
+        await box.fill(question);
+        await page.getByRole("button", { name: "Ask", exact: true }).click();
+        const answer = page.locator('[data-ask="answer"]').last();
+        await expect(answer).toContainText(expected, { timeout: 120_000 });
+        const said = (await answer.innerText()).replace(/\s+/g, " ").trim();
+        note(`Ask "${question}": ${said.slice(0, 400)}`);
+        expect(said, "every spec answer names its source").toMatch(/09 2\d \d\d|sheet [A-Z]/);
+        await shot(`ask-${asks.findIndex((a) => a[0] === question) + 1}`);
+      }
+    } else {
+      note("Ask step skipped: set ASK_REAL=1 with a model key that has credit to ask the four spec questions.");
+    }
+
     const usage = await prisma.askUsage.findMany({ where: { companyId }, select: { feature: true, model: true, inputTokens: true, outputTokens: true } });
     note(`Model calls: ${usage.length} (${usage.map((u) => `${u.feature} ${u.model} ${u.inputTokens}/${u.outputTokens}`).join("; ")}).`);
     note(`Total ${Math.round((Date.now() - t0) / 1000)} s.`);
