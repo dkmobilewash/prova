@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { findWallsOnSheet } from "./findWallsOnSheet";
 import { offeredCandidates } from "./offeredCandidates";
-import { priorPlanFor } from "./priorPlan";
+import { priorPlanFor, samePaper } from "./priorPlan";
 import { autoPairs, pairingFor } from "./priorPlanLoad";
 import { takeoffFeatureRows } from "./features";
 import type { StrokeSegment } from "./wallVectors";
@@ -87,6 +87,36 @@ describe("what the demolition plan sets aside", () => {
     const prior = priorPlanFor({ demo: demo([...few, ...ticks]), newPage: { segments: newSegments, widthPt: W }, newRuns, feetPerUnit });
     expect(prior.lines).toBeNull();
     if (prior.lines === null) expect(prior.why).toMatch(/of 5 walls agree/);
+  });
+
+  // The sheet's border: two long rules across and two down, as every title-blocked sheet carries.
+  const frame = (dx = 0): StrokeSegment[] => [
+    { x1: 10 + dx, y1: 10, x2: 1214 + dx, y2: 10, width: 2 }, { x1: 10 + dx, y1: 782, x2: 1214 + dx, y2: 782, width: 2 },
+    { x1: 10 + dx, y1: 10, x2: 10 + dx, y2: 782, width: 2 }, { x1: 1214 + dx, y1: 10, x2: 1214 + dx, y2: 782, width: 2 },
+  ];
+
+  it("the same sheet of paper is the same frame: every border rule has its twin, and a frameless page is not", () => {
+    expect(samePaper({ segments: [...frame(), ...ticks], widthPt: W }, { segments: [...frame(), ...existing], widthPt: W })).toBe(true);
+    expect(samePaper({ segments: frame(), widthPt: W }, { segments: frame(20), widthPt: W })).toBe(false);
+    expect(samePaper({ segments: frame(), widthPt: W }, { segments: frame(), widthPt: 1728 })).toBe(false);
+    expect(samePaper({ segments: ticks, widthPt: W }, { segments: ticks, widthPt: W })).toBe(false);
+  });
+
+  it("on the same paper, a demolition plan too sparse to vote still sets aside the walls it draws solid", () => {
+    // One wall in common, under the vote floor — but drawn on the same sheet in the same frame,
+    // so the frame is the alignment (Green Bay A3.1/A3.2, McAllen A3.2).
+    const few = wall(20, 20, 100, 20);
+    const page = { segments: [...newSegments, ...frame()], widthPt: W };
+    const prior = priorPlanFor({ demo: demo([...few, ...frame(), ...ticks]), newPage: page, newRuns, feetPerUnit });
+    expect(prior.lines).not.toBeNull();
+    const aside = (lines: NonNullable<typeof prior.lines>) => offer({ lines, sheet: "A3.1" }).setAsideLines.filter((l) => l.kind === "on-prior-plan").reduce((n, l) => n + l.lengthFeet, 0);
+    expect(aside(prior.lines!)).toBeGreaterThan(70);
+    expect(aside(prior.lines!)).toBeLessThan(90);
+    // Drawn along 75% of the run — enough for a wall-aligned pair, short of what a frame-aligned one asks: offered.
+    const part = priorPlanFor({ demo: demo([...wall(20, 20, 80, 20), ...frame(), ...ticks]), newPage: page, newRuns, feetPerUnit });
+    expect(aside(part.lines!)).toBe(0);
+    // Moved by 20 pt, it is another sheet: under the vote floor, nothing is compared.
+    expect(priorPlanFor({ demo: demo([...few, ...frame(20), ...ticks]), newPage: page, newRuns, feetPerUnit }).lines).toBeNull();
   });
 
   it("a wall the demolition plan draws at another thickness is still on it: its two faces are", () => {
