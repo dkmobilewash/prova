@@ -19,7 +19,8 @@ import type { BusinessScopeAnswers } from "@/lib/businessScope";
 import type { HelpChannel } from "@/lib/help-request";
 import type { TaskList } from "@/lib/agents/tasks";
 import type { MoneyRailStage } from "@/lib/moneyRail";
-import type { Principal } from "@/lib/permissions";
+import { can, type Principal } from "@/lib/permissions";
+import { NEW_JOB_LABEL, newJobHref } from "@/lib/new-job-entry";
 
 /**
  * The Concept G top bar — the whole of the desktop navigation now that the
@@ -172,6 +173,19 @@ export function TopBar({
         </nav>
 
         <div className="ml-auto flex items-center gap-1 md:gap-3">
+          {/* Start a job from anywhere: lands on its plan upload for someone who can open the
+              Takeoff tab (`lib/new-job-entry.ts`). A "+" on a phone, the words from md up. */}
+          {(can(principal, "MANAGE_JOBS") || can(principal, "VIEW_JOB_COSTS")) && (
+            <Link
+              href={newJobHref(can(principal, "VIEW_JOB_COSTS"))}
+              aria-label={NEW_JOB_LABEL}
+              data-shell="new-job"
+              className="flex h-11 min-w-11 items-center justify-center gap-1 rounded-lg bg-brand px-3 text-sm font-semibold text-neutral-900 hover:bg-brand-hover md:h-9"
+            >
+              <span aria-hidden>+</span>
+              <span className="hidden md:inline">{NEW_JOB_LABEL}</span>
+            </Link>
+          )}
           <div className="hidden md:block">
             <SearchTrigger size="sm" />
           </div>
