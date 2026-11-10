@@ -152,13 +152,16 @@ export type SheetReading = { pageNumber: number; sheetNumber: string | null; tit
  * ── A SHEET THE DRAWING ITSELF SAYS IS A FLOOR PLAN ──
  *
  * Not merely "not refused" (`takeoffSheetVerdict` offers every sheet it does not
- * recognise): a drawing on it is captioned as a plan, or it is an architectural sheet
- * titled FLOOR PLAN. That is what "sure" means when the workspace picks a sheet for a
- * person who has not picked one.
+ * recognise): an architectural sheet (A series, not AD) whose title or one of whose
+ * drawing captions says FLOOR PLAN, and not another trade's (`ownsFloorPlan`). A
+ * caption read as "a plan" was not enough: on Baker it took G010 CODE PLAN, S2.0
+ * FOUNDATION PLAN and T1.01 SYSTEM COMMUNICATION - LEVEL 1 PLAN into the Scale step's
+ * floor plans (2026-11-10). That is what "sure" means when the workspace picks a sheet,
+ * or the Scale step asks for one, for a person who has not named any.
  */
 export function sureFloorPlan(sheet: SheetReading): boolean {
   if (!takeoffSheetVerdict(sheet).worthMeasuring) return false;
-  return sheet.viewNames.some((name) => viewKind(name).kind === "plan") || ownsFloorPlan(sheet.sheetNumber, sheet.title);
+  return ownsFloorPlan(sheet.sheetNumber, sheet.title) || sheet.viewNames.some((name) => ownsFloorPlan(sheet.sheetNumber, name));
 }
 
 /**
@@ -167,11 +170,12 @@ export function sureFloorPlan(sheet: SheetReading): boolean {
  * With plan reading off no title is read, so the workspace's own choice can land on a
  * reflected ceiling plan where Run takeoff is switched off (Baker p14, the new-customer
  * walk, 2026-11-10: a new customer is stuck there). It moves to the best sure floor plan
- * by `takeoffRank`, then the first in page order; null when none is sure,
+ * one with a scale first (Run takeoff is off on an unscaled sheet too), then by `takeoffRank`,
+ * then the first in page order; null when none is sure,
  * and the person is asked to pick.
  */
-export function floorPlanToOpen(sheets: readonly SheetReading[]): number | null {
-  const sure = sheets.filter(sureFloorPlan).map((s) => ({ page: s.pageNumber, score: takeoffRank(s.sheetNumber, s.title).score }));
-  sure.sort((a, b) => b.score - a.score || a.page - b.page);
+export function floorPlanToOpen(sheets: readonly SheetReading[], scaled: ReadonlySet<number> = new Set()): number | null {
+  const sure = sheets.filter(sureFloorPlan).map((s) => ({ page: s.pageNumber, scaled: scaled.has(s.pageNumber) ? 1 : 0, score: takeoffRank(s.sheetNumber, s.title).score }));
+  sure.sort((a, b) => b.scaled - a.scaled || b.score - a.score || a.page - b.page);
   return sure[0]?.page ?? null;
 }

@@ -1,6 +1,9 @@
 import { renovationMarks } from "@/lib/takeoff/renovationMarks";
 import { prisma } from "@prova/db";
 import { sheetNumberFrom } from "./sheetNumber";
+import { sureFloorPlan } from "../takeoff/takeoffSheet";
+import { sheetViews } from "../takeoff/sheetViews";
+import { SURE_FLOOR_PLAN } from "../takeoff/sureFloorPlans";
 import { aiGate } from "../ai/settings";
 import { nameSheet } from "../takeoff/realplan/nameSheet";
 import { readPlanBytes } from "./planBytes";
@@ -100,6 +103,8 @@ export type PageInventoryDeps = {
    * form's label — so they stay behind an owner's switch either way.
    */
   sheetNamesOn: (companyId: string) => Promise<boolean>;
+  /** Record whether the page's own captions or title say FLOOR PLAN (`sureFloorPlans.ts`). Optional: absent, nothing is recorded. */
+  saveSureFloorPlan?: (row: { planId: string; pageNumber: number; sure: boolean }) => Promise<void>;
 };
 
 export type ScaleReadingRow = {
@@ -264,6 +269,13 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
     if (readable && (await deps.sheetNamesOn(ctx.companyId))) {
       const named = keylessSheetName(page, scaleRow.source === "PRINTED" || scaleRow.source === "DIMENSIONS" ? scaleRow.scaleName : null);
       if (named !== null) await deps.saveSheetProposal({ planId: ctx.planId, ingestJobId: ctx.ingestJobId, pageNumber: task.pageNumber, ...named });
+    }
+
+    // ── IS IT A FLOOR PLAN, BY ITS OWN DRAWINGS? ── a flag, not a name, so no switch (`sureFloorPlans.ts`).
+    if (readable && deps.saveSureFloorPlan) {
+      const read = sheetNumberFrom(page);
+      const sure = sureFloorPlan({ pageNumber: task.pageNumber, sheetNumber: read.sheetNumber, title: read.regionText, viewNames: sheetViews(page.items, page.widthPt).map((view) => view.name) });
+      await deps.saveSureFloorPlan({ planId: ctx.planId, pageNumber: task.pageNumber, sure });
     }
 
     // SUCCESS EVEN WITH NO TEXT LAYER. A scanned sheet is a fact this stage has
@@ -517,6 +529,11 @@ export const realDeps: PageInventoryDeps = {
   sheetNamesOn: async (companyId) =>
     (await aiGate(companyId, "PLAN_TEXT_READ")).ok ||
     (await prisma.company.findUnique({ where: { id: companyId }, select: { planCompareOn: true } }))?.planCompareOn === true,
+
+  saveSureFloorPlan: async ({ planId, pageNumber, sure }) => {
+    const where = { planId_pageNumber_kind: { planId, pageNumber, kind: SURE_FLOOR_PLAN } };
+    await prisma.takeoffPlanTextRead.upsert({ where, create: { planId, pageNumber, kind: SURE_FLOOR_PLAN, value: { sure } }, update: { value: { sure }, computedAt: new Date() } });
+  },
 
   saveSheetProposal: async (row) => {
     const proposal = {

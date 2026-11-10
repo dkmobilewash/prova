@@ -3527,7 +3527,7 @@ export function TakeoffPlanViewer({
       }
       // Somebody moved on while the sheets were read: theirs is the choice.
       if (pageNow.current !== initialPage) return setFloorPlanHunt(null);
-      const to = floorPlanToOpen(readings);
+      const to = floorPlanToOpen(readings, new Set(sheets.filter((sheet) => sheet.calibration !== null).map((sheet) => sheet.pageNumber)));
       if (to !== null) {
         setFloorPlanHunt({ state: "moved", from: label(initialPage), why, to: label(to, readings.find((r) => r.pageNumber === to)) });
         setPageNumber(to);
@@ -3539,7 +3539,7 @@ export function TakeoffPlanViewer({
         sheets: readings.filter((r) => takeoffSheetVerdict(r).worthMeasuring).map((r) => ({ pageNumber: r.pageNumber, label: label(r.pageNumber, r) })),
       });
     })().catch(() => setFloorPlanHunt(null));
-  }, [autoOpened, openedVerdict, pageCount, initialPage, sheetLabelByPage]);
+  }, [autoOpened, openedVerdict, pageCount, initialPage, sheetLabelByPage, sheets]);
 
   /** Why Find the walls cannot run here, in the words both the toolbar and the revision panel show. */
   const findWallsWhy = notATakeoffSheet
