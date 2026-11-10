@@ -16,6 +16,9 @@ import type { EmployerBurdenRates } from "@/lib/labor-job-cost";
 import { employerBurdenPercentOnDay, laborCostBasisLabel } from "@/lib/employer-burden";
 import { serverToday } from "@/lib/serverToday";
 import { CatalogImport } from "@/components/CatalogImport";
+import { PriceListImport } from "@/components/PriceListImport";
+import { priceNeeds } from "@/lib/estimating/catalogPrices";
+import { standardsFrom } from "@/lib/estimating/assemblyStandards";
 import { EstimateTemplates, type TemplateRow } from "@/components/EstimateTemplates";
 import { CatalogEntryRow } from "@/components/CatalogEntryRow";
 import { TRADE_SCOPE_OPTIONS, tradeScopeLabel } from "@/lib/trade-scopes";
@@ -544,6 +547,11 @@ export default async function CatalogPage() {
         <div data-tour="catalog-import">
           <CatalogImport existingDescriptions={entries.map((entry) => entry.description)} canImport={isOwner} />
         </div>
+        <div data-catalog="price-list">
+          <CollapsedForm label="Import a supplier price list" tone="secondary">
+            <PriceListImport needs={(await priceNeeds(prisma, context.company.id)).map(({ group, label, unit }) => ({ group, label, unit }))} rollLf={await rollLength(context.company.id)} canImport={isOwner} />
+          </CollapsedForm>
+        </div>
       </div>
 
       <section className="mb-8">
@@ -722,4 +730,10 @@ export default async function CatalogPage() {
       </Disclosure>
     </PageShell>
   );
+}
+
+/** The company's tape roll length, which a price list's roll prices convert to. */
+async function rollLength(companyId: string): Promise<number> {
+  const d = await prisma.companyBidDefaults.findUnique({ where: { companyId }, select: { assemblyStandards: true } });
+  return standardsFrom(d?.assemblyStandards).tapeRollLf;
 }

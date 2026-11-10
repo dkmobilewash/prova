@@ -34,8 +34,8 @@ describe("an invented single-layer partition, checked by hand", () => {
   });
   // By hand: studs ceil(100 / (16/12)) + 1 = 76, +5% = 79.8 → 80. Track 2 x 100 = 200, +5% = 210.
   // Board 1800 sf / 32 = 56.25 sheets, +10% = 61.875 → 62. Screws 1800 x 1, +5% = 1890 = 1.89 per thousand.
-  // Tape 1800 x 0.37 = 666, +5% = 699.3 → 700. Compound 1800 x 0.14 = 252, +5% = 264.6 → 265.
-  const hand: [RegExp, number][] = [[/metal stud/, 80], [/track/, 210], [/gypsum board/, 62], [/screws/, 1.89], [/tape/, 700], [/compound/, 265]];
+  // Tape 1800 x 0.37 = 666, +5% = 699.3 ft = 1.4 rolls of 500 → 2. Compound 1800 x 0.14 = 252, +5% = 264.6 → 265.
+  const hand: [RegExp, number][] = [[/metal stud/, 80], [/track/, 210], [/gypsum board/, 62], [/screws/, 1.89], [/tape/, 2], [/compound/, 265]];
   for (const [re, want] of hand) it(`${re.source} is ${want}`, () => expect(find(out, re)).toBe(want));
   it("says the spacing is the company's standard, not the drawing's", () => {
     expect(Object.keys(out).find((k) => /metal stud/.test(k))).toMatch(/16in o\.c\. \(your standard; not on the drawing\)/);
@@ -103,16 +103,20 @@ describe("prices come only from the company's own catalog", () => {
   });
   it("reads the materials a legend and a price book write", () => {
     expect(materialKey("3-5/8in metal stud, 20 ga at 16in o.c.")).toBe("stud|metal|3.625|20");
-    expect(materialKey('6" deflection track, top, 20 ga')).toBe("deflection|6");
+    expect(materialKey('6" deflection track, top, 20 ga')).toBe("deflection|6|20");
+    // A supplier's words for the same things.
+    expect(materialKey("362S125-33 Stud 12'")).toBe("stud|metal|3.625|20");
+    expect(materialKey('6" x 14\' 25GA Stud')).toBe("stud|metal|6|25");
+    expect(materialKey('5/8" 4x8 Firecode Drywall')).toBe("board|0.625|x");
     expect(materialKey("cavity insulation, R-19")).toBe("insulation|r19");
   });
   it("lists each unpriced material once, however many walls use it", () => {
     const rows = unpricedMaterials([
       { id: "1", description: "S6B — 5/8in type X gypsum board, 4x8 sheets", unit: "SHT", quantity: 83 },
       { id: "2", description: "S8C — 5/8in type X gypsum board, 2 layers per side, 4x8 sheets", unit: "SHT", quantity: 40 },
-      { id: "3", description: "S6B — joint tape", unit: "LF", quantity: 933 },
+      { id: "3", description: "S6B — joint tape, 500 ft rolls", unit: "RL", quantity: 2 },
     ]);
-    expect(rows.map((r) => [r.lineIds.join(","), r.quantity])).toEqual([["1,2", 123], ["3", 933]]);
+    expect(rows.map((r) => [r.lineIds.join(","), r.quantity])).toEqual([["1,2", 123], ["3", 2]]);
   });
 });
 
