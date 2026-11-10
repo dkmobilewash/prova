@@ -32,7 +32,7 @@ async function quotePdf(): Promise<File> {
     y -= 20;
   }
   const bytes = await pdf.save();
-  return new File([bytes], "northgate-quote.pdf", { type: "application/pdf" });
+  return new File([bytes.slice().buffer as ArrayBuffer], "northgate-quote.pdf", { type: "application/pdf" });
 }
 
 describe("a price list sent as a PDF", () => {
@@ -53,7 +53,7 @@ describe("a price list sent as a PDF", () => {
     const pdf = await PDFDocument.create();
     pdf.addPage([612, 792]);
     const form = new FormData();
-    form.set("file", new File([await pdf.save()], "scan.pdf"));
+    form.set("file", new File([(await pdf.save()).slice().buffer as ArrayBuffer], "scan.pdf"));
     expect(await readPriceListPdf(form)).toMatchObject({ ok: false, error: expect.stringMatching(/scan/) });
   });
 });
