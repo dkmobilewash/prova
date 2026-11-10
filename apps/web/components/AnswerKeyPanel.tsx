@@ -1,5 +1,6 @@
 "use client";
 
+import type { SavedVerdict } from "@/lib/takeoff/restoreSaved";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KEY_RULES } from "@/lib/takeoff/answerKey";
 import {
@@ -63,15 +64,9 @@ export type AnswerKeyPanelProps = {
    * somebody's decisions. They go back into the file verbatim, with the build
    * that produced the candidate each judged.
    */
-  carried?: readonly {
-    x1: number;
-    y1: number;
-    x2: number;
-    y2: number;
-    lengthFeet: number;
-    thicknessFeet?: number;
-    verdict: string;
-  }[];
+  carried?: readonly SavedVerdict[];
+  /** A hidden decision flipped or deleted: the new list, which the next save writes. */
+  onCarried?: (next: SavedVerdict[]) => void;
   /** The splits the file recorded, so a save keeps them. */
   carriedSplits?: readonly unknown[];
   /** The previous file's rows and the build that made them. */
@@ -194,6 +189,7 @@ export function AnswerKeyPanel({
   savedNotice,
   restoredReviewer,
   carried,
+  onCarried,
   carriedSplits,
   carriedRows,
   sourceFinderVersion,
@@ -565,7 +561,8 @@ export function AnswerKeyPanel({
     // pairings, but a save must not throw the review away. Refused only when
     // there is nothing at all to write.
     const anyDecision = Object.values(state.verdicts).some((v) => v !== "unreviewed");
-    if ((pairings ?? []).length === 0 && state.traced.length === 0 && !anyDecision && (state.openings ?? []).length === 0) {
+    // A hidden decision is a decision: flipping one is a change worth saving on its own.
+    if ((pairings ?? []).length === 0 && state.traced.length === 0 && !anyDecision && (state.openings ?? []).length === 0 && (carried ?? []).length === 0) {
       setLabelsResult({ ok: false, text: "Not saved: nothing on this sheet has been decided or traced yet." });
       return;
     }
@@ -663,6 +660,8 @@ export function AnswerKeyPanel({
             lengthFeet: v.lengthFeet,
             thicknessFeet: v.thicknessFeet ?? 0,
             verdict: v.verdict,
+            // Its wall type too: the save used to drop it, so every save stripped a hidden wall's type.
+            ...(v.wallType === undefined ? {} : { wallType: v.wallType }),
             finderVersion: sourceFinderVersion ?? undefined,
           })),
           splits: [...(state.splits ?? []), ...(carriedSplits ?? [])],
@@ -803,6 +802,43 @@ export function AnswerKeyPanel({
           );
         })()}
       </div>
+
+      {/* ── HIDDEN DECISIONS: KEPT FROM THE FILE, SCORED, AND NOW SEEN ──
+          A saved decision whose run the finder no longer offers was written back on every save
+          and scored, yet nobody could see or change it (Green Bay's wrong walls). They are drawn
+          faint on the sheet; here each can be flipped or deleted, and Save writes the result. */}
+      {(carried ?? []).length > 0 && (
+        <details className="rounded-md border border-line-card bg-surface p-2 text-xs" data-takeoff="key-hidden-list">
+          <summary className="cursor-pointer text-ink-label" data-takeoff="key-hidden-count">
+            Hidden decisions ({(carried ?? []).length})
+          </summary>
+          <p className="mt-1 text-ink-muted">Kept from the saved file and scored, but the finder no longer offers these runs. They are the faint dashed lines on the sheet.</p>
+          <ul className="mt-1 space-y-1">
+            {(carried ?? []).map((v, i) => {
+              const isWall = v.verdict === "wall" || v.verdict === "traced";
+              return (
+                <li key={`${v.x1}-${v.y1}-${i}`} className="flex flex-wrap items-center gap-2" data-takeoff="key-hidden-row" data-verdict={v.verdict}>
+                  <span className="text-ink-body">
+                    {Math.round(v.lengthFeet)} ft · {v.verdict === "traced" ? "traced wall" : v.verdict}
+                    {v.wallType ? ` · ${v.wallType}` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-link hover:text-link-hover"
+                    data-takeoff="key-hidden-flip"
+                    onClick={() => onCarried?.((carried ?? []).map((x, j) => (j === i ? { ...x, verdict: isWall ? "not-a-wall" : "wall" } : x)) as SavedVerdict[])}
+                  >
+                    {isWall ? "Not a wall" : "It's a wall"}
+                  </button>
+                  <button type="button" className="text-link hover:text-link-hover" data-takeoff="key-hidden-delete" onClick={() => onCarried?.((carried ?? []).filter((_, j) => j !== i) as SavedVerdict[])}>
+                    Delete
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </details>
+      )}
 
       {/* ── WHAT WAS SET ASIDE, AND HOW TO SEE IT ANYWAY ──
 
