@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { addWallTypeFromLegend, readLegendBySight, type LegendTypeEdits } from "@/lib/actions";
 import type { LegendHeightResult } from "@/lib/takeoff/legendHeights";
@@ -9,7 +9,7 @@ import { sameCode } from "@/lib/takeoff/legendMerge";
 import type { StoredCrop, StoredLegendType } from "@/lib/takeoff/legendProposal";
 import { nominalThicknessIn } from "@/lib/takeoff/legendBands";
 import { fraction } from "@/lib/takeoff/partitionAssembly";
-import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
+import { LegendCrop, openPage, renderRect, type PdfPage } from "./LegendCrop";
 
 /**
  * ── THE REVIEW SCREEN FOR A SET'S WALL LEGEND ──
@@ -33,35 +33,11 @@ import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 
 type Edits = LegendTypeEdits;
 
-// pdfjs ships no types for the legacy build entry.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type PdfPage = any;
 
 const PAGE_PX_MAX = 2000;
 const PAGE_DPI_MAX = 100;
 const CROP_DPI = 200;
 const POINTS_PER_INCH = 72;
-
-async function openPage(planId: string, pageNumber: number): Promise<PdfPage> {
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.mjs", import.meta.url).toString();
-  const doc = await pdfjs.getDocument({ url: `/api/takeoff/plan/${planId}`, standardFontDataUrl: "/pdfjs/standard_fonts/", ...PLAN_PDF_TRANSPORT }).promise;
-  return doc.getPage(pageNumber);
-}
-
-/** Render a rectangle of the page (points, y down) at `scale` px per point onto a fresh canvas. */
-async function renderRect(page: PdfPage, rect: { x: number; y: number; width: number; height: number }, scale: number): Promise<HTMLCanvasElement> {
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(rect.width * scale));
-  canvas.height = Math.max(1, Math.round(rect.height * scale));
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("no 2d context");
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const viewport = page.getViewport({ scale, offsetX: -rect.x * scale, offsetY: -rect.y * scale });
-  await page.render({ canvasContext: ctx, viewport }).promise;
-  return canvas;
-}
 
 function pngBase64(canvas: HTMLCanvasElement): string {
   return canvas.toDataURL("image/png").split(",")[1] ?? "";
@@ -450,42 +426,3 @@ function Field({
 }
 
 /** The crop of the drawing the reader placed for this type, cut from the page in the browser. */
-function LegendCrop({ page, crop, code }: { page: PdfPage | null; crop: StoredCrop | null; code: string }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  const [state, setState] = useState<"waiting" | "drawn" | "failed">("waiting");
-  useEffect(() => {
-    if (page === null || crop === null || ref.current === null) return;
-    let cancelled = false;
-    const target = ref.current;
-    (async () => {
-      try {
-        const dpr = window.devicePixelRatio || 1;
-        const widthCss = Math.min(target.parentElement?.clientWidth ?? 360, 480);
-        const scale = (widthCss / crop.width) * dpr;
-        const drawn = await renderRect(page, crop, scale);
-        if (cancelled) return;
-        target.width = drawn.width;
-        target.height = drawn.height;
-        target.style.width = `${widthCss}px`;
-        target.style.height = `${Math.round(drawn.height / dpr)}px`;
-        target.getContext("2d")?.drawImage(drawn, 0, 0);
-        setState("drawn");
-      } catch {
-        if (!cancelled) setState("failed");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [page, crop]);
-  if (crop === null) {
-    return <p className="text-xs text-ink-muted">No crop was placed for {code} — the code was not found printed on the legend page.</p>;
-  }
-  return (
-    <div className="rounded-md border border-line-card bg-white p-1" data-legend="crop" data-legend-crop-state={state}>
-      <canvas ref={ref} aria-label={`The legend's drawing for ${code}`} />
-      {state === "waiting" && <p className="p-2 text-xs text-ink-muted">Rendering the crop…</p>}
-      {state === "failed" && <p className="p-2 text-xs text-ink-muted">The crop couldn&rsquo;t be rendered here.</p>}
-    </div>
-  );
-}
