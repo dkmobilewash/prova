@@ -74,6 +74,8 @@ import { BidRecapPanel, type RecapLineView } from "@/components/BidRecapPanel";
 import { PriceTheseMaterials } from "@/components/PriceTheseMaterials";
 import { unpricedMaterials } from "@/lib/estimating/materialKey";
 import { laborPlanFor } from "@/lib/estimating/laborLines";
+import { priceSource, type PriceSource } from "@/lib/estimating/catalogPrices";
+import { standardsFrom } from "@/lib/estimating/assemblyStandards";
 import { RECAP_RATE_KEYS, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
 import {
   addLineItem,
@@ -450,6 +452,21 @@ export default async function JobEstimatePage({
   };
   // What the labor needs and does not have — only asked once there are walls or ceilings to put labor on.
   const laborMissing = isEstimateStage ? (await prisma.$transaction((tx) => laborPlanFor(tx, company.id, job.id))).plan.missing : [];
+  // Where each catalog price came from — a supplier's list and its date — derived, and only while still true.
+  const sourceIds = [...new Set(job.lineItems.map((l) => l.sourceCatalogEntryId).filter((id): id is string => id !== null))];
+  const sourceEntries = sourceIds.length === 0 ? [] : await prisma.lineItemCatalogEntry.findMany({
+    where: { id: { in: sourceIds }, companyId: company.id },
+    select: { id: true, description: true, defaultBudgetedUnitCost: true, priceQuotes: { select: { description: true, unit: true, unitPrice: true, quotedOn: true, vendor: { select: { name: true } } } } },
+  });
+  const rollLf = standardsFrom(bidDefaults?.assemblyStandards).tapeRollLf;
+  const sources = new Map<string, PriceSource | null>(sourceEntries.map((e) => [e.id, priceSource(e, e.priceQuotes, rollLf, new Date(`${serverToday()}T00:00:00.000Z`))]));
+  const sourceFor = (item: (typeof job.lineItems)[number]): PriceSource | null => {
+    if (item.sourceCatalogEntryId === null) return null;
+    const entry = sourceEntries.find((e) => e.id === item.sourceCatalogEntryId);
+    // The line's own cost has to be the list's, too: a cost typed over it is the estimator's, not the supplier's.
+    if (!entry || entry.defaultBudgetedUnitCost === null || item.budgetedUnitCost === null || !entry.defaultBudgetedUnitCost.equals(item.budgetedUnitCost)) return null;
+    return sources.get(item.sourceCatalogEntryId) ?? null;
+  };
 
   const lineItemWip = job.lineItems.map((item) => ({
     item,
@@ -940,6 +957,16 @@ export default async function JobEstimatePage({
                     <span className={estimateLineGrid}>
                       <span className="min-w-0 break-words">
                         {item.description}
+                        {sourceFor(item) !== null && (
+                          <span className="block text-xs text-ink-muted" data-estimate="price-source">
+                            {sourceFor(item)!.vendor} price list {formatUtcDate(sourceFor(item)!.quotedOn)}
+                            {sourceFor(item)!.stale && (
+                              <span className="ml-1 font-medium text-tag-amber-ink" data-estimate="price-stale">
+                                · over 90 days old
+                              </span>
+                            )}
+                          </span>
+                        )}
                         {specSaysFor(item) !== "" && (
                           <span className="block text-xs text-tag-amber-ink" data-estimate="spec-says">
                             {specSaysFor(item)}
@@ -1503,4 +1530,9 @@ export default async function JobEstimatePage({
       )}
     </div>
   );
+}
+
+/** 11/9/2026 — the date as entered, in UTC, which is how dates are stored. */
+function formatUtcDate(d: Date): string {
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}/${d.getUTCFullYear()}`;
 }

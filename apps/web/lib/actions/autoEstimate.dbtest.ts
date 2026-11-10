@@ -75,7 +75,7 @@ describe("the automatic estimate", () => {
   it("lists each unpriced material once, and one cost prices its lines through the markup and teaches the part", async () => {
     const all = await lines();
     const rows = unpricedMaterials(all.filter((l) => l.wallTypeComponentId !== null && l.unitPrice === null).map((l) => ({ id: l.id, description: l.description, unit: l.unit, quantity: Number(l.quantity) })));
-    expect(rows.map((r) => r.label)).toEqual(expect.arrayContaining(["drywall screws, Type S, per 1,000", "joint tape"]));
+    expect(rows.map((r) => r.label)).toEqual(expect.arrayContaining(["drywall screws, Type S, per 1,000", "joint tape, 500 ft rolls"]));
     const screws = rows.find((r) => /screws/.test(r.label))!;
     expect(await priceMaterial(jobId, screws.lineIds, form({ unitCost: "30" }))).toEqual({ ok: true });
     const line = (await lines()).find((l) => /screws/.test(l.description))!;

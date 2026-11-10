@@ -166,9 +166,9 @@ test.describe("Baker's legend types to a priced estimate", () => {
     expect(before.filter((l) => !inBook(l.description)).every((l) => l.unitPrice === null)).toBe(true);
     // The hand calculation (lib/estimating/autoEstimate.eval.ts), line by line.
     const hand: [RegExp, number][] = [
-      [/^S6B — .*metal stud/, 96], [/^S6B — .*track/, 252], [/^S6B — .*gypsum board/, 83], [/^S6B — .*screws/, 2.52], [/^S6B — joint tape/, 933], [/^S6B — joint compound/, 353],
-      [/^C8B — .*gypsum board/, 33], [/^C8B — .*insulation/, 1008], [/^C8B — .*screws/, 1.01], [/^C8B — joint tape/, 373], [/^C8B — joint compound/, 142],
-      [/^S6A — .*metal stud/, 33], [/^S6A — .*track, bottom/, 63], [/^S6A — .*deflection track/, 63], [/^S6A — .*gypsum board/, 116], [/^S6A — .*screws/, 3.53], [/^S6A — joint tape/, 653], [/^S6A — joint compound/, 247],
+      [/^S6B — .*metal stud/, 96], [/^S6B — .*track/, 252], [/^S6B — .*gypsum board/, 83], [/^S6B — .*screws/, 2.52], [/^S6B — joint tape/, 2], [/^S6B — joint compound/, 353],
+      [/^C8B — .*gypsum board/, 33], [/^C8B — .*insulation/, 1008], [/^C8B — .*screws/, 1.01], [/^C8B — joint tape/, 1], [/^C8B — joint compound/, 142],
+      [/^S6A — .*metal stud/, 33], [/^S6A — .*track, bottom/, 63], [/^S6A — .*deflection track/, 63], [/^S6A — .*gypsum board/, 116], [/^S6A — .*screws/, 3.53], [/^S6A — joint tape/, 2], [/^S6A — joint compound/, 247],
     ];
     for (const [re, want] of hand) {
       const got = Number(before.find((l) => re.test(l.description))?.quantity ?? NaN);

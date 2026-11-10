@@ -31,6 +31,7 @@ export function AssemblyStandardsForm({ standards }: { standards: AssemblyStanda
       {num("studSpacingIn", "Stud spacing when nothing says", standards.studSpacingIn, "in o.c.")}
       {num("screwsPerSqFt", "Screws per sq ft of board, per layer", standards.screwsPerSqFt, "ea")}
       {num("tapeLfPerSqFt", "Joint tape per sq ft of board", standards.tapeLfPerSqFt, "lin ft")}
+      {num("tapeRollLf", "Tape roll length", standards.tapeRollLf, "ft")}
       {num("compoundLbPerSqFt", "Joint compound per sq ft of board", standards.compoundLbPerSqFt, "lb")}
       {num("level5SkimLbPerSqFt", "Extra compound for a Level 5 finish", standards.level5SkimLbPerSqFt, "lb")}
       <p className="mt-2 text-sm font-semibold text-ink">Waste</p>
