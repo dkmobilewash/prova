@@ -15,7 +15,7 @@ numbers have to clear.
   "Walls — untyped", where the queue offers them again.
 - **"Auto-post proven items"** is a new owner-only company setting under Settings →
   Estimating. It is ON for new companies (`lib/auth.ts`) and OFF for existing ones.
-  The migration `20261109010000_add_company_auto_post` adds the column; it is additive,
+  The migration `20261110120000_add_company_auto_post` adds the column; it is additive,
   `DEFAULT false`.
 - **The evals now record the second signals** the narrow sources need.
   `wallTypes.eval.ts` writes each run's type thickness and the distance to the nearest
