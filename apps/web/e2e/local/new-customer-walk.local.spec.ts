@@ -348,11 +348,16 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       act();
       await page.getByRole("button", { name: /Start the job/ }).click();
       act();
-      await page.waitForURL(/\/jobs\/new\/[^/]+\/items$/, { timeout: 30_000 });
-      jobId = page.url().match(/\/jobs\/new\/([^/]+)\/items$/)![1]!;
+      // "New job" carries ?then=plans since #1084: Start the job opens the job's Takeoff tab
+      // directly. Without it the wizard's second step (`/items`) comes first.
+      await page.waitForURL(/\/jobs\/(new\/[^/]+\/items|[^/]+\/takeoff)$/, { timeout: 30_000 });
+      const landed = page.url().match(/\/jobs\/new\/([^/]+)\/items$/) ?? page.url().match(/\/jobs\/([^/]+)\/takeoff$/);
+      jobId = landed![1]!;
       await shot("new-job-work");
       const toPlans = page.getByRole("link", { name: /plan|drawing|upload/i });
-      if (await seen(toPlans, 3000)) {
+      if (/\/takeoff$/.test(page.url())) {
+        note("Start the job opened the Takeoff tab, ready for the plans.");
+      } else if (await seen(toPlans, 3000)) {
         note(`Step 2 offers: "${await text(toPlans)}".`);
         await toPlans.first().click();
         act();
