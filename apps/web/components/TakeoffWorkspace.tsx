@@ -115,6 +115,8 @@ type Props = {
   reviewSpecSays?: Record<string, SpecSay[]>;
   /** The codes a queued group can be given: the legend's, else the company's library. */
   reviewCodes?: string[];
+  /** Each code's thickness and legend picture (`loadReviewQueue`), for an untagged group's picker. */
+  reviewCodeInfo?: Record<string, { thicknessIn: number | null; crop: import("@/lib/takeoff/legendProposal").StoredCrop | null; legendPage: number | null }>;
   /** Whether this server can label at all (`labellingAllowed`). False on every
    *  deployment, so neither the mode nor its button exists for a customer. */
   labellingAvailable?: boolean;
@@ -228,6 +230,7 @@ export function TakeoffWorkspace({
   reviewHeightChoices = {},
   reviewSpecSays = {},
   reviewCodes = [],
+  reviewCodeInfo = {},
   labellingAvailable = false,
   finderVersion = "unknown",
 }: Props) {
@@ -1622,6 +1625,7 @@ export function TakeoffWorkspace({
                 onShow={onQueueShow}
                 onLeft={setQueueLeft}
                 onUndoable={onUndoable}
+                codeInfo={reviewCodeInfo}
                 doubted={doubted.length}
                 onCheckDoubted={() => {
                   setQueueOpen(false);

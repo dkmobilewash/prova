@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { parseFeetInches } from "@/lib/feet-inches";
 import { feetLabel } from "@/lib/takeoff/wallHeight";
 import type { CodeHeight, Guess } from "@/lib/takeoff/reviewQueue";
@@ -36,6 +36,7 @@ export function QueueGroupConfirm({
   onSkip,
   rest = null,
   onAcceptRest,
+  codeDetail,
 }: {
   /** What the group is: `Walls · sheet A101 · 4-7/8" · 65 ft`. */
   label: string;
@@ -54,6 +55,8 @@ export function QueueGroupConfirm({
   /** "13 groups nothing names on A101": offers the type picked here on all of them at once. */
   rest?: string | null;
   onAcceptRest?: (code: string, heightFt: number | null) => void;
+  /** What sits beside each type's number: its thickness and legend picture, for a group nothing names. */
+  codeDetail?: (code: string) => ReactNode;
 }) {
   const [pick, setPick] = useState<Guess | null>(suggested);
   const [typed, setTyped] = useState<string | null>(null);
@@ -222,6 +225,7 @@ export function QueueGroupConfirm({
             >
               {i < 9 && <span className="mr-1 text-ink-muted">{i + 1}</span>}
               {code}
+              {codeDetail?.(code)}
             </button>
           ))}
         </span>
