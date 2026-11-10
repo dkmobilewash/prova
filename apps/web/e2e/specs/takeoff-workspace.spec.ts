@@ -252,6 +252,8 @@ test.describe("the full-screen takeoff workspace", () => {
     // 30 s test limit, so a slow first render on a loaded machine failed it as
     // "Test timeout of 30000ms exceeded" — four gates on 2026-11-08 and -09, every
     // other step green. The wait was always right; the limit cut it short.
+    // The canvas poll below waits up to 100 s: the PDF renders in the browser, CPU-bound, and on a gate
+    // machine at load 13 (other sessions' builds) it took over 60 s (2026-11-09).
     test.setTimeout(120_000);
     // The click a person makes: the job's Takeoff button. It must leave this
     // tab where it was and give the drawing at least 75% of the new window's
@@ -267,7 +269,7 @@ test.describe("the full-screen takeoff workspace", () => {
     const port = tab.locator('[data-testid="takeoff-plan-port"]');
     await expect(tab.locator('[data-takeoff="workspace"]')).toBeVisible();
     await expect
-      .poll(async () => port.locator("canvas").evaluate((n) => (n as HTMLCanvasElement).width), { timeout: 60_000 })
+      .poll(async () => port.locator("canvas").evaluate((n) => (n as HTMLCanvasElement).width), { timeout: 100_000 })
       .toBeGreaterThan(0);
     await expect(tab.locator('[data-takeoff="layer-panel"]'), "the layer panel is not open beside the plan").toBeVisible();
     const box = await port.boundingBox();
@@ -362,6 +364,9 @@ test.describe("the full-screen takeoff workspace", () => {
   });
 
   test("8. the estimate and the tab read the SAME saved takeoff", async () => {
+    // Two cold page loads (estimate, then the workspace) on a gate machine shared
+    // with other builds: 30 s was the limit a passing run hit (keyless-titles gate, 2026-11-09).
+    test.setTimeout(120_000);
     // ── WHAT THIS CAN AND CANNOT PROVE, AND THE LIMIT IS THE HARNESS ──
     //
     // The claim worth testing is that nothing synchronises: the workspace and
