@@ -22,6 +22,7 @@ import { scheduleSheetCountFor } from "@/lib/plan-ingest/scheduleProposalsQuery"
 import { effectiveSheetNumber, effectiveTitle, sheetPickerLabel } from "@/lib/plan-ingest/sheetIndex";
 import { sheetSuitability, duplicateWallsCaution, takeoffRank } from "@/lib/takeoff/sheetSuitability";
 import { startPages } from "@/lib/takeoff/startPage";
+import { sureFloorPlanPages as sureFloorPlanPages_ } from "@/lib/takeoff/sureFloorPlans";
 import { levelsByPage } from "@/lib/plan-ingest/sheetLevel";
 import {
   printedScalesFromProposals,
@@ -431,6 +432,9 @@ export async function loadTakeoffWorkspace(
   }
   // The floor plans of the work, where the workspace opens (`floorPlansOfTheWork`).
   const theWork = floorPlansOfTheWork(wallsSheets);
+  // With nothing named (plan reading and comparison off), the pages whose own drawings say
+  // FLOOR PLAN (`sureFloorPlans.ts`): the Scale step's floor plans, and where it opens.
+  const sureFloorPlanPages = await sureFloorPlanPages_(plan.id);
   /**
    * WHAT EACH SHEET IS CALLED, so the pager can be jumped to one.
    *
@@ -476,7 +480,10 @@ export async function loadTakeoffWorkspace(
       held: page.measurements.filter((m) => m.label === HELD_LABEL).length,
       score: scoreByPage.get(page.pageNumber) ?? 0,
     })),
-    theWork,
+    // Nothing counted by the whole-set run: the first sure floor plan with a scale, else the first.
+    theWork.length > 0
+      ? theWork
+      : [sureFloorPlanPages.find((p) => plan.pages.some((page) => page.pageNumber === p && page.calibrations.length > 0)) ?? sureFloorPlanPages[0]].filter((p): p is number => p !== undefined),
   );
 
   const earlierVersionByPage = Object.fromEntries(
@@ -718,6 +725,7 @@ export async function loadTakeoffWorkspace(
     notCountedByPage,
     sheetLabelByPage,
     startPage,
+    sureFloorPlanPages,
     earlierVersionByPage,
     sheetRows,
     items,

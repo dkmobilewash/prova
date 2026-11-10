@@ -84,3 +84,24 @@ describe("each sheet's scale and how sure it is", () => {
     expect(scaleStepDone([{ category: "other", confidence: "high" }])).toBe(false);
   });
 });
+
+describe("with nothing named, the pages whose own drawings say FLOOR PLAN are the Scale step's floor plans", () => {
+  // Baker with plan reading off: no sheet named; the inventory's caption read says p12 and p13
+  // are floor plans; the scale reader was sure of p14 (the ceiling plan) only.
+  const none = new Map<number, { number: string | null; title: string | null; pageType: string | null }>();
+  const input = { pages: [12, 13, 14], sheets: none, scaled: new Set<number>(), prefill: {}, printed: { 12: '1/8" = 1\'-0"', 13: '1/8" = 1\'-0"' }, multiScale: new Set<number>(), decline: {} };
+  it("lists them as floor plans, so the step is not done until they have a scale", () => {
+    const rows = planSetRows({ ...input, sure: new Set([12, 13]) });
+    expect(rows.filter((r) => r.category === "floor").map((r) => r.pageNumber)).toEqual([12, 13]);
+    expect(scaleStepDone(planSetRows({ ...input, scaled: new Set([14]), sure: new Set([12, 13]) }))).toBe(false);
+    expect(scaleStepDone(planSetRows({ ...input, scaled: new Set([12, 13, 14]), sure: new Set([12, 13]) }))).toBe(true);
+  });
+  it("without the caption read nothing is a floor plan, and any one scale finished the step (the bug)", () => {
+    expect(planSetRows(input).some((r) => r.category === "floor")).toBe(false);
+    expect(scaleStepDone(planSetRows({ ...input, scaled: new Set([14]) }))).toBe(true);
+  });
+  it("never overrides a sheet its title names as something else", () => {
+    const named = new Map([[14, { number: "A111", title: "REFLECTED CEILING PLAN", pageType: null }]]);
+    expect(planSetRows({ ...input, sheets: named, sure: new Set([14]) }).find((r) => r.pageNumber === 14)?.category).toBe("rcp");
+  });
+});
