@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { existingWalls, isWallTag, LEGEND_EXISTING, legendPens, nicHatch, textRows } from "./existingWalls";
+import { existingSentence, existingWalls, isWallTag, LEGEND_EXISTING, legendPens, nicHatch, roofEdges, textRows } from "./existingWalls";
 import { offeredCandidates } from "./offeredCandidates";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
@@ -211,5 +211,34 @@ describe("route 4 — inside a hatched area labelled NOT IN CONTRACT (Wendell A1
     expect(existingWalls({ walls: [inside, edge, outside], segments: segs, textItems: label(25, 50), widthPt: W, feetPerUnit: FPU })).toEqual([]);
     expect(nicHatch(segs, [{ x: ft(25), y: ft(50) }], FPU)).toBeNull();
     expect(nicHatch(segs, [{ x: ft(75), y: ft(20) }], FPU)).not.toBeNull();
+  });
+});
+
+describe("a roof edge over a lower roof is set aside; a wall is not", () => {
+  // Stipple: 2 in dots, 8 a foot, in a 2 ft band beside one face of a horizontal run at y.
+  const stipple = (x1: number, x2: number, y: number, side: 1 | -1): StrokeSegment[] => {
+    const out: StrokeSegment[] = [];
+    for (let x = x1; x < x2; x += 0.25) for (const d of [0.6, 1.4]) out.push({ x1: ft(x), y1: ft(y + side * d), x2: ft(x + 1 / 6), y2: ft(y + side * d), width: 0.3 });
+    return out;
+  };
+  const edge = wall(0, 50, 60, 50);
+
+  it("60 ft with stipple on one side and nothing meeting it is a roof edge, and the sentence says so", () => {
+    const found = existingWalls({ walls: [edge], segments: [], pageSegments: stipple(0, 60, 50, 1), textItems: [], widthPt: W, feetPerUnit: FPU });
+    expect(found.map((e) => e.route)).toEqual(["roof"]);
+    expect(existingSentence(found)).toBe("1 a roof edge, stipple on one side and no wall meeting it — not a wall to take off");
+  });
+
+  it("not when a partition tees into it, when the stipple is on both sides, when it is short, or when it is thick", () => {
+    const dots = stipple(0, 60, 50, 1);
+    const tee = wall(30, 50.25, 30, 70);
+    expect(roofEdges([edge], [edge, tee], dots, FPU)).toEqual([]);
+    expect(roofEdges([edge], [edge], [...dots, ...stipple(0, 60, 50, -1)], FPU)).toEqual([]);
+    const short = wall(0, 50, 25, 50);
+    expect(roofEdges([short], [short], stipple(0, 25, 50, 1), FPU)).toEqual([]);
+    const thick = { ...edge, thicknessFeet: 1 } as WallCandidate;
+    expect(roofEdges([thick], [thick], stipple(0, 60, 50.25, 1), FPU)).toEqual([]);
+    // and the control: the same run alone IS one, so each case above fails on its own condition
+    expect(roofEdges([edge], [edge], dots, FPU)).toEqual([edge]);
   });
 });

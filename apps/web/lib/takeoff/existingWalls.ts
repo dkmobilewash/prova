@@ -311,7 +311,7 @@ const distanceToRun = (px: number, py: number, w: { x1: number; y1: number; x2: 
   return Math.hypot(px - (w.x1 + t * dx), py - (w.y1 + t * dy));
 };
 
-export type ExistingWall = { wall: WallCandidate; route: "tag" | "legend" | "grey" | "nic"; why: string };
+export type ExistingWall = { wall: WallCandidate; route: "tag" | "legend" | "grey" | "nic" | "roof"; why: string };
 
 export function existingWalls(input: {
   /** The finder's runs, page-width units. */
@@ -423,7 +423,46 @@ export function existingWalls(input: {
       }
     }
   }
+  // ── 5. A ROOF EDGE OVER A LOWER ROOF ──
+  // Not existing work, but read here because it is set aside the same way.
+  // A plan shows the roof below it as stipple; its edge is a long, thin pair
+  // of lines with dots on ONE side and nothing meeting it along its length.
+  // A wall a room's partitions tee into is never one. Training (Round 16
+  // keys): 337 ft set aside, every foot of it junk; the nearest real wall it
+  // touched was 21 ft long, hence the 30 ft floor.
+  for (const w of roofEdges(walls.filter((w) => !found.has(w)), walls, input.pageSegments ?? segments, feetPerUnit)) {
+    found.set(w, { wall: w, route: "roof", why: "stipple fills one side and no wall meets it along its length — a roof edge over a lower roof" });
+  }
   return [...found.values()];
+}
+
+/** A roof edge: at least this long, at most this thick, this many stipple dots a foot on one side and almost none on the other. */
+export const ROOF_EDGE_MIN_FEET = 30;
+export const ROOF_EDGE_MAX_INCHES = 10;
+export const ROOF_STIPPLE_PER_FOOT = 6;
+export const ROOF_OTHER_SIDE_MAX = 0.5;
+
+/** The `candidates` that are roof edges: stipple (strokes under 3 in) within 3 ft of one face, and no run of `all` ending along them. */
+export function roofEdges(candidates: readonly WallCandidate[], all: readonly WallCandidate[], strokes: readonly StrokeSegment[], feetPerUnit: number): WallCandidate[] {
+  const dots = strokes.filter((s) => Math.hypot(s.x2 - s.x1, s.y2 - s.y1) * feetPerUnit <= 0.25);
+  return candidates.filter((w) => {
+    if (w.lengthFeet < ROOF_EDGE_MIN_FEET || w.thicknessFeet * 12 > ROOF_EDGE_MAX_INCHES) return false;
+    const L = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+    if (L === 0) return false;
+    const ux = (w.x2 - w.x1) / L, uy = (w.y2 - w.y1) / L, half = w.thicknessFeet / 2 / feetPerUnit, band = 3 / feetPerUnit;
+    const across = (x: number, y: number) => ({ al: (x - w.x1) * ux + (y - w.y1) * uy, ac: -(x - w.x1) * uy + (y - w.y1) * ux });
+    let a = 0, b = 0;
+    for (const s of dots) {
+      const { al, ac } = across((s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2);
+      if (al >= 0 && al <= L && Math.abs(ac) > half && Math.abs(ac) <= half + band) ac > 0 ? (a += 1) : (b += 1);
+    }
+    const ft = L * feetPerUnit;
+    if (Math.max(a, b) / ft < ROOF_STIPPLE_PER_FOOT || Math.min(a, b) / ft > ROOF_OTHER_SIDE_MAX) return false;
+    return !all.some((o) => o !== w && [[o.x1, o.y1], [o.x2, o.y2]].some(([x, y]) => {
+      const { al, ac } = across(x!, y!);
+      return al > 2 / feetPerUnit && al < L - 2 / feetPerUnit && Math.abs(ac) <= (w.thicknessFeet + 1) / feetPerUnit;
+    }));
+  });
 }
 
 /** The words that put an area outside the contract. */
@@ -481,5 +520,7 @@ export function existingSentence(list: readonly ExistingWall[]): string {
   if (n("legend") > 0) parts.push(`${n("legend")} drawn with the legend's existing-wall pen`);
   if (n("grey") > 0) parts.push(`${n("grey")} drawn grey where the sheet draws its walls black`);
   if (n("nic") > 0) parts.push(`${n("nic")} inside a hatched area labelled NOT IN CONTRACT`);
-  return `${parts.join("; ")} — ${n("nic") === list.length ? "outside this contract" : "existing work"}, not a wall to take off`;
+  if (n("roof") > 0) parts.push(`${n("roof")} a roof edge, stipple on one side and no wall meeting it`);
+  const what = n("nic") === list.length ? "outside this contract, " : n("nic") + n("roof") === list.length ? "" : "existing work, ";
+  return `${parts.join("; ")} — ${what}not a wall to take off`;
 }
