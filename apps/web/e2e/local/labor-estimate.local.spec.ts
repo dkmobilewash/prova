@@ -187,10 +187,10 @@ test.describe("Baker's labor from the company's production rates", () => {
 
     // ── 5. THE LABOR LINES AGAINST THE HAND CALCULATION ──
     await page.goto(`/jobs/${jobId}/estimate`);
-    await hydrated('[data-tour="job-line-items"]');
+    await hydrated('[data-estimate="price-these"] input');
     await expect(page.locator('[data-estimate="set-production-rates"]')).toHaveCount(0);
     const labor = (await estimateLines(jobId)).filter((l) => l.costCategory === "LABOR");
-    for (const l of labor) note(`labor: ${l.description} — ${l.laborHours} h @ $${l.budgetedUnitCost} = $${(Number(l.quantity) * Number(l.budgetedUnitCost)).toFixed(2)}`);
+    for (const l of labor) note(`labor: ${l.description} @ $${l.budgetedUnitCost}/h = $${(Number(l.quantity) * Number(l.budgetedUnitCost)).toFixed(2)}`);
     const hand: [RegExp, number][] = [
       [/^Labor — S6B — framing, studs and track$/, 6], [/^Labor — S6B — hang type X board$/, 48], [/^Labor — S6B — tape and finish, Level 4$/, 53.33],
       [/^Labor — C8B — hang regular board, over 10 ft$/, 18.4], [/^Labor — C8B — tape and finish, Level 4, over 10 ft$/, 24.53],
@@ -204,6 +204,7 @@ test.describe("Baker's labor from the company's production rates", () => {
     const cost = labor.reduce((n, l) => n + Number(l.quantity) * Number(l.budgetedUnitCost), 0);
     note(`Labor: ${labor.reduce((n, l) => n + Number(l.laborHours), 0).toFixed(2)} h, $${cost.toFixed(2)} cost`);
     expect(Math.round(cost * 100) / 100).toBe(16983.04);
+    await page.getByText("Labor — S6B — framing, studs and track", { exact: true }).first().scrollIntoViewIfNeeded();
     await shot("estimate-labor-lines");
 
     // ── 6. A HEIGHT CHANGE MOVES THE LABOR INTO ANOTHER BAND ──
@@ -215,7 +216,8 @@ test.describe("Baker's labor from the company's production rates", () => {
     await expect.poll(s6bBoard, { timeout: 30_000 }).toBe(66.24);
     note(`S6B at 12 ft: hang board 48 h → ${await s6bBoard()} h (2,880 sf / 50 × 1.15)`);
     await page.reload();
-    await hydrated('[data-tour="job-line-items"]');
+    await hydrated('[data-estimate="price-these"] input');
+    await page.getByText("Labor — S6B — hang type X board, over 10 ft", { exact: true }).first().scrollIntoViewIfNeeded();
     await shot("estimate-labor-height-12");
 
     writeFileSync(path.join(OUT, "notes.md"), notes.map((n) => `- ${n}`).join("\n") + "\n");
