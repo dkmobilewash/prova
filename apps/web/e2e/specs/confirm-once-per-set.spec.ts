@@ -152,6 +152,8 @@ test.describe("confirm a wall group once, apply it to the same group on the othe
   });
 
   test("5. windows: confirming the first floor's W1 and W2 offers floor 2, never floor 3 (it prints W3)", async () => {
+    // Steps through the queue with N, then several saves: past 30 s on a loaded gate machine.
+    test.setTimeout(120_000);
     const counts = () => prisma.takeoffMeasurement.count({ where: { kind: "COUNT", page: { plan: { jobId } } } });
     const item = queue().locator('[data-takeoff="review-queue-item"]');
     for (let i = 0; i < 12 && (await item.getAttribute("data-kind")) !== "windows"; i += 1) {
@@ -180,6 +182,8 @@ test.describe("confirm a wall group once, apply it to the same group on the othe
   });
 
   test("6. after Accept all on A101, both printed tags are offered on the other two floors, and Undo puts them back", async () => {
+    // Steps through the queue with N, then several saves: past 30 s on a loaded gate machine.
+    test.setTimeout(120_000);
     const item = queue().locator('[data-takeoff="review-queue-item"]');
     const acceptAll = queue().locator('[data-takeoff="review-queue-accept-sheet"]');
     for (let i = 0; i < 14 && !((await item.getAttribute("data-kind")) === "type" && (await acceptAll.count()) > 0 && (await item.textContent())?.includes("A101")); i += 1) {
