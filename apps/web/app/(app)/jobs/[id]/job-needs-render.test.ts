@@ -96,6 +96,8 @@ vi.mock("@/lib/viewerToday", () => ({
   viewerToday: vi.fn(async () => "2026-10-14"),
 }));
 vi.mock("@/lib/docusign/views", () => ({ loadJobDocuSign: vi.fn(async () => null) }));
+// The bid check reads the takeoff, specs and labor; this file is about the needs block, so it is empty here.
+vi.mock("@/lib/estimating/bidCheckQuery", () => ({ loadBidChecks: vi.fn(async () => []) }));
 vi.mock("@/lib/jobs/job-paperwork", () => ({
   jobPaperworkLinks: vi.fn(() => []),
   loadJobPaperworkCounts: vi.fn(async () => ({})),

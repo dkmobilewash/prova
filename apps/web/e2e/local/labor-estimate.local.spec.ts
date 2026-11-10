@@ -220,6 +220,42 @@ test.describe("Baker's labor from the company's production rates", () => {
     await page.getByText("Labor — S6B — hang type X board, over 10 ft", { exact: true }).first().scrollIntoViewIfNeeded();
     await shot("estimate-labor-height-12");
 
+    // ── 7. THE BID CHECK ON THE SEND STEP (bidCheck.ts) ──
+    // Every check's state, words and fix link; then the floor-area check's own link, the building's
+    // area typed (BID_CHECK_GROSS_SF, read off the set's cover sheet by whoever runs the walk), and back.
+    const readBidCheck = async (when: string) => {
+      await page.goto(`/jobs/${jobId}#contract-signature`);
+      const panel = page.locator('[data-bid-check=""]');
+      await expect(panel).toBeVisible({ timeout: 30_000 });
+      const summary = (await panel.locator('[data-bid-check="summary"]').innerText()).trim();
+      expect(summary).toMatch(/^(\d+ checks? open|All 7 checks clear)$/);
+      note(`Bid check ${when}: ${summary} · beside Send: "${(await page.locator('[data-bid-check="beside-send"]').innerText().catch(() => "")).trim()}"`);
+      const items = await panel.locator("[data-bid-check-item]").all();
+      expect(items).toHaveLength(7);
+      for (const item of items) {
+        const fix = item.locator("[data-bid-check-fix]");
+        const href = (await fix.count()) > 0 ? ` → ${await fix.getAttribute("href")}` : "";
+        note(`  ${await item.getAttribute("data-bid-check-item")} ${(await item.getAttribute("data-state"))!.toUpperCase()}: ${(await item.innerText()).replace(/\s+/g, " ").slice(0, 400)}${href}`);
+      }
+      await panel.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: path.join(OUT, `${String(++shotN).padStart(2, "0")}-bid-check-${when}.png`) });
+      return summary;
+    };
+    await readBidCheck("on-arrival");
+    const gross = process.env.BID_CHECK_GROSS_SF ?? "";
+    const areaFix = page.locator('[data-bid-check-fix="quantities"]');
+    if (gross !== "" && /floor area/.test(await areaFix.innerText().catch(() => ""))) {
+      await areaFix.click();
+      await hydrated("#job-details button");
+      const details = page.locator("#job-details");
+      await details.getByRole("button", { name: "Edit details" }).click();
+      await details.locator('input[name="grossAreaSqFt"]').fill(gross);
+      await details.getByRole("button", { name: /^Save/ }).first().click();
+      await expect.poll(async () => (await prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: { grossAreaSqFt: true } })).grossAreaSqFt?.toString() ?? "", { timeout: 30_000 }).toBe(String(Number(gross)));
+      note(`Typed the building's floor area through the check's own link: ${gross} SF`);
+      await readBidCheck("with-floor-area");
+    }
+
     writeFileSync(path.join(OUT, "notes.md"), notes.map((n) => `- ${n}`).join("\n") + "\n");
   });
 });

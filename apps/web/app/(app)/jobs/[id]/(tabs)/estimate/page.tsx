@@ -1421,7 +1421,7 @@ export default async function JobEstimatePage({
           {/* Collapsed by default (density audit #3): every wall run is an
               open edit form, and the lines it generates are already in the
               table above. */}
-          <div className="mb-4" data-tour="job-wall-schedule">
+          <div id="wall-schedule" className="mb-4 scroll-mt-4" data-tour="job-wall-schedule">
             <Disclosure
               summary={
                 <>

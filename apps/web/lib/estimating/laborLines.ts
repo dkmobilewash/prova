@@ -89,7 +89,7 @@ export async function laborPlanFor(tx: Tx, companyId: string, jobId: string): Pr
 }
 
 /** The job's priced walls, each at its own height, with what labor needs to know about its wall type. */
-async function wallsForLabor(tx: Tx, companyId: string, jobId: string, defaultFinishLevel: 3 | 4 | 5): Promise<WallForLabor[]> {
+export async function wallsForLabor(tx: Tx, companyId: string, jobId: string, defaultFinishLevel: 3 | 4 | 5): Promise<WallForLabor[]> {
   const items = await wallItemsForLabor(tx, companyId, jobId);
   const runs = await tx.wallRun.findMany({ where: { jobId, companyId } });
   const typeIds = [...new Set([...items.map((i) => i.wallTypeId), ...runs.map((r) => r.wallTypeId)])];
