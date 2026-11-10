@@ -257,6 +257,13 @@ async function afterClose(jobId: string): Promise<void> {
   try {
     const job = await prisma.planIngestJob.findUnique({ where: { id: jobId }, select: { stage: true, planId: true, companyId: true, startedByUserId: true } });
     if (job?.stage !== "PAGE_INVENTORY") return;
+    // The set-level pass over the keyless titles, now that every page is read (`keylessTitles.ts`).
+    try {
+      const { cleanKeylessTitles } = await import("./keylessTitles");
+      await cleanKeylessTitles(job.planId);
+    } catch (error) {
+      console.error("[plan-ingest] keyless titles not cleaned; they show as read", { jobId }, error);
+    }
     const { queueLegendRead } = await import("./legendAutoStart");
     await queueLegendRead({ planId: job.planId, companyId: job.companyId, startedByUserId: job.startedByUserId });
   } catch (error) {
