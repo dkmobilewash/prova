@@ -126,6 +126,7 @@ export * from "./takeoffReadSheet";
 export * from "./planTextRead";
 export * from "./wallLegend";
 export * from "./assemblyStandards";
+export * from "./productionRates";
 export * from "./priceList";
 export * from "./wallGroupType";
 export * from "./revisedSheets";

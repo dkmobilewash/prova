@@ -6,6 +6,8 @@ import { pricingRatesFor } from "@/lib/estimating/pricing-rates";
 import { HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 import { AUTO_DOORS_LABEL, AUTO_MARK } from "@/lib/takeoff/autoPost";
+import { nominalThicknessIn } from "@/lib/takeoff/legendBands";
+import type { StoredCrop } from "@/lib/takeoff/legendProposal";
 import { groupsFromProposals, storedRunsOrNull } from "@/lib/takeoff/wallProposal";
 import { storedLegendCodes } from "@/lib/takeoff/planTextRead";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
@@ -33,7 +35,7 @@ import { buildingHeights, feetLabel, legendOption, legendOptions, type CeilingRo
 export async function loadReviewQueue(
   companyId: string,
   jobId: string,
-): Promise<{ planId: string | null; items: ReviewItem[]; heights: Record<string, CodeHeight>; heightChoices: Record<string, CodeHeight[]>; codes: string[]; legend: LegendState; scaledSheets: number; floorPlans: number; floorPlansScaled: number; autoPosted?: { pageNumber: number; sheet: string; feet: number; doors: number }[] }> {
+): Promise<{ planId: string | null; items: ReviewItem[]; heights: Record<string, CodeHeight>; heightChoices: Record<string, CodeHeight[]>; codes: string[]; legend: LegendState; scaledSheets: number; floorPlans: number; floorPlansScaled: number; autoPosted?: { pageNumber: number; sheet: string; feet: number; doors: number }[]; codeInfo?: Record<string, { thicknessIn: number | null; crop: StoredCrop | null; legendPage: number | null }> }> {
   const plan = await prisma.takeoffPlan.findFirst({ where: { jobId, companyId }, orderBy: { createdAt: "desc" }, select: { id: true } });
   const unpriced = await prisma.jobLineItem.findMany({
     // Never "Walls — untyped": those runs are this queue's type items, and the
@@ -137,7 +139,24 @@ export async function loadReviewQueue(
   const roofRead = await storedRoofParts(plan.id);
   // The types whose height is the storey: those whose own words run them to the structure.
   const toStructure = (lines: readonly string[]) => lines.some((line) => heightBasis(line)?.kind === "to-structure");
-  const legendTypes = (await prisma.planLegendProposal.findMany({ where: { planId: plan.id }, select: { merged: true } })).flatMap((p) => storedLegendTypesFromJson(p.merged));
+  const legendReads = await prisma.planLegendProposal.findMany({ where: { planId: plan.id }, orderBy: { createdAt: "asc" }, select: { merged: true, crops: true, pageNumber: true } });
+  const legendTypes = legendReads.flatMap((p) => storedLegendTypesFromJson(p.merged));
+  // ── EACH CODE'S THICKNESS AND LEGEND PICTURE, for an untagged group's picker (`byThickness`) ──
+  // The library's thickness where the type has one, else the legend's stud and boards; the crop
+  // from the newest legend read that placed one. Later reads overwrite earlier ones.
+  const codeInfo: Record<string, { thicknessIn: number | null; crop: StoredCrop | null; legendPage: number | null }> = {};
+  for (const read of legendReads) {
+    const crops = (Array.isArray(read.crops) ? read.crops : []) as StoredCrop[];
+    for (const t of storedLegendTypesFromJson(read.merged)) {
+      const crop = crops.find((c) => typeof c?.code === "string" && c.code.toUpperCase() === t.code.toUpperCase()) ?? null;
+      codeInfo[t.code.toUpperCase()] = { thicknessIn: nominalThicknessIn(t.assembly.read), crop, legendPage: crop === null ? null : read.pageNumber };
+    }
+  }
+  for (const t of libraryTypes) {
+    if (t.thicknessIn === null) continue;
+    const key = t.code.toUpperCase();
+    codeInfo[key] = { crop: codeInfo[key]?.crop ?? null, legendPage: codeInfo[key]?.legendPage ?? null, thicknessIn: Number(t.thicknessIn) };
+  }
   const structureCodes = [
     ...new Set([
       ...libraryTypes.filter((t) => toStructure((t.notes ?? "").split("\n"))).map((t) => t.code.toUpperCase()),
@@ -274,6 +293,7 @@ export async function loadReviewQueue(
   return {
     planId: plan.id,
     autoPosted: [...new Set([...autoByPage.keys(), ...doorsByPage.keys()])].map((pageNumber) => ({ pageNumber, sheet: sheetOf(pageNumber).sheet, feet: autoByPage.get(pageNumber) ?? 0, doors: doorsByPage.get(pageNumber) ?? 0 })),
+    codeInfo,
     items: reviewQueue(items),
     heights,
     heightChoices,

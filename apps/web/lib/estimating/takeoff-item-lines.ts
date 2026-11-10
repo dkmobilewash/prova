@@ -10,6 +10,7 @@ import { nextItemColor } from "@/lib/takeoff/itemColors";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 import { OFF_ESTIMATE_ITEMS } from "@/lib/takeoff/estimateHold";
 import { boardedArea } from "@/lib/takeoff";
+import { syncLaborLines } from "./laborLines";
 
 /**
  * ── A TAKEOFF ITEM'S SHARE OF THE ESTIMATE ──
@@ -471,6 +472,8 @@ export async function syncTakeoffItemLines(
     .filter((p) => showsExistingWork(texts.find((t) => t.planId === p.planId && t.pageNumber === p.pageNumber)?.renovationMarks ?? []))
     .map((p) => p.label ?? `Sheet ${p.pageNumber}`);
 
+  // Labor follows the walls: the hours are worked out again from what the lines now say.
+  await syncLaborLines(tx, companyId, jobId);
   return { created, updated, removed, unpriced, checkFigures, emptyAssembly, renovationUnchecked };
 }
 
@@ -607,4 +610,41 @@ export async function wallScopeParts(tx: Tx, companyId: string, jobId: string): 
   }
   const sorted = (rows: Map<string, WallScopeRow>) => [...rows.values()].sort((a, b) => (a.code === null ? 1 : b.code === null ? -1 : a.code.localeCompare(b.code, undefined, { numeric: true })));
   return { priced: sorted(parts.priced), unpriced: sorted(parts.unpriced) };
+}
+
+/**
+ * Each priced wall on the job, one row per traced item, at its own height — what labor is worked out
+ * from (`laborLines.ts`). The same items, heights and geometry `wallScopeParts` sums; kept per item
+ * because a 14 ft wall and a 9 ft wall of one type take different hours.
+ */
+export async function wallItemsForLabor(tx: Tx, companyId: string, jobId: string): Promise<{ wallTypeId: string; heightFt: number; linearFt: number; boardedSqFt: number }[]> {
+  const { items, assemblies } = await loadItemsForLines(tx, companyId, jobId);
+  const lined = new Set(
+    (await tx.jobLineItem.findMany({ where: { jobId, isDeleted: false, takeoffItemId: { not: null }, wallTypeComponentId: { not: null } }, select: { takeoffItemId: true }, distinct: ["takeoffItemId"] })).map((l) => l.takeoffItemId),
+  );
+  const assemblyById = new Map(assemblies.map((assembly) => [assembly.id, assembly]));
+  const company = await tx.company.findUniqueOrThrow({ where: { id: companyId }, select: { openingDeduction: true, openingDeductionSqFt: true } });
+  const openingThresholdSqFt = company.openingDeduction === null ? 0 : thresholdFor(company.openingDeduction, company.openingDeductionSqFt === null ? null : Number(company.openingDeductionSqFt));
+  const out: { wallTypeId: string; heightFt: number; linearFt: number; boardedSqFt: number }[] = [];
+  for (const item of items) {
+    if (!lined.has(item.id) || item.type !== "LINEAR" || item.wallTypeId === null) continue;
+    const assembly = assemblyById.get(item.wallTypeId);
+    if (assembly === undefined) continue;
+    const heightFt = num(item.heightFt) ?? num(assembly.defaultHeightFt);
+    if (heightFt === null || !(heightFt > 0)) continue;
+    const geometry = itemGeometry({
+      id: item.id,
+      name: item.name,
+      type: item.type,
+      heightFt,
+      sides: item.sides ?? (assembly.sides === 1 ? 1 : 2),
+      wastePercent: null,
+      depthIn: null,
+      wallTypeId: item.wallTypeId,
+      openingThresholdSqFt,
+      measurements: item.measurements.map(geometryMeasurement),
+    });
+    if (geometry.linearFt > 0) out.push({ wallTypeId: item.wallTypeId, heightFt, linearFt: geometry.linearFt, boardedSqFt: geometry.boardedSqFt });
+  }
+  return out;
 }

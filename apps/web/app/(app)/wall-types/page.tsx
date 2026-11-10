@@ -8,6 +8,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { NewWallTypeForm, StarterWallTypesButton, WallTypeCard, type WallTypeView } from "@/components/WallTypes";
 import type { WallComponentBasis } from "@/lib/wall-assemblies";
 import { AssemblyStandardsForm } from "@/components/AssemblyStandardsForm";
+import { ProductionRatesForm } from "@/components/ProductionRatesForm";
+import { ratesFromJson } from "@/lib/estimating/productionRates";
 import { standardsFrom } from "@/lib/estimating/assemblyStandards";
 
 /**
@@ -48,7 +50,7 @@ export default async function WallTypesPage({ searchParams }: { searchParams?: P
     // rendered here later by accident.
     prisma.companyBidDefaults.findUnique({
       where: { companyId: company.id },
-      select: { defaultWastePercent: true, assemblyStandards: true },
+      select: { defaultWastePercent: true, assemblyStandards: true, productionRates: true },
     }),
   ]);
 
@@ -131,6 +133,12 @@ export default async function WallTypesPage({ searchParams }: { searchParams?: P
           <AssemblyStandardsForm
             standards={standardsFrom(bidDefaults?.assemblyStandards, bidDefaults?.defaultWastePercent == null ? null : Number(bidDefaults.defaultWastePercent))}
           />
+        </CollapsedForm>
+      </div>
+
+      <div id="production-rates" data-wall-types="production-rates" className="mb-4 scroll-mt-4">
+        <CollapsedForm label="Production rates" openOnHash="production-rates">
+          <ProductionRatesForm rates={ratesFromJson(bidDefaults?.productionRates)} />
         </CollapsedForm>
       </div>
 
