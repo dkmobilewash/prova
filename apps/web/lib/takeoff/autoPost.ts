@@ -73,25 +73,27 @@ export function autoPosts(source: PostSource): boolean {
 /**
  * ── DOORS: THE FIRST SOURCE PAST THE BAR ──
  *
- * Measured 2026-11-10 against ROUND 17's door keys (labels-snap-20261110T0122; training
- * Baker A101, Topeka A-101, Joplin A-101; held-out USU A121, Riverbend A1.1, measured once).
+ * Measured 2026-11-10 against ROUND 17 + 17b's door keys (labels-snap-20261110T2152).
+ * Training: Baker A101, Topeka A-101, Joplin A-101, Green Bay A3.2, Bunkie A100,
+ * E Street A2.1. Held-out, measured once: USU A121, Riverbend A1.1, Hutto A101, O'Reillys p1.
  * A finder door matches a key door when the key point lies inside its swing (leaf width
  * + 1 ft of the hinge); the finder and the keys both see swing doors only.
  *
  * | source | training | held-out |
  * | --- | --- | --- |
- * | a door with a printed mark beside it (`doorMarks`) | 97.1% (34 doors, 1 false) | 100% (13, 0 false) |
- * | every door found | 93.6% (146, 10 false) | 86.5% (45, 7 false) |
+ * | a door with a printed mark beside it (`doorMarks`) | 98.1% (52 doors, 1 false) | 100% (66, 0 false) |
+ * | every door found | 94.7% (195, 11 false) | 93.1% (108, 8 false) |
  *
  * Marked doors clear ≥97% / ≥95%, so they post themselves as a count (one point per door,
  * "Doors (auto, from printed mark)"), with Undo. Every door found does not, and stays as
- * the wall openings it already was. A thin sample: 47 marked doors, and one false door on
- * training would have failed the bar; re-measure as keys are added.
+ * the wall openings it already was. Recall is low (16.5% training, 38.4% held-out of keyed
+ * doors) and the count carries no mark (mark-correct 45/49 training, 63/63 held-out).
+ * The first measurement (ROUND 17, 47 marked doors) was 97.1% / 100%.
  */
 export type DoorSource = "door-marked" | "door-any";
 export const DOOR_EVIDENCE: Record<DoorSource, SourceEvidence> = {
-  "door-marked": { trainingPct: 97.1, trainingFt: 34, heldOutPct: 100, heldOutFt: 13, measured: "2026-11-10", trainingSheets: 3, heldOutSheets: 2 },
-  "door-any": { trainingPct: 93.6, trainingFt: 146, heldOutPct: 86.5, heldOutFt: 45, measured: "2026-11-10", trainingSheets: 3, heldOutSheets: 2 },
+  "door-marked": { trainingPct: 98.1, trainingFt: 52, heldOutPct: 100, heldOutFt: 66, measured: "2026-11-10", trainingSheets: 6, heldOutSheets: 4 },
+  "door-any": { trainingPct: 94.7, trainingFt: 195, heldOutPct: 93.1, heldOutFt: 108, measured: "2026-11-10", trainingSheets: 6, heldOutSheets: 4 },
 };
 /** Whether a door source posts itself: its own measurement against the same bar. (For doors the "Ft" fields count doors.) */
 export function doorAutoPosts(source: DoorSource): boolean {
