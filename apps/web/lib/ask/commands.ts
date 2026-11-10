@@ -393,6 +393,16 @@ export const EXCLUSIONS: Exclusion[] = [
       "The review screen for a set's wall legend. readLegendBySight takes the legend PAGE and one CROP per type as images rendered in the browser — the same no-sentence-makes-a-picture reason as takeoffClassify and takeoffReadSheet. addWallTypeFromLegend takes the fields a person has just checked against that crop and may have edited; the whole point of the screen is that somebody looked, so a command that adds a type nobody has seen would be the review screen with the review taken out. Ask can describe the library once the types are in it.",
   },
   {
+    action: "saveAssemblyStandards",
+    reason:
+      "A company setting with eleven fields edited together on the Wall types page — waste per material, screws, tape and compound per square foot, the fallback stud spacing. It changes how much of every material every NEW legend type buys, so it belongs on a form showing all of them at once; a sentence that changes one figure out of sight of the rest is the mistake the form exists to prevent.",
+  },
+  {
+    action: "priceMaterial",
+    reason:
+      "Writes a cost into the company's price book and prices every estimate line of that material through the markup. Its input is the exact set of unpriced lines one 'Price these N materials' row stands for, which only exists on the estimate page, and a cost is a figure a person reads off a supplier quote. Ask can report what is unpriced; typing the money is the person's.",
+  },
+  {
     action: "takeoffReadSheet.*",
     reason:
       "Reads the writing off a sheet that was SCANNED. Its input is one rendered TILE of the page as an image, and the whole point is that the words exist only as pixels — so there is no sentence a person could say that produces the picture, and nothing for Ask to pass. The same reason as takeoffClassify above, and the same answer: Ask can describe what a sheet says once it has been read; it cannot do the reading.",

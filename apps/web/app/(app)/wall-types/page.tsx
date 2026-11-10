@@ -7,6 +7,8 @@ import { NoAccess } from "@/components/NoAccess";
 import { EmptyState } from "@/components/EmptyState";
 import { NewWallTypeForm, StarterWallTypesButton, WallTypeCard, type WallTypeView } from "@/components/WallTypes";
 import type { WallComponentBasis } from "@/lib/wall-assemblies";
+import { AssemblyStandardsForm } from "@/components/AssemblyStandardsForm";
+import { standardsFrom } from "@/lib/estimating/assemblyStandards";
 
 /**
  * The company's partition schedule — every wall type it builds, and what each
@@ -46,7 +48,7 @@ export default async function WallTypesPage({ searchParams }: { searchParams?: P
     // rendered here later by accident.
     prisma.companyBidDefaults.findUnique({
       where: { companyId: company.id },
-      select: { defaultWastePercent: true },
+      select: { defaultWastePercent: true, assemblyStandards: true },
     }),
   ]);
 
@@ -123,6 +125,14 @@ export default async function WallTypesPage({ searchParams }: { searchParams?: P
       )}
       {/* Outside the switch above, so the add's answer outlives the empty state. */}
       <StarterWallTypesButton offer={views.length === 0} />
+
+      <div data-wall-types="standards" className="mb-4">
+        <CollapsedForm label="Quantity standards">
+          <AssemblyStandardsForm
+            standards={standardsFrom(bidDefaults?.assemblyStandards, bidDefaults?.defaultWastePercent == null ? null : Number(bidDefaults.defaultWastePercent))}
+          />
+        </CollapsedForm>
+      </div>
 
       {/* Behind its button (declutter, 2026-10-13: it rendered open). */}
       <div data-tour="wall-types-add">
