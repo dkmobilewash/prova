@@ -330,6 +330,27 @@ export function sheetSuggestionGroups(items: readonly ReviewItem[], pageNumber: 
     });
 }
 
+/**
+ * ── AN UNTAGGED GROUP: THE LEGEND'S TYPES, CLOSEST DRAWN THICKNESS FIRST ──
+ *
+ * 69 of 72 queue actions on a three-floor set (Topeka, Hutto) are groups no tag names.
+ * For those, the legend's types are offered in order of how close each type's thickness
+ * (its stud and boards, `nominalThicknessIn`) is to the group's drawn thickness, so 1
+ * picks the closest. A type with no thickness read goes last, in legend order.
+ *
+ * Nothing is preselected. Measured 2026-11-10 on the 9 training sheets (one scorer's
+ * pairing, labels-snap-20261109T0015): the closest type is the key's type for 24.2% of
+ * 33 keyed untagged groups, and in the top 3 for 63.6%. Drawn thickness misses by
+ * inches (Baker draws a 9-1/4" type at 3"), so a blind Enter would misprice; Diego chose
+ * ordering without a preselection.
+ */
+export function byThickness(codes: readonly string[], thicknessOf: (code: string) => number | null, inches: number): { code: string; thicknessIn: number | null }[] {
+  return codes
+    .map((code, at) => ({ code, thicknessIn: thicknessOf(code), at }))
+    .sort((a, b) => (a.thicknessIn === null ? 1 : 0) - (b.thicknessIn === null ? 1 : 0) || (a.thicknessIn === null || b.thicknessIn === null ? 0 : Math.abs(a.thicknessIn - inches) - Math.abs(b.thicknessIn - inches)) || a.at - b.at)
+    .map(({ code, thicknessIn }) => ({ code, thicknessIn }));
+}
+
 /** Thickness within this of the confirmed group's is the same band (a sheet's buckets differ by a hair between floors). */
 export const SAME_BAND_IN = 0.5;
 

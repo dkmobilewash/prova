@@ -8,7 +8,9 @@ import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, undoConfir
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
-import { forCode, QUEUE_PART, sameOnOtherFloors, sameWindowsOnOtherFloors, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { LegendThumb } from "./LegendCrop";
+import type { StoredCrop } from "@/lib/takeoff/legendProposal";
+import { byThickness, forCode, QUEUE_PART, sameOnOtherFloors, sameWindowsOnOtherFloors, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
 import { specSaysLine, type SpecSay } from "@/lib/specs/specTradeFacts";
@@ -47,6 +49,7 @@ export function TakeoffReviewQueue({
   onCheckDoubted,
   onClose,
   onUndoable,
+  codeInfo = {},
 }: {
   jobId: string;
   planId: string;
@@ -70,6 +73,8 @@ export function TakeoffReviewQueue({
   onClose: () => void;
   /** The workspace's undo stack: a group typed or a height set here can be taken back (Undo, ⌘Z). */
   onUndoable?: (entry: UndoEntry) => void;
+  /** Each code's thickness and legend picture (`loadReviewQueue`), for an untagged group's picker. */
+  codeInfo?: Readonly<Record<string, { thicknessIn: number | null; crop: StoredCrop | null; legendPage: number | null }>>;
 }) {
   // Decided here, before the server's re-render drops it from `items`.
   const [done, setDone] = useState<ReadonlySet<string>>(new Set());
@@ -417,7 +422,28 @@ export function TakeoffReviewQueue({
               <QueueGroupConfirm
                 key={current.key}
                 label={`Walls · sheet ${current.sheet}${current.level ? ` · ${current.level.label}` : ""}${current.building ? ` · ${current.building.name.toLowerCase()}` : ""} · ${inchLabel(current.inches)}${current.feet !== null ? ` · ${Math.round(current.feet)} ft` : ""}`}
-                codes={current.suggested === null || legendCodes.some((c) => c.toUpperCase() === current.suggested!.code.toUpperCase()) ? legendCodes : [...legendCodes, current.suggested.code]}
+                codes={
+                  current.suggested === null || current.suggested.drawn !== true
+                    ? // Nothing on the drawing names this group: the legend's types, closest drawn thickness first, so 1–3 is usually it. Nothing preselected.
+                      byThickness(legendCodes, (c) => codeInfo[c.toUpperCase()]?.thicknessIn ?? null, current.inches).map((r) => r.code)
+                    : legendCodes.some((c) => c.toUpperCase() === current.suggested!.code.toUpperCase())
+                      ? legendCodes
+                      : [...legendCodes, current.suggested.code]
+                }
+                codeDetail={
+                  current.suggested?.drawn === true
+                    ? undefined
+                    : (code) => {
+                        const info = codeInfo[code.toUpperCase()];
+                        if (info === undefined) return null;
+                        return (
+                          <span className="ml-1 inline-flex items-center gap-1 align-middle" data-takeoff="queue-code-detail">
+                            {info.thicknessIn !== null && <span className="text-ink-muted">{inchLabel(info.thicknessIn)}</span>}
+                            {info.crop !== null && info.legendPage !== null && <LegendThumb planId={planId} pageNumber={info.legendPage} crop={info.crop} code={code} />}
+                          </span>
+                        );
+                      }
+                }
                 suggested={current.suggested}
                 missing={legendMissing(legend, jobId)}
                 heightOf={(code) => heightOfGroup(current, code)}
