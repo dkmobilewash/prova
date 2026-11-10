@@ -27,6 +27,8 @@ const context = { company: { id: "co_1" }, id: "user_1", role: "OWNER" as string
 
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+// Labor is worked out after the materials (`laborLines.ts`) and has its own db tests; this file is about materials.
+vi.mock("@/lib/estimating/laborLines", () => ({ syncLaborLines: async () => ({ lines: [], missing: [] }) }));
 
 /** Equality, `{ in }`, `{ not: null }`, and one level of relation filter
  * (`wallType: { companyId }`) — exactly what these actions ask for. */
