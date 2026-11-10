@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { prisma } from "@prova/db";
+import { Prisma, prisma } from "@prova/db";
 import { legendProposalFrom } from "@/lib/takeoff/legendProposalBuild";
 import { unpricedMaterials } from "@/lib/estimating/materialKey";
 
@@ -107,6 +107,26 @@ describe("the automatic estimate", () => {
     expect(q(at12, /compound/)).toBeGreaterThan(q(at10, /compound/));
     expect(at12.find((l) => /gypsum board/.test(l.description))!.unitPrice?.toString()).toBe("18.5");
     expect(at12.map((l) => l.id).sort()).toEqual(before.map((l) => l.id).sort()); // updated in place
+  });
+
+  it("a typed takeoff wall gets labor from the company's rates, and its height moves the hours", async () => {
+    // W1: 3-5/8in studs @16, one layer 5/8 type X each side. Rates set directly, as the Wall types form stores them.
+    await prisma.companyBidDefaults.update({
+      where: { companyId },
+      data: { productionRates: { framingLfPerHr: 20, boardSfPerHr: { typeX: 50 }, finishSfPerHr: { level4: 45 }, defaultFinishLevel: 4, over10Multiplier: 1.15, crewRatePerHr: 62 } },
+    });
+    const item = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, wallType: { code: "W1" } } });
+    expect((await setWallGroupHeight(jobId, item.id, 10)).ok).toBe(true);
+    const at10 = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false, costCategory: "LABOR" } });
+    const lf = Number((await lines()).find((l) => /track/.test(l.description))!.quantity) / 2 / 1.05; // track is 2 x LF plus the 5% standard waste
+    const framing = at10.find((l) => /^Labor — W1 — framing, studs and track$/.test(l.description))!;
+    expect(Number(framing.laborHours)).toBeCloseTo(lf / 20, 2);
+    const board10 = Number(at10.find((l) => /W1 — hang type X board$/.test(l.description))!.laborHours);
+    expect(board10).toBeCloseTo((lf * 10 * 2) / 50, 1);
+    expect((await setWallGroupHeight(jobId, item.id, 12)).ok).toBe(true);
+    const at12 = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false, costCategory: "LABOR" } });
+    expect(Number(at12.find((l) => /W1 — hang type X board, over 10 ft/.test(l.description))!.laborHours)).toBeCloseTo(((lf * 12 * 2) / 50) * 1.15, 1);
+    await prisma.companyBidDefaults.update({ where: { companyId }, data: { productionRates: Prisma.DbNull } });
   });
 
   it("saves the company's standards, and refuses a spacing nobody frames at", async () => {

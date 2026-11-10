@@ -73,6 +73,7 @@ import { openingsFromJson, scheduleLines, type WallComponentBasis, type WallType
 import { BidRecapPanel, type RecapLineView } from "@/components/BidRecapPanel";
 import { PriceTheseMaterials } from "@/components/PriceTheseMaterials";
 import { unpricedMaterials } from "@/lib/estimating/materialKey";
+import { laborPlanFor } from "@/lib/estimating/laborLines";
 import { priceSource, type PriceSource } from "@/lib/estimating/catalogPrices";
 import { standardsFrom } from "@/lib/estimating/assemblyStandards";
 import { RECAP_RATE_KEYS, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
@@ -449,6 +450,8 @@ export default async function JobEstimatePage({
     const part = linePart(item.description);
     return specSaysLine((specSaysByCode[code.toUpperCase()] ?? []).filter((s) => part === null || s.part === part));
   };
+  // What the labor needs and does not have — only asked once there are walls or ceilings to put labor on.
+  const laborMissing = isEstimateStage ? (await prisma.$transaction((tx) => laborPlanFor(tx, company.id, job.id))).plan.missing : [];
   // Where each catalog price came from — a supplier's list and its date — derived, and only while still true.
   const sourceIds = [...new Set(job.lineItems.map((l) => l.sourceCatalogEntryId).filter((id): id is string => id !== null))];
   const sourceEntries = sourceIds.length === 0 ? [] : await prisma.lineItemCatalogEntry.findMany({
@@ -893,6 +896,16 @@ export default async function JobEstimatePage({
               </p>
               <Link href="/settings?tab=estimating#bid-defaults" className="text-sm font-semibold text-link hover:underline">
                 Set your markup →
+              </Link>
+            </div>
+          )}
+          {laborMissing.length > 0 && (
+            <div role="status" data-estimate="set-production-rates" className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-brand bg-surface px-4 py-3">
+              <p className="text-sm text-ink">
+                <span className="font-semibold">Set your production rates.</span> This estimate has no labor for work whose rate isn&apos;t set: {laborMissing.join(", ")}.
+              </p>
+              <Link href="/wall-types#production-rates" className="text-sm font-semibold text-link hover:underline">
+                Set your production rates →
               </Link>
             </div>
           )}
