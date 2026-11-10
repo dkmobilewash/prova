@@ -398,6 +398,11 @@ export const EXCLUSIONS: Exclusion[] = [
       "A company setting with eleven fields edited together on the Wall types page — waste per material, screws, tape and compound per square foot, the fallback stud spacing. It changes how much of every material every NEW legend type buys, so it belongs on a form showing all of them at once; a sentence that changes one figure out of sight of the rest is the mistake the form exists to prevent.",
   },
   {
+    action: "priceList.*",
+    reason:
+      "A supplier's price list arrives as a FILE — a spreadsheet or a PDF — and is imported through a preview where a person checks the columns, reads how every row's price was converted and picks between rows the list offers twice. readPriceListPdf takes the file's bytes; importPriceList takes the checked mapping and the picks. No sentence carries the file, and an import with the preview taken out is the re-pricing of the price book nobody looked at. Ask can report what is priced and from where once it is in.",
+  },
+  {
     action: "priceMaterial",
     reason:
       "Writes a cost into the company's price book and prices every estimate line of that material through the markup. Its input is the exact set of unpriced lines one 'Price these N materials' row stands for, which only exists on the estimate page, and a cost is a figure a person reads off a supplier quote. Ask can report what is unpriced; typing the money is the person's.",

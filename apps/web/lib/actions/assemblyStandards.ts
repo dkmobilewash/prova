@@ -31,6 +31,7 @@ export async function saveAssemblyStandards(formData: FormData): Promise<ActionR
       studSpacingIn: spacing,
       screwsPerSqFt: field("screwsPerSqFt", "Screws per sq ft", 5),
       tapeLfPerSqFt: field("tapeLfPerSqFt", "Tape per sq ft", 3),
+      tapeRollLf: field("tapeRollLf", "Tape roll length", 2000),
       compoundLbPerSqFt: field("compoundLbPerSqFt", "Compound per sq ft", 2),
       level5SkimLbPerSqFt: field("level5SkimLbPerSqFt", "Level 5 skim per sq ft", 2),
     };

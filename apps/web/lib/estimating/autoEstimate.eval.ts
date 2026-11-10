@@ -22,7 +22,7 @@ import { itemGeometry } from "./takeoff-item-lines";
  * hand calculation written below — within 2%. AUTO_ESTIMATE_OUT gets the before/after table.
  *
  * The hand figures assume the company defaults: 16in studs when nothing says, waste 5% (10% board),
- * 1 screw/sf/layer (bought per thousand), 0.37 lf tape and 0.14 lb compound per sf.
+ * 1 screw/sf/layer (bought per thousand), 0.37 lf tape (in 500 ft rolls) and 0.14 lb compound per sf.
  */
 const CACHE = process.env.LEGEND_CACHE ?? "";
 const PLANS = process.env.REAL_PLAN_DIR ?? "";
@@ -33,19 +33,19 @@ type Hand = Record<string, [RegExp, number, string]>;
 
 // By hand. S6B: 120 lf at 10 ft, both sides, one layer, no spacing printed (16in standard).
 //   studs ceil(120/1.333)+1 = 91 x1.05 = 95.55 → 96 · track 240 x1.05 = 252 · board 2400sf/32 = 75 x1.10 = 82.5 → 83
-//   screws 2400 x1.05 = 2520 = 2.52 M · tape 888 x1.05 = 932.4 → 933 · compound 336 x1.05 = 352.8 → 353
+//   screws 2400 x1.05 = 2520 = 2.52 M · tape 888 x1.05 = 932.4 ft = 1.86 rolls → 2 · compound 336 x1.05 = 352.8 → 353
 // C8B: 80 lf at 12 ft, board ONE side over concrete (no framing), R-22 insulation.
-//   board 960/32 = 30 x1.1 = 33 · insulation 960 x1.05 = 1008 · screws 1008 = 1.01 M · tape 355.2 x1.05 = 372.96 → 373 · compound 134.4 x1.05 = 141.12 → 142
+//   board 960/32 = 30 x1.1 = 33 · insulation 960 x1.05 = 1008 · screws 1008 = 1.01 M · tape 355.2 x1.05 = 372.96 ft → 1 roll · compound 134.4 x1.05 = 141.12 → 142
 // S6A: 60 lf at 14 ft, both sides, 2 layers each side, 24in o.c., continuous to the roof deck.
 //   studs ceil(60/2)+1 = 31 x1.05 = 32.55 → 33 · bottom track 63 · deflection track 63 · board 3360/32 = 105 x1.1 = 115.5 → 116
-//   screws 3360 x1.05 = 3528 = 3.53 M · tape 621.6 x1.05 = 652.68 → 653 · compound 235.2 x1.05 = 246.96 → 247
+//   screws 3360 x1.05 = 3528 = 3.53 M · tape 621.6 x1.05 = 652.68 ft → 2 rolls · compound 235.2 x1.05 = 246.96 → 247
 // PS2a: 100 lf at 9 ft, both sides, one layer, 2-1/2in studs, no spacing printed (16in standard).
-//   studs 76 x1.05 = 79.8 → 80 · track 210 · board 1800/32 = 56.25 x1.1 = 61.875 → 62 · screws 1890 = 1.89 M · tape 699.3 → 700 · compound 264.6 → 265
+//   studs 76 x1.05 = 79.8 → 80 · track 210 · board 1800/32 = 56.25 x1.1 = 61.875 → 62 · screws 1890 = 1.89 M · tape 699.3 ft → 2 rolls · compound 264.6 → 265
 const HAND: Record<string, Hand> = {
-  S6B: { studs: [/metal stud/, 96, "EA"], track: [/track/, 252, "LF"], board: [/gypsum board/, 83, "SHT"], screws: [/screws/, 2.52, "M"], tape: [/tape/, 933, "LF"], compound: [/compound/, 353, "LB"] },
-  C8B: { board: [/gypsum board/, 33, "SHT"], insulation: [/insulation/, 1008, "SF"], screws: [/screws/, 1.01, "M"], tape: [/tape/, 373, "LF"], compound: [/compound/, 142, "LB"] },
-  S6A: { studs: [/metal stud/, 33, "EA"], bottom: [/track, bottom/, 63, "LF"], deflection: [/deflection track/, 63, "LF"], board: [/gypsum board/, 116, "SHT"], screws: [/screws/, 3.53, "M"], tape: [/tape/, 653, "LF"], compound: [/compound/, 247, "LB"] },
-  PS2a: { studs: [/metal stud/, 80, "EA"], track: [/track/, 210, "LF"], board: [/gypsum board/, 62, "SHT"], screws: [/screws/, 1.89, "M"], tape: [/tape/, 700, "LF"], compound: [/compound/, 265, "LB"] },
+  S6B: { studs: [/metal stud/, 96, "EA"], track: [/track/, 252, "LF"], board: [/gypsum board/, 83, "SHT"], screws: [/screws/, 2.52, "M"], tape: [/tape/, 2, "RL"], compound: [/compound/, 353, "LB"] },
+  C8B: { board: [/gypsum board/, 33, "SHT"], insulation: [/insulation/, 1008, "SF"], screws: [/screws/, 1.01, "M"], tape: [/tape/, 1, "RL"], compound: [/compound/, 142, "LB"] },
+  S6A: { studs: [/metal stud/, 33, "EA"], bottom: [/track, bottom/, 63, "LF"], deflection: [/deflection track/, 63, "LF"], board: [/gypsum board/, 116, "SHT"], screws: [/screws/, 3.53, "M"], tape: [/tape/, 2, "RL"], compound: [/compound/, 247, "LB"] },
+  PS2a: { studs: [/metal stud/, 80, "EA"], track: [/track/, 210, "LF"], board: [/gypsum board/, 62, "SHT"], screws: [/screws/, 1.89, "M"], tape: [/tape/, 2, "RL"], compound: [/compound/, 265, "LB"] },
 };
 
 function quantities(components: readonly ProposedComponent[], wall: Wall) {
