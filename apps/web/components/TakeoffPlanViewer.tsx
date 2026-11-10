@@ -6698,16 +6698,30 @@ export function TakeoffPlanViewer({
                     </g>
                   ))}
                   {(answerKey.state.openings ?? []).map((one) => (
-                    <g key={one.id} data-takeoff="key-opening" data-id={one.id} pointerEvents="none">
-                      <circle
-                        cx={one.x}
-                        cy={one.y}
-                        r={(answerKey.focusedOpening === one.id ? 9 : 6) / Math.max(cssWidth, 1)}
-                        fill="none"
-                        stroke="#0ea5e9"
-                        strokeWidth={STROKE_PX * 2}
-                        vectorEffect="non-scaling-stroke"
-                      />
+                    <g key={one.id} data-takeoff="key-opening" data-kind={one.kind} data-id={one.id} pointerEvents="none">
+                      {/* A door is a square in amber, a window a circle in blue: two kinds on one sheet read apart. */}
+                      {one.kind === "door" ? (
+                        <rect
+                          x={one.x - (answerKey.focusedOpening === one.id ? 9 : 6) / Math.max(cssWidth, 1)}
+                          y={one.y - (answerKey.focusedOpening === one.id ? 9 : 6) / Math.max(cssWidth, 1)}
+                          width={(2 * (answerKey.focusedOpening === one.id ? 9 : 6)) / Math.max(cssWidth, 1)}
+                          height={(2 * (answerKey.focusedOpening === one.id ? 9 : 6)) / Math.max(cssWidth, 1)}
+                          fill="none"
+                          stroke="#d97706"
+                          strokeWidth={STROKE_PX * 2}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      ) : (
+                        <circle
+                          cx={one.x}
+                          cy={one.y}
+                          r={(answerKey.focusedOpening === one.id ? 9 : 6) / Math.max(cssWidth, 1)}
+                          fill="none"
+                          stroke="#0ea5e9"
+                          strokeWidth={STROKE_PX * 2}
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      )}
                       {one.tag !== undefined && (
                         <text
                           x={one.x}
