@@ -1701,6 +1701,7 @@ export function TakeoffWorkspace({
                 keyMode
                   ? {
                       state: keyState ?? startReview([]),
+                      hidden: carriedFromFile?.page === page ? carriedFromFile.carried : undefined,
                       onState: setKeyState,
                       focusedId: keyFocus,
                       onFocus: setKeyFocus,
@@ -1944,6 +1945,7 @@ export function TakeoffWorkspace({
                 savedNotice={savedNotice?.page === page ? savedNotice.note : null}
                 restoredReviewer={restoredReviewer}
                 carried={carriedFromFile?.page === page ? carriedFromFile.carried : undefined}
+                onCarried={(next) => setCarriedFromFile((prev) => (prev === null || prev.page !== page ? prev : { ...prev, carried: next }))}
                 carriedSplits={carriedFromFile?.page === page ? carriedFromFile.splits : undefined}
                 carriedRows={carriedFromFile?.page === page ? carriedFromFile.rows : null}
                 sourceFinderVersion={
