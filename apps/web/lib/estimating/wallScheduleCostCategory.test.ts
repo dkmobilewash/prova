@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { syncWallScheduleLines } from "./wall-schedule";
+// Labor is worked out after the materials (`laborLines.ts`) and has its own db tests; this file is about materials.
+vi.mock("@/lib/estimating/laborLines", () => ({ syncLaborLines: async () => ({ lines: [], missing: [] }) }));
 
 /**
  * What cost type a wall-schedule line arrives with — #513.

@@ -2104,6 +2104,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   wallTypes: () => import("./actions/wallTypes"),
   wallLegend: () => import("./actions/wallLegend"),
   assemblyStandards: () => import("./actions/assemblyStandards"),
+  productionRates: () => import("./actions/productionRates"),
   // "Set type" on the takeoff tab, which withholds on VIEW_JOB_COSTS.
   wallGroupType: () => import("./actions/wallGroupType"),
   // The bid recap. The rates, the cost types and a line's budgeted cost are
