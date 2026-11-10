@@ -124,6 +124,49 @@ async function legendState(): Promise<string> {
   return `${run ? `run ${run._count.tasks}/${run.pageCount}${run.finishedAt ? " done" : ""}` : "no run queued"}, ${proposals} proposal(s), ${Math.round((Date.now() - started) / 1000)} s after sign-up`;
 }
 
+/**
+ * The bid check on the Send step (`bidCheck.ts`): every check's state, words and fix link, and
+ * the count beside Create signing link. With WALK_GROSS_SF it follows the floor-area check's own
+ * link, types the building's area (read off the set's cover sheet by whoever runs the walk) and
+ * comes back, so the wall-footage ratio is shown and the fix link is proved to land.
+ */
+const GROSS_SF = process.env.WALK_GROSS_SF ?? "";
+async function readBidCheck(when: string): Promise<void> {
+  const panel = page.locator('[data-bid-check=""]');
+  if (!(await seen(panel, 20_000))) {
+    stuck(`no bid check on the Send step (${when})`);
+    return;
+  }
+  note(`Bid check ${when}: ${await text(panel.locator('[data-bid-check="summary"]'))} · beside Send: "${await text(page.locator('[data-bid-check="beside-send"]'))}"`);
+  for (const item of await panel.locator("[data-bid-check-item]").all()) {
+    const fix = item.locator("[data-bid-check-fix]");
+    const href = (await fix.count()) > 0 ? ` → ${await fix.getAttribute("href")}` : "";
+    note(`  ${await item.getAttribute("data-bid-check-item")} ${(await item.getAttribute("data-state"))!.toUpperCase()}: ${(await text(item)).slice(0, 500)}${href}`);
+  }
+  await panel.scrollIntoViewIfNeeded();
+  await shot(`bid-check-${when}`);
+}
+async function bidCheck(): Promise<void> {
+  await readBidCheck("on-arrival");
+  const fix = page.locator('[data-bid-check-fix="quantities"]');
+  if (GROSS_SF === "" || !/floor area/.test(await text(fix))) return;
+  await fix.click();
+  act();
+  await hydrated(page, "#job-details button");
+  const section = page.locator("#job-details");
+  await section.getByRole("button", { name: "Edit details" }).click();
+  act();
+  await section.locator('input[name="grossAreaSqFt"]').fill(GROSS_SF);
+  act();
+  await section.getByRole("button", { name: /^Save/ }).first().click();
+  act();
+  await expect.poll(async () => (await prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: { grossAreaSqFt: true } })).grossAreaSqFt?.toString() ?? "", { timeout: 30_000 }).toBe(String(Number(GROSS_SF)));
+  note(`Typed the building's floor area through the check's own link: ${GROSS_SF} SF`);
+  await page.goto(`/jobs/${jobId}#contract-signature`);
+  await page.waitForLoadState("networkidle").catch(() => {});
+  await readBidCheck("with-floor-area");
+}
+
 test.describe("a new customer, sign-up to a sendable estimate", () => {
   test.skip(DIR === "" || SET === "" || OUT === "", "WALK_PLAN_DIR, WALK_SET and WALK_OUT name the set and where the pictures go");
   test.setTimeout(3_600_000);
@@ -936,6 +979,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       act();
       await page.waitForLoadState("networkidle").catch(() => {});
       await shot("send-target");
+      await bidCheck();
       const create = page.getByRole("button", { name: /Create (a new )?signing link/ });
       if (!(await seen(create, 10_000))) {
         stuck(`no Create signing link where Send landed (${new URL(page.url()).pathname})`);

@@ -10,6 +10,9 @@ import { CollapsedForm } from "@/components/CollapsedForm";
 import { RecordExecutedSubcontract } from "@/components/RecordExecutedSubcontract";
 import { ContractDocumentUploadForm } from "@/components/ContractDocumentUploadForm";
 import { DocuSignPanel } from "@/components/DocuSignPanel";
+import { BidCheckPanel } from "@/components/job/BidCheckPanel";
+import { loadBidChecks } from "@/lib/estimating/bidCheckQuery";
+import { bidCheckSummary } from "@/lib/estimating/bidCheck";
 import { loadJobDocuSign } from "@/lib/docusign/views";
 import {
   contractExecutionFor,
@@ -126,6 +129,8 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
   const isContractExecuted = contractIsExecuted(contractExecution);
 
   const docuSign = showsJobMoney ? await loadJobDocuSign(company.id, job.id, timeZone) : null;
+  // The bid check, while there is a bid still to send (`bidCheck.ts`). It informs Send; it never blocks it.
+  const bidCheck = showsJobMoney && job.status === "ESTIMATE" && !signedSignature ? await loadBidChecks(company.id, job.id) : null;
   const docuSignSigner = { name: job.contact.name, email: job.contact.email ?? "" };
 
   const updateScheduleWithId = updateJobSchedule.bind(null, job.id);
@@ -187,7 +192,7 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
 
       <div className="print:hidden">
         {showsJobManagement && (
-          <section className="mb-10" data-tour="job-details">
+          <section id="job-details" className="mb-10 scroll-mt-4" data-tour="job-details">
             <h2 className="mb-3 text-lg font-semibold text-ink">Job details</h2>
             <JobDetailsForm
               jobId={job.id}
@@ -404,6 +409,8 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
           <section id="contract-signature" className="mb-10 scroll-mt-4" data-tour="job-signature">
             <h2 className="mb-3 text-lg font-semibold text-ink">Contract signature</h2>
 
+            {bidCheck && <BidCheckPanel checks={bidCheck} />}
+
             <div
               className={`mb-3 rounded-lg border p-4 ${
                 isContractExecuted ? "border-green-700 bg-tag-green" : "border-line-card bg-surface"
@@ -476,6 +483,11 @@ export default async function JobOverviewPage({ params }: { params: Promise<{ id
                 <div>
                   <p className="mb-3 text-sm text-ink-body">
                     No signing link yet.
+                    {bidCheck && bidCheck.some((c) => c.open) && (
+                      <span data-bid-check="beside-send" className="ml-1 font-semibold text-warn">
+                        {bidCheckSummary(bidCheck)} — see the bid check above.
+                      </span>
+                    )}
                   </p>
                   <form action={createSignatureRequestWithId}>
                     <SubmitButton
