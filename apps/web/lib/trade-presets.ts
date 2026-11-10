@@ -19,8 +19,15 @@ import { STARTER_TYPES, TRADE_ONLY_STARTERS, type StarterType } from "@/lib/wall
  * follow.
  *
  * Switches, Diego 2026-11-05: as proposed, with fireproofing's rooms ON
- * (deck fireproofing is priced by floor area). Scanned sheets and plan
- * comparison stay off for every trade.
+ * (deck fireproofing is priced by floor area). Scanned sheets stay off for
+ * every trade.
+ *
+ * PLAN COMPARISON IS ON FOR EVERY TRADE — Diego's LATER decision (#1087,
+ * 2026-11-08) that a new company starts with it on wins over the 11-05 table,
+ * which had it off. The preset ran after sign-up and switched it back off, so
+ * every company that picked a trade lost what #1087 gave it, and a renovation
+ * set priced its existing walls as new. A preset sets starting values; it must
+ * not undo a default decided after it.
  */
 export type TradeChoice = "FRAMING_DRYWALL" | "ACOUSTICAL_CEILINGS" | "PLASTER_EIFS" | "FIREPROOFING" | "OTHER";
 
@@ -50,7 +57,7 @@ const on = (walls: boolean, rooms: boolean, doors: boolean): TakeoffSwitches => 
   doorsWindowsOn: doors,
   symbolCountOff: false,
   scannedPlansOn: false,
-  planCompareOn: false,
+  planCompareOn: true,
 });
 
 export const TRADE_PRESETS: TradePreset[] = [
