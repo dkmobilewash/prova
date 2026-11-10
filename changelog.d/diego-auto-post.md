@@ -1,4 +1,4 @@
-### Auto-post proven items: the machinery, with every source off
+### Auto-post proven items: the machinery, and marked doors are the first source on
 
 Diego, 2026-11-08: a wall group may post to the estimate without the review queue only
 when its type comes from a source right ≥97% of the time on the training keys AND ≥95%
@@ -39,3 +39,35 @@ none is switched on.**
 
 The thickness signal starves both type rules, because most legends print no thickness.
 The table in `autoPost.ts` carries these numbers.
+
+**Doors are the first source past the bar.** Measured 2026-11-10 against ROUND 17's door keys
+(labels-snap-20261110T0122). A finder door matches a key door when the key point lies inside
+its swing.
+
+| Door source | Training (Baker, Topeka, Joplin) | Held-out (USU, Riverbend, once) |
+| --- | --- | --- |
+| A door with a printed mark beside it | 97.1% (34 doors, 1 false) | 100% (13, 0 false) |
+| Every door found | 93.6% (146, 10 false; recall 57.3%) | 86.5% (45, 7 false; recall 58.4%) |
+
+- **What posts.** On a company with "Auto-post proven items" on (and doors and windows on),
+  the rooms stage writes a sheet's marked doors as one count on the job's "Doors" item,
+  labelled "Doors (auto, from printed mark)" (`lib/plan-ingest/autoDoors.ts`). A re-run
+  replaces it.
+- **Undo.** The queue's Undo for the sheet deletes the count and leaves a `doors-auto-undone`
+  marker, so a re-run never puts it back.
+- **The header.** It reads "312 ft and 14 doors posted automatically · …".
+- **Every door found does not post.** Those stay as the wall openings they already were.
+- **Marks.** The finder now returns each door's printed mark (`doorMarks`, the nearest
+  door-mark symbol within the 3 ft reach it already used). Marks were right 30 of 62 on
+  training and 10 of 10 held-out, so the count carries no mark and prices no mark.
+- **A thin sample.** 47 marked doors in all, and one more false door on training would fail
+  the bar. Re-measure as door keys are added.
+
+**Touch-free.** Wall touch-free stays 0.0%. For doors, keyed doors posted correctly with no
+touch: training 34 of 255 (13.3%), held-out 13 of 77 (16.9%).
+
+**Scoring tools.**
+- `lib/takeoff/realplan/zzDoorCount.eval.ts` runs the product's door finder against the
+  door keys (no model).
+- The swing-match scorer is in the session's scratchpad (`door_score.py`, selftest).
+

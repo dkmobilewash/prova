@@ -116,7 +116,7 @@ type Props = {
   /** The codes a queued group can be given: the legend's, else the company's library. */
   reviewCodes?: string[];
   /** What proven sources posted without the queue, per sheet (`loadReviewQueue`). */
-  reviewAutoPosted?: { pageNumber: number; sheet: string; feet: number }[];
+  reviewAutoPosted?: { pageNumber: number; sheet: string; feet: number; doors?: number }[];
   /** Whether this server can label at all (`labellingAllowed`). False on every
    *  deployment, so neither the mode nor its button exists for a customer. */
   labellingAvailable?: boolean;

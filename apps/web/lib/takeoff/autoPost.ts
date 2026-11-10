@@ -70,6 +70,37 @@ export function autoPosts(source: PostSource): boolean {
   return clearsBar(EVIDENCE[source]);
 }
 
+/**
+ * ── DOORS: THE FIRST SOURCE PAST THE BAR ──
+ *
+ * Measured 2026-11-10 against ROUND 17's door keys (labels-snap-20261110T0122; training
+ * Baker A101, Topeka A-101, Joplin A-101; held-out USU A121, Riverbend A1.1, measured once).
+ * A finder door matches a key door when the key point lies inside its swing (leaf width
+ * + 1 ft of the hinge); the finder and the keys both see swing doors only.
+ *
+ * | source | training | held-out |
+ * | --- | --- | --- |
+ * | a door with a printed mark beside it (`doorMarks`) | 97.1% (34 doors, 1 false) | 100% (13, 0 false) |
+ * | every door found | 93.6% (146, 10 false) | 86.5% (45, 7 false) |
+ *
+ * Marked doors clear ≥97% / ≥95%, so they post themselves as a count (one point per door,
+ * "Doors (auto, from printed mark)"), with Undo. Every door found does not, and stays as
+ * the wall openings it already was. A thin sample: 47 marked doors, and one false door on
+ * training would have failed the bar; re-measure as keys are added.
+ */
+export type DoorSource = "door-marked" | "door-any";
+export const DOOR_EVIDENCE: Record<DoorSource, SourceEvidence> = {
+  "door-marked": { trainingPct: 97.1, trainingFt: 34, heldOutPct: 100, heldOutFt: 13, measured: "2026-11-10", trainingSheets: 3, heldOutSheets: 2 },
+  "door-any": { trainingPct: 93.6, trainingFt: 146, heldOutPct: 86.5, heldOutFt: 45, measured: "2026-11-10", trainingSheets: 3, heldOutSheets: 2 },
+};
+/** Whether a door source posts itself: its own measurement against the same bar. (For doors the "Ft" fields count doors.) */
+export function doorAutoPosts(source: DoorSource): boolean {
+  return clearsBar(DOOR_EVIDENCE[source]);
+}
+/** The item the auto-posted doors are counted on, and the label their count carries. */
+export const AUTO_DOORS_ITEM = "Doors";
+export const AUTO_DOORS_LABEL = "Doors (auto, from printed mark)";
+
 /** The label an auto-posted run carries — read back by the queue's count and by Undo. */
 export const AUTO_MARK = "(auto, from ";
 export function autoLabel(code: string, from: string): string {
@@ -79,9 +110,10 @@ export function isAutoLabel(label: string | null): boolean {
   return label !== null && label.includes(AUTO_MARK);
 }
 
-/** "312 ft posted automatically · 4 groups need you" — the queue's first line. */
-export function queueHeader(autoFeet: number, groupsLeft: number): string | null {
+/** "312 ft and 14 doors posted automatically · 4 groups need you" — the queue's first line. */
+export function queueHeader(autoFeet: number, groupsLeft: number, autoDoors = 0): string | null {
   const auto = Math.round(autoFeet);
-  if (auto <= 0) return null;
-  return `${auto.toLocaleString("en-US")} ft posted automatically · ${groupsLeft} group${groupsLeft === 1 ? "" : "s"} need${groupsLeft === 1 ? "s" : ""} you`;
+  if (auto <= 0 && autoDoors <= 0) return null;
+  const what = [auto > 0 ? `${auto.toLocaleString("en-US")} ft` : null, autoDoors > 0 ? `${autoDoors} door${autoDoors === 1 ? "" : "s"}` : null].filter(Boolean).join(" and ");
+  return `${what} posted automatically · ${groupsLeft} group${groupsLeft === 1 ? "" : "s"} need${groupsLeft === 1 ? "s" : ""} you`;
 }

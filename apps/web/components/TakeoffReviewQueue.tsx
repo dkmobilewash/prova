@@ -73,7 +73,7 @@ export function TakeoffReviewQueue({
   /** The workspace's undo stack: a group typed or a height set here can be taken back (Undo, ⌘Z). */
   onUndoable?: (entry: UndoEntry) => void;
   /** What proven sources posted without the queue, per sheet (`autoPost.ts`): the header's footage, each with Undo. */
-  autoPosted?: readonly { pageNumber: number; sheet: string; feet: number }[];
+  autoPosted?: readonly { pageNumber: number; sheet: string; feet: number; doors?: number }[];
 }) {
   // Decided here, before the server's re-render drops it from `items`.
   const [done, setDone] = useState<ReadonlySet<string>>(new Set());
@@ -350,7 +350,7 @@ export function TakeoffReviewQueue({
       {(() => {
         // "312 ft posted automatically · 4 groups need you", and each sheet's auto-posts can be taken back.
         const shown = autoPosted.filter((a) => !undone.has(a.pageNumber));
-        const header = queueHeader(shown.reduce((n, a) => n + a.feet, 0), left.filter((item) => item.kind === "type").length);
+        const header = queueHeader(shown.reduce((n, a) => n + a.feet, 0), left.filter((item) => item.kind === "type").length, shown.reduce((n, a) => n + (a.doors ?? 0), 0));
         if (header === null) return null;
         return (
           <span className="contents" data-takeoff="review-queue-auto">
@@ -372,7 +372,7 @@ export function TakeoffReviewQueue({
                   router.refresh();
                 }}
               >
-                Undo {a.sheet} ({Math.round(a.feet)} ft)
+                Undo {a.sheet} ({[a.feet > 0 ? `${Math.round(a.feet)} ft` : null, (a.doors ?? 0) > 0 ? `${a.doors} door${a.doors === 1 ? "" : "s"}` : null].filter(Boolean).join(", ")})
               </button>
             ))}
           </span>

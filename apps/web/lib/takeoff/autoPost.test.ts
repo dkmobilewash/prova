@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUTO_MARK, BAR, EVIDENCE, autoLabel, autoPosts, clearsBar, isAutoLabel, queueHeader } from "./autoPost";
+import { AUTO_DOORS_LABEL, AUTO_MARK, BAR, EVIDENCE, autoLabel, autoPosts, clearsBar, doorAutoPosts, isAutoLabel, queueHeader } from "./autoPost";
 import { POSTS, SOURCE_WORDS } from "./postingGate";
 
 describe("auto-post: a source posts itself only past both bars", () => {
@@ -34,5 +34,14 @@ describe("auto-post: a source posts itself only past both bars", () => {
     expect(queueHeader(312.4, 4)).toBe("312 ft posted automatically · 4 groups need you");
     expect(queueHeader(1250, 1)).toBe("1,250 ft posted automatically · 1 group needs you");
     expect(queueHeader(0, 4)).toBeNull();
+  });
+
+  it("doors: a marked door clears the bar and posts itself; every door found does not", () => {
+    expect(doorAutoPosts("door-marked")).toBe(true);
+    expect(doorAutoPosts("door-any")).toBe(false);
+    // The count's label is read back by Undo and the queue the same way a wall's is.
+    expect(isAutoLabel(AUTO_DOORS_LABEL)).toBe(true);
+    expect(queueHeader(0, 3, 14)).toBe("14 doors posted automatically · 3 groups need you");
+    expect(queueHeader(312, 4, 1)).toBe("312 ft and 1 door posted automatically · 4 groups need you");
   });
 });

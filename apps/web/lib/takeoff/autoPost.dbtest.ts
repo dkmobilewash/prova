@@ -15,6 +15,7 @@ vi.mock("./autoPost", async (actual) => ({ ...(await actual<typeof import("./aut
 const { wallItemsForSheet, UNTYPED_ITEM } = await import("@/lib/plan-ingest/wallItems");
 const { loadReviewQueue } = await import("./reviewQueueQuery");
 const { undoAutoPost } = await import("@/lib/actions/wallGroupType");
+const { postAutoDoors, DOORS_AUTO_UNDONE } = await import("@/lib/plan-ingest/autoDoors");
 
 let companyId = "";
 let jobId = "";
@@ -68,12 +69,33 @@ describe("auto-post proven items", () => {
     expect(await undoAutoPost(jobId, planId, 1)).toEqual({ ok: true, value: { runs: 0 } });
   });
 
+  it("DOORS: the sheet's marked doors post as one count, the queue counts them, Undo takes them off and a re-run leaves them off", async () => {
+    const page = await prisma.takeoffPlanPage.create({ data: { planId, pageNumber: 3 } });
+    const cal = await prisma.takeoffScaleCalibration.create({ data: { pageId: page.id, x1: 0, y1: 0, x2: 1, y2: 0, declaredDistanceFeet: "100" } });
+    const doors = [{ x: 0.2, y: 0.3 }, { x: 0.4, y: 0.3 }, { x: 0.6, y: 0.5 }];
+    const post = () => postAutoDoors({ planId, pageNumber: 3, pageId: page.id, calibrationId: cal.id, companyId, jobId, userId: null, points: doors });
+    expect(await post()).toBe(3);
+    // A re-run replaces it rather than adding a second count.
+    expect(await post()).toBe(3);
+    const counts = await prisma.takeoffMeasurement.findMany({ where: { pageId: page.id, kind: "COUNT" }, select: { label: true, xs: true, item: { select: { name: true } } } });
+    expect(counts.map((c) => [c.item?.name, c.label, c.xs.length])).toEqual([["Doors", "Doors (auto, from printed mark)", 3]]);
+    expect((await loadReviewQueue(companyId, jobId)).autoPosted?.find((a) => a.pageNumber === 3)?.doors).toBe(3);
+    expect(await undoAutoPost(jobId, planId, 3)).toEqual({ ok: true, value: { runs: 3 } });
+    expect(await prisma.takeoffMeasurement.count({ where: { pageId: page.id, kind: "COUNT" } })).toBe(0);
+    expect(await prisma.takeoffPlanTextRead.count({ where: { planId, pageNumber: 3, kind: DOORS_AUTO_UNDONE } })).toBe(1);
+    expect(await post()).toBe(0);
+    expect(await prisma.takeoffMeasurement.count({ where: { pageId: page.id, kind: "COUNT" } })).toBe(0);
+  });
+
   it("with the company's setting OFF, nothing posts itself", async () => {
     await prisma.company.update({ where: { id: companyId }, data: { autoPostOn: false } });
     const pageId = await sheet(2);
     const outcome = await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 2, userId: null });
     expect(outcome.kind === "written" && Math.round(outcome.typedFeet)).toBe(0);
     expect(await prisma.takeoffMeasurement.count({ where: { pageId, label: { contains: "(auto, from " } } })).toBe(0);
+    // Doors neither.
+    const page = await prisma.takeoffPlanPage.create({ data: { planId, pageNumber: 4 } });
+    expect(await postAutoDoors({ planId, pageNumber: 4, pageId: page.id, calibrationId: null, companyId, jobId, userId: null, points: [{ x: 0.1, y: 0.1 }] })).toBe(0);
   });
 
   it("refuses a sheet that is not on the job", async () => {

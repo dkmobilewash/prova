@@ -90,6 +90,8 @@ describe("every eval refuses to run without a key", () => {
    * and one the guard re-proves is a second kind of guarantee.
    */
   const KEYLESS_EVALS: Record<string, string> = {
+    "zzDoorCount.eval.ts":
+      "calls no model: runs the product's door finder on the ROUND 17 door-key sheets and scores its doors (and each door's printed mark) against the reviewer's door marks; training and held-out are separate DC_SHEETS runs, held-out measured once. Skips without REAL_PLAN_DIR, DC_SHEETS and DC_OUT and asserts walls were found",
     "zzViewLeak.eval.ts":
       "calls no model: attributes every offered candidate and every key wall on a multi-view sheet to the view whose box holds its midpoint, labelled real / junk / unverdicted from the sheet's own label file. Diagnostic for the view split. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR and LEAK_SHEETS, and asserts a named sheet was found",
     "zzUserAssist.eval.ts":
