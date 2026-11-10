@@ -8,7 +8,7 @@ describe("trade presets", () => {
     expect(tradePreset("NOPE")).toBeNull();
   });
 
-  it("sets the takeoff switches Diego decided on 2026-11-05", () => {
+  it("sets the takeoff switches Diego decided on 2026-11-05, with plan comparison ON (#1087, later)", () => {
     const table = Object.fromEntries(
       TRADE_PRESETS.map((p) => [p.choice, [p.switches.wholeSetTakeoffOn, p.switches.roomFinderOn, p.switches.doorsWindowsOn, !p.switches.symbolCountOff]]),
     );
@@ -21,7 +21,9 @@ describe("trade presets", () => {
     });
     for (const p of TRADE_PRESETS) {
       expect(p.switches.scannedPlansOn, p.choice).toBe(false);
-      expect(p.switches.planCompareOn, p.choice).toBe(false);
+      // #1087 (2026-11-08) turned plan comparison on for every new company, after the 11-05 table had it
+      // off. The later decision wins: a preset that wrote false undid it the moment a trade was picked.
+      expect(p.switches.planCompareOn, p.choice).toBe(true);
     }
   });
 
