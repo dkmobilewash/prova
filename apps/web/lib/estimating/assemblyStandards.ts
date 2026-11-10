@@ -19,6 +19,8 @@ export type AssemblyStandards = {
   studSpacingIn: number;
   screwsPerSqFt: number;
   tapeLfPerSqFt: number;
+  /** Tape is bought, and so counted, in rolls of this length: a price column of cents cannot hold tape by the foot. */
+  tapeRollLf: number;
   compoundLbPerSqFt: number;
   /** Added to compound where the spec calls for a Level 5 finish. */
   level5SkimLbPerSqFt: number;
@@ -29,6 +31,7 @@ export const DEFAULT_ASSEMBLY_STANDARDS: AssemblyStandards = {
   studSpacingIn: 16,
   screwsPerSqFt: 1,
   tapeLfPerSqFt: 0.37,
+  tapeRollLf: 500,
   compoundLbPerSqFt: 0.14,
   level5SkimLbPerSqFt: 0.07,
 };
@@ -53,6 +56,7 @@ export function standardsFrom(value: unknown, companyWastePercent: number | null
     studSpacingIn: [12, 16, 19.2, 24].includes(raw.studSpacingIn as number) ? (raw.studSpacingIn as number) : d.studSpacingIn,
     screwsPerSqFt: within(raw.screwsPerSqFt, 0, 5, d.screwsPerSqFt),
     tapeLfPerSqFt: within(raw.tapeLfPerSqFt, 0, 3, d.tapeLfPerSqFt),
+    tapeRollLf: within(raw.tapeRollLf, 50, 2000, d.tapeRollLf),
     compoundLbPerSqFt: within(raw.compoundLbPerSqFt, 0, 2, d.compoundLbPerSqFt),
     level5SkimLbPerSqFt: within(raw.level5SkimLbPerSqFt, 0, 2, d.level5SkimLbPerSqFt),
   };
