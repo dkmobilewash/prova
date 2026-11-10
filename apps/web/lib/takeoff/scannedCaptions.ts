@@ -23,7 +23,7 @@ export const CAPTION_MIN_CONFIDENCE = 70;
  * the caption classifiers (`viewTitles`, `viewKind`, `sheetSuitability`)
  * already recognise, plus the ordinary qualifiers that sit beside them.
  */
-const CAPTION_WORDS = new Set(
+export const CAPTION_WORDS: ReadonlySet<string> = new Set(
   (
     "PLAN PLANS FLOOR FLOORS LEVEL LEVELS ROOF CEILING CEILINGS REFLECTED RCP ELEVATION ELEVATIONS SECTION SECTIONS DETAIL DETAILS " +
     "SCHEDULE SCHEDULES NOTES NOTE LEGEND LEGENDS KEY KEYED SYMBOLS ABBREVIATIONS TYPES TYPE INDEX ENLARGED PARTIAL OVERALL TYPICAL TYP " +

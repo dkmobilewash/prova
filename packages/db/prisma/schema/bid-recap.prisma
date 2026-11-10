@@ -156,6 +156,14 @@ model CompanyBidDefaults {
   /// what we think the sensible default is.
   defaultWastePercent Decimal? @db.Decimal(5, 2)
 
+  /// How much of each material a square foot of wall takes, and the waste on
+  /// each: screws, tape and compound per SF, stud spacing when nothing states
+  /// it, a waste % per material. Read by `standardsFrom`
+  /// (`lib/estimating/assemblyStandards.ts`), where a missing or out-of-range
+  /// value takes the published default. Quantity factors only, NEVER a price.
+  /// NULL means the company has not changed any of them.
+  assemblyStandards Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

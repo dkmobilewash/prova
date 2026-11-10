@@ -116,7 +116,10 @@ model WallTypeComponent {
   basis       WallComponentBasis
   /// Multiplier on the basis: 2 for top-and-bottom track, the layer count for
   /// board, 1/32 to turn square feet into 4x8 sheets.
-  factor       Decimal @default(1) @db.Decimal(12, 4)
+  ///
+  /// SIX places, not four (2026-11-09): at four, 1/32 stored as 0.0313 and every sheet count came
+  /// out 0.16% high — enough to tip a round-up (960 sf of board: 34 sheets, not 33).
+  factor       Decimal @default(1) @db.Decimal(14, 6)
   wastePercent Decimal @default(0) @db.Decimal(5, 2)
   /// Round the total up to a whole unit — sheets and studs are bought whole.
   roundUp      Boolean @default(false)
