@@ -46,6 +46,14 @@ export function sheetCategory(number: string | null, title: string | null, pageT
   // ELEVEN03 it put 51 code, UL, ANSI, ADA and TAS sheets in the scale step's
   // "80 floor plans", so the step could never finish (29 were real).
   if (pageType === "OTHER" && score <= 5) return "other";
+  // ── A KEYLESS TITLE THAT NAMES NO PLAN IS NOT A FLOOR PLAN ──
+  // With plan reading off nothing reads the page type, and the A-series tie-break
+  // alone made "GUARDRAIL ATTACHMENT", "OFFICE 7 - NORTH" and "SKYLIGHT PERFORMANCE"
+  // floor plans to scale, so the step never finished (walk, 2026-11-08, E Street and
+  // Green Bay with AI off). A title that says nothing about a plan, a floor, a level,
+  // a unit, a suite, a wing or an enlarged part ("UNIT D1" is a residential plan) is
+  // evidence it is not one; NO title is no evidence, and stays a floor plan.
+  if (pageType === null && t.trim() !== "" && score <= 5 && !/\b(?:PLANS?|FLOORS?|LEVELS?|UNITS?|SUITES?|WINGS?|ENLARGED)\b/i.test(t)) return "other";
   if (score > 0 || (pageType === "PLAN" && score >= 0)) return "floor";
   return "other";
 }

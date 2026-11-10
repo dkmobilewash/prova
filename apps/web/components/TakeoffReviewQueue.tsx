@@ -97,6 +97,16 @@ export function TakeoffReviewQueue({
   // 10 (Chrome on Baker A101). Said once, beside the buttons, so each count can be
   // read against what it covers: named by the drawing (Accept all), suggested by
   // thickness alone (one by one: the thickness is a guess), named by nothing (A).
+  // ── ONE TYPE ON GROUPS OF DIFFERENT THICKNESS, SAID ON THE BUTTON ──
+  // "All" types every group nothing names, whatever its thickness — built that way for
+  // walk v6, and kept. With a trade's preset types nothing matched by thickness on Green
+  // Bay or E Street (walk, 2026-11-08), so one keypress put a 3-7/8" and a 13-1/2" wall on
+  // one type. The button now shows the spread, so it is a choice made seeing it.
+  const restInches = unnamed.map((g) => g.inches).filter((n) => n > 0);
+  const restSpread =
+    restInches.length > 1 && Math.max(...restInches) - Math.min(...restInches) >= 1 / 16
+      ? `, ${inchLabel(Math.min(...restInches))} to ${inchLabel(Math.max(...restInches))}`
+      : "";
   const sheetTypes = current === null || current.kind !== "type" ? [] : left.filter((item): item is TypeItem => item.kind === "type" && item.pageNumber === current.pageNumber);
   const sheetCounts = {
     drawn: sheetTypes.filter((g) => g.suggested?.drawn === true).length,
@@ -389,7 +399,7 @@ export function TakeoffReviewQueue({
                 heightOf={(code) => heightOfGroup(current, code)}
                 heightOptions={(code) => forCode(heightChoices, code) ?? []}
                 onSkip={() => setCursor(after(current.key))}
-                rest={unnamed.length > 1 ? `${unnamed.length} groups nothing names on ${current.sheet}` : null}
+                rest={unnamed.length > 1 ? `${unnamed.length} groups nothing names on ${current.sheet}${restSpread}` : null}
                 onAcceptRest={(code, heightFt) => {
                   // The type picked here on every group of the sheet nothing names
                   // (walk v6: 13 of them, two keys each). Each keeps its own height

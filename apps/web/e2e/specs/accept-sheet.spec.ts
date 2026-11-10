@@ -184,10 +184,10 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
     await expect(queue().locator('[data-takeoff="review-queue-accepted-text"]')).toHaveText("Accepted 2 groups on sheet A101 · 130 ft");
     // The queue is on a group nothing names: the type picked there can go on both.
     const rest = queue().locator('[data-takeoff="queue-accept-rest"]');
-    await expect(rest).toHaveText("Pick a type for all 2 groups nothing names on A101", { timeout: 30_000 });
+    await expect(rest).toHaveText('Pick a type for all 2 groups nothing names on A101, 6-1/8" to 8"', { timeout: 30_000 });
     await expect(rest).toBeDisabled();
     await page.keyboard.press("1");
-    await expect(rest).toHaveText("ZA1 on all 2 groups nothing names on A101 (A)");
+    await expect(rest).toHaveText('ZA1 on all 2 groups nothing names on A101, 6-1/8" to 8" (A)');
     await page.keyboard.press("a");
     await expect(queue().locator('[data-takeoff="review-queue-accepted-text"]')).toHaveText("Accepted 2 groups on sheet A101 · 43 ft");
     await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(0);
@@ -198,7 +198,7 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
 
     await queue().locator('[data-takeoff="review-queue-accepted-undo"]').click();
     await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(2);
-    await expect(rest).toHaveText("Pick a type for all 2 groups nothing names on A101", { timeout: 30_000 });
+    await expect(rest).toHaveText('Pick a type for all 2 groups nothing names on A101, 6-1/8" to 8"', { timeout: 30_000 });
   });
 
   test("6. nothing crashed", async () => {

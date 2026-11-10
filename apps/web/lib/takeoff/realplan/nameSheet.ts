@@ -149,8 +149,10 @@ export function nameSheet(
    * Still capped at six, because a wrapped title is several items and a
    * run-on is worse than a truncation in a 232px rail.
    */
+  // A word ending in a colon is a label ("NO.:", "DRAWN:", "CHECKED BY:"), never the drawing's name.
   const qualifies = (w: string) =>
-    w.length > 2 && !/^[\d.\-/'"_ ]+$/.test(w) && !BOILER.test(w) && !LEGEND_HEADING.test(w) && !SHEET_NO.test(w.replace(/\s+/g, ""));
+    w.length > 2 &&
+    !/:\s*$/.test(w) && !/^[\d.\-/'"_ ]+$/.test(w) && !BOILER.test(w) && !LEGEND_HEADING.test(w) && !SHEET_NO.test(w.replace(/\s+/g, ""));
   const titleItems = bySize.slice(0, 24).filter((i) => qualifies(i.str.trim()));
   const tallest = titleItems[0]?.height ?? 0;
   const heights = inBlock.map((i) => i.height).sort((a, b) => a - b);
