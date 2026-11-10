@@ -40,7 +40,12 @@ export type QueueRun = { x1: number; y1: number; x2: number; y2: number };
 /** A pre-filled answer and where it came from, in words: `tag S6B on A101`. */
 /** A suggested type and where it came from. `drawn`: read off the drawing — a printed tag or the legend — not a library guess by thickness, so "Accept all suggestions on this sheet" may take it. */
 /** `variant`: the label for a code read off a marked tag, "C6 (C6* at tub/shower locations, see legend)" (`variantMark.ts`). */
-export type Guess = { code: string; from: string; drawn?: true; variant?: string };
+/**
+ * `match`: what makes two groups on different sheets the SAME drawn thing, for "Apply to
+ * other floors" — the printed tag ("tag:C6") or the "unless noted" type ("note:C"). Absent
+ * for a carried or sibling tag and for a thickness guess: those are never applied across sheets.
+ */
+export type Guess = { code: string; from: string; drawn?: true; variant?: string; match?: string };
 /** A type's height for the queue, by code: the job's item height, else its legend height. */
 export type CodeHeight = { feet: number; from: string };
 export type ReviewItem =
@@ -273,11 +278,12 @@ export function suggestType(
           : found.source === "thickness"
             ? `: ${inchLabel(group.inches)}`
             : "";
-    return { code: found.type.code, from: `${SOURCE_WORDS[found.source]}${detail}`, ...(found.source === "thickness" ? {} : { drawn: true as const }), ...(variant === null ? {} : { variant }) };
+    const match = (found.source === "tag" || found.source === "tag-variant") && tag !== null ? `tag:${tag.toUpperCase()}` : found.source === "note" ? `note:${found.type.code.toUpperCase()}` : null;
+    return { code: found.type.code, from: `${SOURCE_WORDS[found.source]}${detail}`, ...(found.source === "thickness" ? {} : { drawn: true as const }), ...(variant === null ? {} : { variant }), ...(match === null ? {} : { match }) };
   }
   if (tag !== null && group.candidates.length === 0) {
     const code = legendCodes.find((c) => c.toUpperCase() === tag.toUpperCase());
-    if (code !== undefined) return { code, from: `printed tag: ${tag} on ${sheet}, in the legend but not yet your library`, drawn: true };
+    if (code !== undefined) return { code, from: `printed tag: ${tag} on ${sheet}, in the legend but not yet your library`, drawn: true, match: `tag:${tag.toUpperCase()}` };
   }
   return null;
 }
@@ -343,6 +349,84 @@ export function byThickness(codes: readonly string[], thicknessOf: (code: string
     .map((code, at) => ({ code, thicknessIn: thicknessOf(code), at }))
     .sort((a, b) => (a.thicknessIn === null ? 1 : 0) - (b.thicknessIn === null ? 1 : 0) || (a.thicknessIn === null || b.thicknessIn === null ? 0 : Math.abs(a.thicknessIn - inches) - Math.abs(b.thicknessIn - inches)) || a.at - b.at)
     .map(({ code, thicknessIn }) => ({ code, thicknessIn }));
+}
+
+/** Thickness within this of the confirmed group's is the same band (a sheet's buckets differ by a hair between floors). */
+export const SAME_BAND_IN = 0.5;
+
+/**
+ * ── CONFIRM ONCE PER SET: THE SAME DRAWN GROUP ON THE SET'S OTHER FLOOR PLANS ──
+ *
+ * After a person confirms a group, every group still in the queue — on the same sheet or
+ * another floor plan of the set — that the drawing names the same way (the same PRINTED
+ * tag, or the same "unless noted" type: `Guess.match`), in the same thickness band, is
+ * offered the type the person chose. A group tagged differently, carried, or named by
+ * nothing is never among them.
+ *
+ * Measured 2026-11-10 against the type keys (one scorer, labels-snap-20261109T0015), the
+ * estimator confirming each cluster's first group correctly: printed-tag twins end up the
+ * key's type 100% on training (76 ft) and 100% held-out (900 ft, Hutto ×3). Carried tags
+ * would cut that to 94.9% / 75.1%, and untagged groups matched by thickness alone are
+ * 31.3% / 63.1%, so neither is offered.
+ * Each keeps its own height unless it sits on the same level as the confirmed one
+ * (the same item, so the same height), exactly as Enter would fill it.
+ */
+export function sameOnOtherFloors(
+  items: readonly ReviewItem[],
+  confirmed: Extract<ReviewItem, { kind: "type" }>,
+  code: string,
+  heightFt: number | null,
+  heightOf: (item: Extract<ReviewItem, { kind: "type" }>, code: string) => number | null,
+  floorPages: ReadonlySet<number>,
+  planId: string,
+) {
+  const match = confirmed.suggested?.match;
+  if (match === undefined) return [];
+  const sameLevel = (g: Extract<ReviewItem, { kind: "type" }>) => (g.level?.label ?? null) === (confirmed.level?.label ?? null);
+  return items
+    .filter(
+      (item): item is Extract<ReviewItem, { kind: "type" }> =>
+        item.kind === "type" &&
+        item.key !== confirmed.key &&
+        (item.pageNumber === confirmed.pageNumber || floorPages.has(item.pageNumber)) &&
+        item.suggested?.match === match &&
+        Math.abs(item.inches - confirmed.inches) <= SAME_BAND_IN,
+    )
+    .map((g) => {
+      const byLevel = levelHeightFor(code, g.level);
+      return {
+        key: g.key,
+        sheet: g.sheet,
+        feet: g.feet,
+        group: { planId, pageNumber: g.pageNumber, code, inches: g.inches, runs: g.runs, heightFt: sameLevel(g) ? heightFt : heightOf(g, code), level: byLevel === null ? null : g.level!.label },
+      };
+    });
+}
+
+/**
+ * ── AND WINDOWS: THE TAGS A PERSON JUST CONFIRMED, ON THE OTHER FLOORS ──
+ *
+ * A sheet's windows are confirmed as one count. Once one is, another floor plan of the
+ * set whose counted windows ALL carry a tag the person just kept is offered as one click,
+ * every window kept. A sheet with any tag not among them stays for the person, whole.
+ */
+export function sameWindowsOnOtherFloors(
+  items: readonly ReviewItem[],
+  confirmed: Extract<ReviewItem, { kind: "windows" }>,
+  keptTags: ReadonlySet<string>,
+  floorPages: ReadonlySet<number>,
+) {
+  const norm = (t: string) => t.trim().toUpperCase();
+  const kept = new Set([...keptTags].map(norm));
+  return items.filter(
+    (item): item is Extract<ReviewItem, { kind: "windows" }> =>
+      item.kind === "windows" &&
+      item.key !== confirmed.key &&
+      item.pageNumber !== confirmed.pageNumber &&
+      floorPages.has(item.pageNumber) &&
+      item.tags.length > 0 &&
+      item.tags.every((t) => kept.has(norm(t))),
+  );
 }
 
 // What saves the most time first (Chrome's re-test): a group is one key for

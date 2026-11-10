@@ -662,6 +662,8 @@ export function TakeoffPlanViewer({
   onSheetNumber?: (page: number, sheetNumber: string) => void;
   answerKey?: {
     state: ReviewState;
+    /** Saved decisions the finder no longer offers (`carried`), drawn faint so they can be seen; edited in the panel. */
+    hidden?: readonly { x1: number; y1: number; x2: number; y2: number; verdict: string }[];
     onState: (next: ReviewState) => void;
     focusedId: string | null;
     onFocus: (id: string | null) => void;
@@ -6589,6 +6591,27 @@ export function TakeoffPlanViewer({
                     </g>
                   );
                 })()}
+              {answerKey !== undefined && answerKey.overlaysOn && (answerKey.hidden ?? []).length > 0 && (
+                // ── HIDDEN DECISIONS: kept from the file, scored, and until now never drawn ──
+                <g data-takeoff="key-hidden" pointerEvents="none">
+                  {(answerKey.hidden ?? []).map((h, i) => (
+                    <line
+                      key={i}
+                      data-takeoff="key-hidden-line"
+                      data-verdict={h.verdict}
+                      x1={h.x1}
+                      y1={h.y1}
+                      x2={h.x2}
+                      y2={h.y2}
+                      stroke={VERDICT_COLOURS[h.verdict as keyof typeof VERDICT_COLOURS] ?? VERDICT_COLOURS.wall}
+                      strokeOpacity={0.45}
+                      strokeDasharray="6 4"
+                      strokeWidth={STROKE_PX * 2}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ))}
+                </g>
+              )}
               {answerKey !== undefined && answerKey.overlaysOn && (
                 <g data-takeoff="key-overlay">
                   {answerKey.state.candidates.map((one) => {
