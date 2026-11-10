@@ -158,7 +158,7 @@ import { proposalSections, showsHeadings } from "@/lib/takeoff/proposalSections"
 import { calibrationForView, type ViewScale } from "@/lib/takeoff/sheetScale";
 import { SINGLE_LINE_COLOUR, VERDICT_COLOURS } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
-import { takeoffSheetVerdict, type TakeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
+import { floorPlanToOpen, takeoffSheetVerdict, type SheetReading, type TakeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
 import {
   candidatesFromSheet,
   candidatesInBox,
@@ -340,6 +340,7 @@ export function TakeoffPlanViewer({
   onSheetNumber,
   sheetLabelByPage = {},
   initialPage = 1,
+  autoOpened = false,
   onPageChange,
   fill = false,
   panelOpen = true,
@@ -393,6 +394,8 @@ export function TakeoffPlanViewer({
    */
   /** The sheet to open on. 1 unless a caller knows better — see the state. */
   initialPage?: number;
+  /** `initialPage` was the workspace's own choice, not a sheet anybody asked for: it never stays on one where Run takeoff is off. */
+  autoOpened?: boolean;
   /**
    * Which sheet is on screen, reported whenever it changes.
    *
@@ -3482,6 +3485,62 @@ export function TakeoffPlanViewer({
     takeoffVerdict !== null &&
     !takeoffVerdict.worthMeasuring &&
     onThisSheet(overriddenByPage, pageNumber) === null;
+  // ── NEVER LEFT ON A SHEET WHERE RUN TAKEOFF IS OFF, WHEN NOBODY PICKED IT ──
+  // With plan reading off no title is read, so "Run the takeoff" could open on a reflected
+  // ceiling plan with Run takeoff switched off, and a new customer was stuck there (Baker
+  // p14, the new-customer walk, 2026-11-10). When the opening sheet was the workspace's own
+  // choice and its verdict refuses the run, the other sheets are read the same way, no
+  // model, and the first sure floor plan opens (`floorPlanToOpen`); with none sure, the
+  // sheets are listed under "Pick your floor plan". A sheet somebody asked for stays.
+  const [floorPlanHunt, setFloorPlanHunt] = useState<
+    | { state: "finding" }
+    | { state: "moved"; from: string; why: string; to: string }
+    | { state: "pick"; why: string; sheets: { pageNumber: number; label: string }[] }
+    | null
+  >(null);
+  const huntStarted = useRef(false);
+  const pageNow = useRef(pageNumber);
+  pageNow.current = pageNumber;
+  const openedVerdict = takeoffVerdictByPage[initialPage];
+  useEffect(() => {
+    const doc = docRef.current;
+    if (!autoOpened || huntStarted.current || openedVerdict === undefined || !doc || pageCount === null) return;
+    huntStarted.current = true;
+    if (openedVerdict.worthMeasuring || pageNow.current !== initialPage) return;
+    const label = (n: number, r?: SheetReading) => sheetLabelByPage[n] ?? r?.sheetNumber ?? `Sheet ${n}`;
+    const why = (openedVerdict.why ?? "not a sheet to measure").replace(/^Every drawing on this sheet is |^This is /, "").replace(/ — there is no floor plan here to measure\.$/, "");
+    setFloorPlanHunt({ state: "finding" });
+    void (async () => {
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const readings: SheetReading[] = [];
+      for (let n = 1; n <= pageCount; n += 1) {
+        if (n === initialPage || pageNow.current !== initialPage) continue;
+        try {
+          const page = (await doc.getPage(n)) as { getViewport: (o: { scale: number }) => { width: number; height: number } };
+          const size = page.getViewport({ scale: 1 });
+          const items = await pageTextItems(page, pdfjs);
+          const reading = sheetNumberFrom({ pageNumber: n, widthPt: size.width, heightPt: size.height, rotation: 0, items });
+          readings.push({ pageNumber: n, sheetNumber: reading.sheetNumber, title: reading.regionText, viewNames: sheetViews(items, size.width).map((view) => view.name) });
+        } catch {
+          // A sheet whose text will not read is simply not a candidate.
+        }
+      }
+      // Somebody moved on while the sheets were read: theirs is the choice.
+      if (pageNow.current !== initialPage) return setFloorPlanHunt(null);
+      const to = floorPlanToOpen(readings);
+      if (to !== null) {
+        setFloorPlanHunt({ state: "moved", from: label(initialPage), why, to: label(to, readings.find((r) => r.pageNumber === to)) });
+        setPageNumber(to);
+        return;
+      }
+      setFloorPlanHunt({
+        state: "pick",
+        why,
+        sheets: readings.filter((r) => takeoffSheetVerdict(r).worthMeasuring).map((r) => ({ pageNumber: r.pageNumber, label: label(r.pageNumber, r) })),
+      });
+    })().catch(() => setFloorPlanHunt(null));
+  }, [autoOpened, openedVerdict, pageCount, initialPage, sheetLabelByPage]);
+
   /** Why Find the walls cannot run here, in the words both the toolbar and the revision panel show. */
   const findWallsWhy = notATakeoffSheet
     ? (takeoffVerdict?.why ?? "This sheet does not look like one to measure walls on.")
@@ -7196,6 +7255,46 @@ export function TakeoffPlanViewer({
           <p className="absolute right-3 top-3 rounded bg-rail-hover px-2 py-1 text-xs text-ink-muted" data-takeoff="viewer-busy">
             {pageCount === null ? "Opening the set…" : "Drawing…"}
           </p>
+        )}
+        {floorPlanHunt !== null && (
+          <div className="absolute left-3 top-3 z-30 max-h-[70%] w-[min(24rem,calc(100%-1.5rem))] overflow-y-auto rounded-md border border-line-card bg-surface p-3 text-xs text-ink-body shadow-lg" data-takeoff="floor-plan-hunt" data-state={floorPlanHunt.state}>
+            {floorPlanHunt.state === "finding" && <p>This sheet has no floor plan to measure. Finding the floor plan…</p>}
+            {floorPlanHunt.state === "moved" && (
+              <p className="flex items-start gap-2">
+                <span>
+                  Opened {floorPlanHunt.to}: {floorPlanHunt.from} is {floorPlanHunt.why}, with no floor plan to measure.
+                </span>
+                <button type="button" className="underline" onClick={() => setFloorPlanHunt(null)}>
+                  OK
+                </button>
+              </p>
+            )}
+            {floorPlanHunt.state === "pick" && (
+              <>
+                <p className="text-sm font-semibold text-ink">Pick your floor plan</p>
+                <p className="mt-1 text-ink-muted">
+                  This sheet is {floorPlanHunt.why}, and no sheet in the set says for sure it is the floor plan. Pick the one to measure.
+                </p>
+                <ul className="mt-2 flex flex-col gap-1">
+                  {floorPlanHunt.sheets.map((sheet) => (
+                    <li key={sheet.pageNumber}>
+                      <button
+                        type="button"
+                        className="min-h-[32px] w-full rounded-md border border-line-card px-2 text-left hover:bg-rail-hover"
+                        data-takeoff="pick-floor-plan-sheet"
+                        onClick={() => {
+                          setFloorPlanHunt(null);
+                          setPageNumber(sheet.pageNumber);
+                        }}
+                      >
+                        {sheet.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
         )}
       </div>
       {/* ── THE CANVAS'S CORNERS ──
