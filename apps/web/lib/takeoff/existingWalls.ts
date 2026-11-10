@@ -36,6 +36,8 @@ import type { StrokeSegment, WallCandidate } from "./wallVectors";
  *      (`GREY_COVER`, `DARK_COVER_MAX`). Still not grey alone — the sheet's words and its
  *      own new-wall pen must both say so. Measured 2026-11-06: training 920
  *      ft junk / 29 real (worst Baker −29), held-out once 766 / 71.
+ *      On a sheet with NO such words (route 3b), only a wall >= 20 ft, grey
+ *      on its own face lines, on a sheet whose walls are >= 75% dark.
  *
  * Pure, so the three routes have tests that do not need a drawing. Measured
  * on training labels only once Chrome's cleanup of existing walls out of the
@@ -60,6 +62,14 @@ export const GREY_PEN = 0.3;
 export const GREY_COVER = 0.6;
 /** Route 3: share of a wall's length its DARK faces may cover — a wall drawn black is new, whatever grey lies on it. */
 export const DARK_COVER_MAX = 0.2;
+/** Route 3b, a sheet with NO renovation words: share of its walls' length drawn dark. */
+export const NO_WORDS_DARK_SHARE = 0.75;
+/** Route 3b: share of the wall's length its grey faces must cover. */
+export const NO_WORDS_GREY_COVER = 0.9;
+/** Route 3b: share of the wall's OWN face lines (parallel, on the face) drawn grey. */
+export const NO_WORDS_OWN_FACE = 0.5;
+/** Route 3b: shortest wall it sets aside — Topeka's short grey partitions are new work. */
+export const NO_WORDS_MIN_FEET = 20;
 /** A face stroke sits this close to the wall's face line, in feet (as `dashedFaces`). */
 const ON_FACE_FEET = 0.25;
 
@@ -311,6 +321,23 @@ const distanceToRun = (px: number, py: number, w: { x1: number; y1: number; x2: 
   return Math.hypot(px - (w.x1 + t * dx), py - (w.y1 + t * dy));
 };
 
+/** Share of a wall's OWN face lines — strokes parallel to it, within 1 in of a face — drawn grey. */
+function ownFaceGrey(w: WallCandidate, segments: readonly StrokeSegment[], feetPerUnit: number): number {
+  const L = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+  if (L === 0) return 0;
+  const ux = (w.x2 - w.x1) / L, uy = (w.y2 - w.y1) / L, half = w.thicknessFeet / 2 / feetPerUnit, tol = 1 / 12 / feetPerUnit;
+  let all = 0, grey = 0;
+  for (const s of segments) {
+    const sl = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+    if (sl <= 0.25 / feetPerUnit) continue;
+    const mx = (s.x1 + s.x2) / 2 - w.x1, my = (s.y1 + s.y2) / 2 - w.y1, al = mx * ux + my * uy, ac = -mx * uy + my * ux;
+    if (al < 0 || al > L || Math.abs(Math.abs(ac) - half) > tol || Math.abs(((s.x2 - s.x1) * ux + (s.y2 - s.y1) * uy) / sl) <= 0.97) continue;
+    all += sl;
+    if ((s.gray ?? 0) >= GREY_PEN) grey += sl;
+  }
+  return all > 0 ? grey / all : 0;
+}
+
 export type ExistingWall = { wall: WallCandidate; route: "tag" | "legend" | "grey" | "nic" | "roof"; why: string };
 
 export function existingWalls(input: {
@@ -386,7 +413,8 @@ export function existingWalls(input: {
   // and the wall must be drawn grey along most of its length and dark along
   // almost none of it (`GREY_COVER`, `DARK_COVER_MAX`).
   // Training renovation sheets, cleaned keys: 1,214 ft junk to 55 ft real.
-  if (pens.existing === null && showsExistingWork(renovationMarks(input.textItems.map((t) => t.str).join(" ")))) {
+  const showsWork = showsExistingWork(renovationMarks(input.textItems.map((t) => t.str).join(" ")));
+  if (pens.existing === null && showsWork) {
     const modal = modalWallPen(walls, segments, feetPerUnit);
     if (modal !== null && modal.gray < GREY_PEN) {
       for (const w of walls) {
@@ -399,6 +427,27 @@ export function existingWalls(input: {
         const grey = alongCover(w, faces.filter((f) => (f.gray ?? 0) >= GREY_PEN));
         const dark = alongCover(w, faces.filter((f) => (f.gray ?? 0) < GREY_PEN));
         if (grey >= GREY_COVER && dark <= DARK_COVER_MAX) found.set(w, { wall: w, route: "grey", why: "drawn grey where the sheet draws its walls black, on a sheet that shows existing work" });
+      }
+    }
+  }
+  // ── 3b. GREY BESIDE A DARK PLAN, ON A SHEET WITH NO RENOVATION WORDS ──
+  // Joplin G-101 and Camp Bow Wow A101 draw the building that stands in grey
+  // beside new work drawn dark, and never say "existing". Without the words,
+  // every other sign must hold: the sheet's walls nearly all dark by length
+  // (`NO_WORDS_DARK_SHARE`), the wall at least `NO_WORDS_MIN_FEET` long, grey
+  // along nearly all of it (`NO_WORDS_GREY_COVER`), and grey on its OWN face
+  // lines (`NO_WORDS_OWN_FACE`) — K-4 A3.10's new walls sit under grey
+  // linework near their faces but are drawn black themselves (173 ft real
+  // without that check). Training (r17): 346 ft junk / 0 real; held-out once:
+  // nothing moved.
+  if (pens.existing === null && !showsWork) {
+    const greyCover = (w: WallCandidate) => alongCover(w, [...faceStrokes(w, 1, segments, feetPerUnit), ...faceStrokes(w, -1, segments, feetPerUnit)].filter((f) => (f.gray ?? 0) >= GREY_PEN));
+    const total = walls.reduce((n, w) => n + w.lengthFeet, 0);
+    const dark = walls.reduce((n, w) => n + (greyCover(w) < GREY_PEN ? w.lengthFeet : 0), 0);
+    if (total > 0 && dark / total >= NO_WORDS_DARK_SHARE) {
+      for (const w of walls) {
+        if (found.has(w) || w.lengthFeet < NO_WORDS_MIN_FEET || ownFaceGrey(w, segments, feetPerUnit) < NO_WORDS_OWN_FACE) continue;
+        if (greyCover(w) >= NO_WORDS_GREY_COVER) found.set(w, { wall: w, route: "grey", why: "drawn grey where the sheet draws nearly all its walls dark — a building that stands, not new work" });
       }
     }
   }
