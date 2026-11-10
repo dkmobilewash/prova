@@ -12,6 +12,8 @@ import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "
 import { addWallTypeFromLegend } from "./wallLegend";
 import { syncDecidedItems } from "@/lib/estimating/takeoff-item-lines";
 import { sameRunAs } from "@/lib/takeoff/runMatch";
+import { AUTO_DOORS_LABEL, AUTO_MARK } from "@/lib/takeoff/autoPost";
+import { DOORS_AUTO_UNDONE } from "@/lib/plan-ingest/autoDoors";
 
 /**
  * ── "SET TYPE": THE ESTIMATOR NAMES WHAT THE DRAWING DID NOT ──
@@ -384,4 +386,52 @@ export async function clearWallGroupType(
   revalidatePath(`/jobs/${jobId}`, "layout");
   revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { moved } };
+}
+
+/**
+ * ── UNDO AN AUTO-POST: THE SHEET'S AUTO-POSTED WALLS BACK INTO THE QUEUE ──
+ *
+ * A run posted by a proven source (`lib/takeoff/autoPost.ts`) carries the label
+ * "C6 wall (auto, from printed tag)". Undo moves every such run on the sheet back
+ * to "Walls — untyped", where the review queue offers it again with the same
+ * suggestion, and re-syncs the items it left so their estimate lines follow.
+ */
+/** `runs`: the wall runs put back plus the doors taken off. */
+export async function undoAutoPost(jobId: string, planId: string, pageNumber: number): Promise<ActionResultWith<{ runs: number }>> {
+  const working = beginUserWork();
+  try {
+    const context = await requireCompanyContext();
+    if (!can(context, "VIEW_JOB_COSTS")) return { ok: false, error: JOB_COSTS_ONLY };
+    const companyId = context.company.id;
+    if (!Number.isInteger(pageNumber) || pageNumber < 1) return { ok: false, error: "That isn't a sheet of this set." };
+    const page = await prisma.takeoffPlanPage.findFirst({ where: { pageNumber, plan: { id: planId, jobId, companyId } }, select: { id: true } });
+    if (page === null) return { ok: false, error: "That sheet isn't on this job any more." };
+    const runs = await prisma.$transaction(async (tx) => {
+      // The sheet's auto-posted doors go too, and stay gone on a re-run (`autoDoors.ts`).
+      const doors = await tx.takeoffMeasurement.findMany({ where: { pageId: page.id, kind: "COUNT", label: AUTO_DOORS_LABEL }, select: { id: true, itemId: true, xs: true } });
+      const doorCount = doors.reduce((n, d) => n + d.xs.length, 0);
+      if (doors.length > 0) {
+        await tx.takeoffMeasurement.deleteMany({ where: { id: { in: doors.map((d) => d.id) } } });
+        await tx.takeoffPlanTextRead.upsert({
+          where: { planId_pageNumber_kind: { planId, pageNumber, kind: DOORS_AUTO_UNDONE } },
+          // The row's own computedAt says when; the value only says "taken off".
+          create: { planId, pageNumber, kind: DOORS_AUTO_UNDONE, value: true },
+          update: { value: true },
+        });
+        await syncDecidedItems(tx, companyId, jobId, doors.flatMap((d) => (d.itemId === null ? [] : [d.itemId])));
+      }
+      const auto = await tx.takeoffMeasurement.findMany({ where: { pageId: page.id, kind: "LINEAR", source: "DETECTED", label: { contains: AUTO_MARK } }, select: { id: true, itemId: true } });
+      if (auto.length === 0) return doorCount;
+      const untyped = await untypedItem(tx, companyId, jobId);
+      await tx.takeoffMeasurement.updateMany({ where: { id: { in: auto.map((m) => m.id) } }, data: { itemId: untyped, label: "wall, untyped" } });
+      const touched = new Set<string>([untyped, ...auto.flatMap((m) => (m.itemId === null ? [] : [m.itemId]))]);
+      await syncDecidedItems(tx, companyId, jobId, [...touched]);
+      return auto.length + doorCount;
+    });
+    revalidatePath(`/jobs/${jobId}`, "layout");
+    revalidatePath(`/takeoff/${jobId}`);
+    return { ok: true, value: { runs } };
+  } finally {
+    working.end();
+  }
 }

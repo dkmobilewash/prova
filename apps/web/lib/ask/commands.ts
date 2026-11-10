@@ -368,6 +368,10 @@ export const EXCLUSIONS: Exclusion[] = [
     reason: "Undo holds the before-snapshot the queue's own Accept all returned, in the page that pressed it. Ask's card has no snapshot to give back, and says there is no Undo from it.",
   },
   {
+    action: "undoAutoPost",
+    reason: "The queue's Undo beside \"N ft posted automatically\": takes one sheet's auto-posted walls back into the queue, pressed where the footage is shown. Nothing posts itself until a source clears the bar, so there is nothing yet for Ask to name.",
+  },
+  {
     action: "planCompare.*",
     reason:
       "Plan comparison's owner switch and a sheet's demolition-plan pairing. The switch changes what every estimator's takeoff sets aside, so it is the owner's decision in Settings with the explanation beside it, never a sentence to the assistant. The pairing names one sheet of a set as another's demolition plan; which sheet is right is something a person decides by looking at the two drawings, and the takeoff shows both the pairing and what it set aside so they can — a pairing chosen blind would set the wrong walls aside.",

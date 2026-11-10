@@ -144,7 +144,9 @@ describe.skipIf(DIR === "" || CACHE === "" || SET === "" || LEGEND_PAGE === 0)("
       console.log(`${tag} ${JSON.stringify(text.types.map((t) => {
         const s = sight?.types.find((x: SightType) => x.code.toUpperCase() === t.code.toUpperCase());
         const r = heightOfLegendType({ code: t.code, lines: t.lines, heightNote: s?.heightNote ?? null }, { facts, generalNote, factSheets }, buildings);
-        return { code: t.code, feet: r.feet, conf: r.feet === null ? null : r.confidence, gno: r.generalNoteOnly, options: (r.options ?? []).map((f) => f.feet), sentence: r.why.slice(0, 160) };
+        // basis / fromKind: which rule gave the height — a figure printed on the type ("fixed"), or the type's own
+        // rule resolved to one printed level (`autoPost.ts` reads these for the narrow height sources).
+        return { code: t.code, feet: r.feet, conf: r.feet === null ? null : r.confidence, gno: r.generalNoteOnly, basis: r.basis?.kind ?? null, fromKind: r.from?.kind ?? null, options: (r.options ?? []).map((f) => f.feet), sentence: r.why.slice(0, 160) };
       }))}`);
     }
 

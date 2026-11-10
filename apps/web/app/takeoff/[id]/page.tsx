@@ -114,6 +114,7 @@ export default async function TakeoffWorkspacePage({
       reviewHeightChoices={queue.heightChoices}
       reviewSpecSays={specSays}
       reviewCodes={queue.codes}
+      reviewAutoPosted={queue.autoPosted ?? []}
       reviewCodeInfo={queue.codeInfo ?? {}}
       planSet={planSetFromLoaded(data)}
       /* ── ANSWER-KEY MODE FROM THE URL ──

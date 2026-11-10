@@ -14,7 +14,7 @@ import { AI_FEATURE_LABEL, PLAN_READING_SENTENCE } from "@/lib/ai/features";
  * tests read the rows.
  */
 
-export type TakeoffFeatureKey = "wallTypesFromDrawings" | "roomsAndCeilings" | "greyOut" | "wholeSet" | "scannedPlans" | "doorsWindows" | "symbolCount" | "planCompare";
+export type TakeoffFeatureKey = "wallTypesFromDrawings" | "roomsAndCeilings" | "greyOut" | "wholeSet" | "scannedPlans" | "doorsWindows" | "symbolCount" | "planCompare" | "autoPost";
 
 export type TakeoffFeatureStatus =
   /** On, and nothing else is needed. */
@@ -50,6 +50,7 @@ export type TakeoffFeatureInputs = {
   doorsWindowsOn?: boolean | null;
   symbolCountOn?: boolean | null;
   planCompareOn?: boolean | null;
+  autoPostOn?: boolean | null;
 };
 
 export const NEEDS_AI_ON = "Company AI must be on (Settings → Assistant)";
@@ -131,6 +132,15 @@ export function takeoffFeatureRows(input: TakeoffFeatureInputs): TakeoffFeatureR
       status: onOff(input.planCompareOn),
       where: { href: "/settings?tab=estimating#plan-compare", label: "Settings → Estimating" },
       field: "planCompareOn",
+    },
+    {
+      key: "autoPost",
+      title: "Auto-post proven items",
+      explain:
+        "A wall group whose type comes from a source measured right at least 97% of the time on training plans and 95% on held-out plans posts to the estimate without the review queue, labelled with its source, with Undo per sheet. No source has cleared that bar yet. No model.",
+      status: onOff(input.autoPostOn),
+      where: { href: "/settings?tab=estimating#auto-post", label: "Settings → Estimating" },
+      field: "autoPostOn",
     },
     {
       key: "scannedPlans",
