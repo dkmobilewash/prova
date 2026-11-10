@@ -41,8 +41,13 @@ const OUT = process.env.WALK_OUT ?? "";
  */
 const NO_AI = process.env.WALK_NO_AI === "1";
 const RENO = process.env.WALK_RENO === "1";
-/** WALK_PLAN_COMPARE=1: the owner also turns on "Compare renovation sheets with their demolition plan" (no model). */
-const PLAN_COMPARE = process.env.WALK_PLAN_COMPARE === "1";
+/**
+ * WALK_PLAN_COMPARE=1: the owner turns on "Compare renovation sheets with their demolition plan" (no model).
+ * WALK_PLAN_COMPARE=0: the owner turns it OFF (it is on for a new company, #1087) — the set nobody compared,
+ * which the bid check's existing-walls check is for.
+ */
+const PLAN_COMPARE = process.env.WALK_PLAN_COMPARE === "1" || process.env.WALK_PLAN_COMPARE === "0";
+const COMPARE_ON = process.env.WALK_PLAN_COMPARE !== "0";
 const SIZE = { width: 1440, height: 900 };
 const EMAIL = `walk-${Date.now()}+clerk_test@example.com`;
 
@@ -122,6 +127,49 @@ async function legendState(): Promise<string> {
   const run = await prisma.planIngestJob.findFirst({ where: { plan: { jobId }, stage: "WALL_LEGEND" }, orderBy: { createdAt: "desc" }, select: { pageCount: true, finishedAt: true, _count: { select: { tasks: { where: { finishedAt: { not: null } } } } } } });
   const proposals = await prisma.planLegendProposal.count({ where: { plan: { jobId } } });
   return `${run ? `run ${run._count.tasks}/${run.pageCount}${run.finishedAt ? " done" : ""}` : "no run queued"}, ${proposals} proposal(s), ${Math.round((Date.now() - started) / 1000)} s after sign-up`;
+}
+
+/**
+ * The bid check on the Send step (`bidCheck.ts`): every check's state, words and fix link, and
+ * the count beside Create signing link. With WALK_GROSS_SF it follows the floor-area check's own
+ * link, types the building's area (read off the set's cover sheet by whoever runs the walk) and
+ * comes back, so the wall-footage ratio is shown and the fix link is proved to land.
+ */
+const GROSS_SF = process.env.WALK_GROSS_SF ?? "";
+async function readBidCheck(when: string): Promise<void> {
+  const panel = page.locator('[data-bid-check=""]');
+  if (!(await seen(panel, 20_000))) {
+    stuck(`no bid check on the Send step (${when})`);
+    return;
+  }
+  note(`Bid check ${when}: ${await text(panel.locator('[data-bid-check="summary"]'))} · beside Send: "${await text(page.locator('[data-bid-check="beside-send"]'))}"`);
+  for (const item of await panel.locator("[data-bid-check-item]").all()) {
+    const fix = item.locator("[data-bid-check-fix]");
+    const href = (await fix.count()) > 0 ? ` → ${await fix.getAttribute("href")}` : "";
+    note(`  ${await item.getAttribute("data-bid-check-item")} ${(await item.getAttribute("data-state"))!.toUpperCase()}: ${(await text(item)).slice(0, 500)}${href}`);
+  }
+  await panel.scrollIntoViewIfNeeded();
+  await shot(`bid-check-${when}`);
+}
+async function bidCheck(): Promise<void> {
+  await readBidCheck("on-arrival");
+  const fix = page.locator('[data-bid-check-fix="quantities"]');
+  if (GROSS_SF === "" || !/floor area/.test(await text(fix))) return;
+  await fix.click();
+  act();
+  await hydrated(page, "#job-details button");
+  const section = page.locator("#job-details");
+  await section.getByRole("button", { name: "Edit details" }).click();
+  act();
+  await section.locator('input[name="grossAreaSqFt"]').fill(GROSS_SF);
+  act();
+  await section.getByRole("button", { name: /^Save/ }).first().click();
+  act();
+  await expect.poll(async () => (await prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: { grossAreaSqFt: true } })).grossAreaSqFt?.toString() ?? "", { timeout: 30_000 }).toBe(String(Number(GROSS_SF)));
+  note(`Typed the building's floor area through the check's own link: ${GROSS_SF} SF`);
+  await page.goto(`/jobs/${jobId}#contract-signature`);
+  await page.waitForLoadState("networkidle").catch(() => {});
+  await readBidCheck("with-floor-area");
 }
 
 test.describe("a new customer, sign-up to a sendable estimate", () => {
@@ -256,20 +304,20 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
     }
 
     if (PLAN_COMPARE) {
-      await step("Turn plan comparison on", async () => {
+      await step(`Turn plan comparison ${COMPARE_ON ? "on" : "off"}`, async () => {
         await page.goto("/settings?tab=estimating#plan-compare");
         act();
         const form = page.locator('[data-settings="plan-compare"]');
         await hydrated(page, '[data-settings="plan-compare"]');
         const box = form.locator('input[name="planCompareOn"]');
-        if (!(await box.isChecked())) {
-          await box.check();
+        if ((await box.isChecked()) !== COMPARE_ON) {
+          await box.setChecked(COMPARE_ON);
           act();
           await form.getByRole("button", { name: "Save" }).click();
           act();
           await expect(form.getByText("Saved.")).toBeVisible({ timeout: 30_000 }).catch(() => stuck("plan comparison did not say Saved."));
         }
-        await shot("plan-compare-on");
+        await shot(`plan-compare-${COMPARE_ON ? "on" : "off"}`);
         note(`Settings → Estimating: "${(await text(form)).replace(/\s+/g, " ").slice(0, 300)}"`);
       });
     }
@@ -300,11 +348,16 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       act();
       await page.getByRole("button", { name: /Start the job/ }).click();
       act();
-      await page.waitForURL(/\/jobs\/new\/[^/]+\/items$/, { timeout: 30_000 });
-      jobId = page.url().match(/\/jobs\/new\/([^/]+)\/items$/)![1]!;
+      // "New job" carries ?then=plans since #1084: Start the job opens the job's Takeoff tab
+      // directly. Without it the wizard's second step (`/items`) comes first.
+      await page.waitForURL(/\/jobs\/(new\/[^/]+\/items|[^/]+\/takeoff)$/, { timeout: 30_000 });
+      const landed = page.url().match(/\/jobs\/new\/([^/]+)\/items$/) ?? page.url().match(/\/jobs\/([^/]+)\/takeoff$/);
+      jobId = landed![1]!;
       await shot("new-job-work");
       const toPlans = page.getByRole("link", { name: /plan|drawing|upload/i });
-      if (await seen(toPlans, 3000)) {
+      if (/\/takeoff$/.test(page.url())) {
+        note("Start the job opened the Takeoff tab, ready for the plans.");
+      } else if (await seen(toPlans, 3000)) {
         note(`Step 2 offers: "${await text(toPlans)}".`);
         await toPlans.first().click();
         act();
@@ -936,6 +989,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       act();
       await page.waitForLoadState("networkidle").catch(() => {});
       await shot("send-target");
+      await bidCheck();
       const create = page.getByRole("button", { name: /Create (a new )?signing link/ });
       if (!(await seen(create, 10_000))) {
         stuck(`no Create signing link where Send landed (${new URL(page.url()).pathname})`);

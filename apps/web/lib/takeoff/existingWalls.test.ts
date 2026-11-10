@@ -157,10 +157,47 @@ describe("route 3 — grey against the sheet's black, on a sheet that shows exis
   });
 
   it("not on a sheet that does not say it shows existing work, nor where the sheet's walls are grey themselves, nor for a wall grey on one face only", () => {
-    expect(call({ gray: 0.6, width: 0.5 }, [])).toEqual([]);
+    // Without the words, a short grey wall stays (route 3b needs NO_WORDS_MIN_FEET).
+    const short = wall(10, 50, 25, 50);
+    expect(existingWalls({ walls: [...fresh, short], segments: [...black, ...faces(short, { gray: 0.6, width: 0.5 })], textItems: [], widthPt: W, feetPerUnit: FPU })).toEqual([]);
     expect(call({ gray: 0.6, width: 0.5 }, reno, fresh.flatMap((w) => faces(w, { gray: 0.6, width: 0.5 })))).toEqual([]);
     const half = existingWalls({ walls: [...fresh, run], segments: [...black, faces(run, { gray: 0.6, width: 0.5 })[0]!, faces(run, { gray: 0, width: 0.5 })[1]!], textItems: reno, widthPt: W, feetPerUnit: FPU });
     expect(half).toEqual([]);
+  });
+});
+
+describe("route 3b — grey beside a dark plan, on a sheet with no renovation words (Joplin G-101)", () => {
+  // Six new walls drawn black, 30 ft each; the sheet never says "existing".
+  const fresh = [10, 15, 20, 25, 30, 35].map((y) => wall(10, y, 40, y));
+  const black = fresh.flatMap((w) => faces(w, { gray: 0, width: 0.5 }));
+  const sheet = (r: WallCandidate, extra: StrokeSegment[], others = black) =>
+    existingWalls({ walls: [...fresh, r], segments: [...others, ...extra], textItems: [word("FLOOR PLAN", 60, 80)], widthPt: W, feetPerUnit: FPU });
+
+  it("sets aside a long wall drawn grey on its own faces, and none of the black ones", () => {
+    const got = sheet(run, faces(run, { gray: 0.6, width: 0.5 }));
+    expect(got.map((e) => e.wall)).toEqual([run]);
+    expect(got[0]!.route).toBe("grey");
+  });
+
+  it("not a wall shorter than NO_WORDS_MIN_FEET (Topeka's short grey partitions are new)", () => {
+    const short = wall(10, 50, 28, 50);
+    expect(sheet(short, faces(short, { gray: 0.6, width: 0.5 }))).toEqual([]);
+  });
+
+  it("not a wall drawn black on its own faces with grey linework just off them (K-4 A3.10)", () => {
+    // Grey strokes 2 in outside each face: inside the face band, not on the face line.
+    const off = 2 / 12 / FPU, near = faces(run, { gray: 0.6, width: 0.3 }).map((f, i) => ({ ...f, y1: f.y1 + (i === 0 ? -off : off), y2: f.y2 + (i === 0 ? -off : off) }));
+    expect(sheet(run, [...faces(run, { gray: 0, width: 0.5 }), ...near])).toEqual([]);
+  });
+
+  it("not a wall drawn grey along only half its length", () => {
+    const half = faces(wall(10, 50, 25, 50), { gray: 0.6, width: 0.5 });
+    expect(sheet(run, half)).toEqual([]);
+  });
+
+  it("not where the sheet's walls are not nearly all dark", () => {
+    const mixed = [...fresh.slice(0, 3).flatMap((w) => faces(w, { gray: 0, width: 0.5 })), ...fresh.slice(3).flatMap((w) => faces(w, { gray: 0.6, width: 0.5 }))];
+    expect(sheet(run, faces(run, { gray: 0.6, width: 0.5 }), mixed)).toEqual([]);
   });
 });
 
