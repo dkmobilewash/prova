@@ -27,7 +27,7 @@ export const SAME_WALL_SHARE = 0.7;
 export const FEW_WALLS_SHARE = 0.25;
 
 /** A prior-plan line: a wall with its thickness, or a raw face with none. */
-export type PriorLine = Line & { thicknessFeet?: number };
+export type PriorLine = Line & { thicknessFeet?: number; /** A face that asks more of a wall than `SAME_WALL_SHARE` (a frame-aligned pair, `priorPlan.ts`). */ minShare?: number };
 
 const len = (l: Line) => Math.hypot(l.x2 - l.x1, l.y2 - l.y1);
 
@@ -79,7 +79,8 @@ export function onPriorPlan(wall: Pick<WallCandidate, "x1" | "y1" | "x2" | "y2" 
   const faces = prior.filter((p) => p.thicknessFeet === undefined);
   if (faces.length === 0) return false;
   const half = wall.thicknessFeet / 2 / feetPerUnit;
-  return coveredShare(faceOf(wall, half), reach, faces) >= SAME_WALL_SHARE && coveredShare(faceOf(wall, -half), reach, faces) >= SAME_WALL_SHARE;
+  const need = Math.max(SAME_WALL_SHARE, ...faces.map((f) => f.minShare ?? 0));
+  return coveredShare(faceOf(wall, half), reach, faces) >= need && coveredShare(faceOf(wall, -half), reach, faces) >= need;
 }
 
 /** The prior plan's walls moved onto this sheet, or null when the two do not align. */
