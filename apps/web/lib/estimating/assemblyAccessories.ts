@@ -120,7 +120,8 @@ export function completeAssembly(input: {
     out.push(
       // Per THOUSAND, the unit screws are bought in: a price column of cents cannot hold one screw's markup ($0.022 stores as $0.02).
       { description: "drywall screws, Type S, per 1,000", unit: "M", basis: "BOARDED_SQFT", factor: (boardLayers * s.screwsPerSqFt) / 1000, wastePercent: waste("screws"), roundUp: false, from },
-      { description: "joint tape", unit: "LF", basis: "BOARDED_SQFT", factor: s.tapeLfPerSqFt, wastePercent: waste("tape"), roundUp: true, from },
+      // In ROLLS: tape is about a cent and a half a foot, which a price column of cents cannot hold.
+      { description: `joint tape, ${s.tapeRollLf} ft rolls`, unit: "RL", basis: "BOARDED_SQFT", factor: s.tapeLfPerSqFt / s.tapeRollLf, wastePercent: waste("tape"), roundUp: true, from },
       {
         description: `joint compound${level5 === undefined ? "" : `, Level 5 skim (spec ${level5.source})`}`,
         unit: "LB",
