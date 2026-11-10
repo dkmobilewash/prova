@@ -59,7 +59,7 @@ describe("applyTradePreset", () => {
     const company = await prisma.company.findUniqueOrThrow({ where: { id: companyId } });
     expect(company.tradePresetAskedAt).not.toBeNull();
     expect([company.wholeSetTakeoffOn, company.roomFinderOn, company.doorsWindowsOn, company.symbolCountOff]).toEqual([false, true, false, false]);
-    expect([company.scannedPlansOn, company.planCompareOn]).toEqual([false, false]);
+    expect([company.scannedPlansOn, company.planCompareOn]).toEqual([false, true]); // plan comparison stays ON (#1087)
     expect(await prisma.companyTradeScope.findMany({ where: { companyId }, select: { tradeScope: true, isPrimary: true } })).toEqual([
       { tradeScope: "FIREPROOFING", isPrimary: true },
     ]);
