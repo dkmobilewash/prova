@@ -83,11 +83,14 @@ export function planSetRows(input: {
   /** Pages carrying several drawings at several scales. */
   multiScale: ReadonlySet<number>;
   decline: Readonly<Record<number, string>>;
+  /** Pages whose own drawings say FLOOR PLAN (`sureFloorPlans.ts`): a floor plan where nothing else names the sheet. */
+  sure?: ReadonlySet<number>;
 }): PlanSetRow[] {
   const rows = input.pages.map((pageNumber): PlanSetRow => {
     const sheet = input.sheets.get(pageNumber) ?? { number: null, title: null, pageType: null };
     const offer = input.prefill[pageNumber];
-    const base = { pageNumber, number: sheet.number, title: sheet.title, category: sheetCategory(sheet.number, sheet.title, sheet.pageType) };
+    const named = sheetCategory(sheet.number, sheet.title, sheet.pageType);
+    const base = { pageNumber, number: sheet.number, title: sheet.title, category: named === "other" && input.sure?.has(pageNumber) === true ? ("floor" as const) : named };
     if (input.scaled.has(pageNumber)) return { ...base, confidence: "set", scaleName: offer?.scaleName ?? input.printed[pageNumber] ?? null, why: "A scale is saved on this sheet", printedFix: false };
     if (offer && !offer.unconfirmed && offer.reducedPrintCaution === undefined) {
       return { ...base, confidence: "high", scaleName: offer.scaleName, why: `Matched ${offer.agreed.length} printed dimension${offer.agreed.length === 1 ? "" : "s"}`, printedFix: false };
@@ -124,6 +127,7 @@ export function planSetFromLoaded(data: {
   printedScaleByPage: Readonly<Record<number, string>>;
   viewScalesByPage: Readonly<Record<number, readonly unknown[]>>;
   scaleDeclineByPage: Readonly<Record<number, string>>;
+  sureFloorPlanPages?: readonly number[];
 }): PlanSetRow[] {
   const pages = [...new Set([...data.sheetRows.map((row) => row.pageNumber), ...data.sheets.map((sheet) => sheet.pageNumber)])].sort((a, b) => a - b);
   return planSetRows({
@@ -134,5 +138,6 @@ export function planSetFromLoaded(data: {
     printed: data.printedScaleByPage,
     multiScale: new Set(Object.entries(data.viewScalesByPage).filter(([, views]) => views.length > 1).map(([page]) => Number(page))),
     decline: data.scaleDeclineByPage,
+    sure: new Set(data.sureFloorPlanPages ?? []),
   });
 }
