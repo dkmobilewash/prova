@@ -63,7 +63,9 @@ test.describe("confirm a wall group once, apply it to the same group on the othe
 
   test("1. three floor plans, each with a ZK6 and a ZK8 group", async () => {
     test.setTimeout(120_000);
-    await signInAs(page, PERSONAS.takeoff.email);
+    // The rooms persona, as accept-sheet: the takeoff persona's workspace spec adds its starter library only
+    // while the company has no wall types, and this spec's ZK6/ZK8 would stop that (step 20, "no W1").
+    await signInAs(page, PERSONAS.rooms.email);
     await landOnDashboard(page, monitor);
     jobId = await startJob(page, monitor, { name: "ZZ-E2E Confirm once — Three floors", gcName: "ZZ-E2E Confirm once GC" });
     await finishWizard(page, monitor, jobId);
