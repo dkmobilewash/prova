@@ -36,6 +36,33 @@ export { longFaces } from "./viewAlign";
 type Page = { segments: readonly StrokeSegment[]; textItems: readonly { str: string; x: number; y: number; width: number; height: number }[]; widthPt: number; heightPt: number };
 export type PriorPlan = { lines: PriorLine[]; votes: number; walls: "walls" | "faces"; shift?: { dx: number; dy: number } } | { lines: null; why: string };
 
+/** A frame-aligned pair compares only lines at least this long (a dash is shorter) and asks this much of both faces. */
+export const SOLID_FACE_FEET = 6;
+export const FRAME_SHARE = 0.8;
+/** Two border lines are the same when they sit within this of each other, page-width units. */
+const FRAME_SLACK = 0.003;
+
+/**
+ * Whether two pages are the same sheet of paper in the same frame: the same
+ * width, and every long border or title-block line on one has its twin on the
+ * other — at least two of them, so a blank page cannot pass.
+ */
+export function samePaper(a: { segments: readonly StrokeSegment[]; widthPt: number }, b: { segments: readonly StrokeSegment[]; widthPt: number }): boolean {
+  if (Math.abs(a.widthPt - b.widthPt) > 1) return false;
+  const long = (p: typeof a) =>
+    p.segments
+      .map((g) => ({ x1: g.x1 / p.widthPt, y1: g.y1 / p.widthPt, x2: g.x2 / p.widthPt, y2: g.y2 / p.widthPt }))
+      // Frame lengths, not wall lengths: a border runs most of the page — 0.85 of its width, or
+      // 0.6 of it upright (a sheet is ~0.7 as tall as wide) — and no plan's wall does at plan scale.
+      .filter((l) => (Math.abs(l.y2 - l.y1) < 1e-3 && Math.abs(l.x2 - l.x1) >= 0.85) || (Math.abs(l.x2 - l.x1) < 1e-3 && Math.abs(l.y2 - l.y1) >= 0.6));
+  const la = long(a), lb = long(b);
+  if (la.length < 2) return false;
+  const twin = (l: Line, others: readonly Line[]) =>
+    others.some((o) => [[l.x1, o.x1], [l.y1, o.y1], [l.x2, o.x2], [l.y2, o.y2]].every(([p, q]) => Math.abs(p! - q!) <= FRAME_SLACK) ||
+      [[l.x1, o.x2], [l.y1, o.y2], [l.x2, o.x1], [l.y2, o.y1]].every(([p, q]) => Math.abs(p! - q!) <= FRAME_SLACK));
+  return la.every((l) => twin(l, lb));
+}
+
 /**
  * The demolition plan's standing walls, moved onto the new sheet.
  *
@@ -62,7 +89,26 @@ export function priorPlanFor(input: { demo: Page; newPage: { segments: readonly 
   const faces = longFaces(demo.segments, demo.widthPt, fpDemo);
   const set = existingWallSet({ level: null, remove, remain, newPlan: newRuns, feetPerUnit });
   const shift = !few && set.shift !== null ? set.shift : alignViews(longFaces(newPage.segments, newPage.widthPt, feetPerUnit), faces, feetPerUnit);
-  if (shift === null || shift.votes < MIN_VOTES) return { lines: null, why: `the demolition plan does not line up with this sheet (${shift?.votes ?? 0} of ${MIN_VOTES} walls agree), so nothing is compared` };
+  if (shift === null || shift.votes < MIN_VOTES) {
+    // ── THE SAME SHEET OF PAPER: ALIGNED BY ITS FRAME ──
+    // Green Bay A3.1/A3.2 and McAllen A3.2 print their demolition plans on the
+    // same paper, in the same frame, with the building in the same place —
+    // every method put the shift at about 0 ft — but the finder pairs too few
+    // demolition walls for the wall vote to say so. Where the frame lines up,
+    // the frame is the alignment. What it compares against is narrower than a
+    // wall-aligned pair: only SOLID demolition lines (a dash is a wall to be
+    // removed, where new walls get rebuilt — Green Bay grid 9), never one on a
+    // removed wall, and a run needs both faces drawn along FRAME_SHARE of it.
+    if (samePaper(demo, newPage)) {
+      const W = demo.widthPt, minLen = SOLID_FACE_FEET / fpDemo;
+      const solid: PriorLine[] = demo.segments
+        .map((g) => ({ x1: g.x1 / W, y1: g.y1 / W, x2: g.x2 / W, y2: g.y2 / W }))
+        .filter((l) => Math.hypot(l.x2 - l.x1, l.y2 - l.y1) >= minLen && !removed(l))
+        .map((l) => ({ ...l, minShare: FRAME_SHARE }));
+      if (solid.length > 0) return { lines: solid, votes: shift?.votes ?? 0, walls: "faces", shift: { dx: 0, dy: 0 } };
+    }
+    return { lines: null, why: `the demolition plan does not line up with this sheet (${shift?.votes ?? 0} of ${MIN_VOTES} walls agree), so nothing is compared` };
+  }
   // ── THE DEMOLITION PLAN'S FACES RIDE ALONG WITH ITS PAIRED WALLS ──
   // The finder pairs only some of a demolition plan's walls, and a wall it
   // pairs at another thickness fails the band; both are still drawn there as

@@ -104,6 +104,8 @@ export default async function TakeoffWorkspacePage({
                 (queue.items.map((item) => ("pageNumber" in item ? item.pageNumber : null)).find((p): p is number => p !== null && sheetPages.has(p)) ?? data.startPage.review)
               : data.startPage.work
       }
+      // The sheet is this page's own choice — no `?page=`, and not Review's first item.
+      openChosen={!sheetPages.has(openPage) && open !== "review"}
       openReview={open === "review"}
       openScale={open === "scale"}
       reviewQueue={queue.items}
@@ -112,6 +114,8 @@ export default async function TakeoffWorkspacePage({
       reviewHeightChoices={queue.heightChoices}
       reviewSpecSays={specSays}
       reviewCodes={queue.codes}
+      reviewAutoPosted={queue.autoPosted ?? []}
+      reviewCodeInfo={queue.codeInfo ?? {}}
       planSet={planSetFromLoaded(data)}
       /* ── ANSWER-KEY MODE FROM THE URL ──
          So a review session can be opened on the right sheet in one link,

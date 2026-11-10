@@ -4,14 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/actions/shared";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
-import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
+import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, undoAutoPost, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
-import { forCode, QUEUE_PART, sameOnOtherFloors, sameWindowsOnOtherFloors, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { LegendThumb } from "./LegendCrop";
+import type { StoredCrop } from "@/lib/takeoff/legendProposal";
+import { byThickness, forCode, QUEUE_PART, sameOnOtherFloors, sameWindowsOnOtherFloors, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
 import { specSaysLine, type SpecSay } from "@/lib/specs/specTradeFacts";
+import { queueHeader } from "@/lib/takeoff/autoPost";
 
 /**
  * ── THE JOB'S ONE REVIEW QUEUE, ONE ITEM AT A TIME ──
@@ -47,6 +50,8 @@ export function TakeoffReviewQueue({
   onCheckDoubted,
   onClose,
   onUndoable,
+  autoPosted = [],
+  codeInfo = {},
 }: {
   jobId: string;
   planId: string;
@@ -70,6 +75,10 @@ export function TakeoffReviewQueue({
   onClose: () => void;
   /** The workspace's undo stack: a group typed or a height set here can be taken back (Undo, ⌘Z). */
   onUndoable?: (entry: UndoEntry) => void;
+  /** What proven sources posted without the queue, per sheet (`autoPost.ts`): the header's footage, each with Undo. */
+  autoPosted?: readonly { pageNumber: number; sheet: string; feet: number; doors?: number }[];
+  /** Each code's thickness and legend picture (`loadReviewQueue`), for an untagged group's picker. */
+  codeInfo?: Readonly<Record<string, { thicknessIn: number | null; crop: StoredCrop | null; legendPage: number | null }>>;
 }) {
   // Decided here, before the server's re-render drops it from `items`.
   const [done, setDone] = useState<ReadonlySet<string>>(new Set());
@@ -77,6 +86,7 @@ export function TakeoffReviewQueue({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [priced, setPriced] = useState<string | null>(null);
+  const [undone, setUndone] = useState<ReadonlySet<number>>(new Set());
   // ── CONFIRM ONCE PER SET: after a group is confirmed, the same drawn group on the other floors, one click ──
   const [windowsOffer, setWindowsOffer] = useState<Extract<ReviewItem, { kind: "windows" }>[] | null>(null);
   // The other floors' windows confirmed in one click: what the line says, and how its Undo takes them all back.
@@ -376,6 +386,37 @@ export function TakeoffReviewQueue({
       <span className="font-semibold" data-takeoff="review-queue-left">
         {left.length === 0 ? "Nothing left to review" : `${left.length} left to review`}
       </span>
+      {(() => {
+        // "312 ft posted automatically · 4 groups need you", and each sheet's auto-posts can be taken back.
+        const shown = autoPosted.filter((a) => !undone.has(a.pageNumber));
+        const header = queueHeader(shown.reduce((n, a) => n + a.feet, 0), left.filter((item) => item.kind === "type").length, shown.reduce((n, a) => n + (a.doors ?? 0), 0));
+        if (header === null) return null;
+        return (
+          <span className="contents" data-takeoff="review-queue-auto">
+            <span>{header}</span>
+            {shown.map((a) => (
+              <button
+                key={a.pageNumber}
+                type="button"
+                className={button}
+                disabled={busy}
+                data-takeoff="review-queue-auto-undo"
+                onClick={async () => {
+                  setBusy(true);
+                  setError(null);
+                  const result = await undoAutoPost(jobId, planId, a.pageNumber).catch(() => ({ ok: false as const, error: "it did not undo. Try it again." }));
+                  setBusy(false);
+                  if (!result.ok) return setError(result.error);
+                  setUndone((was) => new Set(was).add(a.pageNumber));
+                  router.refresh();
+                }}
+              >
+                Undo {a.sheet} ({[a.feet > 0 ? `${Math.round(a.feet)} ft` : null, (a.doors ?? 0) > 0 ? `${a.doors} door${a.doors === 1 ? "" : "s"}` : null].filter(Boolean).join(", ")})
+              </button>
+            ))}
+          </span>
+        );
+      })()}
       {progress.length > 0 && (
         <span className="text-ink-muted" data-takeoff="review-queue-progress">
           {progress.join(" · ")}
@@ -417,7 +458,28 @@ export function TakeoffReviewQueue({
               <QueueGroupConfirm
                 key={current.key}
                 label={`Walls · sheet ${current.sheet}${current.level ? ` · ${current.level.label}` : ""}${current.building ? ` · ${current.building.name.toLowerCase()}` : ""} · ${inchLabel(current.inches)}${current.feet !== null ? ` · ${Math.round(current.feet)} ft` : ""}`}
-                codes={current.suggested === null || legendCodes.some((c) => c.toUpperCase() === current.suggested!.code.toUpperCase()) ? legendCodes : [...legendCodes, current.suggested.code]}
+                codes={
+                  current.suggested === null || current.suggested.drawn !== true
+                    ? // Nothing on the drawing names this group: the legend's types, closest drawn thickness first, so 1–3 is usually it. Nothing preselected.
+                      byThickness(legendCodes, (c) => codeInfo[c.toUpperCase()]?.thicknessIn ?? null, current.inches).map((r) => r.code)
+                    : legendCodes.some((c) => c.toUpperCase() === current.suggested!.code.toUpperCase())
+                      ? legendCodes
+                      : [...legendCodes, current.suggested.code]
+                }
+                codeDetail={
+                  current.suggested?.drawn === true
+                    ? undefined
+                    : (code) => {
+                        const info = codeInfo[code.toUpperCase()];
+                        if (info === undefined) return null;
+                        return (
+                          <span className="ml-1 inline-flex items-center gap-1 align-middle" data-takeoff="queue-code-detail">
+                            {info.thicknessIn !== null && <span className="text-ink-muted">{inchLabel(info.thicknessIn)}</span>}
+                            {info.crop !== null && info.legendPage !== null && <LegendThumb planId={planId} pageNumber={info.legendPage} crop={info.crop} code={code} />}
+                          </span>
+                        );
+                      }
+                }
                 suggested={current.suggested}
                 missing={legendMissing(legend, jobId)}
                 heightOf={(code) => heightOfGroup(current, code)}
