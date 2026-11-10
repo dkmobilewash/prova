@@ -395,6 +395,15 @@ jobs:
   # doing nothing.
   # --------------------------------------------------------------------------
   e2e:
+    # Three shards, one runner each, so the signed-in suite takes about a third of the
+    # wall-clock time. Each shard builds the app and boots its own scratch Postgres; the
+    # verdict count is per shard (its own --list against its own results), so "absence of
+    # a failure is not a pass" still holds shard by shard.
+    name: e2e (${{ matrix.shard }}/3)
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     runs-on: ubuntu-latest
     # 36 tests, one of them a 12-step serial journey that opens every nav
     # destination. Local runs finish the spine in ~55s after a ~5m build;
@@ -511,10 +520,11 @@ jobs:
           set -e
           set -o pipefail
           pnpm --filter @prova/web exec playwright test \
-            --config e2e/playwright.config.ts --list --reporter=json
+            --config e2e/playwright.config.ts --list --reporter=json \
+            --shard=${{ matrix.shard }}/3
           COUNT="$(node apps/web/e2e/collected.mjs "$PLAYWRIGHT_JSON_OUTPUT_NAME")"
           echo "E2E_COLLECTED=$COUNT" >> "$GITHUB_ENV"
-          echo "the signed-in config collects $COUNT tests"
+          echo "shard ${{ matrix.shard }}/3 of the signed-in config collects $COUNT tests"
 
       # `pnpm test:e2e` — the same one command Cyrus runs. It applies every
       # committed migration to the scratch database, builds the app the way
@@ -523,7 +533,7 @@ jobs:
       # rather than a file.
       - name: The pilot journey, in a real browser
         id: journey
-        run: pnpm test:e2e
+        run: pnpm test:e2e -- --shard=${{ matrix.shard }}/3
 
       # Same gate as `e2e-public`'s, and for the same measured reason: with a
       # bare `always()` this step ran on a job that had stopped at the missing
@@ -540,7 +550,7 @@ jobs:
         if: always() && steps.journey.conclusion != 'skipped'
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: |
             apps/web/playwright-report
             apps/web/test-results
