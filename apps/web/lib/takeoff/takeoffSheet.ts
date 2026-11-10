@@ -144,3 +144,34 @@ export function takeoffSheetVerdict(input: {
   // nothing in the way.
   return { worthMeasuring: true, why: null, skipAutomatically: false };
 }
+
+/** One sheet as the viewer reads it off the PDF, no model: its number and title block, and its drawings' captions. */
+export type SheetReading = { pageNumber: number; sheetNumber: string | null; title: string | null; viewNames: readonly string[] };
+
+/**
+ * ── A SHEET THE DRAWING ITSELF SAYS IS A FLOOR PLAN ──
+ *
+ * Not merely "not refused" (`takeoffSheetVerdict` offers every sheet it does not
+ * recognise): a drawing on it is captioned as a plan, or it is an architectural sheet
+ * titled FLOOR PLAN. That is what "sure" means when the workspace picks a sheet for a
+ * person who has not picked one.
+ */
+export function sureFloorPlan(sheet: SheetReading): boolean {
+  if (!takeoffSheetVerdict(sheet).worthMeasuring) return false;
+  return sheet.viewNames.some((name) => viewKind(name).kind === "plan") || ownsFloorPlan(sheet.sheetNumber, sheet.title);
+}
+
+/**
+ * ── WHERE "RUN THE TAKEOFF" OPENS WHEN ITS SHEET REFUSES THE RUN ──
+ *
+ * With plan reading off no title is read, so the workspace's own choice can land on a
+ * reflected ceiling plan where Run takeoff is switched off (Baker p14, the new-customer
+ * walk, 2026-11-10: a new customer is stuck there). It moves to the best sure floor plan
+ * by `takeoffRank`, then the first in page order; null when none is sure,
+ * and the person is asked to pick.
+ */
+export function floorPlanToOpen(sheets: readonly SheetReading[]): number | null {
+  const sure = sheets.filter(sureFloorPlan).map((s) => ({ page: s.pageNumber, score: takeoffRank(s.sheetNumber, s.title).score }));
+  sure.sort((a, b) => b.score - a.score || a.page - b.page);
+  return sure[0]?.page ?? null;
+}

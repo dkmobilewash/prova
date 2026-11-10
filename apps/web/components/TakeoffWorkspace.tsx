@@ -95,6 +95,8 @@ type Props = {
   data: TakeoffWorkspaceClientData & object;
   savedAt: string;
   openPage: number;
+  /** `openPage` was chosen here, not asked for (no `?page=`, not Review's item): the viewer never stays on a sheet where Run takeoff is off. */
+  openChosen?: boolean;
   /** Open straight into answer-key review, from `?key=1`. */
   openAnswerKey?: boolean;
   /** Opened from the job stepper's Review: Needs review starts open. */
@@ -115,6 +117,8 @@ type Props = {
   reviewSpecSays?: Record<string, SpecSay[]>;
   /** The codes a queued group can be given: the legend's, else the company's library. */
   reviewCodes?: string[];
+  /** What proven sources posted without the queue, per sheet (`loadReviewQueue`). */
+  reviewAutoPosted?: { pageNumber: number; sheet: string; feet: number; doors?: number }[];
   /** Each code's thickness and legend picture (`loadReviewQueue`), for an untagged group's picker. */
   reviewCodeInfo?: Record<string, { thicknessIn: number | null; crop: import("@/lib/takeoff/legendProposal").StoredCrop | null; legendPage: number | null }>;
   /** Whether this server can label at all (`labellingAllowed`). False on every
@@ -220,6 +224,7 @@ export function TakeoffWorkspace({
   data,
   savedAt,
   openPage,
+  openChosen = false,
   openAnswerKey,
   openReview = false,
   openScale = false,
@@ -230,6 +235,7 @@ export function TakeoffWorkspace({
   reviewHeightChoices = {},
   reviewSpecSays = {},
   reviewCodes = [],
+  reviewAutoPosted = [],
   reviewCodeInfo = {},
   labellingAvailable = false,
   finderVersion = "unknown",
@@ -1625,6 +1631,7 @@ export function TakeoffWorkspace({
                 onShow={onQueueShow}
                 onLeft={setQueueLeft}
                 onUndoable={onUndoable}
+                autoPosted={reviewAutoPosted}
                 codeInfo={reviewCodeInfo}
                 doubted={doubted.length}
                 onCheckDoubted={() => {
@@ -1837,6 +1844,7 @@ export function TakeoffWorkspace({
               wallModel={data.wallModel}
               ceilingPages={data.ceilingPages}
               initialPage={openPage}
+              autoOpened={openChosen}
               fill
               bar={{ pager: pagerSlot, actions: actionsSlot, tabs: tabsSlot }}
               onSelect={(picked) => {
