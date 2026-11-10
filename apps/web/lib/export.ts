@@ -414,7 +414,7 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       // RECAP_RATE_KEYS, because it is not a rate: see the column's comment in
       // bid-recap.prisma. The note above says so too, since a customer reading
       // a CSV headed "Default markup rates" would otherwise read it as one.
-      "id", ...RECAP_RATE_KEYS, "defaultWastePercent", "assemblyStandards", "createdAt", "updatedAt",
+      "id", ...RECAP_RATE_KEYS, "defaultWastePercent", "assemblyStandards", "productionRates", "createdAt", "updatedAt",
     ],
     scope: byCompany,
   },

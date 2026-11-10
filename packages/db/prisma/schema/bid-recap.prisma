@@ -164,6 +164,14 @@ model CompanyBidDefaults {
   /// NULL means the company has not changed any of them.
   assemblyStandards Json?
 
+  /// How fast the company's own crews frame, hang board (by type), tape and
+  /// finish (by level) and install ceilings, the height multipliers over 10 and
+  /// 14 ft, and the crew's cost per hour. Read by `ratesFromJson`
+  /// (`lib/estimating/productionRates.ts`). EVERY RATE STARTS BLANK and a blank
+  /// stays blank — no seeded number, because a rate is a fact about one
+  /// company's crews. NULL means none has been set.
+  productionRates Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

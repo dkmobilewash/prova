@@ -1,5 +1,6 @@
 import { openingThresholdSqFt as openingThresholdFor } from "@/lib/businessScope";
 import type { Prisma } from "@prova/db";
+import { syncLaborLines } from "./laborLines";
 import {
   openingsFromJson,
   scheduleLines,
@@ -251,5 +252,7 @@ export async function syncWallScheduleLines(tx: Tx, companyId: string, jobId: st
     }
   }
 
+  // Labor follows the walls: the hours are worked out again from what the runs now say.
+  await syncLaborLines(tx, companyId, jobId);
   return { created, updated, removed, unpricedRuns: schedule.unpricedRuns, orphanRuns: schedule.orphanRuns };
 }
