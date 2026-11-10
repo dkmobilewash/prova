@@ -41,8 +41,13 @@ const OUT = process.env.WALK_OUT ?? "";
  */
 const NO_AI = process.env.WALK_NO_AI === "1";
 const RENO = process.env.WALK_RENO === "1";
-/** WALK_PLAN_COMPARE=1: the owner also turns on "Compare renovation sheets with their demolition plan" (no model). */
-const PLAN_COMPARE = process.env.WALK_PLAN_COMPARE === "1";
+/**
+ * WALK_PLAN_COMPARE=1: the owner turns on "Compare renovation sheets with their demolition plan" (no model).
+ * WALK_PLAN_COMPARE=0: the owner turns it OFF (it is on for a new company, #1087) — the set nobody compared,
+ * which the bid check's existing-walls check is for.
+ */
+const PLAN_COMPARE = process.env.WALK_PLAN_COMPARE === "1" || process.env.WALK_PLAN_COMPARE === "0";
+const COMPARE_ON = process.env.WALK_PLAN_COMPARE !== "0";
 const SIZE = { width: 1440, height: 900 };
 const EMAIL = `walk-${Date.now()}+clerk_test@example.com`;
 
@@ -299,20 +304,20 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
     }
 
     if (PLAN_COMPARE) {
-      await step("Turn plan comparison on", async () => {
+      await step(`Turn plan comparison ${COMPARE_ON ? "on" : "off"}`, async () => {
         await page.goto("/settings?tab=estimating#plan-compare");
         act();
         const form = page.locator('[data-settings="plan-compare"]');
         await hydrated(page, '[data-settings="plan-compare"]');
         const box = form.locator('input[name="planCompareOn"]');
-        if (!(await box.isChecked())) {
-          await box.check();
+        if ((await box.isChecked()) !== COMPARE_ON) {
+          await box.setChecked(COMPARE_ON);
           act();
           await form.getByRole("button", { name: "Save" }).click();
           act();
           await expect(form.getByText("Saved.")).toBeVisible({ timeout: 30_000 }).catch(() => stuck("plan comparison did not say Saved."));
         }
-        await shot("plan-compare-on");
+        await shot(`plan-compare-${COMPARE_ON ? "on" : "off"}`);
         note(`Settings → Estimating: "${(await text(form)).replace(/\s+/g, " ").slice(0, 300)}"`);
       });
     }

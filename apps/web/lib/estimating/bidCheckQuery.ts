@@ -29,7 +29,6 @@ export async function loadBidCheckFacts(companyId: string, jobId: string): Promi
 
   const count = (kind: string) => queue.items.filter((i) => i.kind === kind).length;
   const boards = lines.filter((l) => materialKey(l.description)?.startsWith("board|")).map((l) => boardSqFtOf({ description: l.description, quantity: Number(l.quantity ?? 0), unit: l.unit }));
-  const withHeight = walls.filter((w) => w.heightFt > 0);
 
   return {
     jobId,
@@ -43,8 +42,9 @@ export async function loadBidCheckFacts(companyId: string, jobId: string): Promi
     specConflicts: spec.wallTypes.flatMap((t) => t.conflicts.map((c) => ({ code: t.code, what: c.what, legend: c.legend, spec: c.spec, sectionNumber: c.sectionNumber }))),
     quantities: {
       grossAreaSqFt: job.grossAreaSqFt === null ? null : Number(job.grossAreaSqFt),
+      // `wallsForLabor` leaves out a wall with no height, so every wall here has a face.
       wallLf: walls.reduce((n, w) => n + w.linearFt, 0),
-      wallFaceSqFt: withHeight.reduce((n, w) => n + w.linearFt * w.heightFt, 0),
+      wallFaceSqFt: walls.reduce((n, w) => n + w.linearFt * w.heightFt, 0),
       boardSqFt: boards.length === 0 || boards.some((b) => b === null) ? null : boards.reduce((n: number, b) => n + b!, 0),
     },
     existing: { compareOn: company.planCompareOn, sheets: queue.planId === null ? [] : await uncomparedRenovationSheets(companyId, queue.planId) },
