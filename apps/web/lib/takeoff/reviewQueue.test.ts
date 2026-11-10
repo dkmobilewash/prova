@@ -66,15 +66,17 @@ describe("the job's one review queue", () => {
   it("SUGGESTS THE TYPE THE DRAWING GIVES, and says where it came from", () => {
     const type = (code: string, thicknessIn: number | null = null) => ({ id: code, code, name: code, hasParts: true, thicknessIn });
     const group = (source: WallGroup["source"], candidates: ReturnType<typeof type>[], inches = 4.875): WallGroup => ({ inches, runs: [], feet: 0, source, candidates });
-    expect(suggestType(group({ kind: "TAG", tag: "S6B" }, [type("S6B")]), "A101", [])).toEqual({ code: "S6B", from: "printed tag: S6B on A101", drawn: true });
+    expect(suggestType(group({ kind: "TAG", tag: "S6B" }, [type("S6B")]), "A101", [])).toEqual({ code: "S6B", from: "printed tag: S6B on A101", drawn: true, match: "tag:S6B" });
     expect(suggestType(group({ kind: "TAG", tag: propagatedTag("S6B") }, [type("S6B")]), "A101", [])?.from).toBe("tag carried along the wall: S6B");
+    // A carried tag has no drawn identity, so it is never applied across floors (confirm once per set).
+    expect(suggestType(group({ kind: "TAG", tag: propagatedTag("S6B") }, [type("S6B")]), "A101", [])?.match).toBeUndefined();
     // A tag the library lacks is suggested only where the legend defines it ("Set type" adds it from there).
-    expect(suggestType(group({ kind: "TAG", tag: "S9" }, []), "A101", ["S6B", "S9"])).toEqual({ code: "S9", from: "printed tag: S9 on A101, in the legend but not yet your library", drawn: true });
+    expect(suggestType(group({ kind: "TAG", tag: "S9" }, []), "A101", ["S6B", "S9"])).toEqual({ code: "S9", from: "printed tag: S9 on A101, in the legend but not yet your library", drawn: true, match: "tag:S9" });
     expect(suggestType(group({ kind: "TAG", tag: "S9" }, []), "A101", ["S6B"])).toBeNull();
     // A library guess by thickness, not read off the drawing: never "drawn", so Accept all on this sheet leaves it.
     expect(suggestType(group({ kind: "REMAINDER" }, [type("W1", 4.875)]), "A101", [])).toEqual({ code: "W1", from: `the only type that thick: 4-7/8"` });
     // The note's default, only where it is the one type that thick (#989's rule).
-    expect(suggestType(group({ kind: "GENERAL_NOTE", note: "ALL WALLS TYPE A U.N.O." }, [type("A")]), "A101", [])).toEqual({ code: "A", from: `legend's "unless noted otherwise"`, drawn: true });
+    expect(suggestType(group({ kind: "GENERAL_NOTE", note: "ALL WALLS TYPE A U.N.O." }, [type("A")]), "A101", [])).toEqual({ code: "A", from: `legend's "unless noted otherwise"`, drawn: true, match: "note:A" });
     expect(suggestType(group({ kind: "GENERAL_NOTE", note: "ALL WALLS TYPE A U.N.O." }, [type("A"), type("B")]), "A101", [])).toBeNull();
     // Two types this thick and nothing naming one: the question, not an answer.
     expect(suggestType(group({ kind: "REMAINDER" }, [type("A"), type("B")]), "A101", [])).toBeNull();

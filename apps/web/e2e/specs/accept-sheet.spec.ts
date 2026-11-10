@@ -133,7 +133,7 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
     const zf1 = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, wallType: { code: "ZA1" } }, select: { heightFt: true, _count: { select: { measurements: true } } } });
     expect(zf1._count.measurements).toBe(2);
     expect(zf1.heightFt?.toString()).toBe("15");
-    expect(await linesOf("ZA1")).toBeGreaterThan(0);
+    await expect.poll(() => linesOf("ZA1"), { timeout: 30_000 }).toBeGreaterThan(0);
     // What stays is the groups nothing names, and ZA2's height (it has none of its own).
     const kinds = await queue().locator('[data-takeoff="review-queue-item"]').getAttribute("data-kind");
     expect(["type", "height"]).toContain(kinds);
@@ -171,7 +171,7 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
     // Redo accepts them again; the next Undo takes that back in full.
     await redo.click();
     await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(2);
-    expect(await linesOf("ZA1")).toBeGreaterThan(0);
+    await expect.poll(() => linesOf("ZA1"), { timeout: 30_000 }).toBeGreaterThan(0);
     await expect(undo).toBeEnabled({ timeout: 30_000 });
     await undo.click();
     await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(5);

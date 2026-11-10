@@ -8,7 +8,7 @@ import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, undoConfir
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
-import { forCode, QUEUE_PART, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { forCode, QUEUE_PART, sameOnOtherFloors, sameWindowsOnOtherFloors, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
 import { specSaysLine, type SpecSay } from "@/lib/specs/specTradeFacts";
@@ -77,6 +77,11 @@ export function TakeoffReviewQueue({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [priced, setPriced] = useState<string | null>(null);
+  // ── CONFIRM ONCE PER SET: after a group is confirmed, the same drawn group on the other floors, one click ──
+  const [windowsOffer, setWindowsOffer] = useState<Extract<ReviewItem, { kind: "windows" }>[] | null>(null);
+  // The other floors' windows confirmed in one click: what the line says, and how its Undo takes them all back.
+  const [windowsApplied, setWindowsApplied] = useState<{ text: string; undo: () => Promise<ActionResult> } | null>(null);
+  const [floorsOffer, setFloorsOffer] = useState<{ what: string; groups: ReturnType<typeof sameOnOtherFloors> } | null>(null);
   const left = items.filter((item) => !done.has(item.key));
   const current = left.find((item) => item.key === cursor) ?? left[0] ?? null;
   // ── ACCEPT ALL SUGGESTIONS ON THIS SHEET ──
@@ -113,9 +118,14 @@ export function TakeoffReviewQueue({
     guessed: sheetTypes.filter((g) => g.suggested !== null && g.suggested.drawn !== true).length,
     none: sheetTypes.filter((g) => g.suggested === null).length,
   };
-  async function acceptSheet(groups: readonly { key: string; feet: number | null; group: Parameters<typeof confirmSheetSuggestions>[1][number] }[] = sheetGroups) {
-    if (current === null || current.kind !== "type" || groups.length === 0) return;
-    const sheet = current.sheet;
+  async function acceptSheet(
+    groups: readonly { key: string; feet: number | null; group: Parameters<typeof confirmSheetSuggestions>[1][number] }[] = sheetGroups,
+    /** What the line and the Undo stack call it; the sheet's Accept all when not given. */
+    across?: { done: string; undo: string },
+  ) {
+    if (groups.length === 0) return;
+    if (across === undefined && (current === null || current.kind !== "type")) return;
+    const sheet = current !== null && "sheet" in current ? current.sheet : "";
     setBusy(true);
     setError(null);
     setAccepted(null);
@@ -129,14 +139,28 @@ export function TakeoffReviewQueue({
     setBusy(false);
     if (!result.ok) {
       setDone((was) => new Set([...was].filter((key) => !groups.some((g) => g.key === key))));
-      return setError(`Accept all on sheet ${sheet}: ${result.error}`);
+      return setError(`${across?.undo ?? `Accept all on sheet ${sheet}`}: ${result.error}`);
     }
     const feet = groups.reduce((n, g) => n + (g.feet ?? 0), 0);
     const { accepted: n, failed, undo } = result.value;
+    // ── AFTER ACCEPT ALL: the same printed tags on the other floors, one more click ──
+    if (across === undefined) {
+      const floorPages = new Set(planSet.filter((r) => r.category === "floor").map((r) => r.pageNumber));
+      const taken = new Set(groups.map((g) => g.key));
+      const rest = left.filter((item) => !taken.has(item.key));
+      const twins = new Map<string, ReturnType<typeof sameOnOtherFloors>[number]>();
+      for (const g of groups) {
+        const item = left.find((i): i is TypeItem => i.kind === "type" && i.key === g.key);
+        if (item === undefined) continue;
+        for (const t of sameOnOtherFloors(rest, item, g.group.code, g.group.heightFt, (x, c) => heightOfGroup(x, c)?.feet ?? null, floorPages, planId)) twins.set(t.key, t);
+      }
+      const codes = new Set([...twins.values()].map((t) => t.group.code));
+      setFloorsOffer(twins.size === 0 ? null : { what: codes.size === 1 ? [...codes][0]! : `these ${codes.size} types`, groups: [...twins.values()] });
+    }
     const keys = groups.map((g) => g.key);
     const record = { undo, live: true };
     setAccepted({
-      text: `Accepted ${n} group${n === 1 ? "" : "s"} on sheet ${sheet} · ${Math.round(feet).toLocaleString()} ft${failed.length > 0 ? ` · not accepted: ${failed.join("; ")}` : ""}`,
+      text: `${across?.done ?? `Accepted ${n} group${n === 1 ? "" : "s"} on sheet ${sheet}`} · ${Math.round(feet).toLocaleString()} ft${failed.length > 0 ? ` · not accepted: ${failed.join("; ")}` : ""}`,
       keys,
       record,
       known,
@@ -145,7 +169,7 @@ export function TakeoffReviewQueue({
     // Chrome on Baker: after Accept all the toolbar Undo stayed grey, and only the
     // inline link could take it back.
     onUndoable?.({
-      label: `Accept all on ${sheet} (${n} group${n === 1 ? "" : "s"})`,
+      label: across?.undo ?? `Accept all on ${sheet} (${n} group${n === 1 ? "" : "s"})`,
       undo: async () => {
         if (!record.live) return { ok: true };
         const back = await undoSheetSuggestions(jobId, record.undo).catch(() => ({ ok: false as const, error: "it did not undo. Try it again." }));
@@ -414,6 +438,10 @@ export function TakeoffReviewQueue({
                   );
                 }}
                 onAccept={(code, heightFt) => {
+                  // The same drawn group on the set's other floor plans, offered once this one is in.
+                  const floorPages = new Set(planSet.filter((r) => r.category === "floor").map((r) => r.pageNumber));
+                  const same = sameOnOtherFloors(left, current, code!, heightFt, (g, c) => heightOfGroup(g, c)?.feet ?? null, floorPages, planId);
+                  setFloorsOffer(same.length === 0 ? null : { what: code!, groups: same });
                   // One group through the sheet's confirm, for the token Undo puts it back with.
                   const group = { planId, pageNumber: current.pageNumber, code: code!, inches: current.inches, runs: current.runs, heightFt, level: levelHeightFor(code, current.level) === null ? null : current.level!.label };
                   const confirmOne = async () => {
@@ -478,6 +506,10 @@ export function TakeoffReviewQueue({
               onShow={onShow}
               onSkip={() => setCursor(after(current.key))}
               onAccept={(kept) => {
+                // The same window tags on the set's other floor plans, offered once this sheet is in.
+                const floorPages = new Set(planSet.filter((r) => r.category === "floor").map((r) => r.pageNumber));
+                const same = sameWindowsOnOtherFloors(left, current, new Set(kept.map((i) => current.tags[i]!)), floorPages);
+                setWindowsOffer(same.length === 0 ? null : same);
                 // On the same Undo stack as the groups (Chrome on Baker: "Confirm 9" could not be undone).
                 const pageNumber = current.pageNumber;
                 const confirm = () => confirmWindows(jobId, planId, pageNumber, kept);
@@ -595,6 +627,102 @@ export function TakeoffReviewQueue({
       <button type="button" className="underline" onClick={onClose} data-takeoff="review-queue-close">
         Close
       </button>
+      {(() => {
+        // "Apply C6 to 3 other floors (412 ft)": the confirmed group's twins, still open, one click, one Undo.
+        if (floorsOffer === null) return null;
+        const open = floorsOffer.groups.filter((g) => !done.has(g.key) && left.some((item) => item.key === g.key));
+        if (open.length === 0) return null;
+        const sheets = open.map((g) => g.sheet).filter((v, i, a) => a.indexOf(v) === i);
+        const feet = Math.round(open.reduce((n, g) => n + (g.feet ?? 0), 0));
+        const what = `${floorsOffer.what} to ${open.length} more group${open.length === 1 ? "" : "s"} on ${sheets.join(", ")}`;
+        return (
+          <span className="flex items-center gap-2" data-takeoff="review-queue-floors">
+            <button
+              type="button"
+              className={primaryButton}
+              disabled={busy}
+              data-takeoff="review-queue-floors-apply"
+              title={`The same PRINTED tag (or "unless noted" type), same thickness, on ${sheets.join(", ")}. Carried tags and untagged walls are never included.`}
+              onClick={() => {
+                setFloorsOffer(null);
+                void acceptSheet(open, { done: `Applied ${what}`, undo: `Apply ${what}` });
+              }}
+            >
+              Apply {what} ({feet.toLocaleString()} ft)
+            </button>
+            <button type="button" className="underline" onClick={() => setFloorsOffer(null)} data-takeoff="review-queue-floors-dismiss">
+              Not these
+            </button>
+          </span>
+        );
+      })()}
+      {(() => {
+        // "Confirm the same window tags on 2 other floors (14 windows)": each sheet kept whole, one Undo for all.
+        if (windowsOffer === null) return null;
+        const open = windowsOffer.filter((w) => !done.has(w.key) && left.some((item) => item.key === w.key));
+        if (open.length === 0) return null;
+        const count = open.reduce((n, w) => n + w.tags.length, 0);
+        const what = `the same window tags on ${open.length} other floor${open.length === 1 ? "" : "s"}`;
+        async function applyWindows() {
+          setWindowsOffer(null);
+          setBusy(true);
+          setError(null);
+          setDone((was) => new Set([...was, ...open.map((w) => w.key)]));
+          const saved: { pageNumber: number; undo: Parameters<typeof undoConfirmWindows>[3] }[] = [];
+          for (const w of open) {
+            const result = await confirmWindows(jobId, planId, w.pageNumber, w.tags.map((_, i) => i)).catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
+            if (result.ok) saved.push({ pageNumber: w.pageNumber, undo: result.value.undo });
+            else setDone((was) => new Set([...was].filter((key) => key !== w.key)));
+          }
+          setBusy(false);
+          const record = { live: true };
+          const undo = async (): Promise<ActionResult> => {
+            if (!record.live) return { ok: true };
+            for (const one of saved) {
+              const back = await undoConfirmWindows(jobId, planId, one.pageNumber, one.undo).catch(() => ({ ok: false as const, error: "it did not undo. Try it again." }));
+              if (!back.ok) return back;
+            }
+            record.live = false;
+            setWindowsApplied(null);
+            setDone((was) => new Set([...was].filter((key) => !open.some((w) => w.key === key))));
+            router.refresh();
+            return { ok: true };
+          };
+          setWindowsApplied({ text: `Confirmed ${what} · ${count} windows`, undo });
+          const redo = async (): Promise<ActionResult> => {
+            for (const one of saved) {
+              const w = open.find((x) => x.pageNumber === one.pageNumber)!;
+              const again = await confirmWindows(jobId, planId, one.pageNumber, w.tags.map((_, i) => i)).catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
+              if (!again.ok) return again;
+              // A fresh token: what the redo wrote is what the next Undo takes back.
+              one.undo = again.value.undo;
+            }
+            record.live = true;
+            setDone((was) => new Set([...was, ...open.map((w) => w.key)]));
+            return { ok: true };
+          };
+          onUndoable?.({ label: `Confirm ${what}`, undo, redo, inPlace: true });
+          router.refresh();
+        }
+        return (
+          <span className="flex items-center gap-2" data-takeoff="review-queue-windows-floors">
+            <button type="button" className={primaryButton} disabled={busy} data-takeoff="review-queue-windows-floors-apply" onClick={() => void applyWindows()}>
+              Confirm the same window tags on {open.length} other floor{open.length === 1 ? "" : "s"} ({count} windows)
+            </button>
+            <button type="button" className="underline" onClick={() => setWindowsOffer(null)} data-takeoff="review-queue-windows-floors-dismiss">
+              Not these
+            </button>
+          </span>
+        );
+      })()}
+      {windowsApplied !== null && (
+        <span className="flex items-center gap-2" data-takeoff="review-queue-windows-applied">
+          <span>{windowsApplied.text}</span>
+          <button type="button" className="underline" disabled={busy} onClick={() => void windowsApplied.undo().then((r) => (r.ok ? null : setError(`Undo: ${r.error}`)))} data-takeoff="review-queue-windows-applied-undo">
+            Undo
+          </button>
+        </span>
+      )}
       {accepted !== null && (
         <span className="flex items-center gap-2" data-takeoff="review-queue-accepted">
           <span data-takeoff="review-queue-accepted-text">{accepted.text}</span>

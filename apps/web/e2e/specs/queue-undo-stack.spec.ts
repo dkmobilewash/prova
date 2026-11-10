@@ -115,7 +115,8 @@ test.describe("the review queue's Undo, two accepts deep, survives a reload", ()
   test("3. Redo is its own button: it puts the older accept back, and Undo takes that back in full", async () => {
     await page.locator('[data-takeoff="redo"]').click();
     await expect.poll(async () => (await state()).typed, { timeout: 30_000 }).toBeGreaterThan(0);
-    expect((await state()).lines).toBeGreaterThan(0);
+    // The lines follow the runs in the same save, but the read can land between them: poll, as for `typed`.
+    await expect.poll(async () => (await state()).lines, { timeout: 30_000 }).toBeGreaterThan(0);
     await expect(undo()).toBeEnabled({ timeout: 30_000 });
     await undo().click();
     await expect.poll(state, { timeout: 30_000 }).toEqual({ typed: 0, untyped: 3, lines: 0 });
