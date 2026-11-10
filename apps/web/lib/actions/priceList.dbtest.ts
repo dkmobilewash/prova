@@ -89,6 +89,11 @@ describe("a supplier price list prices Baker's estimate", () => {
     expect(priceSource(entry, entry.priceQuotes, 500, today)).toMatchObject({ vendor: "Northgate Building Supply", stale: false });
     expect(priceSource(entry, entry.priceQuotes, 500, new Date("2027-03-01T00:00:00Z"))?.stale).toBe(true);
     expect(priceSource({ ...entry, defaultBudgetedUnitCost: { toString: () => "17.00" } }, entry.priceQuotes, 500, today)).toBeNull();
+    // EVERY line names its source — including the materials a person picked a row for. (The walk found two that did not:
+    // a picked row that had already priced its own material got a second, quote-less entry.)
+    const lines = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false }, include: { sourceCatalogEntry: { include: { priceQuotes: { include: { vendor: true } } } } } });
+    const unsourced = lines.filter((l) => priceSource(l.sourceCatalogEntry!, l.sourceCatalogEntry!.priceQuotes, 500, today) === null).map((l) => l.description);
+    expect(unsourced).toEqual([]);
   });
 
   it("an unmatched row priced nothing: it is a quote for reference, linked to no catalog entry", async () => {

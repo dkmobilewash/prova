@@ -121,8 +121,9 @@ export async function importPriceList(input: PriceListImportInput): Promise<Acti
         const row = rowAt.get(line)!;
         // Named for the need and NOT the row: the row's words (a gauge) would make this read as the same
         // material as the row's own entry, and two entries for one material price neither. The quote keeps the row's words.
-        const entryId = await upsert(`${need.label} (picked from ${vendorName}, row ${line})`.slice(0, 200), need.unit ?? row.ourUnit!, row.ourPrice!);
-        if (!entryForLine.has(line)) entryForLine.set(line, entryId);
+        // A row that already priced its own material is that entry; the need's parts point at it, one price, one source.
+        const entryId = entryForLine.get(line) ?? (await upsert(`${need.label} (picked from ${vendorName}, row ${line})`.slice(0, 200), need.unit ?? row.ourUnit!, row.ourPrice!));
+        entryForLine.set(line, entryId);
         direct.push({ componentIds: need.componentIds, entryId });
       }
       let quotes = 0;
