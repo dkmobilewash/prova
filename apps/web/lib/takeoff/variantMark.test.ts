@@ -39,6 +39,8 @@ describe("a printed variant mark: C6* (Diego, 2026-11-08)", () => {
       from: "printed tag: C6* on A102",
       drawn: true,
       variant: "C6 (C6* at tub/shower locations, see legend)",
+      // Its own printed mark: a C6* group is never applied to a plain C6 one on another floor (confirm once per set).
+      match: "tag:C6*",
     });
   });
 });
