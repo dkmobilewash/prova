@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { setupClerkTestingToken } from "@clerk/testing/playwright";
@@ -43,6 +43,10 @@ const NO_AI = process.env.WALK_NO_AI === "1";
 const RENO = process.env.WALK_RENO === "1";
 /** WALK_PLAN_COMPARE=1: the owner also turns on "Compare renovation sheets with their demolition plan" (no model). */
 const PLAN_COMPARE = process.env.WALK_PLAN_COMPARE === "1";
+/** WALK_ACCEPT_JOB=1: the queue's "Accept all printed-tag suggestions on this job" is pressed first, through its preview. */
+const ACCEPT_JOB = process.env.WALK_ACCEPT_JOB === "1";
+/** WALK_LIBRARY_FILE: a cached legend read ({ types }) added to the library after sign-up, standing in for the model's read. */
+const LIBRARY_FILE = process.env.WALK_LIBRARY_FILE ?? "";
 const SIZE = { width: 1440, height: 900 };
 const EMAIL = `walk-${Date.now()}+clerk_test@example.com`;
 
@@ -274,6 +278,21 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       });
     }
 
+    if (LIBRARY_FILE !== "") {
+      // THE NAMED STAND-IN for a legend read the model cannot make (no credit): the set's
+      // cached legend read, added to the company's library as "Add to library" would.
+      // Not timed and not counted; a code the trade's presets already hold is left alone.
+      const legend = JSON.parse(readFileSync(LIBRARY_FILE, "utf8")) as { types: { code: string; name?: string; thicknessIn?: number | null }[] };
+      let added = 0;
+      for (const t of legend.types) {
+        if ((await prisma.wallType.count({ where: { companyId, code: t.code } })) > 0) continue;
+        await prisma.wallType.create({
+          data: { companyId, code: t.code, name: t.name ?? t.code, ...(t.thicknessIn ? { thicknessIn: String(t.thicknessIn) } : {}), defaultHeightFt: "10", sides: 2, components: { create: [{ description: `${t.code} board`, unit: "sq ft", basis: "BOARDED_SQFT" }] } },
+        });
+        added += 1;
+      }
+      console.log(`[walk] stand-in: ${added} of ${legend.types.length} legend types added to the library from the cached read`);
+    }
     await step("Create the job", async () => {
       await shot("home");
       const start = page.getByRole("link", { name: /new job|start a job|add a job|first job|new bid|start a bid/i }).first();
@@ -693,6 +712,24 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       for (let round = 0; round < 400; round += 1) {
         if (/Nothing left/.test(await text(left))) break;
         if (!(await seen(item, 10_000))) break;
+        // WALK_ACCEPT_JOB=1: first, every printed tag on the job, after its preview (two presses).
+        const acceptJob = queue.locator('[data-takeoff="review-queue-accept-job"]');
+        if (ACCEPT_JOB && (await acceptJob.count()) > 0) {
+          const said = await text(acceptJob);
+          await acceptJob.click();
+          act();
+          const preview = queue.locator('[data-takeoff="review-queue-job-preview"]');
+          await expect(preview).toBeVisible({ timeout: 30_000 });
+          note(`Job preview: ${(await preview.locator('[data-takeoff="review-queue-job-type"]').allInnerTexts()).map((t) => t.replace(/\s+/g, " ").trim()).join(" | ")}`);
+          await shot("review-accept-job-preview", tab);
+          await preview.locator('[data-takeoff="review-queue-job-accept"]').click();
+          act();
+          const summary = queue.locator('[data-takeoff="review-queue-accepted-text"]');
+          await expect(summary).toBeVisible({ timeout: 120_000 });
+          note(`${said} → "${await text(summary)}"`);
+          seenKinds.acceptJob = (seenKinds.acceptJob ?? 0) + 1;
+          continue;
+        }
         // The sheet's drawn suggestions in one press, as a person who knows the
         // way would: what it takes is in the summary, the rest stays here.
         const acceptAll = queue.locator('[data-takeoff="review-queue-accept-sheet"]');

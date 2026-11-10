@@ -408,6 +408,52 @@ export function sameWindowsOnOtherFloors(
   );
 }
 
+/**
+ * ── "ACCEPT ALL PRINTED-TAG SUGGESTIONS ON THIS JOB" ──
+ *
+ * Every group still in the queue, on every sheet, whose type is a tag PRINTED beside its
+ * walls (`Guess.match` "tag:…"). The groups left out stay for a person: a marked tag
+ * ("C6*", 78.0% training), a carried or sibling tag, an "unless noted" type, and a
+ * thickness guess. Measured on one scorer (labels-snap-20261109T0015): printed tags type
+ * 95.5% correct on training and 82.1% on held-out. That is short of the auto-post bar, so
+ * this is one click after a preview, with one Undo. Each group gets the height Enter
+ * would pre-fill (`heightOf`).
+ */
+export function jobPrintedTagGroups(
+  items: readonly ReviewItem[],
+  heightOf: (item: Extract<ReviewItem, { kind: "type" }>, code: string) => number | null,
+  planId: string,
+) {
+  return items
+    .filter(
+      (item): item is Extract<ReviewItem, { kind: "type" }> =>
+        item.kind === "type" && item.suggested?.drawn === true && item.suggested.variant === undefined && item.suggested.match?.startsWith("tag:") === true,
+    )
+    .map((g) => {
+      const code = g.suggested!.code;
+      const byLevel = levelHeightFor(code, g.level);
+      return { key: g.key, sheet: g.sheet, feet: g.feet, runs: g.runs, group: { planId, pageNumber: g.pageNumber, code, inches: g.inches, runs: g.runs, heightFt: heightOf(g, code), level: byLevel === null ? null : g.level!.label } };
+    });
+}
+
+/** The preview: per type, its groups and feet, and per sheet the runs to light. Types and sheets in the order first met. */
+export function printedTagPreview(groups: ReturnType<typeof jobPrintedTagGroups>) {
+  const types = new Map<string, { code: string; groups: number; feet: number; sheets: Map<number, { sheet: string; pageNumber: number; groups: number; feet: number; runs: QueueRun[] }> }>();
+  for (const g of groups) {
+    const code = g.group.code;
+    const t = types.get(code) ?? { code, groups: 0, feet: 0, sheets: new Map() };
+    t.groups += 1;
+    t.feet += g.feet ?? 0;
+    const s = t.sheets.get(g.group.pageNumber) ?? { sheet: g.sheet, pageNumber: g.group.pageNumber, groups: 0, feet: 0, runs: [] };
+    s.groups += 1;
+    s.feet += g.feet ?? 0;
+    s.runs.push(...g.runs);
+    t.sheets.set(g.group.pageNumber, s);
+    types.set(code, t);
+  }
+  return [...types.values()].map((t) => ({ code: t.code, groups: t.groups, feet: t.feet, sheets: [...t.sheets.values()] }));
+}
+
 // What saves the most time first (Chrome's re-test): a group is one key for
 // dozens of feet, a held wall one key for one run. So groups and windows,
 // then the held walls, sheet by sheet.

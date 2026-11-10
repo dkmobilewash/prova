@@ -8,7 +8,7 @@ import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, undoConfir
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
-import { forCode, QUEUE_PART, sameOnOtherFloors, sameWindowsOnOtherFloors, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { forCode, jobPrintedTagGroups, printedTagPreview, QUEUE_PART, sameOnOtherFloors, sameWindowsOnOtherFloors, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
 import { specSaysLine, type SpecSay } from "@/lib/specs/specTradeFacts";
@@ -118,6 +118,35 @@ export function TakeoffReviewQueue({
     guessed: sheetTypes.filter((g) => g.suggested !== null && g.suggested.drawn !== true).length,
     none: sheetTypes.filter((g) => g.suggested === null).length,
   };
+  // ── ACCEPT ALL PRINTED-TAG SUGGESTIONS ON THIS JOB: a preview first, then one click, one Undo ──
+  const jobGroups = jobPrintedTagGroups(left, (g, c) => heightOfGroup(g, c)?.feet ?? null, planId);
+  const [jobPreview, setJobPreview] = useState(false);
+  /** Up to 200 groups a call (the action's cap); the Undo tokens merged LAST CALL FIRST, so each restores what was before it. */
+  async function confirmInChunks(groups: Parameters<typeof confirmSheetSuggestions>[1]): ReturnType<typeof confirmSheetSuggestions> {
+    const tokens: SheetSuggestionsUndo[] = [];
+    let accepted = 0;
+    const failed: string[] = [];
+    for (let i = 0; i < groups.length; i += 200) {
+      const result = await confirmSheetSuggestions(jobId, groups.slice(i, i + 200));
+      if (!result.ok) {
+        // What went in before it is taken back, so a failure leaves the job as it was.
+        for (const t of tokens.reverse()) await undoSheetSuggestions(jobId, t).catch(() => null);
+        return result;
+      }
+      accepted += result.value.accepted;
+      failed.push(...result.value.failed);
+      tokens.push(result.value.undo);
+    }
+    const merged = [...tokens].reverse();
+    const undo: SheetSuggestionsUndo = {
+      moved: merged.flatMap((t) => t.moved),
+      created: merged.flatMap((t) => t.created),
+      items: merged.flatMap((t) => t.items),
+      createdItems: merged.flatMap((t) => t.createdItems ?? []),
+      createdTypes: merged.flatMap((t) => t.createdTypes ?? []),
+    };
+    return { ok: true, value: { accepted, failed, undo } };
+  }
   async function acceptSheet(
     groups: readonly { key: string; feet: number | null; group: Parameters<typeof confirmSheetSuggestions>[1][number] }[] = sheetGroups,
     /** What the line and the Undo stack call it; the sheet's Accept all when not given. */
@@ -132,10 +161,7 @@ export function TakeoffReviewQueue({
     const known = seenKeys();
     forgetAfter.current = null;
     setDone((was) => new Set([...was, ...groups.map((g) => g.key)]));
-    const result = await confirmSheetSuggestions(
-      jobId,
-      groups.map((g) => g.group),
-    ).catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
+    const result = await confirmInChunks(groups.map((g) => g.group)).catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
     setBusy(false);
     if (!result.ok) {
       setDone((was) => new Set([...was].filter((key) => !groups.some((g) => g.key === key))));
@@ -181,7 +207,7 @@ export function TakeoffReviewQueue({
         return { ok: true };
       },
       redo: async () => {
-        const again = await confirmSheetSuggestions(jobId, groups.map((g) => g.group)).catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
+        const again = await confirmInChunks(groups.map((g) => g.group)).catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
         if (!again.ok) return again;
         // A fresh token: what the redo wrote is what the next Undo takes back.
         record.undo = again.value.undo;
@@ -607,6 +633,11 @@ export function TakeoffReviewQueue({
               ].join(" · ")}
             </span>
           )}
+          {jobGroups.length > 0 && (
+            <button type="button" className={button} disabled={busy} aria-expanded={jobPreview} onClick={() => setJobPreview((v) => !v)} data-takeoff="review-queue-accept-job" title="Every group on every sheet whose type is a tag printed beside its walls. Marked, carried and untagged groups stay here.">
+              Accept all printed-tag suggestions on this job ({jobGroups.length} group{jobGroups.length === 1 ? "" : "s"})
+            </button>
+          )}
           {sheetGroups.length > 1 && (
             <button type="button" className={button} disabled={busy} onClick={() => void acceptSheet()} data-takeoff="review-queue-accept-sheet" title="Every group whose type a printed tag or the legend gives, with its height; the rest stay here">
               Accept all suggestions on this sheet ({sheetGroups.length} groups)
@@ -627,6 +658,57 @@ export function TakeoffReviewQueue({
       <button type="button" className="underline" onClick={onClose} data-takeoff="review-queue-close">
         Close
       </button>
+      {jobPreview && jobGroups.length > 0 && (() => {
+        // The preview: each printed-tag type, its groups and feet, and each sheet it is on, which lights them on that plan.
+        const types = printedTagPreview(jobGroups);
+        const feet = Math.round(jobGroups.reduce((n, g) => n + (g.feet ?? 0), 0));
+        const sheets = new Set(jobGroups.map((g) => g.group.pageNumber)).size;
+        const what = `${jobGroups.length} printed-tag group${jobGroups.length === 1 ? "" : "s"} on ${sheets} sheet${sheets === 1 ? "" : "s"}`;
+        const light = (code: string, s: (typeof types)[number]["sheets"][number]) =>
+          onShow({ kind: "type", key: `job-preview:${code}:${s.pageNumber}`, pageNumber: s.pageNumber, sheet: s.sheet, inches: 0, runs: s.runs, feet: s.feet, suggested: null, ceiling: null });
+        return (
+          <div className="flex w-full flex-col gap-1 rounded-md border border-line-card p-2" data-takeoff="review-queue-job-preview">
+            <span className="text-ink-muted">Each type as its printed tag says, at the height Enter would give it. Pick a sheet to see its walls lit.</span>
+            <table className="text-xs">
+              <tbody>
+                {types.map((t) => (
+                  <tr key={t.code} data-takeoff="review-queue-job-type">
+                    <td className="pr-3 font-semibold">{t.code}</td>
+                    <td className="pr-3">
+                      {t.groups} group{t.groups === 1 ? "" : "s"}
+                    </td>
+                    <td className="pr-3">{Math.round(t.feet).toLocaleString()} ft</td>
+                    <td className="flex flex-wrap gap-1">
+                      {t.sheets.map((s) => (
+                        <button key={s.pageNumber} type="button" className="underline" onClick={() => light(t.code, s)} data-takeoff="review-queue-job-sheet">
+                          {s.sheet} ({Math.round(s.feet).toLocaleString()} ft)
+                        </button>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <span className="flex items-center gap-2">
+              <button
+                type="button"
+                className={primaryButton}
+                disabled={busy}
+                data-takeoff="review-queue-job-accept"
+                onClick={() => {
+                  setJobPreview(false);
+                  void acceptSheet(jobGroups, { done: `Accepted ${what}`, undo: `Accept ${what}` });
+                }}
+              >
+                Accept {what} ({feet.toLocaleString()} ft)
+              </button>
+              <button type="button" className="underline" onClick={() => { setJobPreview(false); onShow(current); }} data-takeoff="review-queue-job-cancel">
+                Not now
+              </button>
+            </span>
+          </div>
+        );
+      })()}
       {(() => {
         // "Apply C6 to 3 other floors (412 ft)": the confirmed group's twins, still open, one click, one Undo.
         if (floorsOffer === null) return null;
