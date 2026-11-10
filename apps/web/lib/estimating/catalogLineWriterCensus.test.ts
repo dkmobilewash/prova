@@ -172,6 +172,8 @@ function writeLiterals(source: string): string[] {
  * are two writers free to drift, and the per-field assertions below are what
  * stop one of them quietly forgetting `productionRate`. */
 const EXPECTED_WRITERS = [
+  // The fifth, 2026-11-09: "Price these N materials" writes one new entry onto the lines it prices.
+  "apps/web/lib/actions/assemblyStandards.ts",
   "apps/web/lib/estimating/catalog-line.ts",
   "apps/web/lib/estimating/draft-lines.ts",
   "apps/web/lib/estimating/takeoff-item-lines.ts",
