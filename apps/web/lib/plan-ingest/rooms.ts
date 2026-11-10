@@ -7,6 +7,7 @@ import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { ceilingsForRooms, type CeilingPageText } from "@/lib/takeoff/roomCeilings";
 import type { DetectedBoundary } from "@/lib/takeoff/detectWallsForCalibration";
 import { doorsAndWindowsForSheet } from "@/lib/takeoff/doorsWindows";
+import { postAutoDoors } from "./autoDoors";
 import { DOOR_HEIGHT_FEET, finishLineLabel, finishTakeoff, typesFromNeighbours, typeTagsInRooms, WINDOW_HEIGHT_FEET } from "@/lib/takeoff/finishTakeoff";
 import { readFinishSchedule, type FinishSchedule } from "@/lib/takeoff/finishSchedule";
 import { sheetRooms } from "@/lib/takeoff/sheetRooms";
@@ -211,6 +212,11 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
       ? doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: inPoints as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: await doorScheduleRowsOf(input.planId), windowRows: await scheduleRowsOf(input.planId, "WINDOW"), wallCodes: await storedLegendCodes(input.planId) })
       : { doors: [], windows: [] };
     await writeWallOpenings(page.id, runs, openings.doors, openings.windows, "join" in openings && openings.join ? openings.join.openings : []);
+    // The marked doors post themselves where the company allows it (`autoDoors.ts`).
+    if ("doorMarks" in openings) {
+      const points = openings.doors.flatMap((d, i) => (openings.doorMarks[i] ? [{ x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2 }] : []));
+      await postAutoDoors({ planId: input.planId, pageNumber: input.pageNumber, pageId: page.id, calibrationId: calibration.id, companyId: input.companyId, jobId: input.jobId, userId: input.userId, points });
+    }
     if ("tagged" in openings) await writeSuggestedWindows(input.planId, input.pageNumber, windowsToStore(openings.tagged, openings.windows));
     const found = sheetRooms({
       pairings: input.boundary?.pairings ?? [],

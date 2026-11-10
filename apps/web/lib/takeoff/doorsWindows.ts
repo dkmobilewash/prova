@@ -1,5 +1,5 @@
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
-import { doorSymbols, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, WINDOW_TAGS_MEAN_ALL, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
+import { DOOR_TAG_REACH_FEET, doorSymbols, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, WINDOW_TAGS_MEAN_ALL, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
 import { joinOpeningsToSchedule, widthAndHeight, type OpeningJoin, type PlacedMark, type ScheduledOpening } from "./openingMarks";
 import { tagSymbols, type TextForSymbol } from "./tagSymbols";
 import { windowsByTag, windowTagVocabulary, type TaggedWindows } from "./windowTags";
@@ -33,6 +33,12 @@ export type DoorsWindowsResult = {
   unplacedMarks: string[];
   /** Windows counted by their tags (`windowsByTag`); `counted: false` leaves them to check. */
   tagged: TaggedWindows;
+  /**
+   * Each door's printed mark, in `doors` order: the nearest door-mark symbol within
+   * DOOR_TAG_REACH_FEET of its leaf, the reach `onlyMarkedDoors` uses; null for none.
+   * A marked door is the auto-post door source (`autoPost.ts`).
+   */
+  doorMarks: (string | null)[];
 };
 
 /** The doors on the sheet: those drawn, plus those the schedule placed from a mark with no swing. */
@@ -81,6 +87,17 @@ export function doorsAndWindowsForSheet(input: {
   const W = input.widthPt;
   const doorMarks = symbols.filter((s) => s.rejected === null && !WINDOW_TAG.test(s.text.trim().toUpperCase())).map((s) => ({ x: s.x / W, y: s.y / W }));
   const doors = onlyMarkedDoors(doorSymbols(input.segments, input.walls, input.feetPerUnit), doorMarks, input.feetPerUnit);
+  const markTexts = symbols.filter((s) => s.rejected === null && !WINDOW_TAG.test(s.text.trim().toUpperCase())).map((s) => ({ text: s.text.trim().toUpperCase(), x: s.x / W, y: s.y / W }));
+  const reach = DOOR_TAG_REACH_FEET / input.feetPerUnit;
+  const markOfDoor = doors.map((d) => {
+    const x = (d.hinge.x + d.strike.x) / 2, y = (d.hinge.y + d.strike.y) / 2;
+    let best: { text: string; d: number } | null = null;
+    for (const m of markTexts) {
+      const dist = Math.hypot(m.x - x, m.y - y);
+      if (dist <= reach && (best === null || dist < best.d)) best = { text: m.text, d: dist };
+    }
+    return best?.text ?? null;
+  });
   const wTagged = symbols.filter((s) => s.rejected === null && WINDOW_TAG.test(s.text.trim().toUpperCase()));
   const tagWords = symbols.filter((s) => s.rejected === null).map((s) => s.text);
   // ── A SHEET TAGGED BY ITS WINDOW SCHEDULE TAGS EVERY WINDOW, AS W-NUMBERS DO ──
@@ -96,7 +113,7 @@ export function doorsAndWindowsForSheet(input: {
   const windows = windowSymbols(input.segments, input.walls, input.feetPerUnit, windowTags, everyWindowTagged, byScheduleOnly);
   const tagged = windowsByTag({ symbols, widthPt: W, windowRows: input.windowRows ?? [], frames: windows, walls: input.walls, feetPerUnit: input.feetPerUnit, wallCodes: input.wallCodes ?? [] });
   const rows = scheduledOpenings(input.scheduleRows);
-  if (rows.length === 0) return { doors, windows, join: null, unplacedMarks: [], tagged };
+  if (rows.length === 0) return { doors, windows, join: null, unplacedMarks: [], tagged, doorMarks: markOfDoor };
   const scheduled = new Set(rows.map((r) => r.mark.toUpperCase()));
   const marks: PlacedMark[] = symbols
     .filter((s) => s.rejected === null || (s.rejected === "sheet-reference" && scheduled.has(s.text.trim().toUpperCase())))
@@ -124,5 +141,5 @@ export function doorsAndWindowsForSheet(input: {
   });
   const carried = new Set(join.openings.map((o) => (o.mark ?? "").trim().toUpperCase()));
   const unplacedMarks = [...new Set(rows.map((r) => r.mark.toUpperCase()))].filter((m) => !carried.has(m)).map((m) => rows.find((r) => r.mark.toUpperCase() === m)!.mark);
-  return { doors, windows, join, unplacedMarks, tagged };
+  return { doors, windows, join, unplacedMarks, tagged, doorMarks: markOfDoor };
 }

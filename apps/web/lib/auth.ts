@@ -230,7 +230,8 @@ export async function adoptCompanyContext(identity: ClerkIdentity) {
           // bid existing walls the proposal's own exclusions leave out. Set here, as
           // plan reading is, and not as a column default: existing companies keep
           // their value and no migration touches them.
-          create: { name: companyName, planCompareOn: true, aiSettings: { create: { optedInFeatures: ["PLAN_TEXT_READ"] } } },
+          // ── AND AUTO-POST OF PROVEN ITEMS (`lib/takeoff/autoPost.ts`) ── on for a new company; existing ones keep the column's default, off.
+          create: { name: companyName, planCompareOn: true, autoPostOn: true, aiSettings: { create: { optedInFeatures: ["PLAN_TEXT_READ"] } } },
         },
       },
       include: { company: true },

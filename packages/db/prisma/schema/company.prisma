@@ -156,6 +156,11 @@ model Company {
   /// existing to remain. OFF until the owner turns it on in Settings — see
   /// `lib/takeoff/priorPlan.ts`.
   planCompareOn Boolean @default(false)
+  /// "Auto-post proven items": a wall group whose type comes from a source
+  /// measured right ≥97% on training and ≥95% held-out (`lib/takeoff/autoPost.ts`)
+  /// posts without the queue, labelled "auto, from <source>", with Undo. OFF for
+  /// existing companies; new companies are created with it ON (`lib/auth.ts`).
+  autoPostOn Boolean @default(false)
 
   /// The unguessable half of this company's inbound intake address:
   /// `docs-<token>@<INTAKE_INBOUND_DOMAIN>`. The token IS the routing — an

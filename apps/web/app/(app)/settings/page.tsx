@@ -35,6 +35,7 @@ import { RoomFinderSwitch } from "@/components/RoomFinderSwitch";
 import { ScannedPlansSwitch } from "@/components/ScannedPlansSwitch";
 import { SymbolCountSwitch } from "@/components/SymbolCountSwitch";
 import { PlanCompareSwitch } from "@/components/PlanCompareSwitch";
+import { AutoPostSwitch } from "@/components/AutoPostSwitch";
 import { DemotedWallsSwitch } from "@/components/DemotedWallsSwitch";
 import { WholeSetTakeoffSwitch } from "@/components/WholeSetTakeoffSwitch";
 import { TakeoffFeaturesSection } from "@/components/TakeoffFeaturesSection";
@@ -187,7 +188,7 @@ export default async function SettingsPage({
   // are columns on the same row and there is no reason to ask twice.
   const switches = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOff: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOff: true, planCompareOn: true },
+    select: { roomFinderOn: true, demotedWallsOff: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOff: true, planCompareOn: true, autoPostOn: true },
   });
   const roomFinderOn = switches?.roomFinderOn ?? false;
   // The switch reads as ON unless this company turned it off, so the box is
@@ -216,6 +217,7 @@ export default async function SettingsPage({
     doorsWindowsOn,
     symbolCountOn,
     planCompareOn,
+    autoPostOn: switches?.autoPostOn ?? false,
   });
   const { qb, qb_detail, tab: tabParam } = await searchParams;
   // The same rule PageTabs highlights by, so the tab lit is the group shown.
@@ -670,6 +672,9 @@ export default async function SettingsPage({
             </div>
             <div id="plan-compare" className="mt-4 scroll-mt-20">
               <PlanCompareSwitch on={planCompareOn} isOwner={currentUser.role === "OWNER"} />
+            </div>
+            <div id="auto-post" className="mt-4 scroll-mt-20">
+              <AutoPostSwitch on={switches?.autoPostOn ?? false} isOwner={currentUser.role === "OWNER"} />
             </div>
           </section>
 
