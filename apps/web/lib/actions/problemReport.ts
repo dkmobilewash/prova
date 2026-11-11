@@ -2,6 +2,7 @@
 
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { helpChannelFromEnv } from "@/lib/help-config";
 import { safePagePath } from "@/lib/help-request";
 import {
@@ -44,7 +45,10 @@ export type ProblemReportInput = {
  * as an id. The browser's own lines are redacted (`lib/problem-report.ts`).
  */
 export async function reportProblem(input: ProblemReportInput): Promise<ActionResult> {
-  const { company, ...user } = await requireCompanyContext();
+  const context = await requireCompanyContext();
+  // The two pages that carry the button are the estimate's and the workspace's, both VIEW_JOB_COSTS.
+  if (!can(context, "VIEW_JOB_COSTS")) return fail("Reporting from the estimate or the takeoff isn't part of your job function. Use Help instead.");
+  const { company, ...user } = context;
   const channel = helpChannelFromEnv();
   if (channel.kind !== "send") return fail(channel.reason);
 

@@ -13,7 +13,8 @@ const actions: string[] = [];
 let installed = false;
 let lastPath = "";
 
-const stamp = () => new Date().toISOString().slice(11, 19);
+/** The browser's own time of day, HH:MM:SS, to order the lines: not a calendar day. */
+const stamp = () => new Date().toTimeString().slice(0, 8);
 const push = (list: string[], line: string) => {
   list.push(`${stamp()} ${line.replace(/\s+/g, " ").slice(0, 280)}`);
   if (list.length > KEEP) list.shift();

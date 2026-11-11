@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { reportProblem } from "@/lib/actions";
 import { MAX_REPORT_MESSAGE, MAX_SCREENSHOT_BYTES } from "@/lib/problem-report";
 import { installProblemReportBuffer, problemReportLines } from "./problemReportBuffer";
+import { Spinner } from "./Spinner";
 
 installProblemReportBuffer();
 
@@ -136,7 +137,7 @@ export function ReportProblemButton({ pageNumber, className }: { pageNumber?: nu
                 onChange={(event) => setMessage(event.target.value)}
                 rows={3}
                 placeholder="A line is enough: what you pressed and what you expected."
-                className="mt-1 w-full rounded-md border border-line-card bg-surface-input px-2 py-1.5 text-sm text-ink"
+                className="mt-1 w-full rounded-md border border-line-card bg-surface px-2 py-1.5 text-sm text-ink"
                 data-report="message"
               />
               <p className="mt-1 text-xs text-ink-muted" data-report="what">
@@ -152,7 +153,14 @@ export function ReportProblemButton({ pageNumber, className }: { pageNumber?: nu
                   Cancel
                 </button>
                 <button type="submit" disabled={state === "sending"} className="min-h-11 rounded-md bg-brand px-3 text-sm font-semibold text-neutral-900 disabled:opacity-50" data-report="send">
-                  {state === "sending" ? "Sending…" : "Send"}
+                  {state === "sending" ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Spinner />
+                      Sending…
+                    </span>
+                  ) : (
+                    "Send"
+                  )}
                 </button>
               </div>
             </form>
