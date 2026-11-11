@@ -285,3 +285,27 @@ describe("with nothing named, the inventory's own read decides (plan reading and
     expect(floorPlansOfTheWork(set)).toEqual([13]);
   });
 });
+
+describe("a sheet number two sheets share is named with its page (Bluetooth AI101 on pages 6 and 7)", () => {
+  it("'same level as AI101 (page 6)', never a sheet's own bare name", () => {
+    const sheet = (pageNumber: number) => ({ pageNumber, sheetNumber: "AI101", title: "FLOOR PLAN", hasScale: true, hasWalls: false });
+    const plan = wallsPlan([sheet(6), sheet(7)]);
+    const notes = [...plan.values()].filter((v) => typeof v === "string" && v.startsWith("same level as"));
+    expect(notes.length).toBe(1);
+    expect(notes[0]).toMatch(/^same level as AI101 \(page [67]\)$/);
+  });
+});
+
+describe("one sheet number printed twice is measured once (Bluetooth AI101 CONSTRUCTION PLAN, pages 6 and 7)", () => {
+  it("the second print is the same level as the first, named with its page", () => {
+    const sheet = (pageNumber: number) => ({ pageNumber, sheetNumber: "AI101", title: "CONSTRUCTION PLAN", hasScale: true, hasWalls: false });
+    const plan = wallsPlan([sheet(6), sheet(7)]);
+    expect(plan.get(6)).toBeNull();
+    expect(plan.get(7)).toBe("same level as AI101 (page 6)");
+    expect(wallsTaskPages([sheet(6), sheet(7)])).toEqual([6]);
+  });
+  it("different numbers are untouched", () => {
+    const plan = wallsPlan([{ pageNumber: 6, sheetNumber: "AI101", title: "CONSTRUCTION PLAN", hasScale: true, hasWalls: false }, { pageNumber: 7, sheetNumber: "AI102", title: "CONSTRUCTION PLAN", hasScale: true, hasWalls: false }]);
+    expect(plan.get(7)).toBeNull();
+  });
+});

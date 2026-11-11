@@ -134,6 +134,22 @@ export function floorPlansOfTheWork(sheets: readonly WallsSheet[]): number[] {
  */
 export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip | null> {
   const out = new Map<number, WallsSkip | null>(sheets.map((sheet) => [sheet.pageNumber, wallsSkipReason(sheet)]));
+  // ── ONE SHEET NUMBER PRINTED TWICE IS ONE DRAWING ──
+  // Bluetooth's set carries AI101 CONSTRUCTION PLAN on pages 6 and 7. Its title names no
+  // level and no whole floor, so nothing below grouped them and both would be measured — the
+  // same walls twice (ROUND 18, 2026-11-11). The first keeps its place (one with walls on the
+  // job, if either has); the other is the same level as it, named with its page.
+  const byNumber = new Map<string, WallsSheet[]>();
+  for (const sheet of sheets) {
+    const reason = out.get(sheet.pageNumber);
+    if (sheet.sheetNumber === null || !(reason === null || reason === "already found")) continue;
+    (byNumber.get(sheet.sheetNumber) ?? byNumber.set(sheet.sheetNumber, []).get(sheet.sheetNumber)!).push(sheet);
+  }
+  for (const same of byNumber.values()) {
+    if (same.length < 2) continue;
+    const keep = same.find((sheet) => sheet.onJob === true) ?? same[0]!;
+    for (const sheet of same) if (sheet !== keep) out.set(sheet.pageNumber, `same level as ${nameOf(keep, sheets)}`);
+  }
   const candidates = sheets.filter((sheet) => {
     const reason = out.get(sheet.pageNumber);
     return reason === null || reason === "already found";
@@ -181,7 +197,7 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
     if (whole.length > 0) {
       const keep = [...whole].sort(preferWholeFloor)[0];
       for (const sheet of group) {
-        if (sheet !== keep && open(sheet)) out.set(sheet.pageNumber, `same level as ${nameOf(keep)}`);
+        if (sheet !== keep && open(sheet)) out.set(sheet.pageNumber, `same level as ${nameOf(keep, sheets)}`);
       }
       continue;
     }
@@ -195,7 +211,7 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
       const keep = [...part].sort(preferWholeFloor)[0];
       kept.push(keep);
       for (const sheet of part) {
-        if (sheet !== keep && open(sheet)) out.set(sheet.pageNumber, `same level as ${nameOf(keep)}`);
+        if (sheet !== keep && open(sheet)) out.set(sheet.pageNumber, `same level as ${nameOf(keep, sheets)}`);
       }
     }
     if (kept.length === 0) {
@@ -205,7 +221,7 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
     const first = [...kept].sort(preferWholeFloor)[0];
     for (const sheet of group) {
       if (!kept.includes(sheet) && areaOfTitle(sheet.title) === null && open(sheet)) {
-        out.set(sheet.pageNumber, `same level as ${nameOf(first)}`);
+        out.set(sheet.pageNumber, `same level as ${nameOf(first, sheets)}`);
       }
     }
   }
@@ -218,8 +234,13 @@ export function wallsTaskPages(sheets: readonly WallsSheet[]): number[] {
   return sheets.filter((sheet) => plan.get(sheet.pageNumber) === null || plan.get(sheet.pageNumber) === "already found").map((sheet) => sheet.pageNumber);
 }
 
-function nameOf(sheet: WallsSheet): string {
-  return sheet.sheetNumber ?? `sheet ${sheet.pageNumber}`;
+function nameOf(sheet: WallsSheet, set: readonly WallsSheet[] = []): string {
+  if (sheet.sheetNumber === null) return `sheet ${sheet.pageNumber}`;
+  // A number another sheet of the set also carries says its page: Bluetooth prints AI101 on
+  // pages 6 and 7, and page 7 read "This sheet isn't counted: AI101 shows the same level" —
+  // its own name (ROUND 18, 2026-11-11).
+  const shared = set.some((other) => other.pageNumber !== sheet.pageNumber && other.sheetNumber === sheet.sheetNumber);
+  return shared ? `${sheet.sheetNumber} (page ${sheet.pageNumber})` : sheet.sheetNumber;
 }
 
 /**
