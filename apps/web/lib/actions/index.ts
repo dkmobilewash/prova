@@ -129,5 +129,6 @@ export * from "./assemblyStandards";
 export * from "./productionRates";
 export * from "./priceList";
 export * from "./wallGroupType";
+export * from "./sampleJob";
 export * from "./revisedSheets";
 export * from "./takeoffOffer";

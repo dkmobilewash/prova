@@ -168,6 +168,9 @@ const nextConfig = {
       // sets the variable and ships no file — and a missing model looks
       // exactly like a classifier that is switched off.
       "./models/wall-model.json",
+      // THE SAMPLE JOB'S DRAWING, read by path for every company's sample
+      // (`lib/sample-job/samplePlan.ts`). An invented fixture, never a client's set.
+      "./lib/takeoff/fixtures/plans/S13.pdf",
     ],
   },
   // The free lien waiver tool lives at cstream.ai/lien-waiver (Diego,

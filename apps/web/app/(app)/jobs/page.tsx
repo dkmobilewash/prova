@@ -69,7 +69,8 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   }
   const jobs = await loadJobs(where);
 
-  const estimating = jobs.filter((job) => job.status === "ESTIMATE");
+  // A sample job (`lib/sample-job`) is listed, labelled, and never counted as work being priced.
+  const estimating = jobs.filter((job) => job.status === "ESTIMATE" && !job.isSample);
   const pipelineValue = estimating.reduce((sum, job) => sum + jobValue(job), 0);
   const filtered = Boolean(q || activeStatus);
 
@@ -191,6 +192,11 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex min-w-0 flex-wrap items-center gap-2">
                             <p className="min-w-0 break-words font-medium text-ink">{job.name}</p>
+                            {job.isSample && (
+                              <span className="rounded-full border border-amber-700 bg-tag-amber px-2 py-0.5 text-xs font-semibold text-tag-amber-ink" data-job="sample-label">
+                                Sample
+                              </span>
+                            )}
                             <StatusBadge status={job.status} />
                             {stage && (
                               <span className={`rounded-full border px-2 py-0.5 text-xs ${STAGE_TONE[stage.key]}`}>

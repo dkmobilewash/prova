@@ -83,6 +83,9 @@ export const EXPORT_DATASETS: ExportDataset[] = [
       "siteLatitude", "siteLongitude", "siteTimeZone", "siteGeocodedAt",
       "bidDueDate", "bidAdvertisedOn", "bidResearch", "publicWorks",
       "awardingBody", "contractNumber", "jobberId",
+      // True on the sample job C Stream made on an invented drawing, so a file
+      // opened in a spreadsheet can tell it from real work.
+      "isSample",
       "createdAt", "updatedAt",
     ],
     scope: byCompany,

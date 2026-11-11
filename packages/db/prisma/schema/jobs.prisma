@@ -23,6 +23,10 @@ model Job {
   name      String
   scope     String?
   status    JobStatus @default(ESTIMATE)
+  /// A job C Stream made to show a new company the flow on an invented drawing
+  /// (`lib/sample-job`): labelled "Sample", deletable in one press, and its plan
+  /// never runs a stage that uses the company's plan sheets.
+  isSample  Boolean   @default(false)
   // Single start/end dates on the Job itself — properties of the job, not a
   // list of entries, so (unlike CostEntry/ChangeOrder) this doesn't need a
   // separate table. Nullable: most jobs start unscheduled.

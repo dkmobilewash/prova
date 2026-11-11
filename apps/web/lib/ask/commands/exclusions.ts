@@ -76,6 +76,7 @@ export const notYetRegistered: Exclusion[] = [
   { action: "proposals.*", reason: "Bid proposals are a scope + price + exclusions document built from a job's estimate; clauses are edited where the document is shown. Never a command." },
   { action: "wallTypes.*", reason: "Wall types are the company's partition schedule and a job's wall runs are measurements off the drawings; both are entered where the schedule and the runs are shown, and every run write regenerates estimate lines. Never a command." },
   { action: "tradePresets.*", reason: "The trade preset and the starter markup are asked once on /welcome, by the owner of a brand-new company, in front of the screen they set up; the markup is the company's own margin call, the same reason bidRecap is excluded. Never a command." },
+  { action: "sampleJob.*", reason: "The sample job is offered once on /welcome, right after the trade pick, to a brand-new company deciding whether to look before uploading its own plans; deleting it is one press on its own banner. Neither is something to say to Ask. Never a command." },
   { action: "bidRecap.*", reason: "Markup, overhead and profit are the estimator's own margin call, read off the recap they are looking at; applying one rewrites every line price on the job. Never a command." },
   // planIngest.* was one wildcard saying a model must never start a run.
   // Diego decided otherwise on 2026-11-04 for ONE stage: run_takeoff
