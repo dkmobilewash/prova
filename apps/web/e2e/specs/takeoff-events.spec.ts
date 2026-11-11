@@ -19,7 +19,9 @@ test.describe.configure({ mode: "serial" });
 
 const S02 = path.resolve(__dirname, "../../lib/takeoff/fixtures/plans/S02.pdf");
 const JOB = `ZZ-E2E Events ${Date.now()}`;
-const CODE = "ZEV1";
+// The starter W1, as review-queue.spec.ts gets it: a type of our own on this shared company hid
+// the starter button from that spec and failed its setup.
+const CODE = "W1";
 
 test.describe("takeoff events on a pilot's job", () => {
   test.setTimeout(120_000);
@@ -48,7 +50,11 @@ test.describe("takeoff events on a pilot's job", () => {
     jobId = (await prisma.job.create({ data: { companyId, contactId: gc.id, name: JOB, status: "ESTIMATE" } })).id;
     const planId = (await prisma.takeoffPlan.create({ data: { companyId, jobId, fileUrl: "local:none.pdf", fileName: "none.pdf" } })).id;
     if ((await prisma.wallType.count({ where: { companyId, code: CODE } })) === 0) {
-      await prisma.wallType.create({ data: { companyId, code: CODE, name: "ZZ-E2E events partition", defaultHeightFt: 10, sides: 2, components: { create: [{ description: "studs", basis: "LINEAR_FT", factor: 1 }] } } });
+      await page.goto("/wall-types");
+      const start = page.getByRole("button", { name: /Start from the common trade assemblies/ });
+      await expect.poll(async () => (await start.isVisible()) || (await prisma.wallType.count({ where: { companyId, code: CODE } })) === 1, { timeout: 30_000 }).toBe(true);
+      if (await start.isVisible()) await start.click();
+      await expect.poll(() => prisma.wallType.count({ where: { companyId, code: CODE } }), { timeout: 60_000 }).toBe(1);
     }
     await prisma.takeoffPlanTextRead.create({ data: { planId, pageNumber: 0, kind: "legend", value: { page: 1, title: "PARTITION TYPES", codes: [CODE], proposals: [], reason: "seeded", confidence: "HIGH" } } });
     const sheet = await prisma.takeoffPlanPage.create({ data: { planId, pageNumber: 1, label: "A101", pageWidthPt: 2592 } });
