@@ -10,7 +10,7 @@ import { readPlanBytes } from "./planBytes";
 import { openSharedPlanPdf, type SharedPlanPdf } from "./sharedPlanPdf";
 import { hasTextLayer, openPlanPdf, titleBlockText, type PlanPdf, type PlanPageText } from "./planPdf";
 import { dimensionLabels, metricDimensionLabels } from "./dimensionLabels";
-import { readSheetScale } from "../takeoff/scaleFromDimensions";
+import { readSheetScale, SNAP_SOURCE } from "../takeoff/scaleFromDimensions";
 import { sheetScale, type StoredViewScales } from "../takeoff/sheetScale";
 import type { StrokeSegment } from "../takeoff/wallVectors";
 import { scaleFromPrinted } from "../takeoff/scaleFromPrinted";
@@ -324,7 +324,7 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
  * caught sentence is stored as a decline, which is a fact about the page rather
  * than a failure of the stage.
  */
-async function readScaleFromSheet(
+export async function readScaleFromSheet(
   pdf: PlanPdf,
   page: PlanPageText,
   planId: string,
@@ -461,6 +461,31 @@ async function readScaleFromSheet(
           declineReason:
             `This sheet carries ${perView.views.length} drawings at their own scales, so there is ` +
             `no one scale for the page. Each drawing can be measured at its own.`,
+        };
+      }
+      // ── SCALE SNAP: LAST, AND ONLY AN OFFER ──
+      // Nothing above read a scale: no line close enough, no printed scale, no views at their own
+      // scales. When the dimensions still cluster within 1% of one standard scale, that scale is
+      // stored UNCONFIRMED (`SNAP_SOURCE`) across the page width, as the reproduction reading is,
+      // and the plan set and queue offer it as "Use 1/8" (from N dimensions)". Last, so every
+      // sheet that reads a scale today reads the same one (Bluetooth AI101, ROUND 18).
+      if (verdict.snap !== undefined) {
+        const paperInches = page.widthPt / 72;
+        return {
+          planId,
+          pageNumber,
+          scaleName: verdict.snap.scaleName,
+          source: SNAP_SOURCE,
+          x1: 0,
+          y1: page.heightPt / page.widthPt / 2,
+          x2: 1,
+          y2: page.heightPt / page.widthPt / 2,
+          declaredDistanceFeet: paperInches * verdict.snap.feetPerInch,
+          declaredText: null,
+          agreedText: verdict.snap.agreed.join("\n"),
+          consideredCount: verdict.considered,
+          inheritedError: null,
+          declineReason: null,
         };
       }
       return { ...empty, consideredCount: verdict.considered, declineReason: verdict.reason };

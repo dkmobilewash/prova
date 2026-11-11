@@ -317,7 +317,7 @@ describe("the error band it reports is the error it has", () => {
     const labels = [];
     for (let i = 0; i < 6; i += 1) {
       const feet = 8 + i * 2;
-      const lenPt = (feet / 8) * 72 * 1.01; // 1% long
+      const lenPt = (feet / 8) * 72 * 1.015; // 1.5% long: outside the 1% scale snap too
       const d = dimension(200, 200 + i * 300, lenPt, `${feet}' - 0"`, feet);
       segments.push(d.segment);
       labels.push(d.label);
@@ -526,7 +526,7 @@ describe("only a line the app would accept is proposed", () => {
     const labels: DimensionLabel[] = [];
     for (let i = 0; i < 6; i += 1) {
       const feet = 20 + i * 2;
-      const d = dimension(200, 200 + i * 300, feet * 9 * 1.01, `${feet}' - 0"`, feet);
+      const d = dimension(200, 200 + i * 300, feet * 9 * 1.015, `${feet}' - 0"`, feet);
       segments.push(d.segment);
       labels.push(d.label);
     }
@@ -598,5 +598,56 @@ describe("readSheetScale takes the floor from the page itself", () => {
     // the caller cannot reach this, because the width comes from the page.
     const { segments, labels } = sheetAt(8, 6, 6);
     expect(readSheetScale(page(0), segments, labels).ok).toBe(true);
+  });
+});
+
+describe("scale snap: the standard scale the dimensions cluster on is OFFERED, never set (Bluetooth AI101)", () => {
+  // Bluetooth AI101: 19 dimensions vote 1/8", the best line is 0.7% out, nothing contradicts.
+  function sheet(off: number, count = 6, fpi = 8) {
+    const segments: StrokeSegment[] = [];
+    const labels: DimensionLabel[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const feet = 8 + i * 2;
+      const d = dimension(200, 200 + i * 300, (feet / fpi) * 72 * (1 + off), `${feet}' - 0"`, feet);
+      segments.push(d.segment);
+      labels.push(d.label);
+    }
+    return { segments, labels };
+  }
+  it("0.7% out: declines to set, and offers 1/8\" from 6 dimensions", () => {
+    const { segments, labels } = sheet(0.007);
+    const verdict = scaleFromDimensions(labels, segments, ANY_PAGE);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.snap).toMatchObject({ scaleName: '1/8" = 1\'-0"', feetPerInch: 8, dimensions: 6 });
+    expect(verdict.reason).toMatch(/6 printed dimensions on this sheet agree on 1\/8" = 1'-0" within 1%/);
+  });
+  it("1.5% out: no offer — the cluster is not within 1%", () => {
+    const { segments, labels } = sheet(0.015);
+    const verdict = scaleFromDimensions(labels, segments, ANY_PAGE);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.snap).toBeUndefined();
+  });
+  it("fewer agreeing dimensions than a vote needs: no offer", () => {
+    const { segments, labels } = sheet(0.007, 2);
+    const verdict = scaleFromDimensions(labels, segments, ANY_PAGE);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.snap).toBeUndefined();
+  });
+  it("a sheet that reads a scale today reads the same one, with no offer", () => {
+    const { segments, labels } = sheet(0);
+    const verdict = scaleFromDimensions(labels, segments, ANY_PAGE);
+    expect(verdict.ok).toBe(true);
+    expect("snap" in verdict).toBe(false);
+  });
+  it("a contradicting scale (two drawings at two scales) blocks the offer", () => {
+    const a = sheet(0.007, 4, 8);
+    const b = sheet(0.007, 3, 4);
+    const verdict = scaleFromDimensions([...a.labels, ...b.labels.map((l) => ({ ...l, y: l.y + 5000 }))], [...a.segments, ...b.segments.map((s) => ({ ...s, y1: s.y1 + 5000, y2: s.y2 + 5000 }))], ANY_PAGE);
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.snap).toBeUndefined();
   });
 });

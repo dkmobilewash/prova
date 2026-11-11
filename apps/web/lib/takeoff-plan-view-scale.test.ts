@@ -457,3 +457,14 @@ describe("a reproduction read from its dimensions", () => {
     expect(prefill.agreed).toEqual(["20' - 0\"", "12' - 6\""]);
   });
 });
+
+describe("a scale snap reading is an unconfirmed offer with its count, never corrected for a reduced print", () => {
+  it("DIMENSIONS_SNAP → unconfirmed, snapDimensions = agreeing dimensions, distance as stored", () => {
+    const prefill = scalePrefillsFromReadings(
+      [row({ source: "DIMENSIONS_SNAP", x1: 0, x2: 1, y1: 0.3, y2: 0.3, declaredDistanceFeet: 288, agreedText: "12'-0\"\n12'-0\"\n15'-2\"" })],
+      { 1: 2592, 2: 5184 },
+    );
+    expect(prefill[1]).toMatchObject({ unconfirmed: true, snapDimensions: 3, declaredFeet: 288 });
+    expect(prefill[1]?.reducedPrintCaution).toBeUndefined();
+  });
+});

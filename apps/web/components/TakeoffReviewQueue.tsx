@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/actions/shared";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, undoAutoPost, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
+import { shortScaleName } from "@/lib/takeoff/scaleFromDimensions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
@@ -643,6 +644,11 @@ export function TakeoffReviewQueue({
                             {r?.confidence === "high" && r.scaleName !== null && (
                               <button type="button" className={button} disabled={busy} onClick={() => void some([p.pageNumber], [])} data-takeoff="review-queue-confirm-scale">
                                 Confirm {r.scaleName}
+                              </button>
+                            )}
+                            {r?.snapDimensions !== undefined && r.scaleName !== null && (
+                              <button type="button" className={button} disabled={busy} onClick={() => void some([], [p.pageNumber])} data-takeoff="review-queue-snap">
+                                Use {shortScaleName(r.scaleName)} (from {r.snapDimensions} dimensions)
                               </button>
                             )}
                             {r?.confidence !== "high" && r?.printedFix === true && r.scaleName !== null && (
