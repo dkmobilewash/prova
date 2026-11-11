@@ -26,12 +26,20 @@ const MARK: Record<ScaleConfidence, { word: string; className: string }> = {
   none: { word: "No scale", className: "bg-tag-rose text-tag-rose-ink" },
 };
 
-export function PlanSetScales({ jobId, planId, rows, reading }: { jobId: string; planId: string; rows: PlanSetRow[]; reading: boolean }) {
+/**
+ * ── NOT WHILE THE SET IS STILL BEING READ ──
+ * `inventory` is the page inventory's progress while it runs. Confirm scales confirms the
+ * sheets read SO FAR: the Topeka walk pressed it at 52 of 137, its floor plans (pages 74 on)
+ * were not read yet, and the step then showed done with 10 of them unscaled (2026-11-10).
+ * So it waits, and says how far the reading has got.
+ */
+export function PlanSetScales({ jobId, planId, rows, reading, inventory = null }: { jobId: string; planId: string; rows: PlanSetRow[]; reading: boolean; inventory?: { read: number; total: number } | null }) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const sure = rows.filter((row) => row.confidence === "high");
-  const floors = rows.filter((row) => row.category === "floor");
+  // The floor plans the takeoff needs (`PlanSetRow.needed`), so this count is the stepper's.
+  const floors = rows.filter((row) => row.category === "floor" && row.needed !== false);
   const floorsSet = floors.filter((row) => row.confidence === "set").length;
   const toLookAt = floors.filter((row) => row.confidence === "printed" || row.confidence === "none");
   const printable = toLookAt.filter((row) => row.printedFix && row.scaleName !== null);
@@ -72,11 +80,12 @@ export function PlanSetScales({ jobId, planId, rows, reading }: { jobId: string;
         <button
           type="button"
           data-takeoff="confirm-scales"
-          disabled={pending || sure.length === 0}
+          disabled={pending || sure.length === 0 || inventory !== null}
+          title={inventory !== null ? `Reading the set: ${inventory.read} of ${inventory.total} sheets. Confirm scales covers every sheet once they are all read.` : undefined}
           onClick={() => run(sure.map((row) => row.pageNumber), false)}
           className="min-h-[40px] rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {pending ? "Confirming…" : sure.length > 0 ? `Confirm ${sure.length} scale${sure.length === 1 ? "" : "s"}` : "Confirm scales"}
+          {pending ? "Confirming…" : inventory !== null ? `Reading the set (${inventory.read} of ${inventory.total})…` : sure.length > 0 ? `Confirm ${sure.length} scale${sure.length === 1 ? "" : "s"}` : "Confirm scales"}
         </button>
         )}
       </div>

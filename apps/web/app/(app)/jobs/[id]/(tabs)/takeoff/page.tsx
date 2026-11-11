@@ -247,7 +247,18 @@ export default async function JobTakeoffPage({
           and Confirm scales. Above the drawing: until the floor plans have a
           scale, nothing below can be measured. The job stepper's Plans and
           Scale steps land here. */}
-      {isEstimateStage && <PlanSetScales jobId={job.id} planId={plan.id} rows={planSetFromLoaded(loaded)} reading={sheetRows.length === 0} />}
+      {isEstimateStage && (
+        <PlanSetScales
+          jobId={job.id}
+          planId={plan.id}
+          rows={planSetFromLoaded(loaded)}
+          reading={sheetRows.length === 0}
+          inventory={await (async () => {
+            const running = await prisma.planIngestJob.findFirst({ where: { planId: plan.id, stage: "PAGE_INVENTORY", finishedAt: null }, select: { pageCount: true, _count: { select: { tasks: { where: { finishedAt: { not: null } } } } } } });
+            return running === null || running.pageCount === null ? null : { read: running._count.tasks, total: running.pageCount };
+          })()}
+        />
+      )}
       {/* ── A RENOVATION SET, AND THE SWITCH THAT HANDLES IT IS OFF ──
           Walk, 2026-11-08 (Green Bay and E Street, plan reading off): nothing named a
           sheet, nothing paired a demolition plan, and the proposal priced existing walls
