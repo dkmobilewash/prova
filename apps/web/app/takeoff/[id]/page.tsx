@@ -71,7 +71,11 @@ export default async function TakeoffWorkspacePage({
   }
 
   const openPage = Number.parseInt(page ?? "", 10);
-  const sheetPages = new Set(data.sheets.map((sheet) => sheet.pageNumber));
+  // ── EVERY PAGE OF THE SET, NOT ONLY THE SCALED ONES ──
+  // `data.sheets` holds a page once it has a scale, so on a set nobody had scaled yet
+  // `?page=7` was "not a sheet" and the workspace opened its own choice instead (Bluetooth
+  // AI101, ROUND 18, 2026-11-11). The pages the inventory read count too.
+  const sheetPages = new Set([...data.sheets.map((sheet) => sheet.pageNumber), ...data.sheetRows.map((row) => row.pageNumber)]);
 
   return (
     <TakeoffWorkspace
