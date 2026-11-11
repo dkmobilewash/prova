@@ -48,6 +48,7 @@ import {
 import type { TakeoffWorkspaceClientData } from "@/lib/takeoff/workspaceLoad";
 import { TOOL_KEYS } from "@/lib/takeoff-plan-view";
 import { TakeoffExportButtons } from "@/components/TakeoffExportButtons";
+import { ReportProblemButton } from "@/components/ReportProblemButton";
 import { TakeoffWallReview } from "@/components/TakeoffWallReview";
 import { TakeoffReviewQueue } from "@/components/TakeoffReviewQueue";
 import type { SpecSay } from "@/lib/specs/specTradeFacts";
@@ -1529,6 +1530,7 @@ export function TakeoffWorkspace({
                   </div>
                 )}
               </div>
+              <ReportProblemButton pageNumber={page} className={BAR_BUTTON} />
             </>
           )}
           {phone && (

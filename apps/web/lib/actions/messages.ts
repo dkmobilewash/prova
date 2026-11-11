@@ -586,6 +586,8 @@ export async function sendHelpRequestEmail(params: {
   subject: string;
   body: string;
   sentByUserId: string;
+  /** A problem report's picture of the plan view (`problemReport.ts`). Still only ever to the support address. */
+  attachments?: readonly { filename: string; content: Buffer }[];
 }): Promise<ActionResult> {
   const toAddress = readSupportAddress(process.env);
   if (!toAddress) {
@@ -604,6 +606,7 @@ export async function sendHelpRequestEmail(params: {
     relatedType: "HELP_REQUEST",
     relatedId: null,
     sentByUserId: params.sentByUserId,
+    ...(params.attachments?.length ? { attachments: params.attachments } : {}),
   });
 }
 

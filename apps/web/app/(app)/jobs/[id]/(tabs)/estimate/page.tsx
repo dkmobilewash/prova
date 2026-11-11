@@ -4,6 +4,7 @@ import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { TakeoffForm } from "@/components/TakeoffForm";
+import { ReportProblemButton } from "@/components/ReportProblemButton";
 import { AddCostEntryForm } from "@/components/AddCostEntryForm";
 import { costCategoryLabel } from "@/components/costCategoryLabels";
 import { loadLineCommitments } from "@/lib/purchase-orders-query";
@@ -652,7 +653,8 @@ export default async function JobEstimatePage({
           {!isEstimateStage && <h2 className="text-lg font-semibold text-ink">Job costing &amp; WIP</h2>}
           {/* On an estimate the proposal link sits above the line items. */}
           {!isEstimateStage && (
-            <span className="flex gap-4">
+            <span className="flex items-center gap-4">
+              <ReportProblemButton className="text-sm text-link hover:underline" />
               {buyoutLink}
               {proposalLink}
             </span>
@@ -909,7 +911,10 @@ export default async function JobEstimatePage({
               </Link>
             </div>
           )}
-          <div className="mb-6 flex justify-end">{proposalLink}</div>
+          <div className="mb-6 flex items-center justify-end gap-4">
+            <ReportProblemButton className="text-sm text-link hover:underline" />
+            {proposalLink}
+          </div>
           <PriceTheseMaterials
             jobId={job.id}
             materials={unpricedMaterials(

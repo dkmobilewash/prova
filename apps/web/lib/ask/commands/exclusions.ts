@@ -46,6 +46,7 @@ export const notYetRegistered: Exclusion[] = [
   // with — and if it knew that, they would not be asking. The panel is one
   // click away on every page and the words have to be theirs.
   { action: "help.*", reason: "Reaching a person is the one thing the assistant must not do on their behalf: the question has to be in their words, and a model-composed one arrives claiming to be. Never a command." },
+  { action: "problemReport.*", reason: "A problem report is a person telling support what went wrong on their screen, with a picture of it, in their own words, the same reason help is excluded. Never a command." },
 
   // PROVA'S OWN CUSTOMER ACQUISITION, from both ends of this module, and the
   // exclusion is one line because the wildcard covers both.
