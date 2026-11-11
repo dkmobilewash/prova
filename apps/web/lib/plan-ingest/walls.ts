@@ -3,6 +3,7 @@ import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { detectWallsForCalibration, oneFinderSlot, type DetectedBoundary, type DetectOutcome, type DetectTarget } from "@/lib/takeoff/detectWallsForCalibration";
 import { takeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
+import { sureFloorPlanReads } from "@/lib/takeoff/sureFloorPlans";
 import { sheetCategory } from "@/lib/takeoff/planSet";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
 import { wallItemsForSheet, wallItemsNoteFor, type WallItemsOutcome } from "./wallItems";
@@ -56,6 +57,8 @@ export type WallsSheet = {
   onJob?: boolean;
   /** What on the sheet says it shows existing work; empty when nothing does. */
   renovation?: string[];
+  /** The page inventory's own read (`sureFloorPlans.ts`): false = read, and not a floor plan by its title or captions. Absent = not read (a scan). */
+  sure?: boolean;
 };
 
 export type WallsSkip = "no scale" | "not a floor plan" | "already found" | `same level as ${string}`;
@@ -74,6 +77,12 @@ export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
   if (takeoffSheetVerdict({ sheetNumber: sheet.sheetNumber, title: sheet.title }).skipAutomatically) {
     return "not a floor plan";
   }
+  // ── NOTHING NAMES IT, AND ITS OWN DRAWINGS SAY IT IS NOT A FLOOR PLAN ──
+  // With plan reading off a sheet has no title, so nothing above refused Baker's A111
+  // (the ceiling plan Confirm scales had scaled): the whole-set takeoff would measure it.
+  // The inventory read its captions with no model; a sheet it read as not sure is skipped.
+  // A sheet it never read (a scan) is left as before.
+  if (!sheet.title && sheet.sure === false) return "not a floor plan";
   if (sheet.hasWalls || sheet.onJob) return "already found";
   return null;
 }
@@ -271,7 +280,7 @@ function preferWholeFloor(a: WallsSheet, b: WallsSheet): number {
 /** Every sheet of the set as the planner sees it: the inventory's rows joined
  *  to the pages that have a scale and the walls stored against it. */
 export async function wallsSheetsFor(planId: string, companyId: string): Promise<WallsSheet[]> {
-  const [rows, pages, texts] = await Promise.all([
+  const [rows, pages, texts, sure] = await Promise.all([
     sheetIndexFor(planId, companyId),
     prisma.takeoffPlanPage.findMany({
       where: { planId },
@@ -283,6 +292,7 @@ export async function wallsSheetsFor(planId: string, companyId: string): Promise
       },
     }),
     prisma.planSheetText.findMany({ where: { planId }, select: { pageNumber: true, renovationMarks: true } }),
+    sureFloorPlanReads(planId),
   ]);
   const marksByPage = new Map(texts.map((t) => [t.pageNumber, t.renovationMarks]));
   const byPage = new Map(pages.map((page) => [page.pageNumber, page]));
@@ -294,10 +304,15 @@ export async function wallsSheetsFor(planId: string, companyId: string): Promise
       const page = byPage.get(pageNumber);
       const row = rowByPage.get(pageNumber);
       const calibration = page?.calibrations[0] ?? null;
+      const read = sure.get(pageNumber);
+      const named = row ? effectiveTitle(row) : null;
       return {
         pageNumber,
-        sheetNumber: row ? effectiveSheetNumber(row) : null,
-        title: row ? effectiveTitle(row) : null,
+        // Where nothing names the sheet, the inventory's own read of it: the number its
+        // title block carries and the caption that says FLOOR PLAN (`sureFloorPlans.ts`).
+        sheetNumber: (row ? effectiveSheetNumber(row) : null) ?? read?.sheetNumber ?? null,
+        title: named ?? read?.caption ?? null,
+        ...(read === undefined ? {} : { sure: read.sure }),
         hasScale: calibration !== null,
         hasWalls: calibration !== null && (page?.wallProposals ?? []).some((p) => p.calibrationId === calibration.id),
         onJob: (page?.measurements ?? []).length > 0,

@@ -20,3 +20,14 @@ export async function sureFloorPlanPages(planId: string): Promise<number[]> {
   const rows = await prisma.takeoffPlanTextRead.findMany({ where: { planId, kind: SURE_FLOOR_PLAN }, select: { pageNumber: true, value: true }, orderBy: { pageNumber: "asc" } });
   return rows.filter((row) => (row.value as { sure?: unknown } | null)?.sure === true).map((row) => row.pageNumber);
 }
+
+/** Each page the inventory read: whether it is a sure floor plan, the words that said so, and the sheet number it read. */
+export async function sureFloorPlanReads(planId: string): Promise<Map<number, { sure: boolean; caption: string | null; sheetNumber: string | null }>> {
+  const rows = await prisma.takeoffPlanTextRead.findMany({ where: { planId, kind: SURE_FLOOR_PLAN }, select: { pageNumber: true, value: true } });
+  return new Map(
+    rows.map((row) => {
+      const v = (row.value ?? {}) as { sure?: unknown; caption?: unknown; sheetNumber?: unknown };
+      return [row.pageNumber, { sure: v.sure === true, caption: typeof v.caption === "string" ? v.caption : null, sheetNumber: typeof v.sheetNumber === "string" ? v.sheetNumber : null }];
+    }),
+  );
+}
