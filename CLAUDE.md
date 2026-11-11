@@ -868,6 +868,18 @@ anything about SIZE.
   deployments; what a CLI or file-upload deployment puts there is UNTESTED, so
   verify the mapping before trusting it on a project that deploys that way.
 
+  **NO LONGER TRUE AS OF 2026-11-11: `dpl=` IS NOW VERCEL'S DEPLOYMENT ID, NOT
+  THE COMMIT.** Read off both hosts that day: `app.cstream.ai` served
+  `dpl=dpl_3Yyh8WpK…` and a branch preview `dpl=dpl_4VcpFJYk…`. That is a
+  deployment id, even though `next.config.mjs` still sets `deploymentId` to the
+  SHA, so Vercel now writes its own value over it. The id still names exactly
+  one deployment, so it can still be matched. To get from it to a commit, read
+  the commit's GitHub status: the Vercel app posts `Vercel – prova-web` on every
+  commit it deploys, and that status's `target_url` ends in the same id
+  (`gh api repos/<repo>/commits/<sha>/statuses`). `synthetic-demo.yml` waits on
+  exactly that match. Do not match a 32-hex string against the SHA any more.
+  It will never match, and a wait loop built on it times out on a healthy build.
+
 - **NAME THE HOSTNAME, NOT "THE CUSTOM DOMAINS" — AND PRODUCTION CAN GO
   BACKWARDS WITHOUT ANYBODY ROLLING IT BACK.** 2026-10-13, the episode the entry
   above came out of, and the fourth member of the "name the endpoint, never say

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { prisma } from "@prova/db";
-import { closeIfSettled, claimPorts, hasWaitingWork, ingestCounts } from "@/lib/plan-ingest/claim";
+import { closeIfSettled, claimPorts, hasWaitingWork, ingestCounts, nextJobToDrain } from "@/lib/plan-ingest/claim";
 import { DEFAULT_RUN_BUDGET_MS, runIngest, type RunReport } from "@/lib/plan-ingest/runner";
 import { stageWork } from "@/lib/plan-ingest/stages";
 
@@ -99,14 +99,18 @@ export async function GET(request: Request) {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  // OLDEST UNFINISHED FIRST, which is what makes this FIFO rather than
-  // whichever-row-Postgres-felt-like. `createdAt` then `id`, so the order is
-  // TOTAL: two jobs created in the same millisecond must not swap places
-  // between ticks, or a budget-truncated sequence visits a different one each
-  // time and neither finishes.
-  const job = await prisma.planIngestJob.findFirst({
-    where: { finishedAt: null },
-    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  // ── NOT GLOBALLY OLDEST-FIRST ANY MORE (2026-11-11) ──
+  // It was FIFO over every unfinished run, and the oldest run, all of its pages in
+  // the provider's backoff, took every call while six newer sets got no page
+  // reading. `nextJobToDrain` skips a run with nothing claimable now and takes
+  // the set served longest ago. Its candidates are still ordered `createdAt` then
+  // `id`, so ties are TOTAL: two runs created in the same millisecond must not swap
+  // places between ticks, or a budget-truncated sequence visits a different one
+  // each time and neither finishes.
+  // Fair across sets, and never a run whose pages are all waiting on the provider (`nextJobToDrain`).
+  const nextId = await nextJobToDrain();
+  const job = nextId === null ? null : await prisma.planIngestJob.findUnique({
+    where: { id: nextId },
     // `plan.jobId` for the spend ledger — see the same select in
     // `advancePlanIngest`. The cron has no session, so `companyId` here is the
     // job row's own and is the only tenancy this path has.
