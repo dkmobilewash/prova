@@ -23,6 +23,9 @@ import { recordTakeoffPlan } from "@/lib/actions";
  * token is minted, with a sentence naming what went wrong, instead of failing
  * later inside pdf.js where the message would be about a corrupt stream.
  */
+export const SAVE_DROPPED =
+  "The drawing was uploaded, but saving it to the job did not finish: the connection dropped. Reload the page to see whether it is there before adding it again.";
+
 export function TakeoffPlanUploader({ jobId }: { jobId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -65,7 +68,19 @@ export function TakeoffPlanUploader({ jobId }: { jobId: string }) {
     formData.set("fileUrl", uploaded.fileUrl);
     if (uploaded.fileName) formData.set("fileName", uploaded.fileName);
     startTransition(async () => {
-      const result = await recordTakeoffPlan(jobId, formData);
+      // ── A DROPPED SAVE IS A SENTENCE, NOT A CRASHED PAGE ──
+      // A request that fails on the network REJECTS, and a rejection inside a
+      // transition goes to the error boundary: the whole tab became "This page
+      // didn't load" (the synthetic check on a preview, 2026-11-11: the file was
+      // in the store and the save never reached the server). Not retried here: if
+      // the save landed and only its answer was lost, a retry adds the drawing twice.
+      let result: Awaited<ReturnType<typeof recordTakeoffPlan>>;
+      try {
+        result = await recordTakeoffPlan(jobId, formData);
+      } catch {
+        setError(SAVE_DROPPED);
+        return;
+      }
       if (result && !result.ok) {
         setError(result.error);
         return;
