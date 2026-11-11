@@ -756,7 +756,17 @@ export function TakeoffReviewQueue({
             </button>
           )}
           {left.length > 1 && (
-            <button type="button" className={button} disabled={busy} onClick={() => setCursor(after(current.key))} data-takeoff="review-queue-next">
+            <button
+              type="button"
+              className={button}
+              disabled={busy}
+              onClick={() => {
+                // Next passes an item undecided: a Skip, recorded like the N key's (`TakeoffEvent`).
+                void recordQueueSkip(jobId, { planId, pageNumber: "pageNumber" in current ? current.pageNumber : null, runs: "runs" in current && Array.isArray(current.runs) ? current.runs : [] }).catch(() => undefined);
+                setCursor(after(current.key));
+              }}
+              data-takeoff="review-queue-next"
+            >
               Next
             </button>
           )}
