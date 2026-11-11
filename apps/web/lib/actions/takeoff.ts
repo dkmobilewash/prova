@@ -11,7 +11,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { isBlank, labelFromKey, parseNumericInput } from "@/lib/numeric-input";
 import { effectiveSheetNumber, effectiveTitle, type SheetRow } from "@/lib/plan-ingest/sheetIndex";
-import { areaOfTitle, isWholeFloorTitle, roomsNoteFor } from "@/lib/plan-ingest/walls";
+import { areaOfTitle, isWholeFloorTitle, roomsNoteFor, wallsSheetsFor, wallsTaskPages } from "@/lib/plan-ingest/walls";
 import { roomsForSheet } from "@/lib/plan-ingest/rooms";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { levelFromTitle } from "@/lib/plan-ingest/sheetLevel";
@@ -776,6 +776,27 @@ export async function postSheetWalls(jobId: string, planId: string, pageNumber: 
 
 /** How long after a scale is saved its finder may still be storing the walls. Walk v6 took 42 s with six sheets at once. */
 const FINDER_WAIT_MS = 3 * 60_000;
+
+/**
+ * ── RUN TAKEOFF TAKES OFF THE SET: WHICH SHEETS ──
+ *
+ * The workspace's Run takeoff posted only the sheet on screen, so a set's other floor
+ * plans waited for a different button on the Takeoff tab, and the queue saw one sheet's
+ * groups (the accept-job walks, 2026-11-10: Topeka's three floors never met). After the
+ * sheet on screen, the viewer posts these, one by one (`postSheetWalls`): every scaled
+ * sheet the whole-set rule counts (`wallsTaskPages`: one plan per floor, never a sheet
+ * that says it is not a floor plan), walls stored or not. Nothing when the owner has
+ * whole-set takeoff off.
+ */
+export async function takeoffSetPages(jobId: string, planId: string): Promise<ActionResultWith<number[]>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const plan = await prisma.takeoffPlan.findFirst({ where: { id: planId, jobId, companyId: context.company.id }, select: { id: true } });
+  if (plan === null) return actionFail("That plan set is no longer on this job. Reload the page.");
+  const on = await prisma.company.findUnique({ where: { id: context.company.id }, select: { wholeSetTakeoffOn: true } });
+  if (on?.wholeSetTakeoffOn !== true) return { ok: true, value: [] };
+  return { ok: true, value: wallsTaskPages(await wallsSheetsFor(planId, context.company.id)) };
+}
 
 /**
  * Writes one sheet's calibration and starts the wall finder on it, for a hand

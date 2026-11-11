@@ -160,8 +160,19 @@ export type SheetReading = { pageNumber: number; sheetNumber: string | null; tit
  * or the Scale step asks for one, for a person who has not named any.
  */
 export function sureFloorPlan(sheet: SheetReading): boolean {
-  if (!takeoffSheetVerdict(sheet).worthMeasuring) return false;
-  return ownsFloorPlan(sheet.sheetNumber, sheet.title) || sheet.viewNames.some((name) => ownsFloorPlan(sheet.sheetNumber, name));
+  return floorPlanCaption(sheet) !== null;
+}
+
+/**
+ * The words that made it sure — its title, else the first drawing caption that says FLOOR
+ * PLAN ("OVERALL FLOOR PLAN", "FLOOR PLAN") — or null when it is not sure. Kept with the
+ * flag so a set nothing names can still tell its overall plan from the plan of the work
+ * (`wallsPlan`'s one plan per floor: Baker A101 over A100 OVERALL).
+ */
+export function floorPlanCaption(sheet: SheetReading): string | null {
+  if (!takeoffSheetVerdict(sheet).worthMeasuring) return null;
+  if (ownsFloorPlan(sheet.sheetNumber, sheet.title)) return sheet.title;
+  return sheet.viewNames.find((name) => ownsFloorPlan(sheet.sheetNumber, name)) ?? null;
 }
 
 /**

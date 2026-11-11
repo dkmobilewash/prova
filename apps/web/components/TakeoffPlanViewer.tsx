@@ -27,7 +27,7 @@ import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 import { DISTINCT_MARKS, DOOR_COLOUR, LAYER_COLOURS, ROOM_COLOUR, markFor } from "@/lib/takeoff/clusterMarks";
 import { TakeoffLayerPanel, type Layer } from "@/components/TakeoffLayerPanel";
 import { defaultLayerName, layerKeyOf } from "@/lib/takeoff/layerKey";
-import { postSheetWalls, renameTakeoffLayer, setWallGroupHeight } from "@/lib/actions";
+import { postSheetWalls, renameTakeoffLayer, setWallGroupHeight, takeoffSetPages } from "@/lib/actions";
 import { SetWallHeight } from "./SetWallHeight";
 import type { TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
 import { areaLine, ceilingOption, heightFrom, heightOptionsInOrder, wallSquareFeet, type CeilingRoom, type HeightOption } from "@/lib/takeoff/wallHeight";
@@ -1194,6 +1194,36 @@ export function TakeoffPlanViewer({
       }
       return;
     }
+  }
+  // ── AND THEN THE REST OF THE SET'S FLOOR PLANS, ONE BY ONE (`takeoffSetPages`) ──
+  // The sheet on screen goes first so it shows at once; the others follow on the server,
+  // each counted as it lands. A newer press, or leaving the page, ends it (`postWait`).
+  const [setRun, setSetRun] = useState<{ done: number; total: number; current: number | null; failed: string[] } | null>(null);
+  async function runRestOfSet(open: number) {
+    const mine = postWait.current;
+    const pages = await takeoffSetPages(jobId, planId).catch(() => null);
+    if (pages === null || !pages.ok || !Array.isArray(pages.value) || postWait.current !== mine) return;
+    const rest = pages.value.filter((p) => p !== open);
+    if (rest.length === 0) return;
+    const total = rest.length + 1;
+    const failed: string[] = [];
+    let done = 1;
+    for (const p of rest) {
+      setSetRun({ done, total, current: p, failed: [...failed] });
+      for (;;) {
+        const posted = await postSheetWalls(jobId, planId, p).catch(() => ({ ok: false as const, error: "it did not save. Run takeoff again." }));
+        if (postWait.current !== mine) return;
+        if (posted.ok && posted.value.waiting) {
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          if (postWait.current !== mine) return;
+          continue;
+        }
+        if (!posted.ok) failed.push(`${sheetLabelByPage[p] ?? `Sheet ${p}`}: ${posted.error}`);
+        break;
+      }
+      done += 1;
+    }
+    setSetRun({ done, total, current: null, failed });
   }
   const [reviewSlot, setReviewSlot] = useState<HTMLElement | null>(null);
   const [bannerSlot, setBannerSlot] = useState<HTMLElement | null>(null);
@@ -3909,7 +3939,7 @@ export function TakeoffPlanViewer({
       setFoundOnPage(pageNumber);
       setChosen({});
       seeded.current.add(pageNumber);
-      void postWhenStored(pageNumber);
+      void postWhenStored(pageNumber).then(() => runRestOfSet(pageNumber));
       return;
     }
     setFinding(true);
@@ -4310,7 +4340,7 @@ export function TakeoffPlanViewer({
       // them, unless something of the sheet is on the job already
       // (`postSheetWalls`). New-customer run v2, M3: it used to add nothing.
       if (fill && !readOnly && answerKey === undefined) {
-        void postWhenStored(pageNumber);
+        void postWhenStored(pageNumber).then(() => runRestOfSet(pageNumber));
       }
     } catch (problem) {
       // The sheet is still on screen and the manual tools still work, so this
@@ -5633,6 +5663,14 @@ export function TakeoffPlanViewer({
           }`}
           data-takeoff="found-walls"
         >
+          {setRun !== null && (
+            <p className={`mb-2 rounded-md px-2 py-1 text-xs ${setRun.failed.length > 0 ? "bg-tag-amber text-tag-amber-ink" : "bg-tag-green text-tag-green-ink"}`} data-takeoff="run-set-progress" data-done={setRun.done} data-total={setRun.total}>
+              {setRun.current !== null
+                ? `Run takeoff: ${setRun.done} of ${setRun.total} floor plans on the job · now ${sheetLabelByPage[setRun.current] ?? `Sheet ${setRun.current}`}…`
+                : `Run takeoff: all ${setRun.total} floor plans of the set are on the job.`}
+              {setRun.failed.length > 0 && ` Not put on: ${setRun.failed.join("; ")}`}
+            </p>
+          )}
           {postedNote !== null && postedNote.page === pageNumber && (
             <p className={`mb-2 rounded-md px-2 py-1 text-xs ${postedNote.failed ? "bg-tag-rose text-tag-rose-ink" : "bg-tag-green text-tag-green-ink"}`} data-takeoff="posted-note">
               {postedNote.waiting ? "Putting the walls on the job as soon as this sheet\u2019s walls are stored (the finder started when the scale was saved)\u2026" : postedNote.failed ? `Not put on the job: ${postedNote.text}` : `Put on the job: ${postedNote.text}. Untyped walls wait in Review.`}

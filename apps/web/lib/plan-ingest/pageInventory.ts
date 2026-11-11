@@ -1,7 +1,7 @@
 import { renovationMarks } from "@/lib/takeoff/renovationMarks";
 import { prisma } from "@prova/db";
 import { sheetNumberFrom } from "./sheetNumber";
-import { sureFloorPlan } from "../takeoff/takeoffSheet";
+import { floorPlanCaption } from "../takeoff/takeoffSheet";
 import { sheetViews } from "../takeoff/sheetViews";
 import { SURE_FLOOR_PLAN } from "../takeoff/sureFloorPlans";
 import { aiGate } from "../ai/settings";
@@ -104,7 +104,7 @@ export type PageInventoryDeps = {
    */
   sheetNamesOn: (companyId: string) => Promise<boolean>;
   /** Record whether the page's own captions or title say FLOOR PLAN (`sureFloorPlans.ts`). Optional: absent, nothing is recorded. */
-  saveSureFloorPlan?: (row: { planId: string; pageNumber: number; sure: boolean }) => Promise<void>;
+  saveSureFloorPlan?: (row: { planId: string; pageNumber: number; sure: boolean; caption?: string | null; sheetNumber?: string | null }) => Promise<void>;
 };
 
 export type ScaleReadingRow = {
@@ -274,8 +274,8 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
     // ── IS IT A FLOOR PLAN, BY ITS OWN DRAWINGS? ── a flag, not a name, so no switch (`sureFloorPlans.ts`).
     if (readable && deps.saveSureFloorPlan) {
       const read = sheetNumberFrom(page);
-      const sure = sureFloorPlan({ pageNumber: task.pageNumber, sheetNumber: read.sheetNumber, title: read.regionText, viewNames: sheetViews(page.items, page.widthPt).map((view) => view.name) });
-      await deps.saveSureFloorPlan({ planId: ctx.planId, pageNumber: task.pageNumber, sure });
+      const caption = floorPlanCaption({ pageNumber: task.pageNumber, sheetNumber: read.sheetNumber, title: read.regionText, viewNames: sheetViews(page.items, page.widthPt).map((view) => view.name) });
+      await deps.saveSureFloorPlan({ planId: ctx.planId, pageNumber: task.pageNumber, sure: caption !== null, caption, sheetNumber: read.sheetNumber });
     }
 
     // SUCCESS EVEN WITH NO TEXT LAYER. A scanned sheet is a fact this stage has
@@ -530,9 +530,10 @@ export const realDeps: PageInventoryDeps = {
     (await aiGate(companyId, "PLAN_TEXT_READ")).ok ||
     (await prisma.company.findUnique({ where: { id: companyId }, select: { planCompareOn: true } }))?.planCompareOn === true,
 
-  saveSureFloorPlan: async ({ planId, pageNumber, sure }) => {
+  saveSureFloorPlan: async ({ planId, pageNumber, sure, caption = null, sheetNumber = null }) => {
     const where = { planId_pageNumber_kind: { planId, pageNumber, kind: SURE_FLOOR_PLAN } };
-    await prisma.takeoffPlanTextRead.upsert({ where, create: { planId, pageNumber, kind: SURE_FLOOR_PLAN, value: { sure } }, update: { value: { sure }, computedAt: new Date() } });
+    const value = { sure, caption, sheetNumber };
+    await prisma.takeoffPlanTextRead.upsert({ where, create: { planId, pageNumber, kind: SURE_FLOOR_PLAN, value }, update: { value, computedAt: new Date() } });
   },
 
   saveSheetProposal: async (row) => {
