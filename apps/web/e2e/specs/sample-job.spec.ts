@@ -49,7 +49,7 @@ test.describe("the sample job", () => {
     await page.waitForURL(/\/jobs\/[^/?#]+$/, { timeout: 90_000 });
     jobId = new URL(page.url()).pathname.split("/").pop()!;
     await expectHealthy(page, "the sample job", { monitor });
-    await expect(page.getByRole("heading", { level: 1, name: NAME })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: NAME }).first()).toBeVisible();
     await expect(page.locator('[data-job="sample-banner"] [data-job="sample-label"]')).toHaveText("Sample");
     // Plans, scale and takeoff are done before the person has done anything.
     for (const step of ["plans", "scale", "takeoff"]) {
