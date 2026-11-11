@@ -1,6 +1,7 @@
 "use server";
 
 import { syncReviewedItems, syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
+import { isSamplePlanUrl } from "@/lib/sample-job/samplePlan";
 import { namedItem, untypedItem, wallItemsForSheet, wallItemsNoteFor } from "@/lib/plan-ingest/wallItems";
 import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
@@ -577,7 +578,8 @@ export async function deleteTakeoffPlan(jobId: string, planId: string): Promise<
   // Only once the row is confirmed gone. Failures are swallowed by
   // `deleteDocument`, so a store that will not delete cannot turn a completed
   // delete into an error for somebody who just removed a plan.
-  if (plan?.fileUrl) await deleteDocument(plan.fileUrl);
+  // A sample set is the deployment's own file, shared by every company: never the store's to delete.
+  if (plan?.fileUrl && !isSamplePlanUrl(plan.fileUrl)) await deleteDocument(plan.fileUrl);
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
   return actionOk;

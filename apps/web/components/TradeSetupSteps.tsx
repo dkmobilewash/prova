@@ -2,14 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { applyTradePreset, saveStarterMarkup, skipBusinessScopeQuestions } from "@/lib/actions";
+import { applyTradePreset, createSampleJob, saveStarterMarkup, skipBusinessScopeQuestions } from "@/lib/actions";
 import { CompanySetupGate } from "@/components/CompanySetupGate";
 import { PlanReadingSwitch } from "@/components/PlanReadingSwitch";
 import { Spinner } from "@/components/Spinner";
 import { RECAP_RATE_FIELDS } from "@/lib/bid-recap";
 import { MARKUP_FIELDS, TRADE_PRESETS } from "@/lib/trade-presets";
 
-export type SetupStep = "trade" | "markup" | "questions";
+export type SetupStep = "trade" | "sample" | "markup" | "questions";
 
 /**
  * `/welcome`, guided flow Phase 5: the trade in one tap, then the company's own
@@ -61,7 +61,7 @@ export function TradeSetupSteps({ initial, planReadingOn }: { initial: SetupStep
                   <button
                     type="button"
                     disabled={isPending}
-                    onClick={() => run(() => applyTradePreset(preset.choice), "markup")}
+                    onClick={() => run(() => applyTradePreset(preset.choice), "sample")}
                     className="flex min-h-12 w-full items-center rounded-md border border-line-card px-4 text-left text-sm font-medium text-ink hover:border-link hover:text-link disabled:opacity-50"
                   >
                     {preset.label}
@@ -96,6 +96,53 @@ export function TradeSetupSteps({ initial, planReadingOn }: { initial: SetupStep
               Skip for now
             </button>
           </>
+        ) : step === "sample" ? (
+          /* ── SEE IT WORK BEFORE YOUR OWN PLANS ── a sample job on an invented
+             drawing, built by the same steps a real one goes through
+             (`lib/sample-job`). Not now carries on exactly as before. */
+          <div data-setup="sample">
+            <h1 className="text-xl font-semibold text-ink">See it work first?</h1>
+            <p className="mt-2 text-sm text-ink-body">
+              Try it on a sample set: an invented office floor plan with the scale set, the walls found, a few left for you to
+              confirm and an estimate started. About two minutes, before you upload your own plans.
+            </p>
+            <p className="mt-2 text-xs text-ink-muted">
+              It is marked Sample, it never uses your plan sheets, and you can delete it in one press.
+            </p>
+            <button
+              type="button"
+              disabled={isPending}
+              data-setup="try-sample"
+              onClick={() => {
+                setError(null);
+                startTransition(async () => {
+                  try {
+                    const result = await createSampleJob();
+                    if (!result.ok) {
+                      setError(result.error);
+                      return;
+                    }
+                    router.push(`/jobs/${result.value.jobId}`);
+                  } catch {
+                    setError("Couldn't make the sample just now. Try again, or carry on without it.");
+                  }
+                });
+              }}
+              className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-neutral-900 disabled:opacity-50"
+            >
+              {isPending && <Spinner />}
+              {isPending ? "Making the sample…" : "Try it on a sample set"}
+            </button>
+            <button
+              type="button"
+              disabled={isPending}
+              data-setup="skip-sample"
+              onClick={() => setStep("markup")}
+              className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md px-3 text-sm text-ink-body hover:bg-rail-hover hover:text-ink disabled:opacity-50"
+            >
+              Not now
+            </button>
+          </div>
         ) : (
           <form
             onSubmit={(event) => {
@@ -156,7 +203,7 @@ export function TradeSetupSteps({ initial, planReadingOn }: { initial: SetupStep
             </div>
           </form>
         )}
-        {step === "trade" && error && (
+        {(step === "trade" || step === "sample") && error && (
           <p role="alert" className="mt-4 rounded-md border border-red-700 bg-tag-rose px-3 py-2 text-sm text-danger">
             {error}
           </p>

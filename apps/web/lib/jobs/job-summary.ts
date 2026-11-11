@@ -23,6 +23,8 @@ export type JobSummary = {
   id: string;
   name: string;
   status: string;
+  /** A sample job on an invented drawing (`lib/sample-job`): labelled and deletable. */
+  isSample: boolean;
   contactName: string;
   startDate: Date | null;
   endDate: Date | null;
@@ -78,6 +80,7 @@ export async function loadJobSummary(companyId: string, jobId: string): Promise<
       companyId: true,
       name: true,
       status: true,
+      isSample: true,
       startDate: true,
       endDate: true,
       substantialCompletionDate: true,
@@ -120,6 +123,7 @@ export async function loadJobSummary(companyId: string, jobId: string): Promise<
     id: job.id,
     name: job.name,
     status: job.status,
+    isSample: job.isSample,
     lifecycle: jobLifecycle({
       status: job.status,
       substantialCompletionDate: job.substantialCompletionDate,

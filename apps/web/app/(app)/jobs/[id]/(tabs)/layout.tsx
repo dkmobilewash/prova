@@ -7,6 +7,7 @@ import { canReach } from "@/lib/permissions";
 import { jobPaperworkLinks, loadJobPaperworkCounts } from "@/lib/jobs/job-paperwork";
 import { JobSummaryHeader } from "@/components/JobSummaryHeader";
 import { JobStageNav } from "@/components/job/JobStageNav";
+import { SampleJobBanner } from "@/components/job/SampleJobBanner";
 import { JobStepper } from "@/components/job/JobStepper";
 import { jobSteps } from "@/lib/job-steps";
 import { loadJobStepFacts } from "@/lib/job-steps-query";
@@ -128,6 +129,7 @@ export default async function JobTabsLayout({
         // markJobContracted is gated on VIEW_JOB_COSTS, which is showsJobMoney.
         markContracted={isEstimateStage && showsJobMoney ? markJobContracted.bind(null, id) : undefined}
       />
+      {summary.isSample && <SampleJobBanner jobId={id} />}
       <JobStageNav stages={stages} />
       <JobSectionNav tabs={tabs} />
       {/* The estimating steps under the tab row, not between it and the stage

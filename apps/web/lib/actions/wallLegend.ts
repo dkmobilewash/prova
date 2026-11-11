@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@prova/db";
+import { SAMPLE_READS_NOTHING, isSamplePlanUrl } from "@/lib/sample-job/samplePlan";
 import { WALL_LEGEND_SIGHT_PROMPT_VERSION, type WallLegendRead } from "@prova/integrations";
 import { revalidatePath } from "next/cache";
 import { aiGate } from "@/lib/ai/settings";
@@ -250,9 +251,10 @@ export async function readLegendBySight(
   }
   const proposal = await prisma.planLegendProposal.findFirst({
     where: { id: proposalId, plan: { job: { id: jobId, companyId } } },
-    select: { id: true, planId: true, pageNumber: true, sheetTitle: true, textRead: true },
+    select: { id: true, planId: true, pageNumber: true, sheetTitle: true, textRead: true, plan: { select: { fileUrl: true } } },
   });
   if (proposal === null) return actionFail(NO_PROPOSAL) as ActionResultWith<never>;
+  if (isSamplePlanUrl(proposal.plan.fileUrl)) return actionFail(SAMPLE_READS_NOTHING) as ActionResultWith<never>;
 
   // The page's words, for the model to read beside the pictures.
   const bytes = await openSharedPlanPdf(proposal.planId, companyId);
