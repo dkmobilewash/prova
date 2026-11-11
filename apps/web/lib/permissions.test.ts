@@ -391,6 +391,8 @@ const OPEN_ROUTES: Record<string, string> = {
     "The operator's public-works market list — other firms' public record, read for C Stream's own outbound. Same two checks as /sales: isProvaOperator, then OWNER; the page refuses otherwise.",
   "/internal/usage":
     "Prova's OWN usage instrument — who is still logging in, across every company. Guarded HARDER than any capability, on the same two things /sales is: Company.isProvaOperator AND role OWNER. A capability would LOOSEN it, since every owner holds all seven, and this is the one page in the app that reads across tenants. Listed open here only in the sense that ROUTE_CAPABILITY is the wrong home for it; the page refuses.",
+  "/internal/pilots":
+    "Prova's OWN pilot dashboard — each customer company's activity, read across every company. Same two checks as /internal/usage: Company.isProvaOperator AND role OWNER; a capability would loosen it, since every owner holds all seven. The page refuses everyone else with \"Not part of your access\".",
   "/vendors":
     "The supplier directory. What each vendor has QUOTED is the sensitive half and it lives on /vendors/pricing, which is guarded.",
   "/jobs/[id]":

@@ -171,6 +171,7 @@ export const NOT_IN_AN_AREA: Record<string, string> = {
   "/settings/integrations": "Connected apps, owner-only, under the avatar menu beside Settings.",
   "/sales": "C Stream's own sales pipeline, only for the operating company.",
   "/internal/usage": "C Stream's own usage page, only for the operating company.",
+  "/internal/pilots": "C Stream's own pilot dashboard, only for the operating company.",
 };
 
 export const areaHref = (slug: AreaSlug) => `/areas/${slug}`;
