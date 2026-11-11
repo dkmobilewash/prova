@@ -1,0 +1,142 @@
+# The daily synthetic check on the demo environment.
+#
+# Once a day it walks what a pilot does first — sign in, start a job, upload a
+# one-sheet plan, run the takeoff, open the review queue, the estimate and the
+# proposal — against a DEPLOYED preview of main, and posts pass/fail with each
+# step's time to #prova-build. A failed step, or a step more than 50% (and 5s)
+# slower than its median over the last 7 passing runs, is an alert.
+#
+# WHERE IT RUNS. Production (app.cstream.ai) is the production Clerk instance
+# and the real data, so it is never the target. Main has no preview of its own
+# (a push to main builds production), so this job first points the branch
+# `synthetic-demo` at main's head; Vercel builds that branch as a preview, at a
+# stable alias, with Preview's variables: the DEMO database (ep-patient-lake)
+# and the striking-jaybird DEVELOPMENT Clerk instance. It then waits until that
+# alias serves main's commit — read off the page's own `dpl=` (CLAUDE.md), not
+# from a status field — and only then walks it.
+#
+# WHO SIGNS IN. One existing e2e persona (PERSONAS.takeoff), every day: the
+# development instance caps at 100 users, so nothing here mints one.
+#
+# SECRETS: E2E_CLERK_PUBLISHABLE_KEY / E2E_CLERK_SECRET_KEY (already set, the
+# ci.yml e2e job's) and SLACK_WEBHOOK_URL (an incoming webhook for
+# #prova-build). Variable SYNTHETIC_BASE_URL overrides the alias.
+#
+# KNOWN LIMIT: Preview shares production's blob store (store_F8qY…), so the
+# 3 KB invented plan this uploads lands there once a day.
+name: Synthetic check (demo)
+
+on:
+  schedule:
+    - cron: "30 13 * * *" # 13:30 UTC, 06:30 Pacific: before the pilots' day starts
+  workflow_dispatch:
+
+permissions:
+  contents: write # to point synthetic-demo at main
+  actions: write # to save the timing history in the cache
+
+concurrency:
+  group: synthetic-demo
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SYNTHETIC_BASE_URL: ${{ vars.SYNTHETIC_BASE_URL || 'https://prova-web-git-synthetic-demo-contractors-s-projects.vercel.app' }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.E2E_CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+      SYNTHETIC_OUT: ${{ github.workspace }}/synthetic/result.json
+      HISTORY: ${{ github.workspace }}/synthetic/history.json
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Point synthetic-demo at main
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          set -o pipefail
+          mkdir -p synthetic
+          sha=$(git rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          if gh api "repos/${{ github.repository }}/git/refs/heads/synthetic-demo" --silent 2>/dev/null; then
+            gh api -X PATCH "repos/${{ github.repository }}/git/refs/heads/synthetic-demo" -f sha="$sha" -F force=false --silent \
+              || { echo "SYNTHETIC_PRECHECK_ERROR=could not move synthetic-demo to main ($sha): it is not a fast-forward, or the token lacks permission. Nothing was walked." >> "$GITHUB_ENV"; exit 1; }
+          else
+            gh api -X POST "repos/${{ github.repository }}/git/refs" -f ref=refs/heads/synthetic-demo -f sha="$sha" --silent \
+              || { echo "SYNTHETIC_PRECHECK_ERROR=could not create synthetic-demo at $sha. Nothing was walked." >> "$GITHUB_ENV"; exit 1; }
+          fi
+          echo "synthetic-demo -> $sha"
+
+      - name: Wait for the preview to serve main's commit
+        env:
+          SHA: ${{ steps.sync.outputs.sha }}
+        run: |
+          set -e
+          set -o pipefail
+          want="${SHA:0:32}"
+          for i in $(seq 1 60); do
+            got=$(curl -fsSL "$SYNTHETIC_BASE_URL/sign-in" 2>/dev/null | grep -oE 'dpl=[0-9a-f]{32}' | head -1 | cut -d= -f2 || true)
+            if [ "$got" = "$want" ]; then echo "serving $want after $((i - 1))0 s"; exit 0; fi
+            echo "serving '${got:-nothing}', want $want"
+            sleep 30
+          done
+          echo "SYNTHETIC_PRECHECK_ERROR=the preview never served main's commit ${SHA:0:8} in 30 min (last seen: ${got:-nothing}). Read the Vercel deployment for branch synthetic-demo. Nothing was walked." >> "$GITHUB_ENV"
+          exit 1
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: playwright-${{ runner.os }}-
+      - run: pnpm --filter @prova/web exec playwright install --with-deps chromium
+
+      - name: The walk
+        id: walk
+        continue-on-error: true
+        run: pnpm --filter @prova/web exec playwright test --config e2e/playwright.synthetic.config.ts
+
+      - name: Restore the timing history
+        if: always()
+        uses: actions/cache/restore@v4
+        with:
+          path: synthetic/history.json
+          key: synthetic-history-${{ github.run_id }}
+          restore-keys: synthetic-history-
+
+      - name: Report to #prova-build
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SYNTHETIC_EXPECT_COMMIT: ${{ steps.sync.outputs.sha }}
+        run: node apps/web/e2e/synthetic-report.mjs "$SYNTHETIC_OUT" "$HISTORY"
+
+      - name: Save the timing history
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: synthetic/history.json
+          key: synthetic-history-${{ github.run_id }}
+
+      - name: Keep the trace of a failed walk
+        if: always() && steps.walk.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-trace
+          path: |
+            apps/web/test-results-synthetic
+            apps/web/playwright-report-synthetic
+          retention-days: 14
