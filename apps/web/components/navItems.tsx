@@ -580,6 +580,15 @@ export const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    href: "/internal/pilots",
+    label: "Pilots",
+    icon: (
+      <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+        <path d="M4 15.5V9.5M8 15.5V5.5M12 15.5V8M16 15.5V11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     href: "/internal/usage",
     label: "Usage",
     icon: (
@@ -899,7 +908,7 @@ const INTERNAL_NAV_GROUP: NavGroup = {
   heading: "Internal",
   description: "C Stream's own sales pipeline — selling C Stream itself. Only visible to the operating company.",
   icon: item("/sales").icon,
-  items: [item("/sales"), item("/internal/usage")],
+  items: [item("/sales"), item("/internal/usage"), item("/internal/pilots")],
 };
 
 /**
