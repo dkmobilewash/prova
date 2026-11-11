@@ -45,7 +45,8 @@ export type QueueRun = { x1: number; y1: number; x2: number; y2: number };
  * other floors" — the printed tag ("tag:C6") or the "unless noted" type ("note:C"). Absent
  * for a carried or sibling tag and for a thickness guess: those are never applied across sheets.
  */
-export type Guess = { code: string; from: string; drawn?: true; variant?: string; match?: string };
+/** `source`: the `PostSource` code behind `from`, for `TakeoffEvent`; the sentence is the person's, the code is ours. */
+export type Guess = { code: string; from: string; drawn?: true; variant?: string; match?: string; source?: string };
 /** A type's height for the queue, by code: the job's item height, else its legend height. */
 export type CodeHeight = { feet: number; from: string };
 export type ReviewItem =
@@ -284,11 +285,11 @@ export function suggestType(
             ? `: ${inchLabel(group.inches)}`
             : "";
     const match = (found.source === "tag" || found.source === "tag-variant") && tag !== null ? `tag:${tag.toUpperCase()}` : found.source === "note" ? `note:${found.type.code.toUpperCase()}` : null;
-    return { code: found.type.code, from: `${SOURCE_WORDS[found.source]}${detail}`, ...(found.source === "thickness" ? {} : { drawn: true as const }), ...(variant === null ? {} : { variant }), ...(match === null ? {} : { match }) };
+    return { code: found.type.code, from: `${SOURCE_WORDS[found.source]}${detail}`, source: found.source, ...(found.source === "thickness" ? {} : { drawn: true as const }), ...(variant === null ? {} : { variant }), ...(match === null ? {} : { match }) };
   }
   if (tag !== null && group.candidates.length === 0) {
     const code = legendCodes.find((c) => c.toUpperCase() === tag.toUpperCase());
-    if (code !== undefined) return { code, from: `printed tag: ${tag} on ${sheet}, in the legend but not yet your library`, drawn: true, match: `tag:${tag.toUpperCase()}` };
+    if (code !== undefined) return { code, from: `printed tag: ${tag} on ${sheet}, in the legend but not yet your library`, drawn: true, match: `tag:${tag.toUpperCase()}`, source: "tag" };
   }
   return null;
 }
