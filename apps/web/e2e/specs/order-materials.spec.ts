@@ -48,7 +48,7 @@ test("Order materials makes a draft PO in whole packs and names what it could no
 
   // Pressed again while the draft is open: refused, nothing ordered twice.
   await page.locator('[data-order="go"]').click();
-  await expect(page.getByRole("alert")).toContainText(`PO 1 from ${TAG} Supply is still a draft on this job.`);
+  await expect(page.locator('[data-order="panel"] [role="alert"]')).toContainText(`PO 1 from ${TAG} Supply is still a draft on this job.`);
   expect(await prisma.purchaseOrder.count({ where: { jobId: job.id } })).toBe(1);
   expect(monitor.crashes).toEqual([]);
 });
