@@ -36,14 +36,14 @@ describe("a group's height by part of the building, chosen in the queue", () => 
     expect([box(), from()]).toEqual(["12'-0\"", "A-512 LOWER BOD 112' 0\""]);
     press("z");
     press("Enter");
-    expect(onAccept).toHaveBeenCalledWith("A", 12 + 4 / 12);
+    expect(onAccept).toHaveBeenCalledWith("A", 12 + 4 / 12, expect.any(Object));
   });
 
   it("takes a zone by click, and offers none for a type the sections give one height", () => {
     const onAccept = paint();
     act(() => (host.querySelectorAll("[data-takeoff=queue-zones] button")[2] as HTMLButtonElement).click());
     press("Enter");
-    expect(onAccept).toHaveBeenCalledWith("A", 16 + 8 / 12);
+    expect(onAccept).toHaveBeenCalledWith("A", 16 + 8 / 12, expect.any(Object));
     press("2");
     expect(host.querySelector("[data-takeoff=queue-zones]")).toBeNull();
   });
@@ -69,7 +69,7 @@ describe("the type picked on a group nothing names, on all of them (walk v6: 13 
     press("2");
     expect(button()!.textContent).toBe("K on all 13 groups nothing names on A101 (A)");
     press("a");
-    expect(onAcceptRest).toHaveBeenCalledWith("K", 15);
+    expect(onAcceptRest).toHaveBeenCalledWith("K", 15, expect.any(Object));
     expect(onAccept).not.toHaveBeenCalled();
   });
 

@@ -49,7 +49,7 @@ describe("accepting the rest when the type has no height", () => {
     expect(host.querySelector("[data-takeoff=queue-ask-height]")?.textContent).toContain("on all 15 groups nothing names on A3.2");
     expect(onAcceptRest).not.toHaveBeenCalled();
     act(() => box().form!.requestSubmit());
-    expect(onAcceptRest).toHaveBeenCalledWith("1ME", null);
+    expect(onAcceptRest).toHaveBeenCalledWith("1ME", null, expect.any(Object));
     expect(onAccept).not.toHaveBeenCalled();
   });
 
@@ -59,7 +59,7 @@ describe("accepting the rest when the type has no height", () => {
     press("a");
     setValue(`9'-6"`);
     act(() => box().form!.requestSubmit());
-    expect(onAcceptRest).toHaveBeenCalledWith("1ME", 9.5);
+    expect(onAcceptRest).toHaveBeenCalledWith("1ME", 9.5, expect.any(Object));
     expect(onAccept).not.toHaveBeenCalled();
   });
 
@@ -68,7 +68,7 @@ describe("accepting the rest when the type has no height", () => {
     press("1");
     press("Enter");
     act(() => box().form!.requestSubmit());
-    expect(onAccept).toHaveBeenCalledWith("1ME", null);
+    expect(onAccept).toHaveBeenCalledWith("1ME", null, expect.any(Object));
     expect(onAcceptRest).not.toHaveBeenCalled();
   });
 });

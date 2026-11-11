@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageShell } from "@prova/ui";
 import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
@@ -79,7 +80,11 @@ export default async function InternalPilotsPage() {
             <tbody>
               {rows.map((row) => (
                 <tr key={row.companyId} className="border-b border-line-card last:border-0" data-pilots="row" data-company={row.name}>
-                  <td className="px-3 py-2 text-left font-medium">{row.name}</td>
+                  <td className="px-3 py-2 text-left font-medium">
+                    <Link href={`/internal/pilots/${row.companyId}`} className="text-link hover:underline" data-pilots="open">
+                      {row.name}
+                    </Link>
+                  </td>
                   <td className={cell} data-pilots="jobs">{row.jobs}</td>
                   <td className={cell} data-pilots="sets">{row.planSets}</td>
                   <td className={cell} data-pilots="sheets">{row.sheetsTakenOff}</td>

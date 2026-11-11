@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { recordTakeoffEvents } from "@/lib/takeoff/events";
 import { prisma } from "@prova/db";
 
 import { requireCompanyContext } from "@/lib/auth";
@@ -276,6 +277,8 @@ export async function setWallGroupHeight(jobId: string, itemId: string, heightFt
     await syncDecidedItems(tx, company.id, jobId, [itemId]);
     return { heightFt: before.heightFt === null ? null : before.heightFt.toString(), sides: before.sides };
   });
+  // A height a person set on an item (the queue's height question or the layers panel): one HEIGHT_EDIT.
+  await recordTakeoffEvents([{ companyId: company.id, jobId, kind: "HEIGHT_EDIT", userId: context.id }]);
   revalidatePath(`/jobs/${jobId}`, "layout");
   revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { was } };
