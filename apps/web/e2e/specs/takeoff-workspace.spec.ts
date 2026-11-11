@@ -50,7 +50,13 @@ test.describe("the full-screen takeoff workspace", () => {
     const context = await browser.newContext({ viewport: DESKTOP });
     page = await context.newPage();
     monitor = new HealthMonitor(page);
-    await page.route("**/api/takeoff/plan/**", async (route) => {
+    // ── THE CONTEXT, NOT THE PAGE ──
+    // Step 2b opens the workspace in a NEW TAB, which a page-level route does not
+    // cover: that tab fetched the real URL of a stubbed upload and showed "That drawing
+    // couldn't be opened". A canvas is 300 wide by default, so 2b's "the canvas has a
+    // width" passed anyway, and its occasional 100 s timeouts were this. With the canvas
+    // 0 × 0 until drawn (TakeoffPlanViewer), the step now needs the sheet really drawn.
+    await context.route("**/api/takeoff/plan/**", async (route) => {
       await route.fulfill({ status: 200, contentType: "application/pdf", body: servedPdf });
     });
     mkdirSync(SHOTS, { recursive: true });
