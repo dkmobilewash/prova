@@ -105,6 +105,23 @@ describe("the sets that must never reach training", () => {
     expect(isHeldOut("Albany-Readiness-Center.pdf")).toBe(true);
   });
 
+  it("round 18: holds out Jefferson City Readiness Center Building 1 as an ANSWER KEY, and trains on the rest", () => {
+    const why = heldOutReason("Jefferson City Readiness Center Building 1.pdf");
+    expect(why).toContain("round 18");
+    expect(why).not.toContain("not a test key");
+    for (const file of [
+      "Clinton Readiness Center.pdf",
+      "Anderson Readiness Center.pdf",
+      "TOTEM LAKE DENTALTENANT IMPROVEMENT.pdf",
+      "Falafel Fresh, Lake St, Kirkland WA.pdf",
+      "Bluetooth-office-TI-Kirkland-WA.pdf",
+    ]) {
+      expect(isHeldOut(file), file).toBe(false);
+    }
+    // The sibling entry still says what it is.
+    expect(heldOutReason("Jefferson-City-Civil.pdf")).toContain("SIBLING");
+  });
+
   it("matches the new names however they were punctuated", () => {
     // A label directory is the PDF's name with punctuation replaced, and
     // O'Reillys is the one most likely to arrive spelled differently — with
@@ -125,7 +142,9 @@ describe("the sets that must never reach training", () => {
     // Village, 4259 Fulton Rd, EH Hutto), before a label was written.
     // 20 to 22 on 2026-11-08: round 16's two tagged new builds (USU ASPIRE
     // EVR, Riverbend), before a label was written.
-    expect(HELD_OUT_SETS).toHaveLength(22);
+    // 22 to 23 on 2026-11-11: round 18's Jefferson City Readiness Center
+    // Building 1, before a label was written.
+    expect(HELD_OUT_SETS).toHaveLength(23);
   });
 
   it("refuses the three that were declared held out in round 7 and only listed in round 9", () => {
