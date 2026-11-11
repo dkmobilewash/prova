@@ -105,3 +105,19 @@ describe("with nothing named, the pages whose own drawings say FLOOR PLAN are th
     expect(planSetRows({ ...input, sheets: named, sure: new Set([14]) }).find((r) => r.pageNumber === 14)?.category).toBe("rcp");
   });
 });
+
+describe("the plan set counts the floor plans the takeoff needs, as the stepper does", () => {
+  const sheets = new Map([
+    [12, { number: "A100", title: "OVERALL FLOOR PLAN", pageType: null }],
+    [13, { number: "A101", title: "FLOOR PLAN", pageType: null }],
+  ]);
+  const base = { pages: [12, 13], sheets, prefill: {}, printed: {}, multiScale: new Set<number>(), decline: {} };
+  it("a floor plan the takeoff does not need (A100 overall) never holds the step open", () => {
+    const rows = planSetRows({ ...base, scaled: new Set([13]), needed: new Set([13]) });
+    expect(rows.find((r) => r.pageNumber === 12)).toMatchObject({ category: "floor", needed: false });
+    expect(scaleStepDone(rows)).toBe(true);
+  });
+  it("without the needed list every floor plan counts, as before", () => {
+    expect(scaleStepDone(planSetRows({ ...base, scaled: new Set([13]) }))).toBe(false);
+  });
+});
