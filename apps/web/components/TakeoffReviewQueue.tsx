@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/actions/shared";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
-import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, undoAutoPost, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
+import { confirmSheetScales, confirmSheetSuggestions, recordQueueSkip, confirmWindows, undoAutoPost, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
 import { shortScaleName } from "@/lib/takeoff/scaleFromDimensions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
@@ -143,10 +143,13 @@ export function TakeoffReviewQueue({
     const known = seenKeys();
     forgetAfter.current = null;
     setDone((was) => new Set([...was, ...groups.map((g) => g.key)]));
-    const result = await confirmSheetSuggestions(
-      jobId,
-      groups.map((g) => g.group),
-    ).catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
+    // For `TakeoffEvent`: one Accept all press, each group with the source its suggestion came from.
+    const sourceOf = (key: string) => {
+      const item = items.find((i) => i.key === key);
+      return item?.kind === "type" ? (item.suggested?.source ?? "none") : "none";
+    };
+    const withSource = () => groups.map((g) => ({ ...g.group, event: { source: sourceOf(g.key) } }));
+    const result = await confirmSheetSuggestions(jobId, withSource(), "accept_all").catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
     setBusy(false);
     if (!result.ok) {
       setDone((was) => new Set([...was].filter((key) => !groups.some((g) => g.key === key))));
@@ -192,7 +195,7 @@ export function TakeoffReviewQueue({
         return { ok: true };
       },
       redo: async () => {
-        const again = await confirmSheetSuggestions(jobId, groups.map((g) => g.group)).catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
+        const again = await confirmSheetSuggestions(jobId, withSource(), "accept_all").catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
         if (!again.ok) return again;
         // A fresh token: what the redo wrote is what the next Undo takes back.
         record.undo = again.value.undo;
@@ -484,7 +487,10 @@ export function TakeoffReviewQueue({
                 missing={legendMissing(legend, jobId)}
                 heightOf={(code) => heightOfGroup(current, code)}
                 heightOptions={(code) => forCode(heightChoices, code) ?? []}
-                onSkip={() => setCursor(after(current.key))}
+                onSkip={() => {
+                  void recordQueueSkip(jobId, { planId, pageNumber: current.pageNumber, runs: current.runs }).catch(() => undefined);
+                  setCursor(after(current.key));
+                }}
                 rest={unnamed.length > 1 ? `${unnamed.length} groups nothing names on ${current.sheet}${restSpread}` : null}
                 onAcceptRest={(code, heightFt) => {
                   // The type picked here on every group of the sheet nothing names
@@ -499,13 +505,23 @@ export function TakeoffReviewQueue({
                     })),
                   );
                 }}
-                onAccept={(code, heightFt) => {
+                onAccept={(code, heightFt, meta) => {
                   // The same drawn group on the set's other floor plans, offered once this one is in.
                   const floorPages = new Set(planSet.filter((r) => r.category === "floor").map((r) => r.pageNumber));
                   const same = sameOnOtherFloors(left, current, code!, heightFt, (g, c) => heightOfGroup(g, c)?.feet ?? null, floorPages, planId);
                   setFloorsOffer(same.length === 0 ? null : { what: code!, groups: same });
                   // One group through the sheet's confirm, for the token Undo puts it back with.
-                  const group = { planId, pageNumber: current.pageNumber, code: code!, inches: current.inches, runs: current.runs, heightFt, level: levelHeightFor(code, current.level) === null ? null : current.level!.label };
+                  const group = {
+                    planId,
+                    pageNumber: current.pageNumber,
+                    code: code!,
+                    inches: current.inches,
+                    runs: current.runs,
+                    heightFt,
+                    level: levelHeightFor(code, current.level) === null ? null : current.level!.label,
+                    // For `TakeoffEvent`: where the pre-filled type came from, and what the person changed.
+                    event: { source: current.suggested?.source ?? "none", picked: meta.picked, heightEdited: meta.heightEdited },
+                  };
                   const confirmOne = async () => {
                     const result = await confirmSheetSuggestions(jobId, [group]);
                     if (!result.ok) return result;
@@ -549,7 +565,10 @@ export function TakeoffReviewQueue({
                 const first = current.options[0]; // in suggestion order: type, general note, ceiling (`heightOptionsInOrder`)
                 return first === undefined ? null : { feet: first.feet, from: first.from };
               }}
-              onSkip={() => setCursor(after(current.key))}
+              onSkip={() => {
+                void recordQueueSkip(jobId, { planId, pageNumber: current.pageNumber, runs: current.runs }).catch(() => undefined);
+                setCursor(after(current.key));
+              }}
               onAccept={(_code, heightFt) => {
                 if (heightFt === null) return setError("Type a height first: H.");
                 const itemId = current.itemId;
@@ -743,7 +762,17 @@ export function TakeoffReviewQueue({
             </button>
           )}
           {left.length > 1 && (
-            <button type="button" className={button} disabled={busy} onClick={() => setCursor(after(current.key))} data-takeoff="review-queue-next">
+            <button
+              type="button"
+              className={button}
+              disabled={busy}
+              onClick={() => {
+                // Next passes an item undecided: a Skip, recorded like the N key's (`TakeoffEvent`).
+                void recordQueueSkip(jobId, { planId, pageNumber: "pageNumber" in current ? current.pageNumber : null, runs: "runs" in current && Array.isArray(current.runs) ? current.runs : [] }).catch(() => undefined);
+                setCursor(after(current.key));
+              }}
+              data-takeoff="review-queue-next"
+            >
               Next
             </button>
           )}

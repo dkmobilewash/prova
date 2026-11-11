@@ -1,4 +1,6 @@
 import { prisma, type Prisma } from "@prova/db";
+import { recordTakeoffEvents } from "@/lib/takeoff/events";
+import { groupTarget } from "@/lib/takeoff/eventTarget";
 import { nextItemColor } from "@/lib/takeoff/itemColors";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
@@ -129,6 +131,19 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
     if (data.length > 0) await tx.takeoffMeasurement.createMany({ data });
     return { typedFeet, untypedFeet, heldFeet, byType: [...byType.values()].sort((a, b) => b.feet - a.feet) };
   });
+  // Each group the auto-post rule typed, with nobody pressing anything (`TakeoffEvent`).
+  await recordTakeoffEvents(
+    [...autoFrom.entries()].map(([group, source]) => ({
+      companyId: input.companyId,
+      jobId: input.jobId,
+      kind: "AUTO_POST" as const,
+      planId: input.planId,
+      pageNumber: input.pageNumber,
+      target: groupTarget(input.planId, input.pageNumber, group.runs as Run[]),
+      source,
+      userId: input.userId,
+    })),
+  );
   return { kind: "written", ...written };
 }
 

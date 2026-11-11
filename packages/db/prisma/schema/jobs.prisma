@@ -243,6 +243,7 @@ model Job {
   @@index([contactId])
   @@index([operatingLocationId])
   @@unique([companyId, jobberId])
+  takeoffEvents TakeoffEvent[]
 }
 
 /// A single line item, referenced everywhere: estimate, contract summary,

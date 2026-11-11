@@ -47,7 +47,7 @@ describe("the queue's height box", () => {
     expect(box().value).toBe("");
     setValue(`9'-6"`);
     act(() => box().form!.requestSubmit());
-    expect(onAccept).toHaveBeenCalledWith("ZF2", 9.5);
+    expect(onAccept).toHaveBeenCalledWith("ZF2", 9.5, expect.any(Object));
   });
 
   it("still follows the type picked when nobody is in it", () => {

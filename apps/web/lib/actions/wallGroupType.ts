@@ -1,6 +1,9 @@
 "use server";
 
 import { prisma } from "@prova/db";
+import { randomUUID } from "node:crypto";
+import { recordTakeoffEvents, type TakeoffEventRow } from "@/lib/takeoff/events";
+import { groupTarget } from "@/lib/takeoff/eventTarget";
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
@@ -54,7 +57,10 @@ export async function setWallGroupType(jobId: string, input: WallGroupTypeInput)
     // The takeoff tab's capability, as its other writes. Adding a NEW type to
     // the library is still estimating's, and `addWallTypeFromLegend` says so.
     if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
-    return typeGroup(context, jobId, input, null);
+    const result = await typeGroup(context, jobId, input, null);
+    // Set type on a group: after an accept or an auto-post, the accuracy signal.
+    if (result.ok) await recordTakeoffEvents([{ companyId: context.company.id, jobId, kind: "CHANGE", planId: input.planId, pageNumber: input.pageNumber, target: groupTarget(input.planId, input.pageNumber, input.runs ?? []), userId: context.id }]);
+    return result;
   } finally {
     working.end();
   }
@@ -71,7 +77,12 @@ export async function setWallGroupType(jobId: string, input: WallGroupTypeInput)
  * through `confirmSheetSuggestions` below — one group or many — for the token
  * Undo puts it back with.
  */
-export type ConfirmGroupInput = WallGroupTypeInput & { heightFt: number | null; level?: string | null };
+export type ConfirmGroupInput = WallGroupTypeInput & {
+  heightFt: number | null;
+  level?: string | null;
+  /** For `TakeoffEvent` only: what the queue pre-filled and whether the person changed it. Never trusted for anything else. */
+  event?: { source?: string | null; picked?: boolean; heightEdited?: boolean };
+};
 
 /** The height and level a group may be confirmed with, or why not. */
 function checkedHeight(input: ConfirmGroupInput): { heightFt: number | null; level: string | null } | string {
@@ -108,10 +119,17 @@ export type SheetSuggestionsUndo = {
    * from. Undo removes one nothing uses (Chrome on Baker: C8B stayed in the library).
    */
   createdTypes?: { id: string; proposalId: string; reopen: boolean }[];
+  /** The accepted groups' event targets, so an Undo is recorded against them (`TakeoffEvent`). */
+  targets?: { planId: string; pageNumber: number; target: string }[];
 };
 const GROUPS_MAX = 200;
 
-export async function confirmSheetSuggestions(jobId: string, groups: ConfirmGroupInput[]): Promise<ActionResultWith<{ accepted: number; failed: string[]; undo: SheetSuggestionsUndo }>> {
+export async function confirmSheetSuggestions(
+  jobId: string,
+  groups: ConfirmGroupInput[],
+  /** Enter on one group, or "Accept all" on a sheet: recorded as ACCEPT or ACCEPT_ALL. */
+  how: "accept" | "accept_all" = "accept",
+): Promise<ActionResultWith<{ accepted: number; failed: string[]; undo: SheetSuggestionsUndo }>> {
   // A person's action: background wall finders wait for it (`beginUserWork`).
   const working = beginUserWork();
   try {
@@ -137,11 +155,21 @@ export async function confirmSheetSuggestions(jobId: string, groups: ConfirmGrou
     // took 10.8 s, most of it the same read over again per group.
     const touched = new Set<string>();
     const createdTypes: { id: string; proposalId: string; reopen: boolean }[] = [];
+    const events: TakeoffEventRow[] = [];
+    const targets: { planId: string; pageNumber: number; target: string }[] = [];
+    const batch = how === "accept_all" ? randomUUID() : null;
     for (const group of groups) {
       const checked = checkedHeight(group);
       const result = typeof checked === "string" ? actionFail(checked) : await typeGroup(context, jobId, group, checked.heightFt, checked.level, touched, createdTypes);
-      if (result.ok) accepted += 1;
-      else failed.push(`${String(group.code)}: ${result.error}`);
+      if (result.ok) {
+        accepted += 1;
+        const target = groupTarget(group.planId, group.pageNumber, group.runs ?? []);
+        targets.push({ planId: group.planId, pageNumber: group.pageNumber, target });
+        const at = { companyId, jobId, planId: group.planId, pageNumber: group.pageNumber, target, userId: context.id };
+        events.push({ ...at, kind: how === "accept_all" ? "ACCEPT_ALL" : "ACCEPT", source: group.event?.source ?? null, batch });
+        if (group.event?.picked) events.push({ ...at, kind: "PICK" });
+        if (group.event?.heightEdited) events.push({ ...at, kind: "HEIGHT_EDIT" });
+      } else failed.push(`${String(group.code)}: ${result.error}`);
     }
     if (touched.size > 0) await prisma.$transaction((tx) => syncDecidedItems(tx, companyId, jobId, [...touched]));
     const after = await snapshot();
@@ -161,7 +189,9 @@ export async function confirmSheetSuggestions(jobId: string, groups: ConfirmGrou
       }),
       createdItems: after.items.filter((i) => !height.has(i.id)).map((i) => i.id),
       createdTypes,
+      targets,
     };
+    await recordTakeoffEvents(events);
     return { ok: true, value: { accepted, failed, undo } };
   } finally {
     working.end();
@@ -221,6 +251,9 @@ export async function undoSheetSuggestions(jobId: string, undo: SheetSuggestions
     revalidatePath(`/jobs/${jobId}`, "layout");
     revalidatePath(`/takeoff/${jobId}`);
     if (removedTypes > 0) revalidatePath("/wall-types");
+    // The groups this took back, as the accept recorded them (`TakeoffEvent`).
+    const undone = Array.isArray(undo?.targets) ? undo.targets.filter((t) => typeof t?.target === "string" && /^[0-9a-f]{16}$/.test(t.target)).slice(0, GROUPS_MAX) : [];
+    await recordTakeoffEvents(undone.map((t) => ({ companyId, jobId, kind: "UNDO" as const, planId: String(t.planId), pageNumber: Number.isInteger(t.pageNumber) ? t.pageNumber : null, target: t.target, userId: context.id })));
     return actionOk;
   } finally {
     working.end();
@@ -383,6 +416,7 @@ export async function clearWallGroupType(
     return ours.map((m) => ({ id: m.id, itemId: m.itemId, label: m.label }));
   });
   if (moved.length === 0) return actionFail("Nothing on this group is typed now. Reload the page.");
+  await recordTakeoffEvents([{ companyId, jobId, kind: "CHANGE", planId: input.planId, pageNumber: input.pageNumber, target: groupTarget(input.planId, input.pageNumber, runs), userId: context.id }]);
   revalidatePath(`/jobs/${jobId}`, "layout");
   revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { moved } };
@@ -428,6 +462,9 @@ export async function undoAutoPost(jobId: string, planId: string, pageNumber: nu
       await syncDecidedItems(tx, companyId, jobId, [...touched]);
       return auto.length + doorCount;
     });
+    // Every group the auto-post rule logged on this sheet is undone: one UNDO each.
+    const posted = await prisma.takeoffEvent.findMany({ where: { companyId, jobId, planId, pageNumber, kind: "AUTO_POST", target: { not: null } }, select: { target: true }, distinct: ["target"] });
+    await recordTakeoffEvents(posted.map((e) => ({ companyId, jobId, kind: "UNDO" as const, planId, pageNumber, target: e.target, userId: context.id })));
     revalidatePath(`/jobs/${jobId}`, "layout");
     revalidatePath(`/takeoff/${jobId}`);
     return { ok: true, value: { runs } };

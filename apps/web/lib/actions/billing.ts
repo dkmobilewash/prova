@@ -1,6 +1,7 @@
 "use server";
 
 import { loadGcProposal } from "@/lib/estimating/gc-proposal";
+import { recordTakeoffEvents } from "@/lib/takeoff/events";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { deleteDocument } from "@/lib/blob";
@@ -166,6 +167,8 @@ export async function createSignatureRequest(jobId: string) {
   if (!existing) {
     const expiresAt = new Date(Date.now() + SIGNATURE_REQUEST_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
     await prisma.signatureRequest.create({ data: { jobId, token: linkToken(), expiresAt } });
+    // The bid is sent: the end of "upload to sent bid" (`TakeoffEvent`).
+    await recordTakeoffEvents([{ companyId: company.id, jobId, kind: "SEND", userId: context.id }]);
   }
 
   revalidatePath(`/jobs/${jobId}`);

@@ -50,11 +50,12 @@ export function QueueGroupConfirm({
   missing?: { text: string; href: string; action: string } | null;
   /** A type's heights by part of the building, each with what printed it, to pick from. */
   heightOptions?: (code: string | null) => readonly CodeHeight[];
-  onAccept: (code: string | null, heightFt: number | null) => void;
+  /** `meta`, for `TakeoffEvent` only: whether the person chose a type other than the pre-filled one, or typed a height. */
+  onAccept: (code: string | null, heightFt: number | null, meta: { picked: boolean; heightEdited: boolean }) => void;
   onSkip: () => void;
   /** "13 groups nothing names on A101": offers the type picked here on all of them at once. */
   rest?: string | null;
-  onAcceptRest?: (code: string, heightFt: number | null) => void;
+  onAcceptRest?: (code: string, heightFt: number | null, meta: { picked: boolean; heightEdited: boolean }) => void;
   /** What sits beside each type's number: its thickness and legend picture, for a group nothing names. */
   codeDetail?: (code: string) => ReactNode;
 }) {
@@ -108,8 +109,9 @@ export function QueueGroupConfirm({
       if (!parsed.ok || !(parsed.n > 0 && parsed.n < 100)) return setError(parsed.ok ? "A wall height is between 0 and 100 ft." : parsed.error);
       feet = parsed.n;
     }
-    if (all && pick !== null && onAcceptRest) onAcceptRest(pick.code, feet);
-    else onAccept(pick?.code ?? null, feet);
+    const meta = { picked: (pick?.code ?? null) !== (suggested?.code ?? null), heightEdited: typed !== null && typed.trim() !== "" };
+    if (all && pick !== null && onAcceptRest) onAcceptRest(pick.code, feet, meta);
+    else onAccept(pick?.code ?? null, feet, meta);
   }
   const offersRest = rest !== null && onAcceptRest !== undefined && choosing;
   const choose = (code: string) => {

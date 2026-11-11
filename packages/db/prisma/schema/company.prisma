@@ -291,6 +291,7 @@ model Company {
   bidOutcomes               BidOutcome[]
   aiRecommendations         AiRecommendation[]
   agentSettings             CompanyAgentSettings?
+  takeoffEvents TakeoffEvent[]
 }
 
 enum UserRole {

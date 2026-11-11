@@ -837,3 +837,53 @@ model TakeoffLayerName {
 
   @@unique([jobId, groupKey])
 }
+
+/// What a person (or the auto-post rule) did to a job's takeoff, one row per act,
+/// so automation can be measured on real jobs (`lib/takeoff/events.ts`). APPEND-ONLY:
+/// nothing updates a row. "Changed after accepting" is DERIVED at read from a later
+/// UNDO or CHANGE on the same `target`, never stored.
+///
+/// NO PLAN CONTENT. `target` is a hash of a wall group's run coordinates, so two
+/// acts on one group can be matched and nothing of the drawing can be read back;
+/// `source` is a code from `PostSource` (or "none"), never a tag, a code or a note.
+enum TakeoffEventKind {
+  /// The review queue's Enter on one wall group.
+  ACCEPT
+  /// "Accept all" on a sheet: one row per group, the press shared by `batch`.
+  ACCEPT_ALL
+  /// The person chose a type other than the one the queue pre-filled.
+  PICK
+  /// The person typed a height instead of the one offered.
+  HEIGHT_EDIT
+  /// The queue's Skip.
+  SKIP
+  /// Undo of an accept.
+  UNDO
+  /// A later Set type or Clear type on a group: the accuracy signal.
+  CHANGE
+  /// The auto-post rule typed a group with nobody pressing anything.
+  AUTO_POST
+  /// A signing link was made: the bid was sent.
+  SEND
+}
+
+model TakeoffEvent {
+  id         String           @id @default(cuid())
+  companyId  String
+  company    Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  jobId      String
+  job        Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  kind       TakeoffEventKind
+  /// The plan and sheet it happened on; null for SEND, which is the job's.
+  planId     String?
+  pageNumber Int?
+  target     String?
+  source     String?
+  /// One "Accept all" press, shared by its rows, so a press counts as one touch.
+  batch      String?
+  userId     String?
+  createdAt  DateTime         @default(now())
+
+  @@index([jobId, createdAt])
+  @@index([companyId, createdAt])
+}

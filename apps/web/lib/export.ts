@@ -1177,6 +1177,8 @@ export const EXPORT_COLUMN_OMISSIONS: Record<string, string> = {
 };
 
 export const EXPORT_INTERNAL_MODELS: Record<string, string> = {
+  TakeoffEvent:
+    "C Stream's own measurement of its automation — which queue presses and auto-posts happened when, keyed by a hash of each wall group's position; it holds nothing the customer typed or drew, and the takeoff itself (items, measurements, lines) is exported",
   TakeoffPlanTextRead:
     "working-out kept between detections — what plan-text reading found on a set (its legend, its door schedule, each sheet's join), recomputable from the drawing at any time; the wall types a person added from it are exported with the library",
   Crew: "picking aid — a saved name for people the schedule form ticks together; the planned days themselves are exported",
