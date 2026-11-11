@@ -469,6 +469,16 @@ export async function loadTakeoffWorkspace(
     const label = sheetPickerLabel(number ?? scannedNumberByPage[row.pageNumber] ?? null, title);
     if (label !== null) sheetLabelByPage[row.pageNumber] = label;
   }
+  // ── TWO SHEETS, ONE NAME: SAY WHICH PAGE ──
+  // Bluetooth's set prints its construction plan twice (pages 6 and 7, both "AI101 ·
+  // CONSTRUCTION PLAN") and its partition detail twice; the picker offered two identical
+  // choices and nothing said which was which (ROUND 18, 2026-11-11). A repeated label
+  // carries its page; a unique one is left as it is.
+  const seenLabels = new Map<string, number>();
+  for (const label of Object.values(sheetLabelByPage)) seenLabels.set(label, (seenLabels.get(label) ?? 0) + 1);
+  for (const [page, label] of Object.entries(sheetLabelByPage)) {
+    if ((seenLabels.get(label) ?? 0) > 1) sheetLabelByPage[Number(page)] = `${label} (page ${page})`;
+  }
 
   // Which sheet to open on, for work, for Scale and for Review (`startPage.ts`).
   const scoreByPage = new Map(sheetRows.map((row) => [row.pageNumber, takeoffRank(effectiveSheetNumber(row), effectiveTitle(row)).score]));
