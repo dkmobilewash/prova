@@ -726,6 +726,8 @@ export async function loadTakeoffWorkspace(
     sheetLabelByPage,
     startPage,
     sureFloorPlanPages,
+    /** The floor plans the takeoff needs (`floorPlansOfTheWork`): what the plan set's and the stepper's Scale count. */
+    floorPlansNeeded: theWork,
     earlierVersionByPage,
     sheetRows,
     items,
