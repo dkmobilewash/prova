@@ -7,6 +7,8 @@ import { gridText, tableRowsFromPage } from "@/lib/plan-ingest/scheduleTable";
 import { bareTextTags } from "./bareTextTags";
 import { inPageWidthUnits } from "./findWallsOnSheet";
 import { legendPages, type PageForLegend } from "./legendPages";
+import { readLegendFromText } from "./legendText";
+import { readPartitionAssembly } from "./partitionAssembly";
 import { openingsInWalls } from "./openings";
 import { joinOpeningsToSchedule, widthAndHeight, type PlacedMark } from "./openingMarks";
 import { storedLegendTypesFromJson } from "./legendProposal";
@@ -243,6 +245,27 @@ export async function legendForPlan(input: {
     };
     await writeStored(input.planId, SET_PAGE, "legend", legend);
     return legend;
+  }
+  // ── NO MODEL READ: THE PAGES' OWN TEXT ──
+  // The switch off, the provider out, or the read refused: the same candidates read from their text
+  // alone (`legendText.ts`). Not stored, so the model's read is still tried next time.
+  for (const candidate of candidates.slice(0, 2)) {
+    if (input.outOfTime()) return null;
+    const text = await input.doc.pageText(candidate.page);
+    const items = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
+    const symbols = tagSymbols({ segments: (await input.doc.pageStrokes(candidate.page)).segments, text: items, unitsPerPaperInch: 72 });
+    const read = readLegendFromText({ items, widthPt: text.widthPt, heightPt: text.heightPt, symbols });
+    if (read.types.length === 0) continue;
+    const title = pages.find((p) => p.page === candidate.page)?.title ?? null;
+    return {
+      page: candidate.page,
+      title,
+      codes: read.types.map((t) => t.code.toUpperCase()),
+      proposals: read.types.map((t) => ({ ...t, assembly: readPartitionAssembly({ lines: t.lines, where: `page ${candidate.page}, type ${t.code}` }) })),
+      reason: read.reason,
+      confidence: read.confidence,
+      ...(read.uno.length > 0 ? { uno: read.uno } : {}),
+    };
   }
   return null;
 }

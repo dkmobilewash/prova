@@ -9,6 +9,7 @@ import { legendPages } from "@/lib/takeoff/legendPages";
 import { legendProposalFrom } from "@/lib/takeoff/legendProposalBuild";
 import { refreshSuggestionsAfterResponse } from "@/lib/takeoff/suggestionRefresh";
 import { legendCropRects, type CropRect } from "@/lib/takeoff/legendSight";
+import { LEGEND_TEXT_SOURCE, readLegendFromText } from "@/lib/takeoff/legendText";
 import { pageLines } from "@/lib/takeoff/planTextRead";
 import { tagSymbols } from "@/lib/takeoff/tagSymbols";
 import type { PlanPdf } from "./planPdf";
@@ -66,6 +67,7 @@ export function wallLegendWork(ctx: StageCtx, deps: WallLegendDeps = realDeps): 
     const pdf = await deps.openPdf(ctx.planId, ctx.companyId);
     let lines: string[];
     let crops: (codes: string[]) => CropRect[];
+    let fromText: WallLegendRead;
     try {
       lines = await pageLines(pdf, task.pageNumber);
       const candidate = legendPages([{ page: task.pageNumber, title, lines }])[0];
@@ -75,14 +77,39 @@ export function wallLegendWork(ctx: StageCtx, deps: WallLegendDeps = realDeps): 
       const strokes = await pdf.pageStrokes(task.pageNumber);
       const symbols = tagSymbols({ segments: strokes.segments, text: items, unitsPerPaperInch: 72 });
       crops = (codes) => legendCropRects({ text: items, codes, widthPt: text.widthPt, heightPt: text.heightPt, symbols });
+      // The same page read from its text alone, for when the model cannot read it (below).
+      fromText = readLegendFromText({ items, widthPt: text.widthPt, heightPt: text.heightPt, symbols });
     } finally {
       await pdf.close();
     }
 
+    // ── THE TEXT READ, WHENEVER THE MODEL'S IS UNAVAILABLE ──
+    // The company's switch off, its plan-sheet allowance spent, the provider out of credit or the
+    // call failing: the set still gets its wall types, read from the page's own text with no model
+    // (`legendText.ts`), saved as the proposal with `model: "legend text"`. Measured on the nine
+    // training sheets: 63.6% of keyed footage settled correctly against the model read's 66.2%,
+    // 7.5% of what it types wrong against 6.6% — where with no legend nothing is typed. Not metered:
+    // it costs nothing. A model read that succeeds later replaces it (same row).
+    const saveFromText = async (): Promise<boolean> => {
+      if (fromText.types.length === 0) return false;
+      await deps.saveProposal({
+        ingestJobId: ctx.ingestJobId,
+        planId: ctx.planId,
+        companyId: ctx.companyId,
+        pageNumber: task.pageNumber,
+        sheetTitle: title,
+        model: LEGEND_TEXT_SOURCE,
+        read: fromText,
+        crops: crops(fromText.types.map((t) => t.code)),
+      });
+      refreshSuggestionsAfterResponse({ planId: ctx.planId, companyId: ctx.companyId });
+      return true;
+    };
+
     const pass = await deps.gate(ctx.companyId);
-    if (!pass.ok) return { ok: false, error: pass.error };
+    if (!pass.ok) return (await saveFromText()) ? { ok: true } : { ok: false, error: pass.error };
     const claimed = await deps.claim(ctx.companyId, pass.settings.planSheetsPerMonth);
-    if (!claimed.ok) return { ok: false, error: claimed.error };
+    if (!claimed.ok) return (await saveFromText()) ? { ok: true } : { ok: false, error: claimed.error };
 
     let read: WallLegendRead;
     try {
@@ -108,9 +135,12 @@ export function wallLegendWork(ctx: StageCtx, deps: WallLegendDeps = realDeps): 
         // The provider refused it (out of credit, rate limit, 5xx, no connection): the sheet is
         // given back and the page retries by itself (`providerOutage.ts`).
         await deps.release(claimed.claim);
+        // The text read now; the page still retries, so the model's read replaces it when it can.
+        await saveFromText();
         return { ok: false, error: PLAN_READING_UNAVAILABLE, outage: true };
       }
       await deps.markFailure(claimed.claim);
+      if (await saveFromText()) return { ok: true };
       return { ok: false, error: "The wall legend on this sheet could not be read. Try it again." };
     }
     // A page that looked like a legend and held no types is not a failure and
