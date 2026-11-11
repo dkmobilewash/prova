@@ -1202,7 +1202,7 @@ export function TakeoffPlanViewer({
   async function runRestOfSet(open: number) {
     const mine = postWait.current;
     const pages = await takeoffSetPages(jobId, planId).catch(() => null);
-    if (pages === null || !pages.ok || postWait.current !== mine) return;
+    if (pages === null || !pages.ok || !Array.isArray(pages.value) || postWait.current !== mine) return;
     const rest = pages.value.filter((p) => p !== open);
     if (rest.length === 0) return;
     const total = rest.length + 1;
