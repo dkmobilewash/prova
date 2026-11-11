@@ -4,7 +4,8 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
-import { finishWizard, landOnDashboard, startJob } from "../lib/journey";
+import { finishWizard, landOnDashboard, nextActionAnswer, startJob } from "../lib/journey";
+import { openItems } from "../lib/finders";
 import { SYNTHETIC_STEPS } from "../lib/syntheticReport.mjs";
 import type { SyntheticRun, SyntheticStep } from "../lib/syntheticReport.d.mts";
 
@@ -37,7 +38,7 @@ const HALF_SHEET_FEET = 72;
 
 test("the demo environment: sign in to proposal", async ({ page }) => {
   const monitor = new HealthMonitor(page);
-  const run: SyntheticRun & { commit?: string; jobId?: string } = { ok: false, startedAt: new Date().toISOString(), steps: [] };
+  const run: SyntheticRun & { deployment?: string; jobId?: string } = { ok: false, startedAt: new Date().toISOString(), steps: [] };
   const save = () => {
     mkdirSync(path.dirname(OUT), { recursive: true });
     writeFileSync(OUT, JSON.stringify(run, null, 2));
@@ -61,14 +62,23 @@ test("the demo environment: sign in to proposal", async ({ page }) => {
   }
 
   let jobId = "";
+  let wallType = "";
   try {
     await step("sign in", async () => {
       await signInAs(page, PERSONAS.takeoff.email);
       await landOnDashboard(page, monitor);
-      run.commit = await servedCommit(page);
+      run.deployment = await servedDeployment(page);
     });
 
     await step("create job", async () => {
+      // The starter assemblies, once: a type with parts is what prices the walls. A no-op after the first day.
+      await page.goto("/wall-types");
+      await expectHealthy(page, "wall types", { monitor });
+      const starters = page.getByRole("button", { name: /Start from the common trade assemblies/ });
+      if (await starters.isVisible()) {
+        await starters.click();
+        await expect(page.getByText(/^Added |already have every starter/)).toBeVisible({ timeout: 60_000 });
+      }
       jobId = await startJob(page, monitor, { name: `ZZ-SYNTH ${run.startedAt.slice(0, 10)}`, gcName: "ZZ-SYNTH GC", newGc: false });
       await finishWizard(page, monitor, jobId);
       run.jobId = jobId;
@@ -98,7 +108,11 @@ test("the demo environment: sign in to proposal", async ({ page }) => {
       const groups = page.locator('[data-takeoff="found-group"]');
       // A found group is the deployed code reading this sheet's walls; none exists before the press.
       await expect(groups.first()).toBeVisible({ timeout: 300_000 });
-      return `${await groups.count()} wall group(s) found`;
+      // Found is not done: the walls go on the job once the sheet's walls are stored, and the panel says so.
+      // Leaving before this line appears leaves the job with no quantities and nothing to review.
+      const posted = page.locator('[data-takeoff="posted-note"]');
+      await expect(posted).toHaveText(/^Put on the job/, { timeout: 300_000 });
+      return `${await groups.count()} wall group(s) found; ${(await posted.innerText()).replace(/\s+/g, " ").trim().slice(0, 160)}`;
     });
 
     await step("review queue", async () => {
@@ -106,19 +120,72 @@ test("the demo environment: sign in to proposal", async ({ page }) => {
       const queue = page.locator('[data-takeoff="review-queue"]');
       await expect(queue).toBeVisible({ timeout: 120_000 });
       await expectHealthy(page, "review queue", { monitor, signedIn: false });
-      return (await queue.locator('[data-takeoff="review-queue-left"]').innerText().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 120);
+      const left = queue.locator('[data-takeoff="review-queue-left"]');
+      const said = async () => (await left.innerText().catch(() => "")).replace(/\s+/g, " ").trim();
+      const before = await said();
+      // The found walls wait here untyped. Give them a type with parts and a height: that is what prices them.
+      const group = queue.locator('[data-takeoff="queue-group"]').first();
+      await expect(group, `the queue offers no wall group to type ("${before}")`).toBeVisible({ timeout: 60_000 });
+      await hydrated(page, '[data-takeoff="queue-accept"]');
+      const typed = (await group.locator('[data-takeoff="queue-type"]').innerText()).trim();
+      if (typed === "—") await group.locator('[data-takeoff="queue-code"]').first().click();
+      const type = (await group.locator('[data-takeoff="queue-type"]').innerText()).trim();
+      if (type === "—") throw new Error("no wall type to give the found walls: the starter assemblies are missing");
+      const height = group.locator('[data-takeoff="queue-height"]');
+      if ((await height.inputValue()) === "") await height.fill("10");
+      // Accept is optimistic: the group leaves the queue at once and the type is saved after. So the
+      // signal is the save's own answer, not the queue's count (leaving early dropped the save).
+      const actions: string[] = [];
+      const listen = async (response: import("@playwright/test").Response) => {
+        if (response.request().method() !== "POST" || !response.request().headers()["next-action"]) return;
+        const body = await response.text().catch(() => "");
+        actions.push(`${response.status()} ${body.replace(/\s+/g, " ").slice(-200)}`);
+      };
+      page.on("response", listen);
+      const answer = nextActionAnswer(page, 60_000);
+      await group.locator('[data-takeoff="queue-accept"]').click();
+      const saved = await answer;
+      await page.waitForTimeout(8_000);
+      page.off("response", listen);
+      console.log(`SYNTH queue accept ${type}: ${saved}\n  ${actions.join("\n  ")}`);
+      if (!/answered 200/.test(saved)) throw new Error(`typing the walls ${type}: ${saved}`);
+      await expect.poll(said, { timeout: 30_000, message: `the queue still says "${before}" after typing the walls ${type}` }).not.toBe(before);
+      const refused = queue.getByRole("alert");
+      if ((await refused.count()) > 0 && (await refused.first().innerText()).trim() !== "") throw new Error(`the queue refused ${type}: ${(await refused.first().innerText()).trim()}`);
+      wallType = type;
+      return `typed ${type}; "${before}" → "${await said()}"`;
     });
 
     await step("build estimate", async () => {
+      // As the stepper's "Put the takeoff on the estimate" does: the typed walls' item, Send takeoff to the estimate.
+      await page.goto(`/takeoff/${jobId}`);
+      await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 120_000 });
+      await openItems(page);
+      const item = page.locator('[data-takeoff="items-rail"] [data-takeoff="item-row"]').filter({ hasText: wallType }).first();
+      await expect(item, `no ${wallType} item in the items rail`).toBeVisible({ timeout: 60_000 });
+      await hydrated(page, '[data-takeoff="pick-item"]');
+      await item.locator('[data-takeoff="pick-item"]').click();
+      const panel = page.locator('[data-takeoff="assembly-panel"]');
+      await expect(panel).toBeVisible({ timeout: 60_000 });
+      await panel.locator('[data-takeoff="send-to-estimate"]').click();
+      const result = panel.locator('[data-takeoff="send-result"]');
+      await expect(result).toContainText(/\d+ added/, { timeout: 60_000 });
+      const sent = (await result.innerText()).replace(/\s+/g, " ").trim().slice(0, 120);
       await page.goto(`/jobs/${jobId}/estimate`);
       await expectHealthy(page, "estimate", { monitor });
-      // TODO(selectors): settled by the first run against a preview.
+      // No line exists on a new job until the takeoff is sent.
+      const lines = page.locator('[data-tour="job-line-items"] [id^="line-"]');
+      await expect(lines.first()).toBeVisible({ timeout: 60_000 });
+      const total = (await page.locator('[data-tour="job-line-items"]').getByText(/^Lines total/).innerText()).replace(/\s+/g, " ");
+      return `${sent}; ${await lines.count()} line(s), ${total}`;
     });
 
     await step("open proposal", async () => {
       await page.goto(`/jobs/${jobId}/proposal`);
       await expectHealthy(page, "proposal", { monitor });
-      await expect(page.locator('[data-proposal="terms"]')).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByRole("heading", { level: 1, name: /^Proposal — / })).toBeVisible({ timeout: 60_000 });
+      await expect(page.getByRole("heading", { name: "Schedule of values" })).toBeVisible();
+      await expect(page.getByText("This job has no line items yet.")).toHaveCount(0);
     });
 
     expect(monitor.crashes, "uncaught exceptions in the browser").toEqual([]);
@@ -148,17 +215,27 @@ async function setScaleByClicking(page: Page): Promise<void> {
   await expect(page.getByText(/^Scale set/)).toBeVisible({ timeout: 60_000 });
 }
 
-/** The commit the preview is serving: the first 32 hex of `dpl=` (CLAUDE.md). */
-async function servedCommit(page: Page): Promise<string> {
+/** The deployment the preview is serving, from `dpl=` on its scripts (a Vercel `dpl_…` id, not a commit). */
+async function servedDeployment(page: Page): Promise<string> {
   return page.evaluate(
-    () => [...document.querySelectorAll<HTMLScriptElement>('script[src*="dpl="]')].map((s) => /dpl=([0-9a-f]{32})/.exec(s.src)?.[1]).find(Boolean) ?? "unknown",
+    () => [...document.querySelectorAll<HTMLScriptElement>('script[src*="dpl="]')].map((s) => /dpl=([\w-]+)/.exec(s.src)?.[1]).find(Boolean) ?? "unknown",
   );
 }
 
 /** The failure in one line, plus the one cause worth naming: a demo database behind main. */
 async function explain(page: Page, error: unknown): Promise<string> {
-  const first = (error instanceof Error ? error.message : String(error)).split("\n").find((l) => l.trim())?.trim() ?? "unknown";
+  // eslint-disable-next-line no-control-regex
+  const first = (error instanceof Error ? error.message : String(error)).replace(/\u001b\[[0-9;]*m/g, "").split("\n").find((l) => l.trim())?.trim() ?? "unknown";
   const body = await page.locator("body").innerText({ timeout: 2_000 }).catch(() => "");
-  const drift = /Migrate demo database|does not exist in the current database|column .* does not exist/.test(body);
-  return `${drift ? "the demo database is behind main — run the Migrate demo database workflow. " : ""}${first.slice(0, 300)} (at ${page.url()})`;
+  // The drift arm's own sentence (components/PageLoadError.tsx). NOT "Migrate demo database": the
+  // not-drift arm names that workflow too, to say it will not help.
+  const drift = body.includes("On this preview, this is the database, not the code.");
+  const boundary = body.includes("This page didn't load");
+  const reference = /include reference (\S+?)\.?$/m.exec(body)?.[1];
+  const cause = drift
+    ? "the demo database is behind main — run the Migrate demo database workflow. "
+    : boundary
+      ? `the page hit its error boundary${reference ? ` (reference ${reference}, in Vercel's logs)` : ""}. `
+      : "";
+  return `${cause}${first.slice(0, 300)} (at ${page.url()})`;
 }

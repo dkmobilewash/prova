@@ -33,7 +33,7 @@ writeFileSync(historyPath, JSON.stringify(nextHistory(history, run), null, 2));
 
 const text = slackText(v, {
   baseUrl: process.env.SYNTHETIC_BASE_URL ?? "?",
-  commit: run?.commit ?? process.env.SYNTHETIC_EXPECT_COMMIT ?? "unknown",
+  commit: process.env.SYNTHETIC_EXPECT_COMMIT ?? "unknown",
   runUrl: process.env.RUN_URL ?? "(local run)",
 });
 console.log(text);

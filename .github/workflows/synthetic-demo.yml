@@ -77,14 +77,20 @@ jobs:
       - name: Wait for the preview to serve main's commit
         env:
           SHA: ${{ steps.sync.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+        # The page's `dpl=` is a Vercel deployment id (dpl_…), not the commit. The Vercel GitHub app
+        # posts a "Vercel – prova-web" status on the commit whose target_url ends in that id, one per
+        # deployment of the commit (production's too). So: wait until the id the alias serves is one
+        # of this commit's successful Vercel deployments.
         run: |
           set -e
           set -o pipefail
-          want="${SHA:0:32}"
+          got=""
           for i in $(seq 1 60); do
-            got=$(curl -fsSL "$SYNTHETIC_BASE_URL/sign-in" 2>/dev/null | grep -oE 'dpl=[0-9a-f]{32}' | head -1 | cut -d= -f2 || true)
-            if [ "$got" = "$want" ]; then echo "serving $want after $((i - 1))0 s"; exit 0; fi
-            echo "serving '${got:-nothing}', want $want"
+            got=$(curl -fsSL "$SYNTHETIC_BASE_URL/sign-in" 2>/dev/null | grep -oE 'dpl=dpl_[A-Za-z0-9]+' | head -1 | sed 's/^dpl=dpl_//' || true)
+            ids=$(gh api "repos/${{ github.repository }}/commits/$SHA/statuses" --jq '.[] | select(.context | startswith("Vercel")) | select(.state == "success") | .target_url' | sed 's#.*/##' || true)
+            if [ -n "$got" ] && echo "$ids" | grep -qx "$got"; then echo "serving dpl_$got, a deployment of ${SHA:0:8}, after $((i - 1))0 s"; exit 0; fi
+            echo "serving 'dpl_${got:-nothing}'; ${SHA:0:8}'s deployments so far: $(echo $ids)"
             sleep 30
           done
           echo "SYNTHETIC_PRECHECK_ERROR=the preview never served main's commit ${SHA:0:8} in 30 min (last seen: ${got:-nothing}). Read the Vercel deployment for branch synthetic-demo. Nothing was walked." >> "$GITHUB_ENV"

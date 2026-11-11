@@ -27,5 +27,5 @@ export default defineConfig({
   // The walk's own steps carry their budgets; this is the ceiling over all of them.
   timeout: 25 * 60_000,
   expect: { timeout: 30_000 },
-  use: { baseURL, trace: "retain-on-failure", screenshot: "only-on-failure", ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
+  use: { baseURL, actionTimeout: 30_000, navigationTimeout: 120_000, trace: "retain-on-failure", screenshot: "only-on-failure", ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
 });
