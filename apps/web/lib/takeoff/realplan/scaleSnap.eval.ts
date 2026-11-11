@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { hasTextLayer, openPlanPdf } from "../../plan-ingest/planPdf";
 import { readScaleFromSheet } from "../../plan-ingest/pageInventory";
 import { SNAP_SOURCE } from "../scaleFromDimensions";
@@ -35,7 +35,8 @@ function pdfs(dir: string, out = new Map<string, string>()): Map<string, string>
   return out;
 }
 
-it.skipIf(LABELS === "" || DIRS.length === 0)("scale snap on labelled sheets", { timeout: 3_600_000 }, async () => {
+describe.skipIf(LABELS === "" || DIRS.length === 0)("scale snap", () => {
+it("on labelled sheets", { timeout: 3_600_000 }, async () => {
   const files = new Map<string, string>();
   for (const d of DIRS) pdfs(d, files);
   const lines: string[] = [];
@@ -79,4 +80,8 @@ it.skipIf(LABELS === "" || DIRS.length === 0)("scale snap on labelled sheets", {
   lines.unshift(summary);
   console.error(summary);
   if (process.env.OUT) writeFileSync(process.env.OUT, lines.join("\n") + "\n");
+  // A label folder or plan path that matched nothing would read as a clean zero.
+  const graded = lines.filter((l) => /^(SNAP|READ|DECLINED) /.test(l));
+  expect(graded.length, "no labelled sheet was read").toBeGreaterThan(0);
+});
 });
