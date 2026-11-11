@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { requireCompanyContext } from "@/lib/auth";
 import { formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
-import { WINDOW_DAYS, formatHours, loadPilotMetrics } from "@/lib/internal/pilotMetrics";
+import { WINDOW_DAYS, formatElapsed, loadPilotMetrics } from "@/lib/internal/pilotMetrics";
 
 export const metadata = { title: "Pilots" };
 
@@ -86,7 +86,7 @@ export default async function InternalPilotsPage() {
                   <td className={cell} data-pilots="typed">{row.wallsTypedByPerson}</td>
                   <td className={cell} data-pilots="auto">{row.autoPosted}</td>
                   <td className={cell} data-pilots="bid">
-                    {formatHours(row.uploadToBidHours)}
+                    {formatElapsed(row.uploadToBidHours)}
                     {row.bidsSent > 0 && <span className="text-xs text-ink-muted"> ({row.bidsSent})</span>}
                   </td>
                   <td className={cell} data-pilots="reports">

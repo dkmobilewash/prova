@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatHours, median } from "./pilotMetrics";
+import { formatElapsed, median } from "./pilotMetrics";
 
 describe("the pilot dashboard's arithmetic", () => {
   it("median of none, odd and even", () => {
@@ -8,10 +8,10 @@ describe("the pilot dashboard's arithmetic", () => {
     expect(median([4, 1, 3, 2])).toBe(2.5);
   });
   it("upload-to-bid reads in minutes, hours or days", () => {
-    expect(formatHours(null)).toBe("—");
-    expect(formatHours(0.25)).toBe("15 min");
-    expect(formatHours(2)).toBe("2 h");
-    expect(formatHours(47.94)).toBe("47.9 h");
-    expect(formatHours(72)).toBe("3 d");
+    expect(formatElapsed(null)).toBe("—");
+    expect(formatElapsed(0.25)).toBe("15 min");
+    expect(formatElapsed(2)).toBe("2 h");
+    expect(formatElapsed(47.94)).toBe("47.9 h");
+    expect(formatElapsed(72)).toBe("3 d");
   });
 });

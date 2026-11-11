@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { formatHours } from "@/lib/render-hours";
 
 /**
  * ── THE PILOT DASHBOARD'S FIGURES: ONE ROW PER CUSTOMER COMPANY ──
@@ -55,12 +56,14 @@ export function median(values: number[]): number | null {
   return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
-/** "3 h", "2.5 d", "—": the upload-to-bid time at a glance. */
-export function formatHours(hours: number | null): string {
+/** "15 min", "3 h", "2.5 d", "—": the upload-to-bid time at a glance. */
+export function formatElapsed(hours: number | null): string {
   if (hours === null) return "—";
-  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))} min`;
-  if (hours < 48) return `${Math.round(hours * 10) / 10} h`;
-  return `${Math.round((hours / 24) * 10) / 10} d`;
+  const minutes = Math.max(1, Math.round(hours * 60));
+  if (hours < 1) return `${minutes} min`;
+  if (hours < 48) return `${formatHours(Math.round(hours * 10) / 10)} h`;
+  const days = Math.round((hours / 24) * 10) / 10;
+  return `${days} d`;
 }
 
 type CountRow = { companyId: string; n: bigint | number };
