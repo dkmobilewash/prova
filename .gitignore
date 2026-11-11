@@ -57,6 +57,8 @@ apps/web/playwright-report-public
 apps/web/test-results-public
 apps/web/playwright-report-lien-waiver
 apps/web/test-results-lien-waiver
+apps/web/playwright-report-synthetic
+apps/web/test-results-synthetic
 apps/web/blob-report
 
 # expo prebuild output — generated from app.json + plugins/, never edited by hand
