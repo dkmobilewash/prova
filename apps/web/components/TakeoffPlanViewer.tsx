@@ -6375,7 +6375,14 @@ export function TakeoffPlanViewer({
           // the end where the scrollbar can reach it.
           <div className={fill ? "flex min-h-full min-w-full" : ""}>
           <div ref={sheetRef} className={`relative w-fit${fill ? " m-auto" : ""}`}>
-            <canvas ref={canvasRef} className="block" />
+            {/* ── 0 × 0 UNTIL THE SHEET IS DRAWN ──
+                A canvas is 300 × 150 by default, so "the canvas has a width" was true
+                before the PDF had even loaded, and every spec that waits for it before
+                clicking the sheet clicked an empty box: the two clicks of Set scale went
+                nowhere and the scale form never opened (takeoff-estimate-chain, flaky on
+                main: the PDF arrived 250 ms after the clicks). The render sets the real
+                size; until then there is nothing to click. */}
+            <canvas ref={canvasRef} width={0} height={0} className="block" />
             {/* The lit layer's length, on the drawing beside the run it names. */}
             {litReadout !== null && cssWidth > 0 && (
               <div
