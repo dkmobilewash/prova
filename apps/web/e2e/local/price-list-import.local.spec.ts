@@ -92,6 +92,7 @@ test.describe("a supplier price list prices Baker's estimate", () => {
     await page.waitForURL(/\/welcome/, { timeout: 90_000 });
     await hydrated('[data-setup="trades"] button');
     await page.locator('[data-setup="trades"]').getByRole("button", { name: /Framing and drywall/ }).click();
+    await page.locator('[data-setup="skip-sample"]').click(); // the sample offer after the trade (#1120): not now
     await page.getByRole("button", { name: "Later" }).click();
     const skip = page.getByRole("button", { name: "Skip for now" });
     if (await seen(skip, 15_000)) await skip.click();
@@ -213,6 +214,32 @@ test.describe("a supplier price list prices Baker's estimate", () => {
     expect(sources.every((s) => /Northgate Building Supply price list \d+\/\d+\/\d{4}/.test(s))).toBe(true);
     note(`Unpriced materials: ${unpricedBefore} → 0`);
     await shot("estimate-after-import");
+
+    // ── 6. ORDER MATERIALS: THE CONTRACTED ESTIMATE AS A DRAFT PO, IN WHOLE PACKS ──
+    // Buyout starts at the contract, so the job is contracted (the walk does not
+    // re-walk the executed subcontract, which journey.spec.ts covers).
+    await prisma.job.update({ where: { id: jobId }, data: { status: "CONTRACTED" } });
+    await page.goto(`/jobs/${jobId}/estimate`);
+    await hydrated('[data-order="go"]');
+    await page.locator('[data-order="supplier"]').selectOption({ label: "Northgate Building Supply" });
+    await shot("order-materials");
+    await page.locator('[data-order="go"]').click();
+    await expect(page.locator('[data-order="done"]')).toBeVisible({ timeout: 60_000 });
+    note(`Order materials: ${(await page.locator('[data-order="done"]').innerText()).replace(/\s+/g, " ")}`);
+    await expect(page.locator('[data-order="po"]')).toHaveCount(1);
+    await expect(page.locator('[data-order="po"]').first()).toContainText(/^PO 1: \d+ lines?, \$[\d,.]+, draft$/);
+    await shot("order-materials-done");
+    const poLines = await prisma.purchaseOrderLine.findMany({ where: { purchaseOrder: { jobId } }, include: { lineItem: { select: { description: true, quantity: true, unit: true } } } });
+    for (const l of poLines) note(`PO line: ${l.lineItem.description} (${l.lineItem.quantity} ${l.lineItem.unit}) → ${l.quantity} ${l.unit} "${l.description}" @ ${l.unitPrice}`);
+    // Every material line is ordered, and every order is whole packs.
+    expect(poLines.length).toBe(after.filter((l) => l.costCategory === "MATERIAL").length);
+    expect(poLines.every((l) => Number(l.quantity) === Math.ceil(Number(l.quantity)))).toBe(true);
+    expect(poLines.some((l) => l.unit === "PAIL") && poLines.some((l) => l.unit === "BX")).toBe(true);
+    expect((await prisma.purchaseOrder.findFirstOrThrow({ where: { jobId } })).status).toBe("DRAFT");
+    await page.locator('[data-order="open-buyout"]').click();
+    await page.waitForURL(new RegExp(`/jobs/${jobId}/buyout`));
+    await expect(page.getByText(/PO 1 · Northgate Building Supply · draft/)).toBeVisible({ timeout: 30_000 });
+    await shot("buyout-draft");
 
     writeFileSync(path.join(OUT, "notes.md"), notes.map((n) => `- ${n}`).join("\n") + "\n");
   });
