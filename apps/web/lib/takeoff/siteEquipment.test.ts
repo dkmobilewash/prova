@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { offeredCandidates, SITE_EQUIPMENT_LONGEST_FEET, SITE_EQUIPMENT_REACH_FEET, siteEquipmentWord } from "./offeredCandidates";
+import { offeredCandidates, SITE_EQUIPMENT_LONGEST_FEET, SITE_EQUIPMENT_REACH_FEET, SITE_TAG_GUARD_FEET, SITE_WORK_REACH_FEET, siteEquipmentWord, siteWorkWord } from "./offeredCandidates";
 import type { WallCandidate } from "./wallVectors";
 
 // 100 ft per page-width unit, 1000 pt wide: 1 ft = 0.01 units = 10 pt.
@@ -48,5 +48,33 @@ describe("a run with no extent is never offered", () => {
     const got = offeredCandidates(sheet([wall(0.1, 0.5, 0.4, 0.5), point]));
     expect(got.candidates).toHaveLength(1);
     expect(got.setAside.find((a) => a.kind === "zero-extent")?.n).toBe(1);
+  });
+});
+
+describe("site work: a site word written on the line sets it aside", () => {
+  const run = wall(0.1, 0.5, 0.4, 0.5); // 30 ft along y = 50 ft
+  it("takes a site word within SITE_WORK_REACH_FEET, and not one beyond it", () => {
+    expect(siteWorkWord(run, [word("PROPERTY LINE", 25, 51.5)], W, FPU, [])?.word).toBe("PROPERTY LINE");
+    expect(siteWorkWord(run, [word("CONC. CURB", 25, 50 + SITE_WORK_REACH_FEET + 1.5)], W, FPU, [])).toBeNull();
+  });
+  it("matches whole words only", () => {
+    expect(siteWorkWord(run, [word("CURBSIDE PICKUP", 25, 51)], W, FPU, [])).toBeNull();
+    expect(siteWorkWord(run, [word("PARKING STRIPING", 25, 51)], W, FPU, [])?.word).toBe("PARKING");
+  });
+  it("never where a room tag or wall-type tag is within SITE_TAG_GUARD_FEET", () => {
+    const tag = { x: 0.25, y: 0.5 + (SITE_TAG_GUARD_FEET - 1) / FPU };
+    expect(siteWorkWord(run, [word("FENCE", 25, 51)], W, FPU, [tag])).toBeNull();
+    expect(siteWorkWord(run, [word("FENCE", 25, 51)], W, FPU, [{ x: 0.25, y: 0.5 + (SITE_TAG_GUARD_FEET + 2) / FPU }])?.word).toBe("FENCE");
+  });
+  it("takes a site-labelled run longer than the equipment words' cap", () => {
+    const line = wall(0.1, 0.5, 0.1 + (SITE_EQUIPMENT_LONGEST_FEET + 50) / FPU, 0.5);
+    const got = offeredCandidates(sheet([line], [word("PROPERTY LINE", 60, 51)]));
+    expect(got.setAside.find((a) => a.kind === "site-equipment")?.n).toBe(1);
+    expect(offeredCandidates(sheet([line], [word("PLAY YARD", 60, 51)])).candidates).toHaveLength(1);
+  });
+  it("sets the run aside as site equipment when offered", () => {
+    const got = offeredCandidates(sheet([run], [word("LANDSCAPE", 25, 51)]));
+    expect(got.candidates).toHaveLength(0);
+    expect(got.setAside.find((a) => a.kind === "site-equipment")?.n).toBe(1);
   });
 });

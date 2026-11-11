@@ -26,6 +26,8 @@ import { classifySingleLines, worthOffering } from "./singleLines";
 import { trustedScanViews } from "./scannedCaptions";
 import { ocrWordsSentence, runsInOcrWords, scanOnlyAsides } from "./scannedWords";
 import { viewKind } from "./viewKind";
+import { readRoomTags } from "./roomTags";
+import { wallTypeTags } from "./wallTags";
 import { oneFacePerLine, wallFromPair, type StrokeSegment, type WallCandidate } from "./wallVectors";
 
 /**
@@ -194,6 +196,63 @@ export function siteEquipmentWord(
   return best;
 }
 
+/**
+ * ── SITE WORK: A WORD SAYING SO, WRITTEN ON THE LINE ──
+ *
+ * The site drawn around a building (curbs, property lines, parking stripes,
+ * fences, walks, planters, retaining walls) pairs up like walls, and on the
+ * new-build training sheets it is the largest kind of junk that sits outside
+ * the building. Geometry was measured and fails: a bounding box, the room
+ * tags' extent and the exterior wall loop all either take real walls or miss
+ * the site, because curbs and fences close loops of their own. The label does
+ * not fail. Measured through the whole pipeline on the training sheets (main
+ * 8a92ba4b, labels 2026-11-11), what reaches the estimate loses 319 ft of junk
+ * and 0 ft of real wall: a 199 ft property line on Camp Bow Wow A101, a
+ * sidewalk on Bunkie A100 (71 ft), a run on Totem A2.1 (50 ft). On the 26
+ * held-out sheets it sets nothing aside, so it is small, and it is safe.
+ * Closer than the equipment words' 10 ft because FENCE and CURB also sit near
+ * real walls a few feet away.
+ *
+ * Never where a room tag or a wall-type tag is also within `SITE_TAG_GUARD_FEET`:
+ * a tag says the run is building, whatever else is written by it. It changed
+ * nothing measured; it is there for the sheet that labels a fenced court.
+ */
+export const SITE_WORK_WORDS = /\b(CURBS?|PROPERTY\s*LINE|P\.\s?L\.|PARKING|STRIP(?:E|ES|ING)|FENC(?:E|ES|ING)|SIDEWALKS?|PLANTERS?|CONC\.?\s*WALK|ASPHALT|LANDSCAP(?:E|ED|ING)|RETAINING|SETBACK|EASEMENT)\b/i;
+export const SITE_WORK_REACH_FEET = 3;
+export const SITE_TAG_GUARD_FEET = 8;
+
+type Point = { x: number; y: number };
+type TextItem = { str: string; x: number; y: number; width: number; height: number };
+const feetToSegment = (wall: { x1: number; y1: number; x2: number; y2: number }, p: Point, feetPerUnit: number) => {
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, l2 = dx * dx + dy * dy || 1e-12;
+  const t = Math.max(0, Math.min(1, ((p.x - wall.x1) * dx + (p.y - wall.y1) * dy) / l2));
+  return Math.hypot(p.x - (wall.x1 + t * dx), p.y - (wall.y1 + t * dy)) * feetPerUnit;
+};
+
+/** Room tags and wall-type tags, in page-width units: text that says "this is building". */
+export function buildingTags(textItems: readonly TextItem[], widthPt: number): Point[] {
+  return [...readRoomTags(textItems).map((t) => ({ x: (t.numberAt ?? t).x / widthPt, y: (t.numberAt ?? t).y / widthPt })), ...wallTypeTags(textItems, widthPt)];
+}
+
+/** The nearest site-work word within reach of this wall, or null — never where a building tag is near. */
+export function siteWorkWord(
+  wall: { x1: number; y1: number; x2: number; y2: number },
+  textItems: readonly TextItem[],
+  widthPt: number,
+  feetPerUnit: number,
+  tags: readonly Point[],
+): { word: string; feet: number } | null {
+  let best: { word: string; feet: number } | null = null;
+  for (const item of textItems) {
+    const m = SITE_WORK_WORDS.exec(item.str);
+    if (m === null) continue;
+    const feet = feetToSegment(wall, { x: (item.x + item.width / 2) / widthPt, y: (item.y - item.height / 2) / widthPt }, feetPerUnit);
+    if (feet <= SITE_WORK_REACH_FEET && (best === null || feet < best.feet)) best = { word: m[1].toUpperCase(), feet };
+  }
+  if (best === null || tags.some((p) => feetToSegment(wall, p, feetPerUnit) <= SITE_TAG_GUARD_FEET)) return null;
+  return best;
+}
+
 /** Is this part of the sheet one that was measured? */
 function onAPlan(sheet: DetectedSheet, x1: number, y1: number, x2: number, y2: number): boolean {
   if (sheet.planBoxes === null) return true;
@@ -258,6 +317,7 @@ export function offeredCandidates(
   }
 
   const equipment: { wall: WallCandidate; word: string; feet: number }[] = [];
+  let tags: { x: number; y: number }[] | undefined;
 
   const wordRuns: { wall: WallCandidate; word: string }[] = [];
 
@@ -288,10 +348,14 @@ export function offeredCandidates(
       return false;
     }
     if (!onAPlan(sheet, w.x1, w.y1, w.x2, w.y2)) return false;
+    // The length cap is the equipment words' (a 10 ft reach finds a building's
+    // wall beside a play yard); a site word within 3 ft of a long line is that
+    // line's own label — a property line is as long as the lot.
     const hit =
-      sheet.textItems === undefined || w.lengthFeet > SITE_EQUIPMENT_LONGEST_FEET
+      sheet.textItems === undefined
         ? null
-        : siteEquipmentWord(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit);
+        : (w.lengthFeet > SITE_EQUIPMENT_LONGEST_FEET ? null : siteEquipmentWord(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit)) ??
+          siteWorkWord(w, sheet.textItems, sheet.widthPt, sheet.feetPerUnit, (tags ??= buildingTags(sheet.textItems, sheet.widthPt)));
     if (hit !== null) {
       equipment.push({ wall: w, word: hit.word, feet: hit.feet });
       return false;
