@@ -38,7 +38,8 @@ export function PlanSetScales({ jobId, planId, rows, reading, inventory = null }
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const sure = rows.filter((row) => row.confidence === "high");
-  const floors = rows.filter((row) => row.category === "floor");
+  // The floor plans the takeoff needs (`PlanSetRow.needed`), so this count is the stepper's.
+  const floors = rows.filter((row) => row.category === "floor" && row.needed !== false);
   const floorsSet = floors.filter((row) => row.confidence === "set").length;
   const toLookAt = floors.filter((row) => row.confidence === "printed" || row.confidence === "none");
   const printable = toLookAt.filter((row) => row.printedFix && row.scaleName !== null);
