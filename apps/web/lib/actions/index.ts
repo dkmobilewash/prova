@@ -71,6 +71,7 @@ export * from "./intake";
 export * from "./ask";
 export * from "./phase-codes";
 export * from "./help";
+export * from "./problemReport";
 export * from "./spreadsheetImport";
 export * from "./payrollRegister";
 export * from "./wh347Statement";
