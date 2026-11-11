@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma, type PlanIngestStage } from "@prova/db";
+import { SAMPLE_READS_NOTHING, isSamplePlanUrl } from "@/lib/sample-job/samplePlan";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { claimPorts, closeIfSettled, ingestViewOf, unfinishedIngestsFor } from "@/lib/plan-ingest/claim";
@@ -71,9 +72,13 @@ export type FailedPage = { pageNumber: number; attempts: number; error: string |
 async function planInCompany(planId: string, companyId: string) {
   return prisma.takeoffPlan.findFirst({
     where: { id: planId, companyId },
-    select: { id: true, jobId: true, companyId: true },
+    select: { id: true, jobId: true, companyId: true, fileUrl: true },
   });
 }
+
+/** The stages that read with the model and so use the company's plan sheets (`claimPlanSheet`). */
+const SHEET_STAGES: readonly PlanIngestStage[] = ["TITLE_BLOCK", "WALL_LEGEND", "SCHEDULE_ROWS"];
+
 
 /**
  * Create a run over the set's pages, or hand back the one already running.
@@ -101,6 +106,7 @@ export async function startPlanIngest(planId: string, stage: PlanIngestStage): P
 
   const plan = await planInCompany(planId, companyId);
   if (!plan) return { ok: false, error: "That plan set could not be found." };
+  if (isSamplePlanUrl(plan.fileUrl) && SHEET_STAGES.includes(stage)) return { ok: false, error: SAMPLE_READS_NOTHING };
 
   if (!isRunnableStage(stage)) {
     // REFUSED UP FRONT rather than one page at a time. A job created for an

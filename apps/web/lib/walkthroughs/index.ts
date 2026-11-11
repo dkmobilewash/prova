@@ -127,6 +127,8 @@ export const ROUTES_WITHOUT_WALKTHROUGH: string[] = [
   // C Stream's own operator page (who is still logging in, across every
   // customer). No customer can open it, so there is nobody to walk through it.
   "/internal/usage",
+  // The pilot dashboard: operator-only like /internal/usage, nobody to walk through it.
+  "/internal/pilots",
   // C Stream's own sales CRM, for selling C Stream. Operator-only like
   // /internal/usage: a customer sees "Not part of your access".
   "/sales",

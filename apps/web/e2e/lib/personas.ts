@@ -339,6 +339,20 @@ export const PERSONAS = {
     username: "e2e_gcproposal",
     phone: "+15555550187",
   },
+  /**
+   * ── A BRAND-NEW COMPANY THAT TRIES THE SAMPLE SET ──
+   *
+   * `sample-job.spec.ts` picks a trade on /welcome, presses "Try it on a sample
+   * set" and deletes the sample. It must meet the trade question unanswered, and
+   * its sample job and trade types must not land in another spec's company, so it
+   * has its own, unseeded like NEW_JOB.
+   */
+  sampleJob: {
+    email: "e2e-samplejob+clerk_test@example.com",
+    label: "SAMPLE_JOB",
+    username: "e2e_samplejob",
+    phone: "+15555550193",
+  },
 } as const;
 
 export type PersonaKey = keyof typeof PERSONAS;

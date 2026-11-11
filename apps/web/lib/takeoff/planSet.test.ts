@@ -105,3 +105,34 @@ describe("with nothing named, the pages whose own drawings say FLOOR PLAN are th
     expect(planSetRows({ ...input, sheets: named, sure: new Set([14]) }).find((r) => r.pageNumber === 14)?.category).toBe("rcp");
   });
 });
+
+describe("the plan set counts the floor plans the takeoff needs, as the stepper does", () => {
+  const sheets = new Map([
+    [12, { number: "A100", title: "OVERALL FLOOR PLAN", pageType: null }],
+    [13, { number: "A101", title: "FLOOR PLAN", pageType: null }],
+  ]);
+  const base = { pages: [12, 13], sheets, prefill: {}, printed: {}, multiScale: new Set<number>(), decline: {} };
+  it("a floor plan the takeoff does not need (A100 overall) never holds the step open", () => {
+    const rows = planSetRows({ ...base, scaled: new Set([13]), needed: new Set([13]) });
+    expect(rows.find((r) => r.pageNumber === 12)).toMatchObject({ category: "floor", needed: false });
+    expect(scaleStepDone(rows)).toBe(true);
+  });
+  it("without the needed list every floor plan counts, as before", () => {
+    expect(scaleStepDone(planSetRows({ ...base, scaled: new Set([13]) }))).toBe(false);
+  });
+});
+
+describe("scale snap: one click per sheet, never in the bulk buttons (Bluetooth AI101)", () => {
+  const sheets = new Map([[6, { number: "AI101", title: "CONSTRUCTION PLAN", pageType: "PLAN" }]]);
+  const base = { pages: [6], sheets, scaled: new Set<number>(), printed: {}, multiScale: new Set<number>(), decline: {} };
+  it("offers the snapped scale with its count, and is neither 'high' (Confirm scales) nor printedFix (Use the printed scale on all)", () => {
+    const [row] = planSetRows({ ...base, prefill: { 6: offer({ unconfirmed: true, snapDimensions: 18 }) } });
+    expect(row).toMatchObject({ confidence: "printed", scaleName: '1/8" = 1\'-0"', printedFix: false, snapDimensions: 18 });
+    expect(row?.why).toMatch(/^18 printed dimensions agree on 1\/8" = 1'-0" within 1%/);
+  });
+  it("a printed-scale offer is unchanged", () => {
+    const [row] = planSetRows({ ...base, prefill: { 6: offer({ unconfirmed: true }) } });
+    expect(row).toMatchObject({ confidence: "printed", printedFix: true });
+    expect(row?.snapDimensions).toBeUndefined();
+  });
+});

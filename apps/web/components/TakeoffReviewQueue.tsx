@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/actions/shared";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { confirmSheetScales, confirmSheetSuggestions, confirmWindows, undoAutoPost, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
+import { shortScaleName } from "@/lib/takeoff/scaleFromDimensions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
@@ -380,7 +381,6 @@ export function TakeoffReviewQueue({
 
   const button = "min-h-[32px] rounded-md border border-line-card px-3 text-xs font-medium text-ink-body hover:bg-rail disabled:opacity-50";
   const primaryButton = "min-h-[32px] rounded-md border border-brand bg-brand px-3 text-xs font-semibold text-neutral-900 disabled:opacity-50";
-  const row = current !== null && current.kind === "scale" ? planSet.find((r) => r.pageNumber === current.pageNumber) : undefined;
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-card bg-surface px-3 py-1.5 text-xs text-ink-body" data-takeoff="review-queue">
       <span className="font-semibold" data-takeoff="review-queue-left">
@@ -584,29 +584,97 @@ export function TakeoffReviewQueue({
               onUndoable={onUndoable}
             />
           )}
-          {current.kind === "scale" && (
-            <>
-              <span>No scale · floor plan {current.sheet}</span>
-              {row?.confidence === "high" && row.scaleName !== null && (
-                <button type="button" className={button} disabled={busy} onClick={() => void decide(() => confirmSheetScales(jobId, planId, [current.pageNumber]))} data-takeoff="review-queue-confirm-scale">
-                  Confirm {row.scaleName}
-                </button>
-              )}
-              {row?.printedFix === true && row.scaleName !== null && (
-                <button type="button" className={button} disabled={busy} onClick={() => void decide(() => confirmSheetScales(jobId, planId, [current.pageNumber], true))} data-takeoff="review-queue-printed">
-                  Use the printed scale {row.scaleName}
-                </button>
-              )}
-              <button
-                type="button"
-                className={button}
-                onClick={() => document.dispatchEvent(new CustomEvent("takeoff-shortcut", { detail: { key: "s" } }))}
-                data-takeoff="review-queue-set-scale"
-              >
-                Set it by two clicks
-              </button>
-            </>
-          )}
+          {current.kind === "scale" &&
+            (() => {
+              // ── ONE QUESTION FOR THE SET'S UNSCALED FLOOR PLANS (`loadReviewQueue`) ──
+              // "Use the printed scale on all N sheets" takes every sheet the plan set can scale
+              // in one press (Confirm for the reader's sure ones, the printed scale for the rest);
+              // the list keeps each sheet's own fix. The item is done when that press covered
+              // every sheet; otherwise it comes back with the ones still to do.
+              const pages = current.pages ?? [{ pageNumber: current.pageNumber, sheet: current.sheet }];
+              const rowOf = (n: number) => planSet.find((r) => r.pageNumber === n);
+              const sure = pages.map((p) => p.pageNumber).filter((n) => rowOf(n)?.confidence === "high" && rowOf(n)?.scaleName != null);
+              const printed = pages.map((p) => p.pageNumber).filter((n) => rowOf(n)?.confidence !== "high" && rowOf(n)?.printedFix === true && rowOf(n)?.scaleName != null);
+              const oneClick = sure.length + printed.length;
+              const scale = async (confirm: number[], usePrinted: number[]): Promise<ActionResult> => {
+                if (confirm.length > 0) {
+                  const a = await confirmSheetScales(jobId, planId, confirm).catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
+                  if (!a.ok) return a;
+                }
+                if (usePrinted.length > 0) {
+                  const b = await confirmSheetScales(jobId, planId, usePrinted, true).catch(() => ({ ok: false as const, error: "it did not save. Try it again." }));
+                  if (!b.ok) return b;
+                }
+                return { ok: true };
+              };
+              const some = async (confirm: number[], usePrinted: number[]) => {
+                setBusy(true);
+                setError(null);
+                const result = await scale(confirm, usePrinted);
+                setBusy(false);
+                if (!result.ok) return setError(result.error);
+                router.refresh();
+              };
+              return (
+                <>
+                  <span data-takeoff="review-queue-scale-count">
+                    No scale · {pages.length} floor plan{pages.length === 1 ? "" : "s"} the takeoff needs
+                  </span>
+                  {oneClick > 0 && (
+                    <button
+                      type="button"
+                      className={primaryButton}
+                      disabled={busy}
+                      data-takeoff="review-queue-scale-all"
+                      onClick={() => void (oneClick === pages.length ? decide(() => scale(sure, printed)) : some(sure, printed))}
+                    >
+                      Use the printed scale on all {oneClick} sheet{oneClick === 1 ? "" : "s"}
+                    </button>
+                  )}
+                  {/* Open when something needs its own fix, and for a short list, which costs nothing to show. */}
+                  <details className="w-full" data-takeoff="review-queue-scale-list" open={oneClick < pages.length || pages.length <= 3}>
+                    <summary className="cursor-pointer text-ink-muted">The sheets, each with its own fix</summary>
+                    <ul className="mt-1 flex flex-col gap-1">
+                      {pages.map((p) => {
+                        const r = rowOf(p.pageNumber);
+                        return (
+                          <li key={p.pageNumber} className="flex flex-wrap items-center gap-2" data-takeoff="review-queue-scale-sheet" data-page={p.pageNumber}>
+                            <span className="font-medium">{p.sheet}</span>
+                            <span className="text-ink-muted">{r?.scaleName ?? "no scale read"}</span>
+                            {r?.confidence === "high" && r.scaleName !== null && (
+                              <button type="button" className={button} disabled={busy} onClick={() => void some([p.pageNumber], [])} data-takeoff="review-queue-confirm-scale">
+                                Confirm {r.scaleName}
+                              </button>
+                            )}
+                            {r?.snapDimensions !== undefined && r.scaleName !== null && (
+                              <button type="button" className={button} disabled={busy} onClick={() => void some([], [p.pageNumber])} data-takeoff="review-queue-snap">
+                                Use {shortScaleName(r.scaleName)} (from {r.snapDimensions} dimensions)
+                              </button>
+                            )}
+                            {r?.confidence !== "high" && r?.printedFix === true && r.scaleName !== null && (
+                              <button type="button" className={button} disabled={busy} onClick={() => void some([], [p.pageNumber])} data-takeoff="review-queue-printed">
+                                Use the printed scale {r.scaleName}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className={button}
+                              onClick={() => {
+                                document.dispatchEvent(new CustomEvent("takeoff-goto", { detail: { page: p.pageNumber } }));
+                                document.dispatchEvent(new CustomEvent("takeoff-shortcut", { detail: { key: "s" } }));
+                              }}
+                              data-takeoff="review-queue-set-scale"
+                            >
+                              Set it by two clicks
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </details>
+                </>
+              );
+            })()}
           {current.kind === "price" && current.askCost && (
             <form
               key={current.key}

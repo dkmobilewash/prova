@@ -227,7 +227,9 @@ test.describe("the job's one review queue", () => {
 
   test("6. the floor plan with no scale: its sheet, and the printed-scale fix", async () => {
     await goTo("scale");
-    await expect(item(tab)).toContainText("No scale · floor plan A102");
+    // One question for the set's unscaled floor plans (here one), each sheet with its own fix.
+    await expect(item(tab)).toContainText("No scale · 1 floor plan the takeoff needs");
+    await expect(item(tab).locator('[data-takeoff="review-queue-scale-sheet"]')).toHaveText([/^A102/]);
     await expect(picker(tab)).toHaveValue("2");
     await expect(item(tab).locator('[data-takeoff="review-queue-set-scale"]')).toBeVisible();
     await item(tab).locator('[data-takeoff="review-queue-printed"]').click();

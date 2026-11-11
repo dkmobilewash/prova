@@ -2039,6 +2039,7 @@ const MODULE_IMPORTS: Record<string, () => Promise<Record<string, unknown>>> = {
   // touches the uploaded package. The other two senders in this module are not
   // reachable from a capability-gated page and are not walked to from here.
   messages: () => import("./actions/messages"),
+  problemReport: () => import("./actions/problemReport"),
   // Lien deadlines — every write reachable only from /lien-deadlines, which
   // demands MANAGE_BILLING, and every one asserts it before any query.
   lienDeadlines: () => import("./actions/lienDeadlines"),

@@ -1,4 +1,5 @@
 import { createReadStream } from "node:fs";
+import { isSamplePlanUrl, readSamplePlan } from "@/lib/sample-job/samplePlan";
 import { stat } from "node:fs/promises";
 import { isLocalPlanUrl, localPlanPath } from "@/lib/plan-ingest/localPlanFile";
 import { NextResponse } from "next/server";
@@ -66,6 +67,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ plan
   // 342 MB. Reading it whole on every request is the difference between a
   // viewer that pages and one that stalls, which is the same reason the blob
   // path forwards the header.
+  // ── THE SAMPLE SET (`lib/sample-job/samplePlan.ts`) ── a few KB, sent whole.
+  if (isSamplePlanUrl(plan.fileUrl)) {
+    const sample = await readSamplePlan(plan.fileUrl);
+    if (!sample.ok) return NextResponse.json({ error: "That drawing could not be read." }, { status: 404 });
+    return new NextResponse(new Uint8Array(sample.bytes), {
+      status: 200,
+      headers: { "content-type": "application/pdf", "content-length": String(sample.bytes.length), "cache-control": "no-store" },
+    });
+  }
+
   if (isLocalPlanUrl(plan.fileUrl)) {
     const path = localPlanPath(plan.fileUrl, process.env);
     if (path === null) {

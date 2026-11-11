@@ -15,7 +15,7 @@ import type { MeasurementKind, StoredCalibration } from "@/lib/takeoff-plan";
 import type { ZoneNotice } from "@/lib/takeoff-zones";
 import { reducedPrint, setSheetWidth, printedScaleForSheet } from "./takeoff/reducedPrint";
 import { REPRODUCTION_SOURCE, reproductionCaution } from "./takeoff/reproductionScale";
-import { ARCHITECTURAL_SCALES } from "./takeoff/scaleFromDimensions";
+import { ARCHITECTURAL_SCALES, SNAP_SOURCE } from "./takeoff/scaleFromDimensions";
 
 /** A calibration as the viewer needs it: the drawn line plus the distance it
  * was declared to be, with the Decimal already turned into a number by the
@@ -172,6 +172,8 @@ export type ScalePrefill = {
    * Undefined on every ordinary sheet, which is almost all of them.
    */
   reducedPrintCaution?: string;
+  /** A scale snap (`SNAP_SOURCE`): this many dimensions agree on the standard scale within 1%. */
+  snapDimensions?: number;
   /**
    * WHETHER ANYTHING ON THE SHEET CONFIRMS THIS, and it changes what the screen
    * says rather than being metadata.
@@ -259,7 +261,12 @@ export function scalePrefillsFromReadings(
     let scaleName = row.scaleName;
     let declaredFeet = feet;
     let reducedPrintCaution: string | undefined;
-    if (row.source === REPRODUCTION_SOURCE) {
+    // A snap is the standard scale the dimensions agree on: never corrected for a reduced print
+    // (the dimensions already account for it), only offered.
+    const snapDimensions = row.source === SNAP_SOURCE ? (row.agreedText ?? "").split("\n").filter((line) => line.trim().length > 0).length : undefined;
+    if (snapDimensions !== undefined) {
+      // nothing to correct
+    } else if (row.source === REPRODUCTION_SOURCE) {
       // Already corrected by the dimensions; the sheet-width check below is
       // for a printed scale and must not correct it twice. The caution is
       // DERIVED from the two names the row holds, never stored.
@@ -300,6 +307,7 @@ export function scalePrefillsFromReadings(
       inheritedError: row.inheritedError ?? 0,
       unconfirmed,
       ...(reducedPrintCaution === undefined ? {} : { reducedPrintCaution }),
+      ...(snapDimensions === undefined ? {} : { snapDimensions }),
     };
   }
   return byPage;

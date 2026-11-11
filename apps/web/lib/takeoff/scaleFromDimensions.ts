@@ -188,6 +188,12 @@ export type DimensionLabel = {
  * 0.5% of a 3,000 ft takeoff is 15 ft.
  */
 const MAX_INHERITED_ERROR = 0.005;
+/** Scale snap: dimensions within this of a standard scale count as agreeing on it exactly. */
+export const SNAP_CLUSTER = 0.01;
+/** The stored source of a snapped reading: offered, never set without a person's click. */
+export const SNAP_SOURCE = "DIMENSIONS_SNAP";
+/** `1/8" = 1'-0"` → `1/8"`, for the button. */
+export const shortScaleName = (name: string) => name.split(" = ")[0] ?? name;
 
 /**
  * ENOUGH LINE WORK THAT A SHEET IS PLAINLY A DRAWING, so "no dimensions found"
@@ -255,6 +261,12 @@ export type ScaleVerdict =
        * it to tell a half-size reproduction from a sheet with no scale.
        */
       vote?: { scaleName: string; feetPerInch: number; votes: number; agreed: string[]; measured: number };
+      /**
+       * SCALE SNAP: the dimensions agree on a standard scale and cluster within 1% of it, but no
+       * single line is close enough to set it from. The standard scale is offered — the scale
+       * itself, not any measured line — for a person to confirm.
+       */
+      snap?: { scaleName: string; feetPerInch: number; dimensions: number; agreed: string[] };
     };
 
 /**
@@ -723,6 +735,32 @@ export function scaleFromDimensions(
     scale === null ? Infinity : Math.abs(best.feetPerInch - scale.feetPerInch) / scale.feetPerInch;
 
   if (inheritedError > MAX_INHERITED_ERROR) {
+    // ── SCALE SNAP: OFFER THE STANDARD SCALE THE DIMENSIONS CLUSTER ON ──
+    // Bluetooth AI101 (pages 6 and 7): 19 of 35 dimensions vote 1/8", nothing contradicts it,
+    // and the best single line is 0.7% out — so the sheet read NO scale and could not be taken
+    // off (ROUND 18, 2026-11-11). Seventeen of its dimensions sit within 1% of 1/8" (most at
+    // 0.00%); they are short (108 pt against a 130 pt calibration floor), which is why none
+    // could anchor a measured line — and why line length is no test here: a snap sets the
+    // STANDARD scale, not a line. When at least as many dimensions as a vote needs sit within
+    // 1% of it, it is offered. An offer, never set by itself: the reading is stored unconfirmed
+    // and a person presses "Use 1/8" (from N dimensions)".
+    const standard = (options.scales ?? ARCHITECTURAL_SCALES).find((s) => s.name === winner.name);
+    if (standard !== undefined) {
+      const near = candidates.filter((c) => Math.abs(c.feetPerInch - standard.feetPerInch) / standard.feetPerInch <= SNAP_CLUSTER);
+      const byLabel = new Map(near.map((c) => [c.labelKey, c.text]));
+      const dimensions = byLabel.size;
+      if (dimensions >= minAgreeing) {
+        return {
+          ok: false,
+          vote,
+          snap: { scaleName: standard.name, feetPerInch: standard.feetPerInch, dimensions, agreed: [...byLabel.values()] },
+          reason:
+            `${dimensions} printed dimensions on this sheet agree on ${winner.name} within 1%, but no single one is ` +
+            `close enough to set it from. Use ${winner.name} if that is the sheet's scale.`,
+          considered,
+        };
+      }
+    }
     return {
       ok: false,
       vote,

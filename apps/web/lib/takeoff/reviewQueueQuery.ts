@@ -14,7 +14,7 @@ import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber, effectiveTitle } from "@/lib/plan-ingest/sheetIndex";
-import { sheetCategory } from "@/lib/takeoff/planSet";
+import { floorPlansOfTheWork, wallsSheetsFor } from "@/lib/plan-ingest/walls";
 import { storedGeneralHeight, storedLevels } from "@/lib/takeoff/levelReads";
 import { storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { levelHeight, runLevels } from "@/lib/takeoff/levelHeights";
@@ -272,10 +272,17 @@ export async function loadReviewQueue(
   }
 
   const scaled = new Set(pages.filter((page) => page.calibrations.length > 0).map((page) => page.pageNumber));
-  const floors = sheetRows
-    .filter((row) => sheetCategory(effectiveSheetNumber(row), effectiveTitle(row), row.proposal?.pageType ?? null) === "floor")
-    .map((row) => row.pageNumber);
-  for (const pageNumber of floors) if (!scaled.has(pageNumber)) items.push({ kind: "scale", key: `scale:${pageNumber}`, pageNumber, sheet: sheetOf(pageNumber).sheet });
+  // ── ONLY THE FLOOR PLANS THE TAKEOFF NEEDS, AND ONE QUESTION FOR ALL OF THEM ──
+  // Every sheet a title called a plan was a scale item of its own: Green Bay's keyless
+  // titles made 380 (the accept-job walks, 2026-11-10), and with nothing named none was, so
+  // Topeka's stepper called Scale done with ten floor plans unscaled. The count is the
+  // whole-set rule's own (`floorPlansOfTheWork`: one plan per floor, the inventory's read
+  // where nothing names a sheet), for the stepper too, and the question is asked once.
+  const floors = floorPlansOfTheWork(await wallsSheetsFor(plan.id, companyId));
+  const unscaled = floors.filter((pageNumber) => !scaled.has(pageNumber));
+  if (unscaled.length > 0) {
+    items.push({ kind: "scale", key: "scale:set", pageNumber: unscaled[0]!, sheet: sheetOf(unscaled[0]!).sheet, pages: unscaled.map((pageNumber) => ({ pageNumber, sheet: sheetOf(pageNumber).sheet })) });
+  }
 
   // ── WHAT POSTED ITSELF: the proven sources' runs (`autoPost.ts`), per sheet, for the queue's header and Undo ──
   const autoRuns = await prisma.takeoffMeasurement.findMany({ where: { kind: "LINEAR", source: "DETECTED", label: { contains: AUTO_MARK }, page: { planId: plan.id } }, select: { xs: true, ys: true, page: { select: { pageNumber: true } } } });

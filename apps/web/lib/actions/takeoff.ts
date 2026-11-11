@@ -1,6 +1,7 @@
 "use server";
 
 import { syncReviewedItems, syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
+import { isSamplePlanUrl } from "@/lib/sample-job/samplePlan";
 import { namedItem, untypedItem, wallItemsForSheet, wallItemsNoteFor } from "@/lib/plan-ingest/wallItems";
 import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
@@ -577,7 +578,8 @@ export async function deleteTakeoffPlan(jobId: string, planId: string): Promise<
   // Only once the row is confirmed gone. Failures are swallowed by
   // `deleteDocument`, so a store that will not delete cannot turn a completed
   // delete into an error for somebody who just removed a plan.
-  if (plan?.fileUrl) await deleteDocument(plan.fileUrl);
+  // A sample set is the deployment's own file, shared by every company: never the store's to delete.
+  if (plan?.fileUrl && !isSamplePlanUrl(plan.fileUrl)) await deleteDocument(plan.fileUrl);
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
   return actionOk;
@@ -693,7 +695,8 @@ export async function confirmSheetScales(
   for (const pageNumber of inOrder) {
     const row = rows.get(pageNumber);
     const offer = data.scalePrefillByPage[pageNumber];
-    const allowed = row !== undefined && offer !== undefined && (usePrinted ? row.printedFix : row.confidence === "high");
+    // A snap only when its own page was asked for: `usePrinted` with one page (its button).
+    const allowed = row !== undefined && offer !== undefined && (usePrinted ? row.printedFix || (row.snapDimensions !== undefined && pages.length === 1) : row.confidence === "high");
     if (!allowed) {
       skipped += 1;
       continue;
@@ -704,7 +707,9 @@ export async function confirmSheetScales(
       skipped += 1;
       continue;
     }
-    const note = offer.unconfirmed
+    const note = offer.snapDimensions !== undefined
+      ? `${offer.snapDimensions} printed dimensions on this sheet agree on ${offer.scaleName} within 1% (${[...new Set(offer.agreed)].slice(0, 3).join(", ")}). Set to the standard scale with Use ${offer.scaleName}.`
+      : offer.unconfirmed
       ? `From the ${offer.scaleName} printed on this sheet. Nothing measurable on the sheet confirmed it.`
       : `Matched ${offer.agreed.length} printed dimension${offer.agreed.length === 1 ? "" : "s"} on this sheet (${offer.agreed.slice(0, 3).join(", ")}), within ${(offer.inheritedError * 100).toFixed(2)}%. Confirmed with Confirm scales.`;
     await writeCalibration({ planId, pageNumber, pageLabel: "", pageWidthPt, line, declared: offer.declaredFeet, note, userId: context.id, company });

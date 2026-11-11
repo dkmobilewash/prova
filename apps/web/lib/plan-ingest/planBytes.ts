@@ -1,4 +1,5 @@
 import { prisma } from "@prova/db";
+import { isSamplePlanUrl, readSamplePlan } from "@/lib/sample-job/samplePlan";
 import { documentUrlProblem, planTooLargeProblem } from "@/lib/document-uploads";
 import { isLocalPlanUrl, readLocalPlan } from "@/lib/plan-ingest/localPlanFile";
 
@@ -54,6 +55,10 @@ export async function readJobFileBytes(fileUrl: string, jobId: string, logId: st
     const tooLarge = planTooLargeProblem(local.bytes.length);
     return tooLarge ? { ok: false, error: tooLarge } : { ok: true, bytes: local.bytes };
   }
+
+  // ── THE SAMPLE SET, SHIPPED WITH THE APP (`lib/sample-job/samplePlan.ts`) ──
+  // Its own scheme, allowlisted by name, read from the deployment's files.
+  if (isSamplePlanUrl(plan.fileUrl)) return readSamplePlan(plan.fileUrl);
 
   const problem = documentUrlProblem(plan.fileUrl, "plan-takeoff", plan.jobId, process.env);
   if (problem) return { ok: false, error: problem };

@@ -79,7 +79,12 @@ export type ReviewItem =
       /** The window being looked at, zoomed to; null shows them all. */
       at: number | null;
     }
-  | { kind: "scale"; key: string; pageNumber: number; sheet: string }
+  /**
+   * The set's floor plans the takeoff needs that have no scale: ONE item for the set, the
+   * first of them on screen, `pages` every one (Green Bay's queue carried 380 scale items,
+   * one per sheet its keyless titles called a plan — the accept-job walks, 2026-11-10).
+   */
+  | { kind: "scale"; key: string; pageNumber: number; sheet: string; pages?: { pageNumber: number; sheet: string }[] }
   | { kind: "price"; key: string; lineItemId: string; description: string; quantity: string; unit: string | null; askCost: boolean; costCategory: CostCategoryValue | null };
 
 const length = (run: QueueRun) => Math.hypot(run.x2 - run.x1, run.y2 - run.y1);

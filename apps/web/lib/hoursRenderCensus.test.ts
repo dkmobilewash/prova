@@ -85,6 +85,9 @@ const APPROVED = ["formatHoursOrNull", "formatHours", "formatLoggedHours", "hour
  * below and forces the decision to be made again.
  */
 const NOT_AN_HOURS_NUMBER: Record<string, string> = {
+  // -- an ELAPSED TIME, shown in min, h or d --
+  "app/(app)/internal/pilots/page.tsx\t{formatElapsed(row.uploadToBidHours)}":
+    "An elapsed time (upload to sent bid) rendered as minutes, hours or days by formatElapsed in lib/internal/pilotMetrics.ts, whose hours branch goes through formatHours.",
   // -- a COUNT that happens to have "hours" in its name --
   "app/(app)/catalog/page.tsx\t{actuals.linesExcludedUnpricedHours}":
     "A count of catalog LINES excluded for having unpriced hours, not a quantity of hours. lib/catalog-actuals.ts: finished.length - priced.length.",
