@@ -1,0 +1,107 @@
+# One-off backfill (Diego, 2026-11-10): companies created after #1087 merged (2026-11-09T04:13:21Z) whose
+# planCompareOn was set false by the trade preset (#985's table, before #1109 merged 2026-11-10T23:19:36Z)
+# get planCompareOn = true.
+#
+# Selection: createdAt >= #1087 merge, tradePresetAskedAt between #1087 merge and #1109 merge + 1 h, and
+# planCompareOn still false. Nothing records an owner turning the switch off, and that's the one case this
+# can't rule out: it needs on-then-off after the preset, and it leaves no trace. `list` prints, per row,
+# how long after the preset the row last changed, so a human can look before `apply`.
+#
+# Run `list` first, then `apply`. Demo first, then production. Type the endpoint id to confirm. The job
+# compares it with the host the secret resolves to and refuses before touching anything (as migrate-demo.yml
+# does). `apply` uploads the selected rows' id/planCompareOn/updatedAt as an artifact BEFORE the update (the
+# backup), runs in one transaction, and prints counts only. Ids and timestamps, no names (log metadata,
+# not content).
+name: Backfill plan comparison (one-off)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "demo or production"
+        required: true
+        type: choice
+        options: [demo, production]
+      expect_host:
+        description: "Type the endpoint id: ep-patient-lake (demo) or ep-little-sea-a6bdnaw2 (production)"
+        required: true
+      mode:
+        description: "list (read only) or apply (backup + update)"
+        required: true
+        type: choice
+        options: [list, apply]
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      URL: ${{ inputs.target == 'production' && secrets.DIRECT_URL || secrets.DEMO_DIRECT_URL }}
+      TARGET: ${{ inputs.target }}
+      EXPECT_HOST: ${{ inputs.expect_host }}
+    steps:
+      - name: Check the target before touching anything
+        run: |
+          set -e
+          [ -n "$URL" ] || { echo "::error::the $TARGET connection secret is empty"; exit 1; }
+          case "$TARGET" in
+            production) want=ep-little-sea-a6bdnaw2 ;;
+            demo) want=ep-patient-lake ;;
+          esac
+          typed=$(printf '%s' "$EXPECT_HOST" | tr -d '[:space:]')
+          host=$(node -e 'console.log(new URL(process.env.URL).hostname)')
+          case "$typed" in "$want"*) ;; *) echo "::error::typed '$typed' is not the $TARGET endpoint ($want). Nothing ran."; exit 1 ;; esac
+          case "$host" in "$typed"*) ;; *) echo "::error::the $TARGET secret resolves to a different host than '$typed'. Nothing ran."; exit 1 ;; esac
+          echo "target: $TARGET, host starts with $typed ✓"
+
+      - name: The selection
+        run: |
+          set -e
+          cat > sel.sql <<'SQL'
+          SELECT id, "createdAt", "tradePresetAskedAt", "updatedAt", "planCompareOn",
+                 round(extract(epoch FROM ("updatedAt" - "tradePresetAskedAt")))::int AS secs_changed_after_preset
+          FROM "Company"
+          WHERE "createdAt" >= '2026-11-09T04:13:21Z'
+            AND "tradePresetAskedAt" >= '2026-11-09T04:13:21Z'
+            AND "tradePresetAskedAt" <  '2026-11-11T00:19:36Z'
+            AND "planCompareOn" = false
+          ORDER BY "createdAt";
+          SQL
+          echo "companies created since #1087: $(psql "$URL" -Atc "SELECT count(*) FROM \"Company\" WHERE \"createdAt\" >= '2026-11-09T04:13:21Z'")"
+          echo "of those, preset applied and planCompareOn still false (the selection):"
+          psql "$URL" -v ON_ERROR_STOP=1 -P pager=off -f sel.sql
+          psql "$URL" -v ON_ERROR_STOP=1 -AF, -P footer=off -f sel.sql > backup.csv
+          echo "selected: $(($(wc -l < backup.csv) - 1))"
+
+      - name: Back up the selected rows
+        if: inputs.mode == 'apply'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backfill-plan-compare-${{ inputs.target }}-backup
+          path: backup.csv
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Apply
+        if: inputs.mode == 'apply'
+        run: |
+          set -e
+          psql "$URL" -v ON_ERROR_STOP=1 -At <<'SQL'
+          BEGIN;
+          WITH sel AS (
+            SELECT id FROM "Company"
+            WHERE "createdAt" >= '2026-11-09T04:13:21Z'
+              AND "tradePresetAskedAt" >= '2026-11-09T04:13:21Z'
+              AND "tradePresetAskedAt" <  '2026-11-11T00:19:36Z'
+              AND "planCompareOn" = false
+          ), upd AS (
+            UPDATE "Company" c SET "planCompareOn" = true FROM sel WHERE c.id = sel.id RETURNING c.id
+          )
+          SELECT 'updated: ' || count(*) FROM upd;
+          COMMIT;
+          SQL
+          echo "still selected after apply (expect 0): $(psql "$URL" -Atc "SELECT count(*) FROM \"Company\" WHERE \"createdAt\" >= '2026-11-09T04:13:21Z' AND \"tradePresetAskedAt\" >= '2026-11-09T04:13:21Z' AND \"tradePresetAskedAt\" < '2026-11-11T00:19:36Z' AND \"planCompareOn\" = false")"
+          echo "Restore if needed: UPDATE \"Company\" SET \"planCompareOn\" = false WHERE id IN (<ids in the backup artifact>);"

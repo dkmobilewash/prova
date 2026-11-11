@@ -3499,7 +3499,12 @@ export function TakeoffPlanViewer({
           done = true;
         }
       } catch {
-        // The sheet is offered as it always was.
+        // The sheet is offered as it always was — and SAID so, because Run takeoff now
+        // waits for this answer (below): an unrecorded failure would leave it off for good.
+        if (!cancelled) {
+          setTakeoffVerdictByPage((prev) => setOnThisSheet<TakeoffSheetVerdict>(prev, pageNumber, { worthMeasuring: true, why: null, skipAutomatically: false }));
+          done = true;
+        }
       }
     })();
     return () => {
@@ -3572,13 +3577,23 @@ export function TakeoffPlanViewer({
   }, [autoOpened, openedVerdict, pageCount, initialPage, sheetLabelByPage, sheets]);
 
   /** Why Find the walls cannot run here, in the words both the toolbar and the revision panel show. */
+  // ── NOT BEFORE THE SHEET HAS SAID WHAT IT IS ──
+  // The verdict above arrives a second or so after the sheet opens, and until it did the
+  // button was ON. A press in that window started a find on a sheet about to be refused:
+  // on Baker with plan reading off the workspace opened on A111, the ceiling plan; the
+  // press began finding walls there, the verdict then turned Run takeoff off and the
+  // workspace moved to the floor plan, and the find was dropped with nothing posted —
+  // the new-customer walk waited 25 minutes for walls (2026-11-10). So the button waits
+  // for the answer ("Reading this sheet…"); a read that fails answers "offered" (above).
   const findWallsWhy = notATakeoffSheet
     ? (takeoffVerdict?.why ?? "This sheet does not look like one to measure walls on.")
     : !calibration
       ? "Set the scale on this sheet first — wall thickness is measured in feet of building."
       : !pageSize
         ? "The sheet is still loading."
-        : null;
+        : takeoffVerdict === null && answerKey === undefined && !readOnly
+          ? "Reading this sheet…"
+          : null;
 
   /**
    * ── FIND THE ROOMS ──
