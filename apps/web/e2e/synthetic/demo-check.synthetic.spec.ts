@@ -4,7 +4,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
-import { finishWizard, landOnDashboard, nextActionAnswer, startJob } from "../lib/journey";
+import { finishWizard, landOnDashboard, startJob } from "../lib/journey";
 import { openItems } from "../lib/finders";
 import { SYNTHETIC_STEPS } from "../lib/syntheticReport.mjs";
 import type { SyntheticRun, SyntheticStep } from "../lib/syntheticReport.d.mts";
@@ -133,22 +133,16 @@ test("the demo environment: sign in to proposal", async ({ page }) => {
       if (type === "—") throw new Error("no wall type to give the found walls: the starter assemblies are missing");
       const height = group.locator('[data-takeoff="queue-height"]');
       if ((await height.inputValue()) === "") await height.fill("10");
-      // Accept is optimistic: the group leaves the queue at once and the type is saved after. So the
-      // signal is the save's own answer, not the queue's count (leaving early dropped the save).
-      const actions: string[] = [];
-      const listen = async (response: import("@playwright/test").Response) => {
-        if (response.request().method() !== "POST" || !response.request().headers()["next-action"]) return;
-        const body = await response.text().catch(() => "");
-        actions.push(`${response.status()} ${body.replace(/\s+/g, " ").slice(-200)}`);
-      };
-      page.on("response", listen);
-      const answer = nextActionAnswer(page, 60_000);
+      // Accept is optimistic: the group leaves the queue at once and the save runs after, so neither the
+      // queue's count nor "the next action" says it landed (that was a sheet-summary action). The save's
+      // own answer carries "accepted"; wait for that one and require 1.
+      const save = page.waitForResponse(
+        async (response) => response.request().method() === "POST" && !!response.request().headers()["next-action"] && (await response.text().catch(() => "")).includes('"accepted":'),
+        { timeout: 60_000 },
+      );
       await group.locator('[data-takeoff="queue-accept"]').click();
-      const saved = await answer;
-      await page.waitForTimeout(8_000);
-      page.off("response", listen);
-      console.log(`SYNTH queue accept ${type}: ${saved}\n  ${actions.join("\n  ")}`);
-      if (!/answered 200/.test(saved)) throw new Error(`typing the walls ${type}: ${saved}`);
+      const answer = await (await save).text();
+      if (!answer.includes('"accepted":1')) throw new Error(`typing the walls ${type} was not accepted: ${answer.replace(/\s+/g, " ").slice(0, 200)}`);
       await expect.poll(said, { timeout: 30_000, message: `the queue still says "${before}" after typing the walls ${type}` }).not.toBe(before);
       const refused = queue.getByRole("alert");
       if ((await refused.count()) > 0 && (await refused.first().innerText()).trim() !== "") throw new Error(`the queue refused ${type}: ${(await refused.first().innerText()).trim()}`);
@@ -224,7 +218,6 @@ async function servedDeployment(page: Page): Promise<string> {
 
 /** The failure in one line, plus the one cause worth naming: a demo database behind main. */
 async function explain(page: Page, error: unknown): Promise<string> {
-  // eslint-disable-next-line no-control-regex
   const first = (error instanceof Error ? error.message : String(error)).replace(/\u001b\[[0-9;]*m/g, "").split("\n").find((l) => l.trim())?.trim() ?? "unknown";
   const body = await page.locator("body").innerText({ timeout: 2_000 }).catch(() => "");
   // The drift arm's own sentence (components/PageLoadError.tsx). NOT "Migrate demo database": the
