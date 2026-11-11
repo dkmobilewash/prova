@@ -695,7 +695,8 @@ export async function confirmSheetScales(
   for (const pageNumber of inOrder) {
     const row = rows.get(pageNumber);
     const offer = data.scalePrefillByPage[pageNumber];
-    const allowed = row !== undefined && offer !== undefined && (usePrinted ? row.printedFix : row.confidence === "high");
+    // A snap only when its own page was asked for: `usePrinted` with one page (its button).
+    const allowed = row !== undefined && offer !== undefined && (usePrinted ? row.printedFix || (row.snapDimensions !== undefined && pages.length === 1) : row.confidence === "high");
     if (!allowed) {
       skipped += 1;
       continue;
@@ -706,7 +707,9 @@ export async function confirmSheetScales(
       skipped += 1;
       continue;
     }
-    const note = offer.unconfirmed
+    const note = offer.snapDimensions !== undefined
+      ? `${offer.snapDimensions} printed dimensions on this sheet agree on ${offer.scaleName} within 1% (${[...new Set(offer.agreed)].slice(0, 3).join(", ")}). Set to the standard scale with Use ${offer.scaleName}.`
+      : offer.unconfirmed
       ? `From the ${offer.scaleName} printed on this sheet. Nothing measurable on the sheet confirmed it.`
       : `Matched ${offer.agreed.length} printed dimension${offer.agreed.length === 1 ? "" : "s"} on this sheet (${offer.agreed.slice(0, 3).join(", ")}), within ${(offer.inheritedError * 100).toFixed(2)}%. Confirmed with Confirm scales.`;
     await writeCalibration({ planId, pageNumber, pageLabel: "", pageWidthPt, line, declared: offer.declaredFeet, note, userId: context.id, company });

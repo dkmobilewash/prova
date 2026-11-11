@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { confirmSheetScales } from "@/lib/actions/takeoff";
+import { shortScaleName } from "@/lib/takeoff/scaleFromDimensions";
 import { CATEGORY_LABEL, CATEGORY_ORDER, type PlanSetRow, type ScaleConfidence } from "@/lib/takeoff/planSet";
 
 /**
@@ -147,6 +148,17 @@ export function PlanSetScales({ jobId, planId, rows, reading, inventory = null }
                 <Mark row={row} />
                 <span className="text-xs text-ink-muted">{row.why}</span>
                 <span className="ml-auto flex gap-2">
+                  {row.snapDimensions !== undefined && row.scaleName !== null && (
+                    <button
+                      type="button"
+                      disabled={pending}
+                      onClick={() => run([row.pageNumber], true)}
+                      data-takeoff="plan-set-snap"
+                      className="min-h-[32px] rounded-md border border-line-card px-2 text-xs text-ink-body hover:bg-rail-hover disabled:opacity-40"
+                    >
+                      Use {shortScaleName(row.scaleName)} (from {row.snapDimensions} dimensions)
+                    </button>
+                  )}
                   {row.printedFix && (
                     <button
                       type="button"

@@ -72,6 +72,8 @@ export type PlanSetRow = {
   why: string;
   /** "Use the printed scale" is a one-click fix on this sheet. */
   printedFix: boolean;
+  /** Scale snap: "Use 1/8" (from N dimensions)" is a one-click fix on this sheet, and only here. */
+  snapDimensions?: number;
   /**
    * A floor plan the takeoff needs (`floorPlansOfTheWork`: one plan per floor). False for a
    * floor plan it does not (Baker's A100 overall beside A101); absent when not known. The
@@ -109,6 +111,18 @@ export function planSetRows(input: {
     if (input.scaled.has(pageNumber)) return { ...base, confidence: "set", scaleName: offer?.scaleName ?? input.printed[pageNumber] ?? null, why: "A scale is saved on this sheet", printedFix: false };
     if (offer && !offer.unconfirmed && offer.reducedPrintCaution === undefined) {
       return { ...base, confidence: "high", scaleName: offer.scaleName, why: `Matched ${offer.agreed.length} printed dimension${offer.agreed.length === 1 ? "" : "s"}`, printedFix: false };
+    }
+    if (offer?.snapDimensions !== undefined) {
+      // Scale snap: one click, per sheet. Not `printedFix`, so neither "Use the printed scale on
+      // all" nor Confirm scales takes it — a person presses this sheet's own button.
+      return {
+        ...base,
+        confidence: "printed",
+        scaleName: offer.scaleName,
+        why: `${offer.snapDimensions} printed dimensions agree on ${offer.scaleName} within 1%; no single one is long enough to set it from`,
+        printedFix: false,
+        snapDimensions: offer.snapDimensions,
+      };
     }
     if (offer) {
       return {

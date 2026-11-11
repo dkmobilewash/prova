@@ -121,3 +121,18 @@ describe("the plan set counts the floor plans the takeoff needs, as the stepper 
     expect(scaleStepDone(planSetRows({ ...base, scaled: new Set([13]) }))).toBe(false);
   });
 });
+
+describe("scale snap: one click per sheet, never in the bulk buttons (Bluetooth AI101)", () => {
+  const sheets = new Map([[6, { number: "AI101", title: "CONSTRUCTION PLAN", pageType: "PLAN" }]]);
+  const base = { pages: [6], sheets, scaled: new Set<number>(), printed: {}, multiScale: new Set<number>(), decline: {} };
+  it("offers the snapped scale with its count, and is neither 'high' (Confirm scales) nor printedFix (Use the printed scale on all)", () => {
+    const [row] = planSetRows({ ...base, prefill: { 6: offer({ unconfirmed: true, snapDimensions: 18 }) } });
+    expect(row).toMatchObject({ confidence: "printed", scaleName: '1/8" = 1\'-0"', printedFix: false, snapDimensions: 18 });
+    expect(row?.why).toMatch(/^18 printed dimensions agree on 1\/8" = 1'-0" within 1%/);
+  });
+  it("a printed-scale offer is unchanged", () => {
+    const [row] = planSetRows({ ...base, prefill: { 6: offer({ unconfirmed: true }) } });
+    expect(row).toMatchObject({ confidence: "printed", printedFix: true });
+    expect(row?.snapDimensions).toBeUndefined();
+  });
+});
