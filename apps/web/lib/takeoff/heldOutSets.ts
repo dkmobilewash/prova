@@ -74,12 +74,23 @@ export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: str
     // Placed ABOVE the "Jefferson-City" sibling entry on purpose: that entry's
     // match also catches this file name, and `heldOutReason` returns the first
     // match, so without this order the round-18 answer key would report itself
-    // as "not a test key". Clinton and Anderson Readiness Centers, and the three
-    // Kirkland tenant improvements, stay TRAINING (Diego's split rule for
-    // round 18: at least one readiness center held out; none of the six draws
-    // walls as a single line).
+    // as "not a test key".
+    //
+    // All THREE round-18 readiness centers are held out (Diego, 2026-11-11):
+    // Clinton and Anderson are the same Missouri National Guard program as the
+    // held-out Albany and Jefferson City, so training on them would contaminate
+    // those scores. Round 18 trains on the three Kirkland tenant improvements
+    // only. None of the six draws walls as a single line.
     match: "Jefferson City Readiness Center Building 1",
     why: "National Guard readiness center, interior/exterior repairs, demolition + new-work plans — held out 2026-11-11 (round 18), before a label was written",
+  },
+  {
+    match: "Clinton Readiness Center",
+    why: "National Guard readiness center (same Missouri program as Albany and Jefferson City), repairs — held out 2026-11-11 (round 18), before a label was written",
+  },
+  {
+    match: "Anderson Readiness Center",
+    why: "National Guard readiness center (same Missouri program as Albany and Jefferson City), renovation — held out 2026-11-11 (round 18), before a label was written",
   },
   {
     // ── NOT HELD OUT, AND KEPT OUT OF TRAINING ANYWAY ──
