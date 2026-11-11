@@ -41,7 +41,8 @@ import { HIDEABLE_ROUTES, UNANSWERED_SCOPE, type BusinessScopeAnswers } from "@/
 // holding a single item costs a click to reveal there was nothing to
 // choose, so Ask is a one-click link pinned outside the scroll — and it is
 // in the Topbar on every page as well.
-const APPENDED_SEPARATELY = new Set(["/sales", "/internal/usage", "/ask"]);
+// The Internal group (operator only) is appended by navGroupsFor, never in NAV_GROUPS.
+const APPENDED_SEPARATELY = new Set(["/sales", "/internal/usage", "/internal/pilots", "/ask"]);
 
 function groupedHrefs(groups: typeof NAV_GROUPS): Set<string> {
   return new Set(groups.flatMap((g) => g.items.map((i) => i.href)));
@@ -478,7 +479,7 @@ describe("the internal usage page", () => {
     const internal = navGroupsFor(owner, { showsInternal: true }).find(
       (group) => group.heading === "Internal",
     );
-    expect(internal?.items.map((item) => item.href)).toEqual(["/sales", "/internal/usage"]);
+    expect(internal?.items.map((item) => item.href)).toEqual(["/sales", "/internal/usage", "/internal/pilots"]);
 
     // The stronger half: it is not in NAV_GROUPS at all, so there is no
     // path by which a tenant's rail could render it.
