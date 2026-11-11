@@ -6,6 +6,7 @@ import { PERSONAS } from "../lib/personas";
 import { HealthMonitor, expectHealthy } from "../lib/health";
 import { finishWizard, landOnDashboard, startJob } from "../lib/journey";
 import { openItems } from "../lib/finders";
+import { dataTour } from "../lib/dataTour";
 import { SYNTHETIC_STEPS } from "../lib/syntheticReport.mjs";
 import type { SyntheticRun, SyntheticStep } from "../lib/syntheticReport.d.mts";
 
@@ -168,9 +169,9 @@ test("the demo environment: sign in to proposal", async ({ page }) => {
       await page.goto(`/jobs/${jobId}/estimate`);
       await expectHealthy(page, "estimate", { monitor });
       // No line exists on a new job until the takeoff is sent.
-      const lines = page.locator('[data-tour="job-line-items"] [id^="line-"]');
+      const lines = page.locator(`${dataTour("job-line-items")} [id^="line-"]`);
       await expect(lines.first()).toBeVisible({ timeout: 60_000 });
-      const total = (await page.locator('[data-tour="job-line-items"]').getByText(/^Lines total/).innerText()).replace(/\s+/g, " ");
+      const total = (await page.locator(dataTour("job-line-items")).getByText(/^Lines total/).innerText()).replace(/\s+/g, " ");
       return `${sent}; ${await lines.count()} line(s), ${total}`;
     });
 
