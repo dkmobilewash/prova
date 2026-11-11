@@ -50,9 +50,9 @@ const CLAIM_ATTEMPTS = 5;
  * the guard, every extra row would be a lost race that looked like contention;
  * if it were narrower, eligible work would be invisible. Sharing it makes the
  * two impossible to disagree. */
-function claimable(jobId: string, now: Date, maxAttempts: number) {
+function claimable(jobId: string | undefined, now: Date, maxAttempts: number) {
   return {
-    jobId,
+    ...(jobId === undefined ? {} : { jobId }),
     // Never re-do finished work, whatever the claim says.
     finishedAt: null,
     // Attempts increments ON CLAIM, so a task at the ceiling has already had
@@ -280,6 +280,56 @@ async function afterClose(jobId: string): Promise<void> {
  * and a runner that could not tell them apart would close a job whose pages
  * are all waiting thirty seconds to be retried.
  */
+/**
+ * ── WHICH RUN THE BACKGROUND DRAIN SERVES NEXT: FAIR ACROSS SETS, NEVER A RUN THAT IS WAITING ──
+ *
+ * The drain served the globally OLDEST unfinished run, one per call. cmb's wall legend was
+ * the oldest and every page of it was in the provider's backoff (#1066: the account out of
+ * credit), so 300 drain calls only ever reached it and found nothing to claim, and six new
+ * sets never got their page reading — no sheet list, no printed scales (the original,
+ * 2026-11-11). A customer uploading during an AI outage would wait the same way.
+ *
+ * Now a run is a candidate only when a page of it can be claimed right now (`claimable`:
+ * not in a backoff window, not leased) — or when nothing of it is left to do, so it is still
+ * closed. Among candidates the SET served longest ago goes first (its runs' latest touched
+ * page, never-served first), so sets take turns; within a set, its oldest run. A stage that
+ * needs no model (inventory, printed scales, keyless titles) is never queued behind one that
+ * is waiting on the provider.
+ */
+export async function nextJobToDrain(
+  now: Date = new Date(),
+  /** Only these sets (a test's own); every set when omitted. */
+  planIds?: readonly string[],
+): Promise<string | null> {
+  const candidates = await prisma.planIngestJob.findMany({
+    where: {
+      finishedAt: null,
+      ...(planIds === undefined ? {} : { planId: { in: [...planIds] } }),
+      OR: [{ tasks: { some: claimable(undefined, now, MAX_ATTEMPTS) } }, { tasks: { none: { finishedAt: null, attempts: { lt: MAX_ATTEMPTS } } } }],
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { id: true, planId: true },
+  });
+  if (candidates.length === 0) return null;
+  const touched = await prisma.planIngestTask.groupBy({
+    by: ["jobId"],
+    // Touched: attempted, finished, or refused (an outage refunds the attempt but leaves its error).
+    where: { job: { planId: { in: [...new Set(candidates.map((c) => c.planId))] } }, OR: [{ attempts: { gt: 0 } }, { finishedAt: { not: null } }, { error: { not: null } }] },
+    _max: { updatedAt: true },
+  });
+  const jobPlan = new Map((await prisma.planIngestJob.findMany({ where: { id: { in: touched.map((t) => t.jobId) } }, select: { id: true, planId: true } })).map((j) => [j.id, j.planId]));
+  const servedAt = new Map<string, number>();
+  for (const t of touched) {
+    const plan = jobPlan.get(t.jobId);
+    const at = t._max.updatedAt?.getTime() ?? 0;
+    if (plan !== undefined && at > (servedAt.get(plan) ?? 0)) servedAt.set(plan, at);
+  }
+  // Oldest candidate first, so a tie (two never-served sets) is the older run.
+  let best = candidates[0]!;
+  for (const c of candidates) if ((servedAt.get(c.planId) ?? 0) < (servedAt.get(best.planId) ?? 0)) best = c;
+  return best.id;
+}
+
 export async function hasWaitingWork(jobId: string, at: Date = new Date()): Promise<boolean> {
   const waiting = await prisma.planIngestTask.count({
     where: {
