@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { areaOfTitle, roomsNoteFor, wallsNoteFor, wallsPlan, wallsSkipReason, wallsSummaryRows, type WallsSheet } from "./walls";
+import { areaOfTitle, floorPlansOfTheWork, roomsNoteFor, wallsNoteFor, wallsPlan, wallsSkipReason, wallsSummaryRows, wallsTaskPages, type WallsSheet } from "./walls";
 
 const sheet = (over: Partial<WallsSheet> = {}): WallsSheet => ({
   pageNumber: 1,
@@ -269,5 +269,19 @@ describe("rooms after walls — what the note and the summary say", () => {
     const rows = wallsSummaryRows({ sheets, walls: new Map([[1, { groups: 3, feet: 400 }], [2, { groups: 2, feet: 300 }]]), rooms: new Map([[1, { rooms: 5, ceilingSqFt: 1200 }]]), tasks: new Map(), maxAttempts: 3 });
     expect(rows[0]!.status).toEqual({ kind: "walls", groups: 3, feet: 400, rooms: 5, ceilingSqFt: 1200 });
     expect(rows[1]!.status).toEqual({ kind: "walls", groups: 2, feet: 300 });
+  });
+});
+
+describe("with nothing named, the inventory's own read decides (plan reading and comparison off)", () => {
+  const sheet = (pageNumber: number, sheetNumber: string | null, title: string | null, sure: boolean | undefined, hasScale = true) => ({ pageNumber, sheetNumber, title, hasScale, hasWalls: false, ...(sure === undefined ? {} : { sure }) });
+  it("a sheet with no title that the inventory read as not a floor plan is skipped; one it never read (a scan) is not", () => {
+    expect(wallsSkipReason(sheet(14, null, null, false))).toBe("not a floor plan");
+    expect(wallsSkipReason(sheet(14, null, null, undefined))).toBeNull();
+    expect(wallsSkipReason(sheet(13, "A101", "FLOOR PLAN", true))).toBeNull();
+  });
+  it("Baker: A101 FLOOR PLAN is the plan of the work, A100 OVERALL FLOOR PLAN the same floor, A111 not a floor plan", () => {
+    const set = [sheet(12, "A100", "OVERALL FLOOR PLAN", true), sheet(13, "A101", "FLOOR PLAN", true), sheet(14, null, null, false), sheet(31, null, null, false)];
+    expect(wallsTaskPages(set)).toEqual([13]);
+    expect(floorPlansOfTheWork(set)).toEqual([13]);
   });
 });
