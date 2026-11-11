@@ -630,7 +630,8 @@ export function TakeoffReviewQueue({
                       Use the printed scale on all {oneClick} sheet{oneClick === 1 ? "" : "s"}
                     </button>
                   )}
-                  <details className="w-full" data-takeoff="review-queue-scale-list" open={oneClick < pages.length}>
+                  {/* Open when something needs its own fix, and for a short list, which costs nothing to show. */}
+                  <details className="w-full" data-takeoff="review-queue-scale-list" open={oneClick < pages.length || pages.length <= 3}>
                     <summary className="cursor-pointer text-ink-muted">The sheets, each with its own fix</summary>
                     <ul className="mt-1 flex flex-col gap-1">
                       {pages.map((p) => {
