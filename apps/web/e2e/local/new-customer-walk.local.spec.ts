@@ -1,3 +1,4 @@
+import { WalkClock } from "../lib/walkClock";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test, expect, type Locator, type Page } from "@playwright/test";
@@ -58,7 +59,9 @@ const COMPARE_ON = process.env.WALK_PLAN_COMPARE !== "0";
 const SIZE = { width: 1440, height: 900 };
 const EMAIL = `walk-${Date.now()}+clerk_test@example.com`;
 
-type Row = { step: string; seconds: number; actions: number; url: string; notes: string[]; shots: string[] };
+/** `seconds` is what a person spends (`WalkClock`); `wallSeconds` includes the walk waiting for itself. */
+type Row = { step: string; seconds: number; wallSeconds: number; walkSeconds: number; actions: number; url: string; notes: string[]; shots: string[] };
+const clock = new WalkClock();
 const rows: Row[] = [];
 let current: Row | null = null;
 let started = 0;
@@ -87,12 +90,16 @@ test.describe.configure({ mode: "serial" });
 
 /** One timed step. `act` counts what a person does (a click, a field typed). */
 async function step(name: string, body: () => Promise<void>): Promise<void> {
-  current = { step: name, seconds: 0, actions: 0, url: "", notes: [], shots: [] };
+  current = { step: name, seconds: 0, wallSeconds: 0, walkSeconds: 0, actions: 0, url: "", notes: [], shots: [] };
+  clock.reset();
   const t0 = Date.now();
   try {
     await body();
   } finally {
-    current.seconds = Math.round((Date.now() - t0) / 100) / 10;
+    const wall = Date.now() - t0;
+    current.seconds = clock.personSeconds(wall);
+    current.wallSeconds = Math.round(wall / 100) / 10;
+    current.walkSeconds = Math.round(clock.walk / 100) / 10;
     current.url = new URL(page.url()).pathname;
     rows.push(current);
     flush();
@@ -112,17 +119,29 @@ async function shot(name: string, on: Page = page): Promise<void> {
   await on.screenshot({ path: path.join(OUT, file) }).catch(() => {});
   current?.shots.push(file);
 }
+/** A look for something that may not be there: if it never shows, the wait was the walk's (`WalkClock`). */
 async function seen(target: Locator, timeout = 5000): Promise<boolean> {
-  return target.first().waitFor({ state: "visible", timeout }).then(() => true, () => false);
+  return clock.look(() => target.first().waitFor({ state: "visible", timeout }).then(() => true, () => false), timeout);
 }
+/** A fixed wait nobody makes (a screenshot, a settle): off a step's seconds. */
+async function pause(on: Page, ms: number): Promise<void> { await clock.pause((t) => on.waitForTimeout(t), ms); }
+/** Work a person waits on (the sheets reading, a run going): on a step's seconds. */
+async function workWait(on: Page, ms: number): Promise<void> { await on.waitForTimeout(ms); }
 async function hydrated(on: Page, selector: string): Promise<void> {
   await expect
     .poll(() => on.locator(selector).first().evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactFiber$"))).catch(() => false), { timeout: 60_000 })
     .toBe(true);
 }
-const text = async (target: Locator) => ((await target.first().innerText({ timeout: 5000 }).catch(() => "")) ?? "").replace(/\s+/g, " ").trim();
+/** A thing's words; one that is not there costs the walk its wait, not the person (`WalkClock`). */
+const text = async (target: Locator) => {
+  const t0 = Date.now();
+  const words = await target.first().innerText({ timeout: 5000 }).catch(() => null);
+  if (words === null) clock.gaveUp(Date.now() - t0);
+  return (words ?? "").replace(/\s+/g, " ").trim();
+};
 function flush(): void {
-  writeFileSync(path.join(OUT, "walk.json"), JSON.stringify({ email: EMAIL, jobId, total: (Date.now() - started) / 1000, rows }, null, 2));
+  const person = Math.round(rows.reduce((sum, r) => sum + r.seconds, 0) * 10) / 10;
+  writeFileSync(path.join(OUT, "walk.json"), JSON.stringify({ email: EMAIL, jobId, total: (Date.now() - started) / 1000, personSeconds: person, rows }, null, 2));
 }
 const next = (on: Page) => on.locator("[data-job-next]");
 async function states(on: Page): Promise<string> {
@@ -234,7 +253,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
         await code.click();
         await page.keyboard.type("424242");
         act(2);
-        await page.waitForTimeout(3000);
+        await pause(page, 3000);
       }
       await page.waitForURL(/\/(welcome|dashboard)/, { timeout: 90_000 });
       // The dashboard sends a company that has not answered on to /welcome.
@@ -313,7 +332,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           act();
           await page.getByRole("button", { name: /Save AI settings/ }).click();
           act();
-          await page.waitForTimeout(2000);
+          await pause(page, 2000);
         }
         await page.reload();
         await hydrated(page, 'input[name="aiEnabled"]');
@@ -434,7 +453,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       await prisma.takeoffPlan.updateMany({ where: { jobId }, data: { fileUrl: `local:${SET}` } });
       pointed();
       await page.unroute("**/*");
-      await page.waitForTimeout(2000);
+      await pause(page, 2000);
       await shot("uploaded");
     });
 
@@ -446,7 +465,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const titles = page.getByRole("button", { name: /Read the title blocks/ });
       if (NO_AI) {
         // Without plan reading nothing reads the title blocks: record what the panel says instead of waiting on it.
-        await page.waitForTimeout(5000);
+        await pause(page, 5000);
         await shot("ingest-no-ai");
         note(`Plan reading off — the panel says: "${(await text(panel).catch(() => "")).replace(/\s+/g, " ").slice(0, 400)}"`);
         if (await titles.isVisible().catch(() => false)) note(`It still offers "${await text(titles)}" — pressing it would call a model, so left alone.`);
@@ -475,7 +494,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           await keep.click();
           act();
         }
-        await page.waitForTimeout(3000);
+        await workWait(page, 3000);
       }
       const read = await prisma.planSheetProposal.count({ where: { plan: { jobId } } });
       note(`Title blocks: ${read} pages read in ${Math.round((Date.now() - t0) / 1000)} s on this page${pauses > 0 ? `, Keep reading pressed ${pauses} times` : ""}.`);
@@ -563,7 +582,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       act();
       const port = tab.locator('[data-testid="takeoff-plan-port"]');
       await expect(port).toHaveAttribute("data-sheet-ready", "true", { timeout: 300_000 });
-      await tab.waitForTimeout(3000);
+      await pause(tab, 3000);
       if (!(await seen(tab.locator('[data-takeoff="found-group"]'), 10_000))) {
         note("A101's found walls are not shown on opening it; pressed Run takeoff again on this sheet.");
         const run = tab.locator('[data-takeoff="find-walls"]');
@@ -644,7 +663,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
             await shot("demolition-suggested", tab);
             await accept.click();
             act();
-            await tab.waitForTimeout(3000);
+            await pause(tab, 3000);
             note(`After taking the suggestion: "${(await text(prior)).replace(/\s+/g, " ").slice(0, 300)}"`);
           }
         } else {
@@ -655,11 +674,12 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       note(`Run button: "${await text(run)}"`);
       await run.click();
       act();
-      await tab.waitForTimeout(3000);
+      // The run is going: the person waits on it, so this is work, not the walk.
+      await workWait(tab, 3000);
       await shot("takeoff-running", tab);
       await expect(run).toBeEnabled({ timeout: 1_800_000 });
       await expect(run).toHaveText(/^(Find the walls|Run takeoff)/, { timeout: 1_800_000 });
-      await tab.waitForTimeout(2000);
+      await pause(tab, 2000);
       await shot("takeoff-done", tab);
       if (RENO) {
         // ── WHAT WAS SET ASIDE AS EXISTING, AND WHAT STILL ASKS ──
@@ -707,9 +727,9 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
             act();
             note("Pressed Continue finding walls (the run had stopped asking).");
           }
-          await page.waitForTimeout(3000);
+          await workWait(page, 3000);
         }
-        await page.waitForTimeout(2000);
+        await pause(page, 2000);
         await page.locator('[data-takeoff="whole-set"]').scrollIntoViewIfNeeded().catch(() => {});
         await shot("whole-set-done");
         note(`Whole set: ${Math.round((Date.now() - t0) / 1000)} s. "${(await text(page.locator('[data-takeoff="whole-set"]'))).slice(0, 700)}"`);
@@ -755,6 +775,8 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const seenKinds: Record<string, number> = {};
       /** Presses by kind of item (walls, types, heights, windows, prices…), each press counted on its own. */
       const pressesBy: Record<string, number> = {};
+      // Each round's wall and walk seconds, so a slow queue says which round and whose wait it was.
+      const trace: string[] = [];
       let noTypes = false;
       for (let pass = 0; pass < 2; pass += 1) {
       if (pass === 1) {
@@ -778,18 +800,49 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       // changes what is counted, and this walk measures presses on the same quantities. Skip only
       // moves the cursor, so once it is all that is left, the queue is done for this walk.
       const skippedExisting = new Set<string>();
-      const onlySkippedLeft = async () => (await item.getAttribute("data-kind")) === "existing" && skippedExisting.has((await queue.locator('[data-takeoff="review-queue-existing"]').getAttribute("data-page")) ?? "");
+      const onlySkippedLeft = async () =>
+        (await item.first().getAttribute("data-kind", { timeout: 500 }).catch(() => null)) === "existing" &&
+        skippedExisting.has((await queue.locator('[data-takeoff="review-queue-existing"]').getAttribute("data-page", { timeout: 500 }).catch(() => null)) ?? "");
+      let mark = { t: Date.now(), walk: clock.walk, what: "open" };
+      const lap = (what: string) => {
+        const wall = Date.now() - mark.t;
+        const walk = clock.walk - mark.walk;
+        if (wall > 2000) trace.push(`${mark.what} ${Math.round(wall / 100) / 10}s (walk ${Math.round(walk / 100) / 10}s)`);
+        mark = { t: Date.now(), walk: clock.walk, what };
+      };
       for (let round = 0; round < 400; round += 1) {
+        lap(`round ${round}: ${(await item.first().getAttribute("data-kind", { timeout: 500 }).catch(() => null)) ?? "none"} · ${(await text(left).catch(() => "")).slice(0, 30)}`);
         // "Nothing left" can be said before the server has written the typed walls' lines, and
         // their price questions follow (Totem Lake: 4 arrived after it). So the queue is re-opened
         // up to twice, a few seconds apart; only an empty queue after that is done. Opening it is
         // not a press: the person is already looking at it.
         if (/Nothing left/.test(await text(left)) || !(await seen(item, 10_000)) || (await onlySkippedLeft())) {
-          if (settled >= 2) break;
+          // One reload check is enough: questions written after "Nothing left" arrive on their own
+          // (Totem Lake: 0.1 s), and a second reload only re-asked an empty queue.
+          if (settled >= 1) break;
+          if (settled === 0) {
+            // ── DOES A PERSON SEE MORE ARRIVE, OR DOES ONLY A RELOAD FIND IT? ──
+            // Looking at the queue that just said it was done, as a person would, with no reload.
+            const t0 = Date.now();
+            // Not the existing-walls question already skipped: only a question that was not there before.
+            const fresh = async () => (await item.first().isVisible().catch(() => false)) && !(await onlySkippedLeft()) && !/Nothing left/.test(await text(left));
+            const arrived = await clock.look(() => expect.poll(fresh, { timeout: 15_000 }).toBe(true).then(() => true, () => false), 15_000);
+            if (arrived) {
+              note(`${Math.round((Date.now() - t0) / 100) / 10} s after the queue said it was done, more questions arrived on their own (${await text(left)}).`);
+              continue;
+            }
+          }
           settled += 1;
-          await tab.waitForTimeout(3000);
+          // From here the walk is checking itself: a pause and a reload a person would not make.
+          const t1 = Date.now();
+          await pause(tab, 3000);
           await tab.goto(`/takeoff/${jobId}?open=review`);
-          await expect(tab.locator('[data-takeoff="review-queue"]')).toBeVisible({ timeout: 120_000 }).catch(() => {});
+          // An empty queue does not open on `?open=review`: 15 s, not the 120 s that cost Falafel 240 s.
+          await expect(tab.locator('[data-takeoff="review-queue"]')).toBeVisible({ timeout: 15_000 }).catch(() => {});
+          clock.gaveUp(Date.now() - t1 - 3000);
+          if (await item.first().isVisible().catch(() => false) && !(await onlySkippedLeft()) && !/Nothing left/.test(await text(left))) {
+            stuck(`questions only a reload showed, after the queue said it was done: ${await text(left)}`);
+          }
           continue;
         }
         settled = 0;
@@ -870,7 +923,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           seenKinds.alike = (seenKinds.alike ?? 0) + 1;
           if (seenKinds.alike === 1) await shot("review-alike", tab);
           note(`Alike: "${said}"`);
-          await expect.poll(async () => text(left), { timeout: 30_000 }).not.toBe(before).catch(() => note("the count did not move after the alike offer"));
+          await expect.poll(async () => text(left), { timeout: 30_000 }).not.toBe(before).catch(() => (clock.gaveUp(30_000), note("the count did not move after the alike offer")));
           continue;
         }
         const kind = (await item.getAttribute("data-kind")) ?? "?";
@@ -964,7 +1017,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
         }
         act();
         pressesBy[kind] = (pressesBy[kind] ?? 0) + (current?.actions ?? 0) - pressedBefore;
-        await expect.poll(async () => text(left), { timeout: 30_000 }).not.toBe(before).catch(() => note(`the count did not move after answering a ${kind}`));
+        await expect.poll(async () => text(left), { timeout: 30_000 }).not.toBe(before).catch(() => (clock.gaveUp(30_000), note(`the count did not move after answering a ${kind}`)));
       }
       }
       const legendNamed = offered.filter((o) => !/^— /.test(o)).length;
@@ -972,6 +1025,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       note(`Pre-filled on ${offered.length} group rows shown one by one: ${legendNamed} with a type, ${fifteen} at 15'-0". ${offered.join(" | ")}`);
       const typedItems = await prisma.takeoffItem.findMany({ where: { jobId, wallTypeId: { not: null } }, select: { name: true, heightFt: true } });
       note(`Typed items' stored heights: ${typedItems.map((i) => `${i.name} ${i.heightFt?.toString() ?? "none"} ft`).join(", ")}`);
+      note(`Slow rounds: ${trace.length === 0 ? "none" : trace.join(" | ")}`);
       note(`Presses by kind: ${Object.entries(pressesBy).map(([k, n]) => `${k} ${n}`).join(", ")}`);
       note(`Answered: ${Object.entries(seenKinds).map(([k, n]) => `${n} ${k}`).join(", ")}. Queue ends: "${await text(tab.locator('[data-takeoff="review-queue-left"]'))}"`);
       await shot("review-done", tab);
