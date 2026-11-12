@@ -49,8 +49,29 @@ function disciplineOf(number: string | null): string | null {
   const head = /^([A-Z]{1,3})/.exec((number ?? "").toUpperCase())?.[1] ?? null;
   if (head === null) return null;
   if (head === "D" || head === "DA" || head === "AD") return "A";
-  return head.length === 2 && head[1] === "D" ? head[0] : head;
+  if (head.length === 2 && head[1] === "D") return head[0];
+  // Every series an architect numbers with an A is architectural: Bluetooth's interiors are AI101,
+  // its finishes AF101, beside its demolition plan AD101 (2026-11-12: AI101 was never paired).
+  return head.startsWith("A") ? "A" : head;
 }
+
+/** A demolition title that names another trade keeps that trade's letter. */
+const TRADE_TITLE = /\b(ELECTRICAL|MECHANICAL|PLUMBING|FIRE\s+PROTECTION|SPRINKLER|LIGHTING|POWER|HVAC|STRUCTURAL)\b/i;
+
+/**
+ * The demolition sheet's discipline among the set's new sheets. ED1.01 is electrical in a set
+ * with E sheets (Wendell's ED101 → E102). In a set with none, and under a title that names no
+ * trade, the E is the architect's "existing": Falafel Fresh's ED2.20 "EXISTING / DEMO PLANS"
+ * belongs to A2.20, and was never paired.
+ */
+function demoDiscipline(demo: SheetForPairing, fresh: readonly SheetForPairing[]): string | null {
+  const discipline = disciplineOf(demo.sheetNumber);
+  if (discipline === null || discipline === "A" || TRADE_TITLE.test(demo.title ?? "")) return discipline;
+  return fresh.some((s) => disciplineOf(s.sheetNumber) === discipline) ? discipline : "A";
+}
+
+/** A sheet number past its letters: AD101 → 101, ED2.20 → 2.20, A-101 → 101. */
+const numberPart = (number: string | null) => (number ?? "").toUpperCase().replace(/^[A-Z]+-?/, "").trim();
 
 /** The new sheets a demolition number can twin with: AD101 to A101, ED1.01 to E1.01, D100 to A100, DA2.1 to AA2.1 (building A) or A2.1. */
 function twinNumbers(number: string | null): string[] {
@@ -90,10 +111,9 @@ export function drawingOnly(lines: readonly Line[]): Line[] {
 }
 
 /** A new plan that could be this demolition plan's floor: same drawing kind, discipline, level and area, and a plan. */
-function fitsDemo(demo: SheetForPairing, s: SheetForPairing): boolean {
+function fitsDemo(demo: SheetForPairing, s: SheetForPairing, discipline: string | null = disciplineOf(demo.sheetNumber)): boolean {
   const level = levelFromTitle(demo.title, "PLAN")?.label ?? null;
   const area = areaOfTitle(demo.title);
-  const discipline = disciplineOf(demo.sheetNumber);
   if (kindOf(s.title) !== kindOf(demo.title) || !saysPlan(s.title) || SAME_FLOOR_NOT_THE_PLAN.test(s.title ?? "")) return false;
   if (discipline !== null && disciplineOf(s.sheetNumber) !== discipline) return false;
   const otherLevel = levelFromTitle(s.title, "PLAN")?.label ?? null;
@@ -157,7 +177,7 @@ export function pairDemoWithNewPlan(
     if (kind === "other" || kind === "site") continue;
     const level = levelFromTitle(demo.title, "PLAN")?.label ?? null;
     const area = areaOfTitle(demo.title);
-    const fits = fresh.filter((s) => fitsDemo(demo, s));
+    const fits = fresh.filter((s) => fitsDemo(demo, s, demoDiscipline(demo, fresh)));
     const align = (page: number) => {
       const a = options.lines?.get(demo.pageNumber), b = options.lines?.get(page);
       return a && b && options.feetPerUnit ? alignViews(drawingOnly(b), drawingOnly(a), options.feetPerUnit) : null;
@@ -173,7 +193,12 @@ export function pairDemoWithNewPlan(
       }
     };
 
-    const byNumber = twinNumbers(demo.sheetNumber).map((twin) => fresh.find((s) => flat(s.sheetNumber) === flat(twin) && !NOT_A_PLAN_SHEET.test(s.title ?? ""))).find((s) => s !== undefined);
+    // The twin number first (AD101 → A101); else the same number in the demolition plan's own
+    // series among the plans it fits (AD101 → AI101, ED2.20 → A2.20 where E is "existing").
+    const digits = numberPart(demo.sheetNumber);
+    const byNumber =
+      twinNumbers(demo.sheetNumber).map((twin) => fresh.find((s) => flat(s.sheetNumber) === flat(twin) && !NOT_A_PLAN_SHEET.test(s.title ?? ""))).find((s) => s !== undefined) ??
+      (digits === "" ? undefined : fits.find((s) => numberPart(s.sheetNumber) === digits));
     const sameFloor = fits.filter((s) => !isEnlargedPlanTitle(s.title));
     if (byNumber) { withOthers(pair(byNumber.pageNumber, "sheet-number", []), sameFloor); continue; }
     // Past a number, the title has to say something: never pair by elimination on noise.
