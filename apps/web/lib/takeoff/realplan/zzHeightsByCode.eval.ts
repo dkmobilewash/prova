@@ -9,7 +9,7 @@ import { ceilingsForRooms, type CeilingPageText } from "../roomCeilings";
 import { setHeightFacts } from "../setHeightFacts";
 import { sheetRooms } from "../sheetRooms";
 import { pointInRing } from "../drawTools";
-import { setHeightRule, wallHeightByCode } from "../heightsByCode";
+import { assumedHeight, setFigures, setHeightRule, wallHeightByCode, WALL_HEIGHT_CONVENTIONS, type WallHeightConvention } from "../heightsByCode";
 import { roofPartsFor } from "../roofPartsRead";
 import { roomPitched } from "../roofParts";
 import { levelHeight, planLevels } from "../levelHeights";
@@ -95,6 +95,8 @@ describe.skipIf(DIR === "" || LABELS === "" || KEY === "" || OUT === "")("D: hei
     /** zzZeroTouch v2's board term on these walls (BOARD_PER_SF, 2 sides): the key's board, and the gap before D (no height: 0 SF) and after (the SHIPPED chain: printed rule, else the default). */
     const BOARD_PER_SF = 2.2;
     const board = { key: 0, gapBefore: 0, gapAfter: 0, over: 0, under: 0 };
+    /** Level 3 as the company's answer: per convention (each falling back to a fixed DEFAULT_FT), the shipped chain's footage close to the key (within 6 in) and its board-dollar error. */
+    const byConvention = new Map<WallHeightConvention, { ft: number; close: number; over: number; under: number }>();
     for (const [setName, set] of Object.entries(key.sets)) {
       if (set.heldOut !== HELD) continue;
       if (ONLY.length > 0 && !ONLY.includes(setName)) continue;
@@ -141,6 +143,7 @@ describe.skipIf(DIR === "" || LABELS === "" || KEY === "" || OUT === "")("D: hei
           // Level 2's floor-to-floor: the level this plan's caption names, through the sections' level marks.
           const levels = text.items.map((i) => planLevels(i.str)).find((l) => l.length > 0) ?? [];
           const storey = levelHeight(facts.levels ?? [], levels);
+          const figures = setFigures(facts.facts, storey?.feet ?? null);
           for (const { w, code, k } of keyed) {
             const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
             const sides: (number | null)[] = [];
@@ -196,6 +199,16 @@ describe.skipIf(DIR === "" || LABELS === "" || KEY === "" || OUT === "")("D: hei
             byLevel.set(level, l);
             const keyFeet = want.strict ?? (want.any.length > 0 ? want.any.reduce((n, f) => n + f, 0) / want.any.length : null);
             if (keyFeet !== null) {
+              for (const convention of WALL_HEIGHT_CONVENTIONS) {
+                const feet = mine?.feet ?? assumedHeight({ convention, fixedFt: DEFAULT_FT }, sides, figures)?.feet ?? 0;
+                const c = byConvention.get(convention) ?? { ft: 0, close: 0, over: 0, under: 0 };
+                c.ft += w.lengthFeet;
+                if (Math.abs(feet - keyFeet) <= TOLERANCE_FT) c.close += w.lengthFeet;
+                const diff = w.lengthFeet * (feet - keyFeet) * 2 * BOARD_PER_SF;
+                if (diff > 0) c.over += diff;
+                else c.under -= diff;
+                byConvention.set(convention, c);
+              }
               const keySf = w.lengthFeet * keyFeet * 2;
               const runSf = w.lengthFeet * (mine?.feet ?? DEFAULT_FT) * 2;
               board.key += keySf * BOARD_PER_SF;
@@ -228,6 +241,9 @@ describe.skipIf(DIR === "" || LABELS === "" || KEY === "" || OUT === "")("D: hei
     const chainWrong = [...byLevel.values()].reduce((n, l) => n + l.wrong, 0);
     const usd = (n: number) => "USD " + Math.round(n).toLocaleString("en-US");
     console.log(`HB board ${HELD ? "HELD-OUT" : "TRAINING"} key ${usd(board.key)}; gap before D ${usd(board.gapBefore)} (no height = 0 SF) -> after ${usd(board.gapAfter)} (over ${usd(board.over)}, under ${usd(board.under)})`);
+    for (const [convention, c] of byConvention) {
+      console.log(`HB level-3 ${convention.padEnd(15)} (fallback ${DEFAULT_FT} ft) close=${pct(c.close, c.ft)} board error ${usd(c.over + c.under)} (over ${usd(c.over)}, under ${usd(c.under)}) vs ${usd(board.gapBefore)} before D`);
+    }
     console.log(`HB chain ${HELD ? "HELD-OUT" : "TRAINING"} every wall a height: right=${pct(chainRight, all)} wrong=${pct(chainWrong, all)}`);
     for (const [kind, c] of byClass) console.log(`HB class ${kind.padEnd(22)} scored=${c.scored.toFixed(0).padStart(5)} ft precision=${pct(c.right, c.scored)}`);
     console.log(`HB ${HELD ? "HELD-OUT" : "TRAINING"} ft=${total.ft.toFixed(0)} with=${pct(total.withHeight, total.ft)} right=${pct(total.right, total.ft)} lenient=${pct(total.lenient, total.ft)} wrong=${pct(total.wrong, total.ft)}`);

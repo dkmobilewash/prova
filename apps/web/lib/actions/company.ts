@@ -28,6 +28,8 @@ import { CONTRACTING_RELATIONSHIPS, OPENING_DEDUCTIONS } from "@/lib/businessSco
 import { doorScopeFrom } from "@/lib/estimating/doorLines";
 import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
 import { AUTO_DOORS_ITEM } from "@/lib/takeoff/autoPost";
+import { wallHeightConventionFrom } from "@/lib/takeoff/heightsByCode";
+import { reassignAssumedHeights } from "@/lib/takeoff/wallHeightsAssign";
 
 /** The job-function refusal for the company record, worded the way
  * `closeoutSubmissions.ts` words its own: the person reading it has done
@@ -734,46 +736,44 @@ export async function saveOpeningDeduction(formData: FormData): Promise<ActionRe
 }
 
 /**
- * Who installs the doors and frames (`Company.doorScope`, `lib/estimating/doorLines.ts`). Its own
- * form and action, like the openings question above and for the same reason. Owner only: it decides
- * whether every bid carries door lines. The company's open estimates follow at once: each one's posted
- * doors are re-synced, so the lines and the labor appear or go with the answer.
+ * The company's answer for a wall the drawing gives no height (`heightsByCode.ts`, level 3): where its
+ * partitions usually go (`wallHeightConvention`) and its fixed height (`defaultWallHeightFt`), which a
+ * convention falls back to and FIXED is. Owner only, its own form. Such a height is ASSUMED. Walls on
+ * the company's open estimates that are assumed, or still have no height, follow the new answer at once,
+ * and their lines with them; a height read off the drawing, typed or answered is never touched.
  */
-/**
- * The company's default wall height (`Company.defaultWallHeightFt`): the height a wall is ASSUMED to be
- * when the drawing gives none (`heightsByCode.ts`, level 3). Owner only, its own form. Blank clears it.
- * Walls already on the assumed default in open estimates follow the new figure, and their lines with
- * them; a height read off the drawing is never touched.
- */
-export async function saveDefaultWallHeight(formData: FormData): Promise<ActionResult> {
+export async function saveWallHeightAnswer(formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
     if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPLIANCE_ONLY);
     const refusal = ownerRefusal(context, "Only the account owner can set this — it is the height every bid assumes where the drawing gives none.");
     if (refusal) return refusal;
+    const conventionRaw = text(formData, "wallHeightConvention");
+    const convention = conventionRaw ? wallHeightConventionFrom(conventionRaw) : null;
+    if (conventionRaw && convention === null) return fail("Choose where your partitions usually go.");
     const raw = formData.get("defaultWallHeightFt");
     let feet: number | null = null;
     if (!isBlank(raw)) {
-      const parsed = parseNumericInput(raw, { label: "The default wall height", min: 6, max: 60, maxDecimals: 2, unit: " ft" });
+      const parsed = parseNumericInput(raw, { label: "Your usual wall height", min: 6, max: 60, maxDecimals: 2, unit: " ft" });
       if (!parsed.ok) return fail(parsed.error);
       feet = parsed.n;
     }
+    if (convention === "FIXED" && feet === null) return fail("Type the height your partitions usually are.");
     const companyId = context.company.id;
-    await prisma.company.update({ where: { id: companyId }, data: { defaultWallHeightFt: feet } });
-    const walls = await prisma.takeoffMeasurement.findMany({ where: { heightAssumed: true, item: { companyId, job: { status: "ESTIMATE" } } }, select: { id: true, itemId: true, item: { select: { jobId: true } } } });
-    await prisma.takeoffMeasurement.updateMany({
-      where: { id: { in: walls.map((w) => w.id) } },
-      data: feet === null ? { heightFt: null, heightFrom: null, heightAssumed: false } : { heightFt: feet, heightFrom: `assumed: your default wall height, ${feet} ft` },
-    });
-    const byJob = new Map<string, Set<string>>();
-    for (const w of walls) if (w.itemId !== null && w.item) byJob.set(w.item.jobId, (byJob.get(w.item.jobId) ?? new Set()).add(w.itemId));
-    for (const [jobId, items] of byJob) await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, jobId, items), { timeout: 60_000 });
+    await prisma.company.update({ where: { id: companyId }, data: { wallHeightConvention: convention, defaultWallHeightFt: feet } });
+    await reassignAssumedHeights(companyId);
     revalidatePath("/settings");
     revalidatePath("/jobs", "layout");
     return ok;
   });
 }
 
+/**
+ * Who installs the doors and frames (`Company.doorScope`, `lib/estimating/doorLines.ts`). Its own
+ * form and action, like the openings question above and for the same reason. Owner only: it decides
+ * whether every bid carries door lines. The company's open estimates follow at once: each one's posted
+ * doors are re-synced, so the lines and the labor appear or go with the answer.
+ */
 export async function saveDoorScope(formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {

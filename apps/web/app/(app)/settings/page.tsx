@@ -33,6 +33,7 @@ import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsFor
 import { OpeningDeductionForm } from "@/components/OpeningDeductionForm";
 import { DoorScopeForm } from "@/components/DoorScopeForm";
 import { DefaultWallHeightForm } from "@/components/DefaultWallHeightForm";
+import { wallHeightConventionFrom } from "@/lib/takeoff/heightsByCode";
 import { RoomFinderSwitch } from "@/components/RoomFinderSwitch";
 import { ScannedPlansSwitch } from "@/components/ScannedPlansSwitch";
 import { SymbolCountSwitch } from "@/components/SymbolCountSwitch";
@@ -652,7 +653,7 @@ export default async function SettingsPage({
             </div>
             {/* The height a wall is assumed to be where the drawing gives none (heightsByCode.ts). */}
             <div id="default-wall-height" className="mt-4 scroll-mt-20">
-              <DefaultWallHeightForm feet={company.defaultWallHeightFt == null ? null : Number(company.defaultWallHeightFt)} isOwner={currentUser.role === "OWNER"} />
+              <DefaultWallHeightForm convention={wallHeightConventionFrom(company.wallHeightConvention)} feet={company.defaultWallHeightFt == null ? null : Number(company.defaultWallHeightFt)} isOwner={currentUser.role === "OWNER"} />
             </div>
             {/* ── FIND THE ROOMS, OFF UNTIL CHOSEN ──
                 Shown to everyone so the absence of the button on the takeoff

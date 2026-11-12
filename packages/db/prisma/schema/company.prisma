@@ -81,6 +81,11 @@ model Company {
   /// preset by trade. A height from here is ASSUMED, and says so on the estimate and in bid check.
   /// NULL: not set, and such a wall has no height until somebody gives it one, as before.
   defaultWallHeightFt Decimal? @db.Decimal(6, 2)
+  /// "Your interior partitions usually go": the company's answer for a wall the drawing gives no height
+  /// (`heightsByCode.ts` level 3) — to the structure (floor to floor), to the ceiling + 6", or the fixed
+  /// `defaultWallHeightFt`, which each falls back to. Asked at the trade pick; preset by trade. NULL: not
+  /// answered, and such a wall takes the fixed height alone, if there is one.
+  wallHeightConvention WallHeightConvention?
   doesPublicWork          Boolean?
   filesMonthlyPayApps     Boolean?
 
@@ -319,6 +324,13 @@ enum ContractingRelationship {
   UNDER_GENERAL_CONTRACTORS
   DIRECT_FOR_OWNERS
   BOTH
+}
+
+/// Company.wallHeightConvention: where a company's partitions usually stop.
+enum WallHeightConvention {
+  TO_STRUCTURE
+  CEILING_PLUS_6
+  FIXED
 }
 
 /// Who installs the doors and frames — see Company.doorScope.

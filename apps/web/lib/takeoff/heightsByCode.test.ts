@@ -37,16 +37,29 @@ describe("level 1: the rule the drawing prints", () => {
   });
 });
 
-describe("the chain: the drawing first, else the company default, assumed", () => {
+describe("the chain: the drawing first, else the company's own answer, assumed", () => {
+  const none = { floorToFloorFt: null, structureFt: null, setCeilingFt: null };
   it("what the drawing prints is not assumed", () => {
     const rule = setHeightRule(note("ALL WALLS TO DECK ABOVE"), [fact("structure-elevation", 15)]);
-    expect(wallHeightChain(rule, [], [], 10)).toMatchObject({ feet: 15, assumed: false });
+    expect(wallHeightChain(rule, [], [], { convention: "FIXED", fixedFt: 10 }, none)).toMatchObject({ feet: 15, assumed: false });
   });
-  it("nothing printed: the default, assumed, and never the room's ceiling (level 2 measured 98.6% wrong on held-out)", () => {
-    expect(wallHeightChain(null, [9, 9], [], 10)).toEqual({ feet: 10, from: "assumed: your default wall height, 10 ft", assumed: true });
+  it("to the structure: the floor-to-floor, else the set's one structure elevation, else the fixed height", () => {
+    const answer = { convention: "TO_STRUCTURE" as const, fixedFt: 10 };
+    expect(wallHeightChain(null, [9], [], answer, { ...none, floorToFloorFt: 14, structureFt: 16 })).toMatchObject({ feet: 14, assumed: true });
+    expect(wallHeightChain(null, [9], [], answer, { ...none, structureFt: 16 })).toMatchObject({ feet: 16, assumed: true });
+    expect(wallHeightChain(null, [9], [], answer, none)).toMatchObject({ feet: 10, assumed: true });
   });
-  it("nothing printed and no default: no height", () => {
-    expect(wallHeightChain(null, [9], [], null)).toBeNull();
+  it("to the ceiling + 6\": the higher adjacent ceiling, else the set's one ceiling, else the fixed height", () => {
+    const answer = { convention: "CEILING_PLUS_6" as const, fixedFt: 10 };
+    expect(wallHeightChain(null, [9, 10], [], answer, none)?.feet).toBeCloseTo(10.5, 5);
+    expect(wallHeightChain(null, [null], [], answer, { ...none, setCeilingFt: 8 })?.feet).toBeCloseTo(8.5, 5);
+    expect(wallHeightChain(null, [null], [], answer, none)?.feet).toBe(10);
+  });
+  it("a fixed height is that height; says where it came from, and is assumed", () => {
+    expect(wallHeightChain(null, [9, 9], [], { convention: "FIXED", fixedFt: 12 }, { ...none, floorToFloorFt: 14 })).toEqual({ feet: 12, from: "assumed: your usual height, 12 ft", assumed: true });
+  });
+  it("nothing printed and nothing answered: no height", () => {
+    expect(wallHeightChain(null, [9], [], { convention: null, fixedFt: null }, { ...none, floorToFloorFt: 14 })).toBeNull();
   });
 });
 
@@ -67,14 +80,14 @@ describe("a wall's own height on the bid", () => {
 });
 
 describe("bid check asks about an assumed height", () => {
-  const facts = (assumed?: { walls: number; feet: number | null }) =>
+  const facts = (assumed?: { walls: number }) =>
     ({ jobId: "j", heights: { queueGroups: 0, runs: [], assumed }, unpriced: [], laborMissing: [], review: { type: 0, wall: 0, windows: 0, scale: 0 }, specConflicts: [], quantities: { grossAreaSqFt: null, faceSqFt: 0, boardSqFt: 0 }, existing: { compareOn: true, sheets: [] } }) as unknown as Parameters<typeof bidChecks>[0];
   it("14 walls on the default: open, saying so", () => {
-    const heights = bidChecks(facts({ walls: 14, feet: 10 })).find((c) => c.key === "heights")!;
+    const heights = bidChecks(facts({ walls: 14 })).find((c) => c.key === "heights")!;
     expect(heights.open).toBe(true);
-    expect(heights.lines).toContain("14 walls use your default height (10 ft), not one read from the drawing: confirm");
+    expect(heights.lines).toContain("14 walls use your assumed height, not one read from the drawing: confirm");
   });
   it("none: clear", () => {
-    expect(bidChecks(facts({ walls: 0, feet: 10 })).find((c) => c.key === "heights")!.open).toBe(false);
+    expect(bidChecks(facts({ walls: 0 })).find((c) => c.key === "heights")!.open).toBe(false);
   });
 });

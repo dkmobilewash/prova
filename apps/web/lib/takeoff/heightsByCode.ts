@@ -91,19 +91,70 @@ export function wallHeightByCode(rule: SetHeightRule | null, sides: readonly (nu
 }
 
 /**
- * ── THE CHAIN: EVERY WALL A HEIGHT, AND ITS SOURCE (Diego, 2026-11-12) ──
+ * ── LEVEL 3: THE COMPANY'S OWN ANSWER, ASSUMED (Diego, 2026-11-12) ──
  *
- *   1. what the drawing prints (`wallHeightByCode`): training 92.7% right, 3.6% wrong on the 86% of wall
- *      footage it answers;
- *   2. the room's ceiling or the floor-to-floor — MEASURED AND NOT SHIPPED: 98.6% and 28.7% wrong on
- *      held-out, where walls run past the ceiling to the structure (zzHeightsByCode.eval.ts);
- *   3. the company's default wall height, ASSUMED, which the estimate and bid check ask to confirm.
+ * "Your interior partitions usually go": to deck/structure (the floor-to-floor, else the set's one
+ * structure elevation), to the ceiling +6" (the higher adjacent ceiling, else the set's one ceiling,
+ * plus 6"), or a fixed height. Each falls back to the company's fixed height where the drawing gives
+ * it nothing to work from. Asked at the trade pick and preset by trade (chosen on training only).
+ */
+export const WALL_HEIGHT_CONVENTIONS = ["TO_STRUCTURE", "CEILING_PLUS_6", "FIXED"] as const;
+export type WallHeightConvention = (typeof WALL_HEIGHT_CONVENTIONS)[number];
+export const WALL_HEIGHT_CONVENTION_LABELS: Record<WallHeightConvention, string> = {
+  TO_STRUCTURE: "To the deck or structure (the floor-to-floor height)",
+  CEILING_PLUS_6: 'To the ceiling, plus 6"',
+  FIXED: "A fixed height",
+};
+export function wallHeightConventionFrom(value: unknown): WallHeightConvention | null {
+  return WALL_HEIGHT_CONVENTIONS.includes(value as WallHeightConvention) ? (value as WallHeightConvention) : null;
+}
+
+/** What the set gives a convention to work from, beside each wall's own rooms. */
+export type SetFigures = { floorToFloorFt: number | null; structureFt: number | null; setCeilingFt: number | null };
+
+/** The set's one structure elevation and one ceiling height, when it prints exactly one of each. */
+export function setFigures(facts: readonly HeightFact[], floorToFloorFt: number | null): SetFigures {
+  return {
+    floorToFloorFt,
+    structureFt: onlyValue(facts.filter((f) => f.kind === "structure-elevation" && f.feet !== null && f.feet >= 7).map((f) => f.feet!)),
+    setCeilingFt: onlyValue(facts.filter((f) => f.kind === "ceiling-height" && f.feet !== null && f.feet >= 7).map((f) => f.feet!)),
+  };
+}
+
+export function assumedHeight(company: { convention: WallHeightConvention | null; fixedFt: number | null }, sides: readonly (number | null)[], figures: SetFigures): WallHeightByCode | null {
+  const fixed = company.fixedFt !== null && company.fixedFt > 0 ? { feet: company.fixedFt, from: `your usual height, ${company.fixedFt} ft` } : null;
+  if (company.convention === "TO_STRUCTURE") {
+    if (figures.floorToFloorFt !== null) return { feet: toTwelfths(figures.floorToFloorFt), from: `your walls go to the structure: floor to floor ${figures.floorToFloorFt} ft` };
+    if (figures.structureFt !== null) return { feet: figures.structureFt, from: `your walls go to the structure: ${figures.structureFt} ft on the sections` };
+    return fixed;
+  }
+  if (company.convention === "CEILING_PLUS_6") {
+    const adjacent = sides.filter((h): h is number => h !== null && h > 0);
+    const ceiling = adjacent.length > 0 ? Math.max(...adjacent) : figures.setCeilingFt;
+    return ceiling !== null ? { feet: toTwelfths(ceiling + 0.5), from: `your walls go 6" past the ceiling: ${ceiling} ft + 6"` } : fixed;
+  }
+  return fixed;
+}
+
+/**
+ * ── THE CHAIN: EVERY WALL A HEIGHT, AND ITS SOURCE ──
  *
- * Null only when the drawing says nothing and the company has no default.
+ *   1. what the drawing prints (`wallHeightByCode`): training 92.7% right, 3.6% wrong on the 86% of
+ *      wall footage it answers; it does not fire on held-out (no set there prints a rule this reads);
+ *   2. the room's ceiling or the floor-to-floor AS READ FROM THE DRAWING — measured and NOT shipped:
+ *      98.6% and 28.7% wrong on held-out, where walls run past the ceiling (zzHeightsByCode.eval.ts);
+ *   3. the company's own answer (`assumedHeight`), ASSUMED, which the estimate and bid check ask to confirm.
  */
 export type ChainHeight = { feet: number; from: string; assumed: boolean };
-export function wallHeightChain(rule: SetHeightRule | null, sides: readonly (number | null)[], roofPitched: readonly (boolean | null)[], defaultFt: number | null): ChainHeight | null {
+export function wallHeightChain(
+  rule: SetHeightRule | null,
+  sides: readonly (number | null)[],
+  roofPitched: readonly (boolean | null)[],
+  company: { convention: WallHeightConvention | null; fixedFt: number | null },
+  figures: SetFigures,
+): ChainHeight | null {
   const drawn = wallHeightByCode(rule, sides, roofPitched);
   if (drawn !== null) return { ...drawn, assumed: false };
-  return defaultFt !== null && defaultFt > 0 ? { feet: defaultFt, from: `assumed: your default wall height, ${defaultFt} ft`, assumed: true } : null;
+  const assumed = assumedHeight(company, sides, figures);
+  return assumed === null ? null : { feet: assumed.feet, from: `assumed: ${assumed.from}`, assumed: true };
 }

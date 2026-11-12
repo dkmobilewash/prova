@@ -19,8 +19,8 @@ export type BidCheck = { key: BidCheckKey; title: string; open: boolean; lines: 
 export type BidCheckFacts = {
   jobId: string;
   /** Wall groups in the review queue with no height, and wall-schedule runs whose type has none either. */
-  /** `assumed`: walls whose board rests on the company's default height (D, level 3), and that height. */
-  heights: { queueGroups: number; runs: string[]; assumed?: { walls: number; feet: number | null } };
+  /** `assumed`: walls whose board rests on the company's assumed height (D, level 3). */
+  heights: { queueGroups: number; runs: string[]; assumed?: { walls: number } };
   /** Estimate lines with neither a price nor a cost. */
   unpriced: string[];
   /** Production rates the job's labor needs and the company has not set (`laborPlanFor`). */
@@ -68,7 +68,7 @@ export function bidChecks(f: BidCheckFacts): BidCheck[] {
     ...(f.heights.queueGroups > 0 ? [`${plural(f.heights.queueGroups, "wall group")} on the takeoff with no height`] : []),
     ...f.heights.runs.map((r) => `${r}: no height on the run or its type`),
     ...(f.heights.assumed && f.heights.assumed.walls > 0
-      ? [`${plural(f.heights.assumed.walls, "wall")} use${f.heights.assumed.walls === 1 ? "s" : ""} your default height${f.heights.assumed.feet !== null ? ` (${f.heights.assumed.feet} ft)` : ""}, not one read from the drawing: confirm`]
+      ? [`${plural(f.heights.assumed.walls, "wall")} use${f.heights.assumed.walls === 1 ? "s" : ""} your assumed height, not one read from the drawing: confirm`]
       : []),
   ];
   checks.push({

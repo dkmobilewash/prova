@@ -202,10 +202,10 @@ export const contactExclusions: Exclusion[] = [
       " Whether openings come off the board quantity. Of all the owner-only settings this is the one a model must least be able to flip from a sentence: it silently changes the QUANTITY on every bid the company takes off afterwards, with no line of its own on the estimate to show it happened. A shop that deducts every opening bids a forty-door plan ~840 sq ft lighter than one that bids solid, and the three answers are a trade convention the estimator holds — not a fact the assistant can look up. The screen states what each answer means and says plainly that unset keeps today's behaviour; a command would be a bid-wide change with none of that in front of anyone.",
   },
   {
-    action: "saveDefaultWallHeight",
+    action: "saveWallHeightAnswer",
     reason:
       ADMIN +
-      " The height every bid assumes where the drawing gives a wall none, and changing it re-prices the open estimates' assumed walls at once. A bid-wide figure the owner holds, set on Settings beside what it means. Never a command.",
+      " Where the company's partitions usually go, and the height every bid assumes where the drawing gives a wall none, and changing it re-prices the open estimates' assumed walls at once. A bid-wide figure the owner holds, set on Settings beside what it means. Never a command.",
   },
   {
     action: "saveDoorScope",

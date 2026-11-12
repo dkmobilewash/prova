@@ -37,7 +37,6 @@ export async function loadBidCheckFacts(companyId: string, jobId: string): Promi
       runs: runs.filter((r) => r.wallType.defaultHeightFt === null).map((r) => `${r.label} (${r.wallType.code})`),
       assumed: {
         walls: await prisma.takeoffMeasurement.count({ where: { kind: "LINEAR", heightAssumed: true, heightFt: { not: null }, item: { jobId, companyId, heightFt: null } } }),
-        feet: ((d) => (d == null ? null : Number(d)))((await prisma.company.findUnique({ where: { id: companyId }, select: { defaultWallHeightFt: true } }))?.defaultWallHeightFt),
       },
     },
     unpriced: lines.filter((l) => l.unitPrice === null && l.budgetedUnitCost === null).map((l) => l.description),
