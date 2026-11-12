@@ -1,0 +1,188 @@
+import { Buffer } from "node:buffer";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { pageInventoryWork, type SheetProposalRow } from "../../plan-ingest/pageInventory";
+import { openPlanPdf } from "../../plan-ingest/planPdf";
+import type { ScoredPairing } from "../demotedRuns";
+import { runsHeldOffEstimate } from "../estimateHold";
+import { excludedSheetReason, heldOutReason } from "../heldOutSets";
+import { keyFromLabels, scoreSheet, type ScoredRun } from "../heldOutScore";
+import { detectForSheet, offeredCandidates } from "../offeredCandidates";
+import { priorPlanFor } from "../priorPlan";
+import { autoPairs } from "../priorPlanLoad";
+import { doorsAndWindowsForSheet } from "../doorsWindows";
+import { sheetStrokes } from "../sheetStrokes";
+import { loadWallModel } from "../wallModelFile";
+import { reviewOrder, runScores } from "../wallReview";
+import type { WallCandidate } from "../wallVectors";
+
+/**
+ * ── F. ZERO-TOUCH BID ACCURACY (AUTOMATION-PLAN.md) ──
+ *
+ * The one number: open a keyed set, press NOTHING, and ask how far the bid is
+ * from the key's bid priced the same way. Per labelled sheet:
+ *
+ *   ZERO-TOUCH — what reaches the estimate with no presses: wall runs the
+ *   model does not hold off (`runsHeldOffEstimate`), after the app's own
+ *   demolition comparison when the sheet auto-pairs (`autoPairs` +
+ *   `priorPlanFor`, the same path `zzRenoCauses` exercises); doors with a
+ *   printed mark (the auto-post door source); no windows (nothing clears
+ *   their bar yet).
+ *
+ *   TEN-PRESS — the same after the first N (default 10) review answers,
+ *   answered FROM THE KEY in the shipped review order
+ *   (`reviewOrder(…, "doubt")`): a posted junk run is removed, a held real
+ *   run is added. Walls only in v1 — door and window questions are not
+ *   simulated.
+ *
+ *   BID $ — one deterministic price table (PRICE below), applied identically
+ *   to the run's quantities and the key's, so % off is about QUANTITIES,
+ *   never price data. Key wall types are REPORTED for visibility, but v1
+ *   prices every wall foot at one composite rate: with no presses nothing
+ *   carries a confirmed type today, and a per-type price would charge the
+ *   type gap twice.
+ *
+ * Training and held-out run separately (`ZT_HELD=1`). Held-out prints per-set
+ * rows because the SCORE is per set — nothing here tunes anything. Needs
+ * TAKEOFF_WALL_MODEL. Writes JSON rows to ZT_OUT and the table to stdout.
+ */
+const DIR = process.env.REAL_PLAN_DIR ?? "";
+const DIR2 = process.env.REAL_PLAN_DIR2 ?? "";
+const LABELS = process.env.TAKEOFF_LABEL_DIR ?? "";
+const OUT = process.env.ZT_OUT ?? "";
+const HELD = process.env.ZT_HELD === "1";
+const PRESSES = Number(process.env.ZT_PRESSES ?? "10");
+
+/** v1 price table — placeholder composite rates, identical for run and key. */
+const PRICE = { wallPerLf: 18, doorEach: 350, windowEach: 150 } as const;
+
+const flat = (s: string) => s.replace(/\.pdf$/i, "").replace(/[^a-z0-9]+/gi, "").toUpperCase();
+const findPdf = (dir: string) => {
+  for (const root of [DIR, DIR2].filter((r) => r !== "")) for (const n of readdirSync(root)) if (n.toLowerCase().endsWith(".pdf") && flat(n) === flat(dir)) return join(root, n);
+  return null;
+};
+type Saved = Parameters<typeof keyFromLabels>[0] & { page: number; feetPerUnit: number };
+
+async function sheetsOf(pdf: string): Promise<{ pageNumber: number; sheetNumber: string | null; title: string | null }[]> {
+  const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
+  const proposals = new Map<number, SheetProposalRow>();
+  const work = pageInventoryWork(
+    { planId: "p", companyId: "c", ingestJobId: "i", jobId: "j", startedByUserId: null },
+    {
+      readPlanBytes: async () => ({ ok: true, bytes: Buffer.from("") }),
+      openPdf: async () => doc,
+      saveSheetText: async () => {},
+      saveScaleReading: async () => {},
+      saveSheetProposal: async (r) => void proposals.set(r.pageNumber, r),
+      sheetNamesOn: async () => true,
+    },
+  );
+  for (let page = 1; page <= doc.pageCount; page += 1) {
+    try {
+      await work({ id: `t${page}`, pageNumber: page, stage: "PAGE_INVENTORY", attempts: 0 } as never);
+    } catch {
+      // an unreadable page is not paired
+    }
+  }
+  await doc.close();
+  return [...proposals.values()].map((p) => ({ pageNumber: p.pageNumber, sheetNumber: p.sheetNumber, title: p.title }));
+}
+
+const bid = (q: { lf: number; doors: number; windows: number }) => q.lf * PRICE.wallPerLf + q.doors * PRICE.doorEach + q.windows * PRICE.windowEach;
+
+describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF_WALL_MODEL === undefined)("zero-touch bid accuracy", () => {
+  it("prices the untouched takeoff against the key", { timeout: 14_400_000 }, async () => {
+    const config = loadWallModel();
+    if (config === null) throw new Error("no wall model");
+    const rows: Record<string, unknown>[] = [];
+    const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number }>();
+    for (const dir of readdirSync(LABELS).sort()) {
+      if (!existsSync(join(LABELS, dir)) || (heldOutReason(dir) !== null) !== HELD) continue;
+      if (process.env.ZT_ONLY !== undefined && !dir.includes(process.env.ZT_ONLY)) continue;
+      let names: string[] = [];
+      try { names = readdirSync(join(LABELS, dir)).filter((n) => n.endsWith(".json")); } catch { continue; }
+      const pdf = findPdf(dir);
+      if (pdf === null || names.length === 0) continue;
+      const sheetsAll = await sheetsOf(pdf);
+      const auto = autoPairs(sheetsAll);
+      for (const name of names) {
+        const sheet = name.slice(0, -5);
+        if (excludedSheetReason(dir, sheet) !== null) continue;
+        const saved = JSON.parse(readFileSync(join(LABELS, dir, name), "utf8")) as Saved;
+        const got = keyFromLabels(saved);
+        const key = got.key;
+        const keyDoors = got.openings.filter((o) => o.kind === "door").length;
+        const keyWindows = got.openings.filter((o) => o.kind === "window").length;
+        if (key.length === 0 && keyDoors === 0 && keyWindows === 0) continue;
+        const strokes = await sheetStrokes(Buffer.from(readFileSync(pdf)), saved.page);
+        if (strokes === null || strokes.segments.length < 50) continue;
+        const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
+        const text = await doc.pageText(saved.page);
+        const W = strokes.widthPt, fpu = saved.feetPerUnit;
+        const textItems = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
+        const scored: ScoredPairing[] = [];
+        const d = detectForSheet({ segments: strokes.segments, textItems, pageSize: { widthPt: W, heightPt: strokes.heightPt }, feetPerUnit: fpu, onCandidate: (f, w) => { scored.push({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, thicknessFeet: w.thicknessFeet, features: [...f] }); } });
+        const offer = (priorPlan?: { lines: NonNullable<ReturnType<typeof priorPlanFor>["lines"]>; sheet: string }) =>
+          offeredCandidates({ walls: d.found.walls, segments: d.found.inUnits.map((u) => ({ ...u, x1: u.x1 * W, y1: u.y1 * W, x2: u.x2 * W, y2: u.y2 * W })), pageSegments: strokes.segments, widthPt: W, feetPerUnit: fpu, planBoxes: d.planBoxes, textItems, ...(priorPlan === undefined ? {} : { priorPlan }) }).offeredRuns;
+        let runs = offer();
+        let paired = "-";
+        const pair = auto.get(saved.page);
+        if (pair !== undefined) {
+          const ds = await doc.pageStrokes(pair.demoPage);
+          const dt = (await doc.pageText(pair.demoPage)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
+          const prior = priorPlanFor({ demo: { segments: ds.segments, textItems: dt, widthPt: ds.widthPt, heightPt: ds.heightPt }, newPage: { segments: strokes.segments, widthPt: W }, newRuns: runs, feetPerUnit: fpu });
+          paired = `p${pair.demoPage}`;
+          if (prior.lines !== null) runs = offer({ lines: prior.lines, sheet: `p${pair.demoPage}` });
+        }
+        // Doors with a printed mark: the auto-post class. Schedule rows are a
+        // DB read this eval does not make; the mark comes off the drawing.
+        const dw = doorsAndWindowsForSheet({ segments: d.found.inUnits, segmentsPt: strokes.segments, textPt: textItems, widthPt: W, walls: d.found.walls, feetPerUnit: fpu, scheduleRows: [] });
+        const postedDoors = dw.doors.filter((o) => typeof (o as { mark?: unknown }).mark === "string" && ((o as { mark?: string }).mark ?? "").trim() !== "").length;
+        const held = new Set(runsHeldOffEstimate(config.model, runs, scored, fpu, false));
+        const zeroLf = runs.reduce((n, r) => n + (held.has(r) ? 0 : r.lengthFeet), 0);
+        // N presses, answered from the key, in the shipped order.
+        const junk = runs.map((r) => scoreSheet({ set: dir, sheet, key, proposed: [{ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFeet: r.lengthFeet, thicknessFeet: r.thicknessFeet } as ScoredRun], feetPerUnit: fpu }).extraFeet >= 0.5 * r.lengthFeet);
+        const scores = runScores(config.model, runs, scored, fpu);
+        const entries = runs.map((r, at) => ({ at, held: held.has(r), score: scores[at] ?? null, lengthFeet: r.lengthFeet }));
+        let lf10 = zeroLf;
+        let answered = 0;
+        for (const at of reviewOrder(entries, "doubt")) {
+          if (answered >= PRESSES) break;
+          answered += 1;
+          const r = runs[at]!;
+          if (!held.has(r) && junk[at]) lf10 -= r.lengthFeet;
+          if (held.has(r) && !junk[at]) lf10 += r.lengthFeet;
+        }
+        await doc.close();
+        const keyLf = key.reduce((n, k) => n + k.lengthFeet, 0);
+        const keyByType: Record<string, number> = {};
+        for (const k of key) {
+          const t = ((k as { wallType?: string }).wallType ?? "0").trim() || "0";
+          keyByType[t] = Math.round(((keyByType[t] ?? 0) + k.lengthFeet) * 10) / 10;
+        }
+        const s = bySet.get(dir) ?? { lf: 0, doors: 0, windows: 0, lf10: 0, keyLf: 0, keyDoors: 0, keyWindows: 0, keyByType: {}, sheets: 0 };
+        s.lf += zeroLf; s.lf10 += lf10; s.doors += postedDoors; s.keyLf += keyLf; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1;
+        for (const [t, ft] of Object.entries(keyByType)) s.keyByType[t] = Math.round(((s.keyByType[t] ?? 0) + ft) * 10) / 10;
+        bySet.set(dir, s);
+        rows.push({ set: dir, sheet, paired, keyLf: Math.round(keyLf), zeroLf: Math.round(zeroLf), lf10: Math.round(lf10), keyDoors, postedDoors, keyWindows });
+      }
+    }
+    const group = HELD ? "HELD-OUT" : "TRAINING";
+    let zb = 0, kb = 0, tb = 0;
+    for (const [dir, s] of [...bySet.entries()].sort()) {
+      const kBid = bid({ lf: s.keyLf, doors: s.keyDoors, windows: s.keyWindows });
+      const zBid = bid({ lf: s.lf, doors: s.doors, windows: s.windows });
+      const tBid = bid({ lf: s.lf10, doors: s.doors, windows: s.windows });
+      zb += zBid; kb += kBid; tb += tBid;
+      const pct = (x: number) => (kBid === 0 ? "—" : `${(((x - kBid) / kBid) * 100).toFixed(1)}%`);
+      console.log(
+        `ZT ${group} ${dir.slice(0, 26).padEnd(26)} sheets ${s.sheets} · key LF ${Math.round(s.keyLf)} doors ${s.keyDoors} windows ${s.keyWindows} · ` +
+          `zero LF ${Math.round(s.lf)} doors ${s.doors} windows 0 · bid off ${pct(zBid)} · after ${PRESSES} presses/sheet ${pct(tBid)} · key types ${JSON.stringify(s.keyByType)}`,
+      );
+    }
+    if (kb > 0) console.log(`ZT ${group} TOTAL bid off ${(((zb - kb) / kb) * 100).toFixed(1)}% zero-touch · ${(((tb - kb) / kb) * 100).toFixed(1)}% after ${PRESSES} presses/sheet (key $${Math.round(kb)})`);
+    writeFileSync(OUT, JSON.stringify({ group, prices: PRICE, rows }, null, 1));
+    expect(rows.length, "no labelled sheet was read").toBeGreaterThan(0);
+  });
+});
