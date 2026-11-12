@@ -23,7 +23,7 @@ import { levelHeight, runLevels } from "@/lib/takeoff/levelHeights";
 import { heightBasis } from "@/lib/takeoff/wallHeights";
 import { roomPitched, runPitched } from "@/lib/takeoff/roofParts";
 import { storedRoofParts } from "@/lib/takeoff/roofPartsRead";
-import { GENERAL_HEIGHT_KEY, heightItem, reviewQueue, splitByLevel, splitByRoof, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { fillOfRuns, GENERAL_HEIGHT_KEY, heightItem, reviewQueue, splitByLevel, splitByRoof, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import { storedWindowsOf, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
 import { refreshSuggestionsAfterResponse } from "@/lib/takeoff/suggestionRefresh";
 import { buildingHeights, feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/takeoff/wallHeight";
@@ -192,6 +192,7 @@ export async function loadReviewQueue(
       runs: storedRunsOrNull(row.runs) ?? [],
       suggested: named === null ? null : suggestType(named[at]!, sheet.sheet, legendCodes, notesByPage.get(page.pageNumber)),
       rooms: roomsOn(page.pageNumber),
+      ...(row.source === "REMAINDER" ? { fill: fillOfRuns(storedRunsOrNull(row.runs) ?? []) } : {}),
     }));
     const typed = typeItems(sheet, page.measurements.filter((m) => m.label !== HELD_LABEL), groups);
     // ── ITS PLAN'S BUILDING PART: each type's height drawn for it, pre-filled ──

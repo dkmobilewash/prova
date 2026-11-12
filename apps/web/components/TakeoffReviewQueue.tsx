@@ -11,7 +11,7 @@ import { QueueGroupConfirm } from "./QueueGroupConfirm";
 import { QueueWindowsConfirm } from "./QueueWindowsConfirm";
 import { LegendThumb } from "./LegendCrop";
 import type { StoredCrop } from "@/lib/takeoff/legendProposal";
-import { byThickness, forCode, QUEUE_PART, sameOnOtherFloors, sameWindowsOnOtherFloors, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { alikeGroups, byThickness, forCode, QUEUE_PART, sameOnOtherFloors, sameWindowsOnOtherFloors, heightFor, legendMissing, levelHeightFor, sheetSuggestionGroups, type CodeHeight, type LegendState, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { PlanSetRow } from "@/lib/takeoff/planSet";
 import { inchLabel } from "@/lib/takeoff/wallVectors";
 import { specSaysLine, type SpecSay } from "@/lib/specs/specTradeFacts";
@@ -96,6 +96,9 @@ export function TakeoffReviewQueue({
   // The other floors' windows confirmed in one click: what the line says, and how its Undo takes them all back.
   const [windowsApplied, setWindowsApplied] = useState<{ text: string; undo: () => Promise<ActionResult> } | null>(null);
   const [floorsOffer, setFloorsOffer] = useState<{ what: string; groups: ReturnType<typeof sameOnOtherFloors> } | null>(null);
+  // ── THE SAME TYPE ON THE GROUPS DRAWN LIKE THE ONE JUST TYPED (`alikeGroups`) ──
+  // Offered after a person types an untagged group; never a type the queue picked.
+  const [alikeOffer, setAlikeOffer] = useState<{ code: string; heightFt: number | null; offered: number | null; sheet: string; fill: "hatched" | "plain"; groups: Extract<ReviewItem, { kind: "type" }>[] } | null>(null);
   const left = items.filter((item) => !done.has(item.key));
   const current = left.find((item) => item.key === cursor) ?? left[0] ?? null;
   // ── ACCEPT ALL SUGGESTIONS ON THIS SHEET ──
@@ -530,6 +533,9 @@ export function TakeoffReviewQueue({
                 }}
                 onAccept={(code, heightFt, meta) => {
                   rememberHeight(code, heightFt, meta.heightEdited);
+                  // Untagged and typed by the person: the other untagged groups on the sheet drawn like it.
+                  const alike = code === null ? [] : alikeGroups(left, current);
+                  setAlikeOffer(alike.length === 0 || current.fill === undefined ? null : { code: code!, heightFt, offered: heightOfGroup(current, code!)?.feet ?? null, sheet: current.sheet, fill: current.fill, groups: alike });
                   // The same drawn group on the set's other floor plans, offered once this one is in.
                   const floorPages = new Set(planSet.filter((r) => r.category === "floor").map((r) => r.pageNumber));
                   const same = sameOnOtherFloors(left, current, code!, heightFt, (g, c) => heightOfGroup(g, c)?.feet ?? null, floorPages, planId);
@@ -838,6 +844,44 @@ export function TakeoffReviewQueue({
       <button type="button" className="underline" onClick={onClose} data-takeoff="review-queue-close">
         Close
       </button>
+      {(() => {
+        // "W1 on the 3 other groups drawn like it (same fill, thickness within an inch): 14 runs, 212 ft":
+        // the person's type, on the sheet's untagged groups drawn alike, one press, one Undo.
+        if (alikeOffer === null) return null;
+        const open = alikeOffer.groups.filter((g) => !done.has(g.key) && left.some((item) => item.key === g.key));
+        if (open.length === 0) return null;
+        const runs = open.reduce((n, g) => n + g.runs.length, 0);
+        const feet = Math.round(open.reduce((n, g) => n + (g.feet ?? 0), 0));
+        const what = `${alikeOffer.code} on the ${open.length} other group${open.length === 1 ? "" : "s"} drawn like it on ${alikeOffer.sheet}`;
+        return (
+          <span className="flex flex-wrap items-center gap-2" data-takeoff="review-queue-alike">
+            <button
+              type="button"
+              className={primaryButton}
+              disabled={busy}
+              data-takeoff="review-queue-alike-apply"
+              title={`Untagged groups on ${alikeOffer.sheet} drawn ${alikeOffer.fill === "hatched" ? "hatched" : "plain"}, their thickness within an inch (or 15%) of the one you typed: ${open.map((g) => inchLabel(g.inches)).join(", ")}. Undo takes them all back.`}
+              onClick={() => {
+                const offer = alikeOffer;
+                setAlikeOffer(null);
+                void acceptSheet(
+                  open.map((g) => ({
+                    key: g.key,
+                    feet: g.feet,
+                    group: { planId, pageNumber: g.pageNumber, code: offer.code, inches: g.inches, runs: g.runs, heightFt: offer.heightFt === offer.offered ? (heightOfGroup(g, offer.code)?.feet ?? null) : offer.heightFt, level: levelHeightFor(offer.code, g.level) === null ? null : g.level!.label },
+                  })),
+                  { done: `Typed ${what}`, undo: `Type ${what}` },
+                );
+              }}
+            >
+              {what}: {runs} run{runs === 1 ? "" : "s"}, {feet.toLocaleString()} ft
+            </button>
+            <button type="button" className="underline" onClick={() => setAlikeOffer(null)} data-takeoff="review-queue-alike-dismiss">
+              Not these
+            </button>
+          </span>
+        );
+      })()}
       {(() => {
         // "Apply C6 to 3 other floors (412 ft)": the confirmed group's twins, still open, one click, one Undo.
         if (floorsOffer === null) return null;
