@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   wallTypeTags,
   tagByRun,
+  runsBesideTag,
   namesForClusters,
   tagSentence,
   TAG_REACH_FEET,
@@ -362,5 +363,25 @@ describe("the mid-span tie-break — on only when no legend is read", () => {
     const byRun = tagByRun([along, around], corner, feetPerUnit, [], true);
     expect(byRun.get(along)).toBe("3B");
     expect(byRun.has(around)).toBe(false);
+  });
+});
+
+describe("a tag also names the other runs it sits beside — with no legend read", () => {
+  // Totem Lake sets "1" between two parallel partitions 3 ft apart: 1.5 ft from each, so by distance
+  // alone it is too close to call and named neither.
+  const upper = wall({ x1: 0.2, y1: 0.5, x2: 0.3, y2: 0.5 });
+  const lower = wall({ x1: 0.2, y1: 0.5 + 3 * FOOT, x2: 0.3, y2: 0.5 + 3 * FOOT });
+  const between = tag("1", 0.25, 0.5 + 1.5 * FOOT);
+  it("off: neither wall is named", () => {
+    expect(tagByRun([upper, lower], [between], feetPerUnit).size).toBe(0);
+  });
+  it("on: both walls it sits beside mid-span take it", () => {
+    const byRun = tagByRun([upper, lower], [between], feetPerUnit, [], true);
+    expect([byRun.get(upper), byRun.get(lower)]).toEqual(["1", "1"]);
+  });
+  it("not when a tag of another name is about as near, nor from a leader, nor past the run's end", () => {
+    expect(runsBesideTag([upper], [between, tag("2B", 0.26, 0.5 - 2 * FOOT)], feetPerUnit, new Map()).size).toBe(0);
+    expect(runsBesideTag([upper], [{ ...between, leader: true }], feetPerUnit, new Map()).size).toBe(0);
+    expect(runsBesideTag([upper], [tag("1", 0.3 + 1 * FOOT, 0.5 + FOOT)], feetPerUnit, new Map()).size).toBe(0);
   });
 });

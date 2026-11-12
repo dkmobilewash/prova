@@ -299,6 +299,39 @@ export function tagByRun(
     if (out.has(claim.wall)) continue;
     out.set(claim.wall, claim.name);
   }
+  if (midSpan) for (const [wall, name] of runsBesideTag(walls, tags, feetPerUnit, out)) out.set(wall, name);
+  return out;
+}
+
+/**
+ * ── A TAG ALSO NAMES THE OTHER RUNS IT SITS BESIDE ──
+ *
+ * A printed tag names ONE run above, its nearest. Totem Lake sets "1" between two parallel
+ * partitions and at T-junctions, so the second wall it sits beside was left untagged and went into
+ * the sheet's "rest" question under another type: on the training type keys, 182 ft of walls whose
+ * own type's tag was their nearest, within reach and beside them mid-span (2026-11-12). Run by run:
+ * an untagged run takes its nearest tag when that tag is within `TAG_REACH_FEET`, falls beside it
+ * mid-span (`projectsMidSpan`), and every tag of another name is `TAG_CLEAR_MARGIN` times farther.
+ * A leader-placed tag names only the run its leader ends on, so it is left out. Only with no legend
+ * read, like the mid-span tie-break (the same switch).
+ */
+export function runsBesideTag(
+  walls: readonly WallCandidate[],
+  tags: readonly WallTypeTag[],
+  feetPerUnit: number,
+  taken: ReadonlyMap<WallCandidate, string>,
+): Map<WallCandidate, string> {
+  const out = new Map<WallCandidate, string>();
+  const free = tags.filter((tag) => tag.leader !== true);
+  for (const wall of walls) {
+    if (taken.has(wall)) continue;
+    const near = free.map((tag) => ({ tag, feet: distanceFeet(tag.x, tag.y, wall, feetPerUnit) })).sort((a, b) => a.feet - b.feet);
+    const first = near[0];
+    if (first === undefined || first.feet > TAG_REACH_FEET || !projectsMidSpan(first.tag, wall, feetPerUnit)) continue;
+    const other = near.find((n) => n.tag.name !== first.tag.name);
+    if (other !== undefined && other.feet < first.feet * TAG_CLEAR_MARGIN) continue;
+    out.set(wall, first.tag.name);
+  }
   return out;
 }
 
