@@ -59,8 +59,9 @@ export function keyTypeFor(types: Record<string, KeyType>, code: string): [strin
 
 /** The key's height for one wall: a single figure, or the zone its rooms settle, else every zone's figure (lenient only). */
 function keyHeights(setName: string, k: KeyType, sideRooms: readonly (string | null)[], parts: Map<string, string>): { strict: number | null; any: number[] } {
-  if (k.feet !== undefined) return { strict: k.feet, any: [k.feet] };
-  const zones = k.zones ?? [];
+  // A key figure is a number; a type keyed with "feet": null has none (it would turn every sum into NaN).
+  if (typeof k.feet === "number" && Number.isFinite(k.feet)) return { strict: k.feet, any: [k.feet] };
+  const zones = (k.zones ?? []).filter((z) => typeof z.feet === "number" && Number.isFinite(z.feet));
   const any = zones.map((z) => z.feet);
   const numbers = sideRooms.filter((n): n is string => n !== null);
   const zoneOf = (n: string) => {
