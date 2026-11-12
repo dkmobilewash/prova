@@ -107,7 +107,24 @@ export function TakeoffReviewQueue({
   // Offered after a person types an untagged group; never a type the queue picked.
   const [alikeOffer, setAlikeOffer] = useState<{ code: string; heightFt: number | null; offered: number | null; sheet: string; fill: "hatched" | "plain"; groups: Extract<ReviewItem, { kind: "type" }>[] } | null>(null);
   const left = items.filter((item) => !done.has(item.key));
-  const current = left.find((item) => item.key === cursor) ?? left[0] ?? null;
+  // ── AFTER AN ANSWER, THE NEXT ITEM — NOT BACK TO THE TOP ──
+  // A bulk answer (a tag, the rest, Accept all) marks its groups done without moving the cursor,
+  // and the queue fell back to its FIRST item: on Baker A101 that was the existing-walls question
+  // the person had just skipped, back after every answer (new-customer walk, 2026-11-12). The cursor's
+  // item gone, the queue goes on from where it stood.
+  const current =
+    left.find((item) => item.key === cursor) ??
+    (() => {
+      const at = cursor === null ? -1 : items.findIndex((item) => item.key === cursor);
+      if (at < 0) return null;
+      for (let k = 1; k <= items.length; k += 1) {
+        const next = items[(at + k) % items.length]!;
+        if (!done.has(next.key)) return next;
+      }
+      return null;
+    })() ??
+    left[0] ??
+    null;
   // ── ACCEPT ALL SUGGESTIONS ON THIS SHEET ──
   // Every group on the sheet on show whose type the drawing gave (a printed
   // tag or the legend), each with the height Enter would take. Library

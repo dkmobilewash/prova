@@ -8,6 +8,7 @@ import { PlanReadingSwitch } from "@/components/PlanReadingSwitch";
 import { Spinner } from "@/components/Spinner";
 import { RECAP_RATE_FIELDS } from "@/lib/bid-recap";
 import { MARKUP_FIELDS, TRADE_PRESETS } from "@/lib/trade-presets";
+import { DOOR_SCOPE_LABELS, DOOR_SCOPES, type DoorScope } from "@/lib/estimating/doorLines";
 
 export type SetupStep = "trade" | "sample" | "markup" | "questions";
 
@@ -26,6 +27,7 @@ export function TradeSetupSteps({ initial, planReadingOn }: { initial: SetupStep
   const [step, setStep] = useState<SetupStep>(initial);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [doorScope, setDoorScope] = useState<DoorScope>("BY_OTHERS");
   const router = useRouter();
 
   if (step === "questions") return <CompanySetupGate />;
@@ -55,13 +57,26 @@ export function TradeSetupSteps({ initial, planReadingOn }: { initial: SetupStep
             <p className="mt-2 text-sm text-ink-body">
               We&apos;ll start you with that trade&apos;s wall types, takeoff tools and estimate lines. No prices — those are yours.
             </p>
+            {/* The same choice as Settings' "Doors and frames", asked before the tap so the trade's
+                setup carries it; by others unless changed, as every preset starts. */}
+            <fieldset className="mt-5" data-setup="door-scope">
+              <legend className="text-sm font-medium text-ink">Doors and frames</legend>
+              <div className="mt-1 flex flex-col gap-1">
+                {DOOR_SCOPES.map((scope) => (
+                  <label key={scope} className="flex min-h-11 items-center gap-2 text-sm text-ink-body">
+                    <input type="radio" name="doorScope" value={scope} checked={doorScope === scope} onChange={() => setDoorScope(scope)} className="h-4 w-4 shrink-0" />
+                    {DOOR_SCOPE_LABELS[scope]}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <ul className="mt-6 flex flex-col gap-2" data-setup="trades">
               {TRADE_PRESETS.map((preset) => (
                 <li key={preset.choice}>
                   <button
                     type="button"
                     disabled={isPending}
-                    onClick={() => run(() => applyTradePreset(preset.choice), "sample")}
+                    onClick={() => run(() => applyTradePreset(preset.choice, doorScope), "sample")}
                     className="flex min-h-12 w-full items-center rounded-md border border-line-card px-4 text-left text-sm font-medium text-ink hover:border-link hover:text-link disabled:opacity-50"
                   >
                     {preset.label}

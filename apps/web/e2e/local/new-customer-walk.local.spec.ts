@@ -43,6 +43,10 @@ const OUT = process.env.WALK_OUT ?? "";
  */
 const NO_AI = process.env.WALK_NO_AI === "1";
 const RENO = process.env.WALK_RENO === "1";
+// "Doors and frames" at the trade pick (FRAMES or DOORS_AND_FRAMES; unset leaves the default, by others).
+// With it, the walk also types its crew's rate and door rates on Wall types, so the door labor is priced.
+const DOORS = process.env.WALK_DOORS ?? "";
+const DOOR_RATES = { crewRatePerHr: "85", doorFramesPerHr: "2", doorsPerHr: "1.5" };
 /**
  * WALK_KNOWN_PRICES=1: a company that already holds the four costs the walk would type into the
  * queue, written in before the job as earlier work would have left them (not counted as presses):
@@ -315,6 +319,11 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const reading = page.locator('[data-setup="plan-reading"]');
       await expect(reading).toContainText(/title blocks and wall legends with AI; about \$\d+\.\d\d per plan set/);
       await expect(reading.getByRole("switch", { name: "AI plan reading" })).toHaveAttribute("aria-checked", "true");
+      if (DOORS !== "") {
+        await page.locator(`[data-setup="door-scope"] input[value="${DOORS}"]`).check();
+        act();
+        note(`Doors and frames at the trade pick: ${DOORS}.`);
+      }
       await trades.getByRole("button", { name: /Framing and drywall/ }).click();
       act();
       await page.locator('[data-setup="skip-sample"]').click(); // the sample offer after the trade (#1120): not now
@@ -341,6 +350,24 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       await page.waitForURL(/\/dashboard/, { timeout: 60_000 });
       const company = await prisma.user.findFirstOrThrow({ where: { email: EMAIL }, select: { companyId: true } });
       companyId = company.companyId;
+      if (DOORS !== "") {
+        expect((await prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { doorScope: true } })).doorScope).toBe(DOORS);
+        await page.goto("/wall-types");
+        // The rates sit behind their own button on Wall types.
+        await page.getByRole("button", { name: "Production rates", exact: true }).click();
+        act();
+        await expect(page.locator('[data-rates="crewRatePerHr"]')).toBeVisible({ timeout: 30_000 });
+        await hydrated(page, '[data-rates="crewRatePerHr"]');
+        for (const [name, value] of Object.entries(DOOR_RATES)) {
+          await page.locator(`[data-rates="${name}"]`).fill(value);
+          act();
+        }
+        await page.getByRole("button", { name: "Save rates" }).click();
+        act();
+        await expect.poll(async () => JSON.stringify((await prisma.companyBidDefaults.findUnique({ where: { companyId }, select: { productionRates: true } }))?.productionRates ?? {}), { timeout: 30_000 }).toContain('"doorsPerHr":1.5');
+        note(`Production rates typed on Wall types: crew ${DOOR_RATES.crewRatePerHr} $/hr, ${DOOR_RATES.doorFramesPerHr} frames/hr, ${DOOR_RATES.doorsPerHr} doors/hr (the wall rates left blank).`);
+        await page.goto("/dashboard");
+      }
       const types = await prisma.wallType.count({ where: { companyId } });
       const templates = await prisma.estimateTemplate.count({ where: { companyId } });
       note(`The preset left ${types} wall types and ${templates} estimate template(s).`);
@@ -841,7 +868,13 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       // changes what is counted, and this walk measures presses on the same quantities. Skip only
       // moves the cursor, so once it is all that is left, the queue is done for this walk.
       const skippedExisting = new Set<string>();
+      // Only when the count says it is the LAST item: the queue comes back round to a skipped existing-walls
+      // question while other items wait (Baker: "24 left" with it first again), and that is not done.
+      const skippedExistingShown = async () =>
+        (await item.first().getAttribute("data-kind", { timeout: 500 }).catch(() => null)) === "existing" &&
+        skippedExisting.has((await queue.locator('[data-takeoff="review-queue-existing"]').getAttribute("data-page", { timeout: 500 }).catch(() => null)) ?? "");
       const onlySkippedLeft = async () =>
+        /^1 left\b/.test(await text(left).catch(() => "")) &&
         (await item.first().getAttribute("data-kind", { timeout: 500 }).catch(() => null)) === "existing" &&
         skippedExisting.has((await queue.locator('[data-takeoff="review-queue-existing"]').getAttribute("data-page", { timeout: 500 }).catch(() => null)) ?? "");
       let mark = { t: Date.now(), walk: clock.walk, what: "open" };
@@ -1053,6 +1086,9 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           await estimate.close();
           await tab.bringToFront();
           await tab.evaluate(() => window.dispatchEvent(new Event("focus")));
+        } else if (kind === "existing" && (await skippedExistingShown())) {
+          // Already skipped, and other items are waiting behind it: Next, as a person moves past it.
+          await item.locator('[data-takeoff="review-queue-next"]').click();
         } else if (kind === "existing") {
           const pageOf = (await item.locator('[data-takeoff="review-queue-existing"]').getAttribute("data-page")) ?? "";
           skippedExisting.add(pageOf);
@@ -1118,6 +1154,11 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       if (unpriced > 0) note(`${unpriced} lines still unpriced after the queue.`);
       const sources = await page.locator('[data-estimate="price-source"]').allTextContents();
       note(`Price sources shown: ${sources.length === 0 ? "none" : sources.join(" | ")}`);
+      const doorsPosted = (await prisma.takeoffMeasurement.findMany({ where: { kind: "COUNT", item: { jobId, name: "Doors" } }, select: { xs: true } })).reduce((n, m) => n + m.xs.length, 0);
+      const doorLines = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false, description: { contains: "Doors" } }, select: { description: true, quantity: true, unit: true, unitPrice: true } });
+      const doorTotal = doorLines.reduce((n, l) => n + Number(l.quantity) * Number(l.unitPrice ?? 0), 0);
+      const listed = doorLines.map((l) => `${l.description} ${Number(l.quantity)} ${l.unit} @ ${l.unitPrice ?? "-"}`).join(" | ");
+      note(`Doors: ${doorsPosted} posted; ${doorLines.length} door lines, ${doorTotal.toFixed(2)} dollars${listed ? `: ${listed}` : ""}`);
     });
 
     // ── 9. SET MARKUP ──
