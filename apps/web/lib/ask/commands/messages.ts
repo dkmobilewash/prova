@@ -528,6 +528,13 @@ export const messageExclusions: Exclusion[] = [
     reason: "Emails a document to a vendor. A person reads the words and presses send on the document's own page, like a bid package.",
   },
   {
+    action: "sendDraftPurchaseOrder",
+    reason:
+      "Send PO to supplier: emails a draft from Order materials to a supplier AND issues it, which commits the money. " +
+      "A person opens its preview on the Order materials result or Buyout, reads who it goes to, the lines, the total " +
+      "and the PDF, and presses send. That preview is the confirm screen, so a card would add nothing. Never a command.",
+  },
+  {
     action: "sendSubmittalPackage",
     reason: "Emails a built package to a GC. A person builds it, reads the words and presses send in the submittal's own form.",
   },

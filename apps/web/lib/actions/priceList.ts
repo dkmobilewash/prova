@@ -13,6 +13,7 @@ import { catalogByMaterial, catalogFor } from "@/lib/estimating/materialKey";
 import { chosenRows, materialLabelFor, planPriceList, priceListTable, readRow, type ColumnMap, type Picks } from "@/lib/estimating/priceList";
 import { actionFail, ownerRefusal, type ActionResultWith } from "./shared";
 import { pdfRows } from "@/lib/estimating/pdfRows";
+import { looksLikeEmail } from "@prova/integrations";
 
 const NO_ESTIMATING = "Estimating isn't part of your job function. The account owner sets who sees what, on the Team page.";
 const PDF_PAGES_MAX = 20;
@@ -41,7 +42,7 @@ export async function readPriceListPdf(formData: FormData): Promise<ActionResult
   }
 }
 
-export type PriceListImportInput = { vendorName: string; quotedOn: string; text: string; map: ColumnMap; picks: Picks };
+export type PriceListImportInput = { vendorName: string; quotedOn: string; text: string; map: ColumnMap; picks: Picks; contactEmail?: string };
 export type PriceListImportResult = { quotes: number; prices: number; linked: number; priced: number; jobs: number; noMarkup: number };
 
 /**
@@ -64,6 +65,9 @@ export async function importPriceList(input: PriceListImportInput): Promise<Acti
 
   const vendorName = String(input.vendorName ?? "").trim().slice(0, 120);
   if (vendorName === "") return actionFail("Name the supplier, so every price says where it came from.") as ActionResultWith<never>;
+  // Where "Send PO to supplier" sends their orders. Optional: blank keeps whatever the supplier had.
+  const contactEmail = String(input.contactEmail ?? "").trim().slice(0, 200);
+  if (contactEmail !== "" && !looksLikeEmail(contactEmail)) return actionFail(`"${contactEmail}" doesn't look like an email address.`) as ActionResultWith<never>;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(input.quotedOn))) return actionFail("Enter the date on the quote.") as ActionResultWith<never>;
   const quotedOn = new Date(`${input.quotedOn}T00:00:00.000Z`);
   if (Number.isNaN(quotedOn.getTime()) || quotedOn.getTime() > Date.now() + 86_400_000) return actionFail("The quote date can't be in the future.") as ActionResultWith<never>;
@@ -91,9 +95,9 @@ export async function importPriceList(input: PriceListImportInput): Promise<Acti
 
   const result = await prisma.$transaction(
     async (tx) => {
-      const vendor =
-        (await tx.vendor.findFirst({ where: { companyId, name: { equals: vendorName, mode: "insensitive" } }, select: { id: true } })) ??
-        (await tx.vendor.create({ data: { companyId, name: vendorName }, select: { id: true } }));
+      const found = await tx.vendor.findFirst({ where: { companyId, name: { equals: vendorName, mode: "insensitive" } }, select: { id: true } });
+      if (found && contactEmail !== "") await tx.vendor.update({ where: { id: found.id }, data: { email: contactEmail } });
+      const vendor = found ?? (await tx.vendor.create({ data: { companyId, name: vendorName, email: contactEmail || null }, select: { id: true } }));
       const entries = await tx.lineItemCatalogEntry.findMany({ where: { companyId }, select: { id: true, description: true, unit: true } });
       const catalog = catalogByMaterial(entries);
       const entryForLine = new Map<number, string>();

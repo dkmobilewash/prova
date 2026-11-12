@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { importPriceList, readPriceListPdf, type PriceListImportResult } from "@/lib/actions";
 import { readImportFile } from "@/lib/import-files";
-import { guessColumns, planPriceList, priceListTable, readRow, type ColumnMap, type Need } from "@/lib/estimating/priceList";
+import { contactEmailIn, guessColumns, planPriceList, priceListTable, readRow, type ColumnMap, type Need } from "@/lib/estimating/priceList";
 import { localToday } from "./localToday";
 
 const field = "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm text-ink";
@@ -18,6 +18,8 @@ const field = "rounded-md border border-line-card bg-canvas px-2 py-1 text-sm te
 export function PriceListImport({ needs, rollLf, canImport }: { needs: Need[]; rollLf: number; canImport: boolean }) {
   const router = useRouter();
   const [vendor, setVendor] = useState("");
+  // The supplier's email for orders: read off the list until somebody types their own.
+  const [contactTyped, setContact] = useState<string | null>(null);
   const [quotedOn, setQuotedOn] = useState(localToday());
   const [text, setText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
@@ -30,6 +32,7 @@ export function PriceListImport({ needs, rollLf, canImport }: { needs: Need[]; r
 
   const table = useMemo(() => priceListTable(text), [text]);
   const map = mapOverride ?? guessColumns(table.header);
+  const contact = contactTyped ?? contactEmailIn(text) ?? "";
   const rows = useMemo(() => (map ? table.rows.map((r) => readRow(r, map, rollLf)) : []), [table, map, rollLf]);
   const plan = useMemo(() => planPriceList(rows, needs), [rows, needs]);
   const rowAt = new Map(rows.map((r) => [r.line, r]));
@@ -88,6 +91,10 @@ export function PriceListImport({ needs, rollLf, canImport }: { needs: Need[]; r
         <label className="flex flex-col gap-1 text-xs text-ink-label">
           Supplier
           <input className={`${field} w-56`} value={vendor} onChange={(e) => setVendor(e.target.value)} name="vendorName" placeholder="Northgate Building Supply" />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-ink-label">
+          Their email for orders
+          <input type="email" className={`${field} w-64`} value={contact} onChange={(e) => setContact(e.target.value)} name="contactEmail" placeholder="orders@supplier.com" data-price-list="contact" />
         </label>
         <label className="flex flex-col gap-1 text-xs text-ink-label">
           Date on the quote
@@ -181,7 +188,7 @@ export function PriceListImport({ needs, rollLf, canImport }: { needs: Need[]; r
                   onClick={() =>
                     start(async () => {
                       setMessage(null);
-                      const result = await importPriceList({ vendorName: vendor, quotedOn, text, map, picks: { byKey, byGroup } });
+                      const result = await importPriceList({ vendorName: vendor, quotedOn, text, map, picks: { byKey, byGroup }, contactEmail: contact });
                       if (!result.ok) return setMessage(result.error);
                       setDone(result.value);
                       router.refresh();

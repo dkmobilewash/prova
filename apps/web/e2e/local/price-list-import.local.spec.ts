@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { deleteThrowaway, throwawayEmail } from "../lib/throwawayUsers.mjs";
@@ -38,6 +38,12 @@ const EMAIL = throwawayEmail("pricelist");
 // Pass or fail: the dev Clerk instance caps at 100 users (e2e/lib/throwawayUsers.mjs).
 test.afterAll(async () => { await deleteThrowaway(EMAIL); });
 const FIXTURE = path.join(__dirname, "..", "fixtures", "supplier-price-list.csv");
+// "Send PO to supplier" is pressed only against a TEST INBOX: the walk's own server sends every
+// email there (a local capture of the provider's endpoint), and the supplier's address is the
+// invented list's reserved .example one. Without WALK_INBOX_DIR the walk stops at the preview.
+const INBOX = process.env.WALK_INBOX_DIR ?? "";
+const SUPPLIER_EMAIL = "orders@northgate-supply.example";
+const inboxMessages = () => (INBOX === "" ? [] : readdirSync(INBOX).filter((f) => f.endsWith(".json")).map((f) => JSON.parse(readFileSync(path.join(INBOX, f), "utf8")) as { to: string[]; subject: string; attachments: string[] }));
 let page: Page;
 let shotN = 0;
 const notes: string[] = [];
@@ -184,6 +190,8 @@ test.describe("a supplier price list prices Baker's estimate", () => {
     await page.locator('input[name="vendorName"]').fill("Northgate Building Supply");
     await page.locator('[data-price-list="file"]').setInputFiles(FIXTURE);
     await expect(page.locator('[data-price-list="summary"]')).toBeVisible({ timeout: 30_000 });
+    // The supplier's email for orders, read off their list, before anyone types it.
+    await expect(page.locator('[data-price-list="contact"]')).toHaveValue(SUPPLIER_EMAIL);
     note(`Preview: ${(await page.locator('[data-price-list="summary"]').innerText()).replace(/\s+/g, " ")}`);
     await shot("price-list-preview");
     const pick = async (selector: string, re: RegExp) => {
@@ -232,17 +240,54 @@ test.describe("a supplier price list prices Baker's estimate", () => {
     await expect(page.locator('[data-order="po"]')).toHaveCount(1);
     await expect(page.locator('[data-order="po"]').first()).toContainText(/^PO 1: \d+ lines?, \$[\d,.]+, draft$/);
     await shot("order-materials-done");
+
+    // ── SEND PO TO SUPPLIER: a preview first, nothing sent until the press, then one email ──
+    expect(inboxMessages()).toHaveLength(0);
+    await page.locator('[data-po-send="open"]').click();
+    const preview = page.locator('[data-po-send="preview"]');
+    await expect(preview).toBeVisible();
+    await expect(preview).toContainText("Preview: nothing has been sent yet.");
+    await expect(page.locator('[data-po-send="to"]')).toHaveValue(SUPPLIER_EMAIL);
+    note(`Send preview: ${(await page.locator('[data-po-send="summary"]').innerText()).replace(/\s+/g, " ")}`);
+    await shot("send-po-preview");
+    const [pdfTab] = await Promise.all([page.context().waitForEvent("page"), page.locator('[data-po-send="pdf"]').click()]);
+    await pdfTab.close();
+    expect(inboxMessages(), "opening the preview and its PDF sent nothing").toHaveLength(0);
+    expect((await prisma.outboundMessage.count({ where: { jobId } })), "and logged nothing").toBe(0);
+    if (INBOX === "") {
+      note("No WALK_INBOX_DIR: stopped at the preview; nothing was sent.");
+    } else {
+      expect(SUPPLIER_EMAIL.endsWith(".example")).toBe(true);
+      await page.locator('[data-po-send="send"]').click();
+      await expect(page.locator('[data-po-send="sent"]')).toBeVisible({ timeout: 60_000 });
+      await shot("send-po-sent");
+      const got = inboxMessages();
+      expect(got).toHaveLength(1);
+      expect(got[0].to).toEqual([`Northgate Building Supply <${SUPPLIER_EMAIL}>`]);
+      expect(got[0].attachments).toHaveLength(1);
+      expect(readFileSync(path.join(INBOX, got[0].attachments[0])).subarray(0, 5).toString()).toBe("%PDF-");
+      note(`Test inbox: "${got[0].subject}" to ${got[0].to[0]} with ${got[0].attachments[0].replace(/^inbox_\d+_\d+-0-/, "")}`);
+      const po = await prisma.purchaseOrder.findFirstOrThrow({ where: { jobId }, select: { id: true, status: true, issuedOn: true } });
+      expect(po.status).toBe("ISSUED");
+      const logged = await prisma.outboundMessage.findFirstOrThrow({ where: { jobId, relatedType: "PURCHASE_ORDER", relatedId: po.id }, include: { sentDocument: { select: { fileName: true } } } });
+      expect(logged.toAddress).toBe(SUPPLIER_EMAIL);
+      note(`Logged on the job: to ${logged.toAddress}, kept ${logged.sentDocument?.fileName}; PO issued ${po.issuedOn?.toISOString().slice(0, 10)}`);
+    }
     const poLines = await prisma.purchaseOrderLine.findMany({ where: { purchaseOrder: { jobId } }, include: { lineItem: { select: { description: true, quantity: true, unit: true } } } });
     for (const l of poLines) note(`PO line: ${l.lineItem.description} (${l.lineItem.quantity} ${l.lineItem.unit}) → ${l.quantity} ${l.unit} "${l.description}" @ ${l.unitPrice}`);
     // Every material line is ordered, and every order is whole packs.
     expect(poLines.length).toBe(after.filter((l) => l.costCategory === "MATERIAL").length);
     expect(poLines.every((l) => Number(l.quantity) === Math.ceil(Number(l.quantity)))).toBe(true);
     expect(poLines.some((l) => l.unit === "PAIL") && poLines.some((l) => l.unit === "BX")).toBe(true);
-    expect((await prisma.purchaseOrder.findFirstOrThrow({ where: { jobId } })).status).toBe("DRAFT");
     await page.locator('[data-order="open-buyout"]').click();
     await page.waitForURL(new RegExp(`/jobs/${jobId}/buyout`));
-    await expect(page.getByText(/PO 1 · Northgate Building Supply · draft/)).toBeVisible({ timeout: 30_000 });
-    await shot("buyout-draft");
+    if (INBOX === "") {
+      await expect(page.getByText(/PO 1 · Northgate Building Supply · draft/)).toBeVisible({ timeout: 30_000 });
+    } else {
+      await expect(page.getByText(/PO 1 · Northgate Building Supply · issued/)).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByText(new RegExp(`Emailed .* to ${SUPPLIER_EMAIL.replace(/\./g, "\\.")}`))).toBeVisible();
+    }
+    await shot("buyout-after");
 
     writeFileSync(path.join(OUT, "notes.md"), notes.map((n) => `- ${n}`).join("\n") + "\n");
   });

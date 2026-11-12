@@ -10,6 +10,10 @@ import { actionFail as fail, actionOk as ok, runAction, type ActionResult, type 
 import { planMaterialOrder } from "@/lib/estimating/materialOrder";
 import { standardsFrom } from "@/lib/estimating/assemblyStandards";
 import { viewerAsOf } from "@/lib/viewerToday";
+import { purchaseOrderDocument } from "@/lib/purchase-order-document";
+import { purchaseOrderFileName, type PurchaseOrderDocument } from "@/lib/purchase-order-pdf";
+import { purchaseOrderEmail, type DocumentEmailDraft } from "@/lib/document-email";
+import { money } from "@/lib/money";
 
 const COSTS_ONLY =
   "Buying out a job is part of job costs, which isn't part of your job function. The account owner sets who sees what, on the Team page.";
@@ -214,7 +218,8 @@ export async function removePurchaseOrderLine(lineId: string): Promise<ActionRes
 }
 
 export type MaterialOrderResult = {
-  orders: { id: string; number: number; phase: string | null; lines: number; amount: number }[];
+  /** Each draft, with what "Send PO to supplier" previews: the PDF's content and the email. */
+  orders: { id: string; number: number; phase: string | null; lines: number; amount: number; document: PurchaseOrderDocument; email: DocumentEmailDraft }[];
   skipped: { description: string; why: string }[];
 };
 
@@ -277,7 +282,7 @@ export async function orderMaterials(jobId: string, vendorId: string): Promise<A
   }
   const costCategory = "MATERIAL" as const;
   const orders = await prisma.$transaction(async (tx) => {
-    const made: MaterialOrderResult["orders"] = [];
+    const made: Omit<MaterialOrderResult["orders"][number], "document" | "email">[] = [];
     for (const order of plan.orders) {
       const number = await issuePurchaseOrderNumber(tx, jobId);
       const po = await tx.purchaseOrder.create({ data: { companyId, jobId, vendorId: vendor.id, number, createdByUserId: context.id }, select: { id: true } });
@@ -288,6 +293,21 @@ export async function orderMaterials(jobId: string, vendorId: string): Promise<A
     }
     return made;
   });
+  const drafts = await prisma.purchaseOrder.findMany({
+    where: { id: { in: orders.map((o) => o.id) } },
+    include: {
+      vendor: { select: { name: true, contactName: true, phone: true, email: true } },
+      lines: { orderBy: { createdAt: "asc" } },
+      job: { select: { name: true, siteAddress: true, projectLocation: true, contractNumber: true } },
+    },
+  });
+  const companyName = context.company.dbaName ?? context.company.name;
   revalidatePath(`/jobs/${jobId}`, "layout");
-  return { ok: true, value: { orders, skipped: plan.skipped } };
+  const withSend = orders.map((o) => {
+    const po = drafts.find((d) => d.id === o.id)!;
+    const document = purchaseOrderDocument(po, po.job, context.company);
+    const email = purchaseOrderEmail({ company: companyName, jobName: po.job.name, number: po.number, total: money(o.amount), fileName: purchaseOrderFileName(document), vendorName: po.vendor.name, vendorEmail: po.vendor.email });
+    return { ...o, document, email };
+  });
+  return { ok: true, value: { orders: withSend, skipped: plan.skipped } };
 }
