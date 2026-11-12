@@ -5,6 +5,7 @@ import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
 import { TakeoffForm } from "@/components/TakeoffForm";
 import { ReportProblemButton } from "@/components/ReportProblemButton";
+import { OrderMaterials } from "@/components/OrderMaterials";
 import { AddCostEntryForm } from "@/components/AddCostEntryForm";
 import { costCategoryLabel } from "@/components/costCategoryLabels";
 import { loadLineCommitments } from "@/lib/purchase-orders-query";
@@ -224,6 +225,10 @@ export default async function JobEstimatePage({
   if (!job) throw new Error("job disappeared between checks");
 
   const isEstimateStage = job.status === "ESTIMATE";
+  // The suppliers "Order materials" can price from: those with an imported price list.
+  const priceListSuppliers = isEstimateStage
+    ? []
+    : await prisma.vendor.findMany({ where: { companyId: company.id, priceQuotes: { some: { source: "PRICE_LIST" } } }, orderBy: { name: "asc" }, select: { id: true, name: true } });
 
   const [catalogEntries, craftClassifications, phaseCodes, employerBurdenRates, wallTypes, wallRuns, bidRecapRow, bidDefaults, estimateTemplates] =
     await Promise.all([
@@ -660,6 +665,11 @@ export default async function JobEstimatePage({
             </span>
           )}
         </div>
+        {!isEstimateStage && (
+          <div className="mb-6">
+            <OrderMaterials jobId={job.id} suppliers={priceListSuppliers} />
+          </div>
+        )}
         {/* WHAT THE LABOR IN THESE FIGURES IS MADE OF, SAID OUT LOUD AND
             DRIVEN BY THE DATA. This screen used to describe logged hours as
             "burdened", which to a contractor means fully loaded -- employer

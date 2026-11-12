@@ -6,7 +6,10 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { parseNumericInput } from "@/lib/numeric-input";
 import { unitKey } from "@/components/vendorPricing";
-import { actionFail as fail, actionOk as ok, runAction, type ActionResult } from "./shared";
+import { actionFail as fail, actionOk as ok, runAction, type ActionResult, type ActionResultWith } from "./shared";
+import { planMaterialOrder } from "@/lib/estimating/materialOrder";
+import { standardsFrom } from "@/lib/estimating/assemblyStandards";
+import { viewerAsOf } from "@/lib/viewerToday";
 
 const COSTS_ONLY =
   "Buying out a job is part of job costs, which isn't part of your job function. The account owner sets who sees what, on the Team page.";
@@ -208,4 +211,83 @@ export async function removePurchaseOrderLine(lineId: string): Promise<ActionRes
     revalidatePath(`/jobs/${po.jobId}`);
     return ok;
   });
+}
+
+export type MaterialOrderResult = {
+  orders: { id: string; number: number; phase: string | null; lines: number; amount: number }[];
+  skipped: { description: string; why: string }[];
+};
+
+/**
+ * ── "ORDER MATERIALS": THE ESTIMATE'S MATERIAL LINES AS DRAFT POs FOR ONE SUPPLIER ──
+ *
+ * Every material line the supplier's imported price list (#1094) prices becomes a
+ * DRAFT PO line: the supplier's words, whole packs rounded UP, the pack's price
+ * (`lib/estimating/materialOrder.ts`). One draft per phase code the lines carry, and
+ * one for the lines with none. What the list cannot price is skipped and named.
+ *
+ * DRAFT ONLY, THE EXISTING FLOW. Nothing is issued or sent: the person checks the
+ * drafts on Buyout, issues them and emails them as for any PO. Like every buyout,
+ * a job must be contracted first. A second press while a draft from this supplier
+ * is open is refused, so nothing is ordered twice; the draft is edited on Buyout.
+ */
+export async function orderMaterials(jobId: string, vendorId: string): Promise<ActionResultWith<MaterialOrderResult>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return fail(COSTS_ONLY) as ActionResultWith<never>;
+  const companyId = context.company.id;
+  const job = await prisma.job.findFirst({ where: { id: jobId, companyId }, select: { id: true, status: true, isSample: true } });
+  if (!job) return fail("That job is no longer here. Reload the page.") as ActionResultWith<never>;
+  if (job.status === "ESTIMATE") return fail("Contract this job before ordering its materials.") as ActionResultWith<never>;
+  const vendor = await prisma.vendor.findFirst({ where: { id: vendorId, companyId }, select: { id: true, name: true } });
+  if (!vendor) return fail("Pick a supplier.") as ActionResultWith<never>;
+  const open = await prisma.purchaseOrder.findFirst({ where: { jobId, vendorId: vendor.id, status: "DRAFT" }, orderBy: { number: "asc" }, select: { number: true } });
+  if (open) return fail(`PO ${open.number} from ${vendor.name} is still a draft on this job. Finish or remove it on Buyout before ordering again.`) as ActionResultWith<never>;
+
+  const today = await viewerAsOf();
+  const [lines, quotes, defaults] = await Promise.all([
+    prisma.jobLineItem.findMany({
+      where: { jobId, isDeleted: false, costCategory: "MATERIAL" },
+      orderBy: { sortOrder: "asc" },
+      select: { id: true, description: true, quantity: true, unit: true, sourceCatalogEntryId: true, phaseCode: { select: { id: true, code: true, name: true } } },
+    }),
+    prisma.vendorPriceQuote.findMany({
+      where: { companyId, vendorId: vendor.id, catalogEntryId: { not: null }, OR: [{ validUntil: null }, { validUntil: { gte: today } }] },
+      orderBy: [{ quotedOn: "desc" }, { createdAt: "desc" }],
+      select: { id: true, catalogEntryId: true, description: true, unit: true, unitPrice: true },
+    }),
+    prisma.companyBidDefaults.findUnique({ where: { companyId }, select: { assemblyStandards: true, defaultWastePercent: true } }),
+  ]);
+  const rollLf = standardsFrom(defaults?.assemblyStandards, defaults?.defaultWastePercent == null ? null : Number(defaults.defaultWastePercent)).tapeRollLf;
+  const plan = planMaterialOrder(
+    lines.map((line) => ({
+      id: line.id,
+      description: line.description,
+      quantity: Number(line.quantity),
+      unit: line.unit,
+      phase: line.phaseCode,
+      quotes: quotes
+        .filter((q) => line.sourceCatalogEntryId !== null && q.catalogEntryId === line.sourceCatalogEntryId)
+        .map((q) => ({ id: q.id, description: q.description, unit: q.unit, unitPrice: Number(q.unitPrice) })),
+    })),
+    vendor.name,
+    rollLf,
+  );
+  if (plan.orders.length === 0) {
+    return fail(lines.length === 0 ? "This estimate has no material lines to order." : `Nothing on this estimate is on ${vendor.name}'s price list. Import their list on the Price book, or order by hand on Buyout.`) as ActionResultWith<never>;
+  }
+  const costCategory = "MATERIAL" as const;
+  const orders = await prisma.$transaction(async (tx) => {
+    const made: MaterialOrderResult["orders"] = [];
+    for (const order of plan.orders) {
+      const number = await issuePurchaseOrderNumber(tx, jobId);
+      const po = await tx.purchaseOrder.create({ data: { companyId, jobId, vendorId: vendor.id, number, createdByUserId: context.id }, select: { id: true } });
+      await tx.purchaseOrderLine.createMany({
+        data: order.lines.map((l) => ({ purchaseOrderId: po.id, lineItemId: l.lineItemId, description: l.description, unit: l.unit, quantity: l.quantity.toFixed(2), unitPrice: l.unitPrice.toFixed(2), costCategory, vendorPriceQuoteId: l.quoteId })),
+      });
+      made.push({ id: po.id, number, phase: order.phase ? `${order.phase.code} ${order.phase.name}` : null, lines: order.lines.length, amount: order.lines.reduce((n, l) => n + Number(l.quantity.toFixed(2)) * Number(l.unitPrice.toFixed(2)), 0) });
+    }
+    return made;
+  });
+  revalidatePath(`/jobs/${jobId}`, "layout");
+  return { ok: true, value: { orders, skipped: plan.skipped } };
 }

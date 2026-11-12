@@ -81,7 +81,7 @@ function trackedSources(): string[] {
   return out
     .split("\n")
     .filter((path) => /\.tsx?$/.test(path))
-    .filter((path) => !/\.(test|dbtest|eval)\.tsx?$/.test(path));
+    .filter((path) => !/\.(test|dbtest|eval|spec)\.tsx?$/.test(path));
 }
 
 function stripComments(source: string): string {
@@ -203,7 +203,7 @@ describe("the census can see what it is reasoning about", () => {
     )
       .split("\n")
       .filter(Boolean)
-      .filter((path) => !/\.(test|dbtest|eval)\.tsx?$/.test(path));
+      .filter((path) => !/\.(test|dbtest|eval|spec)\.tsx?$/.test(path));
 
     expect(raw.length).toBeGreaterThan(0);
     expect(writers.length).toBeGreaterThan(0);

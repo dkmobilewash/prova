@@ -55,6 +55,7 @@ test("1. a new company is asked its trade first, one tap each, with a way past i
 
 test("2. Fireproofing leads to the markup step, every box EMPTY", async () => {
   await page.getByRole("button", { name: "Fireproofing" }).click();
+  await page.locator('[data-setup="skip-sample"]').click(); // the sample offer after the trade (#1120): not now
   await expect(page.getByRole("heading", { name: "Your markup" })).toBeVisible();
   for (const [field, label] of MARKUP_FIELDS.map((f, i) => [f, ["Material markup", "Labor markup", "Overhead", "Profit"][i]!] as const)) {
     await expect(page.getByLabel(label), label).toBeVisible();

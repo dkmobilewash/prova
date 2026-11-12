@@ -31,7 +31,7 @@ beforeAll(async () => {
   jobId = job.id;
   const plan = await prisma.takeoffPlan.create({ data: { companyId, jobId, fileUrl: "https://example.test/set.pdf" } });
   planId = plan.id;
-  for (const n of [1, 2, 3, 4]) {
+  for (const n of [1, 2, 3, 4, 5]) {
     await prisma.planSheetText.create({
       data: { planId, pageNumber: n, hasTextLayer: true, widthPt: SHEET_PT, heightPt: 24 * 72, rotation: 0 },
     });
@@ -54,6 +54,8 @@ beforeAll(async () => {
   await prisma.planSheetScaleReading.create({ data: reading(2, 120, "PRINTED") });
   await prisma.planSheetScaleReading.create({ data: { planId, pageNumber: 3, scaleName: null, source: "DIMENSIONS", declineReason: "no scale printed" } });
   await prisma.planSheetScaleReading.create({ data: reading(4, 144, "PRINTED") });
+  // Page 5: a scale snap (Bluetooth AI101) — offered, set only by its own button.
+  await prisma.planSheetScaleReading.create({ data: { ...reading(5, 288, "DIMENSIONS_SNAP"), x1: 0, x2: 1, agreedText: "12'-0\"\n15'-2\"\n8'-3\"" } });
   const page4 = await prisma.takeoffPlanPage.create({ data: { planId, pageNumber: 4, pageWidthPt: SHEET_PT } });
   await prisma.takeoffScaleCalibration.create({
     data: { pageId: page4.id, x1: 0.1, y1: 0.5, x2: 0.6, y2: 0.5, declaredDistanceFeet: "99", createdByUserId: context.id },
@@ -71,13 +73,14 @@ afterAll(async () => {
 
 describe("applyPrintedScales", () => {
   it("sets each named sheet from its own reading, skips the scaled and the unread, and says so", async () => {
-    const result = await applyPrintedScales(jobId, planId, [1, 2, 3, 4, 4]);
+    const result = await applyPrintedScales(jobId, planId, [1, 2, 3, 4, 4, 5]);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.applied).toEqual([1, 2]);
     expect(result.value.skipped).toEqual([
       { pageNumber: 3, why: "no scale was read off this sheet" },
       { pageNumber: 4, why: "already has a scale" },
+      { pageNumber: 5, why: "its scale is offered from the dimensions: use the button on this sheet" },
     ]);
     const pages = await prisma.takeoffPlanPage.findMany({
       where: { planId },

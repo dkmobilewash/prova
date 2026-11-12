@@ -131,6 +131,12 @@ async function main() {
     }
 
     // 1. A scale the sheet states, or one measured from its own dimensions.
+    // A scale snap (DIMENSIONS_SNAP) is an offer a person confirms with its own button; this
+    // script never sets one (Bluetooth AI101 was set here without a click, 2026-11-11).
+    if (reading.source === "DIMENSIONS_SNAP") {
+      console.log(`  p${reading.pageNumber}: ${reading.scaleName} offered from the dimensions — left for its button`);
+      continue;
+    }
     if (reading.x1 !== null && reading.declaredDistanceFeet !== null) {
       await prisma.takeoffScaleCalibration.create({
         data: {
