@@ -478,16 +478,19 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       note(`Legend: ${await legendState()}`);
       const confirm = page.locator('[data-takeoff="confirm-scales"]');
       await page.reload();
-      await expect(confirm).toBeVisible({ timeout: 60_000 });
-      await hydrated(page, '[data-takeoff="confirm-scales"]');
       const set = page.locator('[data-takeoff="plan-set"]');
+      // No Confirm when the reader is sure of no sheet (Totem Lake, plan reading off): the
+      // floor plans' own printed scales below are the whole step.
+      await expect(confirm.or(set)).toBeVisible({ timeout: 60_000 });
+      if (await seen(confirm, 3000)) await hydrated(page, '[data-takeoff="confirm-scales"]');
+      else note("No Confirm scales: the reader is sure of no sheet, so only the floor plans' printed scales are asked.");
       await set.scrollIntoViewIfNeeded();
       await shot("plan-set-before");
       note(`Plan set: "${(await text(set)).slice(0, 500)}"`);
       note(`Stepper: ${await states(page)} · ${await text(next(page))}`);
       // Confirm covers the sheets the reader is sure of, and says the floor
       // plans need their own (#1000): read what it says, then take them.
-      if (await confirm.isEnabled()) {
+      if ((await confirm.count()) > 0 && (await confirm.isEnabled())) {
         note(`Confirm says: "${await text(page.locator('[data-takeoff="plan-set-covers"]'))}"`);
         await confirm.click();
         act();
@@ -745,6 +748,8 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const offered: string[] = [];
       await shot("review-queue", tab);
       const seenKinds: Record<string, number> = {};
+      /** Presses by kind of item (walls, types, heights, windows, prices…), each press counted on its own. */
+      const pressesBy: Record<string, number> = {};
       let noTypes = false;
       for (let pass = 0; pass < 2; pass += 1) {
       if (pass === 1) {
@@ -763,9 +768,21 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const queue = tab.locator('[data-takeoff="review-queue"]');
       const left = queue.locator('[data-takeoff="review-queue-left"]');
       const item = queue.locator('[data-takeoff="review-queue-item"]');
+      let settled = 0;
       for (let round = 0; round < 400; round += 1) {
-        if (/Nothing left/.test(await text(left))) break;
-        if (!(await seen(item, 10_000))) break;
+        // "Nothing left" can be said before the server has written the typed walls' lines, and
+        // their price questions follow (Totem Lake: 4 arrived after it). So the queue is re-opened
+        // up to twice, a few seconds apart; only an empty queue after that is done. Opening it is
+        // not a press: the person is already looking at it.
+        if (/Nothing left/.test(await text(left)) || !(await seen(item, 10_000))) {
+          if (settled >= 2) break;
+          settled += 1;
+          await tab.waitForTimeout(3000);
+          await tab.goto(`/takeoff/${jobId}?open=review`);
+          await expect(tab.locator('[data-takeoff="review-queue"]')).toBeVisible({ timeout: 120_000 }).catch(() => {});
+          continue;
+        }
+        settled = 0;
         // The sheet's drawn suggestions in one press, as a person who knows the
         // way would: what it takes is in the summary, the rest stays here.
         const acceptAll = queue.locator('[data-takeoff="review-queue-accept-sheet"]');
@@ -800,6 +817,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
         }
         const kind = (await item.getAttribute("data-kind")) ?? "?";
         seenKinds[kind] = (seenKinds[kind] ?? 0) + 1;
+        const pressedBefore = current?.actions ?? 0;
         const before = await text(left);
         if (seenKinds[kind] === 1) {
           await shot(`review-${kind}`, tab);
@@ -881,6 +899,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           await item.locator('[data-takeoff="review-queue-next"]').click();
         }
         act();
+        pressesBy[kind] = (pressesBy[kind] ?? 0) + (current?.actions ?? 0) - pressedBefore;
         await expect.poll(async () => text(left), { timeout: 30_000 }).not.toBe(before).catch(() => note(`the count did not move after answering a ${kind}`));
       }
       }
@@ -889,6 +908,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       note(`Pre-filled on ${offered.length} group rows shown one by one: ${legendNamed} with a type, ${fifteen} at 15'-0". ${offered.join(" | ")}`);
       const typedItems = await prisma.takeoffItem.findMany({ where: { jobId, wallTypeId: { not: null } }, select: { name: true, heightFt: true } });
       note(`Typed items' stored heights: ${typedItems.map((i) => `${i.name} ${i.heightFt?.toString() ?? "none"} ft`).join(", ")}`);
+      note(`Presses by kind: ${Object.entries(pressesBy).map(([k, n]) => `${k} ${n}`).join(", ")}`);
       note(`Answered: ${Object.entries(seenKinds).map(([k, n]) => `${n} ${k}`).join(", ")}. Queue ends: "${await text(tab.locator('[data-takeoff="review-queue-left"]'))}"`);
       await shot("review-done", tab);
     }

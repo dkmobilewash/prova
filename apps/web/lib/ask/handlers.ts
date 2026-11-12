@@ -5133,6 +5133,7 @@ const KIND_WORDS: Record<ReviewItem["kind"], string> = {
   windows: "window counts to confirm",
   scale: "floor plans with no scale",
   price: "estimate lines with no cost or price",
+  existing: "renovation sheets whose existing walls are still among the walls",
 };
 
 async function takeoffReview(companyId: string, input: Input): Promise<ToolResult> {
@@ -5196,6 +5197,8 @@ function describe(item: ReviewItem): string {
       return `${item.sheet}: ${item.feet === null ? "a wall" : `${Math.round(item.feet)} ft wall`}`;
     case "scale":
       return item.sheet;
+    case "existing":
+      return `${item.sheet}: ${item.walls} walls${item.feet === null ? "" : `, ${Math.round(item.feet)} ft`}, existing work not set aside yet`;
   }
 }
 
