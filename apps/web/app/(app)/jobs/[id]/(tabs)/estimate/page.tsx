@@ -77,6 +77,8 @@ import { PriceTheseMaterials } from "@/components/PriceTheseMaterials";
 import { unpricedMaterials } from "@/lib/estimating/materialKey";
 import { laborPlanFor } from "@/lib/estimating/laborLines";
 import { priceSource, type PriceSource } from "@/lib/estimating/catalogPrices";
+import { ratesFromJson } from "@/lib/estimating/productionRates";
+import { laborSource } from "@/lib/estimating/doorLines";
 import { standardsFrom } from "@/lib/estimating/assemblyStandards";
 import { RECAP_RATE_KEYS, type CostCategoryValue, type RecapRates } from "@/lib/bid-recap";
 import {
@@ -480,6 +482,9 @@ export default async function JobEstimatePage({
     const holds = entry.defaultBudgetedUnitCost !== null ? item.budgetedUnitCost !== null && entry.defaultBudgetedUnitCost.equals(item.budgetedUnitCost) : entry.defaultUnitPrice !== null && item.unitPrice !== null && entry.defaultUnitPrice.equals(item.unitPrice);
     return holds ? entry.description : null;
   };
+  // A labor line written from the production rates (`laborLines.ts`): which rate, while the line's cost is still the rate's.
+  const productionRates = ratesFromJson(bidDefaults?.productionRates);
+  const laborSourceFor = (item: (typeof job.lineItems)[number]): string | null => laborSource(item, productionRates);
 
   const lineItemWip = job.lineItems.map((item) => ({
     item,
@@ -987,6 +992,11 @@ export default async function JobEstimatePage({
                                 · over 90 days old
                               </span>
                             )}
+                          </span>
+                        )}
+                        {laborSourceFor(item) !== null && (
+                          <span className="block text-xs text-ink-muted" data-estimate="price-source">
+                            {laborSourceFor(item)}
                           </span>
                         )}
                         {priceBookFor(item) !== null && (
