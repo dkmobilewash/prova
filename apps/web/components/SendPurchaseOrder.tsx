@@ -119,8 +119,14 @@ export function SendPurchaseOrder({ id, document: doc, email }: { id: string; do
           Open the PDF
         </button>
         <button type="submit" disabled={isPending || toAddress.trim() === ""} className={primary} data-po-send="send">
-          {isPending && <Spinner />}
-          {isPending ? "Sending…" : "Send PO to supplier"}
+          {isPending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Sending…
+            </span>
+          ) : (
+            "Send PO to supplier"
+          )}
         </button>
         <button type="button" disabled={isPending} className={btn} onClick={() => setOpen(false)}>
           Cancel
