@@ -219,6 +219,10 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       );
     }
     if (kb > 0) console.log(`ZT ${group} TOTAL bid off ${(((zb - kb) / kb) * 100).toFixed(1)}% zero-touch · ${(((tb - kb) / kb) * 100).toFixed(1)}% after ${PRESSES} presses/sheet (key $${Math.round(kb)})`);
+    // OVER and UNDER separately, so junk cuts and recovered quantities cannot hide each other (Diego).
+    const over = cause.junkNew + cause.junkReno;
+    const under = cause.missed + cause.board + cause.doors + cause.windows;
+    if (kb > 0) console.log(`ZT ${group} OVER $${Math.round(over)} (+${((over / kb) * 100).toFixed(1)}% of key) · UNDER $${Math.round(under)} (-${((under / kb) * 100).toFixed(1)}%) · net ${(((zb - kb) / kb) * 100).toFixed(1)}%`);
     // Dollars by cause, ranked. "wrong type" prices at $0 in v2 (one composite wall rate, and
     // nothing posts typed with zero presses) — the types gap is the canonical type scorer's to
     // report in feet until per-type prices exist. "board (no height)" is the whole board term,
