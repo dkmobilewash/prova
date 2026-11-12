@@ -134,6 +134,8 @@ export function groupsForStage(input: {
   legendCodes: readonly string[] | null;
   /** Another sheet of the same floor at the same size, read for tags when this one prints none. */
   sibling?: SiblingSheet | null;
+  /** The mid-span tag tie-break (`tagByRun`): true only when no legend has been read. */
+  midSpan?: boolean;
 }): { groups: WallGroup[]; hatched: Set<WallCandidate> } {
   const { found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes } = input;
   const tags = wallTypeTags(textItems, widthPt);
@@ -141,7 +143,7 @@ export function groupsForStage(input: {
   const own =
     legendCodes === null
       ? { byRun: tagByRun(found.walls, tags, feetPerUnit, wallTypes), wallTypes: [...wallTypes] }
-      : planTextTagByRun({ segments: segmentsPt, text: textItems, widthPt, walls: found.walls, feetPerUnit, legendCodes, textTags: tags, wallTypes });
+      : planTextTagByRun({ segments: segmentsPt, text: textItems, widthPt, walls: found.walls, feetPerUnit, legendCodes, textTags: tags, wallTypes, midSpan: input.midSpan ?? false });
   const fromSibling = own.byRun.size === 0 && legendCodes !== null && input.sibling ? tagsFromSibling({ ...input, sibling: input.sibling, legendCodes }) : null;
   const read = fromSibling ?? own;
   const hatched = hatchedRuns(found.walls, found.inUnits, feetPerUnit);
@@ -171,6 +173,7 @@ export function tagsFromSibling(input: {
   wallTypes: readonly MatchableWallType[];
   legendCodes: readonly string[];
   sibling: SiblingSheet;
+  midSpan?: boolean;
 }): { byRun: Map<WallCandidate, string>; wallTypes: MatchableWallType[] } | null {
   const { found, segmentsPt, widthPt, feetPerUnit, wallTypes, legendCodes, sibling } = input;
   if (Math.abs(sibling.widthPt / widthPt - 1) > 0.01) return null;
@@ -178,7 +181,7 @@ export function tagsFromSibling(input: {
   if (shift === null || shift.votes < MIN_VOTES) return null;
   // `shift` moves the other sheet onto this one; this sheet's walls go the other way.
   const moved = found.walls.map((w) => ({ ...w, x1: w.x1 - shift.dx, y1: w.y1 - shift.dy, x2: w.x2 - shift.dx, y2: w.y2 - shift.dy }));
-  const read = planTextTagByRun({ segments: sibling.segmentsPt, text: sibling.textItems, widthPt, walls: moved, feetPerUnit, legendCodes, textTags: wallTypeTags(sibling.textItems, widthPt), wallTypes });
+  const read = planTextTagByRun({ segments: sibling.segmentsPt, text: sibling.textItems, widthPt, walls: moved, feetPerUnit, legendCodes, textTags: wallTypeTags(sibling.textItems, widthPt), wallTypes, midSpan: input.midSpan ?? false });
   const byRun = new Map<WallCandidate, string>();
   moved.forEach((w, i) => {
     const tag = read.byRun.get(w);

@@ -174,6 +174,8 @@ export function planTextTagByRun(input: {
   /** Today's text-matched tags against the company's own types, kept. */
   textTags: readonly WallTypeTag[];
   wallTypes: readonly MatchableWallType[];
+  /** The mid-span tie-break (`tagByRun`): on only when no legend has been read. */
+  midSpan?: boolean;
 }): { byRun: Map<WallCandidate, string>; report: PlanTextTagReport; wallTypes: MatchableWallType[] } {
   const { segments, text, widthPt, walls, feetPerUnit, textTags } = input;
   const symbols = tagSymbols({ segments, text, unitsPerPaperInch: 72 });
@@ -250,7 +252,7 @@ export function planTextTagByRun(input: {
     x: b.x,
     y: b.y,
   }));
-  const direct = tagByRun(walls, [...fromSymbols.tags.map(asLegend), ...bareTags, ...loose], feetPerUnit, wallTypes);
+  const direct = tagByRun(walls, [...fromSymbols.tags.map(asLegend), ...bareTags, ...loose], feetPerUnit, wallTypes, input.midSpan ?? false);
   const carried = propagateTypes({ walls, tagged: direct, feetPerUnit, defaultCode: null });
   const byRun = new Map<WallCandidate, string>(direct);
   let propagated = 0;
