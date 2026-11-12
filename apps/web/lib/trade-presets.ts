@@ -1,6 +1,7 @@
 import type { TradeScope } from "@prova/db";
 import { OWN_MARKUP_KEYS } from "@/lib/bid-recap";
 import { STARTER_TYPES, TRADE_ONLY_STARTERS, type StarterType } from "@/lib/wall-type-starters";
+import type { DoorScope } from "@/lib/estimating/doorLines";
 
 /**
  * TRADE PRESETS (guided flow Phase 5). A new company taps its trade once on
@@ -55,6 +56,12 @@ export type TradePreset = {
    * longer waits on the new user typing them. Words a person reads and edits, never a number.
    */
   clauses: { inclusions: string[]; exclusions: string[] };
+  /**
+   * Who installs the doors and frames: the trade setting `Company.doorScope`, which the trade step
+   * also asks. By others for every trade (Diego, 2026-11-12): a posted door adds nothing until the
+   * company says it installs them.
+   */
+  doorScope: DoorScope;
 };
 
 const on = (walls: boolean, rooms: boolean, doors: boolean): TakeoffSwitches => ({
@@ -86,6 +93,7 @@ export const TRADE_PRESETS: TradePreset[] = [
         { description: "Clean up and haul off", unit: "ls" },
       ],
     },
+    doorScope: "BY_OTHERS",
     clauses: { inclusions: ["Metal stud framing, gypsum board, hang, tape and finish per the wall types listed"], exclusions: ["Fire caulking and firestopping", "Paint and wall coverings", "Insulation not listed in the wall types", "Work on existing walls to remain"] },
   },
   {
@@ -105,6 +113,7 @@ export const TRADE_PRESETS: TradePreset[] = [
         { description: "Clean up and haul off", unit: "ls" },
       ],
     },
+    doorScope: "BY_OTHERS",
     clauses: { inclusions: ["Ceiling grid, tile, wall angle and hanger wire per the ceiling plan"], exclusions: ["Light fixtures, diffusers and their support", "Fire caulking and firestopping", "Work above existing ceilings to remain"] },
   },
   {
@@ -126,6 +135,7 @@ export const TRADE_PRESETS: TradePreset[] = [
         { description: "Scaffolding", unit: "ls" },
       ],
     },
+    doorScope: "BY_OTHERS",
     clauses: { inclusions: ["Lath, plaster and EIFS per the wall types and details listed"], exclusions: ["Paint and coatings not listed", "Sealants by others", "Work on existing finishes to remain"] },
   },
   {
@@ -146,6 +156,7 @@ export const TRADE_PRESETS: TradePreset[] = [
         { description: "Thickness and density testing", unit: "ls" },
       ],
     },
+    doorScope: "BY_OTHERS",
     clauses: { inclusions: ["Spray-applied fireproofing to the ratings shown on the drawings"], exclusions: ["Fireproofing of existing steel", "Patching after other trades", "Inspections and testing by others"] },
   },
   {
@@ -156,6 +167,7 @@ export const TRADE_PRESETS: TradePreset[] = [
     switches: on(true, true, true),
     wallTypeCodes: [],
     template: null,
+    doorScope: "BY_OTHERS",
     clauses: { inclusions: [], exclusions: [] },
   },
 ];

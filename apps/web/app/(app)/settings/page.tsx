@@ -31,6 +31,7 @@ import { CompanyProfileForm } from "@/components/CompanyProfileForm";
 import { companyProfileGaps, type CompanyProfile } from "@/lib/company-profile";
 import { BusinessScopeSettingsForm } from "@/components/BusinessScopeSettingsForm";
 import { OpeningDeductionForm } from "@/components/OpeningDeductionForm";
+import { DoorScopeForm } from "@/components/DoorScopeForm";
 import { RoomFinderSwitch } from "@/components/RoomFinderSwitch";
 import { ScannedPlansSwitch } from "@/components/ScannedPlansSwitch";
 import { SymbolCountSwitch } from "@/components/SymbolCountSwitch";
@@ -644,6 +645,10 @@ export default async function SettingsPage({
               thresholdSqFt={businessScope.openingDeductionSqFt ?? null}
               isOwner={currentUser.role === "OWNER"}
             />
+            {/* Who installs the doors a takeoff posts: whether a door reaches the bid at all. */}
+            <div id="doors-and-frames" className="mt-4 scroll-mt-20">
+              <DoorScopeForm answer={company.doorScope} isOwner={currentUser.role === "OWNER"} />
+            </div>
             {/* ── FIND THE ROOMS, OFF UNTIL CHOSEN ──
                 Shown to everyone so the absence of the button on the takeoff
                 has an explanation somewhere a person can find; saved by the
