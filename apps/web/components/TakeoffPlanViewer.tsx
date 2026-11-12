@@ -8490,7 +8490,9 @@ function CalibrationForm({
     // The provenance, in words, so it survives the save — see `note` above for
     // why that is not cosmetic.
     setNote(
-      offer.unconfirmed
+      offer.snapDimensions !== undefined
+        ? `${offer.snapDimensions} printed dimensions on this sheet agree on ${offer.scaleName} within 1%.`
+        : offer.unconfirmed
         ? `From the ${offer.scaleName} printed on this sheet. Nothing measurable on the sheet ` + `confirmed it.`
         : `Matched ${offer.agreed.length} printed dimension${offer.agreed.length === 1 ? "" : "s"}` +
             ` on this sheet (${offer.agreed.slice(0, 3).join(", ")}), within ` +
