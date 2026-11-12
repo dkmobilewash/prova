@@ -83,6 +83,7 @@ test.describe("Baker's legend types to a priced estimate", () => {
     await page.waitForURL(/\/welcome/, { timeout: 90_000 });
     await hydrated('[data-setup="trades"] button');
     await page.locator('[data-setup="trades"]').getByRole("button", { name: /Framing and drywall/ }).click();
+    await page.locator('[data-setup="skip-sample"]').click(); // the sample offer after the trade (#1120): not now
     await page.getByRole("button", { name: "Later" }).click();
     const skip = page.getByRole("button", { name: "Skip for now" });
     if (await seen(skip, 15_000)) await skip.click();

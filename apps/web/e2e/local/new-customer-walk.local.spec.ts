@@ -252,6 +252,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       await expect(reading.getByRole("switch", { name: "AI plan reading" })).toHaveAttribute("aria-checked", "true");
       await trades.getByRole("button", { name: /Framing and drywall/ }).click();
       act();
+      await page.locator('[data-setup="skip-sample"]').click(); // the sample offer after the trade (#1120): not now
       // The markup question, answered here: with the four rates set the review
       // queue asks each line's COST and prices it with the markup (#994), so
       // the price the GC sees carries it. Later would leave the queue asking
