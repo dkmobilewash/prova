@@ -16,10 +16,12 @@ const { saveDoorScope } = await import("@/lib/actions/company");
 const { postAutoDoors } = await import("@/lib/plan-ingest/autoDoors");
 const { AUTO_DOORS_ITEM, AUTO_DOORS_LABEL } = await import("@/lib/takeoff/autoPost");
 const { applyTradePreset } = await import("@/lib/actions/tradePresets");
+const { confirmWindows, undoConfirmWindows } = await import("@/lib/actions/symbolCount");
+const { WINDOWS_SUGGESTED } = await import("@/lib/takeoff/windowTags");
 
 const MARKUP = { materialMarkupPercent: 10, laborMarkupPercent: 15, overheadPercent: 8, profitPercent: 10 };
 const RATES = Object.fromEntries(RECAP_RATE_KEYS.map((k) => [k, (MARKUP as Record<string, number>)[k] ?? null])) as RecapRates;
-const PRODUCTION = { crewRatePerHr: 85, doorFramesPerHr: 2, doorsPerHr: 1.5 };
+const PRODUCTION = { crewRatePerHr: 85, doorFramesPerHr: 2, doorsPerHr: 1.5, windowFramesPerHr: 3 };
 const made: string[] = [];
 
 /** A company of `trade`, its W1 the default partition with studs and track on a supplier list, and a job with `doors` posted. */
@@ -137,6 +139,15 @@ describe("posted doors on a framing company's bid", () => {
   });
 });
 
+describe("an EA labor line costs the crew rate over its own rate", () => {
+  it("7 doors hung at 1.5 an hour: $56.67 a door, not the $56.71 rounded hours give, and its source still shows", async () => {
+    const s = await setUp("ACOUSTICAL_CEILINGS", 7);
+    expect(await setScope("DOORS_AND_FRAMES")).toEqual({ ok: true });
+    const hang = (await doorLines(s.jobId)).find((l) => l.description === "Labor — Doors — hang doors, with hardware")!;
+    expect([Number(hang.quantity), Number(hang.laborHours), Number(hang.budgetedUnitCost)]).toEqual([7, 4.67, 56.67]);
+  });
+});
+
 describe("posted doors elsewhere", () => {
   it("a trade that does not frame gets the install labor and no framing", async () => {
     const s = await setUp("ACOUSTICAL_CEILINGS", 2);
@@ -181,5 +192,46 @@ describe("the same choice at the trade pick", () => {
       expect((await prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { doorScope: true } })).doorScope).toBe(stored);
     }
     expect(await applyTradePreset("FRAMING_DRYWALL", "SOMETIMES")).toMatchObject({ ok: false });
+  });
+});
+
+describe("confirmed windows, behind the same setting", () => {
+  const windowLines = (jobId: string) =>
+    prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false, description: { contains: "Windows" } }, orderBy: { description: "asc" } });
+  /** Two "A" windows suggested on the sheet: 3 ft and 4 ft wide at 100 ft across the page. */
+  async function suggest(planId: string) {
+    const windows = [
+      { tag: "A", x1: 0.2, y1: 0.45, x2: 0.23, y2: 0.45 },
+      { tag: "A", x1: 0.4, y1: 0.45, x2: 0.44, y2: 0.45 },
+    ];
+    await prisma.takeoffPlanTextRead.create({ data: { planId, pageNumber: 1, kind: WINDOWS_SUGGESTED, value: { windows } } });
+  }
+
+  it("installed: each confirmed window's frame set at the rate, and its rough opening off the supplier list, sized by its own width", async () => {
+    const s = await setUp("METAL_FRAMING_DRYWALL", 0);
+    expect(await setScope("FRAMES")).toEqual({ ok: true });
+    await suggest(s.planId);
+    const done = await confirmWindows(s.jobId, s.planId, 1, [0, 1]);
+    expect(done.ok).toBe(true);
+    const lines = await windowLines(s.jobId);
+    expect(lines.map((l) => [l.description, Number(l.quantity), l.unit, Number(l.budgetedUnitCost)])).toEqual([
+      ["Labor — Windows — set window frames", 2, "EA", 28.33],
+      ["Windows — A — opening framing, header and sill, twice the width + 1 ft per window — 3⅝″ 20ga track, top and bottom", 16, "lin ft", 0.95],
+      ["Windows — A — opening framing, king and jack studs, 4 per window — 3⅝″ 20ga studs", 8, "ea", 4.1],
+    ]);
+    // Undo takes them back off the bid, and the item with them.
+    if (!done.ok) return;
+    expect(await undoConfirmWindows(s.jobId, s.planId, 1, done.value.undo)).toEqual({ ok: true });
+    expect(await windowLines(s.jobId)).toEqual([]);
+    expect(await prisma.takeoffItem.count({ where: { jobId: s.jobId, name: { startsWith: "Windows" } } })).toBe(0);
+  });
+
+  it("by others: confirmed windows add no line", async () => {
+    const s = await setUp("METAL_FRAMING_DRYWALL", 0);
+    await suggest(s.planId);
+    expect((await confirmWindows(s.jobId, s.planId, 1, [0, 1])).ok).toBe(true);
+    expect(await windowLines(s.jobId)).toEqual([]);
+    expect(await setScope("FRAMES")).toEqual({ ok: true });
+    expect((await windowLines(s.jobId)).length).toBe(3);
   });
 });

@@ -1,5 +1,5 @@
 import { materialKey } from "./materialKey";
-import { doorLabor, type DoorScope } from "./doorLines";
+import { doorLabor, windowLabor, type DoorScope } from "./doorLines";
 
 /**
  * ── A COMPANY'S PRODUCTION RATES: how fast ITS crews frame, hang and finish ──
@@ -28,6 +28,8 @@ export type ProductionRates = {
   doorFramesPerHr: number | null;
   /** Doors hung per crew hour, hardware included (Company.doorScope DOORS_AND_FRAMES). */
   doorsPerHr: number | null;
+  /** Window frames set per crew hour (Company.doorScope FRAMES or DOORS_AND_FRAMES). */
+  windowFramesPerHr: number | null;
   /** Hours multiplied by this for a wall over 10 ft, and by the second for one over 14 ft. */
   over10Multiplier: number | null;
   over14Multiplier: number | null;
@@ -43,6 +45,7 @@ export const BLANK_RATES: ProductionRates = {
   ceilingSfPerHr: null,
   doorFramesPerHr: null,
   doorsPerHr: null,
+  windowFramesPerHr: null,
   over10Multiplier: null,
   over14Multiplier: null,
   crewRatePerHr: null,
@@ -63,6 +66,7 @@ export function ratesFromJson(value: unknown): ProductionRates {
     ceilingSfPerHr: rate(raw.ceilingSfPerHr, 2000),
     doorFramesPerHr: rate(raw.doorFramesPerHr, 100),
     doorsPerHr: rate(raw.doorsPerHr, 100),
+    windowFramesPerHr: rate(raw.windowFramesPerHr, 100),
     over10Multiplier: rate(raw.over10Multiplier, 5),
     over14Multiplier: rate(raw.over14Multiplier, 5),
     crewRatePerHr: rate(raw.crewRatePerHr, 1000),
@@ -95,7 +99,7 @@ export function heightBand(heightFt: number, rates: ProductionRates): { band: ""
 export type WallForLabor = { code: string; assembly: LaborAssembly; heightFt: number; linearFt: number; boardedSqFt: number };
 
 /** An HR line by default; a door task is an EA line, `quantity` doors taking `hours`. */
-export type LaborLine = { description: string; hours: number; unit?: "EA"; quantity?: number };
+export type LaborLine = { description: string; hours: number; unit?: "EA"; quantity?: number; perHr?: number };
 export type LaborPlan = { lines: LaborLine[]; missing: string[] };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -106,7 +110,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * forty short runs are one line, not forty roundings. A task with a blank rate writes nothing and its
  * rate is named in `missing`.
  */
-export function laborPlan(walls: readonly WallForLabor[], ceilings: readonly { description: string; squareFeet: number }[], rates: ProductionRates, doors: { count: number; scope: DoorScope } = { count: 0, scope: "BY_OTHERS" }): LaborPlan {
+export function laborPlan(walls: readonly WallForLabor[], ceilings: readonly { description: string; squareFeet: number }[], rates: ProductionRates, doors: { count: number; scope: DoorScope; windows?: number } = { count: 0, scope: "BY_OTHERS" }): LaborPlan {
   const missing = new Set<string>();
   const sums = new Map<string, { hours: number }>();
   const add = (description: string, hours: number) => sums.set(description, { hours: (sums.get(description)?.hours ?? 0) + hours });
@@ -136,8 +140,11 @@ export function laborPlan(walls: readonly WallForLabor[], ceilings: readonly { d
     else add(`Labor — ${c.description} — install`, c.squareFeet / rates.ceilingSfPerHr);
   }
   const door = doorLabor(doors.count, doors.scope, rates);
+  const window = windowLabor(doors.windows ?? 0, doors.scope, rates);
+  door.lines.push(...window.lines);
+  door.missing.push(...window.missing);
   for (const m of door.missing) missing.add(m);
   if ((sums.size > 0 || door.lines.length > 0) && rates.crewRatePerHr === null) missing.add("the crew rate ($ per hour)");
   const lines: LaborLine[] = [...sums].map(([description, s]) => ({ description, hours: round2(s.hours) })).filter((l) => l.hours > 0);
-  return { lines: [...lines, ...door.lines.map((l) => ({ description: l.description, hours: l.hours, unit: l.unit, quantity: l.quantity }))], missing: [...missing] };
+  return { lines: [...lines, ...door.lines.map((l) => ({ description: l.description, hours: l.hours, unit: l.unit, quantity: l.quantity, perHr: l.perHr }))], missing: [...missing] };
 }

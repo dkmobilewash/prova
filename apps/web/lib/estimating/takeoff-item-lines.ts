@@ -12,7 +12,8 @@ import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 import { OFF_ESTIMATE_ITEMS } from "@/lib/takeoff/estimateHold";
 import { boardedArea } from "@/lib/takeoff";
 import { syncLaborLines } from "./laborLines";
-import { framesOpenings, framingAssembly, openingFraming } from "./doorLines";
+import { framesOpenings, framingAssembly, openingFraming, WINDOW_FALLBACK_WIDTH_FT, WINDOW_ITEM_PREFIX, windowOpeningTrackFt } from "./doorLines";
+import { storedWindowsOf, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
 import { AUTO_DOORS_ITEM } from "@/lib/takeoff/autoPost";
 
 /**
@@ -192,7 +193,7 @@ export async function loadItemsForLines(tx: Tx, companyId: string, jobId: string
           xs: true,
           ys: true,
           cutouts: true,
-          page: { select: { pageNumber: true } },
+          page: { select: { pageNumber: true, planId: true } },
           calibration: {
             select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true },
           },
@@ -253,7 +254,16 @@ export async function syncTakeoffItemLines(
   const { items, assemblies, defaultPartitionId, finishPages } = await loadItemsForLines(tx, companyId, jobId);
   // The posted doors ride along with any partial sync: their opening framing comes from the job's
   // wall types, which are typed after the doors post (the Baker walk had labor and no framing).
-  const only = onlyItems === undefined ? undefined : new Set([...onlyItems, ...items.filter((i) => i.name === AUTO_DOORS_ITEM).map((i) => i.id)]);
+  const opening = (name: string) => name === AUTO_DOORS_ITEM || name.startsWith(WINDOW_ITEM_PREFIX);
+  const only = onlyItems === undefined ? undefined : new Set([...onlyItems, ...items.filter((i) => opening(i.name)).map((i) => i.id)]);
+  // Each confirmed window's width: its frame found again in the sheet's stored suggestion (`confirmWindows` keeps the centre only).
+  const windowPages = [...new Set(items.filter((i) => i.name.startsWith(WINDOW_ITEM_PREFIX)).flatMap((i) => i.measurements.map((m) => `${m.page.planId}:${m.page.pageNumber}`)))];
+  const suggested = new Map<string, { x1: number; y1: number; x2: number; y2: number }[]>();
+  for (const key of windowPages) {
+    const [planId, pageNumber] = key.split(":");
+    const read = await tx.takeoffPlanTextRead.findUnique({ where: { planId_pageNumber_kind: { planId: planId!, pageNumber: Number(pageNumber), kind: WINDOWS_SUGGESTED } }, select: { value: true } });
+    suggested.set(key, storedWindowsOf(read?.value)?.windows ?? []);
+  }
   const assemblyById = new Map(assemblies.map((assembly) => [assembly.id, assembly]));
   const company = await tx.company.findUniqueOrThrow({ where: { id: companyId }, select: { openingDeduction: true, openingDeductionSqFt: true, doorScope: true, tradeScopes: { select: { tradeScope: true } } } });
   const openingThresholdSqFt = company.openingDeduction === null ? 0 : thresholdFor(company.openingDeduction, company.openingDeductionSqFt === null ? null : Number(company.openingDeductionSqFt));
@@ -307,6 +317,37 @@ export async function syncTakeoffItemLines(
     // By others: no line at all, not even a count. Installed: the labor is `syncLaborLines`'s, at the
     // production rates; a framing trade's opening framing is written here, from its partition's own
     // stud and track parts, so it is priced (and sourced) as those parts are.
+    // ── CONFIRMED WINDOWS, BEHIND THE SAME SETTING ── labor in `syncLaborLines`; the rough opening here.
+    if (item.name.startsWith(WINDOW_ITEM_PREFIX) && item.wallTypeId === null) {
+      const counts = item.measurements.filter((m) => m.kind === "COUNT");
+      const windows = counts.reduce((n, m) => n + m.xs.length, 0);
+      if (company.doorScope === "BY_OTHERS" || windows === 0 || !framesOpenings(company.tradeScopes.map((t) => t.tradeScope))) continue;
+      const framing = framingAssembly(assemblies, [defaultPartitionId, ...items.map((i) => i.wallTypeId)]);
+      let trackFt = 0;
+      for (const m of counts) {
+        const frames = suggested.get(`${m.page.planId}:${m.page.pageNumber}`) ?? [];
+        const feet = m.calibration === null ? null : feetAcross(m.calibration);
+        m.xs.forEach((x, i) => {
+          const f = frames.find((w) => Math.abs((w.x1 + w.x2) / 2 - x) < 1e-6 && Math.abs((w.y1 + w.y2) / 2 - m.ys[i]!) < 1e-6);
+          const width = f && feet !== null ? Math.hypot(f.x2 - f.x1, f.y2 - f.y1) * feet : WINDOW_FALLBACK_WIDTH_FT;
+          trackFt += windowOpeningTrackFt(width);
+        });
+      }
+      for (const { part, perDoor, what } of framing === null ? [] : openingFraming(framing.components)) {
+        const studs = what.startsWith("king");
+        wanted.set(`${item.id}:${part.id}`, {
+          itemId: item.id,
+          componentId: part.id,
+          description: `${item.name} — opening framing, ${studs ? `king and jack studs, ${perDoor} per window` : "header and sill, twice the width + 1 ft per window"} — ${part.description}`,
+          unit: part.unit,
+          quantity: studs ? windows * perDoor : Math.round(trackFt * 100) / 100,
+          laborHours: null,
+          productionRate: null,
+          component: part,
+        });
+      }
+      continue;
+    }
     if (item.name === AUTO_DOORS_ITEM && item.wallTypeId === null) {
       const doors = item.measurements.filter((m) => m.kind === "COUNT").reduce((n, m) => n + m.xs.length, 0);
       if (company.doorScope === "BY_OTHERS" || doors === 0 || !framesOpenings(company.tradeScopes.map((t) => t.tradeScope))) continue;

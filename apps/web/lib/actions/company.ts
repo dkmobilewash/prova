@@ -25,7 +25,7 @@ import { normalizeEin, normalizeWebsite } from "@/lib/company-profile";
 import { can } from "@/lib/permissions";
 import { isBlank, numericReaders, parseNumericInput, PERCENT_BOUNDS } from "@/lib/numeric-input";
 import { CONTRACTING_RELATIONSHIPS, OPENING_DEDUCTIONS } from "@/lib/businessScope";
-import { doorScopeFrom } from "@/lib/estimating/doorLines";
+import { doorScopeFrom, WINDOW_ITEM_PREFIX } from "@/lib/estimating/doorLines";
 import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
 import { AUTO_DOORS_ITEM } from "@/lib/takeoff/autoPost";
 
@@ -749,9 +749,12 @@ export async function saveDoorScope(formData: FormData): Promise<ActionResult> {
     if (doorScope === null) return fail("Choose who installs the doors and frames.");
     const companyId = context.company.id;
     await prisma.company.update({ where: { id: companyId }, data: { doorScope } });
-    const items = await prisma.takeoffItem.findMany({ where: { companyId, name: AUTO_DOORS_ITEM, job: { status: "ESTIMATE" } }, select: { id: true, jobId: true } });
-    for (const item of items) {
-      await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, item.jobId, new Set([item.id])), { timeout: 60_000 });
+    // The posted doors and the confirmed windows, job by job.
+    const items = await prisma.takeoffItem.findMany({ where: { companyId, job: { status: "ESTIMATE" }, OR: [{ name: AUTO_DOORS_ITEM }, { name: { startsWith: WINDOW_ITEM_PREFIX } }] }, select: { id: true, jobId: true } });
+    const byJob = new Map<string, Set<string>>();
+    for (const item of items) byJob.set(item.jobId, (byJob.get(item.jobId) ?? new Set()).add(item.id));
+    for (const [jobId, ids] of byJob) {
+      await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, jobId, ids), { timeout: 60_000 });
     }
     revalidatePath("/settings");
     revalidatePath("/jobs", "layout");

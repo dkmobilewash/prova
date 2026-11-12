@@ -38,6 +38,7 @@ export async function saveProductionRates(formData: FormData): Promise<ActionRes
       ceilingSfPerHr: n("ceilingSfPerHr", "Ceilings", 2000),
       doorFramesPerHr: n("doorFramesPerHr", "Door frames", 100),
       doorsPerHr: n("doorsPerHr", "Doors", 100),
+      windowFramesPerHr: n("windowFramesPerHr", "Window frames", 100),
       over10Multiplier: over10,
       over14Multiplier: over14,
       crewRatePerHr: n("crewRatePerHr", "Crew rate", 1000),
