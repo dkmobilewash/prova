@@ -84,6 +84,17 @@ export type ReviewItem =
       /** The window being looked at, zoomed to; null shows them all. */
       at: number | null;
     }
+  /** A sheet's found doors with no printed mark, to confirm (`doorSuggestions.ts`): each lit on its leaf. */
+  | {
+      kind: "doors";
+      key: string;
+      pageNumber: number;
+      sheet: string;
+      runs: QueueRun[];
+      /** One per door, as `windows` carries its types: here "door", so the shared confirm reads both. */
+      tags: string[];
+      at: number | null;
+    }
   /**
    * The set's floor plans the takeoff needs that have no scale: ONE item for the set, the
    * first of them on screen, `pages` every one (Green Bay's queue carried 380 scale items,
@@ -509,10 +520,10 @@ export function sameWindowsOnOtherFloors(
 // then the held walls, sheet by sheet.
 // A renovation sheet's existing walls go first: typing or keeping a wall that is not new work is
 // the press that is wasted.
-const KIND_ORDER: ReviewItem["kind"][] = ["existing", "type", "height", "windows", "wall", "scale", "price"];
+const KIND_ORDER: ReviewItem["kind"][] = ["existing", "type", "height", "windows", "doors", "wall", "scale", "price"];
 
 /** What the queue counts each kind as, for "Groups 3 of 8 · Held walls 0 of 34". */
-export const QUEUE_PART: Record<ReviewItem["kind"], string> = { existing: "Existing walls", type: "Groups", height: "Groups", windows: "Windows", wall: "Held walls", scale: "Scales", price: "Prices" };
+export const QUEUE_PART: Record<ReviewItem["kind"], string> = { existing: "Existing walls", type: "Groups", height: "Groups", windows: "Windows", doors: "Doors", wall: "Held walls", scale: "Scales", price: "Prices" };
 
 /** A sheet's suggested windows, until they are confirmed. */
 export function windowsItem(sheet: QueueSheet, stored: { windows: readonly ({ tag: string } & QueueRun)[]; decided?: boolean }): ReviewItem | null {
@@ -524,6 +535,20 @@ export function windowsItem(sheet: QueueSheet, stored: { windows: readonly ({ ta
     sheet: sheet.sheet,
     runs: stored.windows.map(({ x1, y1, x2, y2 }) => ({ x1, y1, x2, y2 })),
     tags: stored.windows.map((w) => w.tag),
+    at: null,
+  };
+}
+
+/** A sheet's found doors with no printed mark, until they are confirmed. */
+export function doorsItem(sheet: QueueSheet, stored: { doors: readonly QueueRun[]; decided?: boolean }): ReviewItem | null {
+  if (stored.decided === true || stored.doors.length === 0) return null;
+  return {
+    kind: "doors",
+    key: `doors:${sheet.pageNumber}`,
+    pageNumber: sheet.pageNumber,
+    sheet: sheet.sheet,
+    runs: stored.doors.map(({ x1, y1, x2, y2 }) => ({ x1, y1, x2, y2 })),
+    tags: stored.doors.map(() => "door"),
     at: null,
   };
 }
@@ -541,7 +566,7 @@ export function reviewQueue(items: readonly ReviewItem[]): ReviewItem[] {
 /** The run to zoom to: a held run itself, or a group's longest run. */
 export function focusOf(item: ReviewItem): (QueueRun & { pageNumber: number }) | null {
   if (item.kind === "wall") return { pageNumber: item.pageNumber, x1: item.x1, y1: item.y1, x2: item.x2, y2: item.y2 };
-  if (item.kind === "windows") return item.at === null || item.runs[item.at] === undefined ? null : { pageNumber: item.pageNumber, ...item.runs[item.at]! };
+  if (item.kind === "windows" || item.kind === "doors") return item.at === null || item.runs[item.at] === undefined ? null : { pageNumber: item.pageNumber, ...item.runs[item.at]! };
   if (item.kind === "type" || item.kind === "height") {
     const longest = item.runs.reduce((best, run) => (length(run) > length(best) ? run : best));
     return { pageNumber: item.pageNumber, ...longest };

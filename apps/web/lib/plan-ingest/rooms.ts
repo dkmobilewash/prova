@@ -7,6 +7,7 @@ import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { ceilingsForRooms, type CeilingPageText } from "@/lib/takeoff/roomCeilings";
 import type { DetectedBoundary } from "@/lib/takeoff/detectWallsForCalibration";
 import { doorsAndWindowsForSheet } from "@/lib/takeoff/doorsWindows";
+import { DOORS_SUGGESTED, doorsToStore, storedDoorsOf, type StoredDoors } from "@/lib/takeoff/doorSuggestions";
 import { postAutoDoors } from "./autoDoors";
 import { DOOR_HEIGHT_FEET, finishLineLabel, finishTakeoff, typesFromNeighbours, typeTagsInRooms, WINDOW_HEIGHT_FEET } from "@/lib/takeoff/finishTakeoff";
 import { readFinishSchedule, type FinishSchedule } from "@/lib/takeoff/finishSchedule";
@@ -97,6 +98,18 @@ async function writeWallOpenings(
  * already decided is never replaced by a re-run, and a sheet no longer counted
  * loses an undecided suggestion rather than keeping a stale one.
  */
+/** The sheet's found doors with no printed mark, for the queue to confirm (`doorSuggestions.ts`). A decided sheet is left as it is. */
+async function writeSuggestedDoors(planId: string, pageNumber: number, value: StoredDoors | null) {
+  const where = { planId_pageNumber_kind: { planId, pageNumber, kind: DOORS_SUGGESTED } };
+  const was = await prisma.takeoffPlanTextRead.findUnique({ where, select: { value: true } });
+  if (storedDoorsOf(was?.value)?.decided) return;
+  if (value === null) {
+    if (was) await prisma.takeoffPlanTextRead.delete({ where });
+    return;
+  }
+  await prisma.takeoffPlanTextRead.upsert({ where, create: { planId, pageNumber, kind: DOORS_SUGGESTED, value }, update: { value, computedAt: new Date() } });
+}
+
 async function writeSuggestedWindows(planId: string, pageNumber: number, value: StoredWindows | null) {
   const where = { planId_pageNumber_kind: { planId, pageNumber, kind: WINDOWS_SUGGESTED } };
   const was = await prisma.takeoffPlanTextRead.findUnique({ where, select: { value: true } });
@@ -216,6 +229,8 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
     if ("doorMarks" in openings) {
       const points = openings.doors.flatMap((d, i) => (openings.doorMarks[i] ? [{ x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2 }] : []));
       await postAutoDoors({ planId: input.planId, pageNumber: input.pageNumber, pageId: page.id, calibrationId: calibration.id, companyId: input.companyId, jobId: input.jobId, userId: input.userId, points });
+      // The doors with no mark never post themselves; the queue asks once for the sheet.
+      await writeSuggestedDoors(input.planId, input.pageNumber, doorsToStore(openings.doors, openings.doorMarks));
     }
     if ("tagged" in openings) await writeSuggestedWindows(input.planId, input.pageNumber, windowsToStore(openings.tagged, openings.windows));
     const found = sheetRooms({

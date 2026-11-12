@@ -1002,6 +1002,9 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
             act(2);
           }
           await tab.keyboard.press("Enter");
+        } else if (kind === "doors") {
+          // The sheet's found doors with no printed mark (one item per sheet): a person who agrees keeps them all.
+          await item.locator('[data-takeoff="queue-doors-accept"]').click();
         } else if (kind === "windows") {
           // The windows counted on the sheet (#1024): a person who agrees confirms them all.
           await item.locator('[data-takeoff="queue-windows-accept"]').click();

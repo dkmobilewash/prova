@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/actions/shared";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
-import { confirmSheetScales, confirmSheetSuggestions, recordQueueSkip, confirmWindows, undoAutoPost, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
+import { confirmDoors, confirmSheetScales, confirmSheetSuggestions, recordQueueSkip, confirmWindows, undoAutoPost, undoConfirmDoors, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
 import { shortScaleName } from "@/lib/takeoff/scaleFromDimensions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
@@ -738,6 +738,27 @@ export function TakeoffReviewQueue({
                 acceptNow(current.key, `windows on sheet ${current.sheet}`, confirm, {
                   label: `Confirm ${kept.length} ${kept.length === 1 ? "window" : "windows"} on ${current.sheet}`,
                   undo: (saved) => undoConfirmWindows(jobId, planId, pageNumber, saved.value.undo),
+                  redo: confirm,
+                });
+              }}
+              onUndoable={onUndoable}
+            />
+          )}
+          {current.kind === "doors" && (
+            // ── A SHEET'S FOUND DOORS WITH NO PRINTED MARK (`doorSuggestions.ts`) ──
+            // Each lit on its leaf; D drops a false one, Enter keeps the rest on the job's Doors count.
+            <QueueWindowsConfirm
+              key={current.key}
+              noun="door"
+              item={current}
+              onShow={onShow}
+              onSkip={() => setCursor(after(current.key))}
+              onAccept={(kept) => {
+                const pageNumber = current.pageNumber;
+                const confirm = () => confirmDoors(jobId, planId, pageNumber, kept);
+                acceptNow(current.key, `doors on sheet ${current.sheet}`, confirm, {
+                  label: `Confirm ${kept.length} ${kept.length === 1 ? "door" : "doors"} on ${current.sheet}`,
+                  undo: (saved) => undoConfirmDoors(jobId, planId, pageNumber, saved.value.undo),
                   redo: confirm,
                 });
               }}
