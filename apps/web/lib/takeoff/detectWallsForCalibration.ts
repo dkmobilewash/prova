@@ -247,7 +247,7 @@ export async function detectWallsForCalibration(
       wallTypes.map((type) => type.code),
       legendCodes,
       // The sheet's own printed codes: Totem's 1, 1A, 2A, 2B and 3B (`printedTagCodes`).
-      printedTagCodes(textItems),
+      printedTagCodes(textItems, strokes.segments),
     );
     const planText = vocabulary.length === 0 ? undefined : { legendCodes: vocabulary };
     // ── THE SAME PIPELINE THE VIEWER RUNS, NOT THE FINDER UNDERNEATH IT ──
