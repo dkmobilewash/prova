@@ -69,6 +69,8 @@ export type ReviewItem =
       building?: { name: string; heights: Record<string, CodeHeight> };
       /** An untagged group's fill as detection drew it; absent when not known (a tagged group, an older row). */
       fill?: "hatched" | "plain";
+      /** The printed tag its walls carry (Totem's 2A), when detection read one; whether or not a type of yours has that code. */
+      tag?: string;
     }
   | { kind: "height"; key: string; itemId: string; name: string; pageNumber: number; sheet: string; runs: QueueRun[]; feet: number | null; options: HeightOption[] }
   | {
@@ -213,7 +215,7 @@ export function wallItem(sheet: QueueSheet, m: { id: string; xs: readonly number
 export function typeItems(
   sheet: QueueSheet,
   untyped: readonly { xs: readonly number[]; ys: readonly number[] }[],
-  groups: readonly { id: string; inches: number; runs: readonly QueueRun[]; suggested?: Guess | null; rooms?: readonly CeilingRoom[]; fill?: "hatched" | "plain" }[],
+  groups: readonly { id: string; inches: number; runs: readonly QueueRun[]; suggested?: Guess | null; rooms?: readonly CeilingRoom[]; fill?: "hatched" | "plain"; tag?: string | null }[],
 ): ReviewItem[] {
   const out: ReviewItem[] = [];
   for (const group of groups) {
@@ -233,9 +235,36 @@ export function typeItems(
       suggested: group.suggested ?? null,
       ceiling: ceilingOption(runs, group.rooms ?? []),
       ...(group.fill === undefined ? {} : { fill: group.fill }),
+      ...(group.tag == null ? {} : { tag: group.tag }),
     });
   }
   return out;
+}
+
+/**
+ * ── A PRINTED TAG'S TYPE, AS THIS JOB'S ESTIMATOR ANSWERED IT ──
+ *
+ * "Tag 2A = which of your types?" is asked once and answered across the set. The answer is not
+ * stored: it is read back from what was typed — the type of the items that a tag's runs are
+ * already on. So a group detected later (a re-run, a sheet refreshed) with the same tag is offered
+ * the same type, and an Undo that takes the walls back takes the answer with it. A tag whose runs
+ * sit on two different types has no one answer, and is asked again.
+ */
+export function answeredTagTypes(
+  tagged: readonly { tag: string; runs: readonly QueueRun[] }[],
+  typed: readonly { xs: readonly number[]; ys: readonly number[]; code: string }[],
+): Map<string, string> {
+  const codeAt = new Map<string, string>();
+  for (const m of typed) if (m.xs.length === 2 && m.ys.length === 2) codeAt.set(`${m.xs[0]},${m.ys[0]},${m.xs[1]},${m.ys[1]}`, m.code);
+  const seen = new Map<string, Set<string>>();
+  for (const group of tagged) {
+    const tag = group.tag.toUpperCase();
+    for (const r of group.runs) {
+      const code = codeAt.get(`${r.x1},${r.y1},${r.x2},${r.y2}`);
+      if (code !== undefined) seen.set(tag, (seen.get(tag) ?? new Set()).add(code));
+    }
+  }
+  return new Map([...seen].filter(([, codes]) => codes.size === 1).map(([tag, codes]) => [tag, [...codes][0]!]));
 }
 
 /** A group's fill from its stored runs: known only when every run carries it, and they agree. */

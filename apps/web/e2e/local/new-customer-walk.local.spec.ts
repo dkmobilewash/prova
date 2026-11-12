@@ -825,6 +825,22 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
         // agrees would; it says what it covers before it is pressed.
         // "The rest of A2.1's untagged walls: N groups, F ft = which of your types?" (one per sheet):
         // the walk's usual first type, then apply — two presses for every group nothing names.
+        // "Tag 2A (3 groups, 96 ft) = which of your types?" (once per printed tag, across the set, before
+        // the rest). The walk cannot know the real type, so it takes its usual first type: two presses a tag.
+        const tagQ = queue.locator('[data-takeoff="review-queue-tag"]');
+        if ((await tagQ.count()) > 0 && (await tagQ.isVisible().catch(() => false))) {
+          const said = await text(tagQ);
+          const before = await text(left);
+          await tagQ.locator('[data-takeoff="review-queue-tag-code"]').first().click();
+          await tagQ.locator('[data-takeoff="review-queue-tag-apply"]').click();
+          act(2);
+          pressesBy.type = (pressesBy.type ?? 0) + 2;
+          seenKinds.tag = (seenKinds.tag ?? 0) + 1;
+          if (seenKinds.tag === 1) await shot("review-tag", tab);
+          note(`Tag: "${said.slice(0, 160)}"`);
+          await expect.poll(async () => text(left), { timeout: 30_000 }).not.toBe(before).catch(() => note("the count did not move after the tag question"));
+          continue;
+        }
         const rest = queue.locator('[data-takeoff="review-queue-rest"]');
         if ((await rest.count()) > 0 && (await rest.isVisible().catch(() => false))) {
           const said = await text(rest);
