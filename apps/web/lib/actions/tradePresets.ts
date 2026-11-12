@@ -8,6 +8,8 @@ import { RECAP_RATE_FIELDS } from "@/lib/bid-recap";
 import { MARKUP_FIELDS, presetWallTypes, tradePreset } from "@/lib/trade-presets";
 import { STARTER_TYPE_NOTE } from "@/lib/wall-type-starters";
 import { doorScopeFrom } from "@/lib/estimating/doorLines";
+import { parseNumericInput } from "@/lib/numeric-input";
+import { wallHeightConventionFrom } from "@/lib/takeoff/heightsByCode";
 import { actionFail, actionOk, nullablePercentFromForm, ownerRefusal, runAction, type ActionResult } from "./shared";
 
 const NO_SETTINGS =
@@ -23,7 +25,7 @@ const NO_SETTINGS =
  *
  * Same two guards as `saveBusinessScope`, its sibling on the same screen.
  */
-export async function applyTradePreset(choice: string, doorScopeChoice?: string): Promise<ActionResult> {
+export async function applyTradePreset(choice: string, doorScopeChoice?: string, defaultWallHeight?: string, wallHeightConventionChoice?: string): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_COMPLIANCE")) return actionFail(NO_SETTINGS);
   const refusal = ownerRefusal(context, "Only the account owner can choose the company's trade.");
@@ -33,6 +35,16 @@ export async function applyTradePreset(choice: string, doorScopeChoice?: string)
   // The trade step's own answer to "Doors and frames", else the preset's starting value.
   const doorScope = doorScopeChoice === undefined ? preset.doorScope : doorScopeFrom(doorScopeChoice);
   if (doorScope === null) return actionFail("Choose who installs the doors and frames.");
+  // The height a wall is assumed to be when the drawing gives none; the preset's figure unless typed.
+  let defaultWallHeightFt: number | null = preset.defaultWallHeightFt;
+  if (defaultWallHeight !== undefined && defaultWallHeight.trim() !== "") {
+    const parsed = parseNumericInput(defaultWallHeight, { label: "Your usual wall height", min: 6, max: 60, maxDecimals: 2, unit: " ft" });
+    if (!parsed.ok) return actionFail(parsed.error);
+    defaultWallHeightFt = parsed.n;
+  }
+  // Where the company's partitions usually go: the step's answer, else the preset's.
+  const wallHeightConvention = wallHeightConventionChoice === undefined ? preset.wallHeightConvention : wallHeightConventionFrom(wallHeightConventionChoice);
+  if (wallHeightConvention === null) return actionFail("Choose where your partitions usually go.");
 
   const companyId = context.company.id;
   const company = await prisma.company.findUniqueOrThrow({
@@ -49,7 +61,7 @@ export async function applyTradePreset(choice: string, doorScopeChoice?: string)
     // Re-read inside the transaction: two taps racing must not both seed.
     const fresh = await tx.company.findUniqueOrThrow({ where: { id: companyId }, select: { tradePresetAskedAt: true } });
     if (fresh.tradePresetAskedAt !== null) return;
-    await tx.company.update({ where: { id: companyId }, data: { ...preset.switches, doorScope, tradePresetAskedAt: new Date() } });
+    await tx.company.update({ where: { id: companyId }, data: { ...preset.switches, doorScope, defaultWallHeightFt, wallHeightConvention, tradePresetAskedAt: new Date() } });
     if (preset.scopes.length > 0) {
       await tx.companyTradeScope.createMany({
         data: preset.scopes.map((tradeScope, index) => ({ companyId, tradeScope, isPrimary: index === 0, activeSince: new Date() })),
