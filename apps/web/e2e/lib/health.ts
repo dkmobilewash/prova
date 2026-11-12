@@ -77,7 +77,7 @@ export const RAIL_NAV_NAME = "Main";
 
 /** Visible characters a page must render to count as having loaded.
  * Deliberately low: the point is "not blank", not "looks finished". */
-const MIN_VISIBLE_CHARS = 120;
+export const MIN_VISIBLE_CHARS = 120;
 
 /**
  * Collects what the browser reports about a page for the life of that

@@ -4,7 +4,7 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 import { setupClerkTestingToken } from "@clerk/testing/playwright";
 import { createClerkClient } from "@clerk/backend";
 import { prisma } from "@prova/db";
-import { HealthMonitor } from "../lib/health";
+import { CRASH_MARKERS, HealthMonitor, MIN_VISIBLE_CHARS } from "../lib/health";
 import { stubDocumentUpload } from "../lib/blobStub";
 import { openItems } from "../lib/finders";
 
@@ -85,13 +85,45 @@ async function freeTestPhone(): Promise<string> {
 
 test.describe.configure({ mode: "serial" });
 
+/**
+ * ── WHAT WENT WRONG ON SCREEN, RECORDED, NEVER THROWN ──
+ * Every page and tab the walk opens is watched; after each step the walk notes, as "HEALTH: …", any
+ * uncaught exception or console error since the last step, any page showing a crash or error banner
+ * (`CRASH_MARKERS`), and any page that renders next to nothing. A robustness run reads these; a step
+ * that cannot be finished records its error before the walk stops ("FAILED: …").
+ */
+const watched: { page: Page; monitor: HealthMonitor; crashes: number; console: number }[] = [];
+function watch(on: Page): HealthMonitor {
+  const monitor = new HealthMonitor(on);
+  watched.push({ page: on, monitor, crashes: 0, console: 0 });
+  return monitor;
+}
+async function health(): Promise<void> {
+  for (const w of watched) {
+    for (const crash of w.monitor.crashes.slice(w.crashes)) note(`HEALTH: uncaught exception ${crash.slice(0, 300)}`);
+    for (const line of w.monitor.consoleErrors.slice(w.console)) if (!/Clerk|clerk|favicon|Download the React DevTools/.test(line)) note(`HEALTH: console error ${line.slice(0, 300)}`);
+    w.crashes = w.monitor.crashes.length;
+    w.console = w.monitor.consoleErrors.length;
+    if (w.page.isClosed()) continue;
+    const body = await w.page.locator("body").innerText({ timeout: 2000 }).catch(() => null);
+    if (body === null) continue;
+    const marker = CRASH_MARKERS.find((m) => body.includes(m));
+    if (marker) note(`HEALTH: "${marker}" on ${w.page.url()}`);
+    else if (body.replace(/\s+/g, " ").trim().length < MIN_VISIBLE_CHARS) note(`HEALTH: a blank page (${body.trim().length} characters) on ${w.page.url()}`);
+  }
+}
+
 /** One timed step. `act` counts what a person does (a click, a field typed). */
 async function step(name: string, body: () => Promise<void>): Promise<void> {
   current = { step: name, seconds: 0, actions: 0, url: "", notes: [], shots: [] };
   const t0 = Date.now();
   try {
     await body();
+  } catch (error) {
+    note(`FAILED: ${(error instanceof Error ? error.message : String(error)).split("\n").slice(0, 3).join(" ").slice(0, 400)}`);
+    throw error;
   } finally {
+    await health().catch(() => {});
     current.seconds = Math.round((Date.now() - t0) / 100) / 10;
     current.url = new URL(page.url()).pathname;
     rows.push(current);
@@ -186,7 +218,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
   test.beforeAll(async ({ browser }) => {
     mkdirSync(OUT, { recursive: true });
     page = await (await browser.newContext({ viewport: SIZE })).newPage();
-    new HealthMonitor(page);
+    watch(page);
     started = Date.now();
   });
   test.afterAll(async () => {
@@ -551,7 +583,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       // workspace and add each group. A100 is the overall plan of the same
       // floor, so the walk works A101.
       tab = await page.context().newPage();
-      new HealthMonitor(tab);
+      watch(tab);
       await tab.setViewportSize(SIZE);
       await tab.goto(`/takeoff/${jobId}`);
       act();
@@ -619,7 +651,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       if (!/Run the takeoff/.test(nextText)) stuck(`Next says "${nextText}", not Run the takeoff`);
       [tab] = await Promise.all([page.context().waitForEvent("page"), (/Run the takeoff/.test(nextText) ? next(page) : page.locator('[data-job-step="takeoff"]')).click()]);
       act();
-      new HealthMonitor(tab);
+      watch(tab);
       await tab.setViewportSize(SIZE);
       await expect(tab.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 120_000 });
       const run = tab.locator('[data-takeoff="find-walls"]');
@@ -736,7 +768,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       if (/Review/.test(nextText)) {
         [tab] = await Promise.all([page.context().waitForEvent("page"), next(page).click()]);
         act();
-        new HealthMonitor(tab);
+        watch(tab);
         await tab.setViewportSize(SIZE);
       } else {
         stuck(`after the takeoff, Next says "${nextText}", not Review`);
@@ -764,7 +796,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
         note(`On A101's group list: ${await typeGroupsOnA101()} measurements on the job; back to the queue.`);
         noTypes = false;
         tab = await page.context().newPage();
-        new HealthMonitor(tab);
+        watch(tab);
         await tab.setViewportSize(SIZE);
         await tab.goto(`/takeoff/${jobId}?open=review`);
         act();
