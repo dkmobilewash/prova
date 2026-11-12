@@ -248,9 +248,12 @@ export async function syncTakeoffItemLines(
   companyId: string,
   jobId: string,
   /** Only these items' lines are written or retired; the rest of the estimate is left as it is. */
-  only?: ReadonlySet<string>,
+  onlyItems?: ReadonlySet<string>,
 ): Promise<ItemLineSummary> {
   const { items, assemblies, defaultPartitionId, finishPages } = await loadItemsForLines(tx, companyId, jobId);
+  // The posted doors ride along with any partial sync: their opening framing comes from the job's
+  // wall types, which are typed after the doors post (the Baker walk had labor and no framing).
+  const only = onlyItems === undefined ? undefined : new Set([...onlyItems, ...items.filter((i) => i.name === AUTO_DOORS_ITEM).map((i) => i.id)]);
   const assemblyById = new Map(assemblies.map((assembly) => [assembly.id, assembly]));
   const company = await tx.company.findUniqueOrThrow({ where: { id: companyId }, select: { openingDeduction: true, openingDeductionSqFt: true, doorScope: true, tradeScopes: { select: { tradeScope: true } } } });
   const openingThresholdSqFt = company.openingDeduction === null ? 0 : thresholdFor(company.openingDeduction, company.openingDeductionSqFt === null ? null : Number(company.openingDeductionSqFt));

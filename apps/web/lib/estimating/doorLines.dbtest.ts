@@ -23,13 +23,13 @@ const PRODUCTION = { crewRatePerHr: 85, doorFramesPerHr: 2, doorsPerHr: 1.5 };
 const made: string[] = [];
 
 /** A company of `trade`, its W1 the default partition with studs and track on a supplier list, and a job with `doors` posted. */
-async function setUp(trade: "METAL_FRAMING_DRYWALL" | "ACOUSTICAL_CEILINGS", doors: number) {
+async function setUp(trade: "METAL_FRAMING_DRYWALL" | "ACOUSTICAL_CEILINGS", doors: number, defaultPartition = true) {
   const companyId = (await prisma.company.create({ data: { name: `Doors ${trade}`, autoPostOn: true } })).id;
   made.push(companyId);
   await prisma.companyTradeScope.create({ data: { companyId, tradeScope: trade, isPrimary: true, activeSince: new Date() } });
   await prisma.companyBidDefaults.create({ data: { companyId, ...MARKUP, productionRates: PRODUCTION } });
   const w1 = STARTER_TYPES.find((t) => t.code === "W1")!;
-  await prisma.wallType.create({ data: { companyId, code: "W1", name: w1.name, isDefaultPartition: true, components: { create: w1.parts.map((p, i) => ({ ...p, sortOrder: i })) } } });
+  const w1Id = (await prisma.wallType.create({ data: { companyId, code: "W1", name: w1.name, isDefaultPartition: defaultPartition, components: { create: w1.parts.map((p, i) => ({ ...p, sortOrder: i })) } } })).id;
   const vendor = await prisma.vendor.create({ data: { companyId, name: "Northgate Supply" } });
   for (const [description, unit, cost] of [['3-5/8" 20ga steel stud', "EA", "4.10"], ['3-5/8" 20ga track', "LF", "0.95"]] as const) {
     const entry = await prisma.lineItemCatalogEntry.create({ data: { companyId, description, unit, defaultBudgetedUnitCost: cost } });
@@ -49,7 +49,7 @@ async function setUp(trade: "METAL_FRAMING_DRYWALL" | "ACOUSTICAL_CEILINGS", doo
   context.company.id = companyId;
   context.companyId = companyId;
   context.id = (await prisma.user.create({ data: { companyId, clerkId: `door_${Date.now()}_${Math.random()}`, email: `door_${Date.now()}_${Math.random()}@example.test`, role: "OWNER" } })).id;
-  return { companyId, jobId: job.id, planId: plan.id, page, calibration, item };
+  return { companyId, jobId: job.id, planId: plan.id, page, calibration, item, w1Id };
 }
 const doorLines = (jobId: string) =>
   prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false, description: { contains: "Doors" } }, orderBy: { description: "asc" } });
@@ -152,6 +152,21 @@ describe("posted doors elsewhere", () => {
     const labor = (await doorLines(s.jobId)).find((l) => l.description === "Labor — Doors — set hollow-metal frames");
     expect(Number(labor?.quantity)).toBe(2);
     expect((await doorLines(s.jobId)).filter((l) => l.description.startsWith("Doors — opening framing")).map((l) => Number(l.quantity))).toEqual([8, 8]);
+  });
+});
+
+describe("doors posted before any wall has a type (the Baker walk's order)", () => {
+  it("their framing arrives when a wall is typed, though only that wall's lines were synced", async () => {
+    // A preset company has no default partition, and the set's doors post while it is read.
+    const s = await setUp("METAL_FRAMING_DRYWALL", 0, false);
+    expect(await setScope("FRAMES")).toEqual({ ok: true });
+    await postAutoDoors({ planId: s.planId, pageNumber: 1, pageId: s.page.id, calibrationId: s.calibration.id, companyId: s.companyId, jobId: s.jobId, userId: null, points: [{ x: 0.2, y: 0.4 }] });
+    expect((await doorLines(s.jobId)).map((l) => l.description)).toEqual(["Labor — Doors — set hollow-metal frames"]);
+    // The review queue types a run of wall as W1 and syncs that item alone.
+    const walls = await prisma.takeoffItem.create({ data: { companyId: s.companyId, jobId: s.jobId, name: "W1 walls", type: "LINEAR", colorHex: "#222222", wallTypeId: s.w1Id, heightFt: "10", sides: 2 } });
+    await prisma.takeoffMeasurement.create({ data: { pageId: s.page.id, calibrationId: s.calibration.id, kind: "LINEAR", source: "DETECTED", xs: [0, 0.5], ys: [0.3, 0.3], itemId: walls.id } });
+    await prisma.$transaction((tx) => syncTakeoffItemLines(tx, s.companyId, s.jobId, new Set([walls.id])));
+    expect((await doorLines(s.jobId)).filter((l) => l.description.startsWith("Doors — opening framing")).map((l) => Number(l.quantity))).toEqual([4, 4]);
   });
 });
 
