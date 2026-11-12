@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/actions/shared";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
@@ -35,12 +35,15 @@ import { queueHeader } from "@/lib/takeoff/autoPost";
  * without deciding; an item leaves when the row behind it changes, and the
  * queue is done when empty.
  */
+/** One empty map for "no heights", so an effect keyed on `heights` does not run on every render. */
+const NO_HEIGHTS: Readonly<Record<string, CodeHeight>> = {};
+
 export function TakeoffReviewQueue({
   jobId,
   planId,
   items,
   legendCodes,
-  heights = {},
+  heights = NO_HEIGHTS,
   legend = "read",
   heightChoices = {},
   specSays = {},
@@ -102,9 +105,19 @@ export function TakeoffReviewQueue({
   // went in, with Undo.
   // `record` is shared with the toolbar's Undo stack: whichever undoes it first, the other has nothing left to undo.
   const [accepted, setAccepted] = useState<{ text: string; keys: string[]; record: { undo: SheetSuggestionsUndo; live: boolean }; known: Set<string> } | null>(null);
-  const sheetGroups = current === null || current.kind !== "type" ? [] : sheetSuggestionGroups(left, current.pageNumber, heights, planId);
+  // ── A HEIGHT A PERSON JUST TYPED FOR A TYPE IS THE NEXT GROUPS' TOO ──
+  // The accept is optimistic, so the next groups render before the server's `heights` know it:
+  // the Totem Lake walk was asked 10 ft three times for W1. Kept only until the server's heights
+  // next arrive, which then speak for the job (an Undo included).
+  const [typedHeights, setTypedHeights] = useState<Record<string, CodeHeight>>({});
+  useEffect(() => setTypedHeights({}), [heights]);
+  const heightsNow = useMemo(() => ({ ...heights, ...typedHeights }), [heights, typedHeights]);
+  const rememberHeight = (code: string | null, heightFt: number | null, typed: boolean) => {
+    if (code && heightFt !== null && typed) setTypedHeights((was) => ({ ...was, [code]: { feet: heightFt, from: `typed for ${code} on this sheet` } }));
+  };
+  const sheetGroups = current === null || current.kind !== "type" ? [] : sheetSuggestionGroups(left, current.pageNumber, heightsNow, planId);
   type TypeItem = Extract<ReviewItem, { kind: "type" }>;
-  const heightOfGroup = (g: TypeItem, code: string | null) => levelHeightFor(code, g.level) ?? forCode(g.building?.heights ?? {}, code) ?? heightFor(code, heights, g.ceiling);
+  const heightOfGroup = (g: TypeItem, code: string | null) => levelHeightFor(code, g.level) ?? forCode(g.building?.heights ?? {}, code) ?? heightFor(code, heightsNow, g.ceiling);
   // The groups on this sheet nothing on the drawing names: no tag, no legend, no library guess.
   const unnamed = current === null || current.kind !== "type" || current.suggested !== null ? [] : left.filter((item): item is TypeItem => item.kind === "type" && item.pageNumber === current.pageNumber && item.suggested === null);
   // ── THE SHEET'S GROUPS, COUNTED THE WAY THE TWO BUTTONS COUNT THEM ──
@@ -271,6 +284,15 @@ export function TakeoffReviewQueue({
     return () => window.removeEventListener("focus", onFocus);
   }, [router]);
 
+  // The viewer set the existing walls aside on this sheet: the item is answered.
+  useEffect(() => {
+    const done = (event: Event) => {
+      const page = (event as CustomEvent<{ page?: number }>).detail?.page;
+      if (current?.kind === "existing" && current.pageNumber === page) setCursor(after(current.key));
+    };
+    document.addEventListener("takeoff-aside-like-done", done);
+    return () => document.removeEventListener("takeoff-aside-like-done", done);
+  });
   useEffect(() => onShow(current), [current?.key]); // eslint-disable-line react-hooks/exhaustive-deps -- the item's key is its identity
   useEffect(() => onLeft?.(left.length), [left.length]); // eslint-disable-line react-hooks/exhaustive-deps -- the count is what changes
 
@@ -492,7 +514,8 @@ export function TakeoffReviewQueue({
                   setCursor(after(current.key));
                 }}
                 rest={unnamed.length > 1 ? `${unnamed.length} groups nothing names on ${current.sheet}${restSpread}` : null}
-                onAcceptRest={(code, heightFt) => {
+                onAcceptRest={(code, heightFt, meta) => {
+                  rememberHeight(code, heightFt, meta.heightEdited);
                   // The type picked here on every group of the sheet nothing names
                   // (walk v6: 13 of them, two keys each). Each keeps its own height
                   // unless a height was typed here; one line says it, with Undo.
@@ -506,6 +529,7 @@ export function TakeoffReviewQueue({
                   );
                 }}
                 onAccept={(code, heightFt, meta) => {
+                  rememberHeight(code, heightFt, meta.heightEdited);
                   // The same drawn group on the set's other floor plans, offered once this one is in.
                   const floorPages = new Set(planSet.filter((r) => r.category === "floor").map((r) => r.pageNumber));
                   const same = sameOnOtherFloors(left, current, code!, heightFt, (g, c) => heightOfGroup(g, c)?.feet ?? null, floorPages, planId);
@@ -602,6 +626,34 @@ export function TakeoffReviewQueue({
               }}
               onUndoable={onUndoable}
             />
+          )}
+          {current.kind === "existing" && (
+            // ── A RENOVATION SHEET: THE EXISTING WALLS, IN ONE STEP (`setAsideLike.ts`) ──
+            // The viewer takes the pick: one existing wall, a preview of every wall drawn like it,
+            // Enter sets them aside with one Undo. It says when it is done (`takeoff-aside-like-done`).
+            <div className="flex flex-col gap-2" data-takeoff="review-queue-existing" data-page={current.pageNumber}>
+              <p className="text-sm text-ink">
+                {current.sheet} shows existing work: {current.walls} wall{current.walls === 1 ? "" : "s"}
+                {current.feet === null ? "" : `, ${Math.round(current.feet).toLocaleString()} ft`} found, the existing ones among them.
+              </p>
+              <p className="text-xs text-ink-muted">Pick one existing wall on the sheet; every wall drawn like it is set aside.</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className={`${button} border-brand`}
+                  data-takeoff="review-queue-aside-like"
+                  onClick={() => {
+                    document.dispatchEvent(new CustomEvent("takeoff-goto", { detail: { page: current.pageNumber } }));
+                    document.dispatchEvent(new CustomEvent("takeoff-aside-like", { detail: { page: current.pageNumber } }));
+                  }}
+                >
+                  Set aside all walls drawn like this one
+                </button>
+                <button type="button" className={button} onClick={() => setCursor(after(current.key))}>
+                  Skip
+                </button>
+              </div>
+            </div>
           )}
           {current.kind === "scale" &&
             (() => {
