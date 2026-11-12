@@ -17,6 +17,9 @@ const fake = vi.hoisted(() => {
   const tx = {
     contact: { findFirst: fn(), create: fn() },
     job: { findFirst: fn(), create: fn() },
+    // createEstimateJob copies the company's standard clauses onto a new job: none here.
+    proposalClause: { findMany: vi.fn(async () => []) },
+    jobProposalClause: { createMany: fn() },
   };
   return {
     tx,

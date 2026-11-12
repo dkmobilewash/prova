@@ -966,6 +966,15 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           act(3);
           await expect(page.getByText(words)).toBeVisible({ timeout: 30_000 });
         }
+      } else {
+        // The proposal already carries the company's standard clauses: nothing to type.
+        note(`Next says "${await text(next(page))}": the proposal starts with the standard inclusions and exclusions.`);
+        // The GC's terms are still set on the proposal, as in a run where clauses were typed, so the
+        // two runs measure the same proposal: one press to open it, as a person would.
+        await page.goto(`/jobs/${jobId}/proposal`);
+        act();
+      }
+      {
         // The GC added in the job wizard has no terms; the proposal says so.
         const missing = page.locator('[data-proposal="terms-missing"]');
         if (await seen(missing, 3000)) {
