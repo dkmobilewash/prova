@@ -1,3 +1,4 @@
+import { applyCatalogPrices } from "./catalogPrices";
 import { showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import type { Prisma } from "@prova/db";
 
@@ -471,6 +472,13 @@ export async function syncTakeoffItemLines(
   const renovationUnchecked = measuredPages
     .filter((p) => showsExistingWork(texts.find((t) => t.planId === p.planId && t.pageNumber === p.pageNumber)?.renovationMarks ?? []))
     .map((p) => p.label ?? `Sheet ${p.pageNumber}`);
+
+  // ── A PRICE THE COMPANY ALREADY HAS IS NOT ASKED AGAIN ──
+  // A part with no catalog entry is linked to the company's own entry for the same material in the
+  // same unit (its price book, an imported supplier list), and this job's new unpriced lines are
+  // priced from it through the job's markup, marked with where the price came from. The review queue
+  // then asks only for what the company has no price for (Totem Lake: 4 prices typed that it held).
+  await applyCatalogPrices(tx, companyId, [], jobId);
 
   // Labor follows the walls: the hours are worked out again from what the lines now say.
   await syncLaborLines(tx, companyId, jobId);
