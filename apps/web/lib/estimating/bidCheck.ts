@@ -30,8 +30,13 @@ export type BidCheckFacts = {
   specConflicts: { code: string; what: string; legend: string; spec: string; sectionNumber: string }[];
   /** The building's floor area as typed on the job, the walls' footage and face, and the board on the estimate. */
   quantities: { grossAreaSqFt: number | null; wallLf: number; wallFaceSqFt: number; boardSqFt: number | null };
-  /** Sheets that show existing work, carry walls, and were never compared with a demolition plan. */
-  existing: { compareOn: boolean; sheets: { pageNumber: number; sheet: string; walls: number }[] };
+  /**
+   * Sheets that show existing work, carry walls, and have nothing set aside as existing: no stored
+   * comparison with a demolition plan, and nothing a person set aside (a work area, or walls drawn
+   * like one they picked). `demoPlan`: whether the set has a demolition plan this sheet pairs with
+   * — Totem Lake Dental's A2.1 draws the demolition on the floor plan itself, so it has none.
+   */
+  existing: { compareOn: boolean; sheets: { pageNumber: number; sheet: string; walls: number; demoPlan: boolean }[] };
 };
 
 /**
@@ -122,19 +127,34 @@ export function bidChecks(f: BidCheckFacts): BidCheck[] {
     lines:
       ex.sheets.length > 0
         ? [
-            ...ex.sheets.map((s) => `${s.sheet}: shows existing work, ${plural(s.walls, "wall")} taken off, none compared with a demolition plan — existing walls to remain may be priced as new`),
-            ...(ex.compareOn ? [] : ["Plan comparison is off, so nothing on these sheets was set aside as existing."]),
+            ...ex.sheets.map((s) =>
+              s.demoPlan
+                ? `${s.sheet}: shows existing work, ${plural(s.walls, "wall")} taken off, none compared with a demolition plan — existing walls to remain may be priced as new`
+                : `${s.sheet}: shows existing work on the plan itself (the set has no separate demolition plan for it), ${plural(s.walls, "wall")} taken off, none set aside as existing — existing walls to remain may be priced as new`,
+            ),
+            ...(ex.compareOn || !ex.sheets.some((s) => s.demoPlan) ? [] : ["Plan comparison is off, so nothing on these sheets was set aside as existing."]),
           ]
         : ["No sheet with existing work has walls left uncompared."],
-    fix:
-      ex.sheets.length === 0
-        ? null
-        : ex.compareOn
-          ? { label: `Pair ${ex.sheets[0]!.sheet} with its demolition plan`, href: `/takeoff/${f.jobId}?page=${ex.sheets[0]!.pageNumber}`, newTab: true }
-          : { label: "Turn on plan comparison (Settings, owner)", href: "/settings?tab=estimating#plan-compare", newTab: false },
+    fix: existingFix(ex, f.jobId),
   });
 
   return checks;
+}
+
+/**
+ * The way out for the first sheet that needs one. A sheet with no demolition plan in the set cannot
+ * be paired (Totem Lake Dental A2.1, whose fix said "Pair A2.1 with its demolition plan"): it opens
+ * the sheet, where the review queue's "Set aside all walls drawn like this one" takes the existing
+ * walls by their drawing. A sheet that has one is paired, with the switch on.
+ */
+function existingFix(ex: BidCheckFacts["existing"], jobId: string): BidCheck["fix"] {
+  const alone = ex.sheets.find((s) => !s.demoPlan);
+  if (alone !== undefined) return { label: `Set aside the existing walls on ${alone.sheet}`, href: `/takeoff/${jobId}?page=${alone.pageNumber}`, newTab: true };
+  const first = ex.sheets[0];
+  if (first === undefined) return null;
+  return ex.compareOn
+    ? { label: `Pair ${first.sheet} with its demolition plan`, href: `/takeoff/${jobId}?page=${first.pageNumber}`, newTab: true }
+    : { label: "Turn on plan comparison (Settings, owner)", href: "/settings?tab=estimating#plan-compare", newTab: false };
 }
 
 function quantityCheck(f: BidCheckFacts, job: string): BidCheck {

@@ -27,7 +27,7 @@ import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 import { DISTINCT_MARKS, DOOR_COLOUR, LAYER_COLOURS, ROOM_COLOUR, markFor } from "@/lib/takeoff/clusterMarks";
 import { TakeoffLayerPanel, type Layer } from "@/components/TakeoffLayerPanel";
 import { defaultLayerName, layerKeyOf } from "@/lib/takeoff/layerKey";
-import { postSheetWalls, renameTakeoffLayer, setWallGroupHeight, takeoffSetPages } from "@/lib/actions";
+import { postSheetWalls, renameTakeoffLayer, savePlanComparison, setWallGroupHeight, takeoffSetPages } from "@/lib/actions";
 import { SetWallHeight } from "./SetWallHeight";
 import type { TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
 import { areaLine, ceilingOption, heightFrom, heightOptionsInOrder, wallSquareFeet, type CeilingRoom, type HeightOption } from "@/lib/takeoff/wallHeight";
@@ -127,6 +127,7 @@ import { pagesToSample } from "@/lib/takeoff/sheetTemplate";
 import { inPageWidthUnits, type FoundOnSheet } from "@/lib/takeoff/findWallsOnSheet";
 import { SheetTooDenseError, oneFacePerLine, wallFromPair } from "@/lib/takeoff/wallVectors";
 import { layersOf, segmentsFromOpenPage } from "@/lib/takeoff/sheetStrokes";
+import { likeOnSheet, pickedRun, withoutRuns } from "@/lib/takeoff/setAsideLike";
 import { droppedLayersSentence, type LayerDrop } from "@/lib/takeoff/layerNames";
 import { sheetNumberFrom } from "@/lib/plan-ingest/sheetNumber";
 import {
@@ -855,11 +856,21 @@ export function TakeoffPlanViewer({
       const page = (event as CustomEvent<{ page?: number }>).detail?.page;
       if (typeof page === "number" && page >= 1) setPageNumber(page);
     };
+    // The review queue's "Set aside all walls drawn like this one": wait for the pick.
+    const onAsideLike = (event: Event) => {
+      const page = (event as CustomEvent<{ page?: number }>).detail?.page;
+      if (typeof page !== "number") return;
+      setAsideLike({ page, preview: null });
+      setAsideLikeDone(null);
+      setTool("exclude");
+    };
     document.addEventListener("takeoff-shortcut", onShortcut);
     document.addEventListener("takeoff-goto", onGoto);
+    document.addEventListener("takeoff-aside-like", onAsideLike);
     return () => {
       document.removeEventListener("takeoff-shortcut", onShortcut);
       document.removeEventListener("takeoff-goto", onGoto);
+      document.removeEventListener("takeoff-aside-like", onAsideLike);
     };
   }, [pageCount]);
 
@@ -1170,6 +1181,10 @@ export function TakeoffPlanViewer({
   useEffect(() => () => void (postWait.current = null), []);
   /** A sheet whose stored groups replace a live find once they are posted (`postWhenStored`). */
   const [preferStored, setPreferStored] = useState<number | null>(null);
+  // The stored walls as they were when Run takeoff found the sheet again on the server
+  // (`refound`): those are stale, so the sheet waits for the render that brings the new ones.
+  const staleStored = useRef<unknown>(null);
+  const storedNowRef = useRef<unknown>(null);
   async function postWhenStored(sheetAt: number) {
     const mine = {};
     postWait.current = mine;
@@ -1189,6 +1204,7 @@ export function TakeoffPlanViewer({
       // Baker: one 7-3/8" 114 ft group here, C8B 117 ft in the queue, gone on
       // reload). The post's own render brings the stored groups; they take over.
       if (posted.ok) {
+        if (posted.value.refound === true) staleStored.current = storedNowRef.current;
         seeded.current.delete(sheetAt);
         setPreferStored(sheetAt);
       }
@@ -1292,6 +1308,11 @@ export function TakeoffPlanViewer({
   // From the sheet at first paint: a saved work area has its control on open.
   const [exclusionRows, setExclusionRows] = useState<ExclusionRow[]>(sheet?.exclusions ?? []);
   const [userAside, setUserAside] = useState<{ kind: string; why: string; n: number }[]>([]);
+  // ── "SET ASIDE ALL WALLS DRAWN LIKE THIS ONE", STARTED FROM THE REVIEW QUEUE (`setAsideLike.ts`) ──
+  // `pick`: waiting for the click on one existing wall; then the preview, applied by Enter.
+  const [asideLike, setAsideLike] = useState<{ page: number; preview: { line: { x1: number; y1: number; x2: number; y2: number }; runs: Set<WallCandidate>; n: number; feet: number } | null } | null>(null);
+  const [asideLikeDone, setAsideLikeDone] = useState<{ page: number; text: string } | null>(null);
+  const asideSegments = useRef<{ page: number; segments: StrokeSegment[] } | null>(null);
   /** What plan comparison did on the sheet last found — shown by `PriorPlanBar`. */
   const [priorStatus, setPriorStatus] = useState<PriorStatus | null>(null);
   // ── WHAT THE COMPARISON SET ASIDE, IN PLACE OF THE RENOVATION PROMPT ──
@@ -3335,8 +3356,12 @@ export function TakeoffPlanViewer({
     };
   }, [suggestionDue, pageNumber]);
 
+  storedNowRef.current = storedWallsByPage;
   useEffect(() => {
     if (seeded.current.has(pageNumber)) return;
+    // Found again on the server: not these, the next ones.
+    if (preferStored === pageNumber && staleStored.current !== null && storedWallsByPage === staleStored.current) return;
+    staleStored.current = null;
     const stored = storedWallsFor(storedWallsByPage, pageNumber);
     if (stored === null) return;
     // NOT OVER THE TOP OF A LIVE RESULT. A press of Find the walls on this very
@@ -3847,6 +3872,7 @@ export function TakeoffPlanViewer({
   }
 
   async function onExcludeAt(at: { x: number; y: number }) {
+    if (asideLike !== null && asideLike.page === pageNumber) return void previewAsideLike(at);
     const feet = feetAcrossRef.current;
     if (!sheet || feet === null || runsRef.current.length === 0) {
       setFindError(say("Find the walls on this sheet first, then click one to exclude."));
@@ -3865,6 +3891,116 @@ export function TakeoffPlanViewer({
     const ys = [hit.y1, hit.y2];
     await addExclusion("EXCLUDE_LIKE", xs, ys);
   }
+
+  /** The page's strokes in page-width units, read once per sheet for the preview. */
+  async function asideStrokes(): Promise<StrokeSegment[] | null> {
+    if (asideSegments.current?.page === pageNumber) return asideSegments.current.segments;
+    const doc = docRef.current;
+    if (!doc || !pageSize) return null;
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const page = await doc.getPage(pageNumber);
+    const layers = await layersOf(doc as never).catch(() => null);
+    const { segments } = await segmentsFromOpenPage(page as never, pdfjs as never, pageNumber, layers as never);
+    const units = segments.map(inPageWidthUnits(pageSize.widthPt));
+    asideSegments.current = { page: pageNumber, segments: units };
+    return units;
+  }
+
+  async function previewAsideLike(at: { x: number; y: number }) {
+    if (found === null || feetPerUnit === null) {
+      setFindError("Run takeoff on this sheet first, then pick one existing wall.");
+      return;
+    }
+    const hit = pickedRun(found, at, feetPerUnit);
+    if (hit === null) {
+      setFindError("No wall there. Click on one of the walls found on this sheet.");
+      return;
+    }
+    setFindError(null);
+    const segments = await asideStrokes();
+    if (segments === null) {
+      setFindError("The sheet is still loading. Pick the wall again in a moment.");
+      return;
+    }
+    const line = { x1: hit.x1, y1: hit.y1, x2: hit.x2, y2: hit.y2 };
+    const like = likeOnSheet({ groups: found, picked: line, segments, feetPerUnit });
+    setAsideLike({ page: pageNumber, preview: { line, ...like } });
+  }
+
+  /** Enter: the previewed walls set aside, saved as the sheet's exclusion, with one Undo. */
+  async function applyAsideLike() {
+    const preview = asideLike?.preview;
+    if (!sheet || preview === null || preview === undefined || found === null) return;
+    const pageId = sheet.id;
+    const page = pageNumber;
+    const before = found;
+    const xs = [preview.line.x1, preview.line.x2];
+    const ys = [preview.line.y1, preview.line.y2];
+    const saved = await addSheetExclusion(jobId, pageId, "EXCLUDE_LIKE", xs, ys);
+    if (!saved.ok) {
+      setFindError(saved.error);
+      return;
+    }
+    const row: ExclusionRow = { id: saved.value.ids[0], kind: "EXCLUDE_LIKE", xs, ys };
+    const here = () => sheetIdRef.current === pageId;
+    // On screen at once, from the preview; the server finds the sheet again with the exclusion
+    // and replaces the walls on the job (`refreshSheetWalls`, after the response).
+    const apply = () => {
+      setFound(withoutRuns(before, preview.runs));
+      setFoundOnPage(page);
+    };
+    apply();
+    putExclusionRows([...exclusionRowsRef.current, row]);
+    onUndoable?.(
+      exclusionUndoEntry(row, {
+        remove: (id) => removeSheetExclusion(jobId, pageId, id),
+        add: (r) => addSheetExclusion(jobId, pageId, r.kind, r.xs, r.ys),
+        removed: async (_result, id) => {
+          if (!here()) return;
+          putExclusionRows(exclusionRowsRef.current.filter((r) => r.id !== id));
+          setFound(before);
+          setFoundOnPage(page);
+          setAsideLikeDone(null);
+        },
+        added: async (_result, r) => {
+          if (!here()) return;
+          putExclusionRows([...exclusionRowsRef.current, r]);
+          apply();
+        },
+      }),
+    );
+    const feet = Math.round(preview.feet).toLocaleString();
+    setAsideLikeDone({ page, text: `Set aside ${preview.n} wall${preview.n === 1 ? "" : "s"}, ${feet} ft drawn like the one you picked.` });
+    setAsideLike(null);
+    setTool("pan");
+    document.dispatchEvent(new CustomEvent("takeoff-aside-like-done", { detail: { page } }));
+  }
+  const applyAsideLikeRef = useRef(applyAsideLike);
+  applyAsideLikeRef.current = applyAsideLike;
+  // Enter applies the preview; Escape leaves the pick. Before the workspace's own keys.
+  useEffect(() => {
+    if (asideLike === null) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target !== null && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      if (event.key === "Enter" && asideLike.preview !== null) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        void applyAsideLikeRef.current();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setAsideLike(null);
+        setTool("pan");
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [asideLike]);
+  // Another sheet, or another tool: the pick is over.
+  useEffect(() => {
+    if (asideLike !== null && (asideLike.page !== pageNumber || tool !== "exclude")) setAsideLike(null);
+  }, [pageNumber, tool, asideLike]);
 
   async function onSaveWorkArea() {
     if (!sheet) return;
@@ -4216,6 +4352,13 @@ export function TakeoffPlanViewer({
         }
       }
       setPriorStatus(planCompare === null || offered === null ? null : (prior ?? { page: pageNumber, pairing: null, sheet: null, n: 0, feet: 0, why: null }));
+      // Kept, so the next visit shows what was set aside rather than the renovation prompt again
+      // (E Street A2.1, 2026-11-06 → 11-12). The server's detection stores the same record.
+      if (prior !== null && prior.pairing !== null && prior.sheet !== null && !readOnly) {
+        void savePlanComparison(jobId, planId, pageNumber, { demoPage: prior.pairing.demoPage, sheet: prior.sheet, n: prior.n, feet: prior.feet, why: prior.why }).catch((error) =>
+          console.warn("[takeoff] plan comparison not kept", error),
+        );
+      }
       setUserAside((offered?.setAside ?? []).filter((a) => a.kind === "excluded-like" || a.kind === "outside-work-area"));
       const walls = offered?.offeredRuns ?? found.walls;
       const regroup = found.regroup;
@@ -5509,8 +5652,10 @@ export function TakeoffPlanViewer({
           aside={userAside}
           excludes={exclusionRows.filter((r) => r.kind === "EXCLUDE_LIKE").length}
           existing={existingAside}
+          // The prompt is for a renovation sheet with NO demolition plan paired: a paired one has its
+          // existing walls set aside by the comparison, and says so instead (`existing`).
           renovation={
-            found !== null && renovationOnPage?.page === pageNumber && showsExistingWork(renovationOnPage.marks) && !exclusionRows.some((r) => r.kind === "EXCLUDE_LIKE" || r.kind === "WORK_AREA")
+            found !== null && planCompare?.pairs[pageNumber] === undefined && renovationOnPage?.page === pageNumber && showsExistingWork(renovationOnPage.marks) && !exclusionRows.some((r) => r.kind === "EXCLUDE_LIKE" || r.kind === "WORK_AREA")
               ? renovationOnPage.marks
               : null
           }
@@ -5524,6 +5669,19 @@ export function TakeoffPlanViewer({
       ))}
       {slot(panelOpen ? (bannerSlot ?? sideSlot) : noticeSlot, answerKey === undefined && planCompare !== null && shownPrior !== null && (
         <PriorPlanBar status={shownPrior} sheets={planCompare.sheets} pageNumber={pageNumber} jobId={jobId} planId={planId} readOnly={readOnly} />
+      ))}
+      {/* The review queue's "Set aside all walls drawn like this one": the pick, the preview, the result. */}
+      {slot(panelOpen ? dockSlot : noticeSlot, answerKey === undefined && asideLike !== null && asideLike.page === pageNumber && (
+        <p className="order-first shrink-0 rounded-md bg-tag-amber px-2 py-1 text-xs font-medium text-tag-amber-ink" data-takeoff={asideLike.preview === null ? "aside-like-pick" : "aside-like-preview"}>
+          {asideLike.preview === null
+            ? "Click one existing wall on the sheet. Esc cancels."
+            : `${asideLike.preview.n} wall${asideLike.preview.n === 1 ? "" : "s"}, ${Math.round(asideLike.preview.feet).toLocaleString()} ft drawn like this one. Enter sets them aside; click another wall to change; Esc cancels.`}
+        </p>
+      ))}
+      {slot(panelOpen ? dockSlot : noticeSlot, answerKey === undefined && asideLike === null && asideLikeDone !== null && asideLikeDone.page === pageNumber && (
+        <p className="order-first shrink-0 text-xs font-medium text-ink-body" data-takeoff="aside-like-done">
+          {asideLikeDone.text}
+        </p>
       ))}
       {/* At the TOP of the panel, first in its dock (Chrome on E Street A1.1: it sat below the groups). */}
       {slot(panelOpen ? dockSlot : noticeSlot, answerKey === undefined && setsAsideOn.length > 0 && (

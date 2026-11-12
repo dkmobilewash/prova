@@ -1,6 +1,6 @@
 import { prisma } from "@prova/db";
 import { loadReviewQueue } from "@/lib/takeoff/reviewQueueQuery";
-import { storedPriorsOf } from "@/lib/takeoff/priorPlanLoad";
+import { pairingsForPlan, storedPriorsOf } from "@/lib/takeoff/priorPlanLoad";
 import { sheetIndexFor } from "@/lib/plan-ingest/sheetIndexQuery";
 import { effectiveSheetNumber } from "@/lib/plan-ingest/sheetIndex";
 import { loadSpecBookView } from "@/lib/specs/specBookQuery";
@@ -56,24 +56,30 @@ export async function loadBidCheckFacts(companyId: string, jobId: string): Promi
  * carry walls taken off, and have no stored comparison with a demolition plan (`storedPriorsOf`):
  * their existing walls to remain may be on the bid as new work.
  */
-async function uncomparedRenovationSheets(companyId: string, planId: string): Promise<{ pageNumber: number; sheet: string; walls: number }[]> {
+async function uncomparedRenovationSheets(companyId: string, planId: string): Promise<{ pageNumber: number; sheet: string; walls: number; demoPlan: boolean }[]> {
   const marked = await prisma.planSheetText.findMany({ where: { planId, renovationMarks: { isEmpty: false } }, select: { pageNumber: true } });
   if (marked.length === 0) return [];
   const pages = marked.map((m) => m.pageNumber);
-  const [measured, priors, index] = await Promise.all([
+  const [measured, priors, index, pairings] = await Promise.all([
     prisma.takeoffPlanPage.findMany({
       where: { planId, pageNumber: { in: pages } },
-      select: { pageNumber: true, _count: { select: { measurements: { where: { kind: "LINEAR" } } } } },
+      select: {
+        pageNumber: true,
+        _count: { select: { measurements: { where: { kind: "LINEAR" } } } },
+        // A person's set-aside (a work area, or walls drawn like one they picked) answers the check.
+        exclusions: { where: { kind: { in: ["EXCLUDE_LIKE", "WORK_AREA"] } }, select: { id: true }, take: 1 },
+      },
     }),
     storedPriorsOf(planId),
     sheetIndexFor(planId, companyId),
+    pairingsForPlan(planId),
   ]);
   const rowByPage = new Map(index.map((row) => [row.pageNumber, row]));
   return measured
-    .filter((p) => p._count.measurements > 0 && priors[p.pageNumber] === undefined)
+    .filter((p) => p._count.measurements > 0 && priors[p.pageNumber] === undefined && p.exclusions.length === 0)
     .sort((a, b) => a.pageNumber - b.pageNumber)
     .map((p) => {
       const row = rowByPage.get(p.pageNumber);
-      return { pageNumber: p.pageNumber, sheet: (row && effectiveSheetNumber(row)) ?? `p${p.pageNumber}`, walls: p._count.measurements };
+      return { pageNumber: p.pageNumber, sheet: (row && effectiveSheetNumber(row)) ?? `p${p.pageNumber}`, walls: p._count.measurements, demoPlan: pairings.byPage.has(p.pageNumber) };
     });
 }

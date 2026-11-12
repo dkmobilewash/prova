@@ -143,3 +143,42 @@ describe("a page-keyed label file still loads, and saves back to itself", () => 
     expect((await post(74)).status).toBe(409);
   });
 });
+
+/**
+ * "Saved 164" while the file held 163 (Bluetooth AI101, Chrome 2026-11-11): the count on screen was
+ * the browser's sum of what it sent. The route now says how many verdicts it wrote — new work and
+ * the hidden decisions carried, together — and that is the number shown.
+ */
+describe("a save says how many verdicts the file holds", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "labels-count-"));
+    vi.stubEnv("TAKEOFF_LABEL_DIR", dir);
+    vi.stubEnv("NODE_ENV", "development");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const v = (x: number, verdict: string) => ({ x1: x, y1: 0, x2: x + 0.1, y2: 0, lengthFeet: 10, thicknessFeet: 0.4, verdict });
+
+  it("new verdicts, traces and carried ones: the count is the file's verdicts", async () => {
+    const response = await POST(
+      new Request("http://x/api/takeoff/labels", {
+        method: "POST",
+        body: JSON.stringify({
+          set: "Bluetooth",
+          sheet: "AI101",
+          page: 6,
+          candidates: [],
+          verdicts: [v(0, "wall"), v(0.2, "not-wall"), v(0.4, "traced")],
+          carried: [{ ...v(0.6, "not-wall"), finderVersion: "abc" }, v(0.8, "wall")],
+        }),
+      }),
+    );
+    const body = await response.json();
+    const file = JSON.parse(readFileSync(join(dir, "Bluetooth", "AI101.json"), "utf8"));
+    expect(file.verdicts).toHaveLength(5);
+    expect(body.verdicts).toBe(file.verdicts.length);
+  });
+});
