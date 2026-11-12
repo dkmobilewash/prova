@@ -796,6 +796,22 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           seenKinds.acceptAll = (seenKinds.acceptAll ?? 0) + 1;
           continue;
         }
+        // "W1 on the 2 other groups drawn like it": the type the person just gave, on the untagged
+        // groups drawn alike (same fill, thickness within an inch). One press, as a person who
+        // agrees would; it says what it covers before it is pressed.
+        const alike = queue.locator('[data-takeoff="review-queue-alike-apply"]');
+        if ((await alike.count()) > 0 && (await alike.isVisible().catch(() => false))) {
+          const said = await text(alike);
+          const before = await text(left);
+          await alike.click();
+          act();
+          pressesBy.type = (pressesBy.type ?? 0) + 1;
+          seenKinds.alike = (seenKinds.alike ?? 0) + 1;
+          if (seenKinds.alike === 1) await shot("review-alike", tab);
+          note(`Alike: "${said}"`);
+          await expect.poll(async () => text(left), { timeout: 30_000 }).not.toBe(before).catch(() => note("the count did not move after the alike offer"));
+          continue;
+        }
         const kind = (await item.getAttribute("data-kind")) ?? "?";
         seenKinds[kind] = (seenKinds[kind] ?? 0) + 1;
         const pressedBefore = current?.actions ?? 0;

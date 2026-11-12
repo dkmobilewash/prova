@@ -67,6 +67,8 @@ export type ReviewItem =
       level?: QueueLevel;
       /** Where its sheet's plan names one building part: each type's height for that part (Bunkie's ADDITION 10'-0"), by code. */
       building?: { name: string; heights: Record<string, CodeHeight> };
+      /** An untagged group's fill as detection drew it; absent when not known (a tagged group, an older row). */
+      fill?: "hatched" | "plain";
     }
   | { kind: "height"; key: string; itemId: string; name: string; pageNumber: number; sheet: string; runs: QueueRun[]; feet: number | null; options: HeightOption[] }
   | {
@@ -211,7 +213,7 @@ export function wallItem(sheet: QueueSheet, m: { id: string; xs: readonly number
 export function typeItems(
   sheet: QueueSheet,
   untyped: readonly { xs: readonly number[]; ys: readonly number[] }[],
-  groups: readonly { id: string; inches: number; runs: readonly QueueRun[]; suggested?: Guess | null; rooms?: readonly CeilingRoom[] }[],
+  groups: readonly { id: string; inches: number; runs: readonly QueueRun[]; suggested?: Guess | null; rooms?: readonly CeilingRoom[]; fill?: "hatched" | "plain" }[],
 ): ReviewItem[] {
   const out: ReviewItem[] = [];
   for (const group of groups) {
@@ -230,9 +232,41 @@ export function typeItems(
       feet: feetOf(runs, sheet.feetPerUnit),
       suggested: group.suggested ?? null,
       ceiling: ceilingOption(runs, group.rooms ?? []),
+      ...(group.fill === undefined ? {} : { fill: group.fill }),
     });
   }
   return out;
+}
+
+/** A group's fill from its stored runs: known only when every run carries it, and they agree. */
+export function fillOfRuns(runs: readonly { hatched?: boolean }[]): "hatched" | "plain" | undefined {
+  if (runs.length === 0 || runs.some((r) => typeof r.hatched !== "boolean")) return undefined;
+  const hatched = runs.every((r) => r.hatched === true);
+  const plain = runs.every((r) => r.hatched === false);
+  return hatched ? "hatched" : plain ? "plain" : undefined;
+}
+
+/** Two thicknesses "drawn alike": within an inch, or 15% of the thicker — the band "walls drawn like this one" uses. */
+export const ALIKE_INCHES = 1;
+export const ALIKE_SHARE = 0.15;
+
+/**
+ * ── THE OTHER UNTAGGED GROUPS ON THE SHEET DRAWN LIKE THE ONE JUST TYPED ──
+ *
+ * Totem Lake's A2.1: thirteen groups nothing on the drawing names, typed one at a time, two
+ * presses each (the walk's 28). Several are drawn alike — the same fill, thicknesses within an
+ * inch (4-3/4" and 5-1/8", 10" and 10-3/4"). After a person types one, these are offered the
+ * SAME type in one confirm, with their count and feet; the type is always the person's, never
+ * picked for them. Only groups whose fill is known on both sides; never a group a tag, a note or
+ * a thickness suggests something for.
+ */
+export function alikeGroups<T extends Extract<ReviewItem, { kind: "type" }>>(open: readonly ReviewItem[], typed: T): T[] {
+  if (typed.fill === undefined || typed.suggested !== null) return [];
+  const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(ALIKE_INCHES, ALIKE_SHARE * Math.max(a, b));
+  return open.filter(
+    (g): g is T =>
+      g.kind === "type" && g.key !== typed.key && g.pageNumber === typed.pageNumber && g.suggested === null && g.fill === typed.fill && near(g.inches, typed.inches),
+  );
 }
 
 /**
