@@ -1,4 +1,6 @@
 import { prisma } from "@prova/db";
+import { showsExistingWork } from "@/lib/takeoff/renovationMarks";
+import { pairingsForPlan } from "@/lib/takeoff/priorPlanLoad";
 import { VARIANT_NOTES } from "./variantMark";
 import { aiGate } from "@/lib/ai/settings";
 import { asCostCategory } from "@/lib/cost-category";
@@ -282,6 +284,27 @@ export async function loadReviewQueue(
   const unscaled = floors.filter((pageNumber) => !scaled.has(pageNumber));
   if (unscaled.length > 0) {
     items.push({ kind: "scale", key: "scale:set", pageNumber: unscaled[0]!, sheet: sheetOf(unscaled[0]!).sheet, pages: unscaled.map((pageNumber) => ({ pageNumber, sheet: sheetOf(pageNumber).sheet })) });
+  }
+
+  // ── A RENOVATION SHEET: SET ASIDE THE EXISTING WALLS IN ONE STEP (`setAsideLike.ts`) ──
+  // Its walls are in the queue and nothing is set aside on it yet; a sheet a demolition plan
+  // handles (plan comparison on, paired) is left to the comparison.
+  const withWalls = pages.filter((page) => page.measurements.length > 0);
+  if (withWalls.length > 0) {
+    const [marks, aside, company] = await Promise.all([
+      prisma.planSheetText.findMany({ where: { planId: plan.id, pageNumber: { in: withWalls.map((p) => p.pageNumber) } }, select: { pageNumber: true, renovationMarks: true } }),
+      prisma.takeoffSheetExclusion.findMany({ where: { pageId: { in: withWalls.map((p) => p.id) }, kind: { in: ["EXCLUDE_LIKE", "WORK_AREA"] } }, select: { pageId: true } }),
+      prisma.company.findUnique({ where: { id: companyId }, select: { planCompareOn: true } }),
+    ]);
+    const renovation = new Set(marks.filter((m) => showsExistingWork(m.renovationMarks)).map((m) => m.pageNumber));
+    const hasAside = new Set(aside.map((a) => a.pageId));
+    const paired = renovation.size > 0 && company?.planCompareOn === true ? (await pairingsForPlan(plan.id)).byPage : new Map<number, unknown>();
+    for (const page of withWalls) {
+      if (!renovation.has(page.pageNumber) || hasAside.has(page.id) || paired.has(page.pageNumber)) continue;
+      const sheet = sheetOf(page.pageNumber, page.calibrations[0]);
+      const units = page.measurements.reduce((n, m) => n + (m.xs.length === 2 ? Math.hypot(m.xs[1]! - m.xs[0]!, m.ys[1]! - m.ys[0]!) : 0), 0);
+      items.push({ kind: "existing", key: `existing:${page.pageNumber}`, pageNumber: page.pageNumber, sheet: sheet.sheet, walls: page.measurements.length, feet: sheet.feetPerUnit === null ? null : units * sheet.feetPerUnit });
+    }
   }
 
   // ── WHAT POSTED ITSELF: the proven sources' runs (`autoPost.ts`), per sheet, for the queue's header and Undo ──

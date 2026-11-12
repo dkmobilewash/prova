@@ -86,6 +86,12 @@ export type ReviewItem =
    * one per sheet its keyless titles called a plan — the accept-job walks, 2026-11-10).
    */
   | { kind: "scale"; key: string; pageNumber: number; sheet: string; pages?: { pageNumber: number; sheet: string }[] }
+  /**
+   * A renovation sheet (its words say it shows existing work) whose walls are in the queue and
+   * nothing set aside yet: one step sets aside every wall drawn like one existing wall the person
+   * picks (`setAsideLike.ts`). Not on a sheet a demolition plan handles (plan comparison).
+   */
+  | { kind: "existing"; key: string; pageNumber: number; sheet: string; walls: number; feet: number | null }
   | { kind: "price"; key: string; lineItemId: string; description: string; quantity: string; unit: string | null; askCost: boolean; costCategory: CostCategoryValue | null };
 
 const length = (run: QueueRun) => Math.hypot(run.x2 - run.x1, run.y2 - run.y1);
@@ -438,10 +444,12 @@ export function sameWindowsOnOtherFloors(
 // What saves the most time first (Chrome's re-test): a group is one key for
 // dozens of feet, a held wall one key for one run. So groups and windows,
 // then the held walls, sheet by sheet.
-const KIND_ORDER: ReviewItem["kind"][] = ["type", "height", "windows", "wall", "scale", "price"];
+// A renovation sheet's existing walls go first: typing or keeping a wall that is not new work is
+// the press that is wasted.
+const KIND_ORDER: ReviewItem["kind"][] = ["existing", "type", "height", "windows", "wall", "scale", "price"];
 
 /** What the queue counts each kind as, for "Groups 3 of 8 · Held walls 0 of 34". */
-export const QUEUE_PART: Record<ReviewItem["kind"], string> = { type: "Groups", height: "Groups", windows: "Windows", wall: "Held walls", scale: "Scales", price: "Prices" };
+export const QUEUE_PART: Record<ReviewItem["kind"], string> = { existing: "Existing walls", type: "Groups", height: "Groups", windows: "Windows", wall: "Held walls", scale: "Scales", price: "Prices" };
 
 /** A sheet's suggested windows, until they are confirmed. */
 export function windowsItem(sheet: QueueSheet, stored: { windows: readonly ({ tag: string } & QueueRun)[]; decided?: boolean }): ReviewItem | null {
