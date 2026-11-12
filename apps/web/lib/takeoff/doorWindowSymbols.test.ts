@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
-import { doorArcCandidates, doorSymbols, exteriorWalls, tagsNameEveryWindow, windowSymbols, WIDEST_WINDOW_FEET, onlyMarkedDoors } from "./doorWindowSymbols";
+import { doorArcCandidates, doorSymbols, exteriorWalls, tagsNameEveryWindow, windowSymbols, WIDEST_WINDOW_FEET, onlyMarkedDoors, FULL_FRAME_FEET, FULL_FRAME_MAX_FEET } from "./doorWindowSymbols";
 
 /** One foot = 0.01 page-width units here, so feetPerUnit is 100. */
 const FPU = 100;
@@ -161,6 +161,17 @@ describe("window symbols", () => {
     // Frame, glass, frame inside the wall is (the test above), and a tag beside
     // the faces-and-roof pattern overrides the rule: the drawing says window.
     expect(windowSymbols(facesAndRoof, box, FPU, [{ x: 0.57, y: 0.4 - ft(3) }])).toHaveLength(1);
+  });
+
+  it("a full frame drawn wider than the paired wall is a window; a narrow three-line one is not (Crosslines, Topeka)", () => {
+    // Five lines across 14 in, centred on the 8 in north wall: the outer two sit 3 in past its faces.
+    const offs = [-0.58, -0.33, 0, 0.33, 0.58];
+    const full = (x1: number, x2: number, os = offs): StrokeSegment[] => os.map((o) => ({ x1, y1: 0.4 + ft(o), x2, y2: 0.4 + ft(o) }));
+    expect(windowSymbols(full(0.5, 0.54), box, FPU)).toHaveLength(1);
+    // Under FULL_FRAME_FEET wide, or with fewer than FULL_FRAME_LINES lines, a line past the faces still rules it out.
+    expect(windowSymbols(full(0.5, 0.5 + ft(FULL_FRAME_FEET - 0.3)), box, FPU)).toHaveLength(0);
+    expect(windowSymbols(full(0.5, 0.54, [-0.58, -0.33, 0, 0.33]), box, FPU)).toHaveLength(0);
+    expect(windowSymbols(full(0.5, 0.5 + ft(FULL_FRAME_MAX_FEET + 1)), box, FPU)).toHaveLength(0);
   });
 
   it("gives a tag to the NEAREST candidate only, and to the lites drawn like it", () => {
