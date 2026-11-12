@@ -90,6 +90,8 @@ describe("every eval refuses to run without a key", () => {
    * and one the guard re-proves is a second kind of guarantee.
    */
   const KEYLESS_EVALS: Record<string, string> = {
+    "zzZeroTouch.eval.ts":
+      "calls no model: AUTOMATION-PLAN item F. Opens every keyed set, presses nothing, and prices what reaches the estimate (un-held wall runs after the app's own demolition comparison, marked doors) against the key through one deterministic price table; then the same after ten review answers taken from the key. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR, ZT_OUT and TAKEOFF_WALL_MODEL, and asserts at least one labelled sheet was read",
     "setAsideLike.eval.ts":
       "calls no model: on the product's offered walls for each named renovation sheet, the labels play the person picking walls to set aside like (`wallsLikeThese`) and counts the presses before and after the queue's one-step set-aside. Skips without REAL_PLAN_DIR and SA_SHEETS and asserts at least one sheet was measured",
     "scaleSnap.eval.ts":
