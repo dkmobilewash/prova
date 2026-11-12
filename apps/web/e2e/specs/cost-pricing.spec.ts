@@ -76,7 +76,6 @@ test.describe("cost pricing in the review queue", () => {
     await openJobTab(page, "Takeoff");
     await stubDocumentUpload(page);
     await page.locator('input[type="file"]').first().setInputFiles(S02);
-    await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
     // Two lines a takeoff would write: one material with its category, one
     // with none (the queue asks for it).

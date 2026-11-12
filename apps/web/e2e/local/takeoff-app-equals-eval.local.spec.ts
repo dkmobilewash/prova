@@ -80,7 +80,6 @@ test.describe("the app's candidate list against the eval's", () => {
       await page.waitForURL(new RegExp(`/jobs/${id}/takeoff$`));
       await stubDocumentUpload(page);
       await page.locator('input[type="file"]').setInputFiles(file);
-      await page.getByRole("button", { name: "Add a drawing" }).click();
       await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 180_000 });
       await page.goto(`/takeoff/${id}?key=1`);
       await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();

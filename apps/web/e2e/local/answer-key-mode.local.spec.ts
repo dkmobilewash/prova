@@ -125,7 +125,6 @@ test.describe("answer-key mode in the takeoff workspace", () => {
     await page.waitForURL(new RegExp(`/jobs/${jobOne}/takeoff$`));
     await stubDocumentUpload(page);
     await page.locator('input[type="file"]').setInputFiles(path.join(FIXTURES, "S02.pdf"));
-    await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
     await setScaleByClicking(48);
     await expectHealthy(page, "takeoff tab, S02 scaled", { monitor });

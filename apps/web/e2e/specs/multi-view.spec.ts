@@ -142,7 +142,6 @@ test.describe("a sheet that carries more than one drawing", () => {
     servedPdf = readFileSync(pdf);
     await stubDocumentUpload(page);
     await page.locator('input[type="file"]').setInputFiles(pdf);
-    await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({
       timeout: 60_000,
     });
