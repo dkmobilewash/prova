@@ -10,6 +10,7 @@ import { formatCalendarDate } from "@/lib/render-date";
 import { requireCapability } from "@/lib/authz";
 import { loadPurchaseOrderDraft } from "@/lib/ask/drafts";
 import { SendDocument, SendHistory } from "@/components/SendDocument";
+import { SendPurchaseOrder } from "@/components/SendPurchaseOrder";
 import { purchaseOrderEmail } from "@/lib/document-email";
 import { purchaseOrderDocument } from "@/lib/purchase-order-document";
 import { purchaseOrderFileName } from "@/lib/purchase-order-pdf";
@@ -208,6 +209,21 @@ export default async function BuyoutPage({
                     </ul>
                     <div className="mt-3 flex flex-col items-start gap-2">
                       <SendHistory sends={sends.get(po.id) ?? []} />
+                      {po.status === "DRAFT" && po.lines.length > 0 && (
+                        <SendPurchaseOrder
+                          id={po.id}
+                          document={document}
+                          email={purchaseOrderEmail({
+                            company: company.dbaName ?? company.name,
+                            jobName: job.name,
+                            number: po.number,
+                            total: money(total),
+                            fileName: purchaseOrderFileName(document),
+                            vendorName: po.vendor.name,
+                            vendorEmail: po.vendor.email,
+                          })}
+                        />
+                      )}
                       {po.status !== "DRAFT" && (
                         <SendDocument
                           target={{ kind: "PURCHASE_ORDER", id: po.id }}

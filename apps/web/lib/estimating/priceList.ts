@@ -32,6 +32,21 @@ const CANONICAL_UNIT: Record<string, string> = {
 
 export const MAX_PRICE_ROWS = 1000;
 
+/**
+ * The supplier's email for orders, when the list prints one: the first address above the price
+ * table that is not on a customer, bill-to, ship-to or sold-to line (that one is the buyer's own).
+ * Only a suggestion for the import form, which a person reads and can change before Import.
+ */
+export function contactEmailIn(text: string): string | null {
+  for (const line of text.split(/\r?\n/).slice(0, 40)) {
+    if (isHeaderRow(line.split(","))) break;
+    if (/customer|bill\s*to|ship\s*to|sold\s*to/i.test(line)) continue;
+    const found = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/.exec(line);
+    if (found) return found[0];
+  }
+  return null;
+}
+
 /** The rows of a price list's text and the header the columns are named by. */
 export function priceListTable(text: string): { header: string[]; rows: { line: number; cells: string[] }[] } {
   const records = parseCsvRecords(text).map((r) => ({ line: r.line, cells: r.cells.map((c) => c.trim()) }));
