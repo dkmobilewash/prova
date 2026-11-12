@@ -23,7 +23,8 @@ import { levelHeight, runLevels } from "@/lib/takeoff/levelHeights";
 import { heightBasis } from "@/lib/takeoff/wallHeights";
 import { roomPitched, runPitched } from "@/lib/takeoff/roofParts";
 import { storedRoofParts } from "@/lib/takeoff/roofPartsRead";
-import { fillOfRuns, GENERAL_HEIGHT_KEY, heightItem, reviewQueue, splitByLevel, splitByRoof, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { answeredTagTypes, fillOfRuns, GENERAL_HEIGHT_KEY, heightItem, reviewQueue, splitByLevel, splitByRoof, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { plainTag } from "@/lib/takeoff/planTextTags";
 import { storedWindowsOf, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
 import { refreshSuggestionsAfterResponse } from "@/lib/takeoff/suggestionRefresh";
 import { buildingHeights, feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/takeoff/wallHeight";
@@ -174,6 +175,15 @@ export async function loadReviewQueue(
   for (const read of await prisma.takeoffPlanTextRead.findMany({ where: { planId: plan.id, kind: VARIANT_NOTES }, select: { pageNumber: true, value: true } })) {
     if (read.value !== null && typeof read.value === "object" && !Array.isArray(read.value)) notesByPage.set(read.pageNumber, Object.fromEntries(Object.entries(read.value as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string")));
   }
+  // ── EACH PRINTED TAG'S TYPE AS THIS JOB ANSWERED IT (`answeredTagTypes`), read back from what was typed ──
+  const [taggedRows, typedRuns] = await Promise.all([
+    prisma.takeoffWallProposal.findMany({ where: { source: "TAG", namedCode: { not: null }, page: { planId: plan.id } }, select: { namedCode: true, runs: true } }),
+    prisma.takeoffMeasurement.findMany({ where: { kind: "LINEAR", page: { planId: plan.id }, item: { wallTypeId: { not: null } } }, select: { xs: true, ys: true, item: { select: { wallType: { select: { code: true } } } } } }),
+  ]);
+  const tagAnswers = answeredTagTypes(
+    taggedRows.map((row) => ({ tag: plainTag(row.namedCode!), runs: storedRunsOrNull(row.runs) ?? [] })),
+    typedRuns.flatMap((m) => (m.item?.wallType ? [{ xs: m.xs, ys: m.ys, code: m.item.wallType.code }] : [])),
+  );
   for (const page of pages) {
     const sheet = sheetOf(page.pageNumber, page.calibrations[0]);
     for (const m of page.measurements) {
@@ -186,14 +196,20 @@ export async function loadReviewQueue(
     const newest = mine[0]?.createdAt.getTime();
     const rows = mine.filter((row) => row.createdAt.getTime() === newest);
     const named = groupsFromProposals(rows, wallTypes, sheet.feetPerUnit ?? 1);
-    const groups = rows.map((row, at) => ({
+    const groups = rows.map((row, at) => {
+      const tag = row.source === "TAG" && row.namedCode ? plainTag(row.namedCode) : null;
+      const drawn = named === null ? null : suggestType(named[at]!, sheet.sheet, legendCodes, notesByPage.get(page.pageNumber));
+      const answered = drawn === null && tag !== null ? (tagAnswers.get(tag.toUpperCase()) ?? null) : null;
+      return {
       id: row.id,
       inches: row.thicknessInches,
       runs: storedRunsOrNull(row.runs) ?? [],
-      suggested: named === null ? null : suggestType(named[at]!, sheet.sheet, legendCodes, notesByPage.get(page.pageNumber)),
+      tag,
+      suggested: answered === null ? drawn : { code: answered, from: `your answer for tag ${tag} on this job`, drawn: true as const, match: `tag:${tag!.toUpperCase()}`, source: "tag" as const },
       rooms: roomsOn(page.pageNumber),
       ...(row.source === "REMAINDER" ? { fill: fillOfRuns(storedRunsOrNull(row.runs) ?? []) } : {}),
-    }));
+      };
+    });
     const typed = typeItems(sheet, page.measurements.filter((m) => m.label !== HELD_LABEL), groups);
     // ── ITS PLAN'S BUILDING PART: each type's height drawn for it, pre-filled ──
     const pageBuildings = levelsRead.buildings.get(page.pageNumber) ?? [];
