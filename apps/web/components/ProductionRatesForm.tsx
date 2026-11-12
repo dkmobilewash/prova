@@ -47,6 +47,9 @@ export function ProductionRatesForm({ rates }: { rates: ProductionRates }) {
       </label>
       <p className="mt-1 text-sm font-semibold text-ink">Ceilings</p>
       {field("ceilingSfPerHr", "Ceilings", rates.ceilingSfPerHr, "sq ft / hr")}
+      <p className="mt-1 text-sm font-semibold text-ink">Doors (when you install them: Settings, Doors and frames)</p>
+      {field("doorFramesPerHr", "Hollow-metal frames set", rates.doorFramesPerHr, "frames / hr")}
+      {field("doorsPerHr", "Doors hung, with hardware", rates.doorsPerHr, "doors / hr")}
       <p className="mt-1 text-sm font-semibold text-ink">Taller walls take longer</p>
       {field("over10Multiplier", "Hours × for walls over 10 ft", rates.over10Multiplier, "×")}
       {field("over14Multiplier", "Hours × for walls over 14 ft", rates.over14Multiplier, "×")}

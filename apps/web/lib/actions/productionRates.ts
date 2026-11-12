@@ -36,6 +36,8 @@ export async function saveProductionRates(formData: FormData): Promise<ActionRes
       finishSfPerHr: { level3: n("finishLevel3", "Level 3 finish", 2000), level4: n("finishLevel4", "Level 4 finish", 2000), level5: n("finishLevel5", "Level 5 finish", 2000) },
       defaultFinishLevel: level === "3" ? 3 : level === "5" ? 5 : 4,
       ceilingSfPerHr: n("ceilingSfPerHr", "Ceilings", 2000),
+      doorFramesPerHr: n("doorFramesPerHr", "Door frames", 100),
+      doorsPerHr: n("doorsPerHr", "Doors", 100),
       over10Multiplier: over10,
       over14Multiplier: over14,
       crewRatePerHr: n("crewRatePerHr", "Crew rate", 1000),
