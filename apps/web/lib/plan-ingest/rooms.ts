@@ -8,6 +8,7 @@ import { ceilingsForRooms, type CeilingPageText } from "@/lib/takeoff/roomCeilin
 import type { DetectedBoundary } from "@/lib/takeoff/detectWallsForCalibration";
 import { doorsAndWindowsForSheet } from "@/lib/takeoff/doorsWindows";
 import { postAutoDoors } from "./autoDoors";
+import { assignWallHeights } from "@/lib/takeoff/wallHeightsAssign";
 import { DOOR_HEIGHT_FEET, finishLineLabel, finishTakeoff, typesFromNeighbours, typeTagsInRooms, WINDOW_HEIGHT_FEET } from "@/lib/takeoff/finishTakeoff";
 import { readFinishSchedule, type FinishSchedule } from "@/lib/takeoff/finishSchedule";
 import { sheetRooms } from "@/lib/takeoff/sheetRooms";
@@ -255,6 +256,9 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
     await prisma.$transaction(async (tx) => {
       await writeRoomRows(tx, input.companyId, input.jobId, built.rows);
     });
+    // ── EVERY WALL A HEIGHT (D): what the drawing prints, else the company's default, assumed ──
+    await assignWallHeights({ planId: input.planId, pageId: page.id, pageNumber: input.pageNumber, companyId: input.companyId, jobId: input.jobId, doc })
+      .catch((error) => console.error("[rooms] wall heights failed", { planId: input.planId, pageNumber: input.pageNumber }, error));
     // ── THE FINISH TAKEOFF, THE VIEWER'S SAME STEPS ──
     const schedule = await setFinishSchedule(doc, input.planId, page.plan._count.sheetTexts);
     if (schedule !== null) {

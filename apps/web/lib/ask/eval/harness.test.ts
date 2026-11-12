@@ -92,6 +92,8 @@ describe("every eval refuses to run without a key", () => {
   const KEYLESS_EVALS: Record<string, string> = {
     "legendText.eval.ts":
       "calls no model: AUTOMATION-PLAN item C. The keyless legend read (`readLegendFromText`) on every set page with a cached model read, compared code by code and field by field with that read. Skips without LEGEND_CACHE and REAL_PLAN_DIR, and asserts at least one cached read was compared",
+    "zzHeightsByCode.eval.ts":
+      "calls no model: AUTOMATION-PLAN item D. Closes rooms from each labelled sheet's walls, reads the set's ceilings, notes and sections by code, and scores each wall's height (the printed rule, the measured-not-shipped level 2, each level-3 convention) and its board dollars against heights-key-v1; held-out only with HB_HELD=1, measured once. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR, HEIGHTS_KEY and HB_OUT, and asserts at least one row was written",
     "zzZeroTouch.eval.ts":
       "calls no model: AUTOMATION-PLAN item F. Opens every keyed set, presses nothing, and prices what reaches the estimate (un-held wall runs after the app's own demolition comparison, marked doors) against the key through one deterministic price table; then the same after ten review answers taken from the key. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR, ZT_OUT and TAKEOFF_WALL_MODEL, and asserts at least one labelled sheet was read",
     "setAsideLike.eval.ts":
