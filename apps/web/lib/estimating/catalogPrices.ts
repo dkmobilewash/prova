@@ -15,7 +15,7 @@ type Tx = Prisma.TransactionClient;
  * that already has a price is never touched: re-pricing a bid somebody may have sent is a decision,
  * not a side effect of an import. A job whose markup is not set is left alone and counted.
  */
-export async function applyCatalogPrices(tx: Tx, companyId: string, direct: { componentIds: string[]; entryId: string }[] = []): Promise<{ linked: number; priced: number; jobs: number; noMarkup: number }> {
+export async function applyCatalogPrices(tx: Tx, companyId: string, direct: { componentIds: string[]; entryId: string }[] = [], onlyJobId?: string): Promise<{ linked: number; priced: number; jobs: number; noMarkup: number }> {
   const entries = await tx.lineItemCatalogEntry.findMany({ where: { companyId }, select: { id: true, description: true, unit: true } });
   const catalog = catalogByMaterial(entries);
   const loose = await tx.wallTypeComponent.findMany({ where: { wallType: { companyId }, catalogEntryId: null }, select: { id: true, description: true, unit: true } });
@@ -31,8 +31,13 @@ export async function applyCatalogPrices(tx: Tx, companyId: string, direct: { co
   }
 
   const lines = await tx.jobLineItem.findMany({
-    where: { isDeleted: false, unitPrice: null, job: { companyId, status: "ESTIMATE" }, wallTypeComponent: { catalogEntry: { defaultBudgetedUnitCost: { not: null } } } },
-    select: { id: true, jobId: true, quantity: true, wallTypeComponent: { select: { catalogEntry: { select: { id: true, defaultBudgetedUnitCost: true } } } } },
+    where: {
+      isDeleted: false,
+      unitPrice: null,
+      job: { companyId, status: "ESTIMATE", ...(onlyJobId ? { id: onlyJobId } : {}) },
+      wallTypeComponent: { catalogEntry: { OR: [{ defaultBudgetedUnitCost: { not: null } }, { defaultUnitPrice: { not: null } }] } },
+    },
+    select: { id: true, jobId: true, quantity: true, costCategory: true, wallTypeComponent: { select: { catalogEntry: { select: { id: true, defaultBudgetedUnitCost: true, defaultUnitPrice: true, costCategory: true } } } } },
   });
   const ratesByJob = new Map<string, RecapRates | null>();
   const defaults = await tx.companyBidDefaults.findUnique({ where: { companyId } });
@@ -40,6 +45,16 @@ export async function applyCatalogPrices(tx: Tx, companyId: string, direct: { co
   const jobs = new Set<string>();
   const noMarkup = new Set<string>();
   for (const line of lines) {
+    const entry = line.wallTypeComponent!.catalogEntry!;
+    // The entry's own category (a labor price takes the labor markup), else the part's, else material.
+    const costCategory = entry.costCategory ?? line.costCategory ?? "MATERIAL";
+    // A price-book entry holding a selling price and no cost: that price is the company's answer.
+    if (entry.defaultBudgetedUnitCost === null) {
+      await tx.jobLineItem.update({ where: { id: line.id }, data: { unitPrice: entry.defaultUnitPrice, costCategory, productionRate: undefined, sourceCatalogEntryId: entry.id, priceBasis: "COMPANY_CATALOG" } });
+      priced += 1;
+      jobs.add(line.jobId);
+      continue;
+    }
     if (!ratesByJob.has(line.jobId)) {
       const recap = await tx.jobBidRecap.findFirst({ where: { jobId: line.jobId, companyId } });
       ratesByJob.set(line.jobId, ratesFrom(recap ?? defaults));
@@ -49,9 +64,8 @@ export async function applyCatalogPrices(tx: Tx, companyId: string, direct: { co
       noMarkup.add(line.jobId);
       continue;
     }
-    const entry = line.wallTypeComponent!.catalogEntry!;
     const cost = Number(entry.defaultBudgetedUnitCost);
-    const unitPrice = unitPriceFromCost({ quantity: Number(line.quantity), unitCost: cost, costCategory: "MATERIAL" }, rates);
+    const unitPrice = unitPriceFromCost({ quantity: Number(line.quantity), unitCost: cost, costCategory }, rates);
     if (unitPrice === null) continue;
     await tx.jobLineItem.update({
       where: { id: line.id },
@@ -59,7 +73,7 @@ export async function applyCatalogPrices(tx: Tx, companyId: string, direct: { co
         budgetedUnitCost: entry.defaultBudgetedUnitCost,
         currentEstimatedUnitCost: entry.defaultBudgetedUnitCost,
         unitPrice,
-        costCategory: "MATERIAL",
+        costCategory,
         // The entry came from a price list and carries no production rate; the line keeps its part's.
         productionRate: undefined,
         sourceCatalogEntryId: entry.id,

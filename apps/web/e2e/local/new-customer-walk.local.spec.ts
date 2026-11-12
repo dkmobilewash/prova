@@ -42,6 +42,13 @@ const OUT = process.env.WALK_OUT ?? "";
 const NO_AI = process.env.WALK_NO_AI === "1";
 const RENO = process.env.WALK_RENO === "1";
 /**
+ * WALK_KNOWN_PRICES=1: a company that already holds the four costs the walk would type into the
+ * queue, written in before the job as earlier work would have left them (not counted as presses):
+ * studs and track on an imported supplier list in the supplier's words, board and hang-and-finish
+ * in the price book under the part's own words. Same costs, so the same total.
+ */
+const KNOWN_PRICES = process.env.WALK_KNOWN_PRICES === "1";
+/**
  * WALK_PLAN_COMPARE=1: the owner turns on "Compare renovation sheets with their demolition plan" (no model).
  * WALK_PLAN_COMPARE=0: the owner turns it OFF (it is on for a new company, #1087) — the set nobody compared,
  * which the bid check's existing-walls check is for.
@@ -279,6 +286,18 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const types = await prisma.wallType.count({ where: { companyId } });
       const templates = await prisma.estimateTemplate.count({ where: { companyId } });
       note(`The preset left ${types} wall types and ${templates} estimate template(s).`);
+      if (KNOWN_PRICES) {
+        const vendor = await prisma.vendor.create({ data: { companyId, name: "Northgate Supply" } });
+        const listed = async (description: string, unit: string, cost: string) => {
+          const entry = await prisma.lineItemCatalogEntry.create({ data: { companyId, description, unit, defaultBudgetedUnitCost: cost } });
+          await prisma.vendorPriceQuote.create({ data: { companyId, vendorId: vendor.id, catalogEntryId: entry.id, description, unit, unitPrice: cost, quotedOn: new Date(), source: "PRICE_LIST" } });
+        };
+        await listed('3-5/8" 20ga steel stud', "EA", "4.10");
+        await listed('3-5/8" 20ga track', "LF", "0.95");
+        await prisma.lineItemCatalogEntry.create({ data: { companyId, description: "⅝″ Type X board, 4x8 sheets", unit: "sheet", defaultBudgetedUnitCost: "14.00" } });
+        await prisma.lineItemCatalogEntry.create({ data: { companyId, description: "Hang, tape and finish ⅝″ board", unit: "sf", defaultBudgetedUnitCost: "1.10", costCategory: "LABOR" } });
+        note("The company already holds: Northgate Supply's list (3-5/8\" 20ga stud $4.10 EA, track $0.95 LF); price book (⅝″ Type X board $14.00/sheet, hang and finish $1.10/sf labor).");
+      }
     });
 
     // ── 3. CREATE THE JOB ──
@@ -913,6 +932,8 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       note(`${lines.length} lines: ${lines.map((l) => `${l.description} ${l.quantity ?? ""} ${l.unit ?? ""} @ ${l.unitPrice ?? "—"}`).join(" | ").slice(0, 900)}`);
       const unpriced = lines.filter((l) => l.unitPrice === null).length;
       if (unpriced > 0) note(`${unpriced} lines still unpriced after the queue.`);
+      const sources = await page.locator('[data-estimate="price-source"]').allTextContents();
+      note(`Price sources shown: ${sources.length === 0 ? "none" : sources.join(" | ")}`);
     });
 
     // ── 9. SET MARKUP ──

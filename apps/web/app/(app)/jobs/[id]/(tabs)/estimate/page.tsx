@@ -462,7 +462,7 @@ export default async function JobEstimatePage({
   const sourceIds = [...new Set(job.lineItems.map((l) => l.sourceCatalogEntryId).filter((id): id is string => id !== null))];
   const sourceEntries = sourceIds.length === 0 ? [] : await prisma.lineItemCatalogEntry.findMany({
     where: { id: { in: sourceIds }, companyId: company.id },
-    select: { id: true, description: true, defaultBudgetedUnitCost: true, priceQuotes: { select: { description: true, unit: true, unitPrice: true, quotedOn: true, vendor: { select: { name: true } } } } },
+    select: { id: true, description: true, defaultBudgetedUnitCost: true, defaultUnitPrice: true, priceQuotes: { select: { description: true, unit: true, unitPrice: true, quotedOn: true, vendor: { select: { name: true } } } } },
   });
   const rollLf = standardsFrom(bidDefaults?.assemblyStandards).tapeRollLf;
   const sources = new Map<string, PriceSource | null>(sourceEntries.map((e) => [e.id, priceSource(e, e.priceQuotes, rollLf, new Date(`${serverToday()}T00:00:00.000Z`))]));
@@ -472,6 +472,13 @@ export default async function JobEstimatePage({
     // The line's own cost has to be the list's, too: a cost typed over it is the estimator's, not the supplier's.
     if (!entry || entry.defaultBudgetedUnitCost === null || item.budgetedUnitCost === null || !entry.defaultBudgetedUnitCost.equals(item.budgetedUnitCost)) return null;
     return sources.get(item.sourceCatalogEntryId) ?? null;
+  };
+  // A catalog price with no supplier list behind it: the price book entry it came from, while the line still holds it.
+  const priceBookFor = (item: (typeof job.lineItems)[number]): string | null => {
+    const entry = item.sourceCatalogEntryId === null ? undefined : sourceEntries.find((e) => e.id === item.sourceCatalogEntryId);
+    if (!entry || sourceFor(item) !== null) return null;
+    const holds = entry.defaultBudgetedUnitCost !== null ? item.budgetedUnitCost !== null && entry.defaultBudgetedUnitCost.equals(item.budgetedUnitCost) : entry.defaultUnitPrice !== null && item.unitPrice !== null && entry.defaultUnitPrice.equals(item.unitPrice);
+    return holds ? entry.description : null;
   };
 
   const lineItemWip = job.lineItems.map((item) => ({
@@ -980,6 +987,11 @@ export default async function JobEstimatePage({
                                 · over 90 days old
                               </span>
                             )}
+                          </span>
+                        )}
+                        {priceBookFor(item) !== null && (
+                          <span className="block text-xs text-ink-muted" data-estimate="price-source">
+                            Your price book: {priceBookFor(item)}
                           </span>
                         )}
                         {specSaysFor(item) !== "" && (
