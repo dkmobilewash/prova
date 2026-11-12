@@ -83,6 +83,14 @@ export async function applyTradePreset(choice: string): Promise<ActionResult> {
         });
       }
     }
+    // The trade's usual inclusions and exclusions, into the clause library (once: this runs once per company).
+    const clauses = [
+      ...preset.clauses.inclusions.map((text) => ({ kind: "INCLUSION" as const, text })),
+      ...preset.clauses.exclusions.map((text) => ({ kind: "EXCLUSION" as const, text })),
+    ];
+    if (clauses.length > 0 && (await tx.proposalClause.count({ where: { companyId } })) === 0) {
+      await tx.proposalClause.createMany({ data: clauses.map((c, sortOrder) => ({ companyId, ...c, sortOrder })) });
+    }
   });
 
   revalidatePath("/settings");

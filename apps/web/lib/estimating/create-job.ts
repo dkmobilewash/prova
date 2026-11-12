@@ -130,6 +130,15 @@ export async function createEstimateJob(
       },
       select: { id: true },
     });
+    // ── THE PROPOSAL STARTS WITH THE COMPANY'S STANDARD INCLUSIONS AND EXCLUSIONS ──
+    // The clauses the library holds are, in its own words, the ones repeated on every bid; so a
+    // new job starts with them, as the same snapshot copies the proposal page's own add makes,
+    // and Send no longer stops a new user to type them (the Baker flow walk: 6 of Send's 13
+    // presses). Edited or removed per job on the proposal before anything is sent.
+    const standard = await tx.proposalClause.findMany({ where: { companyId, kind: { in: ["INCLUSION", "EXCLUSION"] } }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], select: { kind: true, text: true } });
+    if (standard.length > 0) {
+      await tx.jobProposalClause.createMany({ data: standard.map((c, sortOrder) => ({ companyId, jobId: job.id, kind: c.kind, text: c.text, sortOrder })) });
+    }
     return {
       ok: true,
       value: { jobId: job.id, contactId, contactCreated, alreadyExisted: false },

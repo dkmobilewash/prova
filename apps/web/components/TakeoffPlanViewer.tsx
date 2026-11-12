@@ -27,7 +27,7 @@ import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 import { DISTINCT_MARKS, DOOR_COLOUR, LAYER_COLOURS, ROOM_COLOUR, markFor } from "@/lib/takeoff/clusterMarks";
 import { TakeoffLayerPanel, type Layer } from "@/components/TakeoffLayerPanel";
 import { defaultLayerName, layerKeyOf } from "@/lib/takeoff/layerKey";
-import { postSheetWalls, renameTakeoffLayer, setWallGroupHeight, takeoffSetPages } from "@/lib/actions";
+import { postSheetWalls, renameTakeoffLayer, savePlanComparison, setWallGroupHeight, takeoffSetPages } from "@/lib/actions";
 import { SetWallHeight } from "./SetWallHeight";
 import type { TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
 import { areaLine, ceilingOption, heightFrom, heightOptionsInOrder, wallSquareFeet, type CeilingRoom, type HeightOption } from "@/lib/takeoff/wallHeight";
@@ -1170,6 +1170,10 @@ export function TakeoffPlanViewer({
   useEffect(() => () => void (postWait.current = null), []);
   /** A sheet whose stored groups replace a live find once they are posted (`postWhenStored`). */
   const [preferStored, setPreferStored] = useState<number | null>(null);
+  // The stored walls as they were when Run takeoff found the sheet again on the server
+  // (`refound`): those are stale, so the sheet waits for the render that brings the new ones.
+  const staleStored = useRef<unknown>(null);
+  const storedNowRef = useRef<unknown>(null);
   async function postWhenStored(sheetAt: number) {
     const mine = {};
     postWait.current = mine;
@@ -1189,6 +1193,7 @@ export function TakeoffPlanViewer({
       // Baker: one 7-3/8" 114 ft group here, C8B 117 ft in the queue, gone on
       // reload). The post's own render brings the stored groups; they take over.
       if (posted.ok) {
+        if (posted.value.refound === true) staleStored.current = storedNowRef.current;
         seeded.current.delete(sheetAt);
         setPreferStored(sheetAt);
       }
@@ -3335,8 +3340,12 @@ export function TakeoffPlanViewer({
     };
   }, [suggestionDue, pageNumber]);
 
+  storedNowRef.current = storedWallsByPage;
   useEffect(() => {
     if (seeded.current.has(pageNumber)) return;
+    // Found again on the server: not these, the next ones.
+    if (preferStored === pageNumber && staleStored.current !== null && storedWallsByPage === staleStored.current) return;
+    staleStored.current = null;
     const stored = storedWallsFor(storedWallsByPage, pageNumber);
     if (stored === null) return;
     // NOT OVER THE TOP OF A LIVE RESULT. A press of Find the walls on this very
@@ -4216,6 +4225,13 @@ export function TakeoffPlanViewer({
         }
       }
       setPriorStatus(planCompare === null || offered === null ? null : (prior ?? { page: pageNumber, pairing: null, sheet: null, n: 0, feet: 0, why: null }));
+      // Kept, so the next visit shows what was set aside rather than the renovation prompt again
+      // (E Street A2.1, 2026-11-06 → 11-12). The server's detection stores the same record.
+      if (prior !== null && prior.pairing !== null && prior.sheet !== null && !readOnly) {
+        void savePlanComparison(jobId, planId, pageNumber, { demoPage: prior.pairing.demoPage, sheet: prior.sheet, n: prior.n, feet: prior.feet, why: prior.why }).catch((error) =>
+          console.warn("[takeoff] plan comparison not kept", error),
+        );
+      }
       setUserAside((offered?.setAside ?? []).filter((a) => a.kind === "excluded-like" || a.kind === "outside-work-area"));
       const walls = offered?.offeredRuns ?? found.walls;
       const regroup = found.regroup;
@@ -5509,8 +5525,10 @@ export function TakeoffPlanViewer({
           aside={userAside}
           excludes={exclusionRows.filter((r) => r.kind === "EXCLUDE_LIKE").length}
           existing={existingAside}
+          // The prompt is for a renovation sheet with NO demolition plan paired: a paired one has its
+          // existing walls set aside by the comparison, and says so instead (`existing`).
           renovation={
-            found !== null && renovationOnPage?.page === pageNumber && showsExistingWork(renovationOnPage.marks) && !exclusionRows.some((r) => r.kind === "EXCLUDE_LIKE" || r.kind === "WORK_AREA")
+            found !== null && planCompare?.pairs[pageNumber] === undefined && renovationOnPage?.page === pageNumber && showsExistingWork(renovationOnPage.marks) && !exclusionRows.some((r) => r.kind === "EXCLUDE_LIKE" || r.kind === "WORK_AREA")
               ? renovationOnPage.marks
               : null
           }
