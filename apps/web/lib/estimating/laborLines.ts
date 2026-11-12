@@ -4,6 +4,8 @@ import { openingsFromJson, runGeometry } from "@/lib/wall-assemblies";
 import { openingThresholdSqFt as thresholdFor } from "@/lib/businessScope";
 import { laborAssembly, laborPlan, ratesFromJson, type LaborPlan, type WallForLabor } from "./productionRates";
 import { wallItemsForLabor } from "./takeoff-item-lines";
+import type { DoorScope } from "./doorLines";
+import { AUTO_DOORS_ITEM } from "@/lib/takeoff/autoPost";
 
 type Tx = Prisma.TransactionClient;
 
@@ -38,24 +40,26 @@ export async function syncLaborLines(tx: Tx, companyId: string, jobId: string): 
   const wanted = new Set<string>();
   for (const line of rates.crewRatePerHr === null ? [] : plan.lines) {
     wanted.add(line.description);
+    // An HR line is its hours; a door task is an EA line, its doors, each costing its share of the hours.
+    const quantity = line.quantity ?? line.hours;
     const id = live.get(line.description);
     if (id) {
-      await tx.jobLineItem.update({ where: { id }, data: { quantity: line.hours.toFixed(2), laborHours: line.hours.toFixed(2) } });
+      await tx.jobLineItem.update({ where: { id }, data: { quantity: quantity.toFixed(2), laborHours: line.hours.toFixed(2) } });
       continue;
     }
     if (deletedByHand.has(line.description)) continue;
-    const cost = rates.crewRatePerHr!;
+    const cost = line.quantity === undefined ? rates.crewRatePerHr! : Math.round(((rates.crewRatePerHr! * line.hours) / line.quantity) * 100) / 100;
     await tx.jobLineItem.create({
       data: {
         jobId,
         description: line.description,
-        unit: "HR",
-        quantity: line.hours.toFixed(2),
+        unit: line.unit ?? "HR",
+        quantity: quantity.toFixed(2),
         laborHours: line.hours.toFixed(2),
         costCategory: "LABOR",
         budgetedUnitCost: cost.toFixed(2),
         currentEstimatedUnitCost: cost.toFixed(2),
-        unitPrice: jobRates === null ? null : unitPriceFromCost({ quantity: line.hours, unitCost: cost, costCategory: "LABOR" }, jobRates),
+        unitPrice: jobRates === null ? null : unitPriceFromCost({ quantity, unitCost: cost, costCategory: "LABOR" }, jobRates),
       },
     });
   }
@@ -85,7 +89,7 @@ async function jobRatesFor(tx: Tx, companyId: string, jobId: string): Promise<Re
 export async function laborPlanFor(tx: Tx, companyId: string, jobId: string): Promise<{ rates: ReturnType<typeof ratesFromJson>; plan: LaborPlan }> {
   const defaults = await tx.companyBidDefaults.findUnique({ where: { companyId }, select: { productionRates: true } });
   const rates = ratesFromJson(defaults?.productionRates);
-  return { rates, plan: laborPlan(await wallsForLabor(tx, companyId, jobId, rates.defaultFinishLevel), await ceilingsForLabor(tx, jobId), rates) };
+  return { rates, plan: laborPlan(await wallsForLabor(tx, companyId, jobId, rates.defaultFinishLevel), await ceilingsForLabor(tx, jobId), rates, await doorsForLabor(tx, companyId, jobId)) };
 }
 
 /** The job's priced walls, each at its own height, with what labor needs to know about its wall type. */
@@ -117,6 +121,15 @@ export async function wallsForLabor(tx: Tx, companyId: string, jobId: string, de
 }
 
 /** The job's ceiling lines (the takeoff's "Ceiling — …" items), by their square feet. */
+/** The job's posted doors and who installs them: every point counted on its "Doors" item, and the company's door scope. */
+export async function doorsForLabor(tx: Tx, companyId: string, jobId: string): Promise<{ count: number; scope: DoorScope }> {
+  const company = await tx.company.findUnique({ where: { id: companyId }, select: { doorScope: true } });
+  const scope = company?.doorScope ?? "BY_OTHERS";
+  if (scope === "BY_OTHERS") return { count: 0, scope };
+  const counts = await tx.takeoffMeasurement.findMany({ where: { kind: "COUNT", item: { jobId, companyId, name: AUTO_DOORS_ITEM } }, select: { xs: true } });
+  return { count: counts.reduce((n, m) => n + m.xs.length, 0), scope };
+}
+
 async function ceilingsForLabor(tx: Tx, jobId: string): Promise<{ description: string; squareFeet: number }[]> {
   const lines = await tx.jobLineItem.findMany({
     where: { jobId, isDeleted: false, wallTypeComponentId: null, takeoffItemId: { not: null }, description: { startsWith: "Ceiling — " } },
