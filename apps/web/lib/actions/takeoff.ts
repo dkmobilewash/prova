@@ -732,7 +732,7 @@ export async function confirmSheetScales(
  * again never counts a wall twice (new-customer run v2, M3: it added nothing).
  * Then the sheet's rooms, ceilings and windows, as the whole-set run does.
  */
-export async function postSheetWalls(jobId: string, planId: string, pageNumber: number): Promise<ActionResultWith<{ note: string | null; waiting: boolean }>> {
+export async function postSheetWalls(jobId: string, planId: string, pageNumber: number): Promise<ActionResultWith<{ note: string | null; waiting: boolean; refound?: boolean }>> {
   // A person's action: background wall finders wait for it (`beginUserWork`).
   const working = beginUserWork();
   try {
@@ -743,11 +743,20 @@ export async function postSheetWalls(jobId: string, planId: string, pageNumber: 
       select: {
         id: true,
         measurements: { where: { kind: "LINEAR", source: "DETECTED" }, select: { id: true }, take: 1 },
-        calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true } },
+        calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, createdAt: true, x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } },
       },
     });
     if (page === null) return actionFail("That sheet is no longer on this job. Reload the page.");
-    if (page.measurements.length > 0) return { ok: true, value: { note: null, waiting: false } };
+    // Before "already on the job": walls put there before the comparison was on are found again
+    // with it, and replaced unless one has gone to the estimate (`refreshSheetWalls`).
+    const refound = await comparedFirst({ jobId, planId, pageNumber, pageId: page.id, calibration: page.calibrations[0] ?? null, companyId: context.company.id, userId: context.id });
+    if (refound) {
+      revalidatePath(`/jobs/${jobId}`);
+      revalidatePath(`/takeoff/${jobId}`);
+    }
+    const onJob = await prisma.takeoffMeasurement.count({ where: { pageId: page.id, kind: "LINEAR", source: "DETECTED" } });
+    // `refound`: the stored walls changed, so the screen waits for the new ones (`postWhenStored`).
+    if (onJob > 0) return { ok: true, value: { note: null, waiting: false, ...(refound ? { refound: true } : {}) } };
     const outcome = await wallItemsForSheet({ planId, companyId: context.company.id, jobId, pageNumber, userId: context.id });
     // THE FINDER SAVING A SCALE STARTS MAY NOT HAVE STORED THE WALLS YET. Walk v6:
     // A101's scale at 15:25:06, its walls stored at 15:25:48, and Run takeoff
@@ -777,6 +786,59 @@ export async function postSheetWalls(jobId: string, planId: string, pageNumber: 
   } finally {
     working.end();
   }
+}
+
+/**
+ * ── A PAIRED SHEET'S WALLS, FOUND WITH ITS DEMOLITION PLAN BEFORE THEY ARE POSTED ──
+ *
+ * A sheet's walls are found when its scale is saved, and the comparison with its demolition plan
+ * runs inside that only when the company's switch is on at that moment. E Street A2.1 was scaled,
+ * then the switch turned on, so its stored walls were the whole sheet — existing included — and
+ * Run takeoff posted them as they were: nothing set aside, the renovation prompt back on every visit
+ * (Chrome, waiting since 2026-11-06). So on a paired sheet with the switch on and no comparison
+ * kept (`PRIOR_PLAN_READ`), the walls are found again first, which compares, sets the existing walls
+ * aside and keeps what it did. Nothing posted is moved (`refreshSheetWalls`).
+ */
+async function comparedFirst(input: {
+  jobId: string;
+  planId: string;
+  pageNumber: number;
+  pageId: string;
+  calibration: { id: string; x1: number; y1: number; x2: number; y2: number; declaredDistanceFeet: unknown } | null;
+  companyId: string;
+  userId: string;
+}): Promise<boolean> {
+  if (input.calibration === null) return false;
+  const company = await prisma.company.findUnique({ where: { id: input.companyId }, select: { planCompareOn: true } });
+  if (company?.planCompareOn !== true) return false;
+  const { PRIOR_PLAN_READ, pairingsForPlan } = await import("@/lib/takeoff/priorPlanLoad");
+  const kept = await prisma.takeoffPlanTextRead.count({ where: { planId: input.planId, pageNumber: input.pageNumber, kind: PRIOR_PLAN_READ } });
+  if (kept > 0) return false;
+  if (!(await pairingsForPlan(input.planId)).byPage.has(input.pageNumber)) return false;
+  const c = input.calibration;
+  const feetPerUnit = feetPerPageWidth({ x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, declaredDistanceFeet: Number(c.declaredDistanceFeet) });
+  if (feetPerUnit === null) return false;
+  const types = await prisma.wallType.findMany({
+    where: { companyId: input.companyId },
+    select: { id: true, code: true, name: true, thicknessIn: true, _count: { select: { components: true } } },
+    orderBy: { sortOrder: "asc" },
+  });
+  const { refreshSheetWalls } = await import("@/lib/takeoff/refreshSheetWalls");
+  const outcome = await refreshSheetWalls({
+    pageId: input.pageId,
+    calibrationId: c.id,
+    planId: input.planId,
+    companyId: input.companyId,
+    pageNumber: input.pageNumber,
+    feetPerUnit,
+    wallTypes: types.map((t) => ({ id: t.id, code: t.code, name: t.name, hasParts: t._count.components > 0, thicknessIn: t.thicknessIn === null ? null : Number(t.thicknessIn) })),
+    jobId: input.jobId,
+    userId: input.userId,
+  }).catch((error) => {
+    console.error("[postSheetWalls] finding the walls again with the demolition plan failed", { planId: input.planId, pageNumber: input.pageNumber }, error);
+    return { kind: "failed" as const };
+  });
+  return outcome.kind === "replaced" || outcome.kind === "emptied";
 }
 
 /** How long after a scale is saved its finder may still be storing the walls. Walk v6 took 42 s with six sheets at once. */
@@ -1784,4 +1846,42 @@ export async function recordTakeoffPlanRevision(jobId: string, formData: FormDat
     revalidatePath(`/jobs/${jobId}/takeoff`);
     return actionOk;
   });
+}
+
+/**
+ * ── WHAT PLAN COMPARISON SET ASIDE ON A SHEET, KEPT ──
+ *
+ * The browser compares a sheet with its paired demolition plan when its walls are found, and showed
+ * the result only until the page reloaded: E Street A2.1 then said "This sheet shows existing work…"
+ * again, with the walls already set aside (waiting since 2026-11-06). The server's own detection
+ * stores the same record (`PRIOR_PLAN_READ`, `detectWallsForCalibration`); this stores the
+ * browser's, so every later visit shows "Existing walls set aside using demolition plan A1.1".
+ */
+export async function savePlanComparison(
+  jobId: string,
+  planId: string,
+  pageNumber: number,
+  result: { demoPage: number; sheet: string; n: number; feet: number; why: string | null },
+): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const plan = await prisma.takeoffPlan.findFirst({ where: planScope(planId, jobId, context.company.id), select: { id: true } });
+  if (!plan) return actionFail("That plan is no longer on this job. Reload the page.");
+  const page = Math.trunc(Number(pageNumber));
+  const ok =
+    Number.isFinite(page) && page >= 1 &&
+    Number.isInteger(result.demoPage) && result.demoPage >= 1 && result.demoPage !== page &&
+    typeof result.sheet === "string" && result.sheet.length <= 64 &&
+    Number.isInteger(result.n) && result.n >= 0 &&
+    Number.isFinite(result.feet) && result.feet >= 0 &&
+    (result.why === null || (typeof result.why === "string" && result.why.length <= 300));
+  if (!ok) return actionFail("That comparison could not be saved.");
+  const { PRIOR_PLAN_READ } = await import("@/lib/takeoff/priorPlanLoad");
+  const value = { demoPage: result.demoPage, sheet: result.sheet, n: result.n, feet: result.feet, why: result.why };
+  await prisma.takeoffPlanTextRead.upsert({
+    where: { planId_pageNumber_kind: { planId: plan.id, pageNumber: page, kind: PRIOR_PLAN_READ } },
+    create: { planId: plan.id, pageNumber: page, kind: PRIOR_PLAN_READ, value },
+    update: { value, computedAt: new Date() },
+  });
+  return actionOk;
 }

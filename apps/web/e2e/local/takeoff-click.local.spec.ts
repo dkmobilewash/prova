@@ -603,6 +603,19 @@ test("B9-2 switch on: the set-aside line replaces the prompt, and the total says
   await page.screenshot({ path: join(SHOTS_B9, "a21-existing-aside.png") });
 });
 
+test("B9-2b leave A2.1 and come back: the set-aside line and the split total stay, and the prompt does not return", async () => {
+  // Chrome, 2026-11-06 → 11-12: the comparison was shown only until the page reloaded, then the
+  // yellow "This sheet shows existing work…" prompt came back. It is kept now (`savePlanComparison`).
+  await expect.poll(async () => prisma.takeoffPlanTextRead.count({ where: { plan: { jobId: SETS.estreet.id }, pageNumber: 28, kind: "prior-plan" } }), { timeout: 30_000 }).toBe(1);
+  const before = await hook("existing-aside").innerText();
+  await sheet("estreet", 24);
+  await page.reload();
+  await sheet("estreet", 28);
+  await expect(hook("existing-aside")).toHaveText(before, { timeout: 60_000 });
+  await expect(hook("renovation-prompt")).toHaveCount(0);
+  await expect(hook("wall-total")).toContainText(/ ft new \([\d,]+ ft existing set aside\)$/, { timeout: 60_000 });
+});
+
 test("B9-3 A1.1 says it is not counted, and what it is used for", async () => {
   await sheet("estreet", 24);
   await expect(hook("demo-not-counted")).toHaveText("Not counted: used to set aside existing walls on A2.1.");
