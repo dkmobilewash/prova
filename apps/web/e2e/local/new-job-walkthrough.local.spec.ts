@@ -167,7 +167,6 @@ test("4. upload the plans", async () => {
   await stubDocumentUpload(page);
   await hydrated(page, 'input[type="file"]');
   await page.locator('input[type="file"]').first().setInputFiles(S02);
-  await page.getByRole("button", { name: "Add a drawing" }).click();
   const asked = await seen(page.getByRole("button", { name: "Which revision is this?" }), 60_000);
   await sheetDrawn(page).catch(() => {});
   await record(page, "plans-uploaded", [asked ? "After upload the tab asks which revision this is." : "STUCK: no sign the upload took after 60 s."]);

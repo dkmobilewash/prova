@@ -55,7 +55,6 @@ test.describe("a big plan set uploads in resumable parts", () => {
     await openJobTab(page, "Takeoff");
     const stub = await stubDocumentUpload(page);
     await page.locator('input[type="file"]').first().setInputFiles(bigPdf("ZZ-E2E big set.pdf"));
-    await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.locator('[data-takeoff="plan-upload-progress-text"]')).toContainText(/of 101\.0 MB · \d+%/, { timeout: 60_000 });
     await expect.poll(() => prisma.takeoffPlan.count({ where: { jobId } }), { timeout: 120_000 }).toBe(1);
     expect(stub.partsSent().sort((a, b) => a - b)).toEqual(Array.from({ length: PARTS }, (_, i) => i + 1));
@@ -69,7 +68,6 @@ test.describe("a big plan set uploads in resumable parts", () => {
     const stub = await stubDocumentUpload(page, { failPart: (n) => n === 7 && down });
     const upload = page.locator('[data-addendum="upload"]');
     await upload.locator('input[type="file"]').setInputFiles(bigPdf("ZZ-E2E addendum set.pdf"));
-    await upload.getByRole("button", { name: "Add a drawing" }).click();
     const resume = upload.locator('[data-takeoff="plan-upload-resume"]');
     await expect(resume).toHaveText("Resume the upload of ZZ-E2E addendum set.pdf", { timeout: 120_000 });
     await expect(upload.getByRole("alert")).toContainText("press Resume to pick up where it stopped");
@@ -94,7 +92,6 @@ test.describe("a big plan set uploads in resumable parts", () => {
     writeFileSync(file, "%PDF-1.7\n");
     truncateSync(file, 351 * MB);
     await upload.locator('input[type="file"]').setInputFiles(file);
-    await upload.getByRole("button", { name: "Add a drawing" }).click();
     await expect(upload.getByRole("alert").filter({ hasText: "too large" })).toHaveText(
       "This set is too large to process on the current plan; split it or contact support. (It is 351.0 MB; the current limit is 350.0 MB.)",
     );

@@ -423,8 +423,13 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       await shot("upload");
       await page.locator('input[type="file"]').first().setInputFiles(path.join(DIR, SET));
       act(2);
-      await page.getByRole("button", { name: "Add a drawing" }).click();
-      act();
+      // Before the pick started the upload, a separate "Add a drawing" press sent it.
+      const addButton = page.getByRole("button", { name: "Add a drawing" });
+      if ((await addButton.count()) > 0) {
+        await addButton.click();
+        act();
+        note('"Add a drawing" pressed after picking the file.');
+      } else note("The upload started on the pick.");
       await expect.poll(async () => prisma.takeoffPlan.count({ where: { jobId } }), { timeout: 60_000 }).toBe(1);
       await prisma.takeoffPlan.updateMany({ where: { jobId }, data: { fileUrl: `local:${SET}` } });
       pointed();
@@ -481,7 +486,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const set = page.locator('[data-takeoff="plan-set"]');
       // No Confirm when the reader is sure of no sheet (Totem Lake, plan reading off): the
       // floor plans' own printed scales below are the whole step.
-      await expect(confirm.or(set)).toBeVisible({ timeout: 60_000 });
+      await expect(confirm.or(set).first()).toBeVisible({ timeout: 60_000 });
       if (await seen(confirm, 3000)) await hydrated(page, '[data-takeoff="confirm-scales"]');
       else note("No Confirm scales: the reader is sure of no sheet, so only the floor plans' printed scales are asked.");
       await set.scrollIntoViewIfNeeded();
@@ -929,7 +934,9 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           if (seenKinds.price === 1) await shot("review-cost", tab);
           await costForm.locator('[data-takeoff="review-queue-cost-input"]').fill(cost);
           await costForm.locator('[data-takeoff="review-queue-cost-save"]').click();
-          act(2);
+          // Typing the cost; the Price it press is the one every item counts below. (This said act(2),
+          // which counted Price it twice: 3 presses a price where a person makes 2.)
+          act();
           if (seenKinds.price === 1) note(`First price from cost: ${await text(queue.locator('[data-takeoff="review-queue-priced"]'))}`);
         } else if (kind === "price") {
           // Pricing opens the estimate on that line, in another tab.
@@ -942,7 +949,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           if (seenKinds.price === 1) await shot("review-price-line", estimate);
           await line.locator('input[name="unitPrice"]').first().fill("4.25");
           await line.getByRole("button", { name: "Save", exact: true }).click();
-          act(2);
+          act(); // typing the price; Save is counted below with every item
           await expect.poll(async () => (await prisma.jobLineItem.findUnique({ where: { id: id! }, select: { unitPrice: true } }))?.unitPrice?.toString() ?? "", { timeout: 30_000 }).not.toBe("");
           await estimate.close();
           await tab.bringToFront();
