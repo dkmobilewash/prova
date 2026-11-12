@@ -163,7 +163,6 @@ test.describe("the workspace on a real sheet", () => {
         await page.waitForURL(new RegExp(`/jobs/${jobId}/takeoff$`));
         await stubDocumentUpload(page);
         await page.locator('input[type="file"]').setInputFiles(path.join(DIR, sheet.file));
-        await page.getByRole("button", { name: "Add a drawing" }).click();
         await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({
           timeout: 120_000,
         });

@@ -95,6 +95,13 @@ export function TakeoffReviewQueue({
   const [windowsOffer, setWindowsOffer] = useState<Extract<ReviewItem, { kind: "windows" }>[] | null>(null);
   // The other floors' windows confirmed in one click: what the line says, and how its Undo takes them all back.
   const [windowsApplied, setWindowsApplied] = useState<{ text: string; undo: () => Promise<ActionResult> } | null>(null);
+  // ── ONE QUESTION PER SHEET: THE REST OF ITS UNTAGGED WALLS = WHICH TYPE? ──
+  // Asked once per sheet with two or more groups nothing names; the person picks, never preselected.
+  const [restPick, setRestPick] = useState<{ page: number; code: string | null } | null>(null);
+  const [restDone, setRestDone] = useState<ReadonlySet<number>>(new Set());
+  // ── ONE QUESTION PER PRINTED TAG, ACROSS THE SET, BEFORE THE REST ──
+  const [tagPick, setTagPick] = useState<{ tag: string; code: string } | null>(null);
+  const [tagDone, setTagDone] = useState<ReadonlySet<string>>(new Set());
   const [floorsOffer, setFloorsOffer] = useState<{ what: string; groups: ReturnType<typeof sameOnOtherFloors> } | null>(null);
   // ── THE SAME TYPE ON THE GROUPS DRAWN LIKE THE ONE JUST TYPED (`alikeGroups`) ──
   // Offered after a person types an untagged group; never a type the queue picked.
@@ -134,6 +141,18 @@ export function TakeoffReviewQueue({
   // walk v6, and kept. With a trade's preset types nothing matched by thickness on Green
   // Bay or E Street (walk, 2026-11-08), so one keypress put a 3-7/8" and a 13-1/2" wall on
   // one type. The button now shows the spread, so it is a choice made seeing it.
+  // ── "TAG 2A (3 GROUPS, 96 FT) = WHICH OF YOUR TYPES?" ──
+  // Totem Lake's exceptions — 1A, 2A, 2B, 3B — are printed tags no type of the company carries, and
+  // the sheet's "rest" answer (type 1) would have priced them as type 1. Each printed tag is asked
+  // once, for every group carrying it across the set, before the rest of the sheet is; the answer
+  // is the person's (nothing preselected), saved in one press with one Undo, and the queue reads it
+  // back for this job's later groups with that tag (`answeredTagTypes`). The tag on this sheet first.
+  const tagged = left.filter((item): item is TypeItem => item.kind === "type" && item.suggested === null && item.tag !== undefined && !tagDone.has(item.tag.toUpperCase()));
+  const askTag =
+    current === null || current.kind !== "type" || current.suggested !== null || legendCodes.length === 0
+      ? null
+      : ((current.tag !== undefined && !tagDone.has(current.tag.toUpperCase()) ? current.tag : null) ?? tagged.find((g) => g.pageNumber === current.pageNumber)?.tag ?? null);
+  const askTagGroups = askTag === null ? [] : tagged.filter((g) => g.tag!.toUpperCase() === askTag.toUpperCase());
   const restInches = unnamed.map((g) => g.inches).filter((n) => n > 0);
   const restSpread =
     restInches.length > 1 && Math.max(...restInches) - Math.min(...restInches) >= 1 / 16
@@ -473,6 +492,97 @@ export function TakeoffReviewQueue({
               </span>
             </>
           )}
+          {askTag !== null && askTagGroups.length > 0 && (() => {
+            const feet = Math.round(askTagGroups.reduce((n, g) => n + (g.feet ?? 0), 0));
+            const sheets = [...new Set(askTagGroups.map((g) => g.sheet))];
+            const pick = tagPick?.tag === askTag ? tagPick.code : null;
+            const n = askTagGroups.length;
+            return (
+              <div className="flex basis-full flex-wrap items-center gap-2 rounded-md border border-line-card p-2" data-takeoff="review-queue-tag" data-tag={askTag}>
+                <span className="text-sm text-ink">
+                  Tag {askTag} ({n} group{n === 1 ? "" : "s"}, {feet.toLocaleString()} ft{sheets.length > 1 ? ` on ${sheets.length} sheets` : ` on ${sheets[0]}`}) = which of your types?
+                </span>
+                <span className="inline-flex flex-wrap gap-1">
+                  {legendCodes.map((code) => (
+                    <button key={code} type="button" className={`${button} ${pick === code ? "border-brand" : ""}`} aria-pressed={pick === code} onClick={() => setTagPick({ tag: askTag, code })} data-takeoff="review-queue-tag-code">
+                      {code}
+                    </button>
+                  ))}
+                </span>
+                <button
+                  type="button"
+                  className={primaryButton}
+                  disabled={busy || pick === null}
+                  data-takeoff="review-queue-tag-apply"
+                  onClick={() => {
+                    if (pick === null) return;
+                    // Not marked asked: the groups leave the queue as saved, and an Undo brings them — and the question — back.
+                    setTagPick(null);
+                    void acceptSheet(
+                      askTagGroups.map((g) => ({
+                        key: g.key,
+                        feet: g.feet,
+                        group: { planId, pageNumber: g.pageNumber, code: pick, inches: g.inches, runs: g.runs, heightFt: heightOfGroup(g, pick)?.feet ?? null, level: levelHeightFor(pick, g.level) === null ? null : g.level!.label },
+                      })),
+                      { done: `Typed tag ${askTag} ${pick}`, undo: `Type tag ${askTag} ${pick}` },
+                    );
+                  }}
+                >
+                  {pick === null ? "Pick a type first" : `${pick} on all ${n} (${feet.toLocaleString()} ft)`}
+                </button>
+                <button type="button" className="underline" onClick={() => setTagDone((was) => new Set([...was, askTag.toUpperCase()]))} data-takeoff="review-queue-tag-dismiss">
+                  Ask with the rest
+                </button>
+              </div>
+            );
+          })()}
+          {askTag === null && current.kind === "type" && current.suggested === null && unnamed.length > 1 && legendCodes.length > 0 && !restDone.has(current.pageNumber) && (() => {
+            // ── "THE REST OF A2.1'S UNTAGGED WALLS: 14 GROUPS, 804 FT = WHICH OF YOUR TYPES?" ──
+            // Totem Lake: its legend makes every wall not tagged a type 1, in outlined letters no reader
+            // can see (2026-11-12), so thirteen groups were asked one by one. One question, the person's
+            // answer on all of them, one Undo; "One by one" leaves them to the rows below.
+            const page = current.pageNumber;
+            const feet = Math.round(unnamed.reduce((n, g) => n + (g.feet ?? 0), 0));
+            const pick = restPick?.page === page ? restPick.code : null;
+            return (
+              <div className="flex basis-full flex-wrap items-center gap-2 rounded-md border border-line-card p-2" data-takeoff="review-queue-rest">
+                <span className="text-sm text-ink">
+                  The rest of {current.sheet}&rsquo;s untagged walls: {unnamed.length} groups, {feet.toLocaleString()} ft{restSpread} = which of your types?
+                </span>
+                <span className="inline-flex flex-wrap gap-1">
+                  {legendCodes.map((code) => (
+                    <button key={code} type="button" className={`${button} ${pick === code ? "border-brand" : ""}`} aria-pressed={pick === code} onClick={() => setRestPick({ page, code })} data-takeoff="review-queue-rest-code">
+                      {code}
+                    </button>
+                  ))}
+                </span>
+                <button
+                  type="button"
+                  className={primaryButton}
+                  disabled={busy || pick === null}
+                  data-takeoff="review-queue-rest-apply"
+                  onClick={() => {
+                    if (pick === null) return;
+                    setRestDone((was) => new Set([...was, page]));
+                    setRestPick(null);
+                    void acceptSheet(
+                      unnamed.map((g) => ({
+                        key: g.key,
+                        feet: g.feet,
+                        group: { planId, pageNumber: g.pageNumber, code: pick, inches: g.inches, runs: g.runs, heightFt: heightOfGroup(g, pick)?.feet ?? null, level: levelHeightFor(pick, g.level) === null ? null : g.level!.label },
+                      })),
+                      { done: `Typed the rest of ${current.sheet}'s untagged walls ${pick}`, undo: `Type the rest of ${current.sheet}'s untagged walls ${pick}` },
+                    );
+                  }}
+                >
+                  {pick === null ? "Pick a type first" : `${pick} on all ${unnamed.length} (${feet.toLocaleString()} ft)`}
+                </button>
+                <button type="button" className="underline" onClick={() => setRestDone((was) => new Set([...was, page]))} data-takeoff="review-queue-rest-dismiss">
+                  One by one
+                </button>
+              </div>
+            );
+          })()}
           {current.kind === "type" &&
             (legendCodes.length === 0 && current.suggested === null ? (
               <>
@@ -516,7 +626,8 @@ export function TakeoffReviewQueue({
                   void recordQueueSkip(jobId, { planId, pageNumber: current.pageNumber, runs: current.runs }).catch(() => undefined);
                   setCursor(after(current.key));
                 }}
-                rest={unnamed.length > 1 ? `${unnamed.length} groups nothing names on ${current.sheet}${restSpread}` : null}
+                // The sheet's question above asks it once; the row's own "all" returns once that is answered.
+                rest={unnamed.length > 1 && restDone.has(current.pageNumber) ? `${unnamed.length} groups nothing names on ${current.sheet}${restSpread}` : null}
                 onAcceptRest={(code, heightFt, meta) => {
                   rememberHeight(code, heightFt, meta.heightEdited);
                   // The type picked here on every group of the sheet nothing names

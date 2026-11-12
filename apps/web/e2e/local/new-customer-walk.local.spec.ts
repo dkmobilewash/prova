@@ -442,8 +442,13 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       await shot("upload");
       await page.locator('input[type="file"]').first().setInputFiles(path.join(DIR, SET));
       act(2);
-      await page.getByRole("button", { name: "Add a drawing" }).click();
-      act();
+      // Before the pick started the upload, a separate "Add a drawing" press sent it.
+      const addButton = page.getByRole("button", { name: "Add a drawing" });
+      if ((await addButton.count()) > 0) {
+        await addButton.click();
+        act();
+        note('"Add a drawing" pressed after picking the file.');
+      } else note("The upload started on the pick.");
       await expect.poll(async () => prisma.takeoffPlan.count({ where: { jobId } }), { timeout: 60_000 }).toBe(1);
       await prisma.takeoffPlan.updateMany({ where: { jobId }, data: { fileUrl: `local:${SET}` } });
       pointed();
@@ -876,6 +881,38 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
         // "W1 on the 2 other groups drawn like it": the type the person just gave, on the untagged
         // groups drawn alike (same fill, thickness within an inch). One press, as a person who
         // agrees would; it says what it covers before it is pressed.
+        // "The rest of A2.1's untagged walls: N groups, F ft = which of your types?" (one per sheet):
+        // the walk's usual first type, then apply — two presses for every group nothing names.
+        // "Tag 2A (3 groups, 96 ft) = which of your types?" (once per printed tag, across the set, before
+        // the rest). The walk cannot know the real type, so it takes its usual first type: two presses a tag.
+        const tagQ = queue.locator('[data-takeoff="review-queue-tag"]');
+        if ((await tagQ.count()) > 0 && (await tagQ.isVisible().catch(() => false))) {
+          const said = await text(tagQ);
+          const before = await text(left);
+          await tagQ.locator('[data-takeoff="review-queue-tag-code"]').first().click();
+          await tagQ.locator('[data-takeoff="review-queue-tag-apply"]').click();
+          act(2);
+          pressesBy.type = (pressesBy.type ?? 0) + 2;
+          seenKinds.tag = (seenKinds.tag ?? 0) + 1;
+          if (seenKinds.tag === 1) await shot("review-tag", tab);
+          note(`Tag: "${said.slice(0, 160)}"`);
+          await expect.poll(async () => text(left), { timeout: 30_000 }).not.toBe(before).catch(() => note("the count did not move after the tag question"));
+          continue;
+        }
+        const rest = queue.locator('[data-takeoff="review-queue-rest"]');
+        if ((await rest.count()) > 0 && (await rest.isVisible().catch(() => false))) {
+          const said = await text(rest);
+          const before = await text(left);
+          await rest.locator('[data-takeoff="review-queue-rest-code"]').first().click();
+          await rest.locator('[data-takeoff="review-queue-rest-apply"]').click();
+          act(2);
+          pressesBy.type = (pressesBy.type ?? 0) + 2;
+          seenKinds.rest = (seenKinds.rest ?? 0) + 1;
+          if (seenKinds.rest === 1) await shot("review-rest", tab);
+          note(`Rest: "${said.slice(0, 200)}"`);
+          await expect.poll(async () => text(left), { timeout: 30_000 }).not.toBe(before).catch(() => note("the count did not move after the rest question"));
+          continue;
+        }
         const alike = queue.locator('[data-takeoff="review-queue-alike-apply"]');
         if ((await alike.count()) > 0 && (await alike.isVisible().catch(() => false))) {
           const said = await text(alike);
@@ -950,7 +987,9 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           if (seenKinds.price === 1) await shot("review-cost", tab);
           await costForm.locator('[data-takeoff="review-queue-cost-input"]').fill(cost);
           await costForm.locator('[data-takeoff="review-queue-cost-save"]').click();
-          act(2);
+          // Typing the cost; the Price it press is the one every item counts below. (This said act(2),
+          // which counted Price it twice: 3 presses a price where a person makes 2.)
+          act();
           if (seenKinds.price === 1) note(`First price from cost: ${await text(queue.locator('[data-takeoff="review-queue-priced"]'))}`);
         } else if (kind === "price") {
           // Pricing opens the estimate on that line, in another tab.
@@ -963,7 +1002,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           if (seenKinds.price === 1) await shot("review-price-line", estimate);
           await line.locator('input[name="unitPrice"]').first().fill("4.25");
           await line.getByRole("button", { name: "Save", exact: true }).click();
-          act(2);
+          act(); // typing the price; Save is counted below with every item
           await expect.poll(async () => (await prisma.jobLineItem.findUnique({ where: { id: id! }, select: { unitPrice: true } }))?.unitPrice?.toString() ?? "", { timeout: 30_000 }).not.toBe("");
           await estimate.close();
           await tab.bringToFront();

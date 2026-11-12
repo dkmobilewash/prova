@@ -20,7 +20,7 @@ import { stampSuggestions } from "./suggestionStamp";
 import { matchGroups } from "./proposalMatch";
 import { groupsForStage, siblingPages } from "./stageGroups";
 import { aiGate } from "@/lib/ai/settings";
-import { tagVocabulary } from "./planTextTags";
+import { tagVocabulary, printedTagCodes } from "./planTextTags";
 import { doorScheduleForPlan, doorsOnSheet, legendForPlan, typedFeetOf, writeSheetResult } from "./planTextRead";
 
 /**
@@ -246,6 +246,8 @@ export async function detectWallsForCalibration(
     const vocabulary = tagVocabulary(
       wallTypes.map((type) => type.code),
       legendCodes,
+      // The sheet's own printed codes: Totem's 1, 1A, 2A, 2B and 3B (`printedTagCodes`).
+      printedTagCodes(textItems),
     );
     const planText = vocabulary.length === 0 ? undefined : { legendCodes: vocabulary };
     // ── THE SAME PIPELINE THE VIEWER RUNS, NOT THE FINDER UNDERNEATH IT ──
@@ -370,7 +372,7 @@ export async function detectWallsForCalibration(
     // rebuilt here with them — same runs, same feet, named with the types.
     let groups = pairWithThicknesses
       ? found.groups
-      : groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: planText?.legendCodes ?? null }).groups;
+      : groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: planText?.legendCodes ?? null, midSpan: (legendCodes ?? []).length === 0 }).groups;
     // ── NO TAG ON THIS SHEET: READ THEM OFF ITS SIBLING — see `tagsFromSibling` ──
     if (!pairWithThicknesses && planText !== undefined && raster === null && !groups.some((g) => g.source.kind === "TAG")) {
       try {
@@ -379,7 +381,7 @@ export async function detectWallsForCalibration(
           if (page < 1 || page > doc.pageCount) continue;
           const other = await doc.pageStrokes(page);
           const otherText = (await doc.pageText(page)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
-          const withSibling = groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: planText.legendCodes, sibling: { segmentsPt: other.segments, textItems: otherText, widthPt: other.widthPt } }).groups;
+          const withSibling = groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: planText.legendCodes, sibling: { segmentsPt: other.segments, textItems: otherText, widthPt: other.widthPt }, midSpan: (legendCodes ?? []).length === 0 }).groups;
           if (withSibling.some((g) => g.source.kind === "TAG")) {
             groups = withSibling;
             break;

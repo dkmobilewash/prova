@@ -90,7 +90,6 @@ test("the demo environment: sign in to proposal", async ({ page }) => {
       await expectHealthy(page, "takeoff tab", { monitor });
       await hydrated(page, 'input[type="file"]');
       await page.locator('input[type="file"]').first().setInputFiles(PLAN);
-      await page.getByRole("button", { name: "Add a drawing" }).click();
       // Only a stored plan offers its revision: this cannot be on the page before the upload lands.
       await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 120_000 });
     });

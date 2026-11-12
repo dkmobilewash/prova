@@ -102,7 +102,6 @@ test.describe("plan-ingestion runner", () => {
 
     await stubDocumentUpload(page);
     await page.locator('input[type="file"]').setInputFiles(PLAN_FIXTURE);
-    await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 30_000 });
     await expectHealthy(page, "takeoff tab after uploading a sheet", { monitor });
 
