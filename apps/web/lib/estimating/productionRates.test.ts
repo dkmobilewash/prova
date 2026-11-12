@@ -8,6 +8,8 @@ const RATES: ProductionRates = {
   finishSfPerHr: { level3: 55, level4: 45, level5: 30 },
   defaultFinishLevel: 4,
   ceilingSfPerHr: 40,
+  doorFramesPerHr: 2,
+  doorsPerHr: 1.5,
   over10Multiplier: 1.15,
   over14Multiplier: 1.3,
   crewRatePerHr: 62,
@@ -96,5 +98,29 @@ describe("no rate is ever assumed", () => {
     expect(r.boardSfPerHr).toEqual({ regular: null, typeX: null, special: null });
     expect(r.crewRatePerHr).toBe(55);
     expect(ratesFromJson(null)).toEqual(BLANK_RATES);
+  });
+});
+
+describe("posted doors, at the company's door rates", () => {
+  it("by others: no labor line and nothing asked", () => {
+    expect(laborPlan([], [], RATES, { count: 14, scope: "BY_OTHERS" })).toEqual({ lines: [], missing: [] });
+  });
+  it("frames: one EA line, the doors, at frames per hour", () => {
+    expect(laborPlan([], [], RATES, { count: 14, scope: "FRAMES" }).lines).toEqual([{ description: "Labor — Doors — set hollow-metal frames", hours: 7, unit: "EA", quantity: 14 }]);
+  });
+  it("doors and frames: the frames and the doors hung", () => {
+    expect(laborPlan([], [], RATES, { count: 3, scope: "DOORS_AND_FRAMES" }).lines).toEqual([
+      { description: "Labor — Doors — set hollow-metal frames", hours: 1.5, unit: "EA", quantity: 3 },
+      { description: "Labor — Doors — hang doors, with hardware", hours: 2, unit: "EA", quantity: 3 },
+    ]);
+  });
+  it("a blank door rate writes nothing and is named, and so is a blank crew rate", () => {
+    const plan = laborPlan([], [], { ...BLANK_RATES, doorFramesPerHr: 2 }, { count: 3, scope: "DOORS_AND_FRAMES" });
+    expect(plan.lines.map((l) => l.description)).toEqual(["Labor — Doors — set hollow-metal frames"]);
+    expect(plan.missing).toEqual(["hanging doors (doors per hour)", "the crew rate ($ per hour)"]);
+  });
+  it("the door rates are stored and read back like every rate, blank when missing", () => {
+    expect(ratesFromJson(JSON.parse(JSON.stringify(RATES)))).toMatchObject({ doorFramesPerHr: 2, doorsPerHr: 1.5 });
+    expect(ratesFromJson({})).toMatchObject({ doorFramesPerHr: null, doorsPerHr: null });
   });
 });
