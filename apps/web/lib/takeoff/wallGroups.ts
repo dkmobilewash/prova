@@ -72,6 +72,12 @@ export type WallGroup = {
   /** The thickness bucket these came from, unchanged — still what is drawn on
    *  the sheet and still what the colour key shows. */
   inches: number;
+  /**
+   * An untagged group's fill: its runs drawn hatched (a filled band) or plain. Each thickness
+   * cluster's untagged runs are split by it, so two groups of one thickness differ in fill. Kept
+   * on the stored runs, so the review queue can offer one type for the groups drawn alike.
+   */
+  hatched?: boolean;
   runs: WallCandidate[];
   feet: number;
   source: GroupSource;
@@ -213,6 +219,7 @@ export function wallGroups(
       const atThickness = typesAtThickness(cluster.inches, wallTypes);
       out.push({
         inches: cluster.inches,
+        hatched: isHatched,
         runs: untagged,
         feet: feetOf(untagged),
         source: note !== null ? { kind: "GENERAL_NOTE", note: note.note } : { kind: "REMAINDER" },

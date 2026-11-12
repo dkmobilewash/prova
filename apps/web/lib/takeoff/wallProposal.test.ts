@@ -197,7 +197,9 @@ describe("the rows one detection run writes", () => {
     // geometry that determines it, which is the one column this model refuses.
     const rows = proposalRowsFor(detect([run(0.1, 0.4, 0.40625)], new Map()), at);
     expect(rows[0].runs[0]).not.toHaveProperty("lengthFeet");
+    // `hatched`: the untagged group's fill, kept for the queue's "drawn alike" offer.
     expect(Object.keys(rows[0].runs[0]).sort()).toEqual([
+      "hatched",
       "thicknessFeet",
       "x1",
       "x2",
