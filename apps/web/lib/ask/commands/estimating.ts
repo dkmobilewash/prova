@@ -634,6 +634,7 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "applyPrintedScales", reason: "Setting every sheet's printed scale in one press is decided from the sheet list, by somebody who can see which sheets print it; it writes a calibration per sheet, the same scale write a model never makes." },
   { action: "applyRevisedSheets", reason: "Applying a revision moves every wall of the replaced sheets and rewrites their lines; it is pressed on the page that shows each sheet's match and change, by somebody who has read them." },
   { action: "postSheetWalls", reason: "It is the second half of Run takeoff in the viewer, after a find on one sheet a person is looking at; Ask takes a set off with the whole-set run, which posts the same way." },
+  { action: "savePlanComparison", reason: "Keeps what the viewer's own comparison with a demolition plan set aside, so a reload shows it; it is written by Find the walls, never asked for." },
   { action: "takeoffSetPages", reason: "A read-only list the viewer's Run takeoff walks after the sheet on screen; it changes nothing, and Ask takes a set off with the whole-set run." },
   { action: "confirmHeldWall", reason: "Putting a doubted wall on the estimate is a click on that run on the drawing, by someone looking at it." },
   { action: "reviewWall", reason: "Keeping or dropping a wall is decided by looking at that run on the drawing, one at a time." },
