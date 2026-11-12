@@ -353,6 +353,10 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       if (DOORS !== "") {
         expect((await prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { doorScope: true } })).doorScope).toBe(DOORS);
         await page.goto("/wall-types");
+        // The rates sit behind their own button on Wall types.
+        await page.getByRole("button", { name: "Production rates", exact: true }).click();
+        act();
+        await expect(page.locator('[data-rates="crewRatePerHr"]')).toBeVisible({ timeout: 30_000 });
         await hydrated(page, '[data-rates="crewRatePerHr"]');
         for (const [name, value] of Object.entries(DOOR_RATES)) {
           await page.locator(`[data-rates="${name}"]`).fill(value);
@@ -864,7 +868,13 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       // changes what is counted, and this walk measures presses on the same quantities. Skip only
       // moves the cursor, so once it is all that is left, the queue is done for this walk.
       const skippedExisting = new Set<string>();
+      // Only when the count says it is the LAST item: the queue comes back round to a skipped existing-walls
+      // question while other items wait (Baker: "24 left" with it first again), and that is not done.
+      const skippedExistingShown = async () =>
+        (await item.first().getAttribute("data-kind", { timeout: 500 }).catch(() => null)) === "existing" &&
+        skippedExisting.has((await queue.locator('[data-takeoff="review-queue-existing"]').getAttribute("data-page", { timeout: 500 }).catch(() => null)) ?? "");
       const onlySkippedLeft = async () =>
+        /^1 left\b/.test(await text(left).catch(() => "")) &&
         (await item.first().getAttribute("data-kind", { timeout: 500 }).catch(() => null)) === "existing" &&
         skippedExisting.has((await queue.locator('[data-takeoff="review-queue-existing"]').getAttribute("data-page", { timeout: 500 }).catch(() => null)) ?? "");
       let mark = { t: Date.now(), walk: clock.walk, what: "open" };
@@ -1073,6 +1083,9 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           await estimate.close();
           await tab.bringToFront();
           await tab.evaluate(() => window.dispatchEvent(new Event("focus")));
+        } else if (kind === "existing" && (await skippedExistingShown())) {
+          // Already skipped, and other items are waiting behind it: Next, as a person moves past it.
+          await item.locator('[data-takeoff="review-queue-next"]').click();
         } else if (kind === "existing") {
           const pageOf = (await item.locator('[data-takeoff="review-queue-existing"]').getAttribute("data-page")) ?? "";
           skippedExisting.add(pageOf);
