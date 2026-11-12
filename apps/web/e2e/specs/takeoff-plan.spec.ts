@@ -199,7 +199,6 @@ test.describe("on-screen plan takeoff", () => {
   test("2. upload a sheet, and the currency banner says it cannot date it (#502)", async () => {
     await stubDocumentUpload(page);
     await page.locator('input[type="file"]').setInputFiles(PLAN_FIXTURE);
-    await page.getByRole("button", { name: "Add a drawing" }).click();
 
     // The plan row exists, so the viewer and the revision prompt replace the
     // empty state.

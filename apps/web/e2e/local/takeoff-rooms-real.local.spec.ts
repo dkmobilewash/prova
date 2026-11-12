@@ -125,7 +125,6 @@ test.describe("find the rooms on a real sheet", () => {
     await openJobTab(page, "Takeoff");
     await stubDocumentUpload(page);
     await page.locator('input[type="file"]').setInputFiles(path.join(OUT, `sheet-p${PAGE}.pdf`));
-    await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 120_000 });
     await setScaleByClicking(HALF_FEET);
     await page.goto(`/takeoff/${jobId}`);

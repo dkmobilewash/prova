@@ -72,7 +72,6 @@ test.describe("confirm a wall group once, apply it to the same group on the othe
     await openJobTab(page, "Takeoff");
     await stubDocumentUpload(page);
     await page.locator('input[type="file"]').setInputFiles(S02);
-    await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
     const plan = await prisma.takeoffPlan.findFirstOrThrow({ where: { jobId }, orderBy: { createdAt: "desc" }, select: { id: true, companyId: true } });
     const { id: planId, companyId } = plan;

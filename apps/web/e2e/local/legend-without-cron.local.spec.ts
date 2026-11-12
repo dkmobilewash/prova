@@ -87,7 +87,6 @@ test.describe("a new company's wall legend, read with the page open", () => {
       await route.fallback();
     });
     await page.locator('input[type="file"]').first().setInputFiles(path.join(DIR, SET));
-    await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect.poll(async () => prisma.takeoffPlan.count({ where: { jobId } }), { timeout: 60_000 }).toBe(1);
     await prisma.takeoffPlan.updateMany({ where: { jobId }, data: { fileUrl: `local:${SET}` } });
     planId = (await prisma.takeoffPlan.findFirstOrThrow({ where: { jobId }, select: { id: true } })).id;

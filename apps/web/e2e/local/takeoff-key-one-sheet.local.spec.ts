@@ -111,7 +111,6 @@ test.describe("answer-key state belongs to one sheet", () => {
     await page.waitForURL(new RegExp(`/jobs/${id}/takeoff$`));
     await stubDocumentUpload(page);
     await page.locator('input[type="file"]').setInputFiles(file);
-    await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({
       timeout: 120_000,
     });
