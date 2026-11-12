@@ -136,7 +136,7 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
       // preset "W1,W2,W3", else the legend's codes standing in for it), the legend, and the sheet's
       // own printed codes (`printedTagCodes`).
       const library = LIBRARY.length > 0 ? LIBRARY : legendCodes;
-      const vocabulary = tagVocabulary(library, legendCodes.length > 0 ? legendCodes : null, printedTagCodes(items));
+      const vocabulary = tagVocabulary(library, legendCodes.length > 0 ? legendCodes : null, printedTagCodes(items, read.segments));
       const planText = vocabulary.length === 0 ? undefined : { legendCodes: vocabulary };
       // THE PRODUCT'S PATH, not the finder on the whole sheet: `detectForSheet`
       // splits the sheet into drawings and keeps the plan views, so the title

@@ -131,14 +131,81 @@ export const PRINTED_CODE_MIN = 2;
  * it labels a wall is decided as for any code, by where it sits (`bareTextTags`, the symbols,
  * `tagByRun`). Not a room or door number (three digits and up), not a sheet reference.
  */
-export function printedTagCodes(text: readonly { str: string }[]): string[] {
+export function printedTagCodes(text: readonly { str: string; x?: number; y?: number; width?: number; height?: number }[], segmentsPt: readonly StrokeSegment[] = []): string[] {
+  const keynotes = keynoteItems(text, segmentsPt);
   const counts = new Map<string, number>();
   for (const item of text) {
     const code = item.str.trim().toUpperCase();
-    if (!PRINTED_CODE.test(code) || SHEET_REFERENCE.test(code)) continue;
+    if (!PRINTED_CODE.test(code) || SHEET_REFERENCE.test(code) || keynotes.has(item)) continue;
     counts.set(code, (counts.get(code) ?? 0) + 1);
   }
   return [...counts].filter(([, n]) => n >= PRINTED_CODE_MIN).map(([code]) => code).sort();
+}
+
+/** Bare numbers at one x (within this many points) that make a printed list's column. */
+const LIST_COLUMN_PT = 3;
+/** How many numbers a column needs to be a list. */
+const LIST_MIN = 4;
+/** How many DIFFERENT listed numbers one symbol shape must hold, across the plan, to be the keynote shape. */
+export const KEYNOTE_SHAPE_MIN_CODES = 4;
+
+/**
+ * ── KEYNOTES ARE NOT WALL TAGS ──
+ *
+ * With no legend, the sheet's printed codes are the tag vocabulary (`printedTagCodes`), and a keynote
+ * is a printed code: Bunkie's 1–15 sit in a numbered list and, on the plan, in hexagons; Green Bay
+ * A3.1's 1–18 in a list and in diamonds and circles; Joplin's 1–9 in squares. Each became a tag
+ * question nobody could answer — 41 across the training sheets (2026-11-12).
+ *
+ * A keynote is drawn the way keynotes are: the number is listed (a column of bare numbers at one x),
+ * and on the plan its copies sit in one symbol shape that holds many different listed numbers
+ * (`KEYNOTE_SHAPE_MIN_CODES`), a shape the sheet's wall tags — its codes with a letter, not in the
+ * list (IW-2, A3, 1A) — do not use. On a sheet with such a shape, the list's entries and the copies
+ * in it are left out of the count; a code still printed twice elsewhere stays. Totem Lake's 1–4 are
+ * listed too, but its pentagons hold three of them and its squares one, so nothing there is a
+ * keynote shape and its wall types stay.
+ */
+export function keynoteItems<T extends { str: string; x?: number; y?: number; width?: number; height?: number }>(text: readonly T[], segmentsPt: readonly StrokeSegment[]): Set<T> {
+  const out = new Set<T>();
+  type Placed = T & { x: number; y: number; width: number; height: number };
+  const placed = text.filter((i): i is Placed => [i.x, i.y, i.width, i.height].every((v) => typeof v === "number"));
+  if (placed.length === 0 || segmentsPt.length === 0) return out;
+  const code = (i: { str: string }) => i.str.trim().toUpperCase();
+  const bare = placed.filter((i) => /^\d{1,2}$/.test(code(i)));
+  const column = new Map<number, number>();
+  for (const i of bare) column.set(Math.round(i.x / LIST_COLUMN_PT), (column.get(Math.round(i.x / LIST_COLUMN_PT)) ?? 0) + 1);
+  const inList = new Set(bare.filter((i) => (column.get(Math.round(i.x / LIST_COLUMN_PT)) ?? 0) >= LIST_MIN));
+  const listed = new Set([...inList].map(code));
+  if (listed.size === 0) return out;
+  const symbols = tagSymbols({ segments: segmentsPt, text: placed, unitsPerPaperInch: 72 });
+  const shapeAt = (i: Placed): SymbolShape | null => {
+    const c = { x: i.x + i.width / 2, y: i.y - i.height / 2 };
+    return symbols.find((s) => Math.hypot(s.x - c.x, s.y - c.y) <= s.radius)?.shape ?? null;
+  };
+  // The wall tags' shape: the commonest symbol around codes with a letter that are not listed.
+  const tagShapes = new Map<SymbolShape, number>();
+  for (const i of placed) {
+    const c = code(i);
+    if (!/[A-Z]/.test(c) || !PRINTED_CODE.test(c) || SHEET_REFERENCE.test(c)) continue;
+    const shape = shapeAt(i);
+    if (shape !== null && shape !== "other") tagShapes.set(shape, (tagShapes.get(shape) ?? 0) + 1);
+  }
+  const tagShape = [...tagShapes].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  // The keynote shapes: another symbol holding many different listed numbers on the plan.
+  const held = new Map<SymbolShape, Set<string>>();
+  const shapeOfCopy = new Map<Placed, SymbolShape>();
+  for (const i of bare) {
+    if (inList.has(i) || !listed.has(code(i))) continue;
+    const shape = shapeAt(i);
+    if (shape === null || shape === "other" || shape === tagShape) continue;
+    shapeOfCopy.set(i, shape);
+    held.set(shape, (held.get(shape) ?? new Set()).add(code(i)));
+  }
+  const keynoteShapes = new Set([...held].filter(([, codes]) => codes.size >= KEYNOTE_SHAPE_MIN_CODES).map(([shape]) => shape));
+  if (keynoteShapes.size === 0) return out;
+  for (const i of inList) out.add(i);
+  for (const [i, shape] of shapeOfCopy) if (keynoteShapes.has(shape)) out.add(i);
+  return out;
 }
 
 export type PlanTextTagReport = {
