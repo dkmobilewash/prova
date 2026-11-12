@@ -115,7 +115,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     const config = loadWallModel();
     if (config === null) throw new Error("no wall model");
     const rows: Record<string, unknown>[] = [];
-    const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean }>();
+    const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number }>();
     for (const dir of readdirSync(LABELS).sort()) {
       if (!existsSync(join(LABELS, dir)) || (heldOutReason(dir) !== null) !== HELD) continue;
       if (process.env.ZT_ONLY !== undefined && !dir.includes(process.env.ZT_ONLY)) continue;
@@ -157,7 +157,9 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         // Doors with a printed mark: the auto-post class. Schedule rows are a
         // DB read this eval does not make; the mark comes off the drawing.
         const dw = doorsAndWindowsForSheet({ segments: d.found.inUnits, segmentsPt: strokes.segments, textPt: textItems, widthPt: W, walls: d.found.walls, feetPerUnit: fpu, scheduleRows: [] });
-        const postedDoors = dw.doorMarks.filter((m) => m !== null && m.trim() !== "").length;
+        // A sheet whose key holds no door (or window) marks cannot score them: posted doors there are
+        // neither over nor under, they are unkeyed. Only door-keyed sheets enter the door terms.
+        const postedDoors = keyDoors === 0 ? 0 : dw.doorMarks.filter((m) => m !== null && m.trim() !== "").length;
         const held = new Set(runsHeldOffEstimate(config.model, runs, scored, fpu, false));
         const zeroLf = runs.reduce((n, r) => n + (held.has(r) ? 0 : r.lengthFeet), 0);
         // N presses, answered from the key, in the shipped order.
@@ -191,8 +193,8 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           const t = ((k as { wallType?: string }).wallType ?? "0").trim() || "0";
           keyByType[t] = Math.round(((keyByType[t] ?? 0) + k.lengthFeet) * 10) / 10;
         }
-        const s = bySet.get(dir) ?? { lf: 0, doors: 0, windows: 0, lf10: 0, keyLf: 0, keyDoors: 0, keyWindows: 0, keyByType: {}, sheets: 0, junkLf: 0, junkRenoLf: 0, missedLf: 0, keyBoardSf: 0, renovation: false };
-        s.lf += zeroLf; s.lf10 += lf10; s.doors += postedDoors; s.keyLf += keyLf; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1; s.junkLf += junkLf; if (renovation) s.junkRenoLf += junkLf; s.missedLf += missedLf; s.keyBoardSf += keyBoardSf; s.renovation = s.renovation || renovation;
+        const s = bySet.get(dir) ?? { lf: 0, doors: 0, windows: 0, lf10: 0, keyLf: 0, keyDoors: 0, keyWindows: 0, keyByType: {}, sheets: 0, junkLf: 0, junkRenoLf: 0, missedLf: 0, keyBoardSf: 0, renovation: false, doorsOver: 0 };
+        s.lf += zeroLf; s.lf10 += lf10; s.doors += Math.min(postedDoors, keyDoors); s.doorsOver += Math.max(0, postedDoors - keyDoors); s.keyLf += keyLf; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1; s.junkLf += junkLf; if (renovation) s.junkRenoLf += junkLf; s.missedLf += missedLf; s.keyBoardSf += keyBoardSf; s.renovation = s.renovation || renovation;
         for (const [t, ft] of Object.entries(keyByType)) s.keyByType[t] = Math.round(((s.keyByType[t] ?? 0) + ft) * 10) / 10;
         bySet.set(dir, s);
         rows.push({ set: dir, sheet, paired, renovation, keyLf: Math.round(keyLf), zeroLf: Math.round(zeroLf), lf10: Math.round(lf10), junkLf: Math.round(junkLf), missedLf: Math.round(missedLf), keyBoardSf: Math.round(keyBoardSf), keyDoors, postedDoors, keyWindows });
@@ -200,14 +202,15 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     }
     const group = HELD ? "HELD-OUT" : "TRAINING";
     let zb = 0, kb = 0, tb = 0;
-    const cause = { junkNew: 0, junkReno: 0, missed: 0, board: 0, doors: 0, windows: 0 };
+    const cause = { junkNew: 0, junkReno: 0, missed: 0, board: 0, doors: 0, windows: 0, doorsOver: 0 };
     for (const [dir, s] of [...bySet.entries()].sort()) {
       const kBid = bid({ lf: s.keyLf, boardSf: s.keyBoardSf, doors: s.keyDoors, windows: s.keyWindows });
       cause.junkNew += (s.junkLf - s.junkRenoLf) * PRICE.wallPerLf;
       cause.junkReno += s.junkRenoLf * PRICE.wallPerLf;
       cause.missed += s.missedLf * PRICE.wallPerLf;
       cause.board += s.keyBoardSf * PRICE.boardPerSf;
-      cause.doors += (s.keyDoors - s.doors) * PRICE.doorEach;
+      cause.doors += Math.max(0, s.keyDoors - s.doors) * PRICE.doorEach;
+      cause.doorsOver += s.doorsOver * PRICE.doorEach;
       cause.windows += s.keyWindows * PRICE.windowEach;
       const zBid = bid({ lf: s.lf, doors: s.doors, windows: s.windows });
       const tBid = bid({ lf: s.lf10, doors: s.doors, windows: s.windows });
@@ -220,7 +223,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     }
     if (kb > 0) console.log(`ZT ${group} TOTAL bid off ${(((zb - kb) / kb) * 100).toFixed(1)}% zero-touch · ${(((tb - kb) / kb) * 100).toFixed(1)}% after ${PRESSES} presses/sheet (key $${Math.round(kb)})`);
     // OVER and UNDER separately, so junk cuts and recovered quantities cannot hide each other (Diego).
-    const over = cause.junkNew + cause.junkReno;
+    const over = cause.junkNew + cause.junkReno + cause.doorsOver;
     const under = cause.missed + cause.board + cause.doors + cause.windows;
     if (kb > 0) console.log(`ZT ${group} OVER $${Math.round(over)} (+${((over / kb) * 100).toFixed(1)}% of key) · UNDER $${Math.round(under)} (-${((under / kb) * 100).toFixed(1)}%) · net ${(((zb - kb) / kb) * 100).toFixed(1)}%`);
     // Dollars by cause, ranked. "wrong type" prices at $0 in v2 (one composite wall rate, and
@@ -233,6 +236,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       ["missed walls", cause.missed],
       ["board (no height assigned)", cause.board],
       ["doors not posted", cause.doors],
+      ["doors posted beyond the key", cause.doorsOver],
       ["windows not posted", cause.windows],
     ];
     const err = Math.abs(zb - kb);
