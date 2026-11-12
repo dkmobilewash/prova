@@ -132,7 +132,13 @@ async function hydrated(on: Page, selector: string): Promise<void> {
     .poll(() => on.locator(selector).first().evaluate((el) => Object.keys(el).some((k) => k.startsWith("__reactFiber$"))).catch(() => false), { timeout: 60_000 })
     .toBe(true);
 }
-const text = async (target: Locator) => ((await target.first().innerText({ timeout: 5000 }).catch(() => "")) ?? "").replace(/\s+/g, " ").trim();
+/** A thing's words; one that is not there costs the walk its wait, not the person (`WalkClock`). */
+const text = async (target: Locator) => {
+  const t0 = Date.now();
+  const words = await target.first().innerText({ timeout: 5000 }).catch(() => null);
+  if (words === null) clock.gaveUp(Date.now() - t0);
+  return (words ?? "").replace(/\s+/g, " ").trim();
+};
 function flush(): void {
   const person = Math.round(rows.reduce((sum, r) => sum + r.seconds, 0) * 10) / 10;
   writeFileSync(path.join(OUT, "walk.json"), JSON.stringify({ email: EMAIL, jobId, total: (Date.now() - started) / 1000, personSeconds: person, rows }, null, 2));
@@ -764,6 +770,8 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const seenKinds: Record<string, number> = {};
       /** Presses by kind of item (walls, types, heights, windows, prices…), each press counted on its own. */
       const pressesBy: Record<string, number> = {};
+      // Each round's wall and walk seconds, so a slow queue says which round and whose wait it was.
+      const trace: string[] = [];
       let noTypes = false;
       for (let pass = 0; pass < 2; pass += 1) {
       if (pass === 1) {
@@ -787,14 +795,26 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       // changes what is counted, and this walk measures presses on the same quantities. Skip only
       // moves the cursor, so once it is all that is left, the queue is done for this walk.
       const skippedExisting = new Set<string>();
-      const onlySkippedLeft = async () => (await item.getAttribute("data-kind")) === "existing" && skippedExisting.has((await queue.locator('[data-takeoff="review-queue-existing"]').getAttribute("data-page")) ?? "");
+      const onlySkippedLeft = async () =>
+        (await item.first().getAttribute("data-kind", { timeout: 500 }).catch(() => null)) === "existing" &&
+        skippedExisting.has((await queue.locator('[data-takeoff="review-queue-existing"]').getAttribute("data-page", { timeout: 500 }).catch(() => null)) ?? "");
+      let mark = { t: Date.now(), walk: clock.walk, what: "open" };
+      const lap = (what: string) => {
+        const wall = Date.now() - mark.t;
+        const walk = clock.walk - mark.walk;
+        if (wall > 2000) trace.push(`${mark.what} ${Math.round(wall / 100) / 10}s (walk ${Math.round(walk / 100) / 10}s)`);
+        mark = { t: Date.now(), walk: clock.walk, what };
+      };
       for (let round = 0; round < 400; round += 1) {
+        lap(`round ${round}: ${(await item.first().getAttribute("data-kind", { timeout: 500 }).catch(() => null)) ?? "none"} · ${(await text(left).catch(() => "")).slice(0, 30)}`);
         // "Nothing left" can be said before the server has written the typed walls' lines, and
         // their price questions follow (Totem Lake: 4 arrived after it). So the queue is re-opened
         // up to twice, a few seconds apart; only an empty queue after that is done. Opening it is
         // not a press: the person is already looking at it.
         if (/Nothing left/.test(await text(left)) || !(await seen(item, 10_000)) || (await onlySkippedLeft())) {
-          if (settled >= 2) break;
+          // One reload check is enough: questions written after "Nothing left" arrive on their own
+          // (Totem Lake: 0.1 s), and a second reload only re-asked an empty queue.
+          if (settled >= 1) break;
           if (settled === 0) {
             // ── DOES A PERSON SEE MORE ARRIVE, OR DOES ONLY A RELOAD FIND IT? ──
             // Looking at the queue that just said it was done, as a person would, with no reload.
@@ -812,7 +832,8 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           const t1 = Date.now();
           await pause(tab, 3000);
           await tab.goto(`/takeoff/${jobId}?open=review`);
-          await expect(tab.locator('[data-takeoff="review-queue"]')).toBeVisible({ timeout: 120_000 }).catch(() => {});
+          // An empty queue does not open on `?open=review`: 15 s, not the 120 s that cost Falafel 240 s.
+          await expect(tab.locator('[data-takeoff="review-queue"]')).toBeVisible({ timeout: 15_000 }).catch(() => {});
           clock.gaveUp(Date.now() - t1 - 3000);
           if (await item.first().isVisible().catch(() => false) && !(await onlySkippedLeft()) && !/Nothing left/.test(await text(left))) {
             stuck(`questions only a reload showed, after the queue said it was done: ${await text(left)}`);
@@ -965,6 +986,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       note(`Pre-filled on ${offered.length} group rows shown one by one: ${legendNamed} with a type, ${fifteen} at 15'-0". ${offered.join(" | ")}`);
       const typedItems = await prisma.takeoffItem.findMany({ where: { jobId, wallTypeId: { not: null } }, select: { name: true, heightFt: true } });
       note(`Typed items' stored heights: ${typedItems.map((i) => `${i.name} ${i.heightFt?.toString() ?? "none"} ft`).join(", ")}`);
+      note(`Slow rounds: ${trace.length === 0 ? "none" : trace.join(" | ")}`);
       note(`Presses by kind: ${Object.entries(pressesBy).map(([k, n]) => `${k} ${n}`).join(", ")}`);
       note(`Answered: ${Object.entries(seenKinds).map(([k, n]) => `${n} ${k}`).join(", ")}. Queue ends: "${await text(tab.locator('[data-takeoff="review-queue-left"]'))}"`);
       await shot("review-done", tab);
