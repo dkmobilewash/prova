@@ -181,14 +181,15 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
   test("5. the two groups nothing names take one type in one go, and Undo takes both back", async () => {
     await acceptAll().click();
     await expect(queue().locator('[data-takeoff="review-queue-accepted-text"]')).toHaveText("Accepted 2 groups on sheet A101 · 130 ft");
-    // The queue is on a group nothing names: the type picked there can go on both.
-    const rest = queue().locator('[data-takeoff="queue-accept-rest"]');
-    await expect(rest).toHaveText('Pick a type for all 2 groups nothing names on A101, 6-1/8" to 8"', { timeout: 30_000 });
-    await expect(rest).toBeDisabled();
-    await page.keyboard.press("1");
-    await expect(rest).toHaveText('ZA1 on all 2 groups nothing names on A101, 6-1/8" to 8" (A)');
-    await page.keyboard.press("a");
-    await expect(queue().locator('[data-takeoff="review-queue-accepted-text"]')).toHaveText("Accepted 2 groups on sheet A101 · 43 ft");
+    // The queue is on a group nothing names: the sheet asks once which type the rest are, nothing preselected.
+    const question = queue().locator('[data-takeoff="review-queue-rest"]');
+    await expect(question).toContainText('The rest of A101’s untagged walls: 2 groups, 43 ft, 6-1/8" to 8" = which of your types?', { timeout: 30_000 });
+    const apply = question.locator('[data-takeoff="review-queue-rest-apply"]');
+    await expect(apply).toBeDisabled();
+    await question.locator('[data-takeoff="review-queue-rest-code"]', { hasText: /^ZA1$/ }).click();
+    await expect(apply).toHaveText("ZA1 on all 2 (43 ft)");
+    await apply.click();
+    await expect(queue().locator('[data-takeoff="review-queue-accepted-text"]')).toHaveText("Typed the rest of A101's untagged walls ZA1 · 43 ft");
     await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(0);
     const za1 = await prisma.takeoffItem.findFirstOrThrow({ where: { jobId, wallType: { code: "ZA1" } }, select: { heightFt: true, _count: { select: { measurements: true } } } });
     expect(za1._count.measurements).toBe(4);
@@ -197,6 +198,8 @@ test.describe("accepting a sheet's drawn suggestions in one press", () => {
 
     await queue().locator('[data-takeoff="review-queue-accepted-undo"]').click();
     await expect.poll(untypedRuns, { timeout: 30_000 }).toBe(2);
+    // The sheet's question was answered once; back, the groups keep the row's own "all".
+    const rest = queue().locator('[data-takeoff="queue-accept-rest"]');
     await expect(rest).toHaveText('Pick a type for all 2 groups nothing names on A101, 6-1/8" to 8"', { timeout: 30_000 });
   });
 
