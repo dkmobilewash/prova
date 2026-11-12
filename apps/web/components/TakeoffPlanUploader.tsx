@@ -106,12 +106,17 @@ export function TakeoffPlanUploader({ jobId }: { jobId: string }) {
           }}
           className="text-sm text-ink-body file:mr-3 file:rounded-md file:border file:border-line-card file:bg-surface-input file:px-3 file:py-1.5 file:text-sm file:text-ink-label"
         />
-        {(busy || isPending) && (
+        {busy ? (
           <span className="inline-flex items-center gap-1.5 text-sm text-ink-body" data-takeoff="plan-uploading">
             <Spinner />
-            {busy ? "Uploading…" : "Saving…"}
+            Uploading…
           </span>
-        )}
+        ) : isPending ? (
+          <span className="inline-flex items-center gap-1.5 text-sm text-ink-body" data-takeoff="plan-uploading">
+            <Spinner />
+            Saving…
+          </span>
+        ) : null}
       </div>
       <p className="text-xs text-ink-muted">
         Upload the sheets you&rsquo;re bidding rather than the whole set — this is a measuring tool, not a drawing
