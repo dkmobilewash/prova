@@ -749,9 +749,21 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const queue = tab.locator('[data-takeoff="review-queue"]');
       const left = queue.locator('[data-takeoff="review-queue-left"]');
       const item = queue.locator('[data-takeoff="review-queue-item"]');
+      let settled = 0;
       for (let round = 0; round < 400; round += 1) {
-        if (/Nothing left/.test(await text(left))) break;
-        if (!(await seen(item, 10_000))) break;
+        // "Nothing left" can be said before the server has written the typed walls' lines, and
+        // their price questions follow (Totem Lake: 4 arrived after it). So the queue is re-opened
+        // up to twice, a few seconds apart; only an empty queue after that is done. Opening it is
+        // not a press: the person is already looking at it.
+        if (/Nothing left/.test(await text(left)) || !(await seen(item, 10_000))) {
+          if (settled >= 2) break;
+          settled += 1;
+          await tab.waitForTimeout(3000);
+          await tab.goto(`/takeoff/${jobId}?open=review`);
+          await expect(tab.locator('[data-takeoff="review-queue"]')).toBeVisible({ timeout: 120_000 }).catch(() => {});
+          continue;
+        }
+        settled = 0;
         // The sheet's drawn suggestions in one press, as a person who knows the
         // way would: what it takes is in the summary, the rest stays here.
         const acceptAll = queue.locator('[data-takeoff="review-queue-accept-sheet"]');
