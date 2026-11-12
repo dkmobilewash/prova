@@ -99,7 +99,7 @@ export function TakeoffPlanUploader({ jobId }: { jobId: string }) {
           ref={inputRef}
           type="file"
           accept="application/pdf,.pdf"
-          aria-label="Add a drawing"
+          aria-label="The drawing to add (PDF)"
           disabled={busy || isPending}
           onChange={(event) => {
             if (event.currentTarget.files?.length) event.currentTarget.form?.requestSubmit();

@@ -74,7 +74,7 @@ test.describe("what an addendum's sheets change, by wall type", () => {
     await expectHealthy(page, "the addendum page", { monitor });
     // Where the revised sheets go in: the Takeoff tab's own uploader is gone once a drawing is on the job (walk v8).
     await expect(page.locator('[data-addendum="upload"] input[type="file"]')).toHaveCount(1);
-    await expect(page.locator('[data-addendum="upload"]').getByLabel("Add a drawing")).toBeVisible();
+    await expect(page.locator('[data-addendum="upload"]').getByLabel("The drawing to add (PDF)")).toBeVisible();
   });
 
   test("3. each revised sheet against the one it replaces", async () => {
