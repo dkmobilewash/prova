@@ -102,10 +102,11 @@ export type PlanTextInput = {
 export function tagVocabulary(libraryCodes: readonly string[], legendCodes: readonly string[] | null, printedCodes: readonly string[] = []): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  // A printed code that is a LEGEND code's short form (a P-series legend whose sheets print "1")
-  // stays out, so the legend's short form still names it (`planTextTagByRun`).
-  const short = prefixlessVocabulary(legendCodes ?? []);
-  const printed = printedCodes.filter((code) => short === null || !short.has(code.trim().toUpperCase()));
+  // ONLY WITH NO LEGEND READ. A legend says which codes the set uses, and the sheet's other short
+  // codes (detail numbers, keynotes) only steal runs from them: on the training type keys, adding
+  // printed codes beside a legend took settled-correct from 61.4% to 46.9%; with no legend it took
+  // the tags from 4.2% to 30.4% correct (2026-11-12).
+  const printed = (legendCodes ?? []).length > 0 ? [] : printedCodes;
   for (const raw of [...(legendCodes ?? []), ...libraryCodes, ...printed]) {
     const code = raw.trim();
     if (code === "" || seen.has(code.toUpperCase())) continue;
