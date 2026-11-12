@@ -750,12 +750,17 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const left = queue.locator('[data-takeoff="review-queue-left"]');
       const item = queue.locator('[data-takeoff="review-queue-item"]');
       let settled = 0;
+      // A renovation sheet's "existing walls" question (#1135) is skipped once: setting walls aside
+      // changes what is counted, and this walk measures presses on the same quantities. Skip only
+      // moves the cursor, so once it is all that is left, the queue is done for this walk.
+      const skippedExisting = new Set<string>();
+      const onlySkippedLeft = async () => (await item.getAttribute("data-kind")) === "existing" && skippedExisting.has((await queue.locator('[data-takeoff="review-queue-existing"]').getAttribute("data-page")) ?? "");
       for (let round = 0; round < 400; round += 1) {
         // "Nothing left" can be said before the server has written the typed walls' lines, and
         // their price questions follow (Totem Lake: 4 arrived after it). So the queue is re-opened
         // up to twice, a few seconds apart; only an empty queue after that is done. Opening it is
         // not a press: the person is already looking at it.
-        if (/Nothing left/.test(await text(left)) || !(await seen(item, 10_000))) {
+        if (/Nothing left/.test(await text(left)) || !(await seen(item, 10_000)) || (await onlySkippedLeft())) {
           if (settled >= 2) break;
           settled += 1;
           await tab.waitForTimeout(3000);
@@ -875,6 +880,10 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           await estimate.close();
           await tab.bringToFront();
           await tab.evaluate(() => window.dispatchEvent(new Event("focus")));
+        } else if (kind === "existing") {
+          const pageOf = (await item.locator('[data-takeoff="review-queue-existing"]').getAttribute("data-page")) ?? "";
+          skippedExisting.add(pageOf);
+          await item.getByRole("button", { name: "Skip", exact: true }).click();
         } else {
           stuck(`an item of kind "${kind}" the walk does not know how to answer`);
           await item.locator('[data-takeoff="review-queue-next"]').click();
