@@ -1,4 +1,4 @@
-import { DIMENSION_MARK, SHEET_REFERENCE, type TextForSymbol } from "./tagSymbols";
+import { DIMENSION_MARK, SHEET_REFERENCE, tagSymbols, type TextForSymbol } from "./tagSymbols";
 
 /**
  * ── THE WALL LEGEND READ FROM THE PDF'S TEXT, WITH NO MODEL ──
@@ -27,7 +27,8 @@ import { DIMENSION_MARK, SHEET_REFERENCE, type TextForSymbol } from "./tagSymbol
  */
 
 export type LegendTextRead = {
-  types: { code: string; name: string | null; lines: string[] }[];
+  /** `at`: where the code itself is printed (points, `y` the baseline), for diagnosis. */
+  types: { code: string; name: string | null; lines: string[]; at?: { x: number; y: number; h: number }; evidence?: LegendTextEvidence }[];
   uno: { code: string; note: string }[];
   reason: string;
   confidence: "HIGH" | "MEDIUM" | "LOW";
@@ -35,12 +36,22 @@ export type LegendTextRead = {
 
 export const LEGEND_TEXT_SOURCE = "legend text";
 
+/**
+ * How a type was read, so a source can be measured by its evidence: a key/schedule ROW (code, then
+ * its words on the same baseline), a DETAIL (the words around a code in a legend's grid of
+ * sections), or INLINE (the code starting a line whose own words describe the assembly —
+ * Wendell's "S4 3 5/8" MTL STUD & GYP BD TO DECK"). `boxed`: printed inside a closed symbol;
+ * `labelled`: "WALL TYPE X".
+ */
+export type LegendTextEvidence = { how: "row" | "detail" | "inline"; boxed: boolean; labelled: boolean };
+
 type Line = { text: string; x0: number; x1: number; y: number; h: number };
 
 /** Words that only appear where an assembly is described (`legendSight.ts`'s, plus rating and height words). */
 const ASSEMBLY_WORD = /\bSTUDS?\b|\bGYP|\bBOARD\b|\bBATT|\bINSUL|\bO\.?\s?C\.?\b|\bTRACK\b|\bCMU\b|\bCONCRETE\b|\bLAYERS?\b|\bRATED\b|\bRATING\b|\bGA\.?\b|\bGAUGE\b|\bMTL\b|\bMETAL\b|\bDECK\b|\bSTC\b|\bHR\b|\bHOUR\b|\bFURR/i;
 /** A designation as legends print one: S6B, PS3a, IW-4, 1A, XW-1, A3, 12. */
-const DESIGNATION = /^(?:[A-Z]{1,4}-?\d{1,3}[A-Za-z]{0,2}|\d{1,3}[A-Z]{0,2})$/;
+// v2: also digit-led codes with letters inside (cmb's 0SF1B, 0S3, 1SW4) and a dash-numbered variant (Wendell's SW2-1).
+const DESIGNATION = /^(?:[A-Z]{1,4}-?\d{1,3}[A-Za-z]{0,2}(?:-\d{1,2})?|\d{1,3}[A-Z]{0,2}|\d{1,2}[A-Z]{1,3}\d{1,2}[A-Z]?)$/;
 const LETTER = /^[A-Z]{1,2}$/;
 /** A detail's window around its code, in inches: notes run right, the section above or below. */
 /** Fewest types a page must yield to be a legend. */
@@ -103,7 +114,7 @@ export function readLegendFromText(input: {
   };
 
   // ── 2. CANDIDATE CODES, THE BEST PRINTING OF EACH ──
-  type Cand = { key: string; code: string; name: string | null; line: Line; score: number };
+  type Cand = { key: string; code: string; name: string | null; line: Line; score: number; boxed: boolean; labelled: boolean };
   const best = new Map<string, Cand>();
   const weakLetters = new Set<string>();
   const boxedLetters = new Set<string>();
@@ -127,7 +138,7 @@ export function readLegendFromText(input: {
     const key = read.code.toUpperCase();
     const held = best.get(key);
     if (letters && (read.labelled || (inSymbol && key.length === 1))) boxedLetters.add(key);
-    if (held === undefined || score > held.score) best.set(key, { key, code: read.code, name: read.name, line, score });
+    if (held === undefined || score > held.score) best.set(key, { key, code: read.code, name: read.name, line, score, boxed: inSymbol, labelled: read.labelled });
   }
   // A two-letter code seen only bare stays only as a schedule row; a boxed single letter is a type
   // only on a page with no stronger codes (Joplin's A/B/C beside nothing else; a grid bubble beside S6B).
@@ -217,16 +228,29 @@ export function readLegendFromText(input: {
         .sort((a, b) => a.y - b.y || a.x0 - b.x0)
         .map((l) => l.text),
       at: c.line,
+      evidence: { how: rows.has(c.key) ? "row" : "detail", boxed: c.boxed, labelled: c.labelled } as LegendTextEvidence,
     }))
-    .filter((t) => t.lines.length > 0)
-    .sort((a, b) => a.at.y - b.at.y || a.at.x0 - b.at.x0)
-    .map(({ code, name, lines: ls }) => ({ code, name, lines: ls }));
+    .filter((t) => t.lines.length > 0);
+  // ── INLINE: THE CODE STARTS A LINE THAT DESCRIBES ITS ASSEMBLY (Wendell's partition legend) ──
+  // "S4 3 5/8" MTL STUD & GYP BD TO DECK (STC 43-45)": the code and its words share one line, so no
+  // line IS a code and the rules above see nothing. Two core assembly words in the rest of the line
+  // say it is a type; a code already read stays as read.
+  const have = new Set(found.map((t) => t.code.toUpperCase()));
+  for (const line of lines) {
+    const m = line.text.match(/^([A-Z][A-Z0-9]{0,4}(?:-\d{1,2})?|\d{1,2}[A-Z]{1,3}\d{0,2}[A-Z]?)\s+(.+)$/);
+    if (m === null || !DESIGNATION.test(m[1]!) || have.has(m[1]!.toUpperCase())) continue;
+    if ((m[2]!.match(new RegExp(CORE_WORD.source, "gi"))?.length ?? 0) < 2) continue;
+    have.add(m[1]!.toUpperCase());
+    found.push({ code: m[1]!, name: null, lines: [m[2]!], at: line, evidence: { how: "inline", boxed: false, labelled: false } });
+  }
+  found.sort((a, b) => a.at.y - b.at.y || a.at.x0 - b.at.x0);
+  const typesRead = found.map(({ code, name, lines: ls, at, evidence }) => ({ code, name, lines: ls, at: { x: (at.x0 + at.x1) / 2, y: at.y, h: at.h }, evidence }));
   // A legend lists several types. A page that yields one or two is a plan or a detail sheet whose
   // keynotes happened to sit by assembly words; it is read as having none.
-  if (found.length < MIN_TYPES) found.length = 0;
+  if (typesRead.length < MIN_TYPES) typesRead.length = 0;
 
   // ── 4. THE PAGE'S OWN "UNLESS NOTED" DEFAULT, FOR A CODE READ HERE ──
-  const types = found;
+  const types = typesRead;
   const read = new Set(types.map((t) => t.code.toUpperCase().replace(/[\s-]/g, "")));
   // Note numbers ("3. ") interleave a wrapped sentence on a notes column; they are not its periods.
   const page = lines.map((l) => l.text).join(" ").replace(/(^|\s)\d{1,2}\.(?=\s)/g, "$1");
@@ -244,4 +268,69 @@ export function readLegendFromText(input: {
     reason: `Read from the page's text, with no model: ${types.length} type${types.length === 1 ? "" : "s"}, each with the words printed around its code.`,
     confidence: types.length >= 2 ? "MEDIUM" : "LOW",
   };
+}
+
+/**
+ * ── A LEGEND CODE READ FROM TEXT IS TRUSTED ONLY WHERE THE PLAN PRINTS IT AS A WALL TAG ──
+ *
+ * The keyless read takes sheet-zone and detail references for types: on USU it read A1–E6, J1–J4
+ * and F1–F4, and those letters-and-numbers, printed on the plan as callouts and grid marks, typed
+ * walls wrong (held-out, 66% of what it typed; logged 2026-11-12). A wall tag is printed beside a
+ * wall, in the sheet's tag symbol or as bare text; a reference is printed as a callout (a split
+ * symbol, or a symbol or word beside a sheet number such as A-501) or at a grid line's end. So a
+ * code read from the legend's text types walls on a sheet only where that sheet prints it at least
+ * once as a tag: not a reference, and within `reachFeet` of a found wall.
+ */
+export function wallTagCodes(input: {
+  /** The sheet's text, points, `y` the baseline. */
+  text: readonly TextForSymbol[];
+  /** The sheet's strokes, points. */
+  segments: readonly { x1: number; y1: number; x2: number; y2: number }[];
+  /** The sheet's walls, page-width units. */
+  walls: readonly { x1: number; y1: number; x2: number; y2: number }[];
+  widthPt: number;
+  feetPerUnit: number;
+  codes: readonly string[];
+  reachFeet?: number;
+}): Set<string> {
+  const { text, widthPt: W, feetPerUnit } = input;
+  const want = new Set(input.codes.map((c) => c.toUpperCase()));
+  const reach = (input.reachFeet ?? 4) / feetPerUnit;
+  const symbols = tagSymbols({ segments: input.segments as never, text, unitsPerPaperInch: 72 });
+  // A SHEET NUMBER as a callout prints it (A-501, A5.01, A501): never one of the legend's own codes
+  // (IW-2 has a sheet number's shape too).
+  const sheetNumber = (s: string) => {
+    const t = s.replace(/\s+/g, "").toUpperCase();
+    return !want.has(t) && /^[A-Z]{1,2}-?\d{1,2}(?:\.\d{1,2}|\d{2})$/.test(t);
+  };
+  const sheetRefs = text.filter((i) => sheetNumber(i.str)).map((i) => ({ x: i.x + i.width / 2, y: i.y - i.height / 2 }));
+  // A grid bubble: a CIRCLE that a grid line ends in. A leader ends at its tag symbol too, so the line
+  // must be a grid line's length: two paper inches or more.
+  const gridEnd = (s: { x: number; y: number; radius: number; shape: string }) =>
+    s.shape === "circle" &&
+    input.segments.some((g) => {
+      const long = Math.hypot(g.x2 - g.x1, g.y2 - g.y1) >= 2 * 72;
+      return long && (Math.hypot(g.x1 - s.x, g.y1 - s.y) <= s.radius * 2 || Math.hypot(g.x2 - s.x, g.y2 - s.y) <= s.radius * 2);
+    });
+  const nearWall = (x: number, y: number) =>
+    input.walls.some((w) => {
+      const dx = w.x2 - w.x1, dy = w.y2 - w.y1, l2 = dx * dx + dy * dy;
+      const k = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - w.x1) * dx + (y - w.y1) * dy) / l2));
+      return Math.hypot(x - (w.x1 + k * dx), y - (w.y1 + k * dy)) <= reach;
+    });
+  const out = new Set<string>();
+  for (const item of text) {
+    const code = item.str.trim().toUpperCase();
+    if (!want.has(code) || out.has(code)) continue;
+    const c = { x: item.x + item.width / 2, y: item.y - item.height / 2 };
+    const sym = symbols.find((s) => Math.hypot(s.x - c.x, s.y - c.y) <= s.radius + 1);
+    // A callout is a symbol carrying a sheet number (a split one, the detail over its sheet); a
+    // split symbol alone is a tag too (Green Bay's IW-2 over its divider).
+    if (sym !== undefined && (sym.parts.some(sheetNumber) || gridEnd(sym))) continue;
+    if (sheetRefs.some((r) => Math.hypot(r.x - c.x, r.y - c.y) <= 0.5 * 72)) continue;
+    // A tag with a leader names the wall its leader ends on.
+    const at = sym?.leader ?? c;
+    if (nearWall(at.x / W, at.y / W)) out.add(code);
+  }
+  return out;
 }

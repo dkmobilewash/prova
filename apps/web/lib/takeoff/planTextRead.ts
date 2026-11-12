@@ -7,7 +7,7 @@ import { gridText, tableRowsFromPage } from "@/lib/plan-ingest/scheduleTable";
 import { bareTextTags } from "./bareTextTags";
 import { inPageWidthUnits } from "./findWallsOnSheet";
 import { legendPages, type PageForLegend } from "./legendPages";
-import { readLegendFromText } from "./legendText";
+import { readLegendFromText, type LegendTextRead } from "./legendText";
 import { readPartitionAssembly } from "./partitionAssembly";
 import { openingsInWalls } from "./openings";
 import { joinOpeningsToSchedule, widthAndHeight, type PlacedMark } from "./openingMarks";
@@ -114,7 +114,17 @@ export function unoFromJson(value: unknown): { code: string; note: string }[] {
   return list.filter((u): u is { code: string; note: string } => typeof u === "object" && u !== null && typeof (u as { code?: unknown }).code === "string" && typeof (u as { note?: unknown }).note === "string");
 }
 
+/**
+ * The keyless legend read (`legendText.ts`) is OFF unless `LEGEND_TEXT_READ=1`: on training it types
+ * like the model's read (settled 54.5% with the wall-tag guard against 55.7% without, wrong of typed
+ * 3.7%), but its first held-out run read zone and detail references as types (66% wrong of what it
+ * typed); the guard (`wallTagCodes`) waits for new held-out sets before it is turned on. 2026-11-12.
+ */
+export const LEGEND_TEXT_ON = () => process.env.LEGEND_TEXT_READ === "1";
+
 export type PlanTextLegend = {
+  /** Read from the pages' text with no model (`legendText.ts`): its codes are trusted on a sheet only where the sheet prints them as wall tags (`wallTagCodes`). */
+  fromText?: true;
   page: number;
   title: string | null;
   codes: string[];
@@ -201,6 +211,8 @@ export async function legendForPlan(input: {
   outOfTime: () => boolean;
   /** Stored reads only: a suggestion refresh (`suggestionRefresh.ts`) never calls the model. */
   noModel?: boolean;
+  /** No model at all (plan reading off): the pages' own text only, when `LEGEND_TEXT_ON`. */
+  textOnly?: boolean;
 }): Promise<PlanTextLegend | null> {
   // ── THE INGEST'S READ FIRST ──
   // The WALL_LEGEND stage stores what it read for review; a detection that
@@ -222,7 +234,7 @@ export async function legendForPlan(input: {
   const candidates = legendPages(pages);
   // The best page, then the next, so a legend whose first candidate is an
   // index entry still gets read; never more, because each is a model call.
-  for (const candidate of candidates.slice(0, 2)) {
+  for (const candidate of input.textOnly ? [] : candidates.slice(0, 2)) {
     if (input.outOfTime()) return null;
     const page = pages.find((p) => p.page === candidate.page);
     if (page === undefined) continue;
@@ -246,27 +258,38 @@ export async function legendForPlan(input: {
     await writeStored(input.planId, SET_PAGE, "legend", legend);
     return legend;
   }
-  // ── NO MODEL READ: THE PAGES' OWN TEXT ──
-  // The switch off, the provider out, or the read refused: the same candidates read from their text
-  // alone (`legendText.ts`). Not stored, so the model's read is still tried next time.
-  for (const candidate of candidates.slice(0, 2)) {
+  // ── NO MODEL READ: THE PAGES' OWN TEXT (LEGEND_TEXT_READ=1 only) ──
+  // The switch off, the provider out, or the read refused: every page the ranking offers (rank 1–2)
+  // read from its text alone (`legendText.ts`), each type with its richest printing — as measured.
+  // Not stored, so the model's read is still tried next time.
+  if (!LEGEND_TEXT_ON()) return null;
+  const types = new Map<string, LegendTextRead["types"][number] & { page: number }>();
+  const uno: { code: string; note: string }[] = [];
+  for (const candidate of candidates.filter((c) => c.rank <= 2)) {
     if (input.outOfTime()) return null;
     const text = await input.doc.pageText(candidate.page);
     const items = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
     const symbols = tagSymbols({ segments: (await input.doc.pageStrokes(candidate.page)).segments, text: items, unitsPerPaperInch: 72 });
     const read = readLegendFromText({ items, widthPt: text.widthPt, heightPt: text.heightPt, symbols });
-    if (read.types.length === 0) continue;
-    const title = pages.find((p) => p.page === candidate.page)?.title ?? null;
-    return {
-      page: candidate.page,
-      title,
-      codes: read.types.map((t) => t.code.toUpperCase()),
-      proposals: read.types.map((t) => ({ ...t, assembly: readPartitionAssembly({ lines: t.lines, where: `page ${candidate.page}, type ${t.code}` }) })),
-      reason: read.reason,
-      confidence: read.confidence,
-      ...(read.uno.length > 0 ? { uno: read.uno } : {}),
-    };
+    for (const t of read.types) {
+      const key = t.code.toUpperCase();
+      if ((types.get(key)?.lines.length ?? -1) < t.lines.length) types.set(key, { ...t, page: candidate.page });
+    }
+    for (const u of read.uno) if (!uno.some((x) => x.code === u.code)) uno.push(u);
   }
+  if (types.size === 0) return null;
+  const all = [...types.values()];
+  const first = all[0]!.page;
+  return {
+    fromText: true,
+    page: first,
+    title: pages.find((p) => p.page === first)?.title ?? null,
+    codes: all.map((t) => t.code.toUpperCase()),
+    proposals: all.map((t) => ({ code: t.code, name: t.name, lines: t.lines, assembly: readPartitionAssembly({ lines: t.lines, where: `page ${t.page}, type ${t.code}` }) })),
+    reason: `Read from the pages' text, with no model: ${all.length} types.`,
+    confidence: "MEDIUM",
+    ...(uno.length > 0 ? { uno } : {}),
+  };
   return null;
 }
 

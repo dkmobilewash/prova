@@ -1,0 +1,6 @@
+### C: the wall legend read from the pages' text, with no model, and its wall-tag guard (OFF: `LEGEND_TEXT_READ=1`)
+
+- With plan reading off a set gets no wall types. `readLegendFromText` reads a legend's layout from the text items' positions (details, key/schedule rows, and now INLINE lines like Wendell's "S4 3 5/8" MTL STUD & GYP BD TO DECK") and codes shaped 0SF1B / SW2-1. With `LEGEND_TEXT_READ=1` it is the legend when no model read exists (the ingest's fallback and `legendForPlan`, every rank 1–2 page merged).
+- **The guard (`wallTagCodes`)**: a text-read code types walls on a sheet only where the sheet prints it as a wall tag (bare, or in a tag symbol, its leader followed, within 4 ft of a found wall), never as a callout (a symbol or word beside a sheet number like A-501) or a grid bubble (a circle a 2-in line runs into). The stage regroups with the trusted codes.
+- Training (17 type-keyed sheets): keyless 55.7% settled / 6.4% wrong of typed → with the guard **54.5% / 3.7%** (right of typed 91.2 → 93.8%); the one sheet that loses is Green Bay A3.1, which prints no wall tags. v1's single held-out run failed (66% wrong: zone and detail references); the guard is NOT measured on those sheets and waits for new held-out sets — hence OFF.
+- Left unread, with cause: Totem (legend drawn as outlines), cmb (composed code matrix), Falafel (no legend page).

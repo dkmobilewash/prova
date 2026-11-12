@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PLAN_READING_UNAVAILABLE } from "@/lib/ai/providerOutage";
 import { wallLegendWork, type WallLegendDeps, type WallLegendProposalRow } from "./wallLegend";
 import type { PlanPdf } from "./planPdf";
@@ -50,7 +50,19 @@ function deps(over: Partial<WallLegendDeps>): { deps: WallLegendDeps; saved: Wal
 const ctx = { planId: "p1", companyId: "co1", ingestJobId: "ij1", jobId: "j1", startedByUserId: null };
 const task = { pageNumber: 4 } as Parameters<ReturnType<typeof wallLegendWork>>[0];
 
-describe("the legend stage with no model read", () => {
+describe("the keyless read is OFF unless LEGEND_TEXT_READ=1", () => {
+  it("the company's switch off and the env switch off: nothing is saved, the refusal stands", async () => {
+    vi.stubEnv("LEGEND_TEXT_READ", "");
+    const { deps: d, saved } = deps({ gate: vi.fn(async () => ({ ok: false, error: "Plan reading is off." })) as unknown as WallLegendDeps["gate"] });
+    expect(await wallLegendWork(ctx, d)(task)).toEqual({ ok: false, error: "Plan reading is off." });
+    expect(saved).toHaveLength(0);
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("the legend stage with no model read (LEGEND_TEXT_READ=1)", () => {
+  beforeEach(() => vi.stubEnv("LEGEND_TEXT_READ", "1"));
+  afterEach(() => vi.unstubAllEnvs());
   it("the company's switch off: the page's text is the proposal, marked 'legend text', and the page is done", async () => {
     const { deps: d, saved } = deps({ gate: vi.fn(async () => ({ ok: false, error: "Plan reading is off." })) as unknown as WallLegendDeps["gate"] });
     const result = await wallLegendWork(ctx, d)(task);

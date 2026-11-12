@@ -10,7 +10,7 @@ import { legendProposalFrom } from "@/lib/takeoff/legendProposalBuild";
 import { refreshSuggestionsAfterResponse } from "@/lib/takeoff/suggestionRefresh";
 import { legendCropRects, type CropRect } from "@/lib/takeoff/legendSight";
 import { LEGEND_TEXT_SOURCE, readLegendFromText } from "@/lib/takeoff/legendText";
-import { pageLines } from "@/lib/takeoff/planTextRead";
+import { LEGEND_TEXT_ON, pageLines } from "@/lib/takeoff/planTextRead";
 import { tagSymbols } from "@/lib/takeoff/tagSymbols";
 import type { PlanPdf } from "./planPdf";
 import { openSharedPlanPdf } from "./sharedPlanPdf";
@@ -91,7 +91,8 @@ export function wallLegendWork(ctx: StageCtx, deps: WallLegendDeps = realDeps): 
     // 7.5% of what it types wrong against 6.6% — where with no legend nothing is typed. Not metered:
     // it costs nothing. A model read that succeeds later replaces it (same row).
     const saveFromText = async (): Promise<boolean> => {
-      if (fromText.types.length === 0) return false;
+      // OFF unless LEGEND_TEXT_READ=1 (`LEGEND_TEXT_ON`): the read waits for new held-out sets.
+      if (!LEGEND_TEXT_ON() || fromText.types.length === 0) return false;
       await deps.saveProposal({
         ingestJobId: ctx.ingestJobId,
         planId: ctx.planId,

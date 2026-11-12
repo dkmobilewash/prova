@@ -6,6 +6,7 @@ import { sheetStrokes } from "../sheetStrokes";
 import { detectForSheet } from "../offeredCandidates";
 import { groupsForStage } from "../stageGroups";
 import { planTextTagByRun, plainTag, printedTagCodes, tagVocabulary } from "../planTextTags";
+import { wallTagCodes } from "../legendText";
 import { wallTypeTags } from "../wallTags";
 import type { MatchableWallType } from "../wallTypeMatch";
 import type { WallGroup } from "../wallGroups";
@@ -158,7 +159,15 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
       const siblingPage = (process.env.WT_SIBLING ?? "").split(";").map((p) => p.trim().split(">")).find(([at]) => at === `${set}:${page}`)?.[1];
       const siblingRead = siblingPage === undefined ? null : await sheetStrokes(Buffer.from(readFileSync(join(DIR, set!))), Number(siblingPage));
       const sibling = siblingRead === null ? null : { segmentsPt: siblingRead.segments, widthPt: siblingRead.widthPt, textItems: (await doc.pageText(Number(siblingPage))).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height })) };
-      const staged = groupsForStage({ found, segmentsPt: read.segments, textItems: items, widthPt: W, feetPerUnit: fpu, wallTypes, legendCodes: planText?.legendCodes ?? null, sibling, midSpan: legendCodes.length === 0 });
+      // WT_GUARD=1 (the keyless legend's guard, `wallTagCodes`): a code read from the legend's TEXT
+      // types walls on this sheet only where the sheet prints it as a wall tag, not as a reference.
+      const keyless = legend !== null && legend.types.some((t) => (t as { evidence?: unknown }).evidence !== undefined);
+      const trusted = process.env.WT_GUARD === "1" && keyless ? wallTagCodes({ text: items, segments: read.segments, walls: found.walls, widthPt: W, feetPerUnit: fpu, codes: legendCodes }) : null;
+      const untrusted = trusted === null ? new Set<string>() : new Set(legendCodes.filter((c) => !trusted.has(c.toUpperCase())).map((c) => c.toUpperCase()));
+      const guardedTypes = wallTypes.filter((t) => !untrusted.has(t.code.toUpperCase()));
+      const guardedCodes = planText?.legendCodes.filter((c) => !untrusted.has(c.toUpperCase())) ?? null;
+      if (trusted !== null) console.log(`   guard: kept ${[...trusted].join(" ") || "—"}; dropped ${[...untrusted].join(" ") || "—"}`);
+      const staged = groupsForStage({ found, segmentsPt: read.segments, textItems: items, widthPt: W, feetPerUnit: fpu, wallTypes: guardedTypes, legendCodes: guardedCodes, sibling, midSpan: legendCodes.length === 0 });
       const groups: WallGroup[] = staged.groups;
       const total = groups.reduce((s, g) => s + g.feet, 0);
       const by: Record<Source | "untyped" | "tagNoType", number> = { tag: 0, "tag-variant": 0, carried: 0, sibling: 0, note: 0, thickness: 0, untyped: 0, tagNoType: 0 };

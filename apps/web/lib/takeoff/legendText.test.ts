@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readLegendFromText, textLines } from "./legendText";
+import { readLegendFromText, textLines, wallTagCodes } from "./legendText";
 import { readPartitionAssembly } from "./partitionAssembly";
 
 /** A text item at (x, baseline y), width from its length — the shape the page reader returns. */
@@ -46,7 +46,7 @@ describe("a key: the code, then its words on the same row (K-4's plan margin)", 
   ];
   it("each code owns its row and its wrapped line", () => {
     const read = readLegendFromText({ items, ...PAGE });
-    expect(read.types).toEqual([
+    expect(read.types.map(({ at: _at, evidence: _evidence, ...type }) => type)).toEqual([
       { code: "S1", name: null, lines: ["3 5/8\" STL. STUD WALL CONSTRUCTION", "WITH ONE LAYER GWB ON ONE SIDE."] },
       { code: "S2", name: null, lines: ["6\" STL. STUD WALL CONSTRUCTION WITH", "(2) LAYERS GWB EACH SIDE."] },
       { code: "M8", name: null, lines: ["8\" CMU WALL CONSTRUCTION WITH GYP BD FURRING."] },
@@ -104,5 +104,50 @@ describe("Joplin's U.N.O., the sentence written the other way round", () => {
   });
   it("without the boxes a letter is a grid line, and nothing is read", () => {
     expect(readLegendFromText({ items, ...PAGE }).types).toEqual([]);
+  });
+});
+
+describe("v2 layouts", () => {
+  it("INLINE: the code starts a line that describes its assembly (Wendell's partition legend)", () => {
+    const items = [
+      t("S4 3 5/8\" MTL STUD & GYP BD TO DECK (STC 43-45)", 1500, 400),
+      t("S6 6\" MTL STUD & GYP BD TO DECK (STC 45-47)", 1500, 430),
+      t("F2 2 1/2\" FURRING & GYP BD TO DECK", 2100, 400),
+      t("NOTES: 1. BRACE METAL STUDS AS PER MANUFACTURER", 1500, 470),
+    ];
+    const read = readLegendFromText({ items, ...PAGE });
+    expect(read.types.map((x) => [x.code, x.evidence?.how])).toEqual([["S4", "inline"], ["F2", "inline"], ["S6", "inline"]]);
+    expect(read.types[0]!.lines).toEqual(["3 5/8\" MTL STUD & GYP BD TO DECK (STC 43-45)"]);
+  });
+  it("a digit-led code with letters inside (cmb's 0SF1B) and a dash-numbered one (SW2-1) are codes", () => {
+    const items = ["0SF1B", "1SW4", "SW2-1"].flatMap((code, i) => [t(code, 2000, 100 + i * 30), t("3 5/8\" MTL STUDS @ 16\" O.C. W/ 5/8\" GYP BD", 2040, 100 + i * 30)]);
+    expect(readLegendFromText({ items, ...PAGE }).types.map((x) => x.code)).toEqual(["0SF1B", "1SW4", "SW2-1"]);
+  });
+});
+
+describe("the guard: a text-read code types walls only where the sheet prints it as a wall tag (`wallTagCodes`)", () => {
+  // Page-width units for walls; points for text and strokes; 2592 pt wide, 1/8" scale (288 ft per unit).
+  const W = 2592, fpu = 288;
+  const wall = { x1: 0.2, y1: 0.3, x2: 0.4, y2: 0.3 };
+  const at = (str: string, x: number, y: number) => ({ str, x: x - 6, y: y + 3.5, width: 12, height: 7 });
+  const circle = (cx: number, cy: number, r = 10) => Array.from({ length: 16 }, (_, k) => {
+    const a = (2 * Math.PI * k) / 16, b = (2 * Math.PI * (k + 1)) / 16;
+    return { x1: cx + r * Math.cos(a), y1: cy + r * Math.sin(a), x2: cx + r * Math.cos(b), y2: cy + r * Math.sin(b) };
+  });
+  const run = (text: ReturnType<typeof at>[], segments: { x1: number; y1: number; x2: number; y2: number }[] = []) =>
+    [...wallTagCodes({ text, segments, walls: [wall], widthPt: W, feetPerUnit: fpu, codes: ["S6B", "A1", "B3"] })].sort();
+  it("a code printed beside a wall is a tag; the same code beside a sheet number (a callout) is not", () => {
+    const y = 0.3 * W - 4; // a foot or two off the wall
+    expect(run([at("S6B", 0.3 * W, y)])).toEqual(["S6B"]);
+    expect(run([at("A1", 0.3 * W, y), at("A-501", 0.3 * W, y + 14)])).toEqual([]);
+  });
+  it("a code far from every wall (a note, the legend itself) is not a tag", () => {
+    expect(run([at("S6B", 0.9 * W, 0.9 * W)])).toEqual([]);
+  });
+  it("a code in a circle a grid line runs into is a grid bubble, not a tag", () => {
+    const cx = 0.3 * W, cy = 0.3 * W - 4;
+    const gridLine = { x1: cx, y1: cy + 10, x2: cx, y2: cy + 400 };
+    expect(run([at("B3", cx, cy)], [...circle(cx, cy), gridLine])).toEqual([]);
+    expect(run([at("B3", cx, cy)], circle(cx, cy))).toEqual(["B3"]);
   });
 });

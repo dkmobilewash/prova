@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
-import { readLegendFromText } from "../legendText";
+import { readLegendFromText, textLines } from "../legendText";
 import { readPartitionAssembly, type PartitionAssembly } from "../partitionAssembly";
 import { tagSymbols } from "../tagSymbols";
 import { isHeldOut } from "../heldOutSets";
@@ -32,6 +32,8 @@ const ONLY = process.env.ONLY ?? "";
 const norm = (s: string) => s.toLowerCase().replace(/\.pdf$/, "").replace(/pdf$/, "").replace(/[^a-z0-9]/g, "");
 const codeKey = (c: string) => c.toUpperCase().replace(/[\s.-]/g, "").replace(/^(?:WALL|PARTITION)?TYPE/, "");
 const HEIGHT = /\bTO\s+(?:THE\s+)?(?:UNDERSIDE\s+OF\s+)?(?:STRUCT|DECK|ROOF)|\bABOVE\s+(?:FINISH(?:ED)?\s+)?(?:CEILING|CLG)|\bFULL\s+HEIGHT\b|\bTO\s+CEILING\b/i;
+/** A sheet number as a detail callout prints it under its detail number: A5.01, A-501, A501. */
+const SHEET_REF = /^[A-Z]{1,2}-?\d{1,2}(?:\.\d{1,2}|\d{2})$/;
 const FIELDS = ["studWidthIn", "studSpacingIn", "studGauge", "boardThicknessIn", "layersPerSide", "boardIsTypeX", "insulation", "hourlyRating"] as const;
 
 function pdfs(dir: string, out = new Map<string, string>()): Map<string, string> {
@@ -105,7 +107,22 @@ describe.skipIf(CACHE === "" || DIRS.length === 0)("keyless legend read", () => 
         const items = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
         const strokes = await doc.pageStrokes(page);
         const symbols = tagSymbols({ segments: strokes.segments, text: items, unitsPerPaperInch: 72 });
-        richest(myCodes, readLegendFromText({ items, widthPt: text.widthPt, heightPt: text.heightPt, symbols }).types);
+        const readHere = readLegendFromText({ items, widthPt: text.widthPt, heightPt: text.heightPt, symbols });
+        richest(myCodes, readHere.types);
+        // FEATURES=1: how each code read here is drawn — its symbol, a SCALE line under it, a sheet reference beside it.
+        if (process.env.FEATURES === "1") {
+          const words = (await pageLines(doc, page)).join(" ");
+          out.push(`PAGE ${stem.slice(0, 18)} p${page} rank=${rank} typesHeading=${/\b(?:WALL|PARTITION)\s+TYPES?\b/i.test(words) ? 1 : 0} typeLegend=${/\b(?:WALL|PARTITION)\s+TYPES?\s+(?:LEGEND|SCHEDULE)|\bTYPES?\s+LEGEND\b/i.test(words) ? 1 : 0} read=${readHere.types.length} title=${textLines(items).some((l) => /^(?:(?:INTERIOR|EXTERIOR|TYPICAL)\s+)?(?:WALL|PARTITION)S?\s+(?:TYPES?|ASSEMBL(?:Y|IES))(?:\s+(?:LEGEND|SCHEDULE|DETAILS?|KEY))?\s*:?$/i.test(l.text.trim())) ? 1 : 0}`);
+          const aiPage = new Set(((JSON.parse(readFileSync(path.join(CACHE, newest.get(`${stem}|${page}`)!.file), "utf8")) as Read).types ?? []).map((x) => codeKey(x.code)));
+          for (const ty of readHere.types) {
+            if (ty.at === undefined) continue;
+            const { x, y, h } = ty.at;
+            const sym = symbols.find((sy) => Math.hypot(sy.x - x, sy.y - (y - h / 2)) <= sy.radius + 1);
+            const scaleBelow = items.some((i) => /SCALE/i.test(i.str) && i.y > y && i.y - y <= 1.0 * 72 && Math.abs(i.x - x) <= 3 * 72);
+            const sheetRefNear = items.some((i) => SHEET_REF.test(i.str.trim()) && Math.hypot(i.x + i.width / 2 - x, i.y - y) <= 0.6 * 72 && i.str.trim().toUpperCase() !== ty.code.toUpperCase());
+            out.push(`FEAT ${stem.slice(0, 18)} p${page} ${aiPage.has(codeKey(ty.code)) ? "REAL " : "EXTRA"} ${ty.code.padEnd(6)} sym=${sym ? `${sym.shape}${sym.split ? "/split" : ""}[${sym.parts.join("|").slice(0, 20)}]` : "-"} scaleBelow=${scaleBelow ? 1 : 0} sheetRefNear=${sheetRefNear ? 1 : 0} lines=${ty.lines.length} name=${ty.name ?? "-"} at=${Math.round(x)},${Math.round(y)} page=${Math.round(text.widthPt)}x${Math.round(text.heightPt)}`);
+          }
+        }
       }
       t.sets += 1;
       const both = [...aiCodes.keys()].filter((c) => myCodes.has(c));
