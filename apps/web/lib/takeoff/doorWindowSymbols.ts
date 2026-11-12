@@ -511,7 +511,20 @@ export function windowSymbols(
       // CMU piers a foot outside the furring line the finder chose; their W2
       // tags are what keep them, not this rule.)
       const half = walls[wall]!.thicknessFeet / 2 / feetPerUnit;
-      if (!fromWall.some((o) => o < half - inside) || fromWall.some((o) => o > half + 2 * inside)) return;
+      if (!fromWall.some((o) => o < half - inside)) return;
+      // ── A WINDOW DRAWN WIDER THAN THE WALL THE FINDER PAIRED ──
+      // Crosslines' and Topeka's window frames are drawn 6 to 14 in across, a
+      // full frame of five or six lines, where the run the finder paired is a
+      // 4 to 6 in face pair; a frame line then sits outside the "wall" and the
+      // rule above dropped 35 real windows on the training sheets. What it was
+      // keeping out is narrow: a desk edge or sill line beside the wall, three
+      // lines and under 2.4 ft (MHK, SW: 22 of the 26 it stopped). So a frame
+      // `FULL_FRAME_FEET` to `FULL_FRAME_MAX_FEET` wide with `FULL_FRAME_LINES`
+      // lines may reach past the faces; anything else still may not. The upper
+      // bound is Joplin's: its 6 ft pieces of cavity wall between windows are
+      // drawn with inner lines and a roof line outside, exactly as a frame is,
+      // and only a tag tells them apart. The real frames measured are 3 to 4.2 ft.
+      if (fromWall.some((o) => o > half + 2 * inside) && ((aHi - aLo) * feetPerUnit < FULL_FRAME_FEET || (aHi - aLo) * feetPerUnit > FULL_FRAME_MAX_FEET || offs.length < FULL_FRAME_LINES)) return;
       // The gap test below rejected 13 of Topeka's real interior windows (the
       // finder's run passes through them), so a tagged interior frame is held
       // to the glass test only.
@@ -544,6 +557,11 @@ export function windowSymbols(
   });
   return mergeLites(out, feetPerUnit);
 }
+
+/** A frame this wide, with this many lines, is a window even where its lines reach past the paired wall's faces. */
+export const FULL_FRAME_FEET = 2.5;
+export const FULL_FRAME_LINES = 5;
+export const FULL_FRAME_MAX_FEET = 5;
 
 /** A storefront's lites sit this close, mullion to mullion; farther apart they are two windows. */
 export const MULLION_FEET = 0.6;
