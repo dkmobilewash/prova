@@ -12,6 +12,7 @@ import { pointInRing } from "../drawTools";
 import { setHeightRule, wallHeightByCode } from "../heightsByCode";
 import { roofPartsFor } from "../roofPartsRead";
 import { roomPitched } from "../roofParts";
+import { levelHeight, planLevels } from "../levelHeights";
 
 /**
  * ── D. WALL HEIGHTS FROM THE DRAWING, BY CODE: WHAT EACH LABELLED WALL HAS TO GO ON ──
@@ -37,6 +38,10 @@ const ROOM_PARTS = process.env.HB_ROOM_PARTS ?? "";
 const TOLERANCE_FT = 0.5;
 /** HB_SETS=Hutto,STEM: only these sets (finishing one measurement a harness gap skipped, never re-measuring). */
 const ONLY = (process.env.HB_SETS ?? "").split(",").filter(Boolean);
+/** Level 2's offset over the room's ceiling when nothing says which: 0 (to the ceiling) or 6 (+6"), fitted on training. */
+const L2_INCHES = Number(process.env.HB_L2_INCHES ?? "0");
+/** Level 3: the company's default wall height. */
+const DEFAULT_FT = Number(process.env.HB_DEFAULT_FT ?? "10");
 
 type KeyType = { feet?: number; basis?: string; zones?: { zone: string; kind: string; feet: number }[]; excluded?: boolean; sameAs?: string };
 type KeySet = { heldOut: boolean; labelSet: string; types: Record<string, KeyType> };
@@ -84,6 +89,8 @@ describe.skipIf(DIR === "" || LABELS === "" || KEY === "" || OUT === "")("D: hei
     const score = new Map<string, { ft: number; withHeight: number; right: number; lenient: number; wrong: number }>();
     /** Per rule class: footage scored strictly (the key settles one figure), and how much of it is right — the posting bar's precision. */
     const byClass = new Map<string, { scored: number; right: number }>();
+    /** The fallback chain, per level: footage it gave a height, right (settled key), and wrong. */
+    const byLevel = new Map<string, { ft: number; right: number; wrong: number }>();
     for (const [setName, set] of Object.entries(key.sets)) {
       if (set.heldOut !== HELD) continue;
       if (ONLY.length > 0 && !ONLY.includes(setName)) continue;
@@ -127,6 +134,9 @@ describe.skipIf(DIR === "" || LABELS === "" || KEY === "" || OUT === "")("D: hei
           const found = sheetRooms({ pairings: [], runs: walls.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, thicknessFeet: w.thicknessFeet })) as never, drawn: [], segments, doorLeaves: [], feetPerUnit: label.feetPerUnit, text: text.items, widthPt: W });
           const current: CeilingPageText = { pageNumber: label.page, items: text.items, widthPt: W, tableRows: tableRowsFromPage(text) };
           const ceilings = ceilingsForRooms({ rooms: found.rooms, current, feetPerUnit: label.feetPerUnit, others: ceilingPages.filter((p) => p.pageNumber !== label.page) });
+          // Level 2's floor-to-floor: the level this plan's caption names, through the sections' level marks.
+          const levels = text.items.map((i) => planLevels(i.str)).find((l) => l.length > 0) ?? [];
+          const storey = levelHeight(facts.levels ?? [], levels);
           for (const { w, code, k } of keyed) {
             const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
             const sides: (number | null)[] = [];
@@ -165,6 +175,21 @@ describe.skipIf(DIR === "" || LABELS === "" || KEY === "" || OUT === "")("D: hei
               }
             }
             score.set(setName, at);
+            // ── THE CHAIN: 1 printed rule, 2 the room's ceiling (else floor to floor), 3 the default ──
+            const adjacent = sides.filter((h): h is number => h !== null && h > 0);
+            const chain: [string, number | null][] = [
+              ["1 printed rule", mine?.feet ?? null],
+              [`2 room ceiling${L2_INCHES ? ` +${L2_INCHES}"` : ""}`, adjacent.length > 0 ? Math.max(...adjacent) + L2_INCHES / 12 : null],
+              ["2 floor to floor", storey?.feet ?? null],
+              [`3 default ${DEFAULT_FT} ft`, DEFAULT_FT],
+            ];
+            const [level, feet] = chain.find(([, f]) => f !== null)!;
+            const l = byLevel.get(level) ?? { ft: 0, right: 0, wrong: 0 };
+            l.ft += w.lengthFeet;
+            const ok = (h: number) => Math.abs(h - feet!) <= TOLERANCE_FT;
+            if (want.strict !== null ? ok(want.strict) : false) l.right += w.lengthFeet;
+            if (want.strict !== null ? !ok(want.strict) : !want.any.some(ok)) l.wrong += w.lengthFeet;
+            byLevel.set(level, l);
             rows.push({ set: setName, held: set.heldOut, sheet: label.sheet, page: label.page, type: w.wallType, keyCode: code, lf: Math.round(w.lengthFeet * 10) / 10, key: k, sides, sideRooms, mine, want });
           }
           console.log(`[hb] ${setName} ${label.sheet}: ${keyed.length} keyed walls, ${found.rooms.length} rooms, ${[...ceilings.values()].filter((c) => c.heightFeet !== null).length} with a ceiling height`);
@@ -183,6 +208,11 @@ describe.skipIf(DIR === "" || LABELS === "" || KEY === "" || OUT === "")("D: hei
       console.log(`HB ${setName.padEnd(18)} ft=${at.ft.toFixed(0).padStart(5)} with=${pct(at.withHeight, at.ft)} right=${pct(at.right, at.ft)} lenient=${pct(at.lenient, at.ft)} wrong=${pct(at.wrong, at.ft)}`);
       for (const key of Object.keys(total) as (keyof typeof total)[]) total[key] += at[key];
     }
+    const all = [...byLevel.values()].reduce((n, l) => n + l.ft, 0);
+    for (const [level, l] of [...byLevel].sort()) console.log(`HB level ${level.padEnd(20)} ft=${l.ft.toFixed(0).padStart(5)} (${pct(l.ft, all)} of walls) right=${pct(l.right, l.ft)} wrong=${pct(l.wrong, l.ft)}`);
+    const chainRight = [...byLevel.values()].reduce((n, l) => n + l.right, 0);
+    const chainWrong = [...byLevel.values()].reduce((n, l) => n + l.wrong, 0);
+    console.log(`HB chain ${HELD ? "HELD-OUT" : "TRAINING"} every wall a height: right=${pct(chainRight, all)} wrong=${pct(chainWrong, all)}`);
     for (const [kind, c] of byClass) console.log(`HB class ${kind.padEnd(22)} scored=${c.scored.toFixed(0).padStart(5)} ft precision=${pct(c.right, c.scored)}`);
     console.log(`HB ${HELD ? "HELD-OUT" : "TRAINING"} ft=${total.ft.toFixed(0)} with=${pct(total.withHeight, total.ft)} right=${pct(total.right, total.ft)} lenient=${pct(total.lenient, total.ft)} wrong=${pct(total.wrong, total.ft)}`);
     expect(rows.length).toBeGreaterThan(0);
