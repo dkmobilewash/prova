@@ -1,5 +1,6 @@
 "use server";
 
+import { SNAP_SOURCE } from "@/lib/takeoff/scaleFromDimensions";
 import { syncReviewedItems, syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
 import { isSamplePlanUrl } from "@/lib/sample-job/samplePlan";
 import { namedItem, untypedItem, wallItemsForSheet, wallItemsNoteFor } from "@/lib/plan-ingest/wallItems";
@@ -403,6 +404,12 @@ export async function applyPrintedScales(
       const reading = readings.find((r) => r.pageNumber === pageNumber);
       if (!reading || reading.scaleName === null || reading.x1 === null || reading.y1 === null || reading.x2 === null || reading.y2 === null || reading.declaredDistanceFeet === null) {
         skipped.push({ pageNumber, why: "no scale was read off this sheet" });
+        continue;
+      }
+      // A scale snap is an offer, set only by its own sheet's "Use 1/8" (from N dimensions)"
+      // (`confirmSheetScales`), never by a press that sets every sheet (Diego, 2026-11-11).
+      if (reading.source === SNAP_SOURCE) {
+        skipped.push({ pageNumber, why: "its scale is offered from the dimensions: use the button on this sheet" });
         continue;
       }
       const line = { x1: reading.x1, y1: reading.y1, x2: reading.x2, y2: reading.y2, declaredDistanceFeet: Number(reading.declaredDistanceFeet) };
