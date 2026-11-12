@@ -84,6 +84,9 @@ async function freeTestPhone(): Promise<string> {
 }
 
 test.describe.configure({ mode: "serial" });
+// A click on something that never becomes clickable (a button inside a closed list) waited forever
+// and held the run to its 25-minute hard limit (USU ASPIRE). Bounded, it fails as that step's FAILED.
+test.use({ actionTimeout: 60_000 });
 
 /**
  * ── WHAT WENT WRONG ON SCREEN, RECORDED, NEVER THROWN ──
@@ -554,7 +557,9 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
         await expect(page.locator('[data-takeoff="plan-set-look"]')).toBeHidden({ timeout: 60_000 }).catch(() => {});
       } else {
         // One floor plan, or none printed: each sheet's own button.
-        const fixes = page.locator('[data-takeoff="plan-set-fix"]').getByRole("button", { name: /Use the printed scale/ });
+        // "Use the printed scale 1/8\"" or, when printed dimensions agree with it, "Use 1/8\" (from 18
+        // dimensions)" (plan-set-snap): either is the one press a person makes (Bluetooth office TI).
+        const fixes = page.locator('[data-takeoff="plan-set-fix"]').getByRole("button", { name: /^Use / });
         let pressed = 0;
         while ((await fixes.count()) > 0 && pressed < 12) {
           const before = await fixes.count();
@@ -944,7 +949,9 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
           // The windows counted on the sheet (#1024): a person who agrees confirms them all.
           await item.locator('[data-takeoff="queue-windows-accept"]').click();
         } else if (kind === "scale") {
-          const printed = item.locator('[data-takeoff="review-queue-confirm-scale"], [data-takeoff="review-queue-printed"]');
+          // "Use the printed scale on all N sheets" first: with it, the per-sheet list is closed and
+          // its buttons cannot be pressed (the USU ASPIRE hang).
+          const printed = item.locator('[data-takeoff="review-queue-scale-all"], [data-takeoff="review-queue-confirm-scale"]:visible, [data-takeoff="review-queue-printed"]:visible');
           if ((await printed.count()) === 0) {
             stuck(`a floor plan with no printed scale to take: "${(await text(item)).slice(0, 200)}"`);
             await item.locator('[data-takeoff="review-queue-next"]').click();
