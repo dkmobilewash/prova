@@ -449,6 +449,15 @@ model TakeoffMeasurement {
   ceilingFrom       String?
   ceilingGuess      Boolean @default(false)
 
+  /// A wall's own height (LINEAR measurements), from `heightsByCode.ts`'s chain when the whole-set run
+  /// finds its rooms: the rule the drawing prints (to deck, N" above the ceiling) or, failing that, the
+  /// company's default. Used for the wall's board when its item has no height of its own; an item's
+  /// height (typed, answered in the queue) always wins. `heightFrom` says where it came from;
+  /// `heightAssumed` marks the company default, which the estimate and bid check ask to confirm.
+  heightFt      Float?
+  heightFrom    String?
+  heightAssumed Boolean @default(false)
+
   /// The finder's confidence, 0..1. Null unless `source` is `DETECTED` — a
   /// number a person drew has no confidence to report, and defaulting one to
   /// 1 would invent agreement nobody expressed.

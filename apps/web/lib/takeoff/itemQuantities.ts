@@ -33,6 +33,10 @@ export type ItemMeasurement = {
   cutouts?: { xs: number[]; ys: number[] }[];
   /** Doors and windows in this wall, taken off its board. Ignored for the other kinds. */
   openings?: { widthFt: number; heightFt: number }[];
+  /** A wall's own height (`heightsByCode.ts`), used for its board when its item has none. */
+  heightFt?: number | null;
+  /** That height is the company's default, assumed. */
+  heightAssumed?: boolean;
   /**
    * Feet across the page's full width, from the sheet's calibration. Null
    * when the sheet has no scale — those measurements contribute GEOMETRY but

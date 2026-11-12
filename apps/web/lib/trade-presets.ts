@@ -62,6 +62,12 @@ export type TradePreset = {
    * company says it installs them.
    */
   doorScope: DoorScope;
+  /**
+   * The company's default wall height, feet: the height a wall is ASSUMED to be when the drawing gives
+   * none (`heightsByCode.ts`, level 3). Asked at the trade step, which shows this figure. 10'-0" for
+   * every trade to start (Diego, 2026-11-12, "e.g. 10'-0""); one number per trade if they should differ.
+   */
+  defaultWallHeightFt: number;
 };
 
 const on = (walls: boolean, rooms: boolean, doors: boolean): TakeoffSwitches => ({
@@ -94,6 +100,7 @@ export const TRADE_PRESETS: TradePreset[] = [
       ],
     },
     doorScope: "BY_OTHERS",
+    defaultWallHeightFt: 10,
     clauses: { inclusions: ["Metal stud framing, gypsum board, hang, tape and finish per the wall types listed"], exclusions: ["Fire caulking and firestopping", "Paint and wall coverings", "Insulation not listed in the wall types", "Work on existing walls to remain"] },
   },
   {
@@ -114,6 +121,7 @@ export const TRADE_PRESETS: TradePreset[] = [
       ],
     },
     doorScope: "BY_OTHERS",
+    defaultWallHeightFt: 10,
     clauses: { inclusions: ["Ceiling grid, tile, wall angle and hanger wire per the ceiling plan"], exclusions: ["Light fixtures, diffusers and their support", "Fire caulking and firestopping", "Work above existing ceilings to remain"] },
   },
   {
@@ -136,6 +144,7 @@ export const TRADE_PRESETS: TradePreset[] = [
       ],
     },
     doorScope: "BY_OTHERS",
+    defaultWallHeightFt: 10,
     clauses: { inclusions: ["Lath, plaster and EIFS per the wall types and details listed"], exclusions: ["Paint and coatings not listed", "Sealants by others", "Work on existing finishes to remain"] },
   },
   {
@@ -157,6 +166,7 @@ export const TRADE_PRESETS: TradePreset[] = [
       ],
     },
     doorScope: "BY_OTHERS",
+    defaultWallHeightFt: 10,
     clauses: { inclusions: ["Spray-applied fireproofing to the ratings shown on the drawings"], exclusions: ["Fireproofing of existing steel", "Patching after other trades", "Inspections and testing by others"] },
   },
   {
@@ -168,6 +178,7 @@ export const TRADE_PRESETS: TradePreset[] = [
     wallTypeCodes: [],
     template: null,
     doorScope: "BY_OTHERS",
+    defaultWallHeightFt: 10,
     clauses: { inclusions: [], exclusions: [] },
   },
 ];

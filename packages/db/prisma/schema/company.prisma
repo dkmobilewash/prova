@@ -75,6 +75,12 @@ model Company {
   /// opening's header, king and jack studs from its "Door opening" assembly
   /// (`lib/estimating/doorLines.ts`).
   doorScope DoorScope @default(BY_OTHERS)
+
+  /// The wall height this company bids when the drawing says nothing a wall's height can be read
+  /// from: the last step of `lib/takeoff/heightsByCode.ts`'s chain. Asked once at the trade pick and
+  /// preset by trade. A height from here is ASSUMED, and says so on the estimate and in bid check.
+  /// NULL: not set, and such a wall has no height until somebody gives it one, as before.
+  defaultWallHeightFt Decimal? @db.Decimal(6, 2)
   doesPublicWork          Boolean?
   filesMonthlyPayApps     Boolean?
 

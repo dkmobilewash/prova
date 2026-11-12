@@ -91,6 +91,9 @@ describe.skipIf(DIR === "" || LABELS === "" || KEY === "" || OUT === "")("D: hei
     const byClass = new Map<string, { scored: number; right: number }>();
     /** The fallback chain, per level: footage it gave a height, right (settled key), and wrong. */
     const byLevel = new Map<string, { ft: number; right: number; wrong: number }>();
+    /** zzZeroTouch v2's board term on these walls (BOARD_PER_SF, 2 sides): the key's board, and the gap before D (no height: 0 SF) and after (the SHIPPED chain: printed rule, else the default). */
+    const BOARD_PER_SF = 2.2;
+    const board = { key: 0, gapBefore: 0, gapAfter: 0, over: 0, under: 0 };
     for (const [setName, set] of Object.entries(key.sets)) {
       if (set.heldOut !== HELD) continue;
       if (ONLY.length > 0 && !ONLY.includes(setName)) continue;
@@ -190,6 +193,16 @@ describe.skipIf(DIR === "" || LABELS === "" || KEY === "" || OUT === "")("D: hei
             if (want.strict !== null ? ok(want.strict) : false) l.right += w.lengthFeet;
             if (want.strict !== null ? !ok(want.strict) : !want.any.some(ok)) l.wrong += w.lengthFeet;
             byLevel.set(level, l);
+            const keyFeet = want.strict ?? (want.any.length > 0 ? want.any.reduce((n, f) => n + f, 0) / want.any.length : null);
+            if (keyFeet !== null) {
+              const keySf = w.lengthFeet * keyFeet * 2;
+              const runSf = w.lengthFeet * (mine?.feet ?? DEFAULT_FT) * 2;
+              board.key += keySf * BOARD_PER_SF;
+              board.gapBefore += keySf * BOARD_PER_SF;
+              board.gapAfter += Math.abs(runSf - keySf) * BOARD_PER_SF;
+              if (runSf > keySf) board.over += (runSf - keySf) * BOARD_PER_SF;
+              else board.under += (keySf - runSf) * BOARD_PER_SF;
+            }
             rows.push({ set: setName, held: set.heldOut, sheet: label.sheet, page: label.page, type: w.wallType, keyCode: code, lf: Math.round(w.lengthFeet * 10) / 10, key: k, sides, sideRooms, mine, want });
           }
           console.log(`[hb] ${setName} ${label.sheet}: ${keyed.length} keyed walls, ${found.rooms.length} rooms, ${[...ceilings.values()].filter((c) => c.heightFeet !== null).length} with a ceiling height`);
@@ -212,6 +225,8 @@ describe.skipIf(DIR === "" || LABELS === "" || KEY === "" || OUT === "")("D: hei
     for (const [level, l] of [...byLevel].sort()) console.log(`HB level ${level.padEnd(20)} ft=${l.ft.toFixed(0).padStart(5)} (${pct(l.ft, all)} of walls) right=${pct(l.right, l.ft)} wrong=${pct(l.wrong, l.ft)}`);
     const chainRight = [...byLevel.values()].reduce((n, l) => n + l.right, 0);
     const chainWrong = [...byLevel.values()].reduce((n, l) => n + l.wrong, 0);
+    const usd = (n: number) => "USD " + Math.round(n).toLocaleString("en-US");
+    console.log(`HB board ${HELD ? "HELD-OUT" : "TRAINING"} key ${usd(board.key)}; gap before D ${usd(board.gapBefore)} (no height = 0 SF) -> after ${usd(board.gapAfter)} (over ${usd(board.over)}, under ${usd(board.under)})`);
     console.log(`HB chain ${HELD ? "HELD-OUT" : "TRAINING"} every wall a height: right=${pct(chainRight, all)} wrong=${pct(chainWrong, all)}`);
     for (const [kind, c] of byClass) console.log(`HB class ${kind.padEnd(22)} scored=${c.scored.toFixed(0).padStart(5)} ft precision=${pct(c.right, c.scored)}`);
     console.log(`HB ${HELD ? "HELD-OUT" : "TRAINING"} ft=${total.ft.toFixed(0)} with=${pct(total.withHeight, total.ft)} right=${pct(total.right, total.ft)} lenient=${pct(total.lenient, total.ft)} wrong=${pct(total.wrong, total.ft)}`);

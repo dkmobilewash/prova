@@ -28,6 +28,7 @@ export function TradeSetupSteps({ initial, planReadingOn }: { initial: SetupStep
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [doorScope, setDoorScope] = useState<DoorScope>("BY_OTHERS");
+  const [wallHeight, setWallHeight] = useState("10");
   const router = useRouter();
 
   if (step === "questions") return <CompanySetupGate />;
@@ -70,13 +71,30 @@ export function TradeSetupSteps({ initial, planReadingOn }: { initial: SetupStep
                 ))}
               </div>
             </fieldset>
+            {/* The height a wall is assumed to be when the drawing gives none (heightsByCode.ts, level 3).
+                Text with a decimal keypad, never type="number" (CLAUDE.md, the openings entry). */}
+            <label className="mt-4 flex items-center gap-2 text-sm text-ink" data-setup="wall-height">
+              Your usual wall height
+              <input
+                type="text"
+                inputMode="decimal"
+                value={wallHeight}
+                onChange={(event) => setWallHeight(event.target.value)}
+                className="min-h-11 w-20 rounded-md border border-line-card bg-canvas px-2 text-sm text-ink"
+                aria-describedby="wall-height-help"
+              />
+              ft
+            </label>
+            <p id="wall-height-help" className="mt-1 text-xs text-ink-muted">
+              Used only where the drawing gives a wall no height, and marked as assumed on the bid.
+            </p>
             <ul className="mt-6 flex flex-col gap-2" data-setup="trades">
               {TRADE_PRESETS.map((preset) => (
                 <li key={preset.choice}>
                   <button
                     type="button"
                     disabled={isPending}
-                    onClick={() => run(() => applyTradePreset(preset.choice, doorScope), "sample")}
+                    onClick={() => run(() => applyTradePreset(preset.choice, doorScope, wallHeight), "sample")}
                     className="flex min-h-12 w-full items-center rounded-md border border-line-card px-4 text-left text-sm font-medium text-ink hover:border-link hover:text-link disabled:opacity-50"
                   >
                     {preset.label}

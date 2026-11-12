@@ -89,3 +89,21 @@ export function wallHeightByCode(rule: SetHeightRule | null, sides: readonly (nu
     ? { feet: toTwelfths(ceiling + rule.inches / 12), from: `${rule.from}; ${where} ${ceiling} ft + ${rule.inches}"` }
     : { feet: toTwelfths(ceiling), from: `${rule.from}; ${where} ${ceiling} ft` };
 }
+
+/**
+ * ── THE CHAIN: EVERY WALL A HEIGHT, AND ITS SOURCE (Diego, 2026-11-12) ──
+ *
+ *   1. what the drawing prints (`wallHeightByCode`): training 92.7% right, 3.6% wrong on the 86% of wall
+ *      footage it answers;
+ *   2. the room's ceiling or the floor-to-floor — MEASURED AND NOT SHIPPED: 98.6% and 28.7% wrong on
+ *      held-out, where walls run past the ceiling to the structure (zzHeightsByCode.eval.ts);
+ *   3. the company's default wall height, ASSUMED, which the estimate and bid check ask to confirm.
+ *
+ * Null only when the drawing says nothing and the company has no default.
+ */
+export type ChainHeight = { feet: number; from: string; assumed: boolean };
+export function wallHeightChain(rule: SetHeightRule | null, sides: readonly (number | null)[], roofPitched: readonly (boolean | null)[], defaultFt: number | null): ChainHeight | null {
+  const drawn = wallHeightByCode(rule, sides, roofPitched);
+  if (drawn !== null) return { ...drawn, assumed: false };
+  return defaultFt !== null && defaultFt > 0 ? { feet: defaultFt, from: `assumed: your default wall height, ${defaultFt} ft`, assumed: true } : null;
+}

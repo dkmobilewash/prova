@@ -739,6 +739,41 @@ export async function saveOpeningDeduction(formData: FormData): Promise<ActionRe
  * whether every bid carries door lines. The company's open estimates follow at once: each one's posted
  * doors are re-synced, so the lines and the labor appear or go with the answer.
  */
+/**
+ * The company's default wall height (`Company.defaultWallHeightFt`): the height a wall is ASSUMED to be
+ * when the drawing gives none (`heightsByCode.ts`, level 3). Owner only, its own form. Blank clears it.
+ * Walls already on the assumed default in open estimates follow the new figure, and their lines with
+ * them; a height read off the drawing is never touched.
+ */
+export async function saveDefaultWallHeight(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPLIANCE_ONLY);
+    const refusal = ownerRefusal(context, "Only the account owner can set this — it is the height every bid assumes where the drawing gives none.");
+    if (refusal) return refusal;
+    const raw = formData.get("defaultWallHeightFt");
+    let feet: number | null = null;
+    if (!isBlank(raw)) {
+      const parsed = parseNumericInput(raw, { label: "The default wall height", min: 6, max: 60, maxDecimals: 2, unit: " ft" });
+      if (!parsed.ok) return fail(parsed.error);
+      feet = parsed.n;
+    }
+    const companyId = context.company.id;
+    await prisma.company.update({ where: { id: companyId }, data: { defaultWallHeightFt: feet } });
+    const walls = await prisma.takeoffMeasurement.findMany({ where: { heightAssumed: true, item: { companyId, job: { status: "ESTIMATE" } } }, select: { id: true, itemId: true, item: { select: { jobId: true } } } });
+    await prisma.takeoffMeasurement.updateMany({
+      where: { id: { in: walls.map((w) => w.id) } },
+      data: feet === null ? { heightFt: null, heightFrom: null, heightAssumed: false } : { heightFt: feet, heightFrom: `assumed: your default wall height, ${feet} ft` },
+    });
+    const byJob = new Map<string, Set<string>>();
+    for (const w of walls) if (w.itemId !== null && w.item) byJob.set(w.item.jobId, (byJob.get(w.item.jobId) ?? new Set()).add(w.itemId));
+    for (const [jobId, items] of byJob) await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, jobId, items), { timeout: 60_000 });
+    revalidatePath("/settings");
+    revalidatePath("/jobs", "layout");
+    return ok;
+  });
+}
+
 export async function saveDoorScope(formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   return runAction(async () => {
