@@ -120,19 +120,37 @@ export function itemGeometry(item: ItemForLines): RunGeometry {
     depthIn: item.depthIn,
   });
 
-  const heightFt = item.heightFt ?? 0;
+  let heightFt = item.heightFt ?? 0;
   const sides = item.sides ?? 0;
   const depthFt = (item.depthIn ?? 0) / 12;
   // Every opening comes off unless the company says small ones stay: Diego's
   // call, 2026-10-31. A 3 x 7 door is 21 sf, under the rule's usual 32.
   const openings = item.measurements.flatMap((m) => m.openings ?? []);
   const deduct = { openingDeductionThresholdSqFt: item.openingThresholdSqFt ?? 0 };
+  let faceSqFt = boardedArea({ lengthFt: quantity.linearFt, heightFt, sides: 1, openings }, deduct);
+  let boardedSqFt = boardedArea({ lengthFt: quantity.linearFt, heightFt, sides: sides as 1 | 2, openings }, deduct);
+  // ── EACH WALL ITS OWN HEIGHT (D, `heightsByCode.ts`) ──
+  // An item with no height of its own takes each wall's: board wall by wall. An item's height,
+  // typed or answered in the queue, always wins; a wall with no height adds no board, as before.
+  const own = item.heightFt === null ? item.measurements.filter((m) => m.kind === "LINEAR" && m.heightFt != null && m.heightFt > 0) : [];
+  if (own.length > 0) {
+    faceSqFt = 0;
+    boardedSqFt = 0;
+    let weighted = 0;
+    for (const m of own) {
+      const lf = itemQuantity([m], { type: item.type, heightFt: null, sides: item.sides, wastePercent: 0, depthIn: item.depthIn }).linearFt;
+      faceSqFt += boardedArea({ lengthFt: lf, heightFt: m.heightFt!, sides: 1, openings: m.openings ?? [] }, deduct);
+      boardedSqFt += boardedArea({ lengthFt: lf, heightFt: m.heightFt!, sides: sides as 1 | 2, openings: m.openings ?? [] }, deduct);
+      weighted += lf * m.heightFt!;
+    }
+    heightFt = quantity.linearFt > 0 ? weighted / quantity.linearFt : 0;
+  }
 
   return {
     linearFt: quantity.linearFt,
     heightFt,
-    faceSqFt: boardedArea({ lengthFt: quantity.linearFt, heightFt, sides: 1, openings }, deduct),
-    boardedSqFt: boardedArea({ lengthFt: quantity.linearFt, heightFt, sides: sides as 1 | 2, openings }, deduct),
+    faceSqFt,
+    boardedSqFt,
     // An item has no stud spacing of its own; the assembly's `studSpacingIn`
     // is handed in (see `ItemForLines`). Without one: zero rather than a
     // guess, because a guessed stud count is a number that looks right and
@@ -188,6 +206,8 @@ export async function loadItemsForLines(tx: Tx, companyId: string, jobId: string
           roomNumber: true,
           label: true,
           openings: true,
+          heightFt: true,
+          heightAssumed: true,
           pageId: true,
           kind: true,
           xs: true,
@@ -400,11 +420,14 @@ export async function syncTakeoffItemLines(
       continue;
     }
 
+    const itemHeight = num(item.heightFt) ?? (assumed ? num(assembly.defaultHeightFt) : null);
+    // Board from a wall's own height that is the company's default: the line says so (D, level 3).
+    const heightAssumed = itemHeight === null && item.measurements.some((m) => m.heightAssumed && m.heightFt != null);
     const geometry = itemGeometry({
       id: item.id,
       name: item.name,
       type: item.type,
-      heightFt: num(item.heightFt) ?? (assumed ? num(assembly.defaultHeightFt) : null),
+      heightFt: itemHeight,
       sides: item.sides ?? (assumed ? (assembly.sides === 1 ? 1 : 2) : null),
       wastePercent: num(item.wastePercent),
       depthIn: num(item.depthIn),
@@ -440,7 +463,7 @@ export async function syncTakeoffItemLines(
       wanted.set(`${item.id}:${component.id}`, {
         itemId: item.id,
         componentId: component.id,
-        description: `${item.name}${assumed ? " (assumed type: check)" : ""} — ${component.description}`,
+        description: `${item.name}${assumed ? " (assumed type: check)" : ""}${heightAssumed ? " (height assumed: check)" : ""} — ${component.description}`,
         unit: component.unit,
         quantity,
         laborHours: rate != null && rate > 0 ? quantity / rate : null,
@@ -572,6 +595,8 @@ function geometryMeasurement(m: LoadedItem["measurements"][number]): ItemMeasure
     cutouts: Array.isArray(m.cutouts) ? (m.cutouts as { xs: number[]; ys: number[] }[]) : [],
     openings: openingsFromJson(m.openings),
     feetPerPageWidth: m.calibration === null ? null : feetAcross(m.calibration),
+    heightFt: m.heightFt,
+    heightAssumed: m.heightAssumed,
   };
 }
 type LoadedItem = Awaited<ReturnType<typeof loadItemsForLines>>["items"][number];
