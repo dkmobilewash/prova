@@ -823,6 +823,22 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
         // "W1 on the 2 other groups drawn like it": the type the person just gave, on the untagged
         // groups drawn alike (same fill, thickness within an inch). One press, as a person who
         // agrees would; it says what it covers before it is pressed.
+        // "The rest of A2.1's untagged walls: N groups, F ft = which of your types?" (one per sheet):
+        // the walk's usual first type, then apply — two presses for every group nothing names.
+        const rest = queue.locator('[data-takeoff="review-queue-rest"]');
+        if ((await rest.count()) > 0 && (await rest.isVisible().catch(() => false))) {
+          const said = await text(rest);
+          const before = await text(left);
+          await rest.locator('[data-takeoff="review-queue-rest-code"]').first().click();
+          await rest.locator('[data-takeoff="review-queue-rest-apply"]').click();
+          act(2);
+          pressesBy.type = (pressesBy.type ?? 0) + 2;
+          seenKinds.rest = (seenKinds.rest ?? 0) + 1;
+          if (seenKinds.rest === 1) await shot("review-rest", tab);
+          note(`Rest: "${said.slice(0, 200)}"`);
+          await expect.poll(async () => text(left), { timeout: 30_000 }).not.toBe(before).catch(() => note("the count did not move after the rest question"));
+          continue;
+        }
         const alike = queue.locator('[data-takeoff="review-queue-alike-apply"]');
         if ((await alike.count()) > 0 && (await alike.isVisible().catch(() => false))) {
           const said = await text(alike);
