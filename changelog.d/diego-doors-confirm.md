@@ -1,0 +1,4 @@
+### Review queue: found doors with no printed mark, one confirm item per sheet
+
+- A door the finder draws with no printed mark is right about 93.5% of the time on training (143 found, 10 false; ROUND 17+17b keys), under the 97% auto-post bar, so it never posted, and it was never asked either: the doors were found and dropped. They are now one queue item per sheet ("N doors with no printed mark"): each lit on its leaf, D drops a false one, Enter keeps the rest on the job's Doors count (the item marked doors post to, which now prices on the bid with #1153's door scope). Never posted without the press.
+- No class of unmarked doors reaches 97% on training: on a found wall 95.7% (132/6), 2.5–3.6 ft 95.7%, swing 80–100° 93.4%; "in a door-sized wall gap" could not be measured (`openingsInWalls` finds 2–9 gaps per sheet against 13–85 doors). So none auto-posts and held-out was not spent.
