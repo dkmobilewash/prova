@@ -40,6 +40,7 @@ afterAll(async () => {
     await prisma.job.deleteMany({ where: { companyId } });
     await prisma.contact.deleteMany({ where: { companyId } });
     await prisma.estimateTemplate.deleteMany({ where: { companyId } });
+    await prisma.proposalClause.deleteMany({ where: { companyId } });
     await prisma.wallType.deleteMany({ where: { companyId } });
     await prisma.companyTradeScope.deleteMany({ where: { companyId } });
     await prisma.companyBidDefaults.deleteMany({ where: { companyId } });

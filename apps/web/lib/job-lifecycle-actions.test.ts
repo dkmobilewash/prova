@@ -62,6 +62,9 @@ const prisma = {
       return job;
     },
   },
+  // createEstimateJob copies the company's standard clauses onto a new job: none here.
+  proposalClause: { findMany: async () => [] },
+  jobProposalClause: { createMany: async () => ({ count: 0 }) },
   contact: {
     findFirst: async ({ where }: { where: Row }) =>
       db.contacts.find((c) => matches(c, where)) ?? null,

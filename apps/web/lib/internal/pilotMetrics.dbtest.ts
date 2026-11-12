@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@prova/db";
 import { loadPilotMetrics, type PilotRow } from "./pilotMetrics";
 
@@ -18,6 +18,13 @@ async function company(name: string, isProvaOperator = false) {
   const contact = await prisma.contact.create({ data: { companyId: id, name: "GC" } });
   return { id, contactId: contact.id };
 }
+
+// Its operator company stops being one when this file is done: `takeoffOffer.dbtest.ts` refuses to
+// run beside a second operator company, and the db suite runs files one after another
+// (`fileParallelism: false`), so a leftover one failed it on every later run.
+afterAll(async () => {
+  if (operator !== "") await prisma.company.update({ where: { id: operator }, data: { isProvaOperator: false } });
+});
 
 beforeAll(async () => {
   const A = await company("Pilot A");

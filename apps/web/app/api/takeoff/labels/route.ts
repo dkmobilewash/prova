@@ -272,6 +272,8 @@ export async function POST(request: Request) {
     path: written.path,
     candidates: parsed.candidates.length,
     rows: file.rows.length,
+    // What the file holds, so the screen's "Saved N" is the file's count (`labelSaveMessage`).
+    verdicts: file.verdicts.length,
     note: `Set ${LABEL_DIR_VAR} to change where these go.`,
   });
 }

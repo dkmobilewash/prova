@@ -1,5 +1,6 @@
 "use client";
 
+import { labelSaveMessage } from "@/lib/takeoff/labelSaveMessage";
 import type { SavedVerdict } from "@/lib/takeoff/restoreSaved";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { KEY_RULES } from "@/lib/takeoff/answerKey";
@@ -668,11 +669,10 @@ export function AnswerKeyPanel({
           carriedRows: carriedRows ?? null,
         }),
       });
-      const body = (await response.json()) as { ok: boolean; error?: string; path?: string; rows?: number };
-      const decisions = verdicts.length + (carried ?? []).length;
+      const body = (await response.json()) as { ok: boolean; error?: string; path?: string; rows?: number; verdicts?: number };
       setLabelsResult(
         body.ok
-          ? { ok: true, text: `Saved ${decisions} decision${decisions === 1 ? "" : "s"} to ${body.path}` }
+          ? { ok: true, text: labelSaveMessage({ sent: verdicts.length + (carried ?? []).length, written: body.verdicts, path: body.path }) }
           : { ok: false, text: `Not saved: ${body.error ?? "the request failed"}` },
       );
       // ── ONLY AFTER THE FILE IS ON DISK ──

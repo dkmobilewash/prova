@@ -49,6 +49,12 @@ export type TradePreset = {
   switches: TakeoffSwitches;
   wallTypeCodes: string[];
   template: { name: string; lines: { description: string; unit: string }[] } | null;
+  /**
+   * The trade's usual inclusions and exclusions: the trade pick puts them in the company's clause
+   * library, and a new job starts with the library's on its proposal (`create-job.ts`), so Send no
+   * longer waits on the new user typing them. Words a person reads and edits, never a number.
+   */
+  clauses: { inclusions: string[]; exclusions: string[] };
 };
 
 const on = (walls: boolean, rooms: boolean, doors: boolean): TakeoffSwitches => ({
@@ -80,6 +86,7 @@ export const TRADE_PRESETS: TradePreset[] = [
         { description: "Clean up and haul off", unit: "ls" },
       ],
     },
+    clauses: { inclusions: ["Metal stud framing, gypsum board, hang, tape and finish per the wall types listed"], exclusions: ["Fire caulking and firestopping", "Paint and wall coverings", "Insulation not listed in the wall types", "Work on existing walls to remain"] },
   },
   {
     choice: "ACOUSTICAL_CEILINGS",
@@ -98,6 +105,7 @@ export const TRADE_PRESETS: TradePreset[] = [
         { description: "Clean up and haul off", unit: "ls" },
       ],
     },
+    clauses: { inclusions: ["Ceiling grid, tile, wall angle and hanger wire per the ceiling plan"], exclusions: ["Light fixtures, diffusers and their support", "Fire caulking and firestopping", "Work above existing ceilings to remain"] },
   },
   {
     choice: "PLASTER_EIFS",
@@ -118,6 +126,7 @@ export const TRADE_PRESETS: TradePreset[] = [
         { description: "Scaffolding", unit: "ls" },
       ],
     },
+    clauses: { inclusions: ["Lath, plaster and EIFS per the wall types and details listed"], exclusions: ["Paint and coatings not listed", "Sealants by others", "Work on existing finishes to remain"] },
   },
   {
     choice: "FIREPROOFING",
@@ -137,6 +146,7 @@ export const TRADE_PRESETS: TradePreset[] = [
         { description: "Thickness and density testing", unit: "ls" },
       ],
     },
+    clauses: { inclusions: ["Spray-applied fireproofing to the ratings shown on the drawings"], exclusions: ["Fireproofing of existing steel", "Patching after other trades", "Inspections and testing by others"] },
   },
   {
     // Today's new-company defaults, and nothing added.
@@ -146,6 +156,7 @@ export const TRADE_PRESETS: TradePreset[] = [
     switches: on(true, true, true),
     wallTypeCodes: [],
     template: null,
+    clauses: { inclusions: [], exclusions: [] },
   },
 ];
 
