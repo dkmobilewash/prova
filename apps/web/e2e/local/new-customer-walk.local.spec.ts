@@ -2,6 +2,7 @@ import { WalkClock } from "../lib/walkClock";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { deleteThrowaway, throwawayEmail } from "../lib/throwawayUsers.mjs";
 import { setupClerkTestingToken } from "@clerk/testing/playwright";
 import { createClerkClient } from "@clerk/backend";
 import { prisma } from "@prova/db";
@@ -57,7 +58,9 @@ const KNOWN_PRICES = process.env.WALK_KNOWN_PRICES === "1";
 const PLAN_COMPARE = process.env.WALK_PLAN_COMPARE === "1" || process.env.WALK_PLAN_COMPARE === "0";
 const COMPARE_ON = process.env.WALK_PLAN_COMPARE !== "0";
 const SIZE = { width: 1440, height: 900 };
-const EMAIL = `walk-${Date.now()}+clerk_test@example.com`;
+const EMAIL = throwawayEmail("walk");
+// Pass or fail: the dev Clerk instance caps at 100 users (e2e/lib/throwawayUsers.mjs).
+test.afterAll(async () => { await deleteThrowaway(EMAIL); });
 
 /** `seconds` is what a person spends (`WalkClock`); `wallSeconds` includes the walk waiting for itself. */
 type Row = { step: string; seconds: number; wallSeconds: number; walkSeconds: number; actions: number; url: string; notes: string[]; shots: string[] };

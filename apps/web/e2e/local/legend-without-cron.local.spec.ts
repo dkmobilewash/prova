@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { test, expect, type Page } from "@playwright/test";
+import { deleteThrowaway, throwawayEmail } from "../lib/throwawayUsers.mjs";
 import { createClerkClient } from "@clerk/backend";
 import { prisma } from "@prova/db";
 import { signInAs } from "../lib/signIn";
@@ -31,7 +32,9 @@ const SET = process.env.WALK_SET ?? "";
 const OUT = process.env.WALK_OUT ?? "";
 /** How long the page is given. Long by default; a deliberate-break run shortens it. */
 const WAIT_MS = Number(process.env.LEGEND_WAIT_MS ?? 1_500_000);
-const EMAIL = `legend-${Date.now()}+clerk_test@example.com`;
+const EMAIL = throwawayEmail("legend");
+// Pass or fail: the dev Clerk instance caps at 100 users (e2e/lib/throwawayUsers.mjs).
+test.afterAll(async () => { await deleteThrowaway(EMAIL); });
 
 test.describe.configure({ mode: "serial" });
 

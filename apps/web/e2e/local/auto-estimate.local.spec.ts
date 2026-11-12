@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { deleteThrowaway, throwawayEmail } from "../lib/throwawayUsers.mjs";
 import { setupClerkTestingToken } from "@clerk/testing/playwright";
 import { createClerkClient } from "@clerk/backend";
 import { prisma } from "@prova/db";
@@ -25,7 +26,9 @@ import { storedLegendTypes } from "../../lib/takeoff/legendProposal";
 const OUT = process.env.WALK_OUT ?? "";
 const SET = process.env.WALK_SET ?? "";
 const CACHE = process.env.LEGEND_CACHE ?? "";
-const EMAIL = `autoest-${Date.now()}+clerk_test@example.com`;
+const EMAIL = throwawayEmail("autoest");
+// Pass or fail: the dev Clerk instance caps at 100 users (e2e/lib/throwawayUsers.mjs).
+test.afterAll(async () => { await deleteThrowaway(EMAIL); });
 let page: Page;
 let shotN = 0;
 const notes: string[] = [];
