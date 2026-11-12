@@ -15,8 +15,14 @@ const MIL_TO_GAUGE: Record<string, string> = { "18": "25", "19": "25", "30": "20
 /** SSMA widths are hundredths, except the eighths the trade rounds: 362 is 3-5/8, 162 is 1-5/8. */
 const SSMA_WIDTH: Record<string, number> = { "162": 1.625, "250": 2.5, "350": 3.5, "362": 3.625, "400": 4, "550": 5.5, "600": 6, "800": 8, "1000": 10 };
 
+/** "3⅝″" → "3-5/8″", "⅝″" → "5/8″": the trade's preset parts are written with the single-character fractions. */
+const VULGAR: Record<string, string> = { "¼": "1/4", "½": "1/2", "¾": "3/4", "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8" };
+function vulgarFractions(text: string): string {
+  return text.replace(/(\d?)([¼½¾⅛⅜⅝⅞])/g, (_, whole: string, f: string) => (whole ? `${whole}-${VULGAR[f]}` : VULGAR[f]));
+}
+
 export function materialKey(description: string): string | null {
-  const d = description
+  const d = vulgarFractions(description)
     .toLowerCase()
     .replace(/[″"]/g, "in")
     .replace(/\s+/g, " ")
@@ -90,12 +96,15 @@ export function sameUnit(unit: string | null): string | null {
  */
 export function catalogByMaterial(entries: readonly { id: string; description: string; unit: string | null }[]): Map<string, string> {
   const seen = new Map<string, string | null>();
+  const add = (k: string, id: string) => seen.set(k, seen.has(k) ? null : id);
   for (const e of entries) {
     const key = materialKey(e.description);
     const unit = sameUnit(e.unit);
-    if (key === null || unit === null || key.includes("?")) continue;
-    const k = `${key}@${unit}`;
-    seen.set(k, seen.has(k) ? null : e.id);
+    if (unit === null) continue;
+    // The same words in the same unit: an entry saved from this very part ("Hang, tape and finish ⅝″ board").
+    add(wordsKey(e.description, unit), e.id);
+    if (key === null || key.includes("?")) continue;
+    add(`${key}@${unit}`, e.id);
   }
   return new Map([...seen].filter((pair): pair is [string, string] => pair[1] !== null));
 }
@@ -104,7 +113,12 @@ export function catalogByMaterial(entries: readonly { id: string; description: s
 export function catalogFor(catalog: Map<string, string>, part: { description: string; unit: string | null }): string | null {
   const key = materialKey(part.description);
   const unit = sameUnit(part.unit);
-  return key === null || unit === null || key.includes("?") ? null : (catalog.get(`${key}@${unit}`) ?? null);
+  if (unit === null) return null;
+  return (key === null || key.includes("?") ? null : catalog.get(`${key}@${unit}`)) ?? catalog.get(wordsKey(part.description, unit)) ?? null;
+}
+
+function wordsKey(description: string, unit: string): string {
+  return `words:${materialLabel(description).toLowerCase()}@${unit}`;
 }
 
 export type UnpricedLine = { id: string; description: string; unit: string | null; quantity: number };
