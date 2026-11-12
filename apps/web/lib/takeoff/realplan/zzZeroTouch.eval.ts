@@ -55,7 +55,18 @@ const HELD = process.env.ZT_HELD === "1";
 const PRESSES = Number(process.env.ZT_PRESSES ?? "10");
 
 /** v1 price table — placeholder composite rates, identical for run and key. */
-const PRICE = { wallPerLf: 18, boardPerSf: 2.2, doorEach: 350, windowEach: 150 } as const;
+/**
+ * AUDITED 2026-11-13 (Diego): doors are priced per the company's door scope —
+ * the DEFAULT is BY_OTHERS, under which the product bids $0 for doors on BOTH
+ * sides, so doors leave the headline bid and causes and are reported per
+ * setting instead. Windows have no bid line in the product at all, so they
+ * price $0 in the headline; the informational line stays. ZT_DOOR_SCOPE
+ * overrides the default to price FRAMES or DOORS_AND_FRAMES.
+ */
+const PRICE = { wallPerLf: 18, boardPerSf: 2.2, doorEach: { BY_OTHERS: 0, FRAMES: 150, DOORS_AND_FRAMES: 350 }, windowEach: 150 } as const;
+const DOOR_SCOPE = (process.env.ZT_DOOR_SCOPE ?? "BY_OTHERS") as keyof typeof PRICE.doorEach;
+/** The SF figure for key LF whose type the heights key does not cover — VISIBLE, never silently zero. */
+const NOMINAL_FEET = 9;
 
 /**
  * Heights for the board-SF term: heights-key sets → labelSet → type → feet.
@@ -108,14 +119,14 @@ async function sheetsOf(pdf: string): Promise<{ pageNumber: number; sheetNumber:
   return [...proposals.values()].map((p) => ({ pageNumber: p.pageNumber, sheetNumber: p.sheetNumber, title: p.title }));
 }
 
-const bid = (q: { lf: number; boardSf?: number; doors: number; windows: number }) => q.lf * PRICE.wallPerLf + (q.boardSf ?? 0) * PRICE.boardPerSf + q.doors * PRICE.doorEach + q.windows * PRICE.windowEach;
+const bid = (q: { lf: number; boardSf?: number; doors: number }) => q.lf * PRICE.wallPerLf + (q.boardSf ?? 0) * PRICE.boardPerSf + q.doors * PRICE.doorEach[DOOR_SCOPE];
 
 describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF_WALL_MODEL === undefined)("zero-touch bid accuracy", () => {
   it("prices the untouched takeoff against the key", { timeout: 14_400_000 }, async () => {
     const config = loadWallModel();
     if (config === null) throw new Error("no wall model");
     const rows: Record<string, unknown>[] = [];
-    const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number }>();
+    const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number }>();
     for (const dir of readdirSync(LABELS).sort()) {
       if (!existsSync(join(LABELS, dir)) || (heldOutReason(dir) !== null) !== HELD) continue;
       if (process.env.ZT_ONLY !== undefined && !dir.includes(process.env.ZT_ONLY)) continue;
@@ -183,37 +194,43 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         for (let at = 0; at < runs.length; at += 1) if (!held.has(runs[at]!) && junk[at]) junkLf += runs[at]!.lengthFeet;
         const missedLf = Math.max(0, keyLf - (zeroLf - junkLf));
         const hs = heightsByLabelSet[dir] ?? {};
-        const keyBoardSf = key.reduce((n, k) => {
+        let keyBoardSf = 0;
+        let unpricedBoardSf = 0;
+        for (const k of key) {
           const t = (((k as { wallType?: string }).wallType ?? "").trim()).toUpperCase();
           const ft = hs[t];
-          return n + (ft === undefined ? 0 : k.lengthFeet * ft * 2);
-        }, 0);
+          if (ft === undefined) unpricedBoardSf += k.lengthFeet * NOMINAL_FEET * 2;
+          else keyBoardSf += k.lengthFeet * ft * 2;
+        }
         const keyByType: Record<string, number> = {};
         for (const k of key) {
           const t = ((k as { wallType?: string }).wallType ?? "0").trim() || "0";
           keyByType[t] = Math.round(((keyByType[t] ?? 0) + k.lengthFeet) * 10) / 10;
         }
-        const s = bySet.get(dir) ?? { lf: 0, doors: 0, windows: 0, lf10: 0, keyLf: 0, keyDoors: 0, keyWindows: 0, keyByType: {}, sheets: 0, junkLf: 0, junkRenoLf: 0, missedLf: 0, keyBoardSf: 0, renovation: false, doorsOver: 0 };
-        s.lf += zeroLf; s.lf10 += lf10; s.doors += Math.min(postedDoors, keyDoors); s.doorsOver += Math.max(0, postedDoors - keyDoors); s.keyLf += keyLf; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1; s.junkLf += junkLf; if (renovation) s.junkRenoLf += junkLf; s.missedLf += missedLf; s.keyBoardSf += keyBoardSf; s.renovation = s.renovation || renovation;
+        const s = bySet.get(dir) ?? { lf: 0, doors: 0, windows: 0, lf10: 0, keyLf: 0, keyDoors: 0, keyWindows: 0, keyByType: {}, sheets: 0, junkLf: 0, junkRenoLf: 0, missedLf: 0, keyBoardSf: 0, renovation: false, doorsOver: 0, unpricedBoardSf: 0 };
+        s.lf += zeroLf; s.lf10 += lf10; s.doors += Math.min(postedDoors, keyDoors); s.doorsOver += Math.max(0, postedDoors - keyDoors); s.keyLf += keyLf; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1; s.junkLf += junkLf; if (renovation) s.junkRenoLf += junkLf; s.missedLf += missedLf; s.keyBoardSf += keyBoardSf; s.unpricedBoardSf += unpricedBoardSf; s.renovation = s.renovation || renovation;
         for (const [t, ft] of Object.entries(keyByType)) s.keyByType[t] = Math.round(((s.keyByType[t] ?? 0) + ft) * 10) / 10;
         bySet.set(dir, s);
-        rows.push({ set: dir, sheet, paired, renovation, keyLf: Math.round(keyLf), zeroLf: Math.round(zeroLf), lf10: Math.round(lf10), junkLf: Math.round(junkLf), missedLf: Math.round(missedLf), keyBoardSf: Math.round(keyBoardSf), keyDoors, postedDoors, keyWindows });
+        rows.push({ set: dir, sheet, paired, renovation, keyLf: Math.round(keyLf), zeroLf: Math.round(zeroLf), lf10: Math.round(lf10), junkLf: Math.round(junkLf), missedLf: Math.round(missedLf), keyBoardSf: Math.round(keyBoardSf), unpricedBoardSf: Math.round(unpricedBoardSf), keyDoors, postedDoors, keyWindows });
       }
     }
     const group = HELD ? "HELD-OUT" : "TRAINING";
     let zb = 0, kb = 0, tb = 0;
-    const cause = { junkNew: 0, junkReno: 0, missed: 0, board: 0, doors: 0, windows: 0, doorsOver: 0 };
+    const cause = { junkNew: 0, junkReno: 0, missed: 0, board: 0, doors: 0, windows: 0, doorsOver: 0, doorsAtFrames: 0, doorsAtFull: 0, windowsInfo: 0, unpricedBoard: 0 };
     for (const [dir, s] of [...bySet.entries()].sort()) {
-      const kBid = bid({ lf: s.keyLf, boardSf: s.keyBoardSf, doors: s.keyDoors, windows: s.keyWindows });
+      const kBid = bid({ lf: s.keyLf, boardSf: s.keyBoardSf, doors: s.keyDoors });
       cause.junkNew += (s.junkLf - s.junkRenoLf) * PRICE.wallPerLf;
       cause.junkReno += s.junkRenoLf * PRICE.wallPerLf;
       cause.missed += s.missedLf * PRICE.wallPerLf;
       cause.board += s.keyBoardSf * PRICE.boardPerSf;
-      cause.doors += Math.max(0, s.keyDoors - s.doors) * PRICE.doorEach;
-      cause.doorsOver += s.doorsOver * PRICE.doorEach;
-      cause.windows += s.keyWindows * PRICE.windowEach;
-      const zBid = bid({ lf: s.lf, doors: s.doors, windows: s.windows });
-      const tBid = bid({ lf: s.lf10, doors: s.doors, windows: s.windows });
+      cause.doors += Math.max(0, s.keyDoors - s.doors) * PRICE.doorEach[DOOR_SCOPE];
+      cause.doorsAtFrames += Math.max(0, s.keyDoors - s.doors) * PRICE.doorEach.FRAMES;
+      cause.doorsAtFull += Math.max(0, s.keyDoors - s.doors) * PRICE.doorEach.DOORS_AND_FRAMES;
+      cause.unpricedBoard += s.unpricedBoardSf;
+      cause.doorsOver += s.doorsOver * PRICE.doorEach[DOOR_SCOPE];
+      cause.windowsInfo += s.keyWindows * PRICE.windowEach;
+      const zBid = bid({ lf: s.lf, doors: s.doors });
+      const tBid = bid({ lf: s.lf10, doors: s.doors });
       zb += zBid; kb += kBid; tb += tBid;
       const pct = (x: number) => (kBid === 0 ? "—" : `${(((x - kBid) / kBid) * 100).toFixed(1)}%`);
       console.log(
@@ -235,9 +252,8 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       ["existing walls counted on renovations (junk on reno sheets)", cause.junkReno],
       ["missed walls", cause.missed],
       ["board (no height assigned)", cause.board],
-      ["doors not posted", cause.doors],
+      [`doors not posted (at the company scope ${DOOR_SCOPE})`, cause.doors],
       ["doors posted beyond the key", cause.doorsOver],
-      ["windows not posted", cause.windows],
     ];
     const err = Math.abs(zb - kb);
     const sum = named.reduce((n, [, v]) => n + Math.abs(v), 0);
@@ -245,6 +261,9 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     for (const [label, v] of [...named].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))) {
       console.log(`ZTCAUSE ${group} $${Math.round(Math.abs(v))} · ${label}`);
     }
+    console.log(`ZTDOORS ${group} by scope: BY_OTHERS $0 · FRAMES $${Math.round(cause.doorsAtFrames)} · DOORS_AND_FRAMES $${Math.round(cause.doorsAtFull)} (headline uses ${DOOR_SCOPE}, the product default)`);
+    console.log(`ZTWINDOWS ${group} informational: $${Math.round(cause.windowsInfo)} at $150/each — the product has NO window bid line yet, so windows price $0 in the headline`);
+    console.log(`ZTBOARD ${group} UNPRICED key board: ${Math.round(cause.unpricedBoard)} SF (types the heights key does not cover, at a nominal ${NOMINAL_FEET}' for the SF figure) — priced board uses the key's own heights`);
     writeFileSync(OUT, JSON.stringify({ group, prices: PRICE, cause, rows }, null, 1));
     expect(rows.length, "no labelled sheet was read").toBeGreaterThan(0);
   });
