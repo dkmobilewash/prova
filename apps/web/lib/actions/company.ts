@@ -25,6 +25,9 @@ import { normalizeEin, normalizeWebsite } from "@/lib/company-profile";
 import { can } from "@/lib/permissions";
 import { isBlank, numericReaders, parseNumericInput, PERCENT_BOUNDS } from "@/lib/numeric-input";
 import { CONTRACTING_RELATIONSHIPS, OPENING_DEDUCTIONS } from "@/lib/businessScope";
+import { doorScopeFrom } from "@/lib/estimating/doorLines";
+import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
+import { AUTO_DOORS_ITEM } from "@/lib/takeoff/autoPost";
 
 /** The job-function refusal for the company record, worded the way
  * `closeoutSubmissions.ts` words its own: the person reading it has done
@@ -726,6 +729,32 @@ export async function saveOpeningDeduction(formData: FormData): Promise<ActionRe
     });
 
     revalidatePath("/settings");
+    return ok;
+  });
+}
+
+/**
+ * Who installs the doors and frames (`Company.doorScope`, `lib/estimating/doorLines.ts`). Its own
+ * form and action, like the openings question above and for the same reason. Owner only: it decides
+ * whether every bid carries door lines. The company's open estimates follow at once: each one's posted
+ * doors are re-synced, so the lines and the labor appear or go with the answer.
+ */
+export async function saveDoorScope(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPLIANCE_ONLY);
+    const refusal = ownerRefusal(context, "Only the account owner can set this — it decides whether every bid carries door lines.");
+    if (refusal) return refusal;
+    const doorScope = doorScopeFrom(text(formData, "doorScope"));
+    if (doorScope === null) return fail("Choose who installs the doors and frames.");
+    const companyId = context.company.id;
+    await prisma.company.update({ where: { id: companyId }, data: { doorScope } });
+    const items = await prisma.takeoffItem.findMany({ where: { companyId, name: AUTO_DOORS_ITEM, job: { status: "ESTIMATE" } }, select: { id: true, jobId: true } });
+    for (const item of items) {
+      await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, item.jobId, new Set([item.id])), { timeout: 60_000 });
+    }
+    revalidatePath("/settings");
+    revalidatePath("/jobs", "layout");
     return ok;
   });
 }

@@ -12,6 +12,8 @@ import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 import { OFF_ESTIMATE_ITEMS } from "@/lib/takeoff/estimateHold";
 import { boardedArea } from "@/lib/takeoff";
 import { syncLaborLines } from "./laborLines";
+import { framesOpenings, framingAssembly, openingFraming } from "./doorLines";
+import { AUTO_DOORS_ITEM } from "@/lib/takeoff/autoPost";
 
 /**
  * ── A TAKEOFF ITEM'S SHARE OF THE ESTIMATE ──
@@ -246,11 +248,14 @@ export async function syncTakeoffItemLines(
   companyId: string,
   jobId: string,
   /** Only these items' lines are written or retired; the rest of the estimate is left as it is. */
-  only?: ReadonlySet<string>,
+  onlyItems?: ReadonlySet<string>,
 ): Promise<ItemLineSummary> {
   const { items, assemblies, defaultPartitionId, finishPages } = await loadItemsForLines(tx, companyId, jobId);
+  // The posted doors ride along with any partial sync: their opening framing comes from the job's
+  // wall types, which are typed after the doors post (the Baker walk had labor and no framing).
+  const only = onlyItems === undefined ? undefined : new Set([...onlyItems, ...items.filter((i) => i.name === AUTO_DOORS_ITEM).map((i) => i.id)]);
   const assemblyById = new Map(assemblies.map((assembly) => [assembly.id, assembly]));
-  const company = await tx.company.findUniqueOrThrow({ where: { id: companyId }, select: { openingDeduction: true, openingDeductionSqFt: true } });
+  const company = await tx.company.findUniqueOrThrow({ where: { id: companyId }, select: { openingDeduction: true, openingDeductionSqFt: true, doorScope: true, tradeScopes: { select: { tradeScope: true } } } });
   const openingThresholdSqFt = company.openingDeduction === null ? 0 : thresholdFor(company.openingDeduction, company.openingDeductionSqFt === null ? null : Number(company.openingDeductionSqFt));
   const finish = finishPages.map((p) => ({ pageId: p.id, ...finishTakeoffFrom(p.finishTakeoff) }));
   // A room the finish schedule covers has its ceiling there, so the ceiling plan's copy stays off.
@@ -298,6 +303,28 @@ export async function syncTakeoffItemLines(
     // ── NO FOOTAGE IS EVER DROPPED ──
     // Untyped walls take the company's default partition, labelled as assumed,
     // or arrive as footage with no price. Diego's call, 2026-10-31.
+    // ── POSTED DOORS (`doorLines.ts`) ──
+    // By others: no line at all, not even a count. Installed: the labor is `syncLaborLines`'s, at the
+    // production rates; a framing trade's opening framing is written here, from its partition's own
+    // stud and track parts, so it is priced (and sourced) as those parts are.
+    if (item.name === AUTO_DOORS_ITEM && item.wallTypeId === null) {
+      const doors = item.measurements.filter((m) => m.kind === "COUNT").reduce((n, m) => n + m.xs.length, 0);
+      if (company.doorScope === "BY_OTHERS" || doors === 0 || !framesOpenings(company.tradeScopes.map((t) => t.tradeScope))) continue;
+      const framing = framingAssembly(assemblies, [defaultPartitionId, ...items.map((i) => i.wallTypeId)]);
+      for (const { part, perDoor, what } of framing === null ? [] : openingFraming(framing.components)) {
+        wanted.set(`${item.id}:${part.id}`, {
+          itemId: item.id,
+          componentId: part.id,
+          description: `Doors — opening framing, ${what} — ${part.description}`,
+          unit: part.unit,
+          quantity: doors * perDoor,
+          laborHours: null,
+          productionRate: null,
+          component: part,
+        });
+      }
+      continue;
+    }
     const assumed = item.wallTypeId === null && untyped ? defaultPartitionId : null;
     const wallTypeId = item.wallTypeId ?? assumed;
     if (wallTypeId === null) {
