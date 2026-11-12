@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { deleteThrowaway, throwawayEmail } from "../lib/throwawayUsers.mjs";
 import { setupClerkTestingToken } from "@clerk/testing/playwright";
 import { createClerkClient } from "@clerk/backend";
 import { prisma } from "@prova/db";
@@ -16,7 +17,9 @@ import { HealthMonitor } from "../lib/health";
  * seeding a handful of jobs. SKIPS unless WALK_OUT is set, on a `_test` database with E2E_PORT.
  */
 const OUT = process.env.WALK_OUT ?? "";
-const EMAIL = `newjob-${Date.now()}+clerk_test@example.com`;
+const EMAIL = throwawayEmail("newjob");
+// Pass or fail: the dev Clerk instance caps at 100 users (e2e/lib/throwawayUsers.mjs).
+test.afterAll(async () => { await deleteThrowaway(EMAIL); });
 let page: Page;
 let shotN = 0;
 const notes: string[] = [];

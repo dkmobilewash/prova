@@ -1,0 +1,45 @@
+name: Clerk sweep
+
+# Daily: deletes throwaway walk/e2e users older than 24 h from the striking-jaybird DEVELOPMENT
+# Clerk instance, which caps at 100 users and has broken e2e and walks at the cap more than once.
+# Every run already deletes its own user when it ends; this collects the ones a killed run left.
+# Keeps the e2e-* personas CI signs in as, and any address that is not exactly
+# `<word>-<timestamp>+clerk_test@example.com` (apps/web/e2e/lib/throwawayUsers.mjs).
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLERK_SECRET_KEY: ${{ secrets.E2E_CLERK_SECRET_KEY }}
+    steps:
+      - name: Refuse anything but a development key
+        run: |
+          case "$CLERK_SECRET_KEY" in
+            sk_test_*) echo "development (sk_test_) key present." ;;
+            "") echo "::error::E2E_CLERK_SECRET_KEY is not set."; exit 1 ;;
+            *) echo "::error::E2E_CLERK_SECRET_KEY is not an sk_test_ key. This job DELETES users; refusing."; exit 1 ;;
+          esac
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sweep
+        run: node apps/web/e2e/sweep-clerk-users.mjs
