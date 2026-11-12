@@ -65,8 +65,14 @@ const PRESSES = Number(process.env.ZT_PRESSES ?? "10");
  */
 const PRICE = { wallPerLf: 18, boardPerSf: 2.2, doorEach: { BY_OTHERS: 0, FRAMES: 150, DOORS_AND_FRAMES: 350 }, windowEach: 150 } as const;
 const DOOR_SCOPE = (process.env.ZT_DOOR_SCOPE ?? "BY_OTHERS") as keyof typeof PRICE.doorEach;
-/** The SF figure for key LF whose type the heights key does not cover — VISIBLE, never silently zero. */
-const NOMINAL_FEET = 9;
+/**
+ * The trade's default partition assembly height, used to PRICE key board whose
+ * type the heights key does not cover — applied the same way to both sides
+ * (a run wall with no height still carries 0 until the product assigns one),
+ * so board is in the headline rather than a footnote. The previously-unpriced
+ * dollars and the type spellings that failed to match are reported.
+ */
+const NOMINAL_FEET = Number(process.env.ZT_DEFAULT_FEET ?? "9");
 
 /**
  * Heights for the board-SF term: heights-key sets → labelSet → type → feet.
@@ -126,6 +132,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     const config = loadWallModel();
     if (config === null) throw new Error("no wall model");
     const rows: Record<string, unknown>[] = [];
+    const unmatchedSpellings: Record<string, number> = {};
     const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number }>();
     for (const dir of readdirSync(LABELS).sort()) {
       if (!existsSync(join(LABELS, dir)) || (heldOutReason(dir) !== null) !== HELD) continue;
@@ -195,13 +202,17 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const missedLf = Math.max(0, keyLf - (zeroLf - junkLf));
         const hs = heightsByLabelSet[dir] ?? {};
         let keyBoardSf = 0;
-        let unpricedBoardSf = 0;
+        let defaultedBoardSf = 0;
         for (const k of key) {
           const t = (((k as { wallType?: string }).wallType ?? "").trim()).toUpperCase();
           const ft = hs[t];
-          if (ft === undefined) unpricedBoardSf += k.lengthFeet * NOMINAL_FEET * 2;
-          else keyBoardSf += k.lengthFeet * ft * 2;
+          if (ft === undefined) {
+            defaultedBoardSf += k.lengthFeet * NOMINAL_FEET * 2;
+            if (t !== "" && t !== "0" && t !== "U") unmatchedSpellings[`${dir.slice(0, 18)}:${t}`] = (unmatchedSpellings[`${dir.slice(0, 18)}:${t}`] ?? 0) + k.lengthFeet;
+          } else keyBoardSf += k.lengthFeet * ft * 2;
         }
+        keyBoardSf += defaultedBoardSf;
+        const unpricedBoardSf = defaultedBoardSf;
         const keyByType: Record<string, number> = {};
         for (const k of key) {
           const t = ((k as { wallType?: string }).wallType ?? "0").trim() || "0";
@@ -216,9 +227,13 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     }
     const group = HELD ? "HELD-OUT" : "TRAINING";
     let zb = 0, kb = 0, tb = 0;
+    let totalErr = 0;
     const cause = { junkNew: 0, junkReno: 0, missed: 0, board: 0, doors: 0, windows: 0, doorsOver: 0, doorsAtFrames: 0, doorsAtFull: 0, windowsInfo: 0, unpricedBoard: 0 };
     for (const [dir, s] of [...bySet.entries()].sort()) {
       const kBid = bid({ lf: s.keyLf, boardSf: s.keyBoardSf, doors: s.keyDoors });
+      const setOver = s.junkLf * PRICE.wallPerLf + s.doorsOver * PRICE.doorEach[DOOR_SCOPE];
+      const setUnder = s.missedLf * PRICE.wallPerLf + s.keyBoardSf * PRICE.boardPerSf + Math.max(0, s.keyDoors - s.doors) * PRICE.doorEach[DOOR_SCOPE];
+      totalErr += setOver + setUnder;
       cause.junkNew += (s.junkLf - s.junkRenoLf) * PRICE.wallPerLf;
       cause.junkReno += s.junkRenoLf * PRICE.wallPerLf;
       cause.missed += s.missedLf * PRICE.wallPerLf;
@@ -233,12 +248,15 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       const tBid = bid({ lf: s.lf10, doors: s.doors });
       zb += zBid; kb += kBid; tb += tBid;
       const pct = (x: number) => (kBid === 0 ? "—" : `${(((x - kBid) / kBid) * 100).toFixed(1)}%`);
+      const totErr = kBid === 0 ? "—" : `${(((setOver + setUnder) / kBid) * 100).toFixed(1)}%`;
       console.log(
         `ZT ${group} ${dir.slice(0, 26).padEnd(26)} sheets ${s.sheets} · key LF ${Math.round(s.keyLf)} doors ${s.keyDoors} windows ${s.keyWindows} · ` +
-          `zero LF ${Math.round(s.lf)} doors ${s.doors} windows 0 · bid off ${pct(zBid)} · after ${PRESSES} presses/sheet ${pct(tBid)} · key types ${JSON.stringify(s.keyByType)}`,
+          `zero LF ${Math.round(s.lf)} doors ${s.doors} windows 0 · TOTAL ERROR ${totErr} (over $${Math.round(setOver)} + under $${Math.round(setUnder)}) · net ${pct(zBid)} · after ${PRESSES} presses ${pct(tBid)} · key types ${JSON.stringify(s.keyByType)}`,
       );
     }
     if (kb > 0) console.log(`ZT ${group} TOTAL bid off ${(((zb - kb) / kb) * 100).toFixed(1)}% zero-touch · ${(((tb - kb) / kb) * 100).toFixed(1)}% after ${PRESSES} presses/sheet (key $${Math.round(kb)})`);
+    // HEADLINE: TOTAL ERROR = (|over| + |under|) / key — cancelling must never look like accuracy (Diego).
+    if (kb > 0) console.log(`ZT ${group} TOTAL ERROR ${((totalErr / kb) * 100).toFixed(1)}% of key $${Math.round(kb)} — the headline; net is secondary`);
     // OVER and UNDER separately, so junk cuts and recovered quantities cannot hide each other (Diego).
     const over = cause.junkNew + cause.junkReno + cause.doorsOver;
     const under = cause.missed + cause.board + cause.doors + cause.windows;
@@ -263,7 +281,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     }
     console.log(`ZTDOORS ${group} by scope: BY_OTHERS $0 · FRAMES $${Math.round(cause.doorsAtFrames)} · DOORS_AND_FRAMES $${Math.round(cause.doorsAtFull)} (headline uses ${DOOR_SCOPE}, the product default)`);
     console.log(`ZTWINDOWS ${group} informational: $${Math.round(cause.windowsInfo)} at $150/each — the product has NO window bid line yet, so windows price $0 in the headline`);
-    console.log(`ZTBOARD ${group} UNPRICED key board: ${Math.round(cause.unpricedBoard)} SF (types the heights key does not cover, at a nominal ${NOMINAL_FEET}' for the SF figure) — priced board uses the key's own heights`);
+    console.log(`ZTBOARD ${group} board previously unpriced, NOW PRICED at the default ${NOMINAL_FEET}': ${Math.round(cause.unpricedBoard)} SF = $${Math.round(cause.unpricedBoard * PRICE.boardPerSf)} · type spellings with no heights-key match (ft): ${JSON.stringify(Object.fromEntries(Object.entries(unmatchedSpellings).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => [k, Math.round(v)])))}`);
     writeFileSync(OUT, JSON.stringify({ group, prices: PRICE, cause, rows }, null, 1));
     expect(rows.length, "no labelled sheet was read").toBeGreaterThan(0);
   });
