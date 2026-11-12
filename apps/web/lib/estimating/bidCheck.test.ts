@@ -106,12 +106,25 @@ describe("the bid check", () => {
   });
 
   it("existing: names each sheet; the fix is the switch when it is off, the sheet when it is on", () => {
-    const sheets = [{ pageNumber: 4, sheet: "A2.1", walls: 84 }];
+    const sheets = [{ pageNumber: 4, sheet: "A2.1", walls: 84, demoPlan: true }];
     const off = check({ ...clear, existing: { compareOn: false, sheets } }, "existing");
     expect(off.open).toBe(true);
     expect(off.lines[0]).toMatch(/^A2\.1: shows existing work, 84 walls taken off/);
     expect(off.fix?.href).toBe("/settings?tab=estimating#plan-compare");
     expect(check({ ...clear, existing: { compareOn: true, sheets } }, "existing").fix?.href).toBe("/takeoff/j1?page=4");
+  });
+
+  it("existing, with no demolition plan in the set (Totem Lake Dental A2.1): says so, and the fix opens the sheet to set them aside — never 'pair'", () => {
+    const totem = [{ pageNumber: 5, sheet: "A2.1", walls: 66, demoPlan: false }];
+    for (const compareOn of [true, false]) {
+      const c = check({ ...clear, existing: { compareOn, sheets: totem } }, "existing");
+      expect(c.open).toBe(true);
+      expect(c.lines).toEqual(["A2.1: shows existing work on the plan itself (the set has no separate demolition plan for it), 66 walls taken off, none set aside as existing — existing walls to remain may be priced as new"]);
+      expect(c.fix).toEqual({ label: "Set aside the existing walls on A2.1", href: "/takeoff/j1?page=5", newTab: true });
+    }
+    // Beside a sheet that has one, the one that cannot be paired is the way out offered first.
+    const mixed = check({ ...clear, existing: { compareOn: true, sheets: [{ pageNumber: 4, sheet: "A2.0", walls: 9, demoPlan: true }, ...totem] } }, "existing");
+    expect(mixed.fix?.label).toBe("Set aside the existing walls on A2.1");
   });
 
   it("board square feet off a line: sheets by printed size, 4x8 by default, SF as is", () => {

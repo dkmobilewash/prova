@@ -6,6 +6,21 @@ const FPU = 288;
 const walls = (dx: number) => [0.1, 0.2, 0.3].map((y, i) => ({ x1: 0.1 + dx, y1: y, x2: 0.2 + 0.05 * i + dx, y2: y }));
 
 describe("pairDemoWithNewPlan", () => {
+  it("Bluetooth: an interiors series (AI101) is architectural, so its demolition plan AD101 pairs by number, and AD102 with the ceiling plan", () => {
+    const set = [sheet(4, "AD101", "DEMOLITION PLAN"), sheet(5, "AD102", "CEILING DEMOLITION PLAN"), sheet(6, "AI101", "CONSTRUCTION PLAN"), sheet(7, "AI101", "CONSTRUCTION PLAN"), sheet(8, "AI131", "REFLECTED CEILING PLAN"), sheet(10, "AF101", "FINISH PLAN")];
+    expect(pairDemoWithNewPlan(set).filter((p) => p.primary).map((p) => [p.demoPage, p.newPage, p.basis])).toEqual([[4, 6, "sheet-number"], [5, 8, "title"]]);
+  });
+  it("Falafel Fresh: ED2.20 'EXISTING / DEMO PLANS' in a set with no E sheets is the architect's existing plan, and pairs with A2.20", () => {
+    const set = [sheet(6, "ED2.20", "EXISTING / DEMO PLANS FOR DEMOLITION PLAN LEGEND"), sheet(7, "A2.00", "OVERALL BUILDING PLAN - LOWER LEVEL FOR FLOOR PLAN LEGEND"), sheet(8, "A2.10", "OVERALL BUILDING PLAN - MAIN LEVEL FOR FLOOR PLAN LEGEND"), sheet(9, "A2.20", "ENLARGED FLOOR PLANS FOR"), sheet(14, "A6.20", "REFLECTED CEILING PLANS FOR")];
+    expect(pairDemoWithNewPlan(set).filter((p) => p.primary).map((p) => [p.demoPage, p.newPage, p.basis])).toEqual([[6, 9, "sheet-number"]]);
+  });
+  it("an electrical demolition plan in a set with E sheets stays electrical, never the architect's plan of the same number", () => {
+    const set = [sheet(1, "ED101", "ELECTRICAL DEMOLITION PLAN"), sheet(2, "A101", "FLOOR PLAN"), sheet(3, "E102", "ELECTRICAL POWER PLAN")];
+    expect(pairDemoWithNewPlan(set).filter((p) => p.primary && p.newPage !== null).map((p) => p.newPage)).not.toContain(2);
+    // And with no trade in its title but E sheets in the set, the E is still electrical.
+    const quiet = [sheet(1, "ED101", "DEMOLITION PLAN"), sheet(2, "A101", "FLOOR PLAN"), sheet(3, "E101", "POWER PLAN")];
+    expect(pairDemoWithNewPlan(quiet).filter((p) => p.primary && p.newPage !== null).map((p) => p.newPage)).not.toContain(2);
+  });
   it("a twin sheet number decides, across the ways a set writes it", () => {
     const pairs = pairDemoWithNewPlan([sheet(1, "AD101", "FIRST FLOOR - DEMOLITION"), sheet(2, "A101", "FIRST FLOOR PLAN"), sheet(3, "DA2.1", "BUILDING A"), sheet(4, "AA2.1", "BUILDING A")]);
     expect(pairs.map((p) => [p.demoPage, p.newPage, p.basis])).toEqual([[1, 2, "sheet-number"], [3, 4, "sheet-number"]]);
