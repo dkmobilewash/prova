@@ -3,7 +3,6 @@
 import { useRef, useState, useTransition } from "react";
 import { formatDocumentSize } from "@/lib/document-uploads";
 
-import { SubmitButton } from "@/components/SubmitButton";
 import { Spinner } from "@/components/Spinner";
 import { uploadPlanSetFile } from "@/lib/document-upload-client";
 import { PDF_MAGIC_BYTES, looksLikePdf } from "@/lib/pdf-bytes";
@@ -47,6 +46,8 @@ export function TakeoffPlanUploader({ jobId }: { jobId: string }) {
 
     const head = new Uint8Array(await file.slice(0, PDF_MAGIC_BYTES).arrayBuffer());
     if (!looksLikePdf(head)) {
+      // Cleared, so picking a corrected file of the same name still starts it.
+      if (inputRef.current) inputRef.current.value = "";
       setError("That file isn't a PDF. Export the sheet to PDF and try again.");
       return;
     }
@@ -92,26 +93,30 @@ export function TakeoffPlanUploader({ jobId }: { jobId: string }) {
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
+        {/* ── PICKING THE FILE IS THE DECISION ── The upload starts on the pick: an "Add a drawing"
+            press after it decided nothing (the Falafel Fresh flow walk). Resume is its own button. */}
         <input
           ref={inputRef}
           type="file"
           accept="application/pdf,.pdf"
+          aria-label="The drawing to add (PDF)"
+          disabled={busy || isPending}
+          onChange={(event) => {
+            if (event.currentTarget.files?.length) event.currentTarget.form?.requestSubmit();
+          }}
           className="text-sm text-ink-body file:mr-3 file:rounded-md file:border file:border-line-card file:bg-surface-input file:px-3 file:py-1.5 file:text-sm file:text-ink-label"
         />
-        <SubmitButton
-          type="submit"
-          disabled={busy || isPending}
-          className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-neutral-900 disabled:opacity-50"
-        >
-          {busy ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Spinner />
-              Uploading…
-            </span>
-          ) : (
-            "Add a drawing"
-          )}
-        </SubmitButton>
+        {busy ? (
+          <span className="inline-flex items-center gap-1.5 text-sm text-ink-body" data-takeoff="plan-uploading">
+            <Spinner />
+            Uploading…
+          </span>
+        ) : isPending ? (
+          <span className="inline-flex items-center gap-1.5 text-sm text-ink-body" data-takeoff="plan-uploading">
+            <Spinner />
+            Saving…
+          </span>
+        ) : null}
       </div>
       <p className="text-xs text-ink-muted">
         Upload the sheets you&rsquo;re bidding rather than the whole set — this is a measuring tool, not a drawing

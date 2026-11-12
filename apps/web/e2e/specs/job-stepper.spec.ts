@@ -86,7 +86,6 @@ test.describe("the job stepper", () => {
     await page.waitForURL(new RegExp(`/jobs/${jobId}/takeoff`));
     await stubDocumentUpload(page);
     await page.locator('input[type="file"]').setInputFiles(S02);
-    await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
     await page.reload();
     expect(await states()).toBe("job:done plans:done scale:current takeoff:todo review:todo estimate:todo send:todo");

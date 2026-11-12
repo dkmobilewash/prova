@@ -127,7 +127,6 @@ test.describe("find the rooms", () => {
     await page.waitForURL(new RegExp(`/jobs/${jobId}/takeoff$`));
     await stubDocumentUpload(page);
     await page.locator('input[type="file"]').setInputFiles(path.join(FIXTURES, "S05.pdf"));
-    await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
     // S05 is 3/16" = 1'-0" on a 24-inch sheet: 128 ft across, so half of it is 64.
     await setScaleByClicking(64);

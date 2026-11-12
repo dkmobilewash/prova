@@ -62,7 +62,6 @@ test.describe("the sheet's canvas has no size until the sheet is drawn", () => {
     await page.waitForURL(new RegExp(`/jobs/${jobId}/takeoff$`));
     await stubDocumentUpload(page);
     await page.locator('input[type="file"]').setInputFiles(S02);
-    await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 60_000 });
   });
 

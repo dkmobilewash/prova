@@ -101,7 +101,6 @@ test.describe("ceilings on a real set", () => {
     await openJobTab(page, "Takeoff");
     await stubDocumentUpload(page);
     await page.locator('input[type="file"]').setInputFiles(path.join(OUT, `sheets-p${PAGES.join("-")}.pdf`));
-    await page.getByRole("button", { name: "Add a drawing" }).click();
     await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 120_000 });
     await setScaleByClicking(HALF_FEET);
     await page.goto(`/takeoff/${jobId}`);
