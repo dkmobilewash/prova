@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { chosenRows, convert, guessColumns, materialLabelFor, planPriceList, priceFrom, priceListTable, readRow, type Need } from "./priceList";
+import { chosenRows, contactEmailIn, convert, guessColumns, materialLabelFor, planPriceList, priceFrom, priceListTable, readRow, type Need } from "./priceList";
 import { materialGroup, materialKey } from "./materialKey";
 
 const text = readFileSync(new URL("../../e2e/fixtures/supplier-price-list.csv", import.meta.url), "utf8");
@@ -84,5 +84,18 @@ describe("matching rows to what Baker's estimate needs", () => {
     for (const key of ["board|0.625|x", "track|6|25", "deflection|6|25", "stud|metal|6|25", "insulation|r19", "screws", "tape", "compound"]) {
       expect(materialKey(materialLabelFor(key, 500)), key).toBe(key);
     }
+  });
+});
+
+describe("the supplier's email for orders, read off their list", () => {
+  it("is the address the list prints for orders", () => {
+    expect(contactEmailIn(text)).toBe("orders@northgate-supply.example");
+  });
+  it("is never the buyer's own address, nor one inside the price table", () => {
+    expect(contactEmailIn("Acme Supply,,\nCustomer: buyer@sub.example,,\nItem #,Description,Unit Price\nA1,Stud rep@acme.example,4.00")).toBeNull();
+    expect(contactEmailIn("Bill to: ap@sub.example\nSales: Lee <lee@acme.example>\nItem,Price\n")).toBe("lee@acme.example");
+  });
+  it("is nothing when the list prints none", () => {
+    expect(contactEmailIn("Item #,Description,Unit Price\nA1,Stud,4.00")).toBeNull();
   });
 });

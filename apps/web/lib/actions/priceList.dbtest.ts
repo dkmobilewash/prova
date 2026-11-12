@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { prisma } from "@prova/db";
-import { guessColumns, planPriceList, priceListTable, readRow } from "@/lib/estimating/priceList";
+import { contactEmailIn, guessColumns, planPriceList, priceListTable, readRow } from "@/lib/estimating/priceList";
 import { priceNeeds, priceSource } from "@/lib/estimating/catalogPrices";
 import { unpricedMaterials } from "@/lib/estimating/materialKey";
 
@@ -56,9 +56,11 @@ describe("a supplier price list prices Baker's estimate", () => {
       plan.needsPick.map((n) => [n.group, /stud/.test(n.label) ? line(/NBS-1061/) : /track/.test(n.label) ? line(/NBS-1161/) : line(/NBS-6019/)]),
     );
     expect(plan.needsPick.map((n) => n.label).sort()).toEqual(["6in metal stud", "6in track, top and bottom", "cavity insulation"]);
-    const result = await importPriceList({ vendorName: "Northgate Building Supply", quotedOn: "2026-11-09", text, map, picks: { byKey, byGroup } });
+    const result = await importPriceList({ vendorName: "Northgate Building Supply", quotedOn: "2026-11-09", text, map, picks: { byKey, byGroup }, contactEmail: contactEmailIn(text) ?? "" });
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) return;
+    // The supplier's email for orders, off their list: where "Send PO to supplier" sends.
+    expect(await prisma.vendor.findFirstOrThrow({ where: { companyId, name: "Northgate Building Supply" }, select: { email: true } })).toEqual({ email: "orders@northgate-supply.example" });
     expect(result.value.quotes).toBe(23); // every row with a price, kept as the supplier wrote it
     expect(result.value.noMarkup).toBe(0);
     expect(await unpriced()).toEqual([]);
@@ -104,8 +106,9 @@ describe("a supplier price list prices Baker's estimate", () => {
     expect(await prisma.lineItemCatalogEntry.count({ where: { companyId, description: { contains: "Delivery" } } })).toBe(0);
   });
 
-  it("refuses a pick that is not one of the offered rows, and a non-owner", async () => {
+  it("refuses a pick that is not one of the offered rows, a contact that is not an email, and a non-owner", async () => {
     const map = guessColumns(priceListTable(text).header)!;
+    expect(await importPriceList({ vendorName: "X", quotedOn: "2026-11-09", text, map, picks: { byKey: {}, byGroup: {} }, contactEmail: "orders at northgate" })).toMatchObject({ ok: false, error: expect.stringContaining("doesn't look like an email") });
     expect(await importPriceList({ vendorName: "X", quotedOn: "2026-11-09", text, map, picks: { byKey: { screws: 1 }, byGroup: {} } })).toMatchObject({ ok: false });
     context.role = "MEMBER";
     expect(await importPriceList({ vendorName: "X", quotedOn: "2026-11-09", text, map, picks: { byKey: {}, byGroup: {} } })).toMatchObject({ ok: false, error: expect.stringMatching(/owner/) });

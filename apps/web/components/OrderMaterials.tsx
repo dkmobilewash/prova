@@ -5,6 +5,7 @@ import { useState } from "react";
 import { orderMaterials, type MaterialOrderResult } from "@/lib/actions";
 import { money } from "@/lib/money";
 import { Spinner } from "./Spinner";
+import { SendPurchaseOrder } from "./SendPurchaseOrder";
 
 /**
  * "Order materials" on a contracted job's Estimate tab: the material lines as DRAFT
@@ -69,7 +70,7 @@ export function OrderMaterials({ jobId, suppliers }: { jobId: string; suppliers:
         </button>
       </div>
       <p className="mt-2 text-xs text-ink-muted">
-        Turns the estimate&apos;s material lines into draft purchase orders at this supplier&apos;s prices, in whole boxes, pails, rolls and pieces. Nothing is sent: check, issue and send them on Buyout.
+        Turns the estimate&apos;s material lines into draft purchase orders at this supplier&apos;s prices, in whole boxes, pails, rolls and pieces. Nothing is sent until you press Send PO to supplier on a draft and then send it from its preview.
       </p>
       {error !== null && (
         <p role="alert" className="mt-2 text-sm text-danger">
@@ -80,9 +81,14 @@ export function OrderMaterials({ jobId, suppliers }: { jobId: string; suppliers:
         <div role="status" className="mt-3 text-sm text-ink" data-order="done">
           <ul className="list-disc pl-5">
             {done.orders.map((o) => (
-              <li key={o.id} data-order="po">
-                PO {o.number}
-                {o.phase ? ` (${o.phase})` : ""}: {o.lines} line{o.lines === 1 ? "" : "s"}, {money(o.amount)}, draft
+              <li key={o.id} className="py-1">
+                <span data-order="po">
+                  PO {o.number}
+                  {o.phase ? ` (${o.phase})` : ""}: {o.lines} line{o.lines === 1 ? "" : "s"}, {money(o.amount)}, draft
+                </span>
+                <div className="mt-1">
+                  <SendPurchaseOrder id={o.id} document={o.document} email={o.email} />
+                </div>
               </li>
             ))}
           </ul>
