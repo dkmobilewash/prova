@@ -279,9 +279,9 @@ export function TakeoffWorkspace({
   /** The posted walls the queue does not already hold, most doubted first: its Keep/Drop step. */
   const doubted = useMemo(() => data.wallReviewQueue.filter((item) => !item.held), [data.wallReviewQueue]);
   // A group is shown whole: every run lit and the plan zoomed to all of them.
-  const queueGroup = queueOpen && queueItem !== null && (queueItem.kind === "type" || queueItem.kind === "height" || queueItem.kind === "windows");
+  const queueGroup = queueOpen && queueItem !== null && (queueItem.kind === "type" || queueItem.kind === "height" || queueItem.kind === "windows" || queueItem.kind === "doors");
   // A sheet's windows are lit together, and the one being looked at is zoomed to.
-  const queueFocus = queueOpen && queueItem !== null && (!queueGroup || queueItem.kind === "windows") ? focusOf(queueItem) : null;
+  const queueFocus = queueOpen && queueItem !== null && (!queueGroup || queueItem.kind === "windows" || queueItem.kind === "doors") ? focusOf(queueItem) : null;
   const queueRuns = useMemo(
     () => (queueGroup && queueItem !== null && "runs" in queueItem ? { pageNumber: queueItem.pageNumber, runs: queueItem.runs } : null),
     [queueGroup, queueItem],

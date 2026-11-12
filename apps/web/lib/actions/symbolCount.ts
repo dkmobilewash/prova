@@ -2,6 +2,8 @@
 
 import { countItemFor } from "@/lib/takeoff/countItem";
 import { storedWindowsOf, windowItemName, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
+import { CONFIRMED_DOORS_LABEL, DOORS_SUGGESTED, storedDoorsOf } from "@/lib/takeoff/doorSuggestions";
+import { AUTO_DOORS_ITEM } from "@/lib/takeoff/autoPost";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
@@ -183,6 +185,80 @@ export async function undoConfirmWindows(jobId: string, planId: string, pageNumb
     }
     const read = await tx.takeoffPlanTextRead.findUnique({ where, select: { value: true } });
     const stored = storedWindowsOf(read?.value);
+    if (stored !== null && stored.decided) await tx.takeoffPlanTextRead.update({ where, data: { value: { ...stored, decided: false } } });
+  });
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
+  return actionOk;
+}
+
+/**
+ * ── A SHEET'S FOUND DOORS WITH NO PRINTED MARK, CONFIRMED FROM THE REVIEW QUEUE ──
+ *
+ * `kept` is the doors the estimator did not drop, as indexes into the stored suggestion
+ * (`doorSuggestions.ts`). They become one count on the sheet, on the job's "Doors" item — the
+ * item the marked doors post to — labelled as confirmed, and the suggestion is marked decided so
+ * a re-run never offers it again. Keeping none is a decision too. Never posted without this press:
+ * unmarked doors measure ≈93.5% on training, under the 97% bar.
+ */
+export async function confirmDoors(jobId: string, planId: string, pageNumber: number, kept: readonly number[]): Promise<ActionResultWith<{ undo: WindowsUndo }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company, id: userId } = context;
+  const plan = await prisma.takeoffPlan.findFirst({ where: { id: planId, jobId, companyId: company.id }, select: { id: true } });
+  if (!plan) return actionFail("That plan is no longer on this job. Reload the page.");
+  const where = { planId_pageNumber_kind: { planId: plan.id, pageNumber, kind: DOORS_SUGGESTED } };
+  const read = await prisma.takeoffPlanTextRead.findUnique({ where, select: { value: true } });
+  const stored = storedDoorsOf(read?.value);
+  if (stored === null) return actionFail("Those doors are no longer suggested on this sheet. Reload the page.");
+  if (stored.decided) return { ok: true, value: { undo: { measurements: [], items: [] } } };
+  if (!kept.every((i) => Number.isInteger(i) && stored.doors[i] !== undefined)) return actionFail("Those doors did not come through. Reload the page.");
+  // ponytail: decided is claimed before the count is written, as for windows; a failure after it needs the count redone by hand.
+  await prisma.takeoffPlanTextRead.update({ where, data: { value: { ...stored, decided: true } } });
+  const undo: WindowsUndo = { measurements: [], items: [] };
+  const doors = [...new Set(kept)].map((i) => stored.doors[i]!);
+  if (doors.length > 0) {
+    const page = await prisma.takeoffPlanPage.upsert({
+      where: { planId_pageNumber: { planId: plan.id, pageNumber } },
+      create: { planId: plan.id, pageNumber },
+      update: {},
+      select: { id: true, calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } } },
+    });
+    const itemsBefore = new Set((await prisma.takeoffItem.findMany({ where: { jobId, companyId: company.id }, select: { id: true } })).map((i) => i.id));
+    const itemId = await countItemFor(company.id, jobId, AUTO_DOORS_ITEM);
+    const made = await prisma.takeoffMeasurement.create({
+      data: { itemId, pageId: page.id, calibrationId: page.calibrations[0]?.id ?? null, kind: "COUNT", xs: doors.map((d) => (d.x1 + d.x2) / 2), ys: doors.map((d) => (d.y1 + d.y2) / 2), label: CONFIRMED_DOORS_LABEL, createdByUserId: userId },
+      select: { id: true },
+    });
+    undo.measurements.push(made.id);
+    if (itemId !== null && !itemsBefore.has(itemId)) undo.items.push(itemId);
+  }
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/takeoff/${jobId}`);
+  return { ok: true, value: { undo } };
+}
+
+/** Undo for a door confirm: the count it wrote goes, an item it made goes when left empty, and the sheet's doors are offered again. */
+export async function undoConfirmDoors(jobId: string, planId: string, pageNumber: number, undo: WindowsUndo): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+  const plan = await prisma.takeoffPlan.findFirst({ where: { id: planId, jobId, companyId: company.id }, select: { id: true } });
+  if (!plan) return actionFail("That plan is no longer on this job. Reload the page.");
+  const ids = (Array.isArray(undo?.measurements) ? undo.measurements : []).filter((id): id is string => typeof id === "string");
+  const items = (Array.isArray(undo?.items) ? undo.items : []).filter((id): id is string => typeof id === "string");
+  const where = { planId_pageNumber_kind: { planId: plan.id, pageNumber, kind: DOORS_SUGGESTED } };
+  await prisma.$transaction(async (tx) => {
+    await tx.takeoffMeasurement.deleteMany({ where: { id: { in: ids }, kind: "COUNT", label: CONFIRMED_DOORS_LABEL, page: { planId: plan.id, pageNumber } } });
+    for (const id of items) {
+      const item = await tx.takeoffItem.findFirst({ where: { id, jobId, companyId: company.id, type: "COUNT" }, select: { id: true } });
+      if (item === null) continue;
+      const counts = await tx.takeoffMeasurement.count({ where: { itemId: id } });
+      const lines = await tx.jobLineItem.count({ where: { takeoffItemId: id, isDeleted: false } });
+      if (counts === 0 && lines === 0) await tx.takeoffItem.delete({ where: { id } });
+    }
+    const read = await tx.takeoffPlanTextRead.findUnique({ where, select: { value: true } });
+    const stored = storedDoorsOf(read?.value);
     if (stored !== null && stored.decided) await tx.takeoffPlanTextRead.update({ where, data: { value: { ...stored, decided: false } } });
   });
   revalidatePath(`/jobs/${jobId}/takeoff`);

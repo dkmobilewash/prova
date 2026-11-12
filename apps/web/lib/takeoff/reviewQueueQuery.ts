@@ -23,9 +23,10 @@ import { levelHeight, runLevels } from "@/lib/takeoff/levelHeights";
 import { heightBasis } from "@/lib/takeoff/wallHeights";
 import { roomPitched, runPitched } from "@/lib/takeoff/roofParts";
 import { storedRoofParts } from "@/lib/takeoff/roofPartsRead";
-import { answeredTagTypes, fillOfRuns, GENERAL_HEIGHT_KEY, heightItem, reviewQueue, splitByLevel, splitByRoof, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
+import { answeredTagTypes, doorsItem, fillOfRuns, GENERAL_HEIGHT_KEY, heightItem, reviewQueue, splitByLevel, splitByRoof, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import { plainTag } from "@/lib/takeoff/planTextTags";
 import { storedWindowsOf, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
+import { DOORS_SUGGESTED, storedDoorsOf } from "@/lib/takeoff/doorSuggestions";
 import { refreshSuggestionsAfterResponse } from "@/lib/takeoff/suggestionRefresh";
 import { buildingHeights, feetLabel, legendOption, legendOptions, type CeilingRoom } from "@/lib/takeoff/wallHeight";
 
@@ -287,6 +288,13 @@ export async function loadReviewQueue(
   for (const read of await prisma.takeoffPlanTextRead.findMany({ where: { planId: plan.id, kind: WINDOWS_SUGGESTED }, select: { pageNumber: true, value: true } })) {
     const stored = storedWindowsOf(read.value);
     const queued = stored === null ? null : windowsItem(sheetOf(read.pageNumber), stored);
+    if (queued !== null) items.push(queued);
+  }
+
+  // ── FOUND DOORS WITH NO PRINTED MARK, TO CONFIRM ──
+  for (const read of await prisma.takeoffPlanTextRead.findMany({ where: { planId: plan.id, kind: DOORS_SUGGESTED }, select: { pageNumber: true, value: true } })) {
+    const stored = storedDoorsOf(read.value);
+    const queued = stored === null ? null : doorsItem(sheetOf(read.pageNumber), stored);
     if (queued !== null) items.push(queued);
   }
 
