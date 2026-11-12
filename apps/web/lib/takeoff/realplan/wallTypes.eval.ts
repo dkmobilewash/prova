@@ -5,7 +5,7 @@ import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { sheetStrokes } from "../sheetStrokes";
 import { detectForSheet } from "../offeredCandidates";
 import { groupsForStage } from "../stageGroups";
-import { planTextTagByRun, plainTag, tagVocabulary } from "../planTextTags";
+import { planTextTagByRun, plainTag, printedTagCodes, tagVocabulary } from "../planTextTags";
 import { wallTypeTags } from "../wallTags";
 import type { MatchableWallType } from "../wallTypeMatch";
 import type { WallGroup } from "../wallGroups";
@@ -51,6 +51,8 @@ const DIR = process.env.REAL_PLAN_DIR ?? "";
 // WT_SHEETS_FILE: the same list in a file, for a run over every labelled sheet.
 const SHEETS = (process.env.WT_SHEETS_FILE ? readFileSync(process.env.WT_SHEETS_FILE, "utf8") : process.env.WT_SHEETS ?? "").split(";").map((s) => s.trim()).filter(Boolean);
 const OUT = process.env.WT_OUT ?? "";
+/** The company's own codes, comma-separated — a trade preset (W1,W2,W3) for a company with plan reading off. */
+const LIBRARY = (process.env.WT_LIBRARY ?? "").split(",").map((c) => c.trim()).filter(Boolean);
 const SEED = Number(process.env.WT_SEED ?? "7");
 
 type Legend = { types: { code: string; name?: string; lines?: string[]; thicknessIn?: number }[]; uno?: { code: string; note: string }[] };
@@ -130,7 +132,11 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
         }
         return Number.isFinite(best) ? best : null;
       };
-      const vocabulary = tagVocabulary(legendCodes, legendCodes);
+      // As the stage builds it (`detectWallsForCalibration`): the library (WT_LIBRARY, e.g. a trade
+      // preset "W1,W2,W3", else the legend's codes standing in for it), the legend, and the sheet's
+      // own printed codes (`printedTagCodes`).
+      const library = LIBRARY.length > 0 ? LIBRARY : legendCodes;
+      const vocabulary = tagVocabulary(library, legendCodes.length > 0 ? legendCodes : null, printedTagCodes(items));
       const planText = vocabulary.length === 0 ? undefined : { legendCodes: vocabulary };
       // THE PRODUCT'S PATH, not the finder on the whole sheet: `detectForSheet`
       // splits the sheet into drawings and keeps the plan views, so the title
@@ -212,6 +218,8 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
               typeThicknessIn: as === null ? null : (wallTypes.find((t) => t.code === as.code)?.thicknessIn ?? null),
               otherTagFeet: as === null ? null : nearestTagFeet(r, (code) => code !== normCode(as.code)),
               anyTagFeet: nearestTagFeet(r, () => true),
+              // The printed tag its group carries, whether or not a company type has that code.
+              tag: (() => { const g = groups.find((x) => x.runs.includes(r)); return g !== undefined && g.source.kind === "TAG" ? plainTag(g.source.tag) : null; })(),
             })),
           }),
         );

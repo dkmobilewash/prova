@@ -20,7 +20,7 @@ import { stampSuggestions } from "./suggestionStamp";
 import { matchGroups } from "./proposalMatch";
 import { groupsForStage, siblingPages } from "./stageGroups";
 import { aiGate } from "@/lib/ai/settings";
-import { tagVocabulary } from "./planTextTags";
+import { tagVocabulary, printedTagCodes } from "./planTextTags";
 import { doorScheduleForPlan, doorsOnSheet, legendForPlan, typedFeetOf, writeSheetResult } from "./planTextRead";
 
 /**
@@ -246,6 +246,8 @@ export async function detectWallsForCalibration(
     const vocabulary = tagVocabulary(
       wallTypes.map((type) => type.code),
       legendCodes,
+      // The sheet's own printed codes: Totem's 1, 1A, 2A, 2B and 3B (`printedTagCodes`).
+      printedTagCodes(textItems),
     );
     const planText = vocabulary.length === 0 ? undefined : { legendCodes: vocabulary };
     // ── THE SAME PIPELINE THE VIEWER RUNS, NOT THE FINDER UNDERNEATH IT ──

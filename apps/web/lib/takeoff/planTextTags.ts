@@ -99,16 +99,45 @@ export type PlanTextInput = {
  * library lacks still tags a group, which `verdictFor` reports as
  * NO_SUCH_TYPE with the schedule to read — unchanged.
  */
-export function tagVocabulary(libraryCodes: readonly string[], legendCodes: readonly string[] | null): string[] {
+export function tagVocabulary(libraryCodes: readonly string[], legendCodes: readonly string[] | null, printedCodes: readonly string[] = []): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const raw of [...(legendCodes ?? []), ...libraryCodes]) {
+  // A printed code that is a LEGEND code's short form (a P-series legend whose sheets print "1")
+  // stays out, so the legend's short form still names it (`planTextTagByRun`).
+  const short = prefixlessVocabulary(legendCodes ?? []);
+  const printed = printedCodes.filter((code) => short === null || !short.has(code.trim().toUpperCase()));
+  for (const raw of [...(legendCodes ?? []), ...libraryCodes, ...printed]) {
     const code = raw.trim();
     if (code === "" || seen.has(code.toUpperCase())) continue;
     seen.add(code.toUpperCase());
     out.push(code);
   }
   return out;
+}
+
+/** A short designation as sheets print a wall tag: 1, 1A, 2B, S6A, IW-4, C8B. */
+const PRINTED_CODE = /^(?:\d{1,2}[A-Z]{0,2}|[A-Z]{1,3}-?\d{1,2}[A-Z]{0,2})$/;
+/** Fewest times a code must be printed on the sheet to count as one of its tags. */
+export const PRINTED_CODE_MIN = 2;
+
+/**
+ * ── THE SHEET'S OWN PRINTED CODES, AS TAG VOCABULARY ──
+ *
+ * The vocabulary was the company's codes and the legend's, and the legend needs a model.
+ * Totem Lake Dental prints 1, 1A, 2A, 2B and 3B beside its walls; with plan reading off and a
+ * trade preset of W1–W3, none was in the vocabulary, so no tag was read and every group came in
+ * untagged (2026-11-12). A short designation printed at least twice is a candidate tag; whether
+ * it labels a wall is decided as for any code, by where it sits (`bareTextTags`, the symbols,
+ * `tagByRun`). Not a room or door number (three digits and up), not a sheet reference.
+ */
+export function printedTagCodes(text: readonly { str: string }[]): string[] {
+  const counts = new Map<string, number>();
+  for (const item of text) {
+    const code = item.str.trim().toUpperCase();
+    if (!PRINTED_CODE.test(code) || SHEET_REFERENCE.test(code)) continue;
+    counts.set(code, (counts.get(code) ?? 0) + 1);
+  }
+  return [...counts].filter(([, n]) => n >= PRINTED_CODE_MIN).map(([code]) => code).sort();
 }
 
 export type PlanTextTagReport = {
