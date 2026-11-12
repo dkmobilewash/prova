@@ -494,7 +494,7 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const set = page.locator('[data-takeoff="plan-set"]');
       // No Confirm when the reader is sure of no sheet (Totem Lake, plan reading off): the
       // floor plans' own printed scales below are the whole step.
-      await expect(confirm.or(set)).toBeVisible({ timeout: 60_000 });
+      await expect(confirm.or(set).first()).toBeVisible({ timeout: 60_000 });
       if (await seen(confirm, 3000)) await hydrated(page, '[data-takeoff="confirm-scales"]');
       else note("No Confirm scales: the reader is sure of no sheet, so only the floor plans' printed scales are asked.");
       await set.scrollIntoViewIfNeeded();
@@ -799,7 +799,10 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
             // ── DOES A PERSON SEE MORE ARRIVE, OR DOES ONLY A RELOAD FIND IT? ──
             // Looking at the queue that just said it was done, as a person would, with no reload.
             const t0 = Date.now();
-            if (await seen(item.filter({ hasNot: queue.locator('[data-takeoff="review-queue-existing"]') }), 15_000)) {
+            // Not the existing-walls question already skipped: only a question that was not there before.
+            const fresh = async () => (await item.first().isVisible().catch(() => false)) && !(await onlySkippedLeft()) && !/Nothing left/.test(await text(left));
+            const arrived = await clock.look(() => expect.poll(fresh, { timeout: 15_000 }).toBe(true).then(() => true, () => false), 15_000);
+            if (arrived) {
               note(`${Math.round((Date.now() - t0) / 100) / 10} s after the queue said it was done, more questions arrived on their own (${await text(left)}).`);
               continue;
             }
