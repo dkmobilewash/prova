@@ -1,4 +1,5 @@
-import { applyCatalogPrices } from "./catalogPrices";
+import { applyCatalogPrices, ratesFrom } from "./catalogPrices";
+import { unitPriceFromCost, type RecapRates } from "@/lib/bid-recap";
 import { showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import type { Prisma } from "@prova/db";
 
@@ -496,6 +497,8 @@ export async function syncTakeoffItemLines(
   let created = 0;
   let updated = 0;
   let removed = 0;
+  const openingItemIds = new Set(items.filter((i) => opening(i.name)).map((i) => i.id));
+  let jobRates: RecapRates | null | undefined;
 
   for (const [id, line] of wanted) {
     const lineId = live.get(id);
@@ -516,6 +519,22 @@ export async function syncTakeoffItemLines(
     if (removedByHand.has(id)) continue;
 
     const entry = line.component?.catalogEntry ?? null;
+    // ── AN OPENING'S FRAMING TAKES THE COST ALREADY ON THE JOB FOR THE SAME PART ──
+    // A door's or window's studs and track are the walls' own parts. With no price book, the company
+    // typed that part's cost on the wall line in the queue; the opening's line takes it, priced through
+    // the job's markup, rather than asking for it again (Baker: 10 more questions for 5 window tags).
+    let sameCost: { cost: { toString(): string }; price: string | null } | null = null;
+    if (entry === null && line.componentId !== null && openingItemIds.has(line.itemId)) {
+      const priced = await tx.jobLineItem.findFirst({
+        where: { jobId, isDeleted: false, wallTypeComponentId: line.componentId, budgetedUnitCost: { not: null }, OR: [{ takeoffItemId: null }, { takeoffItemId: { not: line.itemId } }] },
+        select: { budgetedUnitCost: true, costCategory: true },
+      });
+      if (priced?.budgetedUnitCost != null) {
+        jobRates ??= ratesFrom((await tx.jobBidRecap.findFirst({ where: { jobId, companyId } })) ?? (await tx.companyBidDefaults.findUnique({ where: { companyId } })));
+        const price = jobRates === null ? null : unitPriceFromCost({ quantity: line.quantity, unitCost: Number(priced.budgetedUnitCost), costCategory: line.component?.costCategory ?? priced.costCategory ?? "MATERIAL" }, jobRates);
+        sameCost = { cost: priced.budgetedUnitCost, price: price === null ? null : String(price) };
+      }
+    }
     await tx.jobLineItem.create({
       data: {
         jobId,
@@ -524,9 +543,9 @@ export async function syncTakeoffItemLines(
         quantity: line.quantity.toString(),
         laborHours: line.laborHours != null ? line.laborHours.toString() : null,
         productionRate: line.productionRate != null ? line.productionRate.toString() : null,
-        unitPrice: entry?.defaultUnitPrice ?? null,
-        budgetedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
-        currentEstimatedUnitCost: entry?.defaultBudgetedUnitCost ?? null,
+        unitPrice: entry?.defaultUnitPrice ?? sameCost?.price ?? null,
+        budgetedUnitCost: entry?.defaultBudgetedUnitCost ?? (sameCost ? sameCost.cost.toString() : null),
+        currentEstimatedUnitCost: entry?.defaultBudgetedUnitCost ?? (sameCost ? sameCost.cost.toString() : null),
         tradeScope: entry?.tradeScope ?? null,
         costCategory: line.component?.costCategory ?? entry?.costCategory ?? null,
         craftClassificationId:

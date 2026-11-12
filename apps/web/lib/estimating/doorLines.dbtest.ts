@@ -139,6 +139,20 @@ describe("posted doors on a framing company's bid", () => {
   });
 });
 
+describe("an opening's framing takes the cost already on the job for the same part", () => {
+  it("a typed stud cost on the walls prices the door studs too: no second question for the same part", async () => {
+    const s = await setUp("METAL_FRAMING_DRYWALL", 2);
+    // No price book: the company typed its stud cost on the W1 walls' line in the review queue.
+    await prisma.lineItemCatalogEntry.deleteMany({ where: { companyId: s.companyId } });
+    await prisma.wallTypeComponent.updateMany({ where: { wallType: { companyId: s.companyId } }, data: { catalogEntryId: null } });
+    const stud = await prisma.wallTypeComponent.findFirstOrThrow({ where: { wallType: { companyId: s.companyId }, basis: "STUDS" } });
+    await prisma.jobLineItem.create({ data: { jobId: s.jobId, description: "W1 walls — 3⅝″ 20ga studs", unit: "ea", quantity: "40", budgetedUnitCost: "4.10", currentEstimatedUnitCost: "4.10", unitPrice: "5.36", costCategory: "MATERIAL", wallTypeComponentId: stud.id } });
+    expect(await setScope("FRAMES")).toEqual({ ok: true });
+    const studs = (await doorLines(s.jobId)).find((l) => /king and jack studs/.test(l.description))!;
+    expect([Number(studs.quantity), Number(studs.budgetedUnitCost), Number(studs.unitPrice)]).toEqual([8, 4.1, Number(unitPriceFromCost({ quantity: 8, unitCost: 4.1, costCategory: "MATERIAL" }, RATES))]);
+  });
+});
+
 describe("an EA labor line costs the crew rate over its own rate", () => {
   it("7 doors hung at 1.5 an hour: $56.67 a door, not the $56.71 rounded hours give, and its source still shows", async () => {
     const s = await setUp("ACOUSTICAL_CEILINGS", 7);
