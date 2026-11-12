@@ -528,6 +528,62 @@ export async function sendPurchaseOrder(purchaseOrderId: string, formData: FormD
   });
 }
 
+/**
+ * "Send PO to supplier": a DRAFT purchase order from Order materials, emailed with its PDF to the
+ * supplier and issued, in one press. The person has seen the preview (To, subject, message, the PDF)
+ * and pressed Send; nothing reaches here without that press.
+ *
+ * The PDF goes as ISSUED on the date sent, never as "DRAFT - NOT ISSUED": a supplier fills an
+ * issued order. It is issued only once the email has gone, so a send that fails (email not set up,
+ * the provider refusing it) leaves a draft that can be fixed and sent again. The send is logged on
+ * the job like every document send: the message, and the exact PDF kept as the sent copy.
+ */
+export async function sendDraftPurchaseOrder(purchaseOrderId: string, formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  const { company, ...user } = context;
+  if (!can(context, "VIEW_JOB_COSTS")) return fail("Sending purchase orders to suppliers isn't part of your job function. Ask the account owner.");
+
+  return runAction(async () => {
+    const po = await prisma.purchaseOrder.findFirst({
+      where: { id: purchaseOrderId, companyId: company.id },
+      include: {
+        vendor: { select: { name: true, contactName: true, phone: true, email: true } },
+        lines: { orderBy: { createdAt: "asc" } },
+        job: { select: { id: true, name: true, siteAddress: true, projectLocation: true, contractNumber: true } },
+      },
+    });
+    if (!po) return fail("That purchase order is gone. Reload the page.");
+    if (po.status !== "DRAFT") return fail(`PO ${po.number} has already been issued. Email it again from Buyout.`);
+    if (po.lines.length === 0) return fail(`PO ${po.number} has no lines to send.`);
+    const sentOn = sentOnFromForm(formData.get("sentOn"));
+    if (!sentOn) return fail("Enter the date this is being sent.");
+
+    const doc = purchaseOrderDocument({ ...po, status: "ISSUED", issuedOn: sentOn }, po.job, company);
+    const { buildPurchaseOrderPdf, purchaseOrderFileName } = await import("@/lib/purchase-order-pdf");
+    const sent = await deliverDocument({
+      company,
+      user,
+      formData,
+      jobId: po.jobId,
+      kind: "PURCHASE_ORDER",
+      documentId: po.id,
+      fileName: purchaseOrderFileName(doc),
+      pdf: await buildPurchaseOrderPdf(doc),
+    });
+    // Issued unless the email never reached the provider (FAILED). One the provider took without an
+    // id "has most likely gone out", so it is issued too: a draft would invite a second copy.
+    const message = await prisma.outboundMessage.findFirst({
+      where: { companyId: company.id, relatedType: "PURCHASE_ORDER", relatedId: po.id },
+      orderBy: { createdAt: "desc" },
+      select: { events: { select: { type: true } } },
+    });
+    const reached = message !== null && !message.events.some((event) => event.type === "FAILED");
+    if (reached) await prisma.purchaseOrder.updateMany({ where: { id: po.id, status: "DRAFT" }, data: { status: "ISSUED", issuedOn: sentOn } });
+    revalidatePath(`/jobs/${po.jobId}`, "layout");
+    return sent;
+  });
+}
+
 /** Emails a pay application with its G702/G703 PDF. */
 export async function sendPayApplication(jobId: string, invoiceId: string, formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
