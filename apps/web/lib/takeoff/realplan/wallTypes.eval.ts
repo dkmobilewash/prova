@@ -158,7 +158,7 @@ describe.skipIf(DIR === "" || SHEETS.length === 0)("wall types on the training f
       const siblingPage = (process.env.WT_SIBLING ?? "").split(";").map((p) => p.trim().split(">")).find(([at]) => at === `${set}:${page}`)?.[1];
       const siblingRead = siblingPage === undefined ? null : await sheetStrokes(Buffer.from(readFileSync(join(DIR, set!))), Number(siblingPage));
       const sibling = siblingRead === null ? null : { segmentsPt: siblingRead.segments, widthPt: siblingRead.widthPt, textItems: (await doc.pageText(Number(siblingPage))).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height })) };
-      const staged = groupsForStage({ found, segmentsPt: read.segments, textItems: items, widthPt: W, feetPerUnit: fpu, wallTypes, legendCodes: planText?.legendCodes ?? null, sibling });
+      const staged = groupsForStage({ found, segmentsPt: read.segments, textItems: items, widthPt: W, feetPerUnit: fpu, wallTypes, legendCodes: planText?.legendCodes ?? null, sibling, midSpan: legendCodes.length === 0 });
       const groups: WallGroup[] = staged.groups;
       const total = groups.reduce((s, g) => s + g.feet, 0);
       const by: Record<Source | "untyped" | "tagNoType", number> = { tag: 0, "tag-variant": 0, carried: 0, sibling: 0, note: 0, thickness: 0, untyped: 0, tagNoType: 0 };

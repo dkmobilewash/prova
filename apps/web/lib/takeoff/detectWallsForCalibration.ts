@@ -372,7 +372,7 @@ export async function detectWallsForCalibration(
     // rebuilt here with them — same runs, same feet, named with the types.
     let groups = pairWithThicknesses
       ? found.groups
-      : groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: planText?.legendCodes ?? null }).groups;
+      : groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: planText?.legendCodes ?? null, midSpan: (legendCodes ?? []).length === 0 }).groups;
     // ── NO TAG ON THIS SHEET: READ THEM OFF ITS SIBLING — see `tagsFromSibling` ──
     if (!pairWithThicknesses && planText !== undefined && raster === null && !groups.some((g) => g.source.kind === "TAG")) {
       try {
@@ -381,7 +381,7 @@ export async function detectWallsForCalibration(
           if (page < 1 || page > doc.pageCount) continue;
           const other = await doc.pageStrokes(page);
           const otherText = (await doc.pageText(page)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
-          const withSibling = groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: planText.legendCodes, sibling: { segmentsPt: other.segments, textItems: otherText, widthPt: other.widthPt } }).groups;
+          const withSibling = groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: planText.legendCodes, sibling: { segmentsPt: other.segments, textItems: otherText, widthPt: other.widthPt }, midSpan: (legendCodes ?? []).length === 0 }).groups;
           if (withSibling.some((g) => g.source.kind === "TAG")) {
             groups = withSibling;
             break;

@@ -142,21 +142,40 @@ function nearest(
   tag: WallTypeTag,
   walls: readonly WallCandidate[],
   feetPerUnit: number,
-): { wall: WallCandidate | null; best: number; second: number } {
+): { wall: WallCandidate | null; best: number; second: number; runnerUp: WallCandidate | null } {
   let best = Infinity;
   let second = Infinity;
   let wall: WallCandidate | null = null;
+  let runnerUp: WallCandidate | null = null;
   for (const one of walls) {
     const d = distanceFeet(tag.x, tag.y, one, feetPerUnit);
     if (d < best) {
       second = best;
+      runnerUp = wall;
       best = d;
       wall = one;
     } else if (d < second) {
       second = d;
+      runnerUp = one;
     }
   }
-  return { wall, best, second };
+  return { wall, best, second, runnerUp };
+}
+
+/** A tag falls beside a run's span — not past or at one of its ends — by this much, in feet. */
+export const MID_SPAN_FEET = 0.5;
+
+/**
+ * Whether a tag projects onto the run's span, clear of both ends: a drafter sets a tag beside the
+ * wall it names, so it falls along that wall, while a wall it merely sits near at a corner reaches
+ * it only at an end.
+ */
+export function projectsMidSpan(tag: { x: number; y: number }, wall: WallCandidate, feetPerUnit: number): boolean {
+  const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1, len = Math.hypot(dx, dy);
+  if (len === 0) return false;
+  const along = ((tag.x - wall.x1) * dx + (tag.y - wall.y1) * dy) / len;
+  const clear = MID_SPAN_FEET / feetPerUnit;
+  return along > clear && along < len - clear;
 }
 
 /**
@@ -174,6 +193,11 @@ export function tagByRun(
   tags: readonly WallTypeTag[],
   feetPerUnit: number,
   wallTypes: readonly MatchableWallType[] = [],
+  /**
+   * Break a too-close-to-call by which run the tag falls beside mid-span. ONLY with no legend read:
+   * beside a legend it cost settled-correct on the training type keys (61.4% → 60.0%, 2026-11-12).
+   */
+  midSpan = false,
 ): Map<WallCandidate, string> {
   const out = new Map<WallCandidate, string>();
   if (!(feetPerUnit > 0) || walls.length === 0 || tags.length === 0) return out;
@@ -250,8 +274,23 @@ export function tagByRun(
         ? fromFitting
         : nearest(tag, tag.leader === true ? walls.filter((wall) => lands(tag, wall)) : walls, feetPerUnit);
 
-    const { best, second, wall: bestWall } = chosen;
-    if (bestWall === null || best > TAG_REACH_FEET || second < best * TAG_CLEAR_MARGIN) continue;
+    const { best, second, wall: bestWall, runnerUp } = chosen;
+    if (bestWall === null || best > TAG_REACH_FEET) continue;
+    if (second < best * TAG_CLEAR_MARGIN) {
+      if (!midSpan) continue;
+      // ── TOO CLOSE TO CALL BY DISTANCE: THE RUN THE TAG FALLS BESIDE ──
+      // Totem Lake sets its tags where two runs meet: of A2.1's 14 tags within reach, 10 were
+      // dropped here, the runner-up 1.2–2.1 ft against 0.6–1.9 ft (2026-11-12). Where exactly one
+      // of the two takes the tag along its span and the other only at an end, that one is meant.
+      const midBest = projectsMidSpan(tag, bestWall, feetPerUnit);
+      const midSecond = runnerUp !== null && projectsMidSpan(tag, runnerUp, feetPerUnit);
+      if (midBest === midSecond) continue;
+      const wall = midBest ? bestWall : runnerUp!;
+      const feet = midBest ? best : second;
+      if (feet > TAG_REACH_FEET) continue;
+      claims.push({ name: tag.name, wall, feet });
+      continue;
+    }
     claims.push({ name: tag.name, wall: bestWall, feet: best });
   }
 

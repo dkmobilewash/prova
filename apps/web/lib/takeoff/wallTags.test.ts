@@ -348,3 +348,19 @@ describe("a leader names the wall it lands on (McAllen A3.2)", () => {
     expect(tagByRun([run], [{ ...tag("IW-4", 0.25, 0.5 + 0.2 * FOOT), leader: true }], feetPerUnit).get(run)).toBe("IW-4");
   });
 });
+
+describe("the mid-span tie-break — on only when no legend is read", () => {
+  // Totem Lake sets its tags where two runs meet: 1.0 ft from the run it falls beside mid-span,
+  // 1.3 ft from the end of the run around the corner — too close to call by distance alone.
+  const along = wall({ x1: 0.2, y1: 0.5, x2: 0.3, y2: 0.5 });
+  const around = wall({ x1: 0.3, y1: 0.5 + 1.5 * FOOT, x2: 0.3, y2: 0.6 });
+  const corner = [tag("3B", 0.3 - 1.2 * FOOT, 0.5 + FOOT)];
+  it("off: the tag is too close to call and names nothing", () => {
+    expect(tagByRun([along, around], corner, feetPerUnit).size).toBe(0);
+  });
+  it("on: the run the tag falls beside mid-span takes it, not the run it reaches only at an end", () => {
+    const byRun = tagByRun([along, around], corner, feetPerUnit, [], true);
+    expect(byRun.get(along)).toBe("3B");
+    expect(byRun.has(around)).toBe(false);
+  });
+});
