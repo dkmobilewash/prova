@@ -90,6 +90,8 @@ describe("every eval refuses to run without a key", () => {
    * and one the guard re-proves is a second kind of guarantee.
    */
   const KEYLESS_EVALS: Record<string, string> = {
+    "setAsideLike.eval.ts":
+      "calls no model: on the product's offered walls for each named renovation sheet, the labels play the person picking walls to set aside like (`wallsLikeThese`) and counts the presses before and after the queue's one-step set-aside. Skips without REAL_PLAN_DIR and SA_SHEETS and asserts at least one sheet was measured",
     "scaleSnap.eval.ts":
       "calls no model: runs the inventory's own scale read on every labelled sheet and grades it, and any scale-snap offer, against the labeller's feet across the page; held-out only with HELD_OUT=1, measured once. Skips without LABEL_DIR and REAL_PLAN_DIR and asserts at least one sheet was read",
     "zzDoorCount.eval.ts":

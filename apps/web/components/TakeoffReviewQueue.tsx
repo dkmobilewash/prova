@@ -284,6 +284,15 @@ export function TakeoffReviewQueue({
     return () => window.removeEventListener("focus", onFocus);
   }, [router]);
 
+  // The viewer set the existing walls aside on this sheet: the item is answered.
+  useEffect(() => {
+    const done = (event: Event) => {
+      const page = (event as CustomEvent<{ page?: number }>).detail?.page;
+      if (current?.kind === "existing" && current.pageNumber === page) setCursor(after(current.key));
+    };
+    document.addEventListener("takeoff-aside-like-done", done);
+    return () => document.removeEventListener("takeoff-aside-like-done", done);
+  });
   useEffect(() => onShow(current), [current?.key]); // eslint-disable-line react-hooks/exhaustive-deps -- the item's key is its identity
   useEffect(() => onLeft?.(left.length), [left.length]); // eslint-disable-line react-hooks/exhaustive-deps -- the count is what changes
 
@@ -617,6 +626,34 @@ export function TakeoffReviewQueue({
               }}
               onUndoable={onUndoable}
             />
+          )}
+          {current.kind === "existing" && (
+            // ── A RENOVATION SHEET: THE EXISTING WALLS, IN ONE STEP (`setAsideLike.ts`) ──
+            // The viewer takes the pick: one existing wall, a preview of every wall drawn like it,
+            // Enter sets them aside with one Undo. It says when it is done (`takeoff-aside-like-done`).
+            <div className="flex flex-col gap-2" data-takeoff="review-queue-existing" data-page={current.pageNumber}>
+              <p className="text-sm text-ink">
+                {current.sheet} shows existing work: {current.walls} wall{current.walls === 1 ? "" : "s"}
+                {current.feet === null ? "" : `, ${Math.round(current.feet).toLocaleString()} ft`} found, the existing ones among them.
+              </p>
+              <p className="text-xs text-ink-muted">Pick one existing wall on the sheet; every wall drawn like it is set aside.</p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className={`${button} border-brand`}
+                  data-takeoff="review-queue-aside-like"
+                  onClick={() => {
+                    document.dispatchEvent(new CustomEvent("takeoff-goto", { detail: { page: current.pageNumber } }));
+                    document.dispatchEvent(new CustomEvent("takeoff-aside-like", { detail: { page: current.pageNumber } }));
+                  }}
+                >
+                  Set aside all walls drawn like this one
+                </button>
+                <button type="button" className={button} onClick={() => setCursor(after(current.key))}>
+                  Skip
+                </button>
+              </div>
+            </div>
           )}
           {current.kind === "scale" &&
             (() => {
