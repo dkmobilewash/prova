@@ -28,6 +28,8 @@ import { CONTRACTING_RELATIONSHIPS, OPENING_DEDUCTIONS } from "@/lib/businessSco
 import { doorScopeFrom } from "@/lib/estimating/doorLines";
 import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
 import { AUTO_DOORS_ITEM } from "@/lib/takeoff/autoPost";
+import { wallHeightConventionFrom } from "@/lib/takeoff/heightsByCode";
+import { reassignAssumedHeights } from "@/lib/takeoff/wallHeightsAssign";
 
 /** The job-function refusal for the company record, worded the way
  * `closeoutSubmissions.ts` words its own: the person reading it has done
@@ -729,6 +731,39 @@ export async function saveOpeningDeduction(formData: FormData): Promise<ActionRe
     });
 
     revalidatePath("/settings");
+    return ok;
+  });
+}
+
+/**
+ * The company's answer for a wall the drawing gives no height (`heightsByCode.ts`, level 3): where its
+ * partitions usually go (`wallHeightConvention`) and its fixed height (`defaultWallHeightFt`), which a
+ * convention falls back to and FIXED is. Owner only, its own form. Such a height is ASSUMED. Walls on
+ * the company's open estimates that are assumed, or still have no height, follow the new answer at once,
+ * and their lines with them; a height read off the drawing, typed or answered is never touched.
+ */
+export async function saveWallHeightAnswer(formData: FormData): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  return runAction(async () => {
+    if (!can(context, "MANAGE_COMPLIANCE")) return fail(COMPLIANCE_ONLY);
+    const refusal = ownerRefusal(context, "Only the account owner can set this — it is the height every bid assumes where the drawing gives none.");
+    if (refusal) return refusal;
+    const conventionRaw = text(formData, "wallHeightConvention");
+    const convention = conventionRaw ? wallHeightConventionFrom(conventionRaw) : null;
+    if (conventionRaw && convention === null) return fail("Choose where your partitions usually go.");
+    const raw = formData.get("defaultWallHeightFt");
+    let feet: number | null = null;
+    if (!isBlank(raw)) {
+      const parsed = parseNumericInput(raw, { label: "Your usual wall height", min: 6, max: 60, maxDecimals: 2, unit: " ft" });
+      if (!parsed.ok) return fail(parsed.error);
+      feet = parsed.n;
+    }
+    if (convention === "FIXED" && feet === null) return fail("Type the height your partitions usually are.");
+    const companyId = context.company.id;
+    await prisma.company.update({ where: { id: companyId }, data: { wallHeightConvention: convention, defaultWallHeightFt: feet } });
+    await reassignAssumedHeights(companyId);
+    revalidatePath("/settings");
+    revalidatePath("/jobs", "layout");
     return ok;
   });
 }
