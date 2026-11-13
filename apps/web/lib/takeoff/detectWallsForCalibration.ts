@@ -4,10 +4,10 @@ import { after } from "next/server";
 import { prisma } from "@prova/db";
 import { storedRasterFor } from "@/lib/plan-ingest/raster";
 import { openSharedPlanPdf } from "@/lib/plan-ingest/sharedPlanPdf";
-import { pagesToSample } from "./sheetTemplate";
 import { storePlanCaptions } from "./levelReads";
-import { inPageWidthUnits, type SheetTextItem } from "./findWallsOnSheet";
-import { detectForSheet, offeredCandidates } from "./offeredCandidates";
+import type { SheetTextItem } from "./findWallsOnSheet";
+import { offeredCandidates } from "./offeredCandidates";
+import { productDetection, sampledSheetsFor, vocabularyFor } from "./productDetection";
 import { userExclusionsFromRows } from "./userExclusions";
 import type { ScoredPairing } from "./demotedRuns";
 import { runsHeldOffEstimate } from "./estimateHold";
@@ -20,7 +20,6 @@ import { stampSuggestions } from "./suggestionStamp";
 import { matchGroups } from "./proposalMatch";
 import { groupsForStage, siblingPages } from "./stageGroups";
 import { aiGate } from "@/lib/ai/settings";
-import { tagVocabulary, printedTagCodes } from "./planTextTags";
 import { wallTagCodes } from "./legendText";
 import { doorScheduleForPlan, doorsOnSheet, LEGEND_TEXT_ON, legendForPlan, typedFeetOf, writeSheetResult } from "./planTextRead";
 
@@ -176,42 +175,17 @@ export async function detectWallsForCalibration(
     // and the logo are the only geometry at the same page position on every
     // sheet of a set; a wall is not. Each sampled sheet is converted in ITS OWN
     // page width, which is what makes two sheets comparable at all.
-    const sampledSheets: StrokeSegment[][] = [];
-    let sampleFailed = false;
-    for (const pageNumber of pagesToSample(doc.pageCount, target.pageNumber)) {
-      // ── RUNNING OUT HERE COSTS THE TEMPLATE FILTER, NOT THE WALLS ──
-      //
-      // Sampling is the long tail: six more pages parsed to learn where the
-      // frame and the title block sit. The sheet in front of somebody is
-      // already read by this point, so the right answer to a deadline is the
-      // same one a failed page gets three lines below — drop the template pass
-      // and detect anyway. The fail-safe direction this file and
-      // `sheetTemplate.ts` both state is "no template filter", never "no walls".
-      if (outOfTime()) {
-        console.info("[takeoff] detection ran out of time", {
-          planId: target.planId,
-          pageNumber: target.pageNumber,
-          afterMs: spent(),
-          reading: "other sheets for the template",
-          sampled: sampledSheets.length,
-        });
-        sampleFailed = true;
-        break;
-      }
-      try {
-        // The sheet itself is one of the samples (`pagesToSample` includes it), and
-        // its strokes are already read above: the same strokes, not parsed twice.
-        const other = pageNumber === target.pageNumber && raster === null ? strokes : await doc.pageStrokes(pageNumber);
-        sampledSheets.push(other.segments.map(inPageWidthUnits(other.widthPt)));
-      } catch {
-        // ONE BAD PAGE MUST NOT COST THE SHEET IN FRONT OF SOMEBODY. The
-        // fail-safe direction is "no template filter", never "no walls", so a
-        // partial read is discarded rather than used — and `null` is how the
-        // pipeline is told to skip the pass entirely.
-        sampleFailed = true;
-        break;
-      }
-    }
+    // Shared with training (`productDetection.ts`): the rows a model learns from use this same read.
+    // RUNNING OUT HERE COSTS THE TEMPLATE FILTER, NOT THE WALLS: null skips the pass, never the sheet.
+    const sampledSheets = await sampledSheetsFor({
+      pageCount: doc.pageCount,
+      pageNumber: target.pageNumber,
+      own: raster === null ? strokes : null,
+      read: (pageNumber) => doc.pageStrokes(pageNumber),
+      outOfTime,
+      onOutOfTime: (sampled) =>
+        console.info("[takeoff] detection ran out of time", { planId: target.planId, pageNumber: target.pageNumber, afterMs: spent(), reading: "other sheets for the template", sampled }),
+    });
 
     // ── PLAN TEXT, BEHIND THE SWITCH ──
     //
@@ -247,12 +221,7 @@ export async function detectWallsForCalibration(
     // The vocabulary is the company's own codes, plus the legend's when read
     // (`tagVocabulary`). A company with no wall types has no vocabulary and
     // gets the detection it always had.
-    const vocabulary = tagVocabulary(
-      wallTypes.map((type) => type.code),
-      legendCodes,
-      // The sheet's own printed codes: Totem's 1, 1A, 2A, 2B and 3B (`printedTagCodes`).
-      printedTagCodes(textItems, strokes.segments),
-    );
+    const vocabulary = vocabularyFor({ wallTypes, legendCodes, textItems, segments: strokes.segments });
     const planText = vocabulary.length === 0 ? undefined : { legendCodes: vocabulary };
     // ── THE SAME PIPELINE THE VIEWER RUNS, NOT THE FINDER UNDERNEATH IT ──
     //
@@ -272,22 +241,26 @@ export async function detectWallsForCalibration(
     // session's spots): requests waiting behind a big sheet get their turn here.
     // Results are unchanged; nothing is read or written across the pause.
     await new Promise((resolve) => setImmediate(resolve));
-    const detected = detectForSheet({
-      segments: strokes.segments,
-      textItems,
-      ...(target.onBoundary === undefined ? {} : {
-            onCandidate: (features: readonly number[], wall: WallCandidate) => {
-              pairings.push(wall);
-              scored.push({ x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2, thicknessFeet: wall.thicknessFeet, features: [...features] });
-            },
-          }),
-      pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt },
-      feetPerUnit: target.feetPerUnit,
-      wallTypes: pairWithThicknesses ? wallTypes : wallTypes.map((type) => ({ ...type, thicknessIn: null })),
-      scanned: raster !== null,
-      sampledSheets: sampleFailed ? null : sampledSheets,
-      ...(planText === undefined ? {} : { planText }),
-    });
+    // ONE INPUT FOR THE PRODUCT AND FOR TRAINING (`productDetection.ts`, METHOD v2 feature parity).
+    const detected = productDetection(
+      {
+        segments: strokes.segments,
+        textItems,
+        pageSize: { widthPt: strokes.widthPt, heightPt: strokes.heightPt },
+        feetPerUnit: target.feetPerUnit,
+        wallTypes,
+        legendCodes,
+        scanned: raster !== null,
+        sampledSheets,
+        pairWithThicknesses,
+      },
+      target.onBoundary === undefined
+        ? undefined
+        : (features, wall) => {
+            pairings.push(wall);
+            scored.push({ x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2, thicknessFeet: wall.thicknessFeet, features: [...features] });
+          },
+    );
     // ── AND THE SAME SET-ASIDES THE VIEWER APPLIES, NOT THE FINDER'S RAW RUNS ──
     //
     // `detectForSheet` is only half of what the viewer shows. The other half
