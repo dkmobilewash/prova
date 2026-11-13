@@ -1,4 +1,5 @@
 import { layerVerdict } from "./layerNames";
+import { segmentGrid, segmentsOfLength } from "./segmentGrid";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
@@ -331,7 +332,15 @@ export function featuresFor(
   const band = (Math.abs(offsetOf(a, b)) || 1e-9) * 3;
   const offsets: number[] = [];
   let dense = 0;
-  for (const other of faces) {
+  // Only faces that can pass: a near-parallel face (|sin| <= 0.05) whose midpoint is within `band`
+  // and that overlaps `a` has a point beside `a` within band + 0.025 x its own length
+  // (`segmentGrid`; a zero-length face passes from anywhere along the line, so it is always asked).
+  const grid = segmentGrid(faces);
+  const pad = (band + 0.025 * grid.longestFiled) * (1 + 1e-9) + 1e-12;
+  const beside = grid.near(Math.min(a.x1, a.x2) - pad, Math.min(a.y1, a.y2) - pad, Math.max(a.x1, a.x2) + pad, Math.max(a.y1, a.y2) + pad);
+  const asked = grid.zeroLength.length === 0 ? beside : [...new Set([...beside, ...grid.zeroLength])].sort((p, q) => p - q);
+  for (const at of asked) {
+    const other = faces[at];
     if (other === a || other === b) continue;
     const { ux: ox, uy: oy } = unitOf(other);
     if (Math.abs(ux * oy - uy * ox) > 0.05) continue;
@@ -432,7 +441,7 @@ export function wordsBetween(wall: WallCandidate, words: readonly { str: string;
 }
 
 /** The face on one side of the wall, as pieces of the run in feet, and whether they form a dash pattern. */
-function faceIsDashed(wall: WallCandidate, side: 1 | -1, strokes: readonly StrokeSegment[]): boolean {
+function faceIsDashed(wall: WallCandidate, side: 1 | -1, strokes: readonly StrokeSegment[], nearby?: readonly number[]): boolean {
   const fpu = feetPerUnitOf(wall);
   const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
   const l = Math.hypot(dx, dy);
@@ -444,7 +453,9 @@ function faceIsDashed(wall: WallCandidate, side: 1 | -1, strokes: readonly Strok
   const minX = Math.min(wall.x1, wall.x2) - reachU, maxX = Math.max(wall.x1, wall.x2) + reachU;
   const minY = Math.min(wall.y1, wall.y2) - reachU, maxY = Math.max(wall.y1, wall.y2) + reachU;
   const pieces: [number, number][] = [];
-  for (const s of strokes) {
+  // Only strokes whose box meets this one can have a midpoint in it; same order as the scan.
+  for (const at of nearby ?? segmentGrid(strokes).near(minX, minY, maxX, maxY)) {
+    const s = strokes[at];
     const mx = (s.x1 + s.x2) / 2, my = (s.y1 + s.y2) / 2;
     if (mx < minX || mx > maxX || my < minY || my > maxY) continue;
     const sdx = s.x2 - s.x1, sdy = s.y2 - s.y1;
@@ -478,7 +489,11 @@ function faceIsDashed(wall: WallCandidate, side: 1 | -1, strokes: readonly Strok
 
 export function dashedFaceCount(wall: WallCandidate, strokes: readonly StrokeSegment[]): number {
   if (strokes.length === 0) return 0;
-  return (faceIsDashed(wall, 1, strokes) ? 1 : 0) + (faceIsDashed(wall, -1, strokes) ? 1 : 0);
+  // Both faces look in the same box, so the grid is asked once.
+  const l = Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1);
+  const reachU = l === 0 ? 0 : (wall.thicknessFeet / 2 + 0.25) / feetPerUnitOf(wall);
+  const nearby = segmentGrid(strokes).near(Math.min(wall.x1, wall.x2) - reachU, Math.min(wall.y1, wall.y2) - reachU, Math.max(wall.x1, wall.x2) + reachU, Math.max(wall.y1, wall.y2) + reachU);
+  return (faceIsDashed(wall, 1, strokes, nearby) ? 1 : 0) + (faceIsDashed(wall, -1, strokes, nearby) ? 1 : 0);
 }
 
 export function runsMeeting(wall: WallCandidate, faces: readonly StrokeSegment[], a: StrokeSegment, b: StrokeSegment): number {
@@ -487,7 +502,11 @@ export function runsMeeting(wall: WallCandidate, faces: readonly StrokeSegment[]
   const l = Math.hypot(dx, dy);
   if (l === 0) return 0;
   let n = 0;
-  for (const o of faces) {
+  // An end that counts is within 0.02 of the run past either end and 1.5 ft off its line, so
+  // inside the run's box padded by both.
+  const pad = (0.02 * l + 1.5 / fpu) * (1 + 1e-9) + 1e-12;
+  for (const at of segmentGrid(faces).near(Math.min(wall.x1, wall.x2) - pad, Math.min(wall.y1, wall.y2) - pad, Math.max(wall.x1, wall.x2) + pad, Math.max(wall.y1, wall.y2) + pad)) {
+    const o = faces[at];
     if (o === a || o === b) continue;
     const ox = o.x2 - o.x1, oy = o.y2 - o.y1;
     const ol = Math.hypot(ox, oy);
@@ -510,7 +529,11 @@ export function twinFaces(wall: WallCandidate, a: StrokeSegment, faces: readonly
   // thicknesses of this face is the same wall.
   const own = (wall.thicknessFeet * 3) / feetPerUnitOf(wall);
   let n = 0;
-  for (const o of faces) {
+  // Only faces within the length window can pass; the rest of the sheet is not read.
+  const window = Math.max(tol, 1e-9);
+  const asked = Number.isFinite(la) && Number.isFinite(window) ? segmentsOfLength(faces, la - window * (1 + 1e-9) - 1e-12, la + window * (1 + 1e-9) + 1e-12) : faces.map((_, i) => i);
+  for (const at of asked) {
+    const o = faces[at];
     if (o === a) continue;
     const lo = lengthOf(o);
     if (Math.abs(lo - la) > Math.max(tol, 1e-9)) continue;

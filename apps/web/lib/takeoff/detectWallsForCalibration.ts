@@ -1,4 +1,5 @@
 import type { PriorLine } from "./planCompare";
+import { SheetTooSlowError, withTimeBudget } from "./timeBudget";
 import { splitVariant, VARIANT_NOTES, variantNotes } from "./variantMark";
 import { after } from "next/server";
 import { prisma } from "@prova/db";
@@ -68,6 +69,9 @@ import { doorScheduleForPlan, doorsOnSheet, LEGEND_TEXT_ON, legendForPlan, typed
  * a test that runs in a millisecond.
  */
 export const DETECTION_BUDGET_MS = 45_000;
+
+/** The least time the finder itself gets, however much sampling spent: inside the route's 60 s. */
+export const FINDER_FLOOR_MS = 10_000;
 
 /** Injected so the deadline is testable without waiting for it. */
 export type DetectClock = { now?: () => number; budgetMs?: number };
@@ -241,7 +245,13 @@ export async function detectWallsForCalibration(
     // Results are unchanged; nothing is read or written across the pause.
     await new Promise((resolve) => setImmediate(resolve));
     // ONE INPUT FOR THE PRODUCT AND FOR TRAINING (`productDetection.ts`, METHOD v2 feature parity).
-    const detected = productDetection(
+    // ── THE FINDER IS SYNCHRONOUS, SO THE BUDGET GOES INSIDE IT ──
+    // `outOfTime` is read between the awaits; a sheet that held the finder itself ran on past it
+    // (Broadway A1.0: 357 s before 2026-11-13). What is left of the budget is handed in, but never
+    // less than `FINDER_FLOOR_MS`: a budget spent on sampling drops the template pass, not the walls
+    // (the test "does NOT give up when the budget runs out while sampling"). `SheetTooSlowError`
+    // below says "out-of-time" like every other overrun.
+    const detected = withTimeBudget(Math.max(budgetMs - spent(), FINDER_FLOOR_MS), () => productDetection(
       {
         segments: strokes.segments,
         textItems,
@@ -259,7 +269,7 @@ export async function detectWallsForCalibration(
             pairings.push(wall);
             scored.push({ x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2, thicknessFeet: wall.thicknessFeet, features: [...features] });
           },
-    );
+    ));
     // ── AND THE SAME SET-ASIDES THE VIEWER APPLIES, NOT THE FINDER'S RAW RUNS ──
     //
     // `detectForSheet` is only half of what the viewer shows. The other half
@@ -478,6 +488,10 @@ export async function detectWallsForCalibration(
     // sheet with more geometry than the pairing budget allows is refused by
     // design, and the viewer says so in its own words when somebody opens it.
     // Logged at info, not error, so it does not read as a fault in the alerting.
+    if (error instanceof SheetTooSlowError) {
+      console.info("[takeoff] sheet ran past the detection budget", { planId: target.planId, pageNumber: target.pageNumber, stage: error.stage });
+      return "out-of-time";
+    }
     if (error instanceof SheetTooDenseError) {
       console.info("[takeoff] sheet too dense to detect", {
         planId: target.planId,
