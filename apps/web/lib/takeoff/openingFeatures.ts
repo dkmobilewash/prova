@@ -1,4 +1,4 @@
-import { DOOR_TAG_REACH_FEET, exteriorWalls, WINDOW_TAG_REACH_FEET, type DoorArcCandidate, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
+import { DOOR_TAG_REACH_FEET, exteriorWalls, LEAF_END_TOLERANCE_FEET, WINDOW_TAG_REACH_FEET, type DoorArcCandidate, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
 import type { KeyPoint } from "./heldOutScore";
 import { UNTAGGED_WINDOW } from "./windowTags";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
@@ -29,8 +29,39 @@ export const DOOR_FEATURE_NAMES = [
   "sheetDoors", "sheetMarkedShare", "droppedByMarkedShare",
   "arcsNear3", "segmentsInSwing", "wordsNear6", "roomWordNear10", "existWordNear10",
   "renovation", "feetPerPoint",
+  "arcGrey",
 ] as const;
-export const DOOR_FEATURES_VERSION = 1;
+/** 2: `arcGrey`, the share of the door's own strokes drawn in grey pen (an existing door is greyed; the fourth, 2026-11-13). */
+export const DOOR_FEATURES_VERSION = 2;
+
+/** A stroke counts as grey pen at this share of grey — the same cut as `zzRenoCauses.eval.ts`. */
+export const GREY_PEN_AT = 0.25;
+
+/**
+ * ── HOW GREY THE DOOR ITSELF IS DRAWN ──
+ * Its own strokes: each leaf's arc chain (every stroke with an end within `LEAF_END_TOLERANCE_FEET` of a
+ * chain point) and the leaf's straight line from the hinge to the open end. The share of them at
+ * `GREY_PEN_AT` or greyer; -1 when none of them carries a grey value (the sheet's pen was not read),
+ * so "no pen information" is never mistaken for "black". Every cross-set false door in the first parity
+ * LOSO was a greyed swing, and `existWordNear10` was the only existing-door signal.
+ */
+export function arcGrey(door: DoorSymbol, leafArcs: readonly DoorArcCandidate[], segments: readonly StrokeSegment[], feetPerUnit: number): number {
+  const tol = LEAF_END_TOLERANCE_FEET / feetPerUnit;
+  const near = (p: Pt, q: Pt) => dist(p, q) <= tol;
+  const own = new Set<StrokeSegment>();
+  for (const arc of leafArcs) {
+    const hinge = arc.door?.hinge ?? door.hinge;
+    const ends = [arc.chain[0], arc.chain[arc.chain.length - 1]].filter((p): p is Pt => p !== undefined);
+    for (const s of segments) {
+      const a = { x: s.x1, y: s.y1 }, b = { x: s.x2, y: s.y2 };
+      if (arc.chain.some((p) => near(a, p) || near(b, p))) own.add(s);
+      else if (!s.curved && ((near(a, hinge) && ends.some((e) => near(b, e))) || (near(b, hinge) && ends.some((e) => near(a, e))))) own.add(s);
+    }
+  }
+  const strokes = [...own];
+  if (strokes.length === 0 || strokes.every((s) => s.gray === undefined)) return -1;
+  return strokes.filter((s) => (s.gray ?? 0) >= GREY_PEN_AT).length / strokes.length;
+}
 
 export const WINDOW_FEATURE_NAMES = [
   "hasFrame", "widthFeet", "frameLines", "glassLines",
@@ -169,6 +200,10 @@ export function doorFeatureRows(input: SheetContext & { doors: readonly DoorSymb
   const roomWords = input.words.filter((w) => ROOM_WORDS.test(w.text));
   const existWords = input.words.filter((w) => EXIST_WORDS.test(w.text));
   const straight = input.segments.filter((s) => !s.curved);
+  // Each door's leaf arcs, found as `doorSwings` finds them: by hinge, and by strike for a pair's second leaf.
+  const leaves = input.arcs.filter((a) => a.door !== null);
+  const leafAt = (p: Pt) => leaves.find((a) => dist(a.door!.hinge, p) <= 0.3 / fpu) ?? null;
+  const leafArcsOf = (d: DoorSymbol) => [leafAt(d.hinge), d.leaves === 2 ? leafAt(d.strike) : null].filter((a): a is DoorArcCandidate => a !== null);
   return doors.map((d, i) => {
     const c = centres[i]!;
     const wall = d.wall === null ? null : walls[d.wall]!;
@@ -186,6 +221,7 @@ export function doorFeatureRows(input: SheetContext & { doors: readonly DoorSymb
       arcHinges.filter((h) => dist(h, d.hinge) * fpu <= 3).length - 1, inSwing,
       input.words.filter((w) => dist(w, c) * fpu <= 6).length, nearestFeet(c, roomWords, fpu) <= 10 ? 1 : 0, nearestFeet(c, existWords, fpu) <= 10 ? 1 : 0,
       input.renovation ? 1 : 0, fpu / input.widthPt,
+      arcGrey(d, leafArcsOf(d), input.segments, fpu),
     ];
   });
 }
