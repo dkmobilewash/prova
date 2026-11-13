@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { appendFileSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { doorArcCandidates, doorSymbols, onlyMarkedDoors, tagsNameEveryWindow } from "../doorWindowSymbols";
@@ -35,6 +35,26 @@ const DIR2 = process.env.REAL_PLAN_DIR2 ?? "";
 const LABELS = process.env.TAKEOFF_LABEL_DIR ?? "";
 const OUT = process.env.OFT_OUT ?? "";
 const HELD = process.env.OFT_HELD === "1";
+/**
+ * The set's WINDOW schedule as the ingest reads it, from `zzWindowCount.eval.ts`'s cache
+ * (`<set>-p<page>-window-schedule.json`), never a new model call. Without it a set tagged by its
+ * schedule's letters (Topeka: A, D, E, F) reads as tagging no window, and #1165's drawn count takes
+ * its frames, which the product (holding the schedule) would not do.
+ */
+const SCHEDULE_CACHE = process.env.OFT_SCHEDULE_CACHE ?? "";
+function cachedWindowRows(pdf: string): { mark: string; size?: string | null; description?: string | null }[] {
+  if (SCHEDULE_CACHE === "") return [];
+  const file = basename(pdf);
+  const stems = [file.replace(/\W+/g, "_"), `new_${file.replace(/\W+/g, "_")}`];
+  const rows: { mark: string; size?: string | null; description?: string | null }[] = [];
+  for (const n of readdirSync(SCHEDULE_CACHE)) {
+    if (!n.endsWith("-window-schedule.json") || !stems.some((s) => n.startsWith(`${s}-p`))) continue;
+    const read = JSON.parse(readFileSync(join(SCHEDULE_CACHE, n), "utf8")) as { kind?: string; rows?: { mark?: string | null; size?: string | null; description?: string | null }[] };
+    if (read.kind !== "WINDOW") continue;
+    for (const r of read.rows ?? []) if (typeof r.mark === "string" && r.mark.trim() !== "" && !rows.some((o) => o.mark === r.mark)) rows.push({ mark: r.mark, size: r.size ?? null, description: r.description ?? null });
+  }
+  return rows;
+}
 const flat = (s: string) => s.replace(/\.pdf$/i, "").replace(/[^a-z0-9]+/gi, "").toUpperCase();
 const findPdf = (dir: string) => {
   for (const root of [DIR, DIR2].filter((r) => r !== "")) for (const n of readdirSync(root)) if (n.toLowerCase().endsWith(".pdf") && flat(n) === flat(dir)) return join(root, n);
@@ -57,6 +77,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       const pdf = findPdf(dir);
       if (pdf === null || names.length === 0) continue;
       let scheduleInSet: boolean | null = null;
+      const windowRows = cachedWindowRows(pdf);
       for (const name of names) {
         const sheet = name.slice(0, -5);
         if (excludedSheetReason(dir, sheet) !== null) continue;
@@ -86,7 +107,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const placed = symbols.map((s) => ({ text: s.text.trim().toUpperCase(), x: s.x / W, y: s.y / W }));
         const marks = placed.filter((s) => !WINDOW_TAG.test(s.text)), tags = placed.filter((s) => WINDOW_TAG.test(s.text));
         const context = { segments, walls, words, feetPerUnit: fpu, widthPt: W, renovation };
-        const dw = doorsAndWindowsForSheet({ segments, segmentsPt: strokes.segments, textPt: textItems, widthPt: W, walls, feetPerUnit: fpu, scheduleRows: [] });
+        const dw = doorsAndWindowsForSheet({ segments, segmentsPt: strokes.segments, textPt: textItems, widthPt: W, walls, feetPerUnit: fpu, scheduleRows: [], windowRows });
 
         if (keyDoors.length > 0) {
           const arcs = doorArcCandidates(segments, walls, fpu);
