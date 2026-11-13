@@ -106,6 +106,43 @@ export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: str
     match: "Jefferson-City",
     why: "SIBLING of the held-out Albany Readiness Center — kept out of training, not a test key",
   },
+  // ── THE 2026-11-13 BATCH: 26 public sets arrived, 24 survived the survey, 8 held out BEFORE labelling ──
+  //
+  // Split 2 training : 1 held-out across building types (survey-new-sets.md has the survey; the split
+  // reasoning is in coordination/log.md). Residential (11 Chestnut, Broadway duplex) both went to TRAINING
+  // because the corpus had none — the rule is not to hold out the only set of a type training lacks.
+  {
+    match: "Appendix+5B+-+Construction+Drawings",
+    why: "UTHealth sim-lab TI (healthcare/university) — held out 2026-11-13, before a label was written",
+  },
+  {
+    match: "df9e0224-b5bc-46bc-80a6-f52a38892d46",
+    why: "Kirkland 405 Clinic TI (healthcare renovation) — held out 2026-11-13, before a label was written",
+  },
+  {
+    match: "Architectural-Structural-Holabird",
+    why: "Holabird Academy PK-8 (new-build school) — held out 2026-11-13, before a label was written",
+  },
+  {
+    match: "BID-PLANS-MDR-260826",
+    why: "MDR elementary renovation (school reno, window-replacement heavy) — held out 2026-11-13, before a label was written",
+  },
+  {
+    match: "1.-Substation-Construction-Documents",
+    why: "El Paso County sheriff substation (civic new build) — held out 2026-11-13, before a label was written",
+  },
+  {
+    match: "Lake Sahoma Restroom",
+    why: "Lake Sahoma restroom facility (civic new build, small) — held out 2026-11-13, before a label was written",
+  },
+  {
+    match: "rebid_mack_theater_drawings",
+    why: "Mack Theater renovation (civic reno) — held out 2026-11-13, before a label was written",
+  },
+  {
+    match: "NW-C35NW Region HQ Remodel",
+    why: "WA State Parks NW Region HQ remodel (civic reno, small) — held out 2026-11-13, before a label was written",
+  },
   {
     match: "Modbox-Bistro-plans",
     why: "modular restaurant build — held out 2026-10-29, before a label was written",
