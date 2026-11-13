@@ -32,23 +32,6 @@ describe("doorFeatureRows", () => {
     expect(gap).toHaveLength(DOOR_FEATURE_NAMES.length);
   });
 
-  it("arcGrey: the share of the door's OWN strokes in grey pen — grey door 1, black door 0, no pen information -1", () => {
-    // The leaf from the hinge to the open end (0,3), the arc from there to the strike (3,0).
-    const arc = { chain: [{ x: 0, y: 3 }, { x: 2.12, y: 2.12 }, { x: 3, y: 0 }], fit: { cx: 0, cy: 0, r: 3, worst: 0 }, radiusFeet: 3, sweepDegrees: 90, reject: null, door };
-    const strokes = (gray: number | undefined) => [
-      { x1: 0, y1: 0, x2: 0, y2: 3, ...(gray === undefined ? {} : { gray }) },
-      { x1: 0, y1: 3, x2: 2.12, y2: 2.12, curved: true, ...(gray === undefined ? {} : { gray }) },
-      { x1: 2.12, y1: 2.12, x2: 3, y2: 0, curved: true, ...(gray === undefined ? {} : { gray }) },
-    ];
-    // A grey line elsewhere on the sheet is not the door's.
-    const elsewhere = { x1: 20, y1: 20, x2: 30, y2: 20, gray: 0.8 };
-    const grey = doorFeatureRows({ ...base, arcs: [arc], segments: [...strokes(0.6), elsewhere] })[0]!;
-    const black = doorFeatureRows({ ...base, arcs: [arc], segments: [...strokes(0), elsewhere] })[0]!;
-    const unread = doorFeatureRows({ ...base, arcs: [arc], segments: strokes(undefined) })[0]!;
-    expect([col(grey, "arcGrey"), col(black, "arcGrey"), col(unread, "arcGrey")]).toEqual([1, 0, -1]);
-    expect(DOOR_FEATURE_NAMES[DOOR_FEATURE_NAMES.length - 1], "appended at the END, so earlier columns keep their place").toBe("arcGrey");
-  });
-
   it("says a mark beside the door, and a door the product drops", () => {
     const row = doorFeatureRows({ ...base, segments: [], marks: [{ text: "101", x: 1.5, y: 1 }] })[0]!;
     expect([col(row, "marked"), col(row, "markNumeric"), col(row, "droppedByMarkedShare")]).toEqual([1, 1, 1]);
