@@ -168,7 +168,9 @@ import {
   type Candidate,
   type ReviewState,
 } from "@/lib/takeoff/answerKeyReview";
-import { detectForSheet, offeredCandidates } from "@/lib/takeoff/offeredCandidates";
+import { offeredCandidates } from "@/lib/takeoff/offeredCandidates";
+import { FIND_BUDGET_MS, FIND_LIMIT_MS, detectOffThread } from "@/lib/takeoff/detectOffThread";
+import { SheetTooSlowError } from "@/lib/takeoff/timeBudget";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { TakeoffRoomsPanel } from "./TakeoffRoomsPanel";
 import { TakeoffFinishPanel } from "./TakeoffFinishPanel";
@@ -4210,40 +4212,15 @@ export function TakeoffPlanViewer({
       // sheet shows (the kept views, the others, the left-out) comes back from
       // the same function the evals score, so a number measured there is a
       // number a customer sees.
-      const pairings: {
-        x1: number;
-        y1: number;
-        x2: number;
-        y2: number;
-        lengthFeet: number;
-        thicknessFeet: number;
-        features: number[];
-      }[] = [];
-      // Always collected now, not only for the answer key: the room step reads
-      // the same list. A few thousand small objects per find.
-      const collect = (features: number[], wall: WallCandidate) => {
-              pairings.push({
-                x1: wall.x1,
-                y1: wall.y1,
-                x2: wall.x2,
-                y2: wall.y2,
-                lengthFeet: wall.lengthFeet,
-                thicknessFeet: wall.thicknessFeet,
-                features: [...features],
-              });
-            };
-      // Detection is seconds of synchronous work on a big sheet, so the spinner paints first.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      const detected = detectForSheet({
-        segments,
-        textItems,
-        pageSize,
-        feetPerUnit,
-        wallTypes,
-        sampledSheets,
-        onCandidate: collect,
-        scanned: raster !== undefined,
-      });
+      // ── OFF THE PAGE'S THREAD, UNDER A TIME BUDGET (`detectOffThread.ts`) ──
+      // Detection ran here, synchronously, and Broadway A1.0 held the tab frozen for more than
+      // 3.5 minutes (Chrome Round 22, 2026-11-13). In a worker the spinner keeps turning, and a sheet
+      // that runs past the budget ends in a sentence rather than a hang.
+      // Always collected now, not only for the answer key: the room step reads the same list.
+      const { detected, pairings } = await detectOffThread(
+        { input: { segments, textItems, pageSize, feetPerUnit, wallTypes, sampledSheets, scanned: raster !== undefined }, budgetMs: FIND_BUDGET_MS },
+        FIND_LIMIT_MS,
+      );
       const found: FoundOnSheet = detected.found;
       // ── WHAT THE FINDER SAW, FOR THE LABELLING HARNESS ONLY ──
       //
@@ -4325,7 +4302,21 @@ export function TakeoffPlanViewer({
           ...(exclusionsRef.current === null ? {} : { user: exclusionsRef.current }),
           ...(priorPlan === undefined ? {} : { priorPlan }),
         });
+      // ── AND WHAT FOLLOWS RUNS IN STEPS THE PAGE CAN PAINT BETWEEN ──
+      // The set-asides and the doors and windows still run here, and on Broadway A1.0 they were
+      // one 3.9 s block after the worker returned. A paint between them keeps the spinner alive,
+      // and the console names each step's time so the next heavy sheet says which one it was.
+      const stepMs: Record<string, number> = {};
+      let stepAt = performance.now();
+      const stepDone = async (name: string) => {
+        const now = performance.now();
+        stepMs[name] = Math.round(now - stepAt);
+        await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+        stepAt = performance.now();
+      };
+      await stepDone("hand-back");
       let offered = answerKey !== undefined ? null : offerHere();
+      await stepDone("set-asides");
       // ── PLAN COMPARISON, ON A PAIRED SHEET — see `priorPlan.ts` ──
       //
       // The paired demolition plan is read from this same document, the way
@@ -4404,6 +4395,7 @@ export function TakeoffPlanViewer({
       let runs: WallCandidate[] = walls;
       if (doorsWindows && answerKey === undefined) {
         const W = pageSize.widthPt;
+        await stepDone("before-openings");
         const allOpenings = doorsAndWindowsForSheet({
           segments: found.inUnits,
           segmentsPt: found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })),
@@ -4432,6 +4424,8 @@ export function TakeoffPlanViewer({
           );
         }
       }
+      await stepDone("openings");
+      console.info("[takeoff] Run takeoff steps after the finder (ms)", stepMs);
       if (!quietFind.current) onResults?.();
       setFound(
         doubted !== null || runs.some(droppedOnJob)
@@ -4502,7 +4496,7 @@ export function TakeoffPlanViewer({
       // returned. "Couldn't be read" would be false: it was read fine and there
       // is too much of it.
       setFindError(
-        problem instanceof SheetTooDenseError
+        problem instanceof SheetTooDenseError || problem instanceof SheetTooSlowError
           ? problem.message
           : "The lines on this sheet couldn't be read. Trace the walls by hand as usual.",
       );

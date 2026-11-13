@@ -1,4 +1,5 @@
 import { filledWallCandidates } from "./filledWalls";
+import { spendTime } from "./timeBudget";
 import {
   type WallCandidate,
   type WallCluster,
@@ -13,8 +14,8 @@ import { gridBubbles, linesIntoBubbles } from "./gridBubbles";
 import { joinAtCorners } from "./joinCorners";
 import { wallsFromBothEngines } from "./wallRuns";
 import { templateFromSheets, withoutTemplate } from "./sheetTemplate";
-import { wallTypeTags, tagByRun } from "./wallTags";
-import { defaultWallTypeFromNotes } from "./wallNotes";
+import { wallTypeTags, tagByRun, type WallTypeTag } from "./wallTags";
+import { defaultWallTypeFromNotes, type WallTypeFromNote } from "./wallNotes";
 import { planTextTagByRun, type PlanTextInput } from "./planTextTags";
 import { scaleBarLabels, wallsNotTheScaleBar } from "./scaleBar";
 import { wallsNotDuplicateCoverage } from "./duplicateCoverage";
@@ -197,6 +198,8 @@ export type FoundOnSheet = {
    *  way is how the list somebody accepts stops matching the list they looked
    *  at. */
   regroup: (runs: WallCandidate[]) => WallGroup[];
+  /** What `regroup` is built from, for a caller that has to rebuild it (`regroupFrom`). */
+  regroupRecipe: RegroupRecipe;
 };
 
 /**
@@ -264,6 +267,8 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // Reports nothing and costs one comparison per stage when nobody is asking.
   let stageStart = Date.now();
   const stage = (name: string) => {
+    // Every stage boundary is a checkpoint against the caller's time budget (`timeBudget.ts`).
+    spendTime(`finishing ${name}`);
     if (!input.onStage) return;
     const now = Date.now();
     input.onStage(name, now - stageStart);
@@ -537,28 +542,16 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
   // always run — `zzSwitchOff.eval.ts` holds the two outputs equal on the
   // training sheets.
   const planText = input.planText;
-  const regroup = (runs: WallCandidate[]) =>
-    planText === undefined
-      ? wallGroups(
-          clusterByThickness(runs),
-          tagByRun(runs, tags, feetPerUnit, wallTypes),
-          wallTypes,
-          fromNote,
-        )
-      : (() => {
-          const read = planTextTagByRun({
-            segments: input.segments,
-            text: input.textItems,
-            widthPt: pageSize.widthPt,
-            walls: runs,
-            feetPerUnit,
-            legendCodes: planText.legendCodes,
-            textTags: tags,
-            wallTypes,
-          });
-          // With the plan's tag variants, so a C6 tag names C's variant.
-          return wallGroups(clusterByThickness(runs), read.byRun, read.wallTypes, fromNote);
-        })();
+  const regroupRecipe: RegroupRecipe = {
+    tags,
+    feetPerUnit,
+    wallTypes: [...wallTypes],
+    fromNote,
+    ...(planText === undefined
+      ? {}
+      : { planText: { legendCodes: planText.legendCodes, segments: input.segments, textItems: input.textItems, widthPt: pageSize.widthPt } }),
+  };
+  const regroup = regroupFrom(regroupRecipe);
 
   return {
     inUnits,
@@ -575,5 +568,50 @@ export function findWallsOnSheet(input: FindWallsInput): FoundOnSheet {
     templateDropped,
     layerDropped: onWallLayers.dropped,
     regroup,
+    regroupRecipe,
+  };
+}
+
+/**
+ * ── EVERYTHING `regroup` READS, AS PLAIN DATA ──
+ *
+ * The viewer finds the sheet in a worker so a heavy sheet cannot freeze the tab (`timeBudget.ts`).
+ * A function cannot cross from a worker to the page, and the page calls `regroup` again after
+ * every labelling decision — so the worker sends this instead and the page rebuilds the same
+ * function with `regroupFrom`. One definition serves both: `findWallsOnSheet` builds its own
+ * `regroup` the same way.
+ */
+export type RegroupRecipe = {
+  tags: WallTypeTag[];
+  feetPerUnit: number;
+  wallTypes: MatchableWallType[];
+  fromNote: WallTypeFromNote | null;
+  /** Only with the plan-text vocabulary (`PlanTextInput`): the symbols are read off these strokes and words. */
+  planText?: { legendCodes: readonly string[]; segments: readonly StrokeSegment[]; textItems: readonly SheetTextItem[]; widthPt: number };
+};
+
+export function regroupFrom(recipe: RegroupRecipe): (runs: WallCandidate[]) => WallGroup[] {
+  const { tags, feetPerUnit, wallTypes, fromNote, planText } = recipe;
+  return (runs) => {
+    if (planText === undefined) {
+      return wallGroups(
+        clusterByThickness(runs),
+        tagByRun(runs, tags, feetPerUnit, wallTypes),
+        wallTypes,
+        fromNote,
+      );
+    }
+    const read = planTextTagByRun({
+      segments: planText.segments,
+      text: planText.textItems,
+      widthPt: planText.widthPt,
+      walls: runs,
+      feetPerUnit,
+      legendCodes: planText.legendCodes,
+      textTags: tags,
+      wallTypes,
+    });
+    // With the plan's tag variants, so a C6 tag names C's variant.
+    return wallGroups(clusterByThickness(runs), read.byRun, read.wallTypes, fromNote);
   };
 }

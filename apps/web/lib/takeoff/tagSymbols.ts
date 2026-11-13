@@ -1,4 +1,5 @@
 import type { StrokeSegment } from "./wallVectors";
+import { spendTime } from "./timeBudget";
 
 /**
  * ── A TAG IS A SMALL CLOSED SHAPE WITH A SHORT CODE INSIDE ──
@@ -373,6 +374,8 @@ export function tagSymbols(input: {
   segments: readonly StrokeSegment[];
   text: readonly TextForSymbol[];
   unitsPerPaperInch: number;
+  /** Counts the loop walk's steps. Here so the test that holds the walk linear can (`noFreeze.test.ts`). */
+  walkSteps?: { count: number };
 }): TagSymbol[] {
   const { segments, text, unitsPerPaperInch } = input;
   if (!(unitsPerPaperInch > 0) || segments.length === 0) return [];
@@ -381,7 +384,14 @@ export function tagSymbols(input: {
   const longest = maxR * 2.5;
 
   const grain = minR * 0.05;
-  const key = (x: number, y: number) => `${Math.round(x / grain)},${Math.round(y / grain)}`;
+  // A number, not a "kx,ky" string: building the string was a third of the walk's time on a dense
+  // sheet. Exact while |ky| < 2^21 cells, which is 377,000 points at the finest grain; beyond that
+  // it falls back to the string, which never equals a number.
+  const key = (x: number, y: number): number | string => {
+    const kx = Math.round(x / grain);
+    const ky = Math.round(y / grain);
+    return Math.abs(ky) < 2 ** 21 && Math.abs(kx) < 2 ** 30 ? kx * 2 ** 22 + ky : `${kx},${ky}`;
+  };
   // ── A STROKE IS INDEXED BY BOTH ENDS, BECAUSE IT HAS NO DIRECTION ──
   //
   // The first walker followed strokes head to tail: from where one ENDED to
@@ -391,14 +401,19 @@ export function tagSymbols(input: {
   // on a sheet that prints them beside every wall. Which way a CAD export
   // happens to emit a polyline's edges is not a property of the drawing, so
   // the walk treats every stroke as passable in either direction.
-  const touches = new Map<string, number[]>();
+  const touches = new Map<number | string, number[]>();
   const short: StrokeSegment[] = [];
   for (const s of segments) {
     const length = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
     if (length === 0 || length > longest) continue;
     short.push(s);
-    for (const k of new Set([key(s.x1, s.y1), key(s.x2, s.y2)])) {
-      touches.set(k, [...(touches.get(k) ?? []), short.length - 1]);
+    const k1 = key(s.x1, s.y1);
+    const k2 = key(s.x2, s.y2);
+    for (const k of k1 === k2 ? [k1] : [k1, k2]) {
+      // Appended in place: copying the bucket on every insert was quadratic in a dense one.
+      const bucket = touches.get(k);
+      if (bucket === undefined) touches.set(k, [short.length - 1]);
+      else bucket.push(short.length - 1);
     }
   }
 
@@ -412,7 +427,9 @@ export function tagSymbols(input: {
   const endsIn = new Map<string, StrokeSegment[]>();
   for (const s of segments) {
     for (const k of new Set([cellKey(s.x1, s.y1), cellKey(s.x2, s.y2)])) {
-      endsIn.set(k, [...(endsIn.get(k) ?? []), s]);
+      const bucket = endsIn.get(k);
+      if (bucket === undefined) endsIn.set(k, [s]);
+      else bucket.push(s);
     }
   }
   const near = (cx: number, cy: number): StrokeSegment[] => {
@@ -427,31 +444,37 @@ export function tagSymbols(input: {
     return out;
   };
 
-  const walked = new Set<number>();
+  // Which strokes a closed loop has already used: each is in at most one.
+  const walked = new Uint8Array(short.length);
   const found: TagSymbol[] = [];
   const sameVertex = (a: Point, b: Point) => Math.abs(a.x - b.x) <= grain && Math.abs(a.y - b.y) <= grain;
 
-  /** One stroke, walked from one of its ends to the other. */
-  type Step = { seg: number; reversed: boolean };
-  const entryOf = (st: Step): Point => {
-    const s = short[st.seg];
-    return st.reversed ? { x: s.x2, y: s.y2 } : { x: s.x1, y: s.y1 };
-  };
-  const exitOf = (st: Step): Point => {
-    const s = short[st.seg];
-    return st.reversed ? { x: s.x1, y: s.y1 } : { x: s.x2, y: s.y2 };
-  };
-
-  /** The unwalked strokes that touch where this step ends, entered at that end. */
-  const continuations = (from: Step): Step[] => {
-    const at = exitOf(from);
-    const out: Step[] = [];
-    for (const c of touches.get(key(at.x, at.y)) ?? []) {
-      if (c === from.seg || walked.has(c)) continue;
+  // ── ONE STROKE, WALKED FROM ONE OF ITS ENDS TO THE OTHER, IS A NUMBER ──
+  //
+  // `stroke * 2 + reversed`. The walk below is the same depth-first walk it always was, in the same
+  // order; it used to build an object, an array of options and a "kx,ky" string at every step, and
+  // on Broadway A1.0 it takes 218 million steps (2026-11-13). The options of a step are the strokes
+  // touching where it ends, which never change, so they are listed once per step and reused.
+  const entryX = (id: number) => ((id & 1) === 1 ? short[id >> 1].x2 : short[id >> 1].x1);
+  const entryY = (id: number) => ((id & 1) === 1 ? short[id >> 1].y2 : short[id >> 1].y1);
+  const exitX = (id: number) => ((id & 1) === 1 ? short[id >> 1].x1 : short[id >> 1].x2);
+  const exitY = (id: number) => ((id & 1) === 1 ? short[id >> 1].y1 : short[id >> 1].y2);
+  const listed: (Int32Array | undefined)[] = new Array(short.length * 2);
+  /** The strokes touching where this step ends, entered at that end (not yet filtered by `walked`). */
+  const optionsOf = (id: number): Int32Array => {
+    const known = listed[id];
+    if (known !== undefined) return known;
+    const x = exitX(id);
+    const y = exitY(id);
+    const out: number[] = [];
+    for (const c of touches.get(key(x, y)) ?? []) {
+      if (c === id >> 1) continue;
       const s = short[c];
-      out.push({ seg: c, reversed: !sameVertex(at, { x: s.x1, y: s.y1 }) });
+      out.push(c * 2 + (sameVertex({ x, y }, { x: s.x1, y: s.y1 }) ? 0 : 1));
     }
-    return out;
+    const list = Int32Array.from(out);
+    listed[id] = list;
+    return list;
   };
 
   /**
@@ -469,52 +492,110 @@ export function tagSymbols(input: {
    * search on a sheet whose strokes all touch.
    */
   const BUDGET = 4000;
-  const walkLoop = (start: Step): { cycle: Point[]; used: number[] } | null => {
-    const origin = entryOf(start);
-    const path: Step[] = [start];
-    const pts: Point[] = [origin];
-    const onPath = new Set<number>([start.seg]);
-    const stack: { options: Step[]; i: number }[] = [{ options: continuations(start), i: 0 }];
-    let budget = BUDGET;
-    while (stack.length > 0 && budget > 0) {
-      budget -= 1;
-      const top = stack[stack.length - 1];
-      if (path.length >= 3 && sameVertex(origin, exitOf(path[path.length - 1]))) {
-        return { cycle: pts, used: path.map((st) => st.seg) };
+  // ── A WALK THAT CANNOT CLOSE IS NOT TAKEN ──
+  //
+  // The walk below tries every order of the strokes it can reach until it closes or spends BUDGET.
+  // Where no reachable stroke ends back at the start, every order fails, and on outlined lettering
+  // that is most starts: Broadway A1.0's notes are 530,414 chords, and 136,926 of its 177,514 walks
+  // spent all 4,000 steps re-walking one letter to find nothing — 63 s of a frozen tab in one call
+  // (2026-11-13). So first ask, visiting each (stroke, direction) once, whether ANY stroke the walk
+  // could reach, past the start's own continuations, ends within `grain` of the start. The walk only ever steps to a continuation of
+  // where it is, never to the start's own stroke, so what it can reach is inside what this visits:
+  // a "no" here is the walk's own null, and a "yes" (or a search too big to finish) runs the walk
+  // exactly as before. The answer cannot change; only the hopeless walks are skipped.
+  const SEARCH_CAP = 4000;
+  const searched = new Uint32Array(short.length * 2);
+  let search = 0;
+  const canClose = (start: number): boolean => {
+    const ox = entryX(start);
+    const oy = entryY(start);
+    search += 1;
+    searched[start] = search;
+    const stack = [start];
+    let states = 0;
+    while (stack.length > 0) {
+      const at = stack.pop()!;
+      states += 1;
+      if (input.walkSteps !== undefined) input.walkSteps.count += 1;
+      if (states > SEARCH_CAP) return true;
+      for (const next of optionsOf(at)) {
+        const seg = next >> 1;
+        if (walked[seg] === 1 || seg === start >> 1) continue;
+        // The walk closes only on its third stroke or later, and every such stroke continues one
+        // that is not the start: a stroke straight off the start that ends back at it (the start
+        // drawn twice) closes nothing.
+        if (at !== start && Math.abs(exitX(next) - ox) <= grain && Math.abs(exitY(next) - oy) <= grain) return true;
+        if (searched[next] === search) continue;
+        searched[next] = search;
+        stack.push(next);
       }
-      let next: Step | undefined;
-      while (top.i < top.options.length && next === undefined) {
-        const candidate = top.options[top.i];
-        top.i += 1;
-        if (!onPath.has(candidate.seg)) next = candidate;
-      }
-      if (next === undefined || path.length > 256) {
-        stack.pop();
-        const dropped = path.pop();
-        if (dropped !== undefined) onPath.delete(dropped.seg);
-        pts.pop();
-        continue;
-      }
-      path.push(next);
-      onPath.add(next.seg);
-      pts.push(entryOf(next));
-      stack.push({ options: continuations(next), i: 0 });
     }
-    return null;
+    return false;
+  };
+  const onPath = new Uint8Array(short.length);
+  const walkLoop = (start: number): { cycle: Point[]; used: number[] } | null => {
+    const ox = entryX(start);
+    const oy = entryY(start);
+    const path = [start];
+    const options = [optionsOf(start)];
+    const tried = [0];
+    onPath[start >> 1] = 1;
+    try {
+      let budget = BUDGET;
+      while (options.length > 0 && budget > 0) {
+        budget -= 1;
+        if (input.walkSteps !== undefined) input.walkSteps.count += 1;
+        const last = path[path.length - 1];
+        if (path.length >= 3 && Math.abs(ox - exitX(last)) <= grain && Math.abs(oy - exitY(last)) <= grain) {
+          return {
+            cycle: path.map((id, at) => (at === 0 ? { x: ox, y: oy } : { x: entryX(id), y: entryY(id) })),
+            used: path.map((id) => id >> 1),
+          };
+        }
+        const top = options.length - 1;
+        const list = options[top];
+        let i = tried[top];
+        let next = -1;
+        while (i < list.length && next < 0) {
+          const candidate = list[i];
+          i += 1;
+          // `walked` is the same for the whole walk, so filtering here is filtering the list.
+          if (walked[candidate >> 1] === 1) continue;
+          if (onPath[candidate >> 1] === 0) next = candidate;
+        }
+        tried[top] = i;
+        if (next < 0 || path.length > 256) {
+          options.pop();
+          tried.pop();
+          const dropped = path.pop();
+          if (dropped !== undefined) onPath[dropped >> 1] = 0;
+          continue;
+        }
+        path.push(next);
+        onPath[next >> 1] = 1;
+        options.push(optionsOf(next));
+        tried.push(0);
+      }
+      return null;
+    } finally {
+      for (const id of path) onPath[id >> 1] = 0;
+    }
   };
 
   // Every closed loop first: a wide box's lettering is judged against its
   // NEIGHBOURS' outlines (below), so all of them have to be known.
   const cycles: Point[][] = [];
   for (let n = 0; n < short.length; n += 1) {
-    if (walked.has(n)) continue;
+    if ((n & 1023) === 0) spendTime("looking for tag symbols");
+    if (walked[n] === 1) continue;
     // One direction is enough: a loop through this stroke closes either way.
-    const loop = walkLoop({ seg: n, reversed: false });
+    const from = n * 2;
+    const loop = canClose(from) ? walkLoop(from) : null;
     // A stroke that leads to no loop is spent either way: trying it again
     // from another start would find the same nothing.
-    walked.add(n);
+    walked[n] = 1;
     if (loop === null) continue;
-    for (const used of loop.used) walked.add(used);
+    for (const used of loop.used) walked[used] = 1;
     if (loop.cycle.length >= 3) cycles.push(loop.cycle);
   }
 
