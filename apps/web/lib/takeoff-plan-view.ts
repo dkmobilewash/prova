@@ -197,6 +197,14 @@ export type ScalePrefill = {
 
 export type ScalePrefillByPage = Record<number, ScalePrefill>;
 
+/**
+ * "SURE": measured off the drawing's own dimensions, with no reduced-print
+ * correction — the plan set's green word. Only a Sure reading saves in one press
+ * from the toolbar (Diego, 2026-11-12); a printed scale or a snap (#1130) never
+ * applies without the person seeing what it rests on.
+ */
+export const scaleIsSure = (p: ScalePrefill): boolean => !p.unconfirmed && p.reducedPrintCaution === undefined && p.snapDimensions === undefined;
+
 /** The shape the page query selects. Named so the query cannot drift from what
  *  this function needs. */
 export type ScaleReadingRowForView = {
