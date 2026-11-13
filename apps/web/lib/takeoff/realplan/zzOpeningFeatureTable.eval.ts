@@ -48,7 +48,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
   it("writes one row per found door and window", { timeout: 7_200_000 }, async () => {
     appendFileSync(OUT, JSON.stringify({ header: true, kind: "door", version: DOOR_FEATURES_VERSION, names: DOOR_FEATURE_NAMES }) + "\n");
     appendFileSync(OUT, JSON.stringify({ header: true, kind: "window", version: WINDOW_FEATURES_VERSION, names: WINDOW_FEATURE_NAMES }) + "\n");
-    let sheets = 0;
+    const read: string[] = [];
     for (const dir of readdirSync(LABELS).sort()) {
       if ((heldOutReason(dir) !== null) !== HELD) continue;
       if (process.env.OFT_ONLY !== undefined && dir !== process.env.OFT_ONLY) continue;
@@ -108,9 +108,9 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           windows.forEach((_, i) => appendFileSync(OUT, JSON.stringify({ set: dir, sheet, kind: "window", real: real[i], x: x[i]!.map((v) => +v.toFixed(4)) }) + "\n"));
           appendFileSync(OUT, JSON.stringify({ set: dir, sheet, kind: "window", keyCount: keyWindows.length }) + "\n");
         }
-        sheets += 1;
+        read.push(`${dir} ${sheet}`);
       }
     }
-    expect(sheets, "no keyed sheet was read").toBeGreaterThan(0);
+    expect(read.length, "no keyed sheet was read").toBeGreaterThan(0);
   });
 });
