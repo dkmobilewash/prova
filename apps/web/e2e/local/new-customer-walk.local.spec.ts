@@ -711,13 +711,36 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       await expect(tab.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 120_000 });
       const run = tab.locator('[data-takeoff="find-walls"]');
       if (!(await expect(run).toBeEnabled({ timeout: 30_000 }).then(() => true, () => false))) {
-        // Opened on a sheet with no scale: a person picks the floor plan.
-        stuck(`the workspace opened on "${(await text(tab.locator("header").first())).slice(0, 80)}", where Run takeoff is off ("${await run.getAttribute("title")}"); picked A101`);
         await shot("workspace-opened-unscaled", tab);
-        const picker = tab.locator('[data-takeoff="sheet-picker"]');
-        const options = await picker.locator("option").evaluateAll((os) => os.map((o) => ({ v: (o as HTMLOptionElement).value, t: o.textContent ?? "" })));
-        await picker.selectOption(options.find((o) => /^A101\b/.test(o.t.trim()))?.v ?? "13");
-        act(2);
+        // ── THE SHEET'S OWN SCALE, OFFERED WHERE THE PERSON STANDS ──
+        // Joplin (133 pages): the scales step ran while the set was still being read, before its floor
+        // plan A-101 was; the workspace then opens on A-101 offering "Use the printed scale 1/8" = 1'-0"",
+        // one press, which is what a person does. Only with no such offer does the walk pick another sheet.
+        const useScale = tab.getByRole("button", { name: /^Use the printed scale/ }).first();
+        if (await useScale.isVisible().catch(() => false)) {
+          // The toolbar offer opens the sheet's evidence ("matched 70 printed dimensions of 223"); the scale
+          // is saved by its own button — "Use this dimension", or "Use the printed scale" from the title block.
+          const offered = await text(useScale);
+          await useScale.click();
+          act();
+          const accept = tab.getByRole("button", { name: /^(Use this dimension|Use the printed scale)$/ }).first();
+          await expect(accept).toBeVisible({ timeout: 15_000 });
+          const acceptName = await text(accept).catch(() => "its button");
+          await accept.click();
+          act();
+          // That fills the Set scale form (two points, the figure, the sheet's name); Set the scale saves it.
+          const save = tab.getByRole("button", { name: /^Set the scale$/ }).first();
+          await expect(save).toBeVisible({ timeout: 15_000 });
+          await save.click();
+          act();
+          note(`Run takeoff was off ("${await run.getAttribute("title")}"); the sheet offered "${offered}", then "${acceptName}", then "Set the scale": 3 presses.`);
+        } else {
+          stuck(`the workspace opened on "${(await text(tab.locator("header").first())).slice(0, 80)}", where Run takeoff is off ("${await run.getAttribute("title")}") and no scale was offered; picked A101`);
+          const picker = tab.locator('[data-takeoff="sheet-picker"]');
+          const options = await picker.locator("option").evaluateAll((os) => os.map((o) => ({ v: (o as HTMLOptionElement).value, t: o.textContent ?? "" })));
+          await picker.selectOption(options.find((o) => /^A-?101\b/.test(o.t.trim()))?.v ?? "13");
+          act(2);
+        }
       }
       await expect(run).toBeEnabled({ timeout: 300_000 });
       await shot("workspace", tab);
