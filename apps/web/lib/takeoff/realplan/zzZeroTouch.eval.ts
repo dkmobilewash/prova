@@ -131,6 +131,14 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
   it("prices the untouched takeoff against the key", { timeout: 14_400_000 }, async () => {
     const config = loadWallModel();
     if (config === null) throw new Error("no wall model");
+    /**
+     * LOSO (METHOD v2): ZT_LOSO_DIR holds one model per label set, named <labelSet>.json,
+     * each trained WITHOUT that set. The set is scored with its own fold model; a set with
+     * no fold file is SKIPPED and listed — using the global model there would leak the
+     * set's own training signal into a number everyone reads as out-of-sample.
+     */
+    const LOSO_DIR = process.env.ZT_LOSO_DIR ?? "";
+    const losoSkipped: string[] = [];
     const rows: Record<string, unknown>[] = [];
     const unmatchedSpellings: Record<string, number> = {};
     const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number }>();
@@ -141,6 +149,14 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       try { names = readdirSync(join(LABELS, dir)).filter((n) => n.endsWith(".json")); } catch { continue; }
       const pdf = findPdf(dir);
       if (pdf === null || names.length === 0) continue;
+      let setConfig = config;
+      if (LOSO_DIR !== "") {
+        const foldPath = join(LOSO_DIR, `${dir}.json`);
+        if (!existsSync(foldPath)) { losoSkipped.push(dir); continue; }
+        const fold = loadWallModel({ ...process.env, TAKEOFF_WALL_MODEL: foldPath });
+        if (fold === null) throw new Error(`LOSO fold model unreadable: ${foldPath}`);
+        setConfig = fold;
+      }
       const sheetsAll = await sheetsOf(pdf);
       const auto = autoPairs(sheetsAll);
       for (const name of names) {
@@ -178,11 +194,11 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         // A sheet whose key holds no door (or window) marks cannot score them: posted doors there are
         // neither over nor under, they are unkeyed. Only door-keyed sheets enter the door terms.
         const postedDoors = keyDoors === 0 ? 0 : dw.doorMarks.filter((m) => m !== null && m.trim() !== "").length;
-        const held = new Set(runsHeldOffEstimate(config.model, runs, scored, fpu, false));
+        const held = new Set(runsHeldOffEstimate(setConfig.model, runs, scored, fpu, false));
         const zeroLf = runs.reduce((n, r) => n + (held.has(r) ? 0 : r.lengthFeet), 0);
         // N presses, answered from the key, in the shipped order.
         const junk = runs.map((r) => scoreSheet({ set: dir, sheet, key, proposed: [{ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFeet: r.lengthFeet, thicknessFeet: r.thicknessFeet } as ScoredRun], feetPerUnit: fpu }).extraFeet >= 0.5 * r.lengthFeet);
-        const scores = runScores(config.model, runs, scored, fpu);
+        const scores = runScores(setConfig.model, runs, scored, fpu);
         const entries = runs.map((r, at) => ({ at, held: held.has(r), score: scores[at] ?? null, lengthFeet: r.lengthFeet }));
         let lf10 = zeroLf;
         let answered = 0;
@@ -255,6 +271,10 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       );
     }
     if (kb > 0) console.log(`ZT ${group} TOTAL bid off ${(((zb - kb) / kb) * 100).toFixed(1)}% zero-touch · ${(((tb - kb) / kb) * 100).toFixed(1)}% after ${PRESSES} presses/sheet (key $${Math.round(kb)})`);
+    if (LOSO_DIR !== "") {
+      console.log(`ZT MODE LOSO: per-set fold models from ${LOSO_DIR} · ${bySet.size} sets scored · ${losoSkipped.length} skipped (no fold model)${losoSkipped.length > 0 ? ": " + losoSkipped.map((d) => d.slice(0, 24)).join(", ") : ""}`);
+      console.log(`ZT MODE LOSO: pooled figures below cover ONLY the ${bySet.size} fold-covered sets; the fixed held-out sets remain the final exam, run once per release`);
+    }
     // HEADLINE: TOTAL ERROR = (|over| + |under|) / key — cancelling must never look like accuracy (Diego).
     if (kb > 0) console.log(`ZT ${group} TOTAL ERROR ${((totalErr / kb) * 100).toFixed(1)}% of key $${Math.round(kb)} — the headline; net is secondary`);
     // OVER and UNDER separately, so junk cuts and recovered quantities cannot hide each other (Diego).
