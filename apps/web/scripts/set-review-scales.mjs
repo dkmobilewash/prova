@@ -139,8 +139,13 @@ async function main() {
       console.log(`  ${number} p${reading.pageNumber}: no scale and no captioned view — ${reading.declineReason ?? ""}`);
       continue;
     }
-    // The widest view, which is the drawing somebody is most likely measuring.
-    const view = [...views].sort((a, b) => b.to - b.from - (a.to - a.from))[0];
+    // The BIGGEST view by AREA, which is the drawing somebody is most likely
+    // measuring. By width alone a wide, short strip (Mack Theater p9's VCT
+    // floor-pattern view) beats the overview drawing above it, and the key
+    // sheet gets the enlargement's scale — every traced wall then reads at
+    // half its length. Area is what "biggest drawing" means on a sheet.
+    const area = (v) => Math.abs(v.to - v.from) * Math.abs(v.toY - v.fromY);
+    const view = [...views].sort((a, b) => area(b) - area(a))[0];
     const inset = (view.to - view.from) * 0.05;
     const x1 = view.from + inset;
     const x2 = view.to - inset;
