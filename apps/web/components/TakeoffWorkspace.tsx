@@ -1850,6 +1850,7 @@ export function TakeoffWorkspace({
               openingThresholdSqFt={data.openingThresholdSqFt}
               roomFinder={data.roomFinderOn}
               doorsWindows={data.doorsWindowsOn}
+              existingDoorsCounted={data.existingDoorsCounted}
               planCompare={data.planCompare}
               doorScheduleRows={data.doorScheduleRows}
               windowScheduleRows={data.windowScheduleRows}

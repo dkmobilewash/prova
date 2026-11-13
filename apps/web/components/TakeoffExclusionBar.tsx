@@ -18,6 +18,8 @@ export function TakeoffExclusionBar({
   readOnly,
   renovation = null,
   existing = null,
+  existingDoors = null,
+  onExistingDoors,
   onPickTool,
   onUndo,
   onClear,
@@ -34,6 +36,12 @@ export function TakeoffExclusionBar({
   renovation?: string[] | null;
   /** What plan comparison set aside as existing, by the paired demolition plan. Its line stands in for the renovation prompt. */
   existing?: { sheet: string; n: number; feet: number } | null;
+  /**
+   * Found doors set aside as existing (`existingDoors.ts`): the sentence, with an Undo that counts them on
+   * this sheet; `sentence: null` when a person already chose to count them, with the way back.
+   */
+  existingDoors?: { sentence: string | null } | null;
+  onExistingDoors?: (counted: boolean) => void;
   onPickTool?: (tool: "workarea" | "exclude") => void;
   onUndo: (kind: Kind) => void;
   onClear: (kind: Kind) => void;
@@ -67,6 +75,16 @@ export function TakeoffExclusionBar({
           Walls on this sheet: {Math.round(feet).toLocaleString()} ft
           {/* The total is the walls left after the comparison: the set-aside ones are not in it. */}
           {existing !== null && ` new (${Math.round(existing.feet).toLocaleString()} ft existing set aside)`}
+        </span>
+      )}
+      {existingDoors !== null && (
+        <span className="flex flex-wrap items-center gap-2" data-takeoff="existing-doors">
+          <span>{existingDoors.sentence === null ? "Existing doors are counted on this sheet." : `${existingDoors.sentence}.`}</span>
+          {!readOnly && onExistingDoors && (
+            <button type="button" className={control} data-takeoff="existing-doors-toggle" onClick={() => onExistingDoors(existingDoors.sentence !== null)}>
+              {existingDoors.sentence === null ? "Set them aside again" : "Undo"}
+            </button>
+          )}
         </span>
       )}
       {aside.map((one) => (

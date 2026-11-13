@@ -1895,6 +1895,27 @@ export async function recordTakeoffPlanRevision(jobId: string, formData: FormDat
 }
 
 /**
+ * Undo of the existing-door set-aside on one sheet (`existingDoorsCounted.ts`): `counted` true finds
+ * the sheet's doors with none set aside; false sets them aside again.
+ */
+export async function countExistingDoors(jobId: string, planId: string, pageNumber: number, counted: boolean): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const plan = await prisma.takeoffPlan.findFirst({ where: planScope(planId, jobId, context.company.id), select: { id: true } });
+  if (!plan) return actionFail("That plan is no longer on this job. Reload the page.");
+  const page = Math.trunc(Number(pageNumber));
+  if (!Number.isFinite(page) || page < 1 || typeof counted !== "boolean") return actionFail("That choice could not be saved.");
+  const { EXISTING_DOORS_COUNTED } = await import("@/lib/takeoff/existingDoorsCounted");
+  const where = { planId_pageNumber_kind: { planId: plan.id, pageNumber: page, kind: EXISTING_DOORS_COUNTED } };
+  if (counted) {
+    await prisma.takeoffPlanTextRead.upsert({ where, create: { planId: plan.id, pageNumber: page, kind: EXISTING_DOORS_COUNTED, value: { counted: true } }, update: { value: { counted: true }, computedAt: new Date() } });
+  } else {
+    await prisma.takeoffPlanTextRead.deleteMany({ where: { planId: plan.id, pageNumber: page, kind: EXISTING_DOORS_COUNTED } });
+  }
+  return actionOk;
+}
+
+/**
  * ── WHAT PLAN COMPARISON SET ASIDE ON A SHEET, KEPT ──
  *
  * The browser compares a sheet with its paired demolition plan when its walls are found, and showed

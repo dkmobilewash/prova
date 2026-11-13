@@ -142,6 +142,29 @@ describe("what the demolition plan sets aside", () => {
     const middle = after.offeredRuns.filter((w) => Math.abs(w.x1 * feetPerUnit - 50) < 1 && Math.abs(w.x2 * feetPerUnit - 50) < 1);
     expect(middle.length).toBeGreaterThan(0);
   });
+
+  it("the doors it keeps come along, moved onto the new sheet; a door in a wall it removes does not", () => {
+    // A 3 ft swing: hinge (hx, hy) ft, leaf standing at -90 degrees, arc to 0, in 12 straight pieces as CAD exports it.
+    const swingAt = (hx: number, hy: number, from: number, to: number): StrokeSegment[] => [
+      { x1: hx * P, y1: hy * P, x2: (hx + 3 * Math.cos(from)) * P, y2: (hy + 3 * Math.sin(from)) * P, width: 1 },
+      ...Array.from({ length: 12 }, (_, i) => {
+        const a0 = from + ((to - from) * i) / 12, a1 = from + ((to - from) * (i + 1)) / 12;
+        return { x1: (hx + 3 * Math.cos(a0)) * P, y1: (hy + 3 * Math.sin(a0)) * P, x2: (hx + 3 * Math.cos(a1)) * P, y2: (hy + 3 * Math.sin(a1)) * P, width: 1 };
+      }),
+    ];
+    const dashed: StrokeSegment[] = [];
+    for (let y = 20; y < 70; y += 2) dashed.push({ x1: 50 * P - T / 2, y1: y * P, x2: 50 * P - T / 2, y2: (y + 1) * P, width: 1 }, { x1: 50 * P + T / 2, y1: y * P, x2: 50 * P + T / 2, y2: (y + 1) * P, width: 1 });
+    const kept = [wall(20, 20, 100, 20), wall(20, 70, 100, 70), wall(20, 20, 20, 70), wall(100, 20, 100, 70), wall(75, 20, 75, 45), wall(20, 45, 50, 45), wall(75, 45, 100, 45)].flat();
+    // One door in the kept wall along y = 20 (hinge at x 30, strike at 33); one in the removed partition at x = 50.
+    const doors = [...swingAt(30, 20, -Math.PI / 2, 0), ...swingAt(50, 30, Math.PI, Math.PI / 2)];
+    const prior = priorPlanFor({ demo: demo([...kept, ...dashed, ...doors, ...ticks]), newPage: { segments: newSegments, widthPt: W }, newRuns, feetPerUnit });
+    expect(prior.lines).not.toBeNull();
+    const got = prior.lines === null ? [] : (prior.doors ?? []);
+    expect(got).toHaveLength(1);
+    const mid = { x: ((got[0]!.hinge.x + got[0]!.strike.x) / 2) * feetPerUnit, y: ((got[0]!.hinge.y + got[0]!.strike.y) / 2) * feetPerUnit };
+    expect(mid.x).toBeCloseTo(31.5, 0);
+    expect(mid.y).toBeCloseTo(20, 0);
+  });
 });
 
 describe("the company switch", () => {

@@ -1,3 +1,4 @@
+import { existingDoorsCountedOn } from "@/lib/takeoff/existingDoorsCounted";
 import { doorScheduleRowsOf, scheduleRowsOf } from "@/lib/takeoff/workspaceLoad";
 import { storedLegendCodes } from "@/lib/takeoff/planTextRead";
 import { storedWindowsOf, windowsToStore, WINDOWS_SUGGESTED, type StoredWindows } from "@/lib/takeoff/windowTags";
@@ -224,8 +225,10 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
     const inUnits = inputs.segments;
     const candidates = inputs.walls;
     const inPoints = inputs.segmentsPt;
+    // Existing doors set aside as the viewer does (`existingDoors.ts`); a retry has no boundary, so only the page's own marks.
+    const existing = { ...(input.boundary?.existingDoors ?? {}), counted: await existingDoorsCountedOn(input.planId, input.pageNumber) };
     const openings = company.doorsWindowsOn
-      ? doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: inPoints as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: await doorScheduleRowsOf(input.planId), windowRows: await scheduleRowsOf(input.planId, "WINDOW"), wallCodes: await storedLegendCodes(input.planId) })
+      ? doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: inPoints as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: await doorScheduleRowsOf(input.planId), windowRows: await scheduleRowsOf(input.planId, "WINDOW"), wallCodes: await storedLegendCodes(input.planId), existing })
       : { doors: [], windows: [] };
     await writeWallOpenings(page.id, runs, openings.doors, openings.windows, "join" in openings && openings.join ? openings.join.openings : []);
     // The marked doors post themselves where the company allows it (`autoDoors.ts`).

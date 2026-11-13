@@ -24,6 +24,20 @@ describe("openings: training and the product build their inputs one way", () => 
     for (const bare of [/\bdetectForSheet\(/, /\bfindWallsOnSheet\(/, /\bdoorSymbols\(/, /\bdoorArcCandidates\(/, /\bdoorFeatureRows\(/]) expect(src).not.toMatch(bare);
     expect(src).toMatch(/expect\(parity\.differ/);
   });
+  it("every product door path hands the existing-door evidence in, and the training table sets the same doors aside", () => {
+    // The viewer's Run takeoff and the whole-set rooms step post doors; each passes `existing` (`existingDoors.ts`).
+    const call = (src: string) => [...src.matchAll(/doorsAndWindowsForSheet\(\{([\s\S]*?)\}\);/g)].map((m) => m[1]!);
+    const viewer = readFileSync(`${process.cwd()}/components/TakeoffPlanViewer.tsx`, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+    expect(call(viewer)).toHaveLength(1);
+    expect(call(viewer)[0]).toMatch(/\bexisting:/);
+    const rooms = read("plan-ingest/rooms.ts");
+    const roomsCalls = [...rooms.matchAll(/doorsAndWindowsForSheet\(\{[^\n]*\}\)/g)].map((m) => m[0]);
+    // The rooms step posts doors; the windows-only count does not, and needs no evidence.
+    expect(roomsCalls.filter((c) => /existing\b/.test(c))).toHaveLength(1);
+    const table = read("takeoff/realplan/zzOpeningFeatureTable.eval.ts");
+    expect(table).toMatch(/productDoorRows\(\{[^}]*existing/);
+    expect(table).toMatch(/doorsAndWindowsForSheet\(\{[^\n]*existing \}\)/);
+  });
   it("page strokes come into page-width units, and the stored runs carry their length at this scale", () => {
     const got = openingInputs({ runs: [{ x1: 0, y1: 0, x2: 0.3, y2: 0.4, thicknessFeet: 0.5 }], feetPerUnit: 100, widthPt: 200, segmentsPt: [{ x1: 20, y1: 40, x2: 100, y2: 40 }] as never });
     expect(got.segments[0]).toMatchObject({ x1: 0.1, y1: 0.2, x2: 0.5, y2: 0.2 });

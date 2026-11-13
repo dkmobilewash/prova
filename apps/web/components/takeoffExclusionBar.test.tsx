@@ -128,4 +128,17 @@ describe("the bar", () => {
     await press(q("outside-work-area")!.querySelector("button")!);
     expect(onUndo).toHaveBeenCalledWith("WORK_AREA");
   });
+  it("says which existing doors were set aside; Undo counts them, and the way back sets them aside again", async () => {
+    const onExistingDoors = vi.fn();
+    bar({ existingDoors: { sentence: "2 existing doors set aside: 2 tagged (E)" }, onExistingDoors });
+    expect(q("existing-doors")?.textContent).toContain("2 existing doors set aside: 2 tagged (E).");
+    await press(q("existing-doors-toggle")!);
+    expect(onExistingDoors).toHaveBeenLastCalledWith(true);
+    bar({ existingDoors: { sentence: null }, onExistingDoors });
+    expect(q("existing-doors")?.textContent).toContain("Existing doors are counted on this sheet.");
+    await press(q("existing-doors-toggle")!);
+    expect(onExistingDoors).toHaveBeenLastCalledWith(false);
+    bar({ existingDoors: { sentence: "1 existing door set aside: 1 tagged (E)" }, onExistingDoors, readOnly: true });
+    expect(q("existing-doors-toggle")).toBeNull();
+  });
 });

@@ -27,7 +27,7 @@ import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 import { DISTINCT_MARKS, DOOR_COLOUR, LAYER_COLOURS, ROOM_COLOUR, markFor } from "@/lib/takeoff/clusterMarks";
 import { TakeoffLayerPanel, type Layer } from "@/components/TakeoffLayerPanel";
 import { defaultLayerName, layerKeyOf } from "@/lib/takeoff/layerKey";
-import { postSheetWalls, renameTakeoffLayer, savePlanComparison, saveSureScale, setWallGroupHeight, takeoffSetPages, undoSheetScale } from "@/lib/actions";
+import { countExistingDoors, postSheetWalls, renameTakeoffLayer, savePlanComparison, saveSureScale, setWallGroupHeight, takeoffSetPages, undoSheetScale } from "@/lib/actions";
 import { SetWallHeight } from "./SetWallHeight";
 import type { TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
 import { areaLine, ceilingOption, heightFrom, heightOptionsInOrder, wallSquareFeet, type CeilingRoom, type HeightOption } from "@/lib/takeoff/wallHeight";
@@ -89,6 +89,7 @@ import {
 } from "@/lib/takeoff/wallVectors";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
 import { addSheetExclusion, clearSheetExclusions, removeSheetExclusion } from "@/lib/actions/takeoffExclusions";
+import { asideExistingWalls, existingDoorsSentence, type ExistingDoor } from "@/lib/takeoff/existingDoors";
 import { insideWorkArea, openingsInWorkArea, runAt, splitLinesFrom, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
 import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUndo";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
@@ -188,7 +189,7 @@ import { scaleFromPrinted } from "@/lib/takeoff/scaleFromPrinted";
 /** One scanned page's stored read, as the raster route and `rasterByPage` both give it. */
 type RasterRead = { segments: { x1: number; y1: number; x2: number; y2: number; width?: number }[]; textItems: { str: string; x: number; y: number; width: number; height: number; confidence?: number }[]; widthPt?: number; heightPt?: number; printedScale?: string | null };
 import { roomBoundary } from "@/lib/takeoff/roomBoundary";
-import { priorPlanFor, type Pairing } from "@/lib/takeoff/priorPlan";
+import { priorPlanFor, type Pairing, type PriorDoor } from "@/lib/takeoff/priorPlan";
 import type { PriorLine } from "@/lib/takeoff/planCompare";
 import { PriorPlanBar, type PriorStatus } from "@/components/PriorPlanBar";
 import { type RoomsFromWallsResult } from "@/lib/takeoff/roomsFromWalls";
@@ -356,6 +357,7 @@ export function TakeoffPlanViewer({
   symbolCount = false,
   demotedWalls = false,
   doorsWindows = false,
+  existingDoorsCounted = [],
   planCompare = null,
   doorScheduleRows = [],
   windowScheduleRows = [],
@@ -481,6 +483,8 @@ export function TakeoffPlanViewer({
    * See `lib/takeoff/NOTES-doors.md`.
    */
   doorsWindows?: boolean;
+  /** Pages whose existing doors a person chose to count: nothing set aside there (`existingDoorsCounted.ts`). */
+  existingDoorsCounted?: number[];
   /**
    * Plan comparison (`Company.planCompareOn`): each new plan's demolition plan
    * and the set's sheets for the picker. Null when the company has it off.
@@ -928,6 +932,10 @@ export function TakeoffPlanViewer({
   const [rooms, setRooms] = useState<RoomsFromWallsResult | null>(null);
   /** Doors and windows read from this sheet's symbols at the last Find, with the page they are about. */
   const [openings, setOpenings] = useState<{ page: number; result: DoorsWindowsResult; walls: WallCandidate[] } | null>(null);
+  // ── EXISTING DOORS SET ASIDE ON THE LAST RUN, AND THE SHEETS WHERE A PERSON SAID COUNT THEM (`existingDoors.ts`) ──
+  const [doorAside, setDoorAside] = useState<{ page: number; list: ExistingDoor[] } | null>(null);
+  const countedDoorPages = useRef<Set<number>>(new Set(existingDoorsCounted));
+  const [countedDoorsTick, setCountedDoorsTick] = useState(0);
   const [hoveredOpening, setHoveredOpening] = useState<string | null>(null);
   /** "Count like this": the box being dragged, and the matches it found, with the ones the estimator dropped. */
   /** The toolbar's offer was pressed: the form opens with the line already drawn, and Save is still the estimator's. */
@@ -4025,6 +4033,17 @@ export function TakeoffPlanViewer({
     await afterExclusionChange(await removeSheetExclusion(jobId, sheet.id, last.id), exclusionRowsRef.current.filter((r) => r.id !== last.id), kind);
   }
 
+  /** The Undo beside the existing doors set aside: count them on this sheet, or set them aside again. Finds the sheet again. */
+  async function onCountExistingDoors(counted: boolean) {
+    const result = await countExistingDoors(jobId, planId, pageNumber, counted);
+    if (result.ok) {
+      if (counted) countedDoorPages.current.add(pageNumber);
+      else countedDoorPages.current.delete(pageNumber);
+      setCountedDoorsTick((n) => n + 1);
+    }
+    await afterExclusionChange(result, exclusionRowsRef.current);
+  }
+
   async function onClearExclusions(kind: ExclusionRow["kind"]) {
     if (!sheet) return;
     await afterExclusionChange(await clearSheetExclusions(jobId, sheet.id, kind), exclusionRowsRef.current.filter((r) => r.kind !== kind), kind);
@@ -4323,6 +4342,8 @@ export function TakeoffPlanViewer({
       // the template's sampled pages are. It is applied only if it lines up.
       const pairing = offered !== null && raster === undefined ? planCompare?.pairs[pageNumber] : undefined;
       let prior: PriorStatus | null = null;
+      // The demolition plan's doors it keeps, for the existing-door set-aside.
+      let priorDoors: { doors: PriorDoor[]; sheet: string } | null = null;
       if (planCompare !== null && offered !== null && pairing !== undefined && pairing.demoPage !== pageNumber && pairing.demoPage <= doc.numPages) {
         const sheet = planCompare.sheets.find((s) => s.pageNumber === pairing.demoPage)?.sheetNumber ?? `page ${pairing.demoPage}`;
         try {
@@ -4339,6 +4360,7 @@ export function TakeoffPlanViewer({
             prior = { page: pageNumber, pairing, sheet, n: 0, feet: 0, why: lines.why };
           } else {
             offered = offerHere({ lines: lines.lines, sheet });
+            priorDoors = { doors: lines.doors ?? [], sheet };
             const aside = offered.setAsideLines.filter((l) => l.kind === "on-prior-plan");
             prior = { page: pageNumber, pairing, sheet, n: aside.length, feet: aside.reduce((n, l) => n + l.lengthFeet, 0), why: null };
           }
@@ -4405,7 +4427,11 @@ export function TakeoffPlanViewer({
           feetPerUnit,
           scheduleRows: doorScheduleRows,
           windowRows: windowScheduleRows,
+          existing: countedDoorPages.current.has(pageNumber)
+            ? { counted: true }
+            : { asideWalls: asideExistingWalls(offered?.setAsideLines ?? []), ...(priorDoors === null ? {} : { priorDoors: priorDoors.doors, priorSheet: priorDoors.sheet }) },
         });
+        setDoorAside({ page: pageNumber, list: allOpenings.existingDoors });
         const result = openingsInWorkArea(allOpenings, exclusionsRef.current?.workArea ?? []);
         const byWall = new Map<number, { widthFt: number }[]>();
         result.doors.forEach((d, i) => {
@@ -5667,6 +5693,14 @@ export function TakeoffPlanViewer({
           splits={exclusionRows.filter((r) => r.kind === "ROOM_SPLIT").length}
           workAreas={exclusionRows.filter((r) => r.kind === "WORK_AREA").length}
           readOnly={readOnly}
+          existingDoors={
+            countedDoorsTick >= 0 && countedDoorPages.current.has(pageNumber)
+              ? { sentence: null }
+              : doorAside !== null && doorAside.page === pageNumber && doorAside.list.length > 0
+                ? { sentence: existingDoorsSentence(doorAside.list) }
+                : null
+          }
+          onExistingDoors={(counted) => void onCountExistingDoors(counted)}
           onUndo={(kind) => void onUndoExclusion(kind)}
           onClear={(kind) => void onClearExclusions(kind)}
         />

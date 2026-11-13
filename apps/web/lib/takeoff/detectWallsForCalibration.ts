@@ -7,6 +7,7 @@ import { storedRasterFor } from "@/lib/plan-ingest/raster";
 import { openSharedPlanPdf } from "@/lib/plan-ingest/sharedPlanPdf";
 import { storePlanCaptions } from "./levelReads";
 import type { SheetTextItem } from "./findWallsOnSheet";
+import { asideExistingWalls, type ExistingDoorEvidence } from "./existingDoors";
 import { productDetection, productSheetRuns, sampledSheetsFor, vocabularyFor } from "./productDetection";
 import { userExclusionsFromRows } from "./userExclusions";
 import type { ScoredPairing } from "./demotedRuns";
@@ -91,7 +92,13 @@ export type DetectOutcome =
   | "failed";
 
 /** What the room step needs from a detection, so it need not detect again. */
-export type DetectedBoundary = { pairings: WallCandidate[]; segments: readonly StrokeSegment[]; held: WallCandidate[] };
+export type DetectedBoundary = {
+  pairings: WallCandidate[];
+  segments: readonly StrokeSegment[];
+  held: WallCandidate[];
+  /** What the doors step needs to set existing doors aside: the walls set aside as existing, the demolition plan's doors (`existingDoors.ts`). */
+  existingDoors?: ExistingDoorEvidence;
+};
 
 export type DetectTarget = {
   /** Handed every pairing and the sheet's strokes in page-width units, when a caller wants the rooms too. */
@@ -296,6 +303,7 @@ export async function detectWallsForCalibration(
       productSheetRuns({ detected, segmentsPt: strokes.segments, widthPt: W, feetPerUnit: target.feetPerUnit, textItems, ...(user === null ? {} : { user }), ...(priorPlan === undefined ? {} : { priorPlan }) });
     await new Promise((resolve) => setImmediate(resolve));
     let offered = offer();
+    let priorDoors: { doors: NonNullable<ExistingDoorEvidence["priorDoors"]>; sheet: string } | null = null;
     // Before the compare, and the aligned demolition plan: the run model's columns read both (`wallRunModel.ts`).
     const beforeCompare = offered;
     let runPrior: ReturnType<typeof priorForRuns>;
@@ -323,6 +331,7 @@ export async function detectWallsForCalibration(
             });
             const sheet = sheetName(pairings.sheets, pairing.demoPage);
             if (prior.lines !== null) offered = offer({ lines: prior.lines, sheet });
+            if (prior.lines !== null) priorDoors = { doors: prior.doors ?? [], sheet };
             runPrior = priorForRuns(prior, demoStrokes, target.feetPerUnit, W);
             // Kept for the screen, which otherwise never hears what was set aside (`PRIOR_PLAN_READ`).
             const aside = prior.lines === null ? [] : offered.setAsideLines.filter((l) => l.kind === "on-prior-plan");
@@ -361,7 +370,8 @@ export async function detectWallsForCalibration(
           if (score !== null) offered.offeredRuns[at]!.modelScore = score;
         });
       }
-      target.onBoundary({ pairings, segments: detected.found.inUnits, held });
+      const existingDoors = { asideWalls: asideExistingWalls(offered.setAsideLines), ...(priorDoors === null ? {} : { priorDoors: priorDoors.doors, priorSheet: priorDoors.sheet }) };
+      target.onBoundary({ pairings, segments: detected.found.inUnits, held, existingDoors });
     }
     await new Promise((resolve) => setImmediate(resolve));
     const found = { ...detected.found, walls: offered.offeredRuns, groups: detected.found.regroup(offered.offeredRuns) };

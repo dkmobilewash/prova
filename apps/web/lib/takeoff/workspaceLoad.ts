@@ -1,3 +1,4 @@
+import { countedExistingDoorPages } from "./existingDoorsCounted";
 import { ensureSheetNames, pairingsForPlan, storedPriorsOf } from "./priorPlanLoad";
 import { storedGeneralHeight } from "./levelReads";
 import { openingsFromJson } from "@/lib/wall-assemblies";
@@ -685,9 +686,12 @@ export async function loadTakeoffWorkspace(
   // panel's join — only for a company whose switch is on.
   const doorScheduleRows = roomFinder?.doorsWindowsOn ? await doorScheduleRowsOf(plan.id) : [];
   const windowScheduleRows = roomFinder?.doorsWindowsOn ? await scheduleRowsOf(plan.id, "WINDOW") : [];
+  // The sheets whose existing doors a person chose to count (the Undo of `existingDoors.ts`).
+  const existingDoorsCounted = roomFinder?.doorsWindowsOn ? await countedExistingDoorPages(plan.id) : [];
 
   return {
     doorsWindowsOn: roomFinder?.doorsWindowsOn ?? false,
+    existingDoorsCounted,
     planCompare,
     doorScheduleRows,
     windowScheduleRows,

@@ -1,4 +1,5 @@
 import { demoRuns } from "./demoWalls";
+import { doorSymbols } from "./doorWindowSymbols";
 import { existingWallSet } from "./existingWallSet";
 import { findWallsOnSheet } from "./findWallsOnSheet";
 import { FEW_WALLS_SHARE, MIN_VOTES, onPriorPlan, type PriorLine } from "./planCompare";
@@ -34,7 +35,9 @@ export type Pairing = { demoPage: number; source: "auto" | "user"; basis: string
 export { longFaces } from "./viewAlign";
 
 type Page = { segments: readonly StrokeSegment[]; textItems: readonly { str: string; x: number; y: number; width: number; height: number }[]; widthPt: number; heightPt: number };
-export type PriorPlan = { lines: PriorLine[]; votes: number; walls: "walls" | "faces"; shift?: { dx: number; dy: number } } | { lines: null; why: string };
+/** A door the demolition plan draws and keeps (on no wall it removes), moved onto the new sheet: existing to remain (`existingDoors.ts`). */
+export type PriorDoor = { hinge: { x: number; y: number }; strike: { x: number; y: number } };
+export type PriorPlan = { lines: PriorLine[]; votes: number; walls: "walls" | "faces"; shift?: { dx: number; dy: number }; doors?: PriorDoor[] } | { lines: null; why: string };
 
 /** A frame-aligned pair compares only lines at least this long (a dash is shorter) and asks this much of both faces. */
 export const SOLID_FACE_FEET = 6;
@@ -84,6 +87,10 @@ export function priorPlanFor(input: { demo: Page; newPage: { segments: readonly 
     );
   const paired = findWallsOnSheet({ segments: demo.segments, textItems: demo.textItems, pageSize: { widthPt: demo.widthPt, heightPt: demo.heightPt }, feetPerUnit: fpDemo, wallTypes: [], sampledSheets: null }).walls;
   const remain = paired.filter((w) => !removed(w));
+  const W0 = demo.widthPt;
+  const keptDoors = doorSymbols(demo.segments.map((g) => ({ ...g, x1: g.x1 / W0, y1: g.y1 / W0, x2: g.x2 / W0, y2: g.y2 / W0 })), paired, fpDemo)
+    .filter((d) => !removed({ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y }));
+  const moved = (by: { dx: number; dy: number }): PriorDoor[] => keptDoors.map((d) => ({ hinge: { x: d.hinge.x + by.dx, y: d.hinge.y + by.dy }, strike: { x: d.strike.x + by.dx, y: d.strike.y + by.dy } }));
   const liveFeet = newRuns.reduce((n, w) => n + w.lengthFeet, 0);
   const few = remain.reduce((n, w) => n + w.lengthFeet, 0) < FEW_WALLS_SHARE * liveFeet;
   const faces = longFaces(demo.segments, demo.widthPt, fpDemo);
@@ -105,7 +112,7 @@ export function priorPlanFor(input: { demo: Page; newPage: { segments: readonly 
         .map((g) => ({ x1: g.x1 / W, y1: g.y1 / W, x2: g.x2 / W, y2: g.y2 / W }))
         .filter((l) => Math.hypot(l.x2 - l.x1, l.y2 - l.y1) >= minLen && !removed(l))
         .map((l) => ({ ...l, minShare: FRAME_SHARE }));
-      if (solid.length > 0) return { lines: solid, votes: shift?.votes ?? 0, walls: "faces", shift: { dx: 0, dy: 0 } };
+      if (solid.length > 0) return { lines: solid, votes: shift?.votes ?? 0, walls: "faces", shift: { dx: 0, dy: 0 }, doors: moved({ dx: 0, dy: 0 }) };
     }
     return { lines: null, why: `the demolition plan does not line up with this sheet (${shift?.votes ?? 0} of ${MIN_VOTES} walls agree), so nothing is compared` };
   }
@@ -117,5 +124,5 @@ export function priorPlanFor(input: { demo: Page; newPage: { segments: readonly 
   // faces drawn, so one line beside a new wall still claims nothing.
   const standingFaces = faces.filter((f) => !removed(f));
   const lines: PriorLine[] = few ? standingFaces : [...remain.map((w) => ({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, thicknessFeet: w.thicknessFeet })), ...standingFaces];
-  return { lines: lines.map((p) => ({ ...p, x1: p.x1 + shift.dx, y1: p.y1 + shift.dy, x2: p.x2 + shift.dx, y2: p.y2 + shift.dy })), votes: shift.votes, walls: few ? "faces" : "walls", shift: { dx: shift.dx, dy: shift.dy } };
+  return { lines: lines.map((p) => ({ ...p, x1: p.x1 + shift.dx, y1: p.y1 + shift.dy, x2: p.x2 + shift.dx, y2: p.y2 + shift.dy })), votes: shift.votes, walls: few ? "faces" : "walls", shift: { dx: shift.dx, dy: shift.dy }, doors: moved(shift) };
 }
