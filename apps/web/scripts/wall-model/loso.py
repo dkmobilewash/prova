@@ -156,7 +156,7 @@ def export(mask, path, title):
     m = fit(X[mask], y[mask], weight(ft[mask]))
     base = float(m.init_.class_prior_[1])  # the prior sklearn itself fitted (sqrt(ft)-weighted), not a re-derived one
     tree = lambda t: {"left": t.children_left.tolist(), "right": t.children_right.tolist(), "feature": t.feature.tolist(), "threshold": t.threshold.tolist(), "value": [float(v[0][0]) for v in t.value]}
-    json.dump({"format": "gbdt-binary-v1", "note": f"{title}. Columns are wallRunFeatures.RUN_FEATURE_NAMES IN ORDER.", "features": names, "learningRate": GBM["learning_rate"],
+    json.dump({"format": "gbdt-binary-v1", "kind": "run", "note": f"{title}. Columns are wallRunFeatures.RUN_FEATURE_NAMES IN ORDER.", "features": names, "learningRate": GBM["learning_rate"],
                "init": float(np.log(base / (1 - base))), "trees": [tree(e[0].tree_) for e in m.estimators_]}, open(path, "w"), separators=(",", ":"))
     # Parity rows for wallRunFeatures.test.ts: invented, each column uniform over its training range (no plan's rows).
     rng = np.random.default_rng(0)

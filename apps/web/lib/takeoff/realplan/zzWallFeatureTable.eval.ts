@@ -75,9 +75,11 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     if (config === null) throw new Error("no wall model");
     appendFileSync(OUT, JSON.stringify({ header: true, version: RUN_FEATURES_VERSION, names: RUN_FEATURE_NAMES }) + "\n");
     let rows = 0;
+    const seen: string[] = [];
     for (const dir of readdirSync(LABELS).sort()) {
-      if ((heldOutReason(dir) !== null) !== HELD) continue;
       if (process.env.WFT_ONLY !== undefined && !dir.includes(process.env.WFT_ONLY)) continue;
+      seen.push(dir);
+      if ((heldOutReason(dir) !== null) !== HELD) continue;
       let names: string[] = [];
       try { names = readdirSync(join(LABELS, dir)).filter((n) => n.endsWith(".json")); } catch { continue; }
       const pdf = findPdf(dir);
@@ -135,6 +137,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         appendFileSync(OUT, JSON.stringify({ set: dir, sheet, sheetKeyFeet: +keyFeet.toFixed(2) }) + "\n");
       }
     }
-    expect(rows).toBeGreaterThanOrEqual(0);
+    // The label folder resolved: a mistyped TAKEOFF_LABEL_DIR or WFT_ONLY must not read as a set with no runs.
+    expect(seen.length).toBeGreaterThan(0);
   });
 });
