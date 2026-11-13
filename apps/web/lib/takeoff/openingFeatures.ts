@@ -1,5 +1,6 @@
 import { DOOR_TAG_REACH_FEET, exteriorWalls, WINDOW_TAG_REACH_FEET, type DoorArcCandidate, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
 import type { KeyPoint } from "./heldOutScore";
+import { UNTAGGED_WINDOW } from "./windowTags";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
@@ -34,11 +35,12 @@ export const DOOR_FEATURES_VERSION = 1;
 export const WINDOW_FEATURE_NAMES = [
   "hasFrame", "widthFeet", "frameLines", "glassLines",
   "onWall", "wallThicknessIn", "wallExterior", "widthOverThickness",
-  "tagFeet", "tagged", "tagIsW", "countedByTag", "sheetEveryWindowTagged", "scheduleInSet",
+  "tagFeet", "tagged", "tagIsW", "countedByTag", "countedDrawn", "sheetEveryWindowTagged", "scheduleInSet",
   "sheetWindows", "windowsNear4", "doorFeet", "existWordNear10",
   "renovation", "feetPerPoint",
 ] as const;
-export const WINDOW_FEATURES_VERSION = 1;
+/** 2: `countedDrawn` (#1165's windows counted from the drawing on a sheet with no tag), apart from `countedByTag`. */
+export const WINDOW_FEATURES_VERSION = 2;
 
 /** Room names as plans print them: a door beside one is a doorway into a room. */
 const ROOM_WORDS = /\b(OFFICE|TOILET|RESTROOM|R\.?R\.?|WOMEN|MEN|CLOSET|CLO|STOR(AGE)?|JAN(ITOR)?|CORR(IDOR)?|LOBBY|CONF(ERENCE)?|BREAK|KITCHEN|MECH|ELEC|ROOM|BEDROOM|BATH|VEST(IBULE)?|EXAM|LAB|CLASS(ROOM)?|STAIR|ENTRY|DINING|LOUNGE|SUITE|WORK)\b/i;
@@ -188,7 +190,7 @@ export function doorFeatureRows(input: SheetContext & { doors: readonly DoorSymb
   });
 }
 
-/** A window candidate: a frame the finder drew, or a tag the product placed with no frame. */
+/** A window candidate: a frame the finder drew, or a tag the product placed with no frame. `countedTag` is `UNTAGGED_WINDOW` for one counted from its drawing (#1165). */
 export type WindowCandidate = { frame: WindowSymbol | null; at: Pt; countedTag: string | null };
 
 /** The shape a key point is matched against: the frame's line, or the placed point. */
@@ -208,7 +210,7 @@ export function windowFeatureRows(input: SheetContext & { windows: readonly Wind
     return [
       f === null ? 0 : 1, f?.widthFeet ?? -1, f?.lines ?? -1, f === null ? -1 : Math.max(0, f.lines - 2),
       wall === null ? 0 : 1, wall === null ? -1 : wall.thicknessFeet * 12, f !== null && f.wall >= 0 && exterior[f.wall] ? 1 : 0, wall === null || f === null ? -1 : f.widthFeet / Math.max(0.1, wall.thicknessFeet),
-      tagFeet, tagFeet <= WINDOW_TAG_REACH_FEET ? 1 : 0, nearest !== null && tagFeet <= WINDOW_TAG_REACH_FEET && /^W/i.test(nearest.text) ? 1 : 0, w.countedTag === null ? 0 : 1, input.everyWindowTagged ? 1 : 0, input.scheduleInSet ? 1 : 0,
+      tagFeet, tagFeet <= WINDOW_TAG_REACH_FEET ? 1 : 0, nearest !== null && tagFeet <= WINDOW_TAG_REACH_FEET && /^W/i.test(nearest.text) ? 1 : 0, w.countedTag === null || w.countedTag === UNTAGGED_WINDOW ? 0 : 1, w.countedTag === UNTAGGED_WINDOW ? 1 : 0, input.everyWindowTagged ? 1 : 0, input.scheduleInSet ? 1 : 0,
       input.windows.length, input.windows.filter((o) => o !== w && dist(o.at, w.at) * fpu <= 4).length, nearestFeet(w.at, doorCentres, fpu), nearestFeet(w.at, existWords, fpu) <= 10 ? 1 : 0,
       input.renovation ? 1 : 0, fpu / input.widthPt,
     ];

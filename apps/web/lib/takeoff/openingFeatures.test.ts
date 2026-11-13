@@ -46,9 +46,12 @@ describe("windowFeatureRows", () => {
       windows: [
         { frame: { kind: "window", x1: 0, y1: 0, x2: 4, y2: 0, widthFeet: 4, wall: -1, lines: 3 }, at: { x: 2, y: 0 }, countedTag: "W1" },
         { frame: null, at: { x: 50, y: 50 }, countedTag: "W1" },
+        { frame: { kind: "window", x1: 90, y1: 0, x2: 94, y2: 0, widthFeet: 4, wall: -1, lines: 4 }, at: { x: 92, y: 0 }, countedTag: "untagged" },
       ],
     });
     const col = (r: number[], n: (typeof WINDOW_FEATURE_NAMES)[number]) => r[WINDOW_FEATURE_NAMES.indexOf(n)];
-    expect(rows.map((r) => [col(r, "hasFrame"), col(r, "glassLines"), col(r, "tagged"), col(r, "tagIsW")])).toEqual([[1, 1, 1, 1], [0, -1, 0, 0]]);
+    expect(rows.map((r) => [col(r, "hasFrame"), col(r, "glassLines"), col(r, "tagged"), col(r, "tagIsW")])).toEqual([[1, 1, 1, 1], [0, -1, 0, 0], [1, 2, 0, 0]]);
+    // A window counted from its drawing (#1165) is not one counted by a tag.
+    expect(rows.map((r) => [col(r, "countedByTag"), col(r, "countedDrawn")])).toEqual([[1, 0], [1, 0], [0, 1]]);
   });
 });

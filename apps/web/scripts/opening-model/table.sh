@@ -2,6 +2,7 @@
 # table.sh <held 0|1> <out.jsonl>: the door and window feature table (zzOpeningFeatureTable.eval.ts), one process per set.
 # Resumes after an interruption: sets listed in <out>.done are skipped. Delete both files to start over.
 # Needs REAL_PLAN_DIR (+ optional REAL_PLAN_DIR2), TAKEOFF_LABEL_DIR. OFT_SETS (regex) narrows the sets.
+# OFT_SCHEDULE_CACHE: the window-count eval's cached schedule reads (legend-cache), so schedule-tagged sets read as the product reads them.
 set -o pipefail
 cd "${0:A:h}/../.."
 OUT="${2:A}"; D="$OUT.done"; touch "$D"
