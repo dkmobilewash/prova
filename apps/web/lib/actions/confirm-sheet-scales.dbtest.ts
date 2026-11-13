@@ -61,23 +61,27 @@ const saved = async () =>
 
 describe("Confirm scales", () => {
   it("asked for every page, saves only the sure one, and starts the wall finder on it", async () => {
-    expect(await confirmSheetScales(jobId, planId, [1, 2, 3])).toEqual({ ok: true, value: { confirmed: 1, skipped: 2 } });
+    const result = await confirmSheetScales(jobId, planId, [1, 2, 3]);
+    expect(result).toMatchObject({ ok: true, value: { confirmed: 1, skipped: 2 } });
     expect(await saved()).toEqual([[1, 72]]);
+    // The saved calibration is named, so the toolbar's one-press save can offer Undo (`saveSureScale`).
+    const ids = result.ok ? result.value.calibrationIds : [];
+    expect(await prisma.takeoffScaleCalibration.count({ where: { id: { in: ids }, page: { planId, pageNumber: 1 } } })).toBe(1);
     expect(detected).toEqual([1]);
   });
 
   it("never saves a page twice", async () => {
-    expect(await confirmSheetScales(jobId, planId, [1])).toEqual({ ok: true, value: { confirmed: 0, skipped: 1 } });
+    expect(await confirmSheetScales(jobId, planId, [1])).toMatchObject({ ok: true, value: { confirmed: 0, skipped: 1 } });
     expect(await saved()).toEqual([[1, 72]]);
   });
 
   it("the printed fix, on several pages at once: only those whose title block is all there is, each set once", async () => {
     // Page 3 read no scale at all, so the printed fix is not its to take.
-    expect(await confirmSheetScales(jobId, planId, [3], true)).toEqual({ ok: true, value: { confirmed: 0, skipped: 1 } });
-    expect(await confirmSheetScales(jobId, planId, [2, 3], true)).toEqual({ ok: true, value: { confirmed: 1, skipped: 1 } });
+    expect(await confirmSheetScales(jobId, planId, [3], true)).toMatchObject({ ok: true, value: { confirmed: 0, skipped: 1 } });
+    expect(await confirmSheetScales(jobId, planId, [2, 3], true)).toMatchObject({ ok: true, value: { confirmed: 1, skipped: 1 } });
     expect(await saved()).toEqual([[1, 72], [2, 144]]);
     // Pressed again: page 2 has its scale now, so nothing is written over it.
-    expect(await confirmSheetScales(jobId, planId, [2, 3], true)).toEqual({ ok: true, value: { confirmed: 0, skipped: 2 } });
+    expect(await confirmSheetScales(jobId, planId, [2, 3], true)).toMatchObject({ ok: true, value: { confirmed: 0, skipped: 2 } });
     expect(await saved()).toEqual([[1, 72], [2, 144]]);
   });
 
