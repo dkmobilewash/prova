@@ -151,3 +151,24 @@ describe("the guard: a text-read code types walls only where the sheet prints it
     expect(run([at("B3", cx, cy)], circle(cx, cy))).toEqual(["B3"]);
   });
 });
+
+describe("C3 recall reads, only with recall on (LEGEND_TEXT_RECALL)", () => {
+  const detail = (title: string, x: number) => [t("5/8\" GYPSUM BOARD, EACH SIDE", x, 300), t("3 5/8\" 20 GA. MTL. STUD FRAMING @ 16\" O.C.", x, 312), t(title, x, 380, 10)];
+  it("a detail titled 'PARTITION - 0S3' (cmb) names its code", () => {
+    const items = [...detail("PARTITION - 0S3", 200), ...detail("PARTITION - 0SF1B", 650), ...detail("PARTITION - 1S3", 1100)];
+    expect(readLegendFromText({ items, ...PAGE, recall: true }).types.map((x) => x.code)).toEqual(["0S3", "0SF1B", "1S3"]);
+    expect(readLegendFromText({ items, ...PAGE, recall: false }).types).toEqual([]);
+  });
+  it("a printing that lists codes (Pottawattamie's 'A1 A2 A3 A4') gives each code the detail's words", () => {
+    const items = [...detail("A1 A2 A3 A4", 200), ...detail("B1 B2", 650)];
+    const read = readLegendFromText({ items, ...PAGE, recall: true });
+    expect(read.types.map((x) => x.code)).toEqual(["A1", "A2", "A3", "A4", "B1", "B2"]);
+    expect(read.types.find((x) => x.code === "A3")!.lines).toEqual(read.types.find((x) => x.code === "A1")!.lines);
+    expect(read.types.find((x) => x.code === "A3")!.lines).toContain("5/8\" GYPSUM BOARD, EACH SIDE");
+    expect(readLegendFromText({ items, ...PAGE, recall: false }).types).toEqual([]);
+  });
+  it("a list of numbers or a dimension string is not a list of codes", () => {
+    const items = [...detail("1 2 3 4", 200), ...detail("A B C", 650), ...detail("B1 B2", 1100)];
+    expect(readLegendFromText({ items, ...PAGE, recall: true }).types).toEqual([]);
+  });
+});
