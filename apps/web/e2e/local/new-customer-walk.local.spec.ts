@@ -46,7 +46,7 @@ const RENO = process.env.WALK_RENO === "1";
 // "Doors and frames" at the trade pick (FRAMES or DOORS_AND_FRAMES; unset leaves the default, by others).
 // With it, the walk also types its crew's rate and door rates on Wall types, so the door labor is priced.
 const DOORS = process.env.WALK_DOORS ?? "";
-const DOOR_RATES = { crewRatePerHr: "85", doorFramesPerHr: "2", doorsPerHr: "1.5" };
+const DOOR_RATES = { crewRatePerHr: "85", doorFramesPerHr: "2", doorsPerHr: "1.5", windowFramesPerHr: "3" };
 /**
  * WALK_KNOWN_PRICES=1: a company that already holds the four costs the walk would type into the
  * queue, written in before the job as earlier work would have left them (not counted as presses):
@@ -364,8 +364,8 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
         }
         await page.getByRole("button", { name: "Save rates" }).click();
         act();
-        await expect.poll(async () => JSON.stringify((await prisma.companyBidDefaults.findUnique({ where: { companyId }, select: { productionRates: true } }))?.productionRates ?? {}), { timeout: 30_000 }).toContain('"doorsPerHr":1.5');
-        note(`Production rates typed on Wall types: crew ${DOOR_RATES.crewRatePerHr} $/hr, ${DOOR_RATES.doorFramesPerHr} frames/hr, ${DOOR_RATES.doorsPerHr} doors/hr (the wall rates left blank).`);
+        await expect.poll(async () => JSON.stringify((await prisma.companyBidDefaults.findUnique({ where: { companyId }, select: { productionRates: true } }))?.productionRates ?? {}), { timeout: 30_000 }).toContain('"windowFramesPerHr":3');
+        note(`Production rates typed on Wall types: crew ${DOOR_RATES.crewRatePerHr} $/hr, ${DOOR_RATES.doorFramesPerHr} frames/hr, ${DOOR_RATES.doorsPerHr} doors/hr, ${DOOR_RATES.windowFramesPerHr} window frames/hr (the wall rates left blank).`);
         await page.goto("/dashboard");
       }
       const types = await prisma.wallType.count({ where: { companyId } });
@@ -1178,10 +1178,10 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const sources = await page.locator('[data-estimate="price-source"]').allTextContents();
       note(`Price sources shown: ${sources.length === 0 ? "none" : sources.join(" | ")}`);
       const doorsPosted = (await prisma.takeoffMeasurement.findMany({ where: { kind: "COUNT", item: { jobId, name: "Doors" } }, select: { xs: true } })).reduce((n, m) => n + m.xs.length, 0);
-      const doorLines = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false, description: { contains: "Doors" } }, select: { description: true, quantity: true, unit: true, unitPrice: true } });
+      const doorLines = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false, OR: [{ description: { contains: "Doors" } }, { description: { contains: "Windows" } }] }, select: { description: true, quantity: true, unit: true, unitPrice: true } });
       const doorTotal = doorLines.reduce((n, l) => n + Number(l.quantity) * Number(l.unitPrice ?? 0), 0);
       const listed = doorLines.map((l) => `${l.description} ${Number(l.quantity)} ${l.unit} @ ${l.unitPrice ?? "-"}`).join(" | ");
-      note(`Doors: ${doorsPosted} posted; ${doorLines.length} door lines, ${doorTotal.toFixed(2)} dollars${listed ? `: ${listed}` : ""}`);
+      note(`Doors: ${doorsPosted} posted; ${doorLines.length} door and window lines, ${doorTotal.toFixed(2)} dollars${listed ? `: ${listed}` : ""}`);
     });
 
     // ── 9. SET MARKUP ──
