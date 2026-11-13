@@ -279,6 +279,8 @@ export function groupsFromProposals(
       // column — see `storedRunsOf`.
       lengthFeet: Math.hypot(run.x2 - run.x1, run.y2 - run.y1) * feetPerUnit,
       ...(run.openings === undefined ? {} : { openings: run.openings }),
+      // The wall model's score from detection, so posting (`wallItems.ts`) and a re-store keep it.
+      ...(run.modelScore === undefined ? {} : { modelScore: run.modelScore }),
     }));
 
     const feet = candidates.reduce((sum, run) => sum + run.lengthFeet, 0);

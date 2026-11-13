@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { prisma } from "@prova/db";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
-import { findWallsOnSheet } from "../findWallsOnSheet";
+import { productDetection, sampledSheetsFor } from "../productDetection";
 import { sheetStrokes } from "../sheetStrokes";
 import { collectSheets } from "../labelCollect";
 import { finderVersion } from "../finderVersion";
@@ -106,26 +106,21 @@ describe.skipIf(DIR === "" || LABELS === "")("building the training rows", () =>
       const text = await doc.pageText(saved.page);
       // ── FEATURES COME FROM THE FINDER'S OWN HOOK ──
       //
-      // `findWallsOnSheet` hands each candidate's feature vector to
-      // `onCandidate` as it builds it. A row's features must be the ones the
-      // product would compute for that candidate, so they are taken from the
-      // finder rather than recomputed here — two implementations of a feature
-      // vector is how a model gets trained on numbers the app never produces.
+      // Each candidate's feature vector is handed to `onCandidate` as it is
+      // built. A row's features must be the ones the product would compute for
+      // that candidate, so they are taken from the product's detection rather
+      // than recomputed here — two implementations of a feature vector is how a
+      // model gets trained on numbers the app never produces.
       const candidates: LabelCandidate[] = [];
-      findWallsOnSheet({
-        segments: read.segments,
-        textItems: text.items.map((i) => ({
-          str: i.str,
-          x: i.x,
-          y: i.y,
-          width: i.width,
-          height: i.height,
-        })),
-        pageSize: { widthPt: read.widthPt, heightPt: read.heightPt },
-        feetPerUnit: saved.feetPerUnit,
-        wallTypes: [],
-        sampledSheets: null,
-        onCandidate: (features, wall) =>
+      // THE PRODUCT'S OWN DETECTION (`productDetection.ts`): plan views at their own scale, the
+      // set's template, the sheet's printed tag vocabulary — so a row's features are the ones the
+      // product scores. `findWallsOnSheet` on the whole sheet differed on every candidate
+      // (`zzFeatureParity.eval.ts`). A new company: no wall types, no legend read.
+      const textItems = text.items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
+      const sampledSheets = await sampledSheetsFor({ pageCount: doc.pageCount, pageNumber: saved.page, own: read, read: (p) => doc.pageStrokes(p) });
+      productDetection(
+        { segments: read.segments, textItems, pageSize: { widthPt: read.widthPt, heightPt: read.heightPt }, feetPerUnit: saved.feetPerUnit, wallTypes: [], legendCodes: null, scanned: false, sampledSheets },
+        (features, wall) =>
           candidates.push({
             x1: wall.x1,
             y1: wall.y1,
@@ -133,9 +128,9 @@ describe.skipIf(DIR === "" || LABELS === "")("building the training rows", () =>
             y2: wall.y2,
             lengthFeet: wall.lengthFeet,
             thicknessFeet: wall.thicknessFeet,
-            features,
+            features: [...features],
           }),
-      });
+      );
       if (candidates.length === 0) {
         skipped.push(`${file.dir}/${file.sheet}: the finder offered no candidates`);
         continue;
