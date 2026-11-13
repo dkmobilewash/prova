@@ -22,11 +22,30 @@ from collections import defaultdict
 import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier
 
+import os
+
 TABLE, OUTDIR = sys.argv[1], sys.argv[2]
 EXAM = sys.argv[3] if len(sys.argv) > 3 else None
+# ── AN UNFINISHED KEY CANNOT SET A LINE ──
+# With LOSO_LABELS (the labels snapshot the table was built from), a sheet whose label file says
+# reviewComplete false is left out and named: Topeka p74, an AI quick pass never finished, held 62 of the
+# first parity line's 138 posts and was the only set keeping it under 97% (2026-11-13).
+LABELS = os.environ.get("LOSO_LABELS", "")
+
+
+def finished(set_name, sheet):
+    if LABELS == "":
+        return True
+    path = os.path.join(LABELS, set_name, f"{sheet}.json")
+    if not os.path.exists(path):
+        return True
+    return json.load(open(path)).get("reviewComplete") is True
 AUTO_PRECISION = 0.97
 # Fewer rows than the wall table (hundreds, not tens of thousands), so smaller leaves.
 GBM = dict(n_estimators=150, max_depth=3, learning_rate=0.05, subsample=0.8, min_samples_leaf=10, random_state=0)
+
+
+SKIPPED = set()
 
 
 def load(path, kind):
@@ -34,6 +53,9 @@ def load(path, kind):
     for line in open(path):
         r = json.loads(line)
         if r.get("kind") != kind:
+            continue
+        if not r.get("header") and not finished(r["set"], r["sheet"]):
+            SKIPPED.add(f"{r['set']} {r['sheet']}")
             continue
         if r.get("header"):
             names = r["names"]
@@ -137,6 +159,8 @@ out = {
     "door": run("door", "marked", "marked", "UNMARKED doors"),
     "window": run("window", None, "tagged", "UNTAGGED windows", refs=("countedByTag", "countedDrawn")),
 }
+if LABELS:
+    print(f"\nleft out, key not finished (reviewComplete false): {', '.join(sorted(SKIPPED)) or 'none'}")
 json.dump({k: (v[0] if v else None) for k, v in out.items()}, open(f"{OUTDIR}/loso-summary.json", "w"), indent=1)
 
 if EXAM:
