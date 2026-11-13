@@ -46,7 +46,7 @@ describe("the run model at Run takeoff, behind TAKEOFF_WALL_RUN_MODEL", () => {
     expect(detect).toContain("const runModel = raster === null ? loadRunModel(process.env) : null;");
     expect(detect).toMatch(/runModelVerdicts\(\s*\{ offered: beforeCompare\.offeredRuns, kept: offered\.offeredRuns,/);
     expect(detect).toContain("for (const run of verdicts.removed) if (!held.includes(run)) held.push(run);");
-    expect(detect.indexOf("held.push(run)")).toBeLessThan(detect.indexOf("target.onBoundary({ pairings, segments: detected.found.inUnits, held });"));
+    expect(detect.indexOf("held.push(run)")).toBeLessThan(detect.indexOf("target.onBoundary({ pairings, segments: detected.found.inUnits, held"));
     // The exam's table builds its columns with the same call.
     expect(read("./realplan/zzWallFeatureTable.eval.ts")).toContain("runModelRows({ offered: off, kept, pairings, pairModel: config.model");
   });

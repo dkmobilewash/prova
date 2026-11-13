@@ -330,10 +330,8 @@ export async function detectWallsForCalibration(
               feetPerUnit: target.feetPerUnit,
             });
             const sheet = sheetName(pairings.sheets, pairing.demoPage);
-            if (prior.lines !== null) {
-              offered = offer({ lines: prior.lines, sheet });
-              priorDoors = { doors: prior.doors ?? [], sheet };
-            }
+            if (prior.lines !== null) offered = offer({ lines: prior.lines, sheet });
+            if (prior.lines !== null) priorDoors = { doors: prior.doors ?? [], sheet };
             runPrior = priorForRuns(prior, demoStrokes, target.feetPerUnit, W);
             // Kept for the screen, which otherwise never hears what was set aside (`PRIOR_PLAN_READ`).
             const aside = prior.lines === null ? [] : offered.setAsideLines.filter((l) => l.kind === "on-prior-plan");
@@ -372,12 +370,8 @@ export async function detectWallsForCalibration(
           if (score !== null) offered.offeredRuns[at]!.modelScore = score;
         });
       }
-      target.onBoundary({
-        pairings,
-        segments: detected.found.inUnits,
-        held,
-        existingDoors: { asideWalls: asideExistingWalls(offered.setAsideLines), ...(priorDoors === null ? {} : { priorDoors: priorDoors.doors, priorSheet: priorDoors.sheet }) },
-      });
+      const existingDoors = { asideWalls: asideExistingWalls(offered.setAsideLines), ...(priorDoors === null ? {} : { priorDoors: priorDoors.doors, priorSheet: priorDoors.sheet }) };
+      target.onBoundary({ pairings, segments: detected.found.inUnits, held, existingDoors });
     }
     await new Promise((resolve) => setImmediate(resolve));
     const found = { ...detected.found, walls: offered.offeredRuns, groups: detected.found.regroup(offered.offeredRuns) };
