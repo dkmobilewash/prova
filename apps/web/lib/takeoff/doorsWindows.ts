@@ -47,7 +47,12 @@ export function doorCount(result: DoorsWindowsResult): number {
 }
 
 /** A window tag is a short code in a symbol: W1, W2, A, 1. A door mark (101) is not one. */
-const WINDOW_TAG = /^W?\d{1,2}[A-Z]?$|^[A-Z]$/;
+export const WINDOW_TAG = /^W?\d{1,2}[A-Z]?$|^[A-Z]$/;
+
+/** The door marks a sheet prints, page-width units: every read symbol that is not a window tag. Shared with the door training rows (`productOpenings.ts`). */
+export function doorMarkTexts(symbols: ReturnType<typeof tagSymbols>, widthPt: number): { text: string; x: number; y: number }[] {
+  return symbols.filter((s) => s.rejected === null && !WINDOW_TAG.test(s.text.trim().toUpperCase())).map((s) => ({ text: s.text.trim().toUpperCase(), x: s.x / widthPt, y: s.y / widthPt }));
+}
 
 /** The window tags read in symbols on a sheet (W1, W2…), each once, in reading order of first appearance. */
 export function windowTagsOnSheet(segmentsPt: readonly StrokeSegment[], textPt: readonly TextForSymbol[]): string[] {
@@ -85,9 +90,8 @@ export function doorsAndWindowsForSheet(input: {
 }): DoorsWindowsResult {
   const symbols = tagSymbols({ segments: input.segmentsPt, text: input.textPt, unitsPerPaperInch: 72 });
   const W = input.widthPt;
-  const doorMarks = symbols.filter((s) => s.rejected === null && !WINDOW_TAG.test(s.text.trim().toUpperCase())).map((s) => ({ x: s.x / W, y: s.y / W }));
-  const doors = onlyMarkedDoors(doorSymbols(input.segments, input.walls, input.feetPerUnit), doorMarks, input.feetPerUnit);
-  const markTexts = symbols.filter((s) => s.rejected === null && !WINDOW_TAG.test(s.text.trim().toUpperCase())).map((s) => ({ text: s.text.trim().toUpperCase(), x: s.x / W, y: s.y / W }));
+  const markTexts = doorMarkTexts(symbols, W);
+  const doors = onlyMarkedDoors(doorSymbols(input.segments, input.walls, input.feetPerUnit), markTexts, input.feetPerUnit);
   const reach = DOOR_TAG_REACH_FEET / input.feetPerUnit;
   const markOfDoor = doors.map((d) => {
     const x = (d.hinge.x + d.strike.x) / 2, y = (d.hinge.y + d.strike.y) / 2;
