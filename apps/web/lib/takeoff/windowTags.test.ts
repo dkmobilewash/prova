@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { WindowSymbol } from "./doorWindowSymbols";
 import type { TagSymbol } from "./tagSymbols";
 import type { WallCandidate } from "./wallVectors";
-import { joinedFrames, storedWindowsOf, windowsByTag, windowsToStore } from "./windowTags";
+import { DRAWN_MAX_FEET, DRAWN_MIN_FEET, DRAWN_MIN_LINES, joinedFrames, storedWindowsOf, UNTAGGED_WINDOW, windowsByTag, windowsToStore } from "./windowTags";
 
 // Windows counted by their frames, each typed by the nearest tag within 3 ft.
 // Page 1000 pt wide, 100 ft per page width: 1 ft = 10 pt.
@@ -139,5 +139,23 @@ describe("the frame finder reads the same window tags windowsByTag types with (T
     expect(src).toMatch(/const everyWindowTagged = tagsNameEveryWindow\(tagWords\) \|\| scheduleTagged\.length >= WINDOW_TAGS_MEAN_ALL;/);
     expect(src).toMatch(/const byScheduleOnly = !tagsNameEveryWindow\(tagWords\) && scheduleTagged\.length >= WINDOW_TAGS_MEAN_ALL;/);
     expect(src).toMatch(/windowSymbols\(input\.segments, input\.walls, input\.feetPerUnit, windowTags, everyWindowTagged, byScheduleOnly\)/);
+  });
+});
+
+describe("a sheet that tags no window counts the full frames drawn in its walls (Crosslines, MHK)", () => {
+  const full = (xFt: number, widthFeet = 4, lines = DRAWN_MIN_LINES): WindowSymbol => ({ ...frame(xFt), x1: (xFt - widthFeet / 2) / 100, x2: (xFt + widthFeet / 2) / 100, widthFeet, lines });
+  it("counts each full frame as an untagged window", () => {
+    const got = run([], { windowRows: [], frames: [full(10), full(30, 5.4, 5)] });
+    expect(got.counted).toBe(true);
+    expect(got.vocabulary).toBe("drawn");
+    expect(got.byTag).toEqual([{ tag: UNTAGGED_WINDOW, count: 2, row: null }]);
+  });
+  it("leaves out a three-line frame, a narrow one and a storefront-wide one", () => {
+    const got = run([], { windowRows: [], frames: [full(10, 4, DRAWN_MIN_LINES - 1), full(30, DRAWN_MIN_FEET - 0.5), full(55, DRAWN_MAX_FEET + 2)] });
+    expect(got.counted).toBe(false);
+  });
+  it("never where the sheet prints a window tag, even one, or the set has a schedule (SW A110)", () => {
+    expect(run([tag("W1", 70, 21.5)], { windowRows: [], frames: [full(10)] }).vocabulary).not.toBe("drawn");
+    expect(run([], { frames: [full(10)] }).counted).toBe(false);
   });
 });
