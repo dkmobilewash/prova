@@ -42,6 +42,8 @@ export type DoorSymbol = {
   leaves: 1 | 2;
   /** The swing's sweep, degrees, for a reviewer. */
   sweepDegrees: number;
+  /** Where the open leaf ends: the arc's other end. The swing lies on this side of the wall (`existingDoors.ts`). */
+  open?: { x: number; y: number };
 };
 
 export type WindowSymbol = {
@@ -254,6 +256,7 @@ export function doorArcCandidates(
         wall: wallFor(walls, hinge, strike, feetPerUnit),
         leaves: 1,
         sweepDegrees: sweep,
+        open: strike === b ? a : b,
       },
     });
   }

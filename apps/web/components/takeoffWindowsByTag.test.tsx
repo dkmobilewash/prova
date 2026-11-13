@@ -11,7 +11,7 @@ document.body.append(host);
 const root = createRoot(host);
 afterEach(() => act(() => root.render(null)));
 const frame = { kind: "window" as const, x1: 0, y1: 0, x2: 0.04, y2: 0, widthFeet: 4, wall: 0, lines: 3 };
-const base: DoorsWindowsResult = { doors: [], windows: [frame, frame], join: null, unplacedMarks: [], tagged: { counted: false, vocabulary: null, windows: [], byTag: [] }, doorMarks: [] };
+const base: DoorsWindowsResult = { doors: [], windows: [frame, frame], join: null, unplacedMarks: [], tagged: { counted: false, vocabulary: null, windows: [], byTag: [] }, doorMarks: [], existingDoors: [] };
 const paint = (result: DoorsWindowsResult) => act(() => root.render(createElement(TakeoffDoorsPanel, { result, groupOfWall: () => null, hovered: null, onHover: () => {} })));
 
 describe("the doors panel's windows", () => {

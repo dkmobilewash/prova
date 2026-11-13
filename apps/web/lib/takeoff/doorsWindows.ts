@@ -1,5 +1,6 @@
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 import { DOOR_TAG_REACH_FEET, doorSymbols, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, WINDOW_TAGS_MEAN_ALL, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
+import { existingDoors, type ExistingDoor, type ExistingDoorEvidence } from "./existingDoors";
 import { joinOpeningsToSchedule, widthAndHeight, type OpeningJoin, type PlacedMark, type ScheduledOpening } from "./openingMarks";
 import { tagSymbols, type TextForSymbol } from "./tagSymbols";
 import { windowsByTag, windowTagVocabulary, type TaggedWindows } from "./windowTags";
@@ -39,6 +40,8 @@ export type DoorsWindowsResult = {
    * A marked door is the auto-post door source (`autoPost.ts`).
    */
   doorMarks: (string | null)[];
+  /** Found doors set aside as existing (`existingDoors.ts`): never in `doors`, shown with their reason. */
+  existingDoors: ExistingDoor[];
 };
 
 /** The doors on the sheet: those drawn, plus those the schedule placed from a mark with no swing. */
@@ -48,6 +51,26 @@ export function doorCount(result: DoorsWindowsResult): number {
 
 /** A window tag is a short code in a symbol: W1, W2, A, 1. A door mark (101) is not one. */
 export const WINDOW_TAG = /^W?\d{1,2}[A-Z]?$|^[A-Z]$/;
+
+/**
+ * The doors in scope: every swing found, less those set aside as existing (`existingDoors.ts`), then
+ * `onlyMarkedDoors`. Shared with the door training rows (`productOpenings.ts`), so the rows are the
+ * doors the product offers.
+ */
+export function doorsInScope(input: {
+  segments: readonly StrokeSegment[];
+  walls: readonly WallCandidate[];
+  feetPerUnit: number;
+  textPt: readonly TextForSymbol[];
+  widthPt: number;
+  marks: readonly { x: number; y: number }[];
+  existing?: ExistingDoorEvidence;
+}): { all: DoorSymbol[]; existing: ExistingDoor[]; doors: DoorSymbol[] } {
+  const all = doorSymbols(input.segments, input.walls, input.feetPerUnit);
+  const existing = existingDoors({ doors: all, segments: input.segments, textPt: input.textPt, widthPt: input.widthPt, feetPerUnit: input.feetPerUnit, ...(input.existing === undefined ? {} : { evidence: input.existing }) });
+  const aside = new Set(existing.map((e) => e.door));
+  return { all, existing, doors: onlyMarkedDoors(all.filter((d) => !aside.has(d)), input.marks, input.feetPerUnit) };
+}
 
 /** The door marks a sheet prints, page-width units: every read symbol that is not a window tag. Shared with the door training rows (`productOpenings.ts`). */
 export function doorMarkTexts(symbols: ReturnType<typeof tagSymbols>, widthPt: number): { text: string; x: number; y: number }[] {
@@ -87,11 +110,13 @@ export function doorsAndWindowsForSheet(input: {
   windowRows?: readonly StoredScheduleRow[];
   /** The set's wall legend codes, so a wall tag shaped like W4 is not read as a window. */
   wallCodes?: readonly string[];
+  /** What the caller knows about existing work beyond the page: walls set aside, the demolition plan's doors. */
+  existing?: ExistingDoorEvidence;
 }): DoorsWindowsResult {
   const symbols = tagSymbols({ segments: input.segmentsPt, text: input.textPt, unitsPerPaperInch: 72 });
   const W = input.widthPt;
   const markTexts = doorMarkTexts(symbols, W);
-  const doors = onlyMarkedDoors(doorSymbols(input.segments, input.walls, input.feetPerUnit), markTexts, input.feetPerUnit);
+  const { doors, existing } = doorsInScope({ segments: input.segments, walls: input.walls, feetPerUnit: input.feetPerUnit, textPt: input.textPt, widthPt: W, marks: markTexts, ...(input.existing === undefined ? {} : { existing: input.existing }) });
   const reach = DOOR_TAG_REACH_FEET / input.feetPerUnit;
   const markOfDoor = doors.map((d) => {
     const x = (d.hinge.x + d.strike.x) / 2, y = (d.hinge.y + d.strike.y) / 2;
@@ -117,7 +142,7 @@ export function doorsAndWindowsForSheet(input: {
   const windows = windowSymbols(input.segments, input.walls, input.feetPerUnit, windowTags, everyWindowTagged, byScheduleOnly);
   const tagged = windowsByTag({ symbols, widthPt: W, windowRows: input.windowRows ?? [], frames: windows, walls: input.walls, feetPerUnit: input.feetPerUnit, wallCodes: input.wallCodes ?? [] });
   const rows = scheduledOpenings(input.scheduleRows);
-  if (rows.length === 0) return { doors, windows, join: null, unplacedMarks: [], tagged, doorMarks: markOfDoor };
+  if (rows.length === 0) return { doors, windows, join: null, unplacedMarks: [], tagged, doorMarks: markOfDoor, existingDoors: existing };
   const scheduled = new Set(rows.map((r) => r.mark.toUpperCase()));
   const marks: PlacedMark[] = symbols
     .filter((s) => s.rejected === null || (s.rejected === "sheet-reference" && scheduled.has(s.text.trim().toUpperCase())))
@@ -145,5 +170,5 @@ export function doorsAndWindowsForSheet(input: {
   });
   const carried = new Set(join.openings.map((o) => (o.mark ?? "").trim().toUpperCase()));
   const unplacedMarks = [...new Set(rows.map((r) => r.mark.toUpperCase()))].filter((m) => !carried.has(m)).map((m) => rows.find((r) => r.mark.toUpperCase() === m)!.mark);
-  return { doors, windows, join, unplacedMarks, tagged, doorMarks: markOfDoor };
+  return { doors, windows, join, unplacedMarks, tagged, doorMarks: markOfDoor, existingDoors: existing };
 }
