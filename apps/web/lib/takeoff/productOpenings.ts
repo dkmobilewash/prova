@@ -1,5 +1,6 @@
-import { doorArcCandidates, doorSymbols, onlyMarkedDoors, type DoorArcCandidate, type DoorSymbol } from "./doorWindowSymbols";
-import { doorMarkTexts, WINDOW_TAG } from "./doorsWindows";
+import { doorArcCandidates, type DoorArcCandidate, type DoorSymbol } from "./doorWindowSymbols";
+import { doorMarkTexts, doorsInScope, WINDOW_TAG } from "./doorsWindows";
+import type { ExistingDoor, ExistingDoorEvidence } from "./existingDoors";
 import { doorFeatureRows, type PlacedText, type SheetContext } from "./openingFeatures";
 import { tagSymbols } from "./tagSymbols";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
@@ -50,8 +51,10 @@ export function sheetIsRenovation(textItems: readonly { str: string }[]): boolea
  * feature row (`DOOR_FEATURE_NAMES`), the arcs, the marks and which of them the product keeps — the
  * same doors and marks `doorsAndWindowsForSheet` reads from these inputs.
  */
-export function productDoorRows(input: OpeningInputs & { textPt: readonly { str: string; x: number; y: number; width: number; height: number }[] }): {
+export function productDoorRows(input: OpeningInputs & { textPt: readonly { str: string; x: number; y: number; width: number; height: number }[]; existing?: ExistingDoorEvidence }): {
   doors: DoorSymbol[];
+  /** Set aside as existing before any row is written: the product never offers them. */
+  existing: ExistingDoor[];
   arcs: DoorArcCandidate[];
   marks: PlacedText[];
   tags: PlacedText[];
@@ -66,7 +69,10 @@ export function productDoorRows(input: OpeningInputs & { textPt: readonly { str:
   const words: PlacedText[] = input.textPt.map((t) => ({ text: t.str, x: (t.x + t.width / 2) / W, y: (t.y - t.height / 2) / W }));
   const context: SheetContext = { segments: input.segments, walls: input.walls, words, feetPerUnit: input.feetPerUnit, widthPt: W, renovation: sheetIsRenovation(input.textPt) };
   const arcs = doorArcCandidates(input.segments, input.walls, input.feetPerUnit);
-  const doors = doorSymbols(input.segments, input.walls, input.feetPerUnit);
-  const kept = new Set(onlyMarkedDoors(doors, marks, input.feetPerUnit));
-  return { doors, arcs, marks, tags, kept, context, rows: doorFeatureRows({ ...context, doors, arcs, marks, keptByProduct: kept }) };
+  // The doors the product offers: existing ones set aside first (`doorsInScope`), as `doorsAndWindowsForSheet` does.
+  const scope = doorsInScope({ segments: input.segments, walls: input.walls, feetPerUnit: input.feetPerUnit, textPt: input.textPt, widthPt: W, marks, ...(input.existing === undefined ? {} : { existing: input.existing }) });
+  const aside = new Set(scope.existing.map((e) => e.door));
+  const doors = scope.all.filter((d) => !aside.has(d));
+  const kept = new Set(scope.doors);
+  return { doors, existing: scope.existing, arcs, marks, tags, kept, context, rows: doorFeatureRows({ ...context, doors, arcs, marks, keptByProduct: kept }) };
 }

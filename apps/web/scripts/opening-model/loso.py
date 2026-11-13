@@ -48,6 +48,8 @@ GBM = dict(n_estimators=150, max_depth=3, learning_rate=0.05, subsample=0.8, min
 SKIPPED = set()
 # Printed door marks with no key door (the table's key-completeness line): a person calls each one.
 UNKEYED = {}
+# Found doors set aside as existing before the rows (`existingDoors.ts`), each called real or false against the key.
+ASIDE = {}
 
 
 def load(path, kind):
@@ -63,6 +65,8 @@ def load(path, kind):
             names = r["names"]
         elif "keyCount" in r:
             key[r["set"]] += r["keyCount"]
+        elif "existingAside" in r:
+            ASIDE[f"{r['set']} {r['sheet']}"] = r["existingAside"]
         elif "unkeyedMarks" in r:
             UNKEYED[f"{r['set']} {r['sheet']}"] = (r["marks"], r["unkeyedMarks"])
         else:
@@ -165,6 +169,12 @@ out = {
 }
 if LABELS:
     print(f"\nleft out, key not finished (reviewComplete false): {', '.join(sorted(SKIPPED)) or 'none'}")
+if ASIDE:
+    print(f"\nexisting doors set aside before the rows (real = a key door lost, false = a false door removed):")
+    for sheet, a in sorted(ASIDE.items()):
+        if a:
+            routes = ", ".join(f"{k} {sum(1 for e in a if e['route'] == k)}" for k in ("wall", "area", "tag", "demo") if any(e["route"] == k for e in a))
+            print(f"  {sheet[:60]}: {len(a)} set aside, {sum(1 for e in a if not e['real'])} false removed, {sum(1 for e in a if e['real'])} real lost ({routes})")
 print(f"\nkey completeness (printed door marks beside a found door, with no key door by tag or within 6 ft): {sum(len(u) for _, u in UNKEYED.values())} on {len(UNKEYED)} door-keyed sheets")
 for sheet, (n, u) in sorted(UNKEYED.items()):
     if u:

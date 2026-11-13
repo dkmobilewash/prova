@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { DOOR_TAG_REACH_FEET, tagsNameEveryWindow } from "../doorWindowSymbols";
 import { doorsAndWindowsForSheet } from "../doorsWindows";
+import { asideExistingWalls } from "../existingDoors";
 import { excludedSheetReason, heldOutReason } from "../heldOutSets";
 import { keyFromLabels } from "../heldOutScore";
 import { productDetection, productSheetRuns, sampledSheetsFor } from "../productDetection";
@@ -111,11 +112,13 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const offered = productSheetRuns({ detected: d, segmentsPt: strokes.segments, widthPt: W, feetPerUnit: fpu, textItems });
         const stored = d.found.regroup(offered.offeredRuns).flatMap((g) => g.runs as readonly { x1: number; y1: number; x2: number; y2: number; thicknessFeet: number }[]).map((r) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, thicknessFeet: r.thicknessFeet }));
         const inputs = openingInputs({ runs: stored, feetPerUnit: fpu, widthPt: W, segmentsPt: strokes.segments });
-        const door = productDoorRows({ ...inputs, textPt: textItems });
+        // The walls the stage set aside as existing: a door on one is set aside too (`existingDoors.ts`).
+        const existing = { asideWalls: asideExistingWalls(offered.setAsideLines) };
+        const door = productDoorRows({ ...inputs, textPt: textItems, existing });
         const { segments, walls } = inputs;
         const { context, tags } = door;
         const symbols = tagSymbols({ segments: strokes.segments, text: textItems, unitsPerPaperInch: 72 }).filter((s) => s.rejected === null);
-        const dw = doorsAndWindowsForSheet({ segments, segmentsPt: inputs.segmentsPt, textPt: textItems, widthPt: W, walls, feetPerUnit: fpu, scheduleRows: [], windowRows });
+        const dw = doorsAndWindowsForSheet({ segments, segmentsPt: inputs.segmentsPt, textPt: textItems, widthPt: W, walls, feetPerUnit: fpu, scheduleRows: [], windowRows, existing });
 
         if (keyDoors.length > 0) {
           const { arcs, doors, rows: x } = door;
@@ -129,6 +132,9 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           const r6 = (v: number) => +v.toFixed(6);
           doors.forEach((d, i) => appendFileSync(OUT, JSON.stringify({ set: dir, sheet, page: saved.page, kind: "door", real: real[i], at: { hinge: [r6(d.hinge.x), r6(d.hinge.y)], strike: [r6(d.strike.x), r6(d.strike.y)] }, x: x[i]!.map((v) => +v.toFixed(4)) }) + "\n"));
           appendFileSync(OUT, JSON.stringify({ set: dir, sheet, kind: "door", keyCount: keyDoors.length }) + "\n");
+          // The doors set aside as existing, each against the key on its own: a real one is a door lost.
+          const asideReal = door.existing.length === 0 ? [] : openingLabels(doorSwings(door.existing.map((e) => e.door), arcs, fpu).map((s) => s.polygons.flat()), keyDoors, fpu);
+          appendFileSync(OUT, JSON.stringify({ set: dir, sheet, kind: "door", existingAside: door.existing.map((e, i) => ({ route: e.route, why: e.why, real: asideReal[i], at: [+((e.door.hinge.x + e.door.strike.x) / 2).toFixed(6), +((e.door.hinge.y + e.door.strike.y) / 2).toFixed(6)] })) }) + "\n");
           // ── KEY COMPLETENESS: A PRINTED DOOR TAG MEANS A KEY DOOR ──
           // Joplin A-101's three confident "false" doors were real doors whose printed tags (115, 111, 120)
           // the key had missed, and they held the line down. So: a mark the product reads (`doorMarkTexts`)
