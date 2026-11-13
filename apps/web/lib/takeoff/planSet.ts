@@ -1,6 +1,6 @@
 import { ownsFloorPlan } from "@/lib/takeoff/takeoffSheet";
 import { takeoffRank } from "@/lib/takeoff/sheetSuitability";
-import type { ScalePrefill } from "@/lib/takeoff-plan-view";
+import { scaleIsSure, type ScalePrefill } from "@/lib/takeoff-plan-view";
 import { effectiveSheetNumber, effectiveTitle, type SheetRow } from "@/lib/plan-ingest/sheetIndex";
 
 /**
@@ -109,7 +109,7 @@ export function planSetRows(input: {
       ...(input.needed === undefined ? {} : { needed: input.needed.has(pageNumber) }),
     };
     if (input.scaled.has(pageNumber)) return { ...base, confidence: "set", scaleName: offer?.scaleName ?? input.printed[pageNumber] ?? null, why: "A scale is saved on this sheet", printedFix: false };
-    if (offer && !offer.unconfirmed && offer.reducedPrintCaution === undefined) {
+    if (offer && scaleIsSure(offer)) {
       return { ...base, confidence: "high", scaleName: offer.scaleName, why: `Matched ${offer.agreed.length} printed dimension${offer.agreed.length === 1 ? "" : "s"}`, printedFix: false };
     }
     if (offer?.snapDimensions !== undefined) {

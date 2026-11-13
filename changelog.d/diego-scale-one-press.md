@@ -1,0 +1,5 @@
+### Takeoff: a Sure scale saves in one press from the toolbar (Diego, 2026-11-12)
+
+- A scale read off the sheet's own dimensions with no reduced-print correction ("Sure" in the plan set) now saves on "Use the printed scale 1/8" = 1'-0"" itself — no panel, no second button — and the toolbar then says the scale and the dimension it came from ("from 73'-6" · matched 70 of 223 printed dimensions") with **Undo**. Readings that are not Sure (a printed scale, a reduced print, a snap #1130) keep today's flow; nothing applies without its press.
+- The server re-derives Sure (`confirmSheetScales`), so a sheet that stopped being Sure is refused, not saved. Undo deletes that calibration only while nothing is measured with it (a measurement cascades with its calibration) and says so when it refuses.
+- Walks (no AI): Joplin Run takeoff step 5 → 3 presses (55 → 54 total, $124,990.77 both); Totem 62 → 62 (its scale comes from the plan set); Baker fails on main and here alike at the queue's tag apply (logged, not this change).
