@@ -163,7 +163,7 @@ const TITLE_RULES: ReadonlyArray<readonly [RegExp, string, string]> = [
   [/\bDEMO(LITION)?\b/i, "demolition plan", "walls being removed, which are not the walls being built"],
   [/ROOF\s+PLAN/i, "roof plan", "roof edges and crickets rather than partitions"],
   [/SITE\s+PLAN/i, "site plan", "site work rather than the building's partitions"],
-  [/FINISH\s+PLAN/i, "finish plan", "the architectural walls repeated under the finish hatching"],
+  [/FINISH\s+(FLOOR\s+)?PLAN/i, "finish plan", "the architectural walls repeated under the finish hatching"],
   [/FURNITURE\s+PLAN/i, "furniture plan", "the architectural walls repeated under the furniture"],
   [/\bMECHANICAL\b/i, "mechanical plan", "the architectural walls repeated in grey under the ductwork"],
   [/\bELECTRICAL\b/i, "electrical plan", "the architectural walls repeated in grey under the power plan"],

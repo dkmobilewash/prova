@@ -274,7 +274,7 @@ export function pageInventoryWork(ctx: StageCtx, deps: PageInventoryDeps = realD
     // ── IS IT A FLOOR PLAN, BY ITS OWN DRAWINGS? ── a flag, not a name, so no switch (`sureFloorPlans.ts`).
     if (readable && deps.saveSureFloorPlan) {
       const read = sheetNumberFrom(page);
-      const caption = floorPlanCaption({ pageNumber: task.pageNumber, sheetNumber: read.sheetNumber, title: read.regionText, viewNames: sheetViews(page.items, page.widthPt).map((view) => view.name) });
+      const caption = floorPlanCaption({ pageNumber: task.pageNumber, sheetNumber: read.sheetNumber, title: read.titleText, viewNames: sheetViews(page.items, page.widthPt).map((view) => view.name) });
       await deps.saveSureFloorPlan({ planId: ctx.planId, pageNumber: task.pageNumber, sure: caption !== null, caption, sheetNumber: read.sheetNumber });
     }
 

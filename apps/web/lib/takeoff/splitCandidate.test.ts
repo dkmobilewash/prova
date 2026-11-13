@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { startReview } from "./answerKeyReview";
-import { SHORTEST_HALF_FEET, crossingPoint, splitCandidate } from "./splitCandidate";
+import { SHORTEST_HALF_FEET, crossingPoint, splitCandidate, splitPress } from "./splitCandidate";
 import type { Candidate } from "./answerKeyReview";
 
 /**
@@ -171,5 +171,27 @@ describe("splitting a candidate", () => {
     const { halves, state: after } = splitCandidate(state, "nobody", { x: 0, y: 0 }, FEET_PER_UNIT);
     expect(halves).toBeNull();
     expect(after).toBe(state);
+  });
+});
+
+describe("S arms a cut anywhere along the run (round 22)", () => {
+  it("the first press arms, with or without a crossing wall; a second cuts at the crossing", () => {
+    const bare = startReview(sheet(), FEET_PER_UNIT);
+    // Aspen's storefront: nothing accepted crosses, and Split used to refuse.
+    expect(splitPress(bare, "north", null)).toEqual({ kind: "arm", crossing: null });
+    expect(splitPress(bare, "north", "north").kind, "stays armed for a click").toBe("arm");
+    const yard = { ...bare, verdicts: { ...bare.verdicts, east: "wall" as const } };
+    expect(splitPress(yard, "north", null).kind).toBe("arm");
+    // Armed for ANOTHER run: this press arms this one rather than cutting.
+    expect(splitPress(yard, "north", "east").kind).toBe("arm");
+    const second = splitPress(yard, "north", "north");
+    expect(second.kind).toBe("cut");
+    expect(second.kind === "cut" ? second.at.x : 0).toBeCloseTo(ft(129), 5);
+  });
+
+  it("the click cuts 3 ft from the end, where the overshoot was", () => {
+    const out = splitCandidate(startReview(sheet(), FEET_PER_UNIT), "north", { x: ft(157), y: 0 }, FEET_PER_UNIT);
+    expect(out.halves).not.toBeNull();
+    expect(out.state.candidates.find((c) => c.id === "north+b")!.lengthFeet).toBeCloseTo(3, 5);
   });
 });

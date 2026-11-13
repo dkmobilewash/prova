@@ -721,6 +721,8 @@ export function TakeoffPlanViewer({
     /** Cut the candidate at a point on it — the shift-click path, for a
      *  boundary with no wall on it. In page-width units. */
     onSplitAt?: (id: string, at: { x: number; y: number }) => void;
+    /** The run S armed a cut on: a plain click while it is focused cuts it there. */
+    cutPendingFor?: string | null;
     onPairings?: (
       pairings: { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet: number; features: number[] }[],
     ) => void;
@@ -3440,7 +3442,7 @@ export function TakeoffPlanViewer({
         // wrong shape for showing anybody — it carries the project name and the
         // architect's address. It is never rendered.
         const caution = duplicateWallsCaution(
-          sheetSuitability(reading.sheetNumber, reading.regionText, null),
+          sheetSuitability(reading.sheetNumber, reading.titleText, null),
           reading.sheetNumber,
         );
         if (!cancelled && caution) setReadCaution((prev) => ({ ...prev, [pageNumber]: caution }));
@@ -3521,7 +3523,7 @@ export function TakeoffPlanViewer({
         }
         const verdict = takeoffSheetVerdict({
           sheetNumber: reading.sheetNumber,
-          title: reading.regionText,
+          title: reading.titleText,
           viewNames: sheetViews(items, pageSize.widthPt).map((view) => view.name),
         });
         if (!cancelled) {
@@ -3585,7 +3587,7 @@ export function TakeoffPlanViewer({
           const size = page.getViewport({ scale: 1 });
           const items = await pageTextItems(page, pdfjs);
           const reading = sheetNumberFrom({ pageNumber: n, widthPt: size.width, heightPt: size.height, rotation: 0, items });
-          readings.push({ pageNumber: n, sheetNumber: reading.sheetNumber, title: reading.regionText, viewNames: sheetViews(items, size.width).map((view) => view.name) });
+          readings.push({ pageNumber: n, sheetNumber: reading.sheetNumber, title: reading.titleText, viewNames: sheetViews(items, size.width).map((view) => view.name) });
         } catch {
           // A sheet whose text will not read is simply not a candidate.
         }
@@ -6701,7 +6703,7 @@ export function TakeoffPlanViewer({
                     Math.abs(keyBox.y2 - keyBox.y1),
                   );
                   if (
-                    keyShift &&
+                    (keyShift || (answerKey.cutPendingFor != null && answerKey.cutPendingFor === answerKey.focusedId)) &&
                     moved <= CLICK_NOT_DRAG &&
                     answerKey.onSplitAt !== undefined &&
                     answerKey.focusedId !== null
@@ -6723,7 +6725,10 @@ export function TakeoffPlanViewer({
                   if (!keyShift && moved <= CLICK_NOT_DRAG) {
                     const width = (event.currentTarget as Element).getBoundingClientRect().width;
                     const picked = pickOnClick({
-                      candidates: answerKey.state.candidates,
+                      // Traces too: a click is how a wall is chosen to TYPE, and a
+                      // trace laid over a candidate was otherwise reachable only
+                      // through its own thin hit line (round 22).
+                      candidates: [...answerKey.state.candidates, ...answerKey.state.traced],
                       x: keyBox.x2,
                       y: keyBox.y2,
                       focusedId: answerKey.focusedId,
