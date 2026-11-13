@@ -64,7 +64,7 @@ describe.skipIf(DIR === "" || SHEETS.length === 0 || OUT === "")("doors against 
       const key = keyFromLabels({ verdicts: saved.verdicts ?? [], openings: saved.openings ?? [] }).openings.filter((o) => o.kind === "door");
       const score = scoreOpenings(key, found, "door", fpu);
       // The swing itself, so a key point anywhere in the door's quarter circle can be matched (`door_score.py`).
-      const swings = result.doors.map((d, i) => ({ hinge: d.hinge, strike: d.strike, widthFeet: d.widthFeet, leaves: d.leaves, tag: found[i]!.tag ?? null }));
+      const swings = result.doors.map((d, i) => ({ hinge: d.hinge, strike: d.strike, widthFeet: d.widthFeet, leaves: d.leaves, tag: found[i]!.tag ?? null, onWall: d.wall !== null, sweepDegrees: d.sweepDegrees }));
       appendFileSync(OUT, JSON.stringify({ file: basename(file!), page, group, feetPerUnit: fpu, score, found, swings, key }) + "\n");
       console.log(`DOORS ${group} ${basename(file!)} p${page}: key ${score.key} found ${score.found} missed ${score.missed} false ${score.false} · marks scored ${score.tagged} correct ${score.tagCorrect}`);
       expect(walls.length).toBeGreaterThan(0);

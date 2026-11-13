@@ -46,7 +46,7 @@ const RENO = process.env.WALK_RENO === "1";
 // "Doors and frames" at the trade pick (FRAMES or DOORS_AND_FRAMES; unset leaves the default, by others).
 // With it, the walk also types its crew's rate and door rates on Wall types, so the door labor is priced.
 const DOORS = process.env.WALK_DOORS ?? "";
-const DOOR_RATES = { crewRatePerHr: "85", doorFramesPerHr: "2", doorsPerHr: "1.5" };
+const DOOR_RATES = { crewRatePerHr: "85", doorFramesPerHr: "2", doorsPerHr: "1.5", windowFramesPerHr: "3" };
 /**
  * WALK_KNOWN_PRICES=1: a company that already holds the four costs the walk would type into the
  * queue, written in before the job as earlier work would have left them (not counted as presses):
@@ -364,8 +364,8 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
         }
         await page.getByRole("button", { name: "Save rates" }).click();
         act();
-        await expect.poll(async () => JSON.stringify((await prisma.companyBidDefaults.findUnique({ where: { companyId }, select: { productionRates: true } }))?.productionRates ?? {}), { timeout: 30_000 }).toContain('"doorsPerHr":1.5');
-        note(`Production rates typed on Wall types: crew ${DOOR_RATES.crewRatePerHr} $/hr, ${DOOR_RATES.doorFramesPerHr} frames/hr, ${DOOR_RATES.doorsPerHr} doors/hr (the wall rates left blank).`);
+        await expect.poll(async () => JSON.stringify((await prisma.companyBidDefaults.findUnique({ where: { companyId }, select: { productionRates: true } }))?.productionRates ?? {}), { timeout: 30_000 }).toContain('"windowFramesPerHr":3');
+        note(`Production rates typed on Wall types: crew ${DOOR_RATES.crewRatePerHr} $/hr, ${DOOR_RATES.doorFramesPerHr} frames/hr, ${DOOR_RATES.doorsPerHr} doors/hr, ${DOOR_RATES.windowFramesPerHr} window frames/hr (the wall rates left blank).`);
         await page.goto("/dashboard");
       }
       const types = await prisma.wallType.count({ where: { companyId } });
@@ -711,13 +711,36 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       await expect(tab.locator('[data-takeoff="workspace"]')).toBeVisible({ timeout: 120_000 });
       const run = tab.locator('[data-takeoff="find-walls"]');
       if (!(await expect(run).toBeEnabled({ timeout: 30_000 }).then(() => true, () => false))) {
-        // Opened on a sheet with no scale: a person picks the floor plan.
-        stuck(`the workspace opened on "${(await text(tab.locator("header").first())).slice(0, 80)}", where Run takeoff is off ("${await run.getAttribute("title")}"); picked A101`);
         await shot("workspace-opened-unscaled", tab);
-        const picker = tab.locator('[data-takeoff="sheet-picker"]');
-        const options = await picker.locator("option").evaluateAll((os) => os.map((o) => ({ v: (o as HTMLOptionElement).value, t: o.textContent ?? "" })));
-        await picker.selectOption(options.find((o) => /^A101\b/.test(o.t.trim()))?.v ?? "13");
-        act(2);
+        // ── THE SHEET'S OWN SCALE, OFFERED WHERE THE PERSON STANDS ──
+        // Joplin (133 pages): the scales step ran while the set was still being read, before its floor
+        // plan A-101 was; the workspace then opens on A-101 offering "Use the printed scale 1/8" = 1'-0"",
+        // one press, which is what a person does. Only with no such offer does the walk pick another sheet.
+        const useScale = tab.getByRole("button", { name: /^Use the printed scale/ }).first();
+        if (await useScale.isVisible().catch(() => false)) {
+          // The toolbar offer opens the sheet's evidence ("matched 70 printed dimensions of 223"); the scale
+          // is saved by its own button — "Use this dimension", or "Use the printed scale" from the title block.
+          const offered = await text(useScale);
+          await useScale.click();
+          act();
+          const accept = tab.getByRole("button", { name: /^(Use this dimension|Use the printed scale)$/ }).first();
+          await expect(accept).toBeVisible({ timeout: 15_000 });
+          const acceptName = await text(accept).catch(() => "its button");
+          await accept.click();
+          act();
+          // That fills the Set scale form (two points, the figure, the sheet's name); Set the scale saves it.
+          const save = tab.getByRole("button", { name: /^Set the scale$/ }).first();
+          await expect(save).toBeVisible({ timeout: 15_000 });
+          await save.click();
+          act();
+          note(`Run takeoff was off ("${await run.getAttribute("title")}"); the sheet offered "${offered}", then "${acceptName}", then "Set the scale": 3 presses.`);
+        } else {
+          stuck(`the workspace opened on "${(await text(tab.locator("header").first())).slice(0, 80)}", where Run takeoff is off ("${await run.getAttribute("title")}") and no scale was offered; picked A101`);
+          const picker = tab.locator('[data-takeoff="sheet-picker"]');
+          const options = await picker.locator("option").evaluateAll((os) => os.map((o) => ({ v: (o as HTMLOptionElement).value, t: o.textContent ?? "" })));
+          await picker.selectOption(options.find((o) => /^A-?101\b/.test(o.t.trim()))?.v ?? "13");
+          act(2);
+        }
       }
       await expect(run).toBeEnabled({ timeout: 300_000 });
       await shot("workspace", tab);
@@ -1035,6 +1058,9 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
             act(2);
           }
           await tab.keyboard.press("Enter");
+        } else if (kind === "doors") {
+          // The sheet's found doors with no printed mark (one item per sheet): a person who agrees keeps them all.
+          await item.locator('[data-takeoff="queue-doors-accept"]').click();
         } else if (kind === "windows") {
           // The windows counted on the sheet (#1024): a person who agrees confirms them all.
           await item.locator('[data-takeoff="queue-windows-accept"]').click();
@@ -1152,10 +1178,10 @@ test.describe("a new customer, sign-up to a sendable estimate", () => {
       const sources = await page.locator('[data-estimate="price-source"]').allTextContents();
       note(`Price sources shown: ${sources.length === 0 ? "none" : sources.join(" | ")}`);
       const doorsPosted = (await prisma.takeoffMeasurement.findMany({ where: { kind: "COUNT", item: { jobId, name: "Doors" } }, select: { xs: true } })).reduce((n, m) => n + m.xs.length, 0);
-      const doorLines = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false, description: { contains: "Doors" } }, select: { description: true, quantity: true, unit: true, unitPrice: true } });
+      const doorLines = await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false, OR: [{ description: { contains: "Doors" } }, { description: { contains: "Windows" } }] }, select: { description: true, quantity: true, unit: true, unitPrice: true } });
       const doorTotal = doorLines.reduce((n, l) => n + Number(l.quantity) * Number(l.unitPrice ?? 0), 0);
       const listed = doorLines.map((l) => `${l.description} ${Number(l.quantity)} ${l.unit} @ ${l.unitPrice ?? "-"}`).join(" | ");
-      note(`Doors: ${doorsPosted} posted; ${doorLines.length} door lines, ${doorTotal.toFixed(2)} dollars${listed ? `: ${listed}` : ""}`);
+      note(`Doors: ${doorsPosted} posted; ${doorLines.length} door and window lines, ${doorTotal.toFixed(2)} dollars${listed ? `: ${listed}` : ""}`);
     });
 
     // ── 9. SET MARKUP ──

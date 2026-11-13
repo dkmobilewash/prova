@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReviewItem } from "@/lib/takeoff/reviewQueue";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 
-type WindowsItem = Extract<ReviewItem, { kind: "windows" }>;
+type WindowsItem = Extract<ReviewItem, { kind: "windows" | "doors" }>;
 
 /**
  * ── A SHEET'S COUNTED WINDOWS IN THE REVIEW QUEUE, CONFIRMED AS ONE COUNT ──
@@ -19,6 +19,9 @@ type WindowsItem = Extract<ReviewItem, { kind: "windows" }>;
  *   N          skip to the next item
  *
  * Keys are taken in the capture phase, as `QueueGroupConfirm` takes them.
+ *
+ * The same item confirms a sheet's found doors with no printed mark (`doorSuggestions.ts`): each
+ * lit on its leaf, D drops a false one, Enter keeps the rest. `noun` says which.
  */
 export function QueueWindowsConfirm({
   item,
@@ -26,8 +29,11 @@ export function QueueWindowsConfirm({
   onAccept,
   onSkip,
   onUndoable,
+  noun = "window",
 }: {
   item: WindowsItem;
+  /** What is counted: windows (typed by their tags) or doors (no type). */
+  noun?: "window" | "door";
   /** The windows still lit and the one zoomed to, for the plan. */
   onShow: (item: WindowsItem) => void;
   /** The kept windows, as indexes into `item.runs`. */
@@ -55,7 +61,7 @@ export function QueueWindowsConfirm({
     setDropped((was) => new Set(was).add(target));
     // Nothing is saved until Confirm, so its Undo only puts the window back in the list.
     onUndoable?.({
-      label: `Not a window: ${item.tags[target] ?? "window"} on ${item.sheet}`,
+      label: noun === "door" ? `Not a door on ${item.sheet}` : `Not a window: ${item.tags[target] ?? "window"} on ${item.sheet}`,
       undo: async () => {
         setDropped((was) => {
           const next = new Set(was);
@@ -97,28 +103,31 @@ export function QueueWindowsConfirm({
 
   const byTag = new Map<string, number>();
   for (const i of kept) byTag.set(item.tags[i]!, (byTag.get(item.tags[i]!) ?? 0) + 1);
-  const types = [...byTag].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true })).map(([tag, n]) => `${tag} ×${n}`).join(", ");
+  const types = noun === "door" ? "" : [...byTag].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true })).map(([tag, n]) => `${tag} ×${n}`).join(", ");
   const current = at === null ? null : kept[at];
   const button = "min-h-[28px] rounded-md border border-line-card px-2 text-xs font-medium text-ink-body hover:bg-rail disabled:opacity-50";
+  const hook = noun === "door" ? "queue-doors" : "queue-windows";
+  const plural = `${noun}s`;
   return (
-    <span className="contents" data-takeoff="queue-windows">
-      <span className="font-medium" data-takeoff="queue-windows-count">
-        {kept.length} {kept.length === 1 ? "window" : "windows"} · sheet {item.sheet}
+    <span className="contents" data-takeoff={hook}>
+      <span className="font-medium" data-takeoff={`${hook}-count`}>
+        {kept.length} {kept.length === 1 ? noun : plural}
+        {noun === "door" ? " with no printed mark" : ""} · sheet {item.sheet}
         {types !== "" && ` · ${types}`}
       </span>
       <span className="text-ink-muted">
-        Counted by opening, typed by the nearest tag
+        {noun === "door" ? "Found by their swing; checked one by one, never counted without you" : "Counted by opening, typed by the nearest tag"}
         {dropped.size > 0 && ` · ${dropped.size} dropped`}
-        {current !== null && current !== undefined && ` · looking at ${at! + 1} of ${kept.length} (${item.tags[current]})`}
+        {current !== null && current !== undefined && ` · looking at ${at! + 1} of ${kept.length}${noun === "door" ? "" : ` (${item.tags[current]})`}`}
       </span>
-      <button type="button" className={`${button} border-brand bg-brand font-semibold text-neutral-900`} onClick={() => onAccept(kept)} data-takeoff="queue-windows-accept">
+      <button type="button" className={`${button} border-brand bg-brand font-semibold text-neutral-900`} onClick={() => onAccept(kept)} data-takeoff={`${hook}-accept`}>
         Confirm {kept.length} ⏎
       </button>
-      <button type="button" className={button} onClick={() => step(1)} data-takeoff="queue-windows-next">
-        Next window →
+      <button type="button" className={button} onClick={() => step(1)} data-takeoff={`${hook}-next`}>
+        Next {noun} →
       </button>
-      <button type="button" className={button} onClick={drop} disabled={kept.length === 0} data-takeoff="queue-windows-drop">
-        Not a window (D)
+      <button type="button" className={button} onClick={drop} disabled={kept.length === 0} data-takeoff={`${hook}-drop`}>
+        Not a {noun} (D)
       </button>
     </span>
   );

@@ -5131,6 +5131,7 @@ const KIND_WORDS: Record<ReviewItem["kind"], string> = {
   type: "wall groups to type",
   height: "wall types with no height",
   windows: "window counts to confirm",
+  doors: "found doors with no printed mark to confirm",
   scale: "floor plans with no scale",
   price: "estimate lines with no cost or price",
   existing: "renovation sheets whose existing walls are still among the walls",
@@ -5193,6 +5194,8 @@ function describe(item: ReviewItem): string {
       return `${item.description}: ${item.quantity}${item.unit ? ` ${item.unit}` : ""}`;
     case "windows":
       return `${item.sheet}: ${item.tags.length} windows`;
+    case "doors":
+      return `${item.sheet}: ${item.runs.length} doors with no printed mark`;
     case "wall":
       return `${item.sheet}: ${item.feet === null ? "a wall" : `${Math.round(item.feet)} ft wall`}`;
     case "scale":

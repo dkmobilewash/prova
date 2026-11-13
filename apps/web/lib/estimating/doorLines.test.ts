@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { doorScopeFrom, framesOpenings, framingAssembly, laborSource, openingFraming } from "./doorLines";
+import { doorScopeFrom, framesOpenings, framingAssembly, laborSource, openingFraming, windowOpeningTrackFt } from "./doorLines";
 import { TRADE_PRESETS } from "@/lib/trade-presets";
 
 // The starter partition's own parts, as `wall-type-starters.ts` writes them.
@@ -58,5 +58,14 @@ describe("where a labor line's price came from", () => {
   it("a cost somebody typed over it is theirs, so the source goes", () => {
     expect(laborSource(line("Labor — Doors — set hollow-metal frames", "60.00"), rates)).toBeNull();
     expect(laborSource({ ...line("Labor — Doors — set hollow-metal frames", "42.50"), costCategory: "MATERIAL" }, rates)).toBeNull();
+  });
+});
+
+describe("a window's rough opening", () => {
+  it("track for the header (width + 1 ft of bearing) and the sill (width)", () => {
+    expect(windowOpeningTrackFt(3)).toBe(7);
+  });
+  it("its labor line names the window frame rate", () => {
+    expect(laborSource({ description: "Labor — Windows — set window frames", costCategory: "LABOR", budgetedUnitCost: "28.33" }, { crewRatePerHr: 85, doorFramesPerHr: 2, doorsPerHr: 1.5, windowFramesPerHr: 3 })).toBe("Your production rate: 3 window frames per hour, at your crew rate of $85.00/hr");
   });
 });
