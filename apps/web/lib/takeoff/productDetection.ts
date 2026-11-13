@@ -1,5 +1,5 @@
 import { inPageWidthUnits } from "./findWallsOnSheet";
-import { detectForSheet, type SheetDetectInput } from "./offeredCandidates";
+import { detectForSheet, offeredCandidates, type SheetDetectInput } from "./offeredCandidates";
 import { printedTagCodes, tagVocabulary } from "./planTextTags";
 import { pagesToSample } from "./sheetTemplate";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
@@ -85,4 +85,35 @@ export async function sampledSheetsFor(input: {
     }
   }
   return sampled;
+}
+
+/**
+ * ── THE RUNS THE PRODUCT KEEPS: the viewer's set-asides over the detection ──
+ * `offeredCandidates` with the arguments `detectWallsForCalibration` gives it: the legend box, dashed
+ * faces, title underline, schedule rows, site equipment, existing walls set aside. Its `offeredRuns`
+ * are what the stage stores and what the product finds doors and windows against (`rooms.ts`), so
+ * the opening training rows are built on these too (`openingFeatures.ts`, `zzOpeningFeatureTable`).
+ * A new company: no user exclusions, no prior plan (plan comparison is off by default).
+ */
+export function productSheetRuns(input: {
+  detected: ReturnType<typeof detectForSheet>;
+  segmentsPt: SheetDetectInput["segments"];
+  widthPt: number;
+  feetPerUnit: number;
+  textItems: SheetDetectInput["textItems"];
+  user?: Parameters<typeof offeredCandidates>[0]["user"];
+  priorPlan?: Parameters<typeof offeredCandidates>[0]["priorPlan"];
+}): ReturnType<typeof offeredCandidates> {
+  const W = input.widthPt;
+  return offeredCandidates({
+    walls: input.detected.found.walls,
+    segments: input.detected.found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })),
+    pageSegments: input.segmentsPt,
+    widthPt: W,
+    feetPerUnit: input.feetPerUnit,
+    planBoxes: input.detected.planBoxes,
+    textItems: input.textItems,
+    ...(input.user === undefined ? {} : { user: input.user }),
+    ...(input.priorPlan === undefined ? {} : { priorPlan: input.priorPlan }),
+  });
 }

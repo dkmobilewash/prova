@@ -6,6 +6,7 @@ import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { ceilingsForRooms, type CeilingPageText } from "@/lib/takeoff/roomCeilings";
 import type { DetectedBoundary } from "@/lib/takeoff/detectWallsForCalibration";
+import { openingInputs } from "@/lib/takeoff/productOpenings";
 import { doorsAndWindowsForSheet } from "@/lib/takeoff/doorsWindows";
 import { DOORS_SUGGESTED, doorsToStore, storedDoorsOf, type StoredDoors } from "@/lib/takeoff/doorSuggestions";
 import { postAutoDoors } from "./autoDoors";
@@ -13,7 +14,6 @@ import { assignWallHeights } from "@/lib/takeoff/wallHeightsAssign";
 import { DOOR_HEIGHT_FEET, finishLineLabel, finishTakeoff, typesFromNeighbours, typeTagsInRooms, WINDOW_HEIGHT_FEET } from "@/lib/takeoff/finishTakeoff";
 import { readFinishSchedule, type FinishSchedule } from "@/lib/takeoff/finishSchedule";
 import { sheetRooms } from "@/lib/takeoff/sheetRooms";
-import type { WallCandidate } from "@/lib/takeoff/wallVectors";
 import { roomRows, writeRoomRows, type RoomToSave } from "@/lib/takeoff/roomRows";
 import { type PlanPdf } from "./planPdf";
 import { openSharedPlanPdf } from "./sharedPlanPdf";
@@ -171,9 +171,9 @@ export async function windowsForSheet(input: { planId: string; companyId: string
     const text = await doc.pageText(input.pageNumber);
     const strokes = await doc.pageStrokes(input.pageNumber);
     const W = text.widthPt;
-    const inUnits = strokes.segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W }));
-    const candidates = runs.map((r) => ({ ...r, lengthFeet: Math.hypot(r.x2 - r.x1, r.y2 - r.y1) * feetPerUnit })) as unknown as WallCandidate[];
-    const openings = doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: strokes.segments as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: await doorScheduleRowsOf(input.planId), windowRows: await scheduleRowsOf(input.planId, "WINDOW"), wallCodes: await storedLegendCodes(input.planId) });
+    // Built the way the door and window training rows are (`productOpenings.ts`).
+    const inputs = openingInputs({ runs, feetPerUnit, widthPt: W, segmentsPt: strokes.segments });
+    const openings = doorsAndWindowsForSheet({ segments: inputs.segments, segmentsPt: inputs.segmentsPt, textPt: text.items as never, widthPt: W, walls: inputs.walls, feetPerUnit, scheduleRows: await doorScheduleRowsOf(input.planId), windowRows: await scheduleRowsOf(input.planId, "WINDOW"), wallCodes: await storedLegendCodes(input.planId) });
     const stored = windowsToStore(openings.tagged, openings.windows);
     await writeSuggestedWindows(input.planId, input.pageNumber, stored);
     return stored === null ? { kind: "skipped", why: "no window tags read" } : { kind: "counted", windows: stored.windows.length };
@@ -219,9 +219,11 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
     // A retry has only the stored runs, and the page's strokes for its doors.
     const strokes = input.boundary ? null : await doc.pageStrokes(input.pageNumber);
     const W = text.widthPt;
-    const inUnits = input.boundary?.segments ?? strokes!.segments.map((s) => ({ ...s, x1: s.x1 / W, y1: s.y1 / W, x2: s.x2 / W, y2: s.y2 / W }));
-    const candidates = runs.map((r) => ({ ...r, lengthFeet: Math.hypot(r.x2 - r.x1, r.y2 - r.y1) * feetPerUnit })) as unknown as WallCandidate[];
-    const inPoints = inUnits.map((s) => ({ ...s, x1: s.x1 * W, y1: s.y1 * W, x2: s.x2 * W, y2: s.y2 * W }));
+    // Built the way the door and window training rows are (`productOpenings.ts`).
+    const inputs = input.boundary ? openingInputs({ runs, feetPerUnit, widthPt: W, segmentsInUnits: input.boundary.segments }) : openingInputs({ runs, feetPerUnit, widthPt: W, segmentsPt: strokes!.segments });
+    const inUnits = inputs.segments;
+    const candidates = inputs.walls;
+    const inPoints = inputs.segmentsPt;
     const openings = company.doorsWindowsOn
       ? doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: inPoints as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: await doorScheduleRowsOf(input.planId), windowRows: await scheduleRowsOf(input.planId, "WINDOW"), wallCodes: await storedLegendCodes(input.planId) })
       : { doors: [], windows: [] };

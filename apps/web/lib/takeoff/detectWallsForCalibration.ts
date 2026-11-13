@@ -6,8 +6,7 @@ import { storedRasterFor } from "@/lib/plan-ingest/raster";
 import { openSharedPlanPdf } from "@/lib/plan-ingest/sharedPlanPdf";
 import { storePlanCaptions } from "./levelReads";
 import type { SheetTextItem } from "./findWallsOnSheet";
-import { offeredCandidates } from "./offeredCandidates";
-import { productDetection, sampledSheetsFor, vocabularyFor } from "./productDetection";
+import { productDetection, productSheetRuns, sampledSheetsFor, vocabularyFor } from "./productDetection";
 import { userExclusionsFromRows } from "./userExclusions";
 import type { ScoredPairing } from "./demotedRuns";
 import { runsHeldOffEstimate } from "./estimateHold";
@@ -281,18 +280,9 @@ export async function detectWallsForCalibration(
       select: { kind: true, xs: true, ys: true },
     });
     const user = userExclusionsFromRows(exclusionRows);
+    // Shared with the opening training rows (`productSheetRuns`): the runs doors and windows are found against.
     const offer = (priorPlan?: { lines: PriorLine[]; sheet: string }) =>
-      offeredCandidates({
-        walls: detected.found.walls,
-        segments: detected.found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })),
-        pageSegments: strokes.segments,
-        widthPt: W,
-        feetPerUnit: target.feetPerUnit,
-        planBoxes: detected.planBoxes,
-        textItems,
-        ...(user === null ? {} : { user }),
-        ...(priorPlan === undefined ? {} : { priorPlan }),
-      });
+      productSheetRuns({ detected, segmentsPt: strokes.segments, widthPt: W, feetPerUnit: target.feetPerUnit, textItems, ...(user === null ? {} : { user }), ...(priorPlan === undefined ? {} : { priorPlan }) });
     await new Promise((resolve) => setImmediate(resolve));
     let offered = offer();
     // ── PLAN COMPARISON, ON A PAIRED SHEET WITH THE COMPANY'S SWITCH ON — see `priorPlan.ts` ──
