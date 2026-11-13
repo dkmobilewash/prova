@@ -988,6 +988,8 @@ async function writeCalibration(input: {
  * Returns the calibration so the toolbar can offer Undo.
  */
 export async function saveSureScale(jobId: string, planId: string, pageNumber: number): Promise<ActionResultWith<{ calibrationId: string }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const saved = await confirmSheetScales(jobId, planId, [pageNumber]);
   if (!saved.ok) return saved;
   const id = saved.value.calibrationIds[0];
