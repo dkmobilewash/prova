@@ -894,7 +894,7 @@ export function TakeoffWorkspace({
   /** What the last split did or refused to do, shown in the panel. */
   const [splitNote, setSplitNote] = useState<string | null>(null);
   /** The run S armed a cut on: the next click on the plan cuts it there (`splitPress`). */
-  const [cutArmedFor, setCutArmedFor] = useState<string | null>(null);
+  const [cutPendingFor, setCutPendingFor] = useState<string | null>(null);
   const [pairingsByPage, setPairingsByPage] = useState<
     Record<
       number,
@@ -1811,11 +1811,11 @@ export function TakeoffWorkspace({
                             ),
                           ),
                         ),
-                      cutArmedFor,
+                      cutPendingFor,
                       onSplitAt: (id, at) => {
                         // A click after S, or a shift-click. Same split, a point
                         // the reviewer aimed at instead of a crossing wall.
-                        setCutArmedFor(null);
+                        setCutPendingFor(null);
                         const feetPerUnit =
                           currentSheet?.calibration != null
                             ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
@@ -2025,9 +2025,9 @@ export function TakeoffWorkspace({
                     currentSheet?.calibration != null
                       ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
                       : 0;
-                  const press = splitPress(keyState, id, cutArmedFor);
+                  const press = splitPress(keyState, id, cutPendingFor);
                   if (press.kind === "arm") {
-                    setCutArmedFor(id);
+                    setCutPendingFor(id);
                     setSplitNote(
                       press.crossing === null
                         ? "Click on the plan where to cut it."
@@ -2035,7 +2035,7 @@ export function TakeoffWorkspace({
                     );
                     return;
                   }
-                  setCutArmedFor(null);
+                  setCutPendingFor(null);
                   const out = splitCandidate(keyState, id, press.at, feetPerUnit);
                   if (out.halves === null) {
                     setSplitNote("That cut would leave a stub shorter than a foot.");

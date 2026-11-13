@@ -3,7 +3,10 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { startReview } from "@/lib/takeoff/answerKeyReview";
-import { AnswerKeyPanel, IDLE_AFTER_SECONDS } from "./AnswerKeyPanel";
+import { AnswerKeyPanel } from "./AnswerKeyPanel";
+
+// `IDLE_AFTER_SECONDS` (6 min) lives in a "use client" module, so the client-boundary census forbids importing it; the literal is the rule.
+const IDLE_AFTER_SECONDS = 360;
 
 // ROUND 22: the clock advanced only on a verdict, so a sheet spent tracing,
 // splitting and marking doors read 2–3 minutes. Any input now counts; a break

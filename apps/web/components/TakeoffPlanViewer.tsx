@@ -720,7 +720,7 @@ export function TakeoffPlanViewer({
      *  boundary with no wall on it. In page-width units. */
     onSplitAt?: (id: string, at: { x: number; y: number }) => void;
     /** The run S armed a cut on: a plain click while it is focused cuts it there. */
-    cutArmedFor?: string | null;
+    cutPendingFor?: string | null;
     onPairings?: (
       pairings: { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet: number; features: number[] }[],
     ) => void;
@@ -6709,7 +6709,7 @@ export function TakeoffPlanViewer({
                     Math.abs(keyBox.y2 - keyBox.y1),
                   );
                   if (
-                    (keyShift || (answerKey.cutArmedFor != null && answerKey.cutArmedFor === answerKey.focusedId)) &&
+                    (keyShift || (answerKey.cutPendingFor != null && answerKey.cutPendingFor === answerKey.focusedId)) &&
                     moved <= CLICK_NOT_DRAG &&
                     answerKey.onSplitAt !== undefined &&
                     answerKey.focusedId !== null
