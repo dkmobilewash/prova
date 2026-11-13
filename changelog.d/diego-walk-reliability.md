@@ -7,7 +7,7 @@ refresh then dropped those groups, the cursor's key was nowhere, and the queue f
 the existing-walls question the person had just skipped (Baker A101), or a height item that had just
 arrived (Falafel A2.00). That happened under the pointer, mid-click. The new-customer walk on main failed
 this way in 7 of 10 runs (Falafel 2/5, Baker 1/5), and so did the three intermittent failures reported on
-#1157+, including issue #1159. What was on screen now holds until the cursor's item is back, without moving the cursor, so an Undo still brings its question back when the server re-sends it (`set-type-undo.spec.ts` step 8 went red on a first version that moved the cursor). Check:
-`components/queueAfterAnswer.test.tsx` (Baker's tag and Falafel's doors, each with the refresh, and a height
-answered then undone) fails without it. The walk also prints, when a step fails, each change of the queue's item, an uncaught error's
+#1157+, including issue #1159. What was on screen now holds until the cursor's item is back, without moving the cursor, so an Undo still brings its question back when the server re-sends it (`set-type-undo.spec.ts` step 8 went red on a first version that moved the cursor). A bulk Undo (Accept all, the rest, a tag, the other floors' windows) now puts the queue on what it brought back, as a one-group Undo already did: it had relied on the queue falling to its first item (`accept-sheet.spec.ts` step 5). Check:
+`components/queueAfterAnswer.test.tsx` (Baker's tag and Falafel's doors, each with the refresh, a height
+answered then undone, and the rest typed then undone) fails without it. The walk also prints, when a step fails, each change of the queue's item, an uncaught error's
 stack and any plan byte range that failed or came back short.

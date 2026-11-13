@@ -258,6 +258,8 @@ export function TakeoffReviewQueue({
         forgetAfter.current = known;
         setAccepted((was) => (was?.record === record ? null : was));
         setDone((done) => new Set([...done].filter((key) => !keys.includes(key))));
+        // Back on the groups just undone, as a one-group Undo is (accept-sheet.spec.ts step 5).
+        setCursor(keys[0] ?? null);
         return { ok: true };
       },
       redo: async () => {
@@ -285,6 +287,8 @@ export function TakeoffReviewQueue({
     forgetAfter.current = was.known;
     setAccepted(null);
     setDone((done) => new Set([...done].filter((key) => !was.keys.includes(key))));
+    // Back on the groups just undone, as a one-group Undo is (accept-sheet.spec.ts step 5).
+    setCursor(was.keys[0] ?? null);
     router.refresh();
   }
   // ── "Groups 3 of 8 · Held walls 0 of 34" ──
@@ -1103,6 +1107,7 @@ export function TakeoffReviewQueue({
             record.live = false;
             setWindowsApplied(null);
             setDone((was) => new Set([...was].filter((key) => !open.some((w) => w.key === key))));
+            setCursor(open[0]?.key ?? null);
             router.refresh();
             return { ok: true };
           };

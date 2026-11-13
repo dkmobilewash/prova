@@ -129,5 +129,26 @@ describe("after an answer the queue goes on, not back to the item just skipped",
     show([height, other]);
     expect(kind()).toBe("height");
   });
+
+  // ── A BULK UNDO BRINGS BACK WHAT IT TOOK, AND SHOWS IT (accept-sheet.spec.ts step 5) ──
+  // "The rest of A101 = W1" types both groups nothing names; its Undo must put the queue back on them.
+  // The bulk Undo never pointed the cursor at them: main showed them only because the queue fell to its
+  // first item, and holding what was on screen kept the doors question up instead.
+  it("the rest typed, then Undo: the two groups are back on screen once the server sends them again", async () => {
+    const doors: ReviewItem = { kind: "doors", key: "doors:13", pageNumber: 13, sheet: "A101", runs: [{ x1: 0.1, y1: 0.1, x2: 0.12, y2: 0.1 }], tags: ["door"], at: null };
+    const two = [group("plain-1", 0.5), group("plain-2", 0.6)];
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    render([...two, doors]);
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('[data-takeoff="review-queue-rest-code"]')].find((b) => b.textContent?.startsWith("W1"))!.click());
+    await act(async () => (q("review-queue-rest-apply") as HTMLButtonElement).click());
+    expect(kind()).toBe("doors");
+    render([doors]);
+    await act(async () => (q("review-queue-accepted-undo") as HTMLButtonElement).click());
+    render([...two, doors]);
+    expect(kind()).toBe("type");
+    expect(q("queue-accept-rest")?.textContent).toContain("2 groups");
+  });
 });
 
