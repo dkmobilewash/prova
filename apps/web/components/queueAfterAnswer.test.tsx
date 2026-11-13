@@ -24,7 +24,7 @@ vi.mock("@/lib/actions", () => {
     undoConfirmWindows: ok,
     priceLineFromCost: ok,
     reviewWall: ok,
-    setWallGroupHeight: ok,
+    setWallGroupHeight: async () => ({ ok: true, value: { was: { heightFt: null, sides: null } } }),
     undoSheetSuggestions: ok,
   };
 });
@@ -99,6 +99,35 @@ describe("after an answer the queue goes on, not back to the item just skipped",
     expect(kind()).toBe("doors");
     render([height, doors]);
     expect(kind()).toBe("doors");
+  });
+
+  // ── AND AN UNDO STILL BRINGS ITS QUESTION BACK (set-type-undo.spec.ts step 8) ──
+  // Undo points the cursor at an item the server has not sent back yet. Pinning the cursor to what
+  // was on screen in that moment lost the item when it arrived: the height question never came back.
+  it("a height answered, then undone: the height question is back once the server sends it again", async () => {
+    const height: ReviewItem = { kind: "height", key: "height:zu2", itemId: "zu2", name: "ZU2 walls", pageNumber: 13, sheet: "A101", runs: [{ x1: 0.1, y1: 0.5, x2: 0.6, y2: 0.5 }], feet: 40, options: [] };
+    const other = group("plain-1", 0.6);
+    const undos: { undo: () => Promise<unknown> }[] = [];
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    const show = (list: ReviewItem[]) =>
+      act(() => root!.render(createElement(TakeoffReviewQueue, { jobId: "job-1", planId: "plan-1", items: list, legendCodes: ["W1", "W2"], planSet: [], onShow: () => {}, onClose: () => {}, onUndoable: (e: { undo: () => Promise<unknown> }) => void undos.push(e) })));
+    show([height, other]);
+    expect(kind()).toBe("height");
+    const box = q("queue-height") as HTMLInputElement;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(box, "9");
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => (q("queue-accept") as HTMLButtonElement).click());
+    expect(kind()).toBe("type");
+    // The server saved the height: no height item now.
+    show([other]);
+    await act(async () => void (await undos[0]!.undo()));
+    // The server's next render has the height item again.
+    show([height, other]);
+    expect(kind()).toBe("height");
   });
 });
 

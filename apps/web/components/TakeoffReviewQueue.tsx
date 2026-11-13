@@ -87,6 +87,8 @@ export function TakeoffReviewQueue({
   // Decided here, before the server's re-render drops it from `items`.
   const [done, setDone] = useState<ReadonlySet<string>>(new Set());
   const [cursor, setCursor] = useState<string | null>(null);
+  // The item last on screen: where the queue stays while the cursor's item is not in `items`.
+  const shown = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [priced, setPriced] = useState<string | null>(null);
@@ -123,18 +125,20 @@ export function TakeoffReviewQueue({
       }
       return null;
     })() ??
+    // ── THE ITEM ON SCREEN STAYS ON SCREEN WHEN THE SERVER'S RE-RENDER LANDS ──
+    // A bulk answer marks its groups done and leaves the cursor on one of them, so the item shown is
+    // "the next after the cursor". The refresh then drops those groups, the cursor's key is nowhere,
+    // and the queue fell to its first item — the existing-walls question just skipped (Baker), or a
+    // height item that had just arrived (Falafel) — under the person's pointer, mid-click (new-customer
+    // walk on main, 5 runs each: Falafel 2/5, Baker 1/5). So what was on screen holds until the
+    // cursor's item is back. NOT by moving the cursor: an Undo points it at an item the server has not
+    // sent back yet, and it must still find that item when it arrives (set-type-undo.spec.ts step 8).
+    left.find((item) => item.key === shown.current) ??
     left[0] ??
     null;
-  // ── THE ITEM ON SCREEN STAYS ON SCREEN WHEN THE SERVER'S RE-RENDER LANDS ──
-  // A bulk answer marks its groups done and leaves the cursor on one of them, so the item shown is
-  // "the next after the cursor". The refresh then drops those groups, the cursor's key is nowhere,
-  // and the queue fell to its first item — the existing-walls question just skipped (Baker), or a
-  // height item that had just arrived (Falafel) — under the person's pointer, mid-click. New-customer
-  // walk on main, 5 runs each: Falafel 2/5, Baker 1/5. The cursor follows what is shown.
-  const currentKey = current?.key ?? null;
   useEffect(() => {
-    if (currentKey !== null && currentKey !== cursor) setCursor(currentKey);
-  }, [currentKey, cursor]);
+    shown.current = current?.key ?? null;
+  });
   // ── ACCEPT ALL SUGGESTIONS ON THIS SHEET ──
   // Every group on the sheet on show whose type the drawing gave (a printed
   // tag or the legend), each with the height Enter would take. Library
