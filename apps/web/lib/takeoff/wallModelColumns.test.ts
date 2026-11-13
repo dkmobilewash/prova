@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { DOOR_FEATURE_NAMES } from "./openingFeatures";
 import { FEATURE_NAMES } from "./wallFeatures";
 
 /**
@@ -68,8 +69,12 @@ describe("every gbdt-binary-v1 model file in apps/web", () => {
     const files = modelFiles(join(__dirname, "..", ".."));
     expect(files.length, "the walk found fewer model files than the repo is known to hold").toBeGreaterThanOrEqual(2);
     for (const file of files) {
-      const model = JSON.parse(readFileSync(file, "utf8")) as { features?: string[] };
-      expect(model.features, file).toEqual([...SHIPPED_MODEL_COLUMNS]);
+      const model = JSON.parse(readFileSync(file, "utf8")) as { features?: string[]; kind?: string };
+      // A door scorer (`models/door-model.json`, METHOD v2) says so, and is held to the door columns.
+      // Anything else is a wall model: a file that forgets its kind is still checked, as a wall model.
+      expect(model.features, file).toEqual(model.kind === "door" ? [...DOOR_FEATURE_NAMES] : [...SHIPPED_MODEL_COLUMNS]);
     }
+    // The door model is found and checked too: a walk that skipped it would pass on the walls alone.
+    expect(files.filter((f) => (JSON.parse(readFileSync(f, "utf8")) as { kind?: string }).kind === "door").length, "no door model was checked").toBeGreaterThanOrEqual(1);
   });
 });
