@@ -10,6 +10,7 @@ const RATES: ProductionRates = {
   ceilingSfPerHr: 40,
   doorFramesPerHr: 2,
   doorsPerHr: 1.5,
+  windowFramesPerHr: 3,
   over10Multiplier: 1.15,
   over14Multiplier: 1.3,
   crewRatePerHr: 62,
@@ -106,12 +107,12 @@ describe("posted doors, at the company's door rates", () => {
     expect(laborPlan([], [], RATES, { count: 14, scope: "BY_OTHERS" })).toEqual({ lines: [], missing: [] });
   });
   it("frames: one EA line, the doors, at frames per hour", () => {
-    expect(laborPlan([], [], RATES, { count: 14, scope: "FRAMES" }).lines).toEqual([{ description: "Labor — Doors — set hollow-metal frames", hours: 7, unit: "EA", quantity: 14 }]);
+    expect(laborPlan([], [], RATES, { count: 14, scope: "FRAMES" }).lines).toEqual([{ description: "Labor — Doors — set hollow-metal frames", hours: 7, unit: "EA", quantity: 14, perHr: 2 }]);
   });
   it("doors and frames: the frames and the doors hung", () => {
     expect(laborPlan([], [], RATES, { count: 3, scope: "DOORS_AND_FRAMES" }).lines).toEqual([
-      { description: "Labor — Doors — set hollow-metal frames", hours: 1.5, unit: "EA", quantity: 3 },
-      { description: "Labor — Doors — hang doors, with hardware", hours: 2, unit: "EA", quantity: 3 },
+      { description: "Labor — Doors — set hollow-metal frames", hours: 1.5, unit: "EA", quantity: 3, perHr: 2 },
+      { description: "Labor — Doors — hang doors, with hardware", hours: 2, unit: "EA", quantity: 3, perHr: 1.5 },
     ]);
   });
   it("a blank door rate writes nothing and is named, and so is a blank crew rate", () => {
@@ -122,5 +123,15 @@ describe("posted doors, at the company's door rates", () => {
   it("the door rates are stored and read back like every rate, blank when missing", () => {
     expect(ratesFromJson(JSON.parse(JSON.stringify(RATES)))).toMatchObject({ doorFramesPerHr: 2, doorsPerHr: 1.5 });
     expect(ratesFromJson({})).toMatchObject({ doorFramesPerHr: null, doorsPerHr: null });
+  });
+});
+
+describe("confirmed windows, at the window frame rate, behind the same setting", () => {
+  it("installed: one EA line, the windows, at frames per hour", () => {
+    expect(laborPlan([], [], RATES, { count: 0, scope: "FRAMES", windows: 6 }).lines).toEqual([{ description: "Labor — Windows — set window frames", hours: 2, unit: "EA", quantity: 6, perHr: 3 }]);
+  });
+  it("by others: nothing, and a blank rate is named", () => {
+    expect(laborPlan([], [], RATES, { count: 0, scope: "BY_OTHERS", windows: 6 }).lines).toEqual([]);
+    expect(laborPlan([], [], { ...RATES, windowFramesPerHr: null }, { count: 0, scope: "FRAMES", windows: 6 }).missing).toContain("setting window frames (frames per hour)");
   });
 });

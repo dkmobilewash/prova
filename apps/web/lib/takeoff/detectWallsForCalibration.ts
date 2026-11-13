@@ -21,7 +21,8 @@ import { matchGroups } from "./proposalMatch";
 import { groupsForStage, siblingPages } from "./stageGroups";
 import { aiGate } from "@/lib/ai/settings";
 import { tagVocabulary, printedTagCodes } from "./planTextTags";
-import { doorScheduleForPlan, doorsOnSheet, legendForPlan, typedFeetOf, writeSheetResult } from "./planTextRead";
+import { wallTagCodes } from "./legendText";
+import { doorScheduleForPlan, doorsOnSheet, LEGEND_TEXT_ON, legendForPlan, typedFeetOf, writeSheetResult } from "./planTextRead";
 
 /**
  * FINDING THE WALLS THE MOMENT A SCALE IS ACCEPTED, so the groups are waiting
@@ -226,9 +227,12 @@ export async function detectWallsForCalibration(
     // sentence on the type it names (`MatchableWallType.unoNote`), so a sheet
     // with no such note of its own still gets the legend's default.
     let wallTypes: MatchableWallType[] = target.wallTypes;
-    if (planTextOn) {
+    // A legend read from the pages' text (no model): its codes type walls only where the sheet prints them as tags.
+    let fromText = false;
+    if (planTextOn || LEGEND_TEXT_ON()) {
       try {
-        const legend = await legendForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime, noModel: target.noModel });
+        const legend = await legendForPlan({ companyId: target.companyId, planId: target.planId, doc, outOfTime, noModel: target.noModel, textOnly: !planTextOn });
+        fromText = legend?.fromText === true;
         if (legend !== null) {
           legendCodes = legend.codes;
           legendPage = legend.page;
@@ -370,9 +374,19 @@ export async function detectWallsForCalibration(
     const found = { ...detected.found, walls: offered.offeredRuns, groups: detected.found.regroup(offered.offeredRuns) };
     // The groups: the finder's own when it paired with the thicknesses, else
     // rebuilt here with them — same runs, same feet, named with the types.
-    let groups = pairWithThicknesses
+    // ── A TEXT-READ LEGEND'S GUARD (`wallTagCodes`): its codes this sheet does not print as wall tags
+    // leave the vocabulary, and the groups are rebuilt with the rest — the path the eval measured.
+    const untrusted =
+      fromText && legendCodes !== null
+        ? (() => {
+            const trusted = wallTagCodes({ text: textItems, segments: strokes.segments, walls: found.walls, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, codes: legendCodes });
+            return new Set(legendCodes.filter((c) => !trusted.has(c.toUpperCase())));
+          })()
+        : null;
+    const guardedCodes = untrusted === null ? (planText?.legendCodes ?? null) : (planText?.legendCodes.filter((c) => !untrusted.has(c.toUpperCase())) ?? null);
+    let groups = pairWithThicknesses && untrusted === null
       ? found.groups
-      : groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: planText?.legendCodes ?? null, midSpan: (legendCodes ?? []).length === 0 }).groups;
+      : groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: guardedCodes, midSpan: (legendCodes ?? []).length === 0 }).groups;
     // ── NO TAG ON THIS SHEET: READ THEM OFF ITS SIBLING — see `tagsFromSibling` ──
     if (!pairWithThicknesses && planText !== undefined && raster === null && !groups.some((g) => g.source.kind === "TAG")) {
       try {

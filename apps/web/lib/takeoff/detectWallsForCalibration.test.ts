@@ -59,6 +59,7 @@ const legendForPlan = vi.fn(async () => null);
 const doorScheduleForPlan = vi.fn(async () => null);
 const writeSheetResult = vi.fn();
 vi.mock("./planTextRead", () => ({
+  LEGEND_TEXT_ON: () => false,
   legendForPlan: (...args: unknown[]) => legendForPlan(...(args as [])),
   doorScheduleForPlan: (...args: unknown[]) => doorScheduleForPlan(...(args as [])),
   doorsOnSheet: () => ({ placed: [], unplaced: [], rowsTotal: 0 }),

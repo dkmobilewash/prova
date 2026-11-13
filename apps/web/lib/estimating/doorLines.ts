@@ -76,6 +76,32 @@ export function framingAssembly<A extends { id: string; components: readonly Par
 }
 
 export const DOORS_LABOR_PREFIX = "Labor — Doors — ";
+export const WINDOWS_LABOR = "Labor — Windows — set window frames";
+
+/**
+ * ── WINDOWS, THE SAME WAY, BEHIND THE SAME SETTING ──
+ *
+ * A confirmed window count ("Windows — A", from the review queue) reaches the bid only when the
+ * company installs frames (FRAMES or DOORS_AND_FRAMES): its frame set at `windowFramesPerHr`, and for a
+ * framing trade the rough opening from the partition's own parts — king and jack studs either side, and
+ * track for the header and the sill, each the window's width, the header with 6" of bearing each end.
+ */
+export const WINDOW_ITEM_PREFIX = "Windows — ";
+// ponytail: the width a window is taken to be when its stored frame cannot be found again; a
+// schedule's widths when windows carry their mark.
+export const WINDOW_FALLBACK_WIDTH_FT = 4;
+
+/** The track a window's rough opening takes: header (width + 1 ft of bearing) and sill (width). */
+export function windowOpeningTrackFt(widthFt: number): number {
+  return 2 * widthFt + 1;
+}
+
+/** The EA labor line a job's windows come to; a blank rate writes nothing and is named. */
+export function windowLabor(windows: number, scope: DoorScope, rates: { windowFramesPerHr: number | null }): { lines: { description: string; unit: "EA"; quantity: number; hours: number; perHr: number }[]; missing: string[] } {
+  if (scope === "BY_OTHERS" || windows <= 0) return { lines: [], missing: [] };
+  if (rates.windowFramesPerHr === null) return { lines: [], missing: ["setting window frames (frames per hour)"] };
+  return { lines: [{ description: WINDOWS_LABOR, unit: "EA", quantity: windows, hours: Math.round((windows / rates.windowFramesPerHr) * 100) / 100, perHr: rates.windowFramesPerHr }], missing: [] };
+}
 
 /** The EA labor lines a job's doors come to at the company's rates; a blank rate writes nothing and is named. */
 export function doorLabor(doors: number, scope: DoorScope, rates: { doorFramesPerHr: number | null; doorsPerHr: number | null }): { lines: { description: string; unit: "EA"; quantity: number; hours: number; perHr: number }[]; missing: string[] } {
@@ -98,7 +124,7 @@ export function doorLabor(doors: number, scope: DoorScope, rates: { doorFramesPe
  */
 export function laborSource(
   line: { description: string; costCategory: string | null; budgetedUnitCost: { toString(): string } | null },
-  rates: { crewRatePerHr: number | null; doorFramesPerHr: number | null; doorsPerHr: number | null },
+  rates: { crewRatePerHr: number | null; doorFramesPerHr: number | null; doorsPerHr: number | null; windowFramesPerHr?: number | null },
 ): string | null {
   if (line.costCategory !== "LABOR" || line.budgetedUnitCost === null || rates.crewRatePerHr === null || !line.description.startsWith("Labor — ")) return null;
   const cost = Number(line.budgetedUnitCost.toString());
@@ -107,5 +133,6 @@ export function laborSource(
     perHr !== null && Math.abs(cost - Math.round((rates.crewRatePerHr! / perHr) * 100) / 100) < 0.005 ? `Your production rate: ${perHr} ${what} per hour, ${crew}` : null;
   if (line.description === `${DOORS_LABOR_PREFIX}set hollow-metal frames`) return each(rates.doorFramesPerHr, "frames");
   if (line.description === `${DOORS_LABOR_PREFIX}hang doors, with hardware`) return each(rates.doorsPerHr, "doors");
+  if (line.description === WINDOWS_LABOR) return each(rates.windowFramesPerHr ?? null, "window frames");
   return Math.abs(cost - rates.crewRatePerHr) < 0.005 ? `Your production rates, ${crew}` : null;
 }
