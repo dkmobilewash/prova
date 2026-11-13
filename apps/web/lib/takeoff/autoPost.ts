@@ -103,6 +103,40 @@ export function doorAutoPosts(source: DoorSource): boolean {
 export const AUTO_DOORS_ITEM = "Doors";
 export const AUTO_DOORS_LABEL = "Doors (auto, from printed mark)";
 
+/**
+ * ── A MODEL'S SCORE POSTS ITSELF ONLY PAST ITS OWN MEASURED BAR (METHOD v2, parts 2–3) ──
+ * One row per decision a learned model makes: walls (real or junk) now; types and doors ready for
+ * the second's models. A decision auto-posts only at the score `autoPostAt` whose LOSO precision is
+ * ≥97% (`trainingPct` here is LOSO pooled precision AT that score, chosen on LOSO, never on held-out)
+ * AND whose held-out final exam, run once, is ≥95% — `clearsBar`, the same two numbers as every
+ * other source. `model` names the file the numbers were measured with; a different model is a new
+ * measurement. Every row is empty until the second fills it: LOSO is valid only on rows from the
+ * product's own detection (`productDetection.ts`, parity 0 since 2026-11-13), so nothing posts yet.
+ * Behind the company's "Auto-post proven items" switch (`Company.autoPostOn`, off by default).
+ */
+export type ModelDecision = "walls" | "types" | "doors";
+export type ModelEvidence = SourceEvidence & { autoPostAt: number | null; model: string | null };
+const UNMEASURED: ModelEvidence = { trainingPct: null, trainingFt: 0, heldOutPct: null, heldOutFt: 0, measured: "", trainingSheets: 0, heldOutSheets: 0, autoPostAt: null, model: null };
+export const MODEL_EVIDENCE: Record<ModelDecision, ModelEvidence> = { walls: UNMEASURED, types: UNMEASURED, doors: UNMEASURED };
+
+/** The score at or above which a decision posts itself, or null while its evidence does not clear the bar. */
+export function modelAutoPostAt(decision: ModelDecision, evidence: ModelEvidence = MODEL_EVIDENCE[decision]): number | null {
+  if (evidence.autoPostAt === null || !(evidence.autoPostAt > 0 && evidence.autoPostAt <= 1) || evidence.model === null) return null;
+  return clearsBar(evidence) ? evidence.autoPostAt : null;
+}
+
+/** Whether one score posts itself: never without a score, never below the decision's bar. */
+export function modelPostsItself(score: number | null | undefined, at: number | null): boolean {
+  return at !== null && typeof score === "number" && Number.isFinite(score) && score >= at;
+}
+
+/**
+ * The label a wall the model is sure of carries: real, counted, not in the junk review — but still
+ * untyped unless a type source posted it, so the queue still asks its type. Undo per sheet
+ * (`undoAutoPost`) takes it back to "wall, untyped".
+ */
+export const HIGH_CONFIDENCE_WALLS = "Walls (auto, high confidence)";
+
 /** The label an auto-posted run carries — read back by the queue's count and by Undo. */
 export const AUTO_MARK = "(auto, from ";
 export function autoLabel(code: string, from: string): string {

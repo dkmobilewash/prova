@@ -15,7 +15,7 @@ import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "
 import { addWallTypeFromLegend } from "./wallLegend";
 import { syncDecidedItems } from "@/lib/estimating/takeoff-item-lines";
 import { sameRunAs } from "@/lib/takeoff/runMatch";
-import { AUTO_DOORS_LABEL, AUTO_MARK } from "@/lib/takeoff/autoPost";
+import { AUTO_DOORS_LABEL, AUTO_MARK, HIGH_CONFIDENCE_WALLS } from "@/lib/takeoff/autoPost";
 import { DOORS_AUTO_UNDONE } from "@/lib/plan-ingest/autoDoors";
 
 /**
@@ -454,7 +454,8 @@ export async function undoAutoPost(jobId: string, planId: string, pageNumber: nu
         });
         await syncDecidedItems(tx, companyId, jobId, doors.flatMap((d) => (d.itemId === null ? [] : [d.itemId])));
       }
-      const auto = await tx.takeoffMeasurement.findMany({ where: { pageId: page.id, kind: "LINEAR", source: "DETECTED", label: { contains: AUTO_MARK } }, select: { id: true, itemId: true } });
+      // Typed auto-posts and the walls the model posted itself (`HIGH_CONFIDENCE_WALLS`) both go back.
+      const auto = await tx.takeoffMeasurement.findMany({ where: { pageId: page.id, kind: "LINEAR", source: "DETECTED", OR: [{ label: { contains: AUTO_MARK } }, { label: HIGH_CONFIDENCE_WALLS }] }, select: { id: true, itemId: true } });
       if (auto.length === 0) return doorCount;
       const untyped = await untypedItem(tx, companyId, jobId);
       await tx.takeoffMeasurement.updateMany({ where: { id: { in: auto.map((m) => m.id) } }, data: { itemId: untyped, label: "wall, untyped" } });

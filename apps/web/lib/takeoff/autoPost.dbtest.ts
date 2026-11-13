@@ -102,3 +102,47 @@ describe("auto-post proven items", () => {
     expect((await undoAutoPost(jobId, planId, 99)).ok).toBe(false);
   });
 });
+
+describe("walls the model is sure of post themselves (METHOD v2, part 2)", () => {
+  // An earlier case turns the company's switch off; these start from it on.
+  beforeAll(async () => {
+    await prisma.company.update({ where: { id: companyId }, data: { autoPostOn: true } });
+  });
+  async function scoredSheet(pageNumber: number) {
+    const page = await prisma.takeoffPlanPage.create({ data: { planId, pageNumber } });
+    const cal = await prisma.takeoffScaleCalibration.create({ data: { pageId: page.id, x1: 0, y1: 0, x2: 1, y2: 0, declaredDistanceFeet: "100" } });
+    await prisma.takeoffWallProposal.createMany({ data: [
+      { pageId: page.id, calibrationId: cal.id, thicknessInches: 6, source: "TAG", sourceLabel: "A1", namedCode: "A1", runs: [{ ...tagged[0]!, modelScore: 0.99 }] },
+      { pageId: page.id, calibrationId: cal.id, thicknessInches: 4, source: "REMAINDER", runs: [{ ...loose[0]!, modelScore: 0.95 }, { x1: 0.2, y1: 0.8, x2: 0.5, y2: 0.8, thicknessFeet: 4 / 12, modelScore: 0.5 }] },
+    ] });
+    return page.id;
+  }
+  const labels = async (pageId: string) =>
+    (await prisma.takeoffMeasurement.findMany({ where: { pageId, kind: "LINEAR" }, select: { ys: true, label: true, confidence: true } })).map((m) => [m.ys[0], m.label, m.confidence]).sort();
+
+  it("above the wall model's bar: counted as 'Walls (auto, high confidence)'; below it: untyped, for review; a typed auto-post keeps its own label; Undo per sheet takes it back", async () => {
+    const pageId = await scoredSheet(11);
+    expect((await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 11, userId: null, wallsAutoPostAt: 0.9 })).kind).toBe("written");
+    expect(await labels(pageId)).toEqual([
+      [0.2, "A1 wall (auto, from printed tag)", 0.99],
+      [0.6, "Walls (auto, high confidence)", 0.95],
+      [0.8, "wall, untyped", 0.5],
+    ]);
+    expect(await undoAutoPost(jobId, planId, 11)).toMatchObject({ ok: true });
+    expect((await labels(pageId)).map((r) => r[1])).toEqual(["wall, untyped", "wall, untyped", "wall, untyped"]);
+  });
+
+  it("with no measured bar (today's evidence) nothing posts on its score", async () => {
+    const pageId = await scoredSheet(12);
+    await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 12, userId: null });
+    expect((await labels(pageId)).map((r) => r[1])).not.toContain("Walls (auto, high confidence)");
+  });
+
+  it("with the company's switch off nothing posts on its score, even past the bar", async () => {
+    await prisma.company.update({ where: { id: companyId }, data: { autoPostOn: false } });
+    const pageId = await scoredSheet(13);
+    await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 13, userId: null, wallsAutoPostAt: 0.9 });
+    expect((await labels(pageId)).map((r) => r[1])).not.toContain("Walls (auto, high confidence)");
+    await prisma.company.update({ where: { id: companyId }, data: { autoPostOn: true } });
+  });
+});
