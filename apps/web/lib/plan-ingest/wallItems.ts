@@ -37,7 +37,7 @@ export type WallItemsOutcome =
   | { kind: "skipped"; why: string };
 
 /** `modelScore`: the wall model's score for the run, stored at detection (`wallProposal.ts`), carried onto the posted wall as its `confidence`. */
-type Run = { x1: number; y1: number; x2: number; y2: number; thicknessFeet: number; modelScore?: number };
+type Run = { x1: number; y1: number; x2: number; y2: number; thicknessFeet: number; modelScore?: number; runScore?: number };
 
 /**
  * ── THE MODEL'S SCORE RIDES ONTO THE POSTED WALL (METHOD v2, part 1) ──
@@ -94,7 +94,8 @@ export async function wallItemsForSheet(input: {
   const autoPostOn = (await prisma.company.findUnique({ where: { id: input.companyId }, select: { autoPostOn: true } }))?.autoPostOn === true;
   const autoFrom = new Map<WallGroup, PostSource>();
   // ── A WALL THE MODEL IS SURE OF IS COUNTED WITHOUT REVIEW (METHOD v2, part 2) ──
-  // Only with the company's switch on AND the wall model's evidence past the bar; null otherwise.
+  // Only with the company's switch on AND the wall model's evidence past the bar; null otherwise. The score is
+  // the RUN model's (`runScore`, stored at Run takeoff behind TAKEOFF_WALL_RUN_MODEL) — the one the evidence measured.
   const wallsAt = autoPostOn ? (input.wallsAutoPostAt === undefined ? modelAutoPostAt("walls") : input.wallsAutoPostAt) : null;
   const typeOf = (group: WallGroup): MatchableWallType | null => {
     const posted = postedType(group, autoPostOn);
@@ -141,7 +142,7 @@ export async function wallItemsForSheet(input: {
         // Doubted by the wall model: on the sheet, off the estimate. See `estimateHold.ts`.
         const isHeld = isHeldRun(run, held);
         if (isHeld) heldFeet += Math.hypot(run.x2 - run.x1, run.y2 - run.y1) * feetPerUnit;
-        data.push({ pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [run.x1, run.x2], ys: [run.y1, run.y2], label: isHeld ? HELD_LABEL : auto === undefined && modelPostsItself(runConfidence(run), wallsAt) ? HIGH_CONFIDENCE_WALLS : label, source: "DETECTED", confidence: runConfidence(run), itemId: isHeld ? await namedItem(tx, input.companyId, input.jobId, HELD_ITEM) : itemId, createdByUserId: input.userId });
+        data.push({ pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [run.x1, run.x2], ys: [run.y1, run.y2], label: isHeld ? HELD_LABEL : auto === undefined && modelPostsItself(run.runScore, wallsAt) ? HIGH_CONFIDENCE_WALLS : label, source: "DETECTED", confidence: runConfidence(run), itemId: isHeld ? await namedItem(tx, input.companyId, input.jobId, HELD_ITEM) : itemId, createdByUserId: input.userId });
       }
       const onEstimate = group.feet - (group.runs as Run[]).filter((run) => isHeldRun(run, held)).reduce((n, run) => n + Math.hypot(run.x2 - run.x1, run.y2 - run.y1) * feetPerUnit, 0);
       if (type === null) untypedFeet += onEstimate;

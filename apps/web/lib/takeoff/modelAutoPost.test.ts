@@ -7,8 +7,10 @@ import { setReviewItems } from "./wallReview";
 const passing: ModelEvidence = { trainingPct: 97.4, trainingFt: 12000, heldOutPct: 95.6, heldOutFt: 6000, measured: "2026-11-13", trainingSheets: 20, heldOutSheets: 10, autoPostAt: 0.92, model: "wall-model.json@abc123" };
 
 describe("a model's score posts itself only past its own measured bar", () => {
-  it("nothing posts today: every decision's evidence is empty until the second measures LOSO on parity-correct rows", () => {
-    for (const decision of ["walls", "types", "doors"] as const) expect(modelAutoPostAt(decision)).toBeNull();
+  it("walls post at the run model's measured line (LOSO 97.02%, held-out 100%); types and doors stay empty until measured", () => {
+    expect(modelAutoPostAt("walls")).toBe(0.9621158405646337);
+    expect(MODEL_EVIDENCE.walls).toMatchObject({ trainingPct: 97.02, heldOutPct: 100, heldOutFt: 417, model: "wall-run-model.json" });
+    for (const decision of ["types", "doors"] as const) expect(modelAutoPostAt(decision)).toBeNull();
     expect(Object.keys(MODEL_EVIDENCE).sort()).toEqual(["doors", "types", "walls"]);
   });
   it("evidence past both numbers gives its score; either number short, no model named, or a score that is not a probability gives null", () => {
