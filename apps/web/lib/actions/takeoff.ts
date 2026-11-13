@@ -684,7 +684,7 @@ export async function confirmSheetScales(
   planId: string,
   pages: number[],
   usePrinted = false,
-): Promise<ActionResultWith<{ confirmed: number; skipped: number }>> {
+): Promise<ActionResultWith<{ confirmed: number; skipped: number; calibrationIds: string[] }>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company, job } = await requireJobGivenContext(jobId, context);
@@ -696,6 +696,7 @@ export async function confirmSheetScales(
   );
   let confirmed = 0;
   let skipped = 0;
+  const calibrationIds: string[] = [];
   // Floor plans first: each save queues its sheet's wall finder, and the floor
   // plans are the ones somebody opens next.
   const inOrder = [...new Set(pages)].sort((a, b) => Number(rows.get(a)?.category !== "floor") - Number(rows.get(b)?.category !== "floor"));
@@ -719,13 +720,13 @@ export async function confirmSheetScales(
       : offer.unconfirmed
       ? `From the ${offer.scaleName} printed on this sheet. Nothing measurable on the sheet confirmed it.`
       : `Matched ${offer.agreed.length} printed dimension${offer.agreed.length === 1 ? "" : "s"} on this sheet (${offer.agreed.slice(0, 3).join(", ")}), within ${(offer.inheritedError * 100).toFixed(2)}%. Confirmed with Confirm scales.`;
-    await writeCalibration({ planId, pageNumber, pageLabel: "", pageWidthPt, line, declared: offer.declaredFeet, note, userId: context.id, company });
+    calibrationIds.push(await writeCalibration({ planId, pageNumber, pageLabel: "", pageWidthPt, line, declared: offer.declaredFeet, note, userId: context.id, company }));
     confirmed += 1;
   }
   revalidatePath(`/jobs/${jobId}/takeoff`);
   // Every tab of the job: its stepper's Scale step counts these sheets (Chrome's re-test).
   revalidatePath(`/jobs/${jobId}`, "layout");
-  return { ok: true, value: { confirmed, skipped } };
+  return { ok: true, value: { confirmed, skipped, calibrationIds } };
 }
 
 /**
@@ -887,7 +888,7 @@ async function writeCalibration(input: {
   note: string;
   userId: string;
   company: { id: string };
-}): Promise<void> {
+}): Promise<string> {
   const { planId, pageNumber, pageLabel, pageWidthPt, line, note, userId, company } = input;
   const page = await prisma.takeoffPlanPage.upsert({
     where: { planId_pageNumber: { planId, pageNumber } },
@@ -973,7 +974,43 @@ async function writeCalibration(input: {
       })),
     });
   }
+  return calibration.id;
+}
 
+/**
+ * ── A SURE SCALE IN ONE PRESS, FROM THE TOOLBAR (Diego, 2026-11-12) ──
+ *
+ * Joplin's A-101 read 1/8" off 70 of its 223 printed dimensions and still took
+ * three presses to save (toolbar → "Use this dimension" → "Set the scale").
+ * Saves exactly what Confirm scales saves for one sheet, and only when that
+ * sheet is still Sure (`confirmSheetScales` re-derives it from what the reader
+ * stored, so a printed scale or a snap is skipped here, never applied).
+ * Returns the calibration so the toolbar can offer Undo.
+ */
+export async function saveSureScale(jobId: string, planId: string, pageNumber: number): Promise<ActionResultWith<{ calibrationId: string }>> {
+  const saved = await confirmSheetScales(jobId, planId, [pageNumber]);
+  if (!saved.ok) return saved;
+  const id = saved.value.calibrationIds[0];
+  if (id === undefined) return actionFail("This sheet's scale is no longer sure. Open Set scale to check it.");
+  return { ok: true, value: { calibrationId: id } };
+}
+
+/**
+ * Undo of a one-press scale: deletes that calibration, and only while nothing is
+ * measured with it — a measurement cascades with its calibration, and a quantity
+ * must never vanish because somebody pressed Undo on a scale. Its wall proposals
+ * go with it (they are keyed on it and mean nothing without it).
+ */
+export async function undoSheetScale(jobId: string, planId: string, calibrationId: string): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const gone = await prisma.takeoffScaleCalibration.deleteMany({
+    where: { id: calibrationId, page: { plan: { id: planId, jobId, companyId: context.company.id } }, measurements: { none: {} } },
+  });
+  if (gone.count === 0) return actionFail("That scale is already in use on this sheet, so it stays. Set a new scale to change it.");
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/jobs/${jobId}`, "layout");
+  return { ok: true };
 }
 
 /** Saves one traced shape against the sheet's current scale. */

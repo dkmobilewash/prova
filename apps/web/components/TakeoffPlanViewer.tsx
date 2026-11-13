@@ -27,7 +27,7 @@ import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 import { DISTINCT_MARKS, DOOR_COLOUR, LAYER_COLOURS, ROOM_COLOUR, markFor } from "@/lib/takeoff/clusterMarks";
 import { TakeoffLayerPanel, type Layer } from "@/components/TakeoffLayerPanel";
 import { defaultLayerName, layerKeyOf } from "@/lib/takeoff/layerKey";
-import { postSheetWalls, renameTakeoffLayer, savePlanComparison, setWallGroupHeight, takeoffSetPages } from "@/lib/actions";
+import { postSheetWalls, renameTakeoffLayer, savePlanComparison, saveSureScale, setWallGroupHeight, takeoffSetPages, undoSheetScale } from "@/lib/actions";
 import { SetWallHeight } from "./SetWallHeight";
 import type { TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
 import { areaLine, ceilingOption, heightFrom, heightOptionsInOrder, wallSquareFeet, type CeilingRoom, type HeightOption } from "@/lib/takeoff/wallHeight";
@@ -77,6 +77,7 @@ import {
   TOOL_KEYS,
   TOOLS,
   ZOOM_STEPS,
+  scaleIsSure,
   wheelZoomFactor,
   type ToolId,
 } from "@/lib/takeoff-plan-view";
@@ -927,6 +928,8 @@ export function TakeoffPlanViewer({
   /** "Count like this": the box being dragged, and the matches it found, with the ones the estimator dropped. */
   /** The toolbar's offer was pressed: the form opens with the line already drawn, and Save is still the estimator's. */
   const [scaleOnOpen, setScaleOnOpen] = useState(false);
+  /** The page whose Sure scale was just saved from the toolbar in one press: its offer stays up to show what was saved, with Undo. */
+  const [oneTapScalePage, setOneTapScalePage] = useState<number | null>(null);
   /** What on this sheet says it shows existing work, read at Find the walls. */
   const [renovationOnPage, setRenovationOnPage] = useState<{ page: number; marks: string[] } | null>(null);
   /** The Split area line being dragged, page-width units. */
@@ -5149,13 +5152,18 @@ export function TakeoffPlanViewer({
             So it is on the toolbar either way, and `title` says what is in the
             way. The measuring tools beside it already take exactly this
             posture — disabled until the sheet is calibrated, never hidden. */}
-        {slot(scaleSlot, !calibration && tool !== "calibrate" && scalePrefillByPage[pageNumber] && (
+        {slot(scaleSlot, (!calibration || oneTapScalePage === pageNumber) && tool !== "calibrate" && scalePrefillByPage[pageNumber] && (
           <ToolbarScaleOffer
+            key={pageNumber}
             prefill={scalePrefillByPage[pageNumber]!}
             onUse={() => {
               setScaleOnOpen(true);
               setTool("calibrate");
             }}
+            save={() => saveSureScale(jobId, planId, pageNumber)}
+            undo={(calibrationId) => undoSheetScale(jobId, planId, calibrationId)}
+            onSaved={() => setOneTapScalePage(pageNumber)}
+            onUndone={() => setOneTapScalePage(null)}
           />
         ))}
         {/* ── ONE MAIN ACTION ──
@@ -8383,17 +8391,90 @@ export function ViewScaleOffer({
   );
 }
 
-/** The scale a sheet reads, on the toolbar, so nobody has to open Set scale to learn there is one. */
-export function ToolbarScaleOffer({ prefill, onUse }: { prefill: ScalePrefill; onUse: () => void }) {
+/**
+ * The scale a sheet reads, on the toolbar, so nobody has to open Set scale to learn there is one.
+ *
+ * A SURE reading (`scaleIsSure`: measured off the sheet's own dimensions) SAVES on this one press
+ * and then says what it saved and what it rests on, with Undo (Diego, 2026-11-12: Joplin's A-101
+ * took three presses for a scale 70 dimensions agreed on). Anything else — a printed scale, a
+ * reduced print, a snap (#1130) — opens Set scale as before, and nothing applies without its press.
+ */
+export function ToolbarScaleOffer({
+  prefill,
+  onUse,
+  save,
+  undo,
+  onSaved,
+  onUndone,
+}: {
+  prefill: ScalePrefill;
+  onUse: () => void;
+  save?: () => Promise<{ ok: true; value: { calibrationId: string } } | { ok: false; error: string }>;
+  undo?: (calibrationId: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onSaved?: () => void;
+  onUndone?: () => void;
+}) {
+  const [saved, setSaved] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const oneTap = save !== undefined && scaleIsSure(prefill);
+  const run = async <T,>(work: () => Promise<T>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      return await work();
+    } catch {
+      setError("It did not save. Try again.");
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (saved !== null) {
+    return (
+      <span data-takeoff="toolbar-scale-saved" className="flex min-h-[36px] items-center gap-2 rounded-md border border-line-card bg-surface px-3 text-xs text-ink-body">
+        <span>
+          Scale <span className="font-semibold text-ink">{prefill.scaleName}</span>, from {prefill.declaredText || "a printed dimension"} · matched {prefill.agreed.length} of {prefill.considered} printed dimensions
+        </span>
+        <button
+          type="button"
+          data-takeoff="toolbar-scale-undo"
+          disabled={busy}
+          onClick={async () => {
+            const r = await run(() => undo!(saved));
+            if (r === null) return;
+            if (!r.ok) return setError(r.error);
+            setSaved(null);
+            onUndone?.();
+          }}
+          className="rounded border border-line-card px-2 py-0.5 hover:bg-rail-hover disabled:opacity-50"
+        >
+          Undo
+        </button>
+        {error && <span className="text-tag-rose-ink" role="alert">{error}</span>}
+      </span>
+    );
+  }
   return (
-    <button
-      type="button"
-      onClick={onUse}
-      data-takeoff="toolbar-scale-offer"
-      className="min-h-[36px] rounded-md bg-brand px-3 text-xs font-semibold text-neutral-900 hover:bg-yellow-500"
-    >
-      Use the printed scale{prefill.scaleName ? ` ${prefill.scaleName}` : ""}
-    </button>
+    <span className="flex items-center gap-2">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          if (!oneTap) return onUse();
+          const r = await run(save!);
+          if (r === null) return;
+          if (!r.ok) return setError(r.error);
+          setSaved(r.value.calibrationId);
+          onSaved?.();
+        }}
+        data-takeoff="toolbar-scale-offer"
+        className="min-h-[36px] rounded-md bg-brand px-3 text-xs font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-60"
+      >
+        Use the printed scale{prefill.scaleName ? ` ${prefill.scaleName}` : ""}
+      </button>
+      {error && <span className="text-xs text-tag-rose-ink" role="alert">{error}</span>}
+    </span>
   );
 }
 
