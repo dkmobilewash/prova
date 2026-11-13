@@ -46,6 +46,8 @@ GBM = dict(n_estimators=150, max_depth=3, learning_rate=0.05, subsample=0.8, min
 
 
 SKIPPED = set()
+# Printed door marks with no key door (the table's key-completeness line): a person calls each one.
+UNKEYED = {}
 
 
 def load(path, kind):
@@ -61,6 +63,8 @@ def load(path, kind):
             names = r["names"]
         elif "keyCount" in r:
             key[r["set"]] += r["keyCount"]
+        elif "unkeyedMarks" in r:
+            UNKEYED[f"{r['set']} {r['sheet']}"] = (r["marks"], r["unkeyedMarks"])
         else:
             rows.append(r)
     assert names is not None, f"{path}: no {kind} header"
@@ -161,6 +165,10 @@ out = {
 }
 if LABELS:
     print(f"\nleft out, key not finished (reviewComplete false): {', '.join(sorted(SKIPPED)) or 'none'}")
+print(f"\nkey completeness (printed door marks beside a found door, with no key door by tag or within 6 ft): {sum(len(u) for _, u in UNKEYED.values())} on {len(UNKEYED)} door-keyed sheets")
+for sheet, (n, u) in sorted(UNKEYED.items()):
+    if u:
+        print(f"  {sheet[:60]}: {len(u)} of {n} marks: " + ", ".join(f"{m['text']}@({m['at'][0]:.3f},{m['at'][1]:.3f})" for m in u))
 json.dump({k: (v[0] if v else None) for k, v in out.items()}, open(f"{OUTDIR}/loso-summary.json", "w"), indent=1)
 
 if EXAM:

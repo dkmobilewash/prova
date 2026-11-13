@@ -3,7 +3,7 @@ import { appendFileSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
-import { tagsNameEveryWindow } from "../doorWindowSymbols";
+import { DOOR_TAG_REACH_FEET, tagsNameEveryWindow } from "../doorWindowSymbols";
 import { doorsAndWindowsForSheet } from "../doorsWindows";
 import { excludedSheetReason, heldOutReason } from "../heldOutSets";
 import { keyFromLabels } from "../heldOutScore";
@@ -129,6 +129,17 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           const r6 = (v: number) => +v.toFixed(6);
           doors.forEach((d, i) => appendFileSync(OUT, JSON.stringify({ set: dir, sheet, page: saved.page, kind: "door", real: real[i], at: { hinge: [r6(d.hinge.x), r6(d.hinge.y)], strike: [r6(d.strike.x), r6(d.strike.y)] }, x: x[i]!.map((v) => +v.toFixed(4)) }) + "\n"));
           appendFileSync(OUT, JSON.stringify({ set: dir, sheet, kind: "door", keyCount: keyDoors.length }) + "\n");
+          // ── KEY COMPLETENESS: A PRINTED DOOR TAG MEANS A KEY DOOR ──
+          // Joplin A-101's three confident "false" doors were real doors whose printed tags (115, 111, 120)
+          // the key had missed, and they held the line down. So: a mark the product reads (`doorMarkTexts`)
+          // within reach of a FOUND door (the product would call that door marked) must be covered by a key
+          // door carrying the same tag, or by any key door within twice the reach. Room tags and keynotes
+          // away from every found door are not asked about. Uncovered marks are written out for a person
+          // to call: a key gap, or a mark that is not the door's.
+          const reach = DOOR_TAG_REACH_FEET / fpu;
+          const byDoor = door.marks.filter((m) => door.doors.some((d) => Math.hypot((d.hinge.x + d.strike.x) / 2 - m.x, (d.hinge.y + d.strike.y) / 2 - m.y) <= reach));
+          const unkeyed = byDoor.filter((m) => !keyDoors.some((o) => o.tag?.trim().toUpperCase() === m.text || Math.hypot(o.x - m.x, o.y - m.y) <= 2 * reach));
+          appendFileSync(OUT, JSON.stringify({ set: dir, sheet, kind: "door", marks: byDoor.length, unkeyedMarks: unkeyed.map((m) => ({ text: m.text, at: [+m.x.toFixed(6), +m.y.toFixed(6)] })) }) + "\n");
         }
         if (keyWindows.length > 0) {
           const counted = dw.tagged.counted ? dw.tagged.windows : [];
