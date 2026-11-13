@@ -148,7 +148,7 @@ describe("the sets that must never reach training", () => {
     // EVR, Riverbend), before a label was written.
     // 22 to 25 on 2026-11-11: round 18's three readiness centers (Jefferson
     // City Building 1, Clinton, Anderson), before a label was written.
-    expect(HELD_OUT_SETS).toHaveLength(25);
+    expect(HELD_OUT_SETS).toHaveLength(33);
   });
 
   it("refuses the three that were declared held out in round 7 and only listed in round 9", () => {
