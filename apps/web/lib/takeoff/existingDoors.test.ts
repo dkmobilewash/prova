@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { doorsAndWindowsForSheet } from "./doorsWindows";
 import { doorSymbols } from "./doorWindowSymbols";
-import { dashedBoxAround, dashedLines, existingDoors, swingSide } from "./existingDoors";
+import { asideExistingWalls, dashedBoxAround, dashedLines, existingDoors, swingSide } from "./existingDoors";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /** One foot = 0.01 page-width units, so feetPerUnit is 100; the page is 1000 pt wide. */
@@ -57,6 +57,14 @@ describe("existing doors set aside", () => {
   it("a door on a wall already set aside as existing is set aside; one on a new wall is not", () => {
     expect(run([], [], { asideWalls: [{ x1: 0.4, y1: 0.5, x2: 0.7, y2: 0.5 }] }).map((e) => e.route)).toEqual(["wall"]);
     expect(run([], [], { asideWalls: [{ x1: 0.4, y1: 0.6, x2: 0.7, y2: 0.6 }] })).toEqual([]);
+  });
+
+  it("route 1 reads the walls the sheet's own marks set aside, never the ones plan comparison did (E Street A2.1 doors 1 and 6, new openings in kept walls)", () => {
+    const line = { x1: 0.4, y1: 0.5, x2: 0.7, y2: 0.5, lengthFeet: 30, why: "" };
+    expect(asideExistingWalls([{ ...line, kind: "existing" }])).toHaveLength(1);
+    expect(asideExistingWalls([{ ...line, kind: "on-prior-plan" }, { ...line, kind: "dashed-faces" }])).toEqual([]);
+    // On a paired sheet the demolition plan decides: a door it does not draw stays, on a kept wall or not.
+    expect(run([], [], { asideWalls: asideExistingWalls([{ ...line, kind: "on-prior-plan" }]), priorDoors: [{ hinge: { x: 0.6, y: 0.5 }, strike: { x: 0.63, y: 0.5 } }] })).toEqual([]);
   });
 
   it("a door the demolition plan draws in the same place, and keeps, is existing to remain", () => {

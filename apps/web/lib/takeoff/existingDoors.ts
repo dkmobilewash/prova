@@ -11,8 +11,12 @@ import type { StrokeSegment } from "./wallVectors";
  * outscored every new door. Walls already have an existing set-aside (`existingWalls.ts`, plan
  * comparison); found doors had none. A found door is SET ASIDE as existing, never dropped, when:
  *
- *   1. `wall`: it sits on a wall the product already set aside as existing (the `existing` and
- *      `on-prior-plan` set-asides of `offeredCandidates`);
+ *   1. `wall`: it sits on a wall the product already set aside as existing by the sheet's own marks
+ *      (the `existing` set-aside of `offeredCandidates`: a tag, the legend's pen, grey, a NIC hatch).
+ *      NOT a wall plan comparison set aside: there the demolition plan is the witness for the door
+ *      too (route 4). E Street A2.1's doors 1 and 6 are new openings cut into walls the comparison
+ *      set aside, and the first cut of this rule lost them (the original's audit, 2026-11-13); the
+ *      demolition plan draws no door within 7 ft of either;
  *   2. `area`: it is inside a HATCHED area labelled not in contract / existing (`nicHatch`, the
  *      wall rule's own reading), or inside a closed DASHED box with such a label in it;
  *   3. `tag`: its tag carries (E): a mark ending `(E)` (`N141 (E)`) or `EXISTING DOOR` within a
@@ -199,9 +203,13 @@ export function existingDoors(input: {
   return doors.filter((d) => out.has(d)).map((d) => out.get(d)!);
 }
 
-/** The walls `offeredCandidates` set aside as existing work (its own rules and plan comparison), for route 1. */
+/**
+ * The walls `offeredCandidates` set aside as existing by the sheet's own marks, for route 1. Never the
+ * `on-prior-plan` ones: a new door cut into a wall the demolition plan keeps is new work, and the
+ * demolition plan says which doors stay (route 4).
+ */
 export function asideExistingWalls(lines: readonly { kind: string; x1: number; y1: number; x2: number; y2: number }[]): NonNullable<ExistingDoorEvidence["asideWalls"]> {
-  return lines.filter((l) => l.kind === "existing" || l.kind === "on-prior-plan").map(({ x1, y1, x2, y2 }) => ({ x1, y1, x2, y2 }));
+  return lines.filter((l) => l.kind === "existing").map(({ x1, y1, x2, y2 }) => ({ x1, y1, x2, y2 }));
 }
 
 /** One sentence for the panel. */

@@ -7,6 +7,7 @@ import { DOOR_TAG_REACH_FEET, tagsNameEveryWindow } from "../doorWindowSymbols";
 import { doorsAndWindowsForSheet } from "../doorsWindows";
 import { asideExistingWalls } from "../existingDoors";
 import { excludedSheetReason, heldOutReason } from "../heldOutSets";
+import { priorPlanFor } from "../priorPlan";
 import { keyFromLabels } from "../heldOutScore";
 import { productDetection, productSheetRuns, sampledSheetsFor } from "../productDetection";
 import { openingInputs, productDoorRows } from "../productOpenings";
@@ -61,6 +62,13 @@ function cachedWindowRows(pdf: string): { mark: string; size?: string | null; de
   }
   return rows;
 }
+/**
+ * `OFT_PAIRS`: the sheets the product compares with a demolition plan, as `set/sheet=demoPage`, comma
+ * separated (E Street: `E_Street_421-Set.pdf/A2.1=24`). Plan comparison is a company switch the product
+ * applies where a sheet is paired; without this the table never runs it, and the existing-door loss
+ * count could not see a new door cut into a wall the comparison set aside (E Street doors 1 and 6).
+ */
+const PAIRS = new Map((process.env.OFT_PAIRS ?? "").split(",").filter((p) => p.includes("=")).map((p) => [p.slice(0, p.lastIndexOf("=")), Number(p.slice(p.lastIndexOf("=") + 1))] as const));
 const flat = (s: string) => s.replace(/\.pdf$/i, "").replace(/[^a-z0-9]+/gi, "").toUpperCase();
 const findPdf = (dir: string) => {
   for (const root of [DIR, DIR2].filter((r) => r !== "")) for (const n of readdirSync(root)) if (n.toLowerCase().endsWith(".pdf") && flat(n) === flat(dir)) return join(root, n);
@@ -107,13 +115,18 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         // no legend), the viewer's set-asides, the runs the stage stores (`found.regroup` of the offered
         // runs), and the page's strokes — what `rooms.ts` finds doors and windows against at Run takeoff.
         const sampledSheets = await sampledSheetsFor({ pageCount: doc.pageCount, pageNumber: saved.page, own: strokes, read: (n) => doc.pageStrokes(n) });
+        const demoPage = PAIRS.get(`${dir}/${sheet}`);
+        const demo = demoPage === undefined ? null : { strokes: await doc.pageStrokes(demoPage), text: (await doc.pageText(demoPage)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height })) };
         await doc.close();
         const d = productDetection({ segments: strokes.segments, textItems, pageSize: { widthPt: W, heightPt: strokes.heightPt }, feetPerUnit: fpu, wallTypes: [], legendCodes: null, scanned: false, sampledSheets });
-        const offered = productSheetRuns({ detected: d, segmentsPt: strokes.segments, widthPt: W, feetPerUnit: fpu, textItems });
+        let offered = productSheetRuns({ detected: d, segmentsPt: strokes.segments, widthPt: W, feetPerUnit: fpu, textItems });
+        // A paired sheet is compared as the product compares it (`OFT_PAIRS`): its set-asides and its demolition plan's doors.
+        const prior = demo === null ? null : priorPlanFor({ demo: { segments: demo.strokes.segments, textItems: demo.text, widthPt: demo.strokes.widthPt, heightPt: demo.strokes.heightPt }, newPage: { segments: strokes.segments, widthPt: W }, newRuns: offered.offeredRuns, feetPerUnit: fpu });
+        if (prior !== null && prior.lines !== null) offered = productSheetRuns({ detected: d, segmentsPt: strokes.segments, widthPt: W, feetPerUnit: fpu, textItems, priorPlan: { lines: prior.lines, sheet: `p${demoPage}` } });
         const stored = d.found.regroup(offered.offeredRuns).flatMap((g) => g.runs as readonly { x1: number; y1: number; x2: number; y2: number; thicknessFeet: number }[]).map((r) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, thicknessFeet: r.thicknessFeet }));
         const inputs = openingInputs({ runs: stored, feetPerUnit: fpu, widthPt: W, segmentsPt: strokes.segments });
         // The walls the stage set aside as existing: a door on one is set aside too (`existingDoors.ts`).
-        const existing = { asideWalls: asideExistingWalls(offered.setAsideLines) };
+        const existing = { asideWalls: asideExistingWalls(offered.setAsideLines), ...(prior === null || prior.lines === null ? {} : { priorDoors: prior.doors ?? [], priorSheet: `p${demoPage}` }) };
         const door = productDoorRows({ ...inputs, textPt: textItems, existing });
         const { segments, walls } = inputs;
         const { context, tags } = door;
