@@ -153,6 +153,38 @@ export function demoPlansFor(sheets: readonly SheetForPairing[], newPage: number
 const flat = (number: string | null) => (number ?? "").toUpperCase().replace(/[-\s]/g, "");
 const isDemo = (s: SheetForPairing) => !!s.demoCaption || demoSheetTitle(s.title) || /^(?:[A-Z]D|D[A-Z]?)[-.\d]/i.test(s.sheetNumber ?? "");
 
+/** A plan of what is there now, not what is built: Macon-Bibb's A1-0 "FLOOR PLAN - EXISTING". */
+const EXISTING_ONLY = (title: string | null) => /\bEXISTING\b/i.test(title ?? "") && !/\bNEW\b/i.test(title ?? "");
+
+/**
+ * ── OF THE PLANS THE TITLES ALLOW, THE NEW PLAN OF THE SAME EXTENT ──
+ *
+ * The title filters keep every plan of the right kind, level and discipline,
+ * and a tie pairs nothing. Round 22 found three renovation sheets unpaired
+ * that way:
+ *   - UCCS's AD2.1 "DEMOLITION FLOOR PLAN - OVERALL" tied A2.1.1 OVERALL with
+ *     its three AREA sheets, which are drawn at 1/8" against the overall's
+ *     smaller scale. Comparison reads the demolition plan at the new sheet's
+ *     scale, so only the whole floor is its pair.
+ *   - Macon-Bibb's AD-1 tied A1-1 "FLOOR PLAN - NEW WORK" with A1-0 "FLOOR
+ *     PLAN - EXISTING" and a canopy plan.
+ * So a whole-floor demolition plan keeps the whole-floor plans, a plan only of
+ * what EXISTS drops out, and a plan that says NEW wins. Each step only narrows,
+ * and is skipped if it would empty the pool, so a tie it cannot break still
+ * pairs nothing.
+ */
+function theNewFloor(pool: readonly SheetForPairing[], demo: SheetForPairing): readonly SheetForPairing[] {
+  let kept = pool;
+  const narrow = (keep: (s: SheetForPairing) => boolean) => {
+    const k = kept.filter(keep);
+    if (k.length > 0) kept = k;
+  };
+  if (areaOfTitle(demo.title) === null) narrow((s) => areaOfTitle(s.title) === null);
+  narrow((s) => !EXISTING_ONLY(s.title));
+  narrow((s) => /\bNEW\b/i.test(s.title ?? ""));
+  return kept;
+}
+
 /**
  * Pairs each demolition plan in a set with the new plan of the same level.
  * This is the one pairer: demolition takeoff and plan comparison both use it.
@@ -204,7 +236,7 @@ export function pairDemoWithNewPlan(
     // Past a number, the title has to say something: never pair by elimination on noise.
     if (!saysPlan(demo.title)) { out.push(pair(null, "none", [])); continue; }
     const whole = fits.filter((s) => !isEnlargedPlanTitle(s.title));
-    const pool = whole.length > 0 ? whole : fits;
+    const pool = theNewFloor(whole.length > 0 ? whole : fits, demo);
     if (pool.length === 0) { out.push(pair(null, "none", [])); continue; }
     if (pool.length === 1) { out.push(pair(pool[0].pageNumber, "title", [])); continue; }
     const voted = pool.map((s) => ({ page: s.pageNumber, votes: align(s.pageNumber)?.votes ?? 0 })).sort((a, b) => b.votes - a.votes);

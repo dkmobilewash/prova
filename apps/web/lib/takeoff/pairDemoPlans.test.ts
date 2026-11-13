@@ -6,6 +6,18 @@ const FPU = 288;
 const walls = (dx: number) => [0.1, 0.2, 0.3].map((y, i) => ({ x1: 0.1 + dx, y1: y, x2: 0.2 + 0.05 * i + dx, y2: y }));
 
 describe("pairDemoWithNewPlan", () => {
+  it("Round 22: of the plans the titles allow, the new plan of the demolition plan's extent", () => {
+    // UCCS: an OVERALL demolition plan, an overall plan and three area sheets
+    // at another scale. Only the whole floor is its pair; the areas stay unpaired.
+    const uccs = [sheet(11, "AD2.1", "DEMOLITION FLOOR PLAN - OVERALL"), sheet(14, "A2.1.1", "LEVEL 1 - FLOOR PLAN - OVERALL"), sheet(15, "A2.1.2", "LEVEL 1 - FLOOR PLAN - NORTH - AREA A"), sheet(16, "A2.1.3", "LEVEL 1 - FLOOR PLAN - NORTH - AREA B"), sheet(17, "A2.1.4", "LEVEL 1 - FLOOR PLAN - SOUTH - AREA A")];
+    expect(pairDemoWithNewPlan(uccs).filter((p) => p.primary).map((p) => [p.demoPage, p.newPage, p.basis])).toEqual([[11, 14, "title"]]);
+    // Macon-Bibb: the new-work plan, not the existing plan or the canopy plan.
+    const macon = [sheet(12, "AD-1", "DEMOLITION FLOOR PLAN"), sheet(13, "A1-0", "FLOOR PLAN - EXISTING"), sheet(14, "A1-1", "FLOOR PLAN - NEW WORK"), sheet(16, "A1-3", "CANOPY PLANS & SECTIONS")];
+    expect(pairDemoWithNewPlan(macon).filter((p) => p.primary).map((p) => [p.demoPage, p.newPage, p.basis])).toEqual([[12, 14, "title"]]);
+    // A tie the extent cannot break still pairs nothing.
+    const tie = [sheet(1, "AD-1", "DEMOLITION FLOOR PLAN"), sheet(2, "A1-1", "FLOOR PLAN"), sheet(3, "A1-2", "FLOOR PLAN")];
+    expect(pairDemoWithNewPlan(tie).filter((p) => p.primary).map((p) => p.newPage)).toEqual([null]);
+  });
   it("Bluetooth: an interiors series (AI101) is architectural, so its demolition plan AD101 pairs by number, and AD102 with the ceiling plan", () => {
     const set = [sheet(4, "AD101", "DEMOLITION PLAN"), sheet(5, "AD102", "CEILING DEMOLITION PLAN"), sheet(6, "AI101", "CONSTRUCTION PLAN"), sheet(7, "AI101", "CONSTRUCTION PLAN"), sheet(8, "AI131", "REFLECTED CEILING PLAN"), sheet(10, "AF101", "FINISH PLAN")];
     expect(pairDemoWithNewPlan(set).filter((p) => p.primary).map((p) => [p.demoPage, p.newPage, p.basis])).toEqual([[4, 6, "sheet-number"], [5, 8, "title"]]);
