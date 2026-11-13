@@ -96,9 +96,11 @@ async function waitForDrawing(page) {
 }
 
 async function findTheWalls(page) {
-  const button = page.getByRole("button", { name: /find the walls/i });
+  // By its hook: the full-screen shell names it "Run takeoff" now, and the
+  // old name matched nothing, so every candidate check failed at 0.
+  const button = page.locator('[data-takeoff="find-walls"]');
   if ((await button.count()) === 0) return 0;
-  await button.first().click();
+  await button.first().click({ timeout: 60_000 });
   await page.waitForFunction(
     () => document.querySelectorAll('[data-takeoff="key-line"]').length > 0,
     { timeout: 120_000 },
@@ -208,6 +210,10 @@ try {
     await page.mouse.move(focusedBox.x, focusedBox.y);
     await page.waitForTimeout(150);
     await page.keyboard.press("s");
+    await page.waitForTimeout(300);
+    // Round 22: S arms the cut and the click says where. The middle of the
+    // line's box projects to the middle of the run, so it always cuts.
+    await page.mouse.click(focusedBox.x, focusedBox.y);
     await page.waitForTimeout(800);
   }
   const afterSplit = await page.locator('[data-takeoff="key-line"]').count();
@@ -224,9 +230,10 @@ try {
   const splitNote = await page.evaluate(
     () => /(No crossing wall[^\n]*|Split[^\n]*)/i.exec(document.body.innerText)?.[1] ?? "",
   );
+  void splitNote;
   check(
-    "a split either happens or says why not",
-    afterSplit > beforeSplit || splitNote !== "",
+    "S then a click cuts the focused run there",
+    afterSplit === beforeSplit + 1,
     afterSplit > beforeSplit ? `${beforeSplit} -> ${afterSplit}` : `said: ${splitNote.slice(0, 70)}`,
   );
 
@@ -244,6 +251,23 @@ try {
   }
   const traced = await page.evaluate(() => /(\d+) traced/.exec(document.body.innerText)?.[1] ?? "0");
   check("a trace is added", Number(traced) > 0, `${traced} traced`);
+
+  // ── ROUND 22: A TRACE IS TYPED THE MOMENT IT IS ADDED ──
+  // Chrome traced five walls and could type none: the picker shows only for
+  // the focused wall and a new trace was never focused. Now it is, so the
+  // type row is up and 0 ("can't tell") lands on it. Trace mode off first, so
+  // the key is the panel's and not the viewer's.
+  await page.keyboard.press("t");
+  await page.waitForTimeout(200);
+  const typeRowUp = (await page.locator('[data-takeoff="key-type"]').count()) > 0;
+  await page.keyboard.press("0");
+  await page.waitForTimeout(300);
+  // Typing moves on to the next untyped wall, so take the trace back with a
+  // REAL click at its middle (the overlay's picker, not a synthetic event).
+  if (box !== null) await page.mouse.click(box.x + box.width * 0.4, box.y + box.height * 0.45);
+  await page.waitForTimeout(300);
+  const typedTrace = await page.evaluate(() => document.querySelector('[data-takeoff="key-type-set"]')?.textContent ?? "");
+  check("a new trace takes the type picker and a type", typeRowUp && typedTrace === "set: U", `row ${typeRowUp}, ${typedTrace || "nothing set"}`);
 
   // ── A CANDIDATE'S NUMBER SURVIVES BEING DECIDED ABOUT ──
   //

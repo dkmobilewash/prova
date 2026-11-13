@@ -125,7 +125,7 @@ export type AnswerKeyPanelProps = {
   focusedOpening?: string | null;
   onFocusOpening?: (id: string | null) => void;
   windowTags?: readonly string[];
-  /** Split the focused candidate where an accepted wall crosses it. The
+  /** S: arm a cut on the focused run (the next click cuts there), or cut where an accepted wall crosses it. The
    *  workspace owns this because the split needs the sheet's scale. */
   onSplit?: (id: string) => void;
   /** What the last split attempt did, for the reviewer. */
@@ -240,14 +240,30 @@ export function AnswerKeyPanel({
     setSpentSeconds(0);
   }, [sheet.number, sheet.page]);
 
-  /** Called on every verdict. Exported shape kept tiny on purpose. */
+  /** Called on every verdict, and on any input anywhere (below). */
   const noteActivity = () => {
     const now = Date.now();
     const gap = (now - spent.current.last) / 1000;
     if (spent.current.last > 0 && gap <= IDLE_AFTER_SECONDS) spent.current.seconds += gap;
     spent.current.last = now;
-    setSpentSeconds(spent.current.seconds);
+    // Whole seconds only: a wheel-zoom fires dozens of these a second.
+    setSpentSeconds(Math.floor(spent.current.seconds));
   };
+  // ── ANY INPUT IS WORK, NOT ONLY A VERDICT ──
+  // Round 22: Chrome's long sheets read 2–3 minutes. Tracing, splitting, marking
+  // doors and windows and panning all happen in the viewer and never reached
+  // `noteActivity`, so the time between two verdicts was one gap — often over
+  // `IDLE_AFTER` and dropped whole. The idle rule still drops a real break.
+  const noteRef = useRef(noteActivity);
+  noteRef.current = noteActivity;
+  useEffect(() => {
+    const on = () => noteRef.current();
+    const kinds = ["pointerdown", "keydown", "wheel"] as const;
+    for (const k of kinds) window.addEventListener(k, on, { passive: true, capture: true });
+    return () => {
+      for (const k of kinds) window.removeEventListener(k, on, { capture: true });
+    };
+  }, []);
   /**
    * Who is reviewing, typed rather than assumed.
    *
@@ -1003,7 +1019,7 @@ export function AnswerKeyPanel({
             </p>
             <p className="font-semibold text-ink-label">Keys</p>
             <p>
-              <b>A</b> wall · <b>R</b> not a wall · <b>U</b> not sure · <b>S</b> split ·{" "}
+              <b>A</b> wall · <b>R</b> not a wall · <b>U</b> not sure · <b>S</b> split, then click where (S again: at the crossing wall) ·{" "}
               <b>N</b> next · <b>H</b> hide overlays · <b>T</b> trace a missed wall ·
               drag a box to reject the undecided · shift-drag to accept them
             </p>

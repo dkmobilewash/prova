@@ -1,0 +1,9 @@
+### Answer key: a traced wall can be typed, Split cuts anywhere, the review clock counts all work; UCCS A2.1.2 is a floor plan again (Diego)
+`diego/round22-fixes`
+
+Four things from Chrome's Round 22.
+
+- **Typing a traced wall.** The type picker shows only for the focused wall, and a new trace was never focused. A click selected a trace only through its thin hit line, because the overlay's picker searched finder candidates alone. Now the trace takes the focus as soon as Enter adds it, and the click picker includes traces. Check: the labelling smoke's "a new trace takes the type picker and a type" step, with a real mouse.
+- **Split anywhere.** S cut only where an accepted wall crossed, at the crossing nearest the middle, so Aspen's runs kept ~3 ft past the storefront. Now S arms a cut, and the next click cuts the selected run there. S again cuts at the crossing wall. Check: `splitCandidate.test.ts` ("S arms a cut anywhere along the run") and the smoke's "S then a click cuts the focused run there".
+- **The review clock.** It advanced only on a verdict. Tracing, splitting, marking openings and panning were invisible to it, so long sheets read 2–3 minutes. Any pointer, key or wheel input now counts, and the 6-minute idle rule still drops a real break. Check: `answerKeyTimer.test.tsx`.
+- **Sheet kind.** A keynote in UCCS's title strip read "…REFERENCE ELEVATION…", and the classifier tests substrings of the whole strip, so the floor plan was called an elevation. The kind is now read from the strip's larger-than-body type, but only when that type names a FLOOR PLAN; otherwise the whole region is used as before. Swept every page of the 90 sets in real-plans (4,577 pages): 4 flips, all correct. "FINISH FLOOR PLAN" is now a finish plan. Check: `sheetNumber.test.ts` ("a sheet's kind is read from its title").

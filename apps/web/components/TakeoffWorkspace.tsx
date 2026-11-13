@@ -21,7 +21,7 @@ import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
 import { restoreSaved, type SavedSheet } from "@/lib/takeoff/restoreSaved";
 import { restoreGate, type RestoreBaseline } from "@/lib/takeoff/restoreGate";
 import { addOpening, addTraced, removeOpening, removeTraced, startReview, tracedWall, type ReviewState } from "@/lib/takeoff/answerKeyReview";
-import { crossingPoint, splitCandidate } from "@/lib/takeoff/splitCandidate";
+import { splitCandidate, splitPress } from "@/lib/takeoff/splitCandidate";
 import { labelSheetKey } from "@/lib/takeoff/labelRows";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { TakeoffPlanViewer, type ViewerSelection } from "@/components/TakeoffPlanViewer";
@@ -893,6 +893,8 @@ export function TakeoffWorkspace({
    */
   /** What the last split did or refused to do, shown in the panel. */
   const [splitNote, setSplitNote] = useState<string | null>(null);
+  /** The run S armed a cut on: the next click on the plan cuts it there (`splitPress`). */
+  const [cutArmedFor, setCutArmedFor] = useState<string | null>(null);
   const [pairingsByPage, setPairingsByPage] = useState<
     Record<
       number,
@@ -1749,7 +1751,14 @@ export function TakeoffWorkspace({
                       // called" shape. A key that cannot hold a wall the
                       // finder missed grades the detector against its own
                       // output, which is the one thing a key must not do.
-                      onTraced: (from, to) =>
+                      onTraced: (from, to) => {
+                        // ── AND THE NEW TRACE TAKES THE FOCUS ──
+                        // So the type picker and 1–9 apply to it at once. Round 22:
+                        // Chrome traced 5 walls and found no way to type any of
+                        // them — the picker shows only for the focused wall, and a
+                        // trace was never focused unless clicked afterwards.
+                        // `addTraced` names it from `nextTraceId`.
+                        setKeyFocus(`t${(onThisSheet(keyStateByPage, page) ?? startReview([])).nextTraceId}`);
                         setKeyStateByPage((prev) => {
                           const current = onThisSheet(prev, page) ?? startReview([]);
                           return setOnThisSheet(
@@ -1766,7 +1775,8 @@ export function TakeoffWorkspace({
                               ),
                             ),
                           );
-                        }),
+                        });
+                      },
                       onSetAside: (counts) =>
                         setSetAsideByPage((prev) => setOnThisSheet(prev, page, counts)),
                       // The scale, so `startReview` can measure duplicates in
@@ -1801,9 +1811,11 @@ export function TakeoffWorkspace({
                             ),
                           ),
                         ),
+                      cutArmedFor,
                       onSplitAt: (id, at) => {
-                        // The shift-click path. Same split, a point the
-                        // reviewer aimed at instead of a crossing wall.
+                        // A click after S, or a shift-click. Same split, a point
+                        // the reviewer aimed at instead of a crossing wall.
+                        setCutArmedFor(null);
                         const feetPerUnit =
                           currentSheet?.calibration != null
                             ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
@@ -2013,15 +2025,18 @@ export function TakeoffWorkspace({
                     currentSheet?.calibration != null
                       ? (feetPerPageWidth(currentSheet.calibration) ?? 0)
                       : 0;
-                  const at = crossingPoint(keyState, id);
-                  if (at === null) {
+                  const press = splitPress(keyState, id, cutArmedFor);
+                  if (press.kind === "arm") {
+                    setCutArmedFor(id);
                     setSplitNote(
-                      "No accepted wall crosses this one. Accept the wall at the" +
-                        " boundary first, or click the point to cut at.",
+                      press.crossing === null
+                        ? "Click on the plan where to cut it."
+                        : "Click on the plan where to cut it — or press S again to cut where the accepted wall crosses.",
                     );
                     return;
                   }
-                  const out = splitCandidate(keyState, id, at, feetPerUnit);
+                  setCutArmedFor(null);
+                  const out = splitCandidate(keyState, id, press.at, feetPerUnit);
                   if (out.halves === null) {
                     setSplitNote("That cut would leave a stub shorter than a foot.");
                     return;

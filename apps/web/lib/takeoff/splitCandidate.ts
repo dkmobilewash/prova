@@ -193,3 +193,22 @@ export function splitCandidate(
     halves: [a.id, b.id],
   };
 }
+
+/**
+ * ── SPLIT CUTS WHERE THE REVIEWER CLICKS ──
+ *
+ * What S (or the Split button) does on the focused run. Round 22: on Aspen A1.1
+ * three runs kept ~3 ft past the storefront because Split cut only where an
+ * ACCEPTED wall crossed, nearest the middle — the storefront was not one, and
+ * the shift-click that cuts anywhere was told to nobody. Now the first press
+ * ARMS a cut and the next click on the plan cuts there; a second press cuts at
+ * the crossing wall, which keeps the yard case (above) two keys long.
+ */
+export function splitPress(
+  state: ReviewState,
+  id: string,
+  armedFor: string | null,
+): { kind: "arm"; crossing: Point | null } | { kind: "cut"; at: Point } {
+  const crossing = crossingPoint(state, id);
+  return armedFor === id && crossing !== null ? { kind: "cut", at: crossing } : { kind: "arm", crossing };
+}

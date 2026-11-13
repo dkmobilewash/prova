@@ -142,6 +142,14 @@ export type SheetNumberReading = {
    * it and the wrong shape for showing anybody.
    */
   regionText: string;
+  /**
+   * What a sheet's KIND is read from (`sheetSuitability`, `takeoffSheetVerdict`):
+   * `regionText`, unless the region's larger type names a FLOOR PLAN (`kindText`).
+   * A tall right-hand title strip also carries the general notes and keynotes,
+   * and UCCS A2.1.2's keynote "…REFERENCE ELEVATION…" made a floor plan read
+   * as an elevation; its title is 22pt over 9.6pt notes.
+   */
+  titleText: string;
   /** Which attempt answered, so a reader can tell a clean corner read from a
    *  fallback over a much larger area. */
   source: "corner" | "region" | "none";
@@ -180,6 +188,23 @@ function withSplitNumbers(items: readonly Placed[]): Placed[] {
   return [...items.filter((i) => !used.has(i)), ...joined];
 }
 
+/**
+ * What a sheet's kind is read from. The whole region, unless the text set at
+ * least a quarter bigger than the body type (the size carrying the most
+ * characters) names a FLOOR PLAN — then only that bigger text, so a keynote
+ * or general note in the body type cannot rename the sheet. Most offices set
+ * the title at the body size, which is why this narrows only on a positive
+ * FLOOR PLAN (measured across every set in real-plans).
+ */
+function kindText(items: readonly Candidate[]): string {
+  const chars = new Map<number, number>();
+  const size = (i: Candidate) => Math.round(i.height * 2) / 2;
+  for (const i of items) chars.set(size(i), (chars.get(size(i)) ?? 0) + i.str.length);
+  const body = [...chars].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
+  const big = items.filter((i) => size(i) >= body * 1.25).map((i) => i.str).join(" ");
+  return /\bFLOOR\s+PLAN/i.test(big) ? big : items.map((i) => i.str).join(" ");
+}
+
 function designationIn(items: readonly Candidate[]): string | null {
   const biggestFirst = [...items].sort((a, b) => b.height - a.height);
   for (const candidate of biggestFirst.slice(0, TIERS_TO_TRY)) {
@@ -198,7 +223,7 @@ function designationIn(items: readonly Candidate[]): string | null {
  */
 export function sheetNumberFrom(page: PlanPageText): SheetNumberReading {
   if (!(page.widthPt > 0) || !(page.heightPt > 0)) {
-    return { sheetNumber: null, regionText: "", source: "none" };
+    return { sheetNumber: null, regionText: "", titleText: "", source: "none" };
   }
 
   const clean = (items: readonly { str: string; height: number; x: number; y: number; width: number }[]): Candidate[] =>
@@ -219,6 +244,7 @@ export function sheetNumberFrom(page: PlanPageText): SheetNumberReading {
     return {
       sheetNumber: fromCorner,
       regionText: corner.map((item) => item.str).join(" "),
+      titleText: kindText(corner),
       source: "corner",
     };
   }
@@ -228,9 +254,11 @@ export function sheetNumberFrom(page: PlanPageText): SheetNumberReading {
   // certainly the number — which is why it runs second and says it did.
   const wider = clean(titleBlockRegion(page).items);
   const fromRegion = designationIn(wider);
+  const read = fromRegion !== null ? wider : corner;
   return {
     sheetNumber: fromRegion,
-    regionText: (fromRegion !== null ? wider : corner).map((item) => item.str).join(" "),
+    regionText: read.map((item) => item.str).join(" "),
+    titleText: kindText(read),
     source: fromRegion !== null ? "region" : "none",
   };
 }
