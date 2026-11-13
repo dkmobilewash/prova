@@ -170,6 +170,7 @@ describe("the sheet number is the largest text in the title block", () => {
     expect(sheetNumberFrom(page([]))).toEqual({
       sheetNumber: null,
       regionText: "",
+      titleText: "",
       source: "none",
     });
   });
@@ -243,3 +244,23 @@ describe("numbers the title block prints in pieces or with extras", () => {
   });
 });
 
+
+describe("a sheet's kind is read from its title, not the keynotes beside it", () => {
+  // UCCS's right-hand strip, rebuilt with generic words: 9.6pt general notes
+  // and keynotes, a 22pt title, the number largest. A keynote naming an
+  // elevation made A2.1.2, a floor plan, read as "an elevation".
+  const notes = Array.from({ length: 30 }, (_, k) => at(`PROVIDE BACKING AT WALL MOUNTED ITEM ${k}`, 0.9, 0.73 + k * 0.005, 9.6));
+  const strip = (title: string, keynote: string) =>
+    sheetNumberFrom(page([...notes, at(keynote, 0.96, 0.8, 9.6), at(title, 0.94, 0.9, 22), at("A2.1.2", 0.94, 0.96, 40)]));
+
+  it("a floor plan stays a floor plan whatever a keynote says", () => {
+    const r = strip("LEVEL 1 - FLOOR PLAN", "REFERENCE ELEVATION");
+    expect(r.regionText).toMatch(/ELEVATION/);
+    expect(sheetSuitability(r.sheetNumber, r.titleText, null).likelyDuplicate).toBe(false);
+  });
+
+  it("an elevations sheet still says so, and a title with no FLOOR PLAN reads the whole region", () => {
+    expect(sheetSuitability("A4.1.2", strip("EXTERIOR ELEVATIONS", "SEE NOTES").titleText, null).kind).toBe("elevation");
+    expect(strip("ENLARGED PLANS", "SEE ELEVATION").titleText).toMatch(/SEE ELEVATION/);
+  });
+});
