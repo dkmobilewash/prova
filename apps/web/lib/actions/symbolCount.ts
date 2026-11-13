@@ -2,6 +2,7 @@
 
 import { countItemFor } from "@/lib/takeoff/countItem";
 import { storedWindowsOf, windowItemName, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
+import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
 import { CONFIRMED_DOORS_LABEL, DOORS_SUGGESTED, storedDoorsOf } from "@/lib/takeoff/doorSuggestions";
 import { AUTO_DOORS_ITEM } from "@/lib/takeoff/autoPost";
 import { revalidatePath } from "next/cache";
@@ -135,6 +136,7 @@ export async function confirmWindows(jobId: string, planId: string, pageNumber: 
   const itemsBefore = new Set((await prisma.takeoffItem.findMany({ where: { jobId, companyId: company.id }, select: { id: true } })).map((i) => i.id));
   const undo: WindowsUndo = { measurements: [], items: [] };
   const byTag = new Map<string, { xs: number[]; ys: number[] }>();
+  const counted = new Set<string>();
   for (const i of new Set(kept)) {
     const w = stored.windows[i]!;
     const at = byTag.get(w.tag) ?? { xs: [], ys: [] };
@@ -150,8 +152,11 @@ export async function confirmWindows(jobId: string, planId: string, pageNumber: 
       select: { id: true },
     });
     undo.measurements.push(made.id);
+    if (itemId !== null) counted.add(itemId);
     if (itemId !== null && !itemsBefore.has(itemId) && !undo.items.includes(itemId)) undo.items.push(itemId);
   }
+  // The windows reach the bid when the company installs frames (`doorLines.ts`); by others, no line.
+  if (counted.size > 0) await prisma.$transaction((tx) => syncTakeoffItemLines(tx, company.id, jobId, counted), { timeout: 60_000 });
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { undo } };
@@ -175,7 +180,10 @@ export async function undoConfirmWindows(jobId: string, planId: string, pageNumb
   const items = (Array.isArray(undo?.items) ? undo.items : []).filter((id): id is string => typeof id === "string");
   const where = { planId_pageNumber_kind: { planId: plan.id, pageNumber, kind: WINDOWS_SUGGESTED } };
   await prisma.$transaction(async (tx) => {
+    const touched = (await tx.takeoffMeasurement.findMany({ where: { id: { in: ids }, kind: "COUNT", page: { planId: plan.id, pageNumber } }, select: { itemId: true } })).flatMap((m) => (m.itemId === null ? [] : [m.itemId]));
     await tx.takeoffMeasurement.deleteMany({ where: { id: { in: ids }, kind: "COUNT", page: { planId: plan.id, pageNumber } } });
+    // Their lines go with them, before an item left with nothing is removed.
+    if (touched.length > 0) await syncTakeoffItemLines(tx, company.id, jobId, new Set(touched));
     for (const id of items) {
       const item = await tx.takeoffItem.findFirst({ where: { id, jobId, companyId: company.id, type: "COUNT" }, select: { id: true } });
       if (item === null) continue;
@@ -232,6 +240,8 @@ export async function confirmDoors(jobId: string, planId: string, pageNumber: nu
     });
     undo.measurements.push(made.id);
     if (itemId !== null && !itemsBefore.has(itemId)) undo.items.push(itemId);
+    // The doors reach the bid as the company's Doors and frames setting says (`doorLines.ts`).
+    if (itemId !== null) await prisma.$transaction((tx) => syncTakeoffItemLines(tx, company.id, jobId, new Set([itemId])), { timeout: 60_000 });
   }
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
@@ -249,7 +259,10 @@ export async function undoConfirmDoors(jobId: string, planId: string, pageNumber
   const items = (Array.isArray(undo?.items) ? undo.items : []).filter((id): id is string => typeof id === "string");
   const where = { planId_pageNumber_kind: { planId: plan.id, pageNumber, kind: DOORS_SUGGESTED } };
   await prisma.$transaction(async (tx) => {
+    const touched = (await tx.takeoffMeasurement.findMany({ where: { id: { in: ids }, kind: "COUNT", label: CONFIRMED_DOORS_LABEL, page: { planId: plan.id, pageNumber } }, select: { itemId: true } })).flatMap((m) => (m.itemId === null ? [] : [m.itemId]));
     await tx.takeoffMeasurement.deleteMany({ where: { id: { in: ids }, kind: "COUNT", label: CONFIRMED_DOORS_LABEL, page: { planId: plan.id, pageNumber } } });
+    // Their lines go with them, before an item left with nothing is removed.
+    if (touched.length > 0) await syncTakeoffItemLines(tx, company.id, jobId, new Set(touched));
     for (const id of items) {
       const item = await tx.takeoffItem.findFirst({ where: { id, jobId, companyId: company.id, type: "COUNT" }, select: { id: true } });
       if (item === null) continue;
