@@ -1,5 +1,6 @@
 import { modelVerdicts, type ScoredPairing } from "./demotedRuns";
 import type { WallModel } from "./wallClassifier";
+import { HIGH_CONFIDENCE_WALLS } from "./autoPost";
 
 type Line = { x1: number; y1: number; x2: number; y2: number; thicknessFeet: number };
 
@@ -140,7 +141,8 @@ export function setReviewItems(input: {
 }): SetReviewItem[] {
   const same = (a: number, b: number) => Math.abs(a - b) < 1e-9;
   return input.measurements
-    .filter((m) => m.kind === "LINEAR" && m.source === "DETECTED" && m.label !== input.droppedLabel && m.xs.length === 2 && m.ys.length === 2)
+    // A wall the model posted itself (`HIGH_CONFIDENCE_WALLS`) is not junk review's to ask about: Undo per sheet brings it back.
+    .filter((m) => m.kind === "LINEAR" && m.source === "DETECTED" && m.label !== input.droppedLabel && m.label !== HIGH_CONFIDENCE_WALLS && m.xs.length === 2 && m.ys.length === 2)
     .map((m) => {
       const [x1, x2] = [m.xs[0]!, m.xs[1]!];
       const [y1, y2] = [m.ys[0]!, m.ys[1]!];
