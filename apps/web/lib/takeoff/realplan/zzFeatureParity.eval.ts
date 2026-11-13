@@ -59,6 +59,7 @@ describe.skipIf(DIR === "" || LABELS === "")("feature parity: product vs trainin
       const productSampled = await sampledSheetsFor({ pageCount: doc.pageCount, pageNumber: saved.page, own: read, read: (n) => doc.pageStrokes(n), outOfTime: () => false });
       productDetection({ segments: read.segments, textItems, pageSize, feetPerUnit: saved.feetPerUnit, wallTypes: [], legendCodes: null, scanned: false, sampledSheets: productSampled, pairWithThicknesses: true }, (f, w) => product.push({ key: keyOf(w), features: [...f] }));
       await doc.close();
+      expect(product.length, `${sheet.labels}: the product found no candidates, so this sheet compares nothing`).toBeGreaterThan(0);
       const t = new Map(training.map((r) => [r.key, r.features]));
       const p = new Map(product.map((r) => [r.key, r.features]));
       const cols = new Map<string, number>();
