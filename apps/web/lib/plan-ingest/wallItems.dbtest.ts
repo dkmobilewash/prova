@@ -106,3 +106,17 @@ describe("walls on the job by type", () => {
     expect(rows.map((r) => [r.label, r.item?.name, r.item?.wallTypeId])).toEqual([["wall, untyped", UNTYPED_ITEM, null], ["wall, untyped", UNTYPED_ITEM, null]]);
   });
 });
+
+describe("the wall model's score rides onto each posted wall (METHOD v2, part 1)", () => {
+  it("stores a run's score as its `confidence`, and null where the run has none or it is not a probability", async () => {
+    const page2 = await prisma.takeoffPlanPage.create({ data: { planId, pageNumber: 2 } });
+    const cal2 = await prisma.takeoffScaleCalibration.create({ data: { pageId: page2.id, x1: 0, y1: 0, x2: 1, y2: 0, declaredDistanceFeet: "100" } });
+    const scored = { x1: 0.1, y1: 0.1, x2: 0.4, y2: 0.1, thicknessFeet: 0.33, modelScore: 0.83 };
+    const unscored = { x1: 0.1, y1: 0.3, x2: 0.4, y2: 0.3, thicknessFeet: 0.33 };
+    await prisma.takeoffWallProposal.create({ data: { pageId: page2.id, calibrationId: cal2.id, thicknessInches: 4, source: "REMAINDER", runs: [scored, unscored] } });
+    const outcome = await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 2, userId: null });
+    expect(outcome.kind).toBe("written");
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId: page2.id, source: "DETECTED" }, select: { ys: true, confidence: true } });
+    expect(rows.map((r) => [r.ys[0], r.confidence]).sort()).toEqual([[0.1, 0.83], [0.3, null]]);
+  });
+});
