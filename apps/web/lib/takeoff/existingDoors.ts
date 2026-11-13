@@ -17,9 +17,10 @@ import type { StrokeSegment } from "./wallVectors";
  *      wall rule's own reading), or inside a closed DASHED box with such a label in it;
  *   3. `tag`: its tag carries (E): a mark ending `(E)` (`N141 (E)`) or `EXISTING DOOR` within a
  *      leaf and a foot of it, or a bare `(E)` INSIDE its swing (UCCS's corridor doors). A bare `(E)`
- *      across the wall from the swing is a dimension's: E Street A2.1 prints `(E)` under the
- *      dimension of each new door's opening (E-9, E-10, E-11), and the first cut of this rule set
- *      those four real doors aside;
+ *      across the wall from the swing is the DIMENSION's, not the door's tag: E Street A2.1 prints
+ *      `(E)` under the opening dimension of doors E-9 to E-11. Those doors are in fact existing (the
+ *      paired demolition plan keys them C11.04, "existing wood door to remain"), and route 4 sets them
+ *      aside when the sheet is paired; route 3 stays with the door's own tag, as Diego worded it;
  *   4. `demo`: the paired demolition plan draws a door in the same place on a wall it does not
  *      remove (`priorPlanFor`'s `doors`): existing to remain.
  *
