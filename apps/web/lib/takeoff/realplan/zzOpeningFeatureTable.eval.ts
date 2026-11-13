@@ -27,7 +27,8 @@ import { tagSymbols } from "../tagSymbols";
  * reads its wall came from a different wall set). Every swing `doorSymbols`
  * keeps (before `onlyMarkedDoors`, whose drop is a column) and every window frame, plus a counted
  * tag placed with no frame. `real` = matched to the key (`openingLabels`: inside the swing or within
- * 2 ft, one to one). Only a sheet whose key marks doors enters the door rows, and windows likewise:
+ * 2 ft, one to one). Each row also carries `page` and `at` (page-width units) so it can be found on its
+ * sheet. Only a sheet whose key marks doors enters the door rows, and windows likewise:
  * a sheet nobody keyed for doors cannot say a found door is false. A `keyCount` line per sheet and
  * kind lets recall be read against every key opening, not only the ones found.
  *
@@ -124,7 +125,9 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           parity.sheets += 1;
           if (JSON.stringify(productKept) !== JSON.stringify(trainKept)) { parity.differ += 1; parity.lines.push(`PARITY DIFFER ${dir}/${sheet}: product ${productKept.length} kept, rows ${trainKept.length}`); }
           const real = openingLabels(doorSwings(doors, arcs, fpu).map((s) => s.polygons.flat()), keyDoors, fpu);
-          doors.forEach((_, i) => appendFileSync(OUT, JSON.stringify({ set: dir, sheet, kind: "door", real: real[i], x: x[i]!.map((v) => +v.toFixed(4)) }) + "\n"));
+          // `page` and `at` (page-width units: hinge and strike) so a confident false door can be opened on its sheet without a rerun.
+          const r6 = (v: number) => +v.toFixed(6);
+          doors.forEach((d, i) => appendFileSync(OUT, JSON.stringify({ set: dir, sheet, page: saved.page, kind: "door", real: real[i], at: { hinge: [r6(d.hinge.x), r6(d.hinge.y)], strike: [r6(d.strike.x), r6(d.strike.y)] }, x: x[i]!.map((v) => +v.toFixed(4)) }) + "\n"));
           appendFileSync(OUT, JSON.stringify({ set: dir, sheet, kind: "door", keyCount: keyDoors.length }) + "\n");
         }
         if (keyWindows.length > 0) {
@@ -135,7 +138,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           ];
           const x = windowFeatureRows({ ...context, windows, tags, doors: dw.doors, everyWindowTagged: tagsNameEveryWindow(symbols.map((s) => s.text)), scheduleInSet });
           const real = openingLabels(windows.map(windowShape), keyWindows, fpu);
-          windows.forEach((_, i) => appendFileSync(OUT, JSON.stringify({ set: dir, sheet, kind: "window", real: real[i], x: x[i]!.map((v) => +v.toFixed(4)) }) + "\n"));
+          windows.forEach((w, i) => appendFileSync(OUT, JSON.stringify({ set: dir, sheet, page: saved.page, kind: "window", real: real[i], at: [+w.at.x.toFixed(6), +w.at.y.toFixed(6)], x: x[i]!.map((v) => +v.toFixed(4)) }) + "\n"));
           appendFileSync(OUT, JSON.stringify({ set: dir, sheet, kind: "window", keyCount: keyWindows.length }) + "\n");
         }
         read.push(`${dir} ${sheet}`);
