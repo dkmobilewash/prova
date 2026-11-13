@@ -46,7 +46,7 @@ describe.skipIf(CONFIG === "" || LABELS === "")("pre-label generator", () => {
     if (config === null) throw new Error("no wall model (set TAKEOFF_WALL_MODEL)");
     const entries = JSON.parse(readFileSync(CONFIG, "utf8")) as Entry[];
     if (!Array.isArray(entries) || entries.length === 0) throw new Error("PRELABEL_CONFIG holds no entries");
-    let written = 0;
+    const written: string[] = [];
     for (const e of entries) {
       const why = heldOutReason(e.set);
       if (why !== null && process.env.PRELABEL_ALLOW_HELD !== "1") {
@@ -104,10 +104,10 @@ describe.skipIf(CONFIG === "" || LABELS === "")("pre-label generator", () => {
       };
       mkdirSync(join(LABELS, e.set), { recursive: true });
       writeFileSync(out, JSON.stringify(file, null, 1));
-      written += 1;
+      written.push(out);
       console.log(`PREFILL ${e.set} ${e.sheet} p${e.page}: ${accepted} wall / ${verdicts.length - accepted} not-wall · ${dw.doors.length} doors · ${dw.windows.length} windows · fpu ${fpu} → ${out}`);
     }
     // The harness census's promise: a config that resolved to nothing must never read as a clean run.
-    expect(written, "PRELABEL_CONFIG resolved to no written pre-fill").toBeGreaterThan(0);
+    expect(written.length, "PRELABEL_CONFIG resolved to no written pre-fill").toBeGreaterThan(0);
   });
 });
