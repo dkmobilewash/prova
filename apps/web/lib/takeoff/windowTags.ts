@@ -76,7 +76,8 @@ export function joinedFrames(frames: readonly WindowSymbol[], feetPerUnit: numbe
 export type TaggedWindows = {
   /** Whether the sheet's tags could be read as windows at all. */
   counted: boolean;
-  vocabulary: "schedule" | "w-tags" | null;
+  /** `drawn`: the sheet prints no window tag at all, and the frames drawn in its walls are the count (`drawnWindows`). */
+  vocabulary: "schedule" | "w-tags" | "drawn" | null;
   windows: TaggedWindow[];
   /** Count per tag, in schedule order (else tag order). */
   byTag: { tag: string; count: number; row: ScheduledOpening | null }[];
@@ -117,7 +118,7 @@ export function windowTagVocabulary(
   symbols: readonly TagSymbol[],
   windowRows: readonly { mark: string }[],
   wallCodesIn: readonly string[],
-): { vocabulary: TaggedWindows["vocabulary"]; isTag: (s: TagSymbol) => boolean } {
+): { vocabulary: TaggedWindows["vocabulary"]; isTag: (s: TagSymbol) => boolean; tagsOnSheet: number } {
   const marks = new Set(windowRows.filter((r) => typeof r.mark === "string" && normaliseTag(r.mark) !== "").map((r) => normaliseTag(r.mark)));
   const wallCodes = new Set(wallCodesIn.map(normaliseTag));
   const isWTag = (s: TagSymbol) => s.rejected === null && W_TAG.test(normaliseTag(s.text)) && !wallCodes.has(normaliseTag(s.text));
@@ -126,7 +127,7 @@ export function windowTagVocabulary(
   const letters = marks.size > 0 && [...marks].every((m) => /^[A-Z]$/.test(m));
   const shapes = new Set(symbols.filter(scheduled).map((s) => s.shape));
   const likeScheduled = (s: TagSymbol) => letters && s.rejected === null && /^[A-Z]$/.test(normaliseTag(s.text)) && shapes.has(s.shape) && !wallCodes.has(normaliseTag(s.text));
-  return { vocabulary, isTag: (s) => scheduled(s) || isWTag(s) || likeScheduled(s) };
+  return { vocabulary, isTag: (s) => scheduled(s) || isWTag(s) || likeScheduled(s), tagsOnSheet: marks.size + symbols.filter(isWTag).length };
 }
 
 export function windowsByTag(input: {
@@ -147,8 +148,9 @@ export function windowsByTag(input: {
     .filter((r) => typeof r.mark === "string" && normaliseTag(r.mark) !== "")
     .map((r) => ({ mark: r.mark.trim(), ...widthAndHeight(r.size ?? null), description: r.description ?? null }));
   const rowOf = new Map(rows.map((r) => [normaliseTag(r.mark), r]));
-  const { vocabulary, isTag } = windowTagVocabulary(input.symbols, input.windowRows, input.wallCodes ?? []);
-  if (vocabulary === null || !(input.feetPerUnit > 0)) return { counted: false, vocabulary: null, windows: [], byTag: [] };
+  const { vocabulary, isTag, tagsOnSheet } = windowTagVocabulary(input.symbols, input.windowRows, input.wallCodes ?? []);
+  if (!(input.feetPerUnit > 0)) return { counted: false, vocabulary: null, windows: [], byTag: [] };
+  if (vocabulary === null) return tagsOnSheet === 0 ? drawnWindows(input.frames, input.feetPerUnit) : { counted: false, vocabulary: null, windows: [], byTag: [] };
   // Every tag of the vocabulary, where it was read and where its leader points.
   const tags = input.symbols.filter(isTag).map((s) => ({ tag: normaliseTag(s.text), points: [{ x: s.x / W, y: s.y / W }, ...(s.leader ? [{ x: s.leader.x / W, y: s.leader.y / W }] : [])] }));
   const reach = WINDOW_TAG_TYPES_FEET / input.feetPerUnit;
@@ -176,6 +178,35 @@ export function windowsByTag(input: {
     .map((tag) => ({ tag, count: windows.filter((w) => w.tag === tag).length, row: rowOf.get(tag) ?? null }))
     .filter((t) => t.count > 0 || vocabulary === "schedule");
   return { counted: true, vocabulary, windows, byTag };
+}
+
+/** The tag a window counted from its drawing alone is filed under: `Windows — untagged`. */
+export const UNTAGGED_WINDOW = "untagged";
+/** A drawn window, on a sheet with no window tags: this many lines across the wall at least... */
+export const DRAWN_MIN_LINES = 4;
+/** ...and this wide, in feet. */
+export const DRAWN_MIN_FEET = 2.5;
+export const DRAWN_MAX_FEET = 7;
+
+/**
+ * ── A SHEET THAT TAGS NO WINDOW: COUNT THE FULL FRAMES DRAWN IN ITS WALLS ──
+ *
+ * Crosslines A100 and MHK A1.01 print no window tag and no schedule, so
+ * nothing was ever suggested: 94 windows on the training sheets. Their windows
+ * are drawn, though, in a full frame across an exterior wall (frame, glass,
+ * frame, sill: four to six lines), 2.7 to 6.2 ft wide. Every false frame on
+ * those two sheets had three lines, or was 2 ft or under, or was 9 to 12 ft
+ * (a heater enclosure, a desk edge, a stair rail). Measured on training: 59
+ * windows found and 0 false. Only where the sheet has NO window tag, not even
+ * one or two: SW A110 tags its three windows W1 and W2, and its four-line 4 ft
+ * frames are fixtures.
+ */
+export function drawnWindows(frames: readonly WindowSymbol[], feetPerUnit: number): TaggedWindows {
+  const windows: TaggedWindow[] = joinedFrames(frames, feetPerUnit)
+    .filter(({ f }) => f.lines >= DRAWN_MIN_LINES && f.widthFeet >= DRAWN_MIN_FEET && f.widthFeet <= DRAWN_MAX_FEET)
+    .map(({ f, first }) => ({ tag: UNTAGGED_WINDOW, x: (f.x1 + f.x2) / 2, y: (f.y1 + f.y2) / 2, row: null, frame: first, span: { x1: f.x1, y1: f.y1, x2: f.x2, y2: f.y2 } }));
+  if (windows.length === 0) return { counted: false, vocabulary: null, windows: [], byTag: [] };
+  return { counted: true, vocabulary: "drawn", windows, byTag: [{ tag: UNTAGGED_WINDOW, count: windows.length, row: null }] };
 }
 
 /**
