@@ -39,6 +39,7 @@
  */
 
 import { featuresFor, normaliseAcrossSheet, penPercentileFor } from "./wallFeatures";
+import { spendTime } from "./timeBudget";
 
 /** One stroked segment, in page points as the PDF drew it. */
 export type StrokeSegment = {
@@ -1664,6 +1665,7 @@ export function wallsFromStrokes(
       if (!collecting && jUsed) continue;
       if (tooFarApart(i, j)) continue;
       pairTests += 1;
+      if ((pairTests & 1023) === 0) spendTime("pairing lines into walls");
       if (pairTests > (options.maxPairTests ?? MAX_PAIR_TESTS)) {
         throw new SheetTooDenseError(order.length);
       }
