@@ -97,7 +97,7 @@ export function forgetWallModel(): void {
  * An ABSOLUTE path is used as given: that is what the tests pass, and what a
  * laptop or a mounted volume uses.
  */
-function resolveModelPath(file: string): string {
+export function resolveModelPath(file: string): string {
   if (isAbsolute(file)) return file;
   // …/apps/web/lib/takeoff/wallModelFile.ts → …/apps/web
   const appDir = join(fileURLToPath(import.meta.url), "..", "..", "..");

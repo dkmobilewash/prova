@@ -7,7 +7,7 @@ import { asCostCategory } from "@/lib/cost-category";
 import { pricingRatesFor } from "@/lib/estimating/pricing-rates";
 import { HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
-import { AUTO_DOORS_LABEL, AUTO_MARK } from "@/lib/takeoff/autoPost";
+import { AUTO_DOORS_LABEL, AUTO_MARK, HIGH_CONFIDENCE_WALLS } from "@/lib/takeoff/autoPost";
 import { nominalThicknessIn } from "@/lib/takeoff/legendBands";
 import type { StoredCrop } from "@/lib/takeoff/legendProposal";
 import { groupsFromProposals, storedRunsOrNull } from "@/lib/takeoff/wallProposal";
@@ -333,7 +333,8 @@ export async function loadReviewQueue(
   }
 
   // ── WHAT POSTED ITSELF: the proven sources' runs (`autoPost.ts`), per sheet, for the queue's header and Undo ──
-  const autoRuns = await prisma.takeoffMeasurement.findMany({ where: { kind: "LINEAR", source: "DETECTED", label: { contains: AUTO_MARK }, page: { planId: plan.id } }, select: { xs: true, ys: true, page: { select: { pageNumber: true } } } });
+  // Typed auto-posts and the walls the run model posted itself (`HIGH_CONFIDENCE_WALLS`) — the two Undo per sheet takes back.
+  const autoRuns = await prisma.takeoffMeasurement.findMany({ where: { kind: "LINEAR", source: "DETECTED", OR: [{ label: { contains: AUTO_MARK } }, { label: HIGH_CONFIDENCE_WALLS }], page: { planId: plan.id } }, select: { xs: true, ys: true, page: { select: { pageNumber: true } } } });
   // The marked doors that posted themselves (`autoDoors.ts`): one count per sheet, its points the doors.
   const autoDoorCounts = await prisma.takeoffMeasurement.findMany({ where: { kind: "COUNT", label: AUTO_DOORS_LABEL, page: { planId: plan.id } }, select: { xs: true, page: { select: { pageNumber: true } } } });
   const doorsByPage = new Map<number, number>();

@@ -13,6 +13,7 @@ import type { ScoredPairing } from "./demotedRuns";
 import { runsHeldOffEstimate } from "./estimateHold";
 import { runScores } from "./wallReview";
 import { loadWallModel } from "./wallModelFile";
+import { loadRunModel, priorForRuns, runModelVerdicts } from "./wallRunModel";
 import { SheetTooDenseError, type StrokeSegment, type WallCandidate } from "./wallVectors";
 import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
@@ -295,6 +296,9 @@ export async function detectWallsForCalibration(
       productSheetRuns({ detected, segmentsPt: strokes.segments, widthPt: W, feetPerUnit: target.feetPerUnit, textItems, ...(user === null ? {} : { user }), ...(priorPlan === undefined ? {} : { priorPlan }) });
     await new Promise((resolve) => setImmediate(resolve));
     let offered = offer();
+    // Before the compare, and the aligned demolition plan: the run model's columns read both (`wallRunModel.ts`).
+    const beforeCompare = offered;
+    let runPrior: ReturnType<typeof priorForRuns>;
     // ── PLAN COMPARISON, ON A PAIRED SHEET WITH THE COMPANY'S SWITCH ON — see `priorPlan.ts` ──
     //
     // The demolition plan is read from this same document. One that does not
@@ -319,6 +323,7 @@ export async function detectWallsForCalibration(
             });
             const sheet = sheetName(pairings.sheets, pairing.demoPage);
             if (prior.lines !== null) offered = offer({ lines: prior.lines, sheet });
+            runPrior = priorForRuns(prior, demoStrokes, target.feetPerUnit, W);
             // Kept for the screen, which otherwise never hears what was set aside (`PRIOR_PLAN_READ`).
             const aside = prior.lines === null ? [] : offered.setAsideLines.filter((l) => l.kind === "on-prior-plan");
             const { PRIOR_PLAN_READ } = await import("./priorPlanLoad");
@@ -334,7 +339,22 @@ export async function detectWallsForCalibration(
     if (target.onBoundary !== undefined) {
       const company = await prisma.company.findUnique({ where: { id: target.companyId }, select: { demotedWallsOff: true } });
       const config = company?.demotedWallsOff === false ? loadWallModel(process.env) : null;
-      const held = config === null ? [] : runsHeldOffEstimate(config.model, offered.offeredRuns, scored, target.feetPerUnit, raster !== null);
+      const held: WallCandidate[] = config === null ? [] : runsHeldOffEstimate(config.model, offered.offeredRuns, scored, target.feetPerUnit, raster !== null);
+      // ── THE RUN MODEL, BEHIND `TAKEOFF_WALL_RUN_MODEL` (`wallRunModel.ts`) ──
+      // Remove-only: a run the hand chain posts and the run model scores below 0.10 is held back too.
+      // Each kept run carries its score (`runScore`), which auto-post reads. Vector sheets only, as trained.
+      const runModel = raster === null ? loadRunModel(process.env) : null;
+      const pairModel = runModel === null ? null : loadWallModel(process.env);
+      if (runModel !== null && pairModel !== null) {
+        const verdicts = runModelVerdicts(
+          { offered: beforeCompare.offeredRuns, kept: offered.offeredRuns, pairings: scored, pairModel: pairModel.model, segments: strokes.segments, textItems, widthPt: W, feetPerUnit: target.feetPerUnit, ...(runPrior === undefined ? {} : { prior: runPrior }) },
+          runModel,
+        );
+        verdicts.scores.forEach((score, at) => {
+          if (Number.isFinite(score)) (offered.offeredRuns[at] as WallCandidate & { runScore?: number }).runScore = score;
+        });
+        for (const run of verdicts.removed) if (!held.includes(run)) held.push(run);
+      }
       // Each run's score rides into the stored walls, so a set-wide review can order every sheet's runs.
       if (config !== null && raster === null) {
         runScores(config.model, offered.offeredRuns, scored, target.feetPerUnit).forEach((score, at) => {

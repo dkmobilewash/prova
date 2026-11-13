@@ -33,6 +33,8 @@ export type StoredRun = {
   openings?: { widthFt: number }[];
   /** The wall model's score at detection, for a set-wide review. Absent with no model. */
   modelScore?: number;
+  /** The RUN model's score at Run takeoff (`wallRunModel.ts`), what auto-post reads. Absent with no run model. */
+  runScore?: number;
   /** Its untagged group's fill (`WallGroup.hatched`); absent on a tagged group and on rows stored before it was kept. */
   hatched?: boolean;
 };
@@ -62,6 +64,8 @@ export function storedRunsOf(group: WallGroup): StoredRun[] {
       stored.openings = run.openings.map((opening) => ({ widthFt: opening.widthFt }));
     }
     if (run.modelScore !== undefined && Number.isFinite(run.modelScore)) stored.modelScore = run.modelScore;
+    const runScore = (run as { runScore?: number }).runScore;
+    if (runScore !== undefined && Number.isFinite(runScore)) stored.runScore = runScore;
     if (group.hatched !== undefined) stored.hatched = group.hatched;
     return stored;
   });
@@ -162,6 +166,7 @@ export function storedRunsOrNull(value: unknown): StoredRun[] | null {
     }
     // A score from another build that is not a probability is dropped, not refused: the walls stand without it.
     if (isFinite(run.modelScore) && run.modelScore >= 0 && run.modelScore <= 1) stored.modelScore = run.modelScore;
+    if (isFinite(run.runScore) && run.runScore >= 0 && run.runScore <= 1) stored.runScore = run.runScore;
     if (typeof run.hatched === "boolean") stored.hatched = run.hatched;
 
     out.push(stored);
@@ -281,6 +286,7 @@ export function groupsFromProposals(
       ...(run.openings === undefined ? {} : { openings: run.openings }),
       // The wall model's score from detection, so posting (`wallItems.ts`) and a re-store keep it.
       ...(run.modelScore === undefined ? {} : { modelScore: run.modelScore }),
+      ...(run.runScore === undefined ? {} : { runScore: run.runScore }),
     }));
 
     const feet = candidates.reduce((sum, run) => sum + run.lengthFeet, 0);

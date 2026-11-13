@@ -110,14 +110,22 @@ export const AUTO_DOORS_LABEL = "Doors (auto, from printed mark)";
  * ≥97% (`trainingPct` here is LOSO pooled precision AT that score, chosen on LOSO, never on held-out)
  * AND whose held-out final exam, run once, is ≥95% — `clearsBar`, the same two numbers as every
  * other source. `model` names the file the numbers were measured with; a different model is a new
- * measurement. Every row is empty until the second fills it: LOSO is valid only on rows from the
- * product's own detection (`productDetection.ts`, parity 0 since 2026-11-13), so nothing posts yet.
+ * measurement. LOSO is valid only on rows from the product's own detection (`productDetection.ts`,
+ * parity 0 since 2026-11-13). Walls are filled (below); types and doors are empty, so they post nothing.
  * Behind the company's "Auto-post proven items" switch (`Company.autoPostOn`, off by default).
  */
 export type ModelDecision = "walls" | "types" | "doors";
 export type ModelEvidence = SourceEvidence & { autoPostAt: number | null; model: string | null };
 const UNMEASURED: ModelEvidence = { trainingPct: null, trainingFt: 0, heldOutPct: null, heldOutFt: 0, measured: "", trainingSheets: 0, heldOutSheets: 0, autoPostAt: null, model: null };
-export const MODEL_EVIDENCE: Record<ModelDecision, ModelEvidence> = { walls: UNMEASURED, types: UNMEASURED, doors: UNMEASURED };
+/**
+ * WALLS, measured 2026-11-13 with `models/wall-run-model.json` (the run model, `wallRunModel.ts`): the line is
+ * the lowest score whose pooled LOSO precision is ≥97% (34 sets / 48 sheets, labels-snap-20261113T1707):
+ * 1,578 ft ok / 48 false = 97.02%. Held-out final exam, run once by the original at that line: 417 ft ok /
+ * 0 false = 100% (18 sets / 28 keyed sheets). The score is the stored `runScore`, which exists only where
+ * Run takeoff ran with TAKEOFF_WALL_RUN_MODEL set.
+ */
+const WALLS_RUN_MODEL: ModelEvidence = { trainingPct: 97.02, trainingFt: 1626, heldOutPct: 100, heldOutFt: 417, measured: "2026-11-13", trainingSheets: 48, heldOutSheets: 28, autoPostAt: 0.9621158405646337, model: "wall-run-model.json" };
+export const MODEL_EVIDENCE: Record<ModelDecision, ModelEvidence> = { walls: WALLS_RUN_MODEL, types: UNMEASURED, doors: UNMEASURED };
 
 /** The score at or above which a decision posts itself, or null while its evidence does not clear the bar. */
 export function modelAutoPostAt(decision: ModelDecision, evidence: ModelEvidence = MODEL_EVIDENCE[decision]): number | null {
