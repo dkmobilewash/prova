@@ -80,11 +80,27 @@ export function textLines(items: readonly TextForSymbol[]): Line[] {
 
 /** "WALL TYPE 1 - NON-RATED", "TYPE A1", "PARTITION TYPE S6B:": the code, and the name after it. */
 const LABELLED = /^(?:(?:WALL|PARTITION|PART\.?|INTERIOR\s+WALL|EXTERIOR\s+WALL)\s+)?TYPE\s*[:#]?\s*["'“‘]?([A-Z0-9][A-Za-z0-9.-]{0,6}?)["'”’]?(?:\s*[-–—:]\s*(.*))?$/i;
+/**
+ * ── C3, CANDIDATE RECALL, OFF UNLESS `LEGEND_TEXT_RECALL=1` ──
+ *
+ * On the 22b training keys the true code was not a candidate for 48% of key-code feet (2026-11-13).
+ * Two general layouts the read missed: a detail titled "PARTITION - 0S3" (no word TYPE, cmb), and
+ * one printing that lists several codes sharing a detail ("A1 A2 A3 A4", "A1A A2A A3A A4A",
+ * Pottawattamie). A legend code with a suffix on the plan (UCCS's P0A6A beside P0A) needs nothing
+ * here: the tag reader already types it as the family's variant (`familyOf`), and putting it in
+ * the vocabulary stops that (tried: UCCS 923 ft right to 0). Gated so the held-out sets decide it.
+ */
+export const LEGEND_RECALL_ON = () => process.env.LEGEND_TEXT_RECALL === "1";
+/** "PARTITION - 0S3", "WALL: S6B": a detail's title naming its code without the word TYPE. */
+const TITLED = /^(?:WALL|PARTITION)\s*[-–—:]\s*["'“‘]?([A-Z0-9][A-Za-z0-9.-]{0,6})["'”’]?$/i;
+
 /** Words a type's own description is made of — not merely words near it. */
 const CORE_WORD = /\bSTUDS?\b|\bGYP|\bG\.?W\.?B\b|\bBOARD\b|\bBD\b|\bCMU\b|\bMASONRY\b|\bCONCRETE\b|\bBATTS?\b|\bINSUL|\bFURR|\bSHEATH|\bPLASTER\b|\bBLOCK\b|\bTRACK\b|\bO\.?\s?C\.?\b/i;
 
-function codeOf(text: string): { code: string; name: string | null; labelled: boolean } | null {
+function codeOf(text: string, recall = false): { code: string; name: string | null; labelled: boolean } | null {
   const t = text.trim();
+  const titled = recall ? t.match(TITLED) : null;
+  if (titled !== null && DESIGNATION.test(titled[1]!)) return { code: titled[1]!, name: null, labelled: true };
   const labelled = t.match(LABELLED);
   if (labelled !== null && /TYPE/i.test(t) && (DESIGNATION.test(labelled[1]!) || LETTER.test(labelled[1]!))) return { code: labelled[1]!, name: labelled[2]?.trim() || null, labelled: true };
   const bare = t.replace(/^["'“‘]|["'”’]$/g, "").trim();
@@ -104,8 +120,19 @@ export function readLegendFromText(input: {
   /** Closed symbols on the page (`tagSymbols`), so a boxed code counts. */
   symbols?: readonly { x: number; y: number; radius: number }[];
   pointsPerInch?: number;
+  /** C3's recall reads (`LEGEND_RECALL_ON`); the env decides when unset. */
+  recall?: boolean;
 }): LegendTextRead {
   const ppi = input.pointsPerInch ?? 72;
+  const recall = input.recall ?? LEGEND_RECALL_ON();
+  // A printing that only lists codes ("A1 A2 A3 A4"): each one a code, all sharing the detail.
+  const listed = (text: string): { code: string; name: string | null; labelled: boolean }[] => {
+    if (!recall) return [];
+    const parts = text.trim().split(/\s+/);
+    if (parts.length < 2) return [];
+    const reads = parts.map((p) => codeOf(p));
+    return reads.every((r) => r !== null && !/^\d{1,3}[A-Z]?$/.test(r.code) && !/^[A-Z]{1,2}$/.test(r.code)) ? (reads as { code: string; name: string | null; labelled: boolean }[]) : [];
+  };
   const lines = textLines(input.items);
   const inWindow = (c: Line, l: Line) => {
     const cx = (c.x0 + c.x1) / 2;
@@ -119,26 +146,27 @@ export function readLegendFromText(input: {
   const weakLetters = new Set<string>();
   const boxedLetters = new Set<string>();
   for (const line of lines) {
-    const read = codeOf(line.text);
-    if (read === null) continue;
-    const cx = (line.x0 + line.x1) / 2;
-    const cy = line.y - line.h / 2;
-    const inSymbol = (input.symbols ?? []).some((s) => Math.hypot(s.x - cx, s.y - cy) <= s.radius + 1);
-    // A bare number is a section bubble, a keynote or a dimension unless labelled ("WALL TYPE 1").
-    if (/^\d{1,3}[A-Z]?$/.test(read.code) && !read.labelled) continue;
-    // A single letter is a grid line unless boxed or labelled; two letters an abbreviation unless
-    // boxed, labelled or in a rated schedule (`kind` below).
-    const letters = /^[A-Z]{1,2}$/.test(read.code);
-    if (/^[A-Z]$/.test(read.code) && !inSymbol && !read.labelled) continue;
-    const near = lines.filter((l) => l !== line && inWindow(line, l));
-    const assembly = near.filter((l) => ASSEMBLY_WORD.test(l.text)).length;
-    if (assembly < 1) continue;
-    if (letters && !inSymbol && !read.labelled) weakLetters.add(read.code.toUpperCase());
-    const score = (inSymbol ? 1000 : 0) + (read.labelled ? 500 : 0) + assembly * 10 + Math.min(near.length, 9);
-    const key = read.code.toUpperCase();
-    const held = best.get(key);
-    if (letters && (read.labelled || (inSymbol && key.length === 1))) boxedLetters.add(key);
-    if (held === undefined || score > held.score) best.set(key, { key, code: read.code, name: read.name, line, score, boxed: inSymbol, labelled: read.labelled });
+    const one = codeOf(line.text, recall);
+    for (const read of one === null ? listed(line.text) : [one]) {
+      const cx = (line.x0 + line.x1) / 2;
+      const cy = line.y - line.h / 2;
+      const inSymbol = (input.symbols ?? []).some((s) => Math.hypot(s.x - cx, s.y - cy) <= s.radius + 1);
+      // A bare number is a section bubble, a keynote or a dimension unless labelled ("WALL TYPE 1").
+      if (/^\d{1,3}[A-Z]?$/.test(read.code) && !read.labelled) continue;
+      // A single letter is a grid line unless boxed or labelled; two letters an abbreviation unless
+      // boxed, labelled or in a rated schedule (`kind` below).
+      const letters = /^[A-Z]{1,2}$/.test(read.code);
+      if (/^[A-Z]$/.test(read.code) && !inSymbol && !read.labelled) continue;
+      const near = lines.filter((l) => l !== line && inWindow(line, l));
+      const assembly = near.filter((l) => ASSEMBLY_WORD.test(l.text)).length;
+      if (assembly < 1) continue;
+      if (letters && !inSymbol && !read.labelled) weakLetters.add(read.code.toUpperCase());
+      const score = (inSymbol ? 1000 : 0) + (read.labelled ? 500 : 0) + assembly * 10 + Math.min(near.length, 9);
+      const key = read.code.toUpperCase();
+      const held = best.get(key);
+      if (letters && (read.labelled || (inSymbol && key.length === 1))) boxedLetters.add(key);
+      if (held === undefined || score > held.score) best.set(key, { key, code: read.code, name: read.name, line, score, boxed: inSymbol, labelled: read.labelled });
+    }
   }
   // A two-letter code seen only bare stays only as a schedule row; a boxed single letter is a type
   // only on a page with no stronger codes (Joplin's A/B/C beside nothing else; a grid bubble beside S6B).
@@ -154,7 +182,7 @@ export function readLegendFromText(input: {
   // First among every candidate, so a keynote or a grid letter takes the words around IT rather
   // than a real type taking them; a candidate whose own words hold fewer than two assembly words
   // is not a type. Then again among the types alone.
-  const mentions = new Set(lines.filter((l) => codeOf(l.text) !== null));
+  const mentions = new Set(lines.filter((l) => codeOf(l.text, recall) !== null || listed(l.text).length > 0));
   const attribute = (cands: readonly Cand[], taken: ReadonlySet<Line>) => {
     const owned = new Map<string, Line[]>(cands.map((c) => [c.key, []]));
     for (const line of lines) {
@@ -166,7 +194,8 @@ export function readLegendFromText(input: {
         const d = Math.hypot(dx, Math.abs(line.y - c.line.y));
         if (pick === null || d < pick.d) pick = { key: c.key, d };
       }
-      if (pick !== null) owned.get(pick.key)!.push(line);
+      // Codes listed on one printing share its detail (only `listed` puts two codes on one line).
+      if (pick !== null) { const at = cands.find((c) => c.key === pick!.key)!.line; for (const c of cands) if (c.line === at) owned.get(c.key)!.push(line); }
     }
     return owned;
   };

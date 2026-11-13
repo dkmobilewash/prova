@@ -96,6 +96,10 @@ describe("every eval refuses to run without a key", () => {
       "calls no model: AUTOMATION-PLAN item D. Closes rooms from each labelled sheet's walls, reads the set's ceilings, notes and sections by code, and scores each wall's height (the printed rule, the measured-not-shipped level 2, each level-3 convention) and its board dollars against heights-key-v1; held-out only with HB_HELD=1, measured once. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR, HEIGHTS_KEY and HB_OUT, and asserts at least one row was written",
     "zzOpeningFeatureTable.eval.ts":
       "calls no model: METHOD v2, doors and windows. On every door- or window-keyed sheet, one row per door the finder draws and per window frame (plus a counted tag with no frame), with `openingFeatures.ts`' columns and real/false from the key, for the learned scorers' leave-one-set-out harness. Held-out only with OFT_HELD=1. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR, OFT_OUT and TAKEOFF_WALL_MODEL, and asserts at least one keyed sheet was read",
+    "zzTypeTable.eval.ts":
+      "calls no model: METHOD v2, types (C/C3). One row per wall group and candidate code on every type-keyed sheet (the product's detection and stage grouping, the keyless legend read, today's chain), for `scripts/type-model/measure.py`. Held-out only with TT_HELD=1. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR and TT_OUT, and asserts a label folder was found",
+    "zzLegendRecall.eval.ts":
+      "calls no model: C3. For each key code on every type-keyed training sheet, where the set prints it and what the keyless legend read made of those pages, for `scripts/type-model/recall.py`. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR and LR_OUT, and asserts a label folder was found",
     "zzWallFeatureTable.eval.ts":
       "calls no model: METHOD v2, walls. One row per run the app offers on every labelled sheet (the product's own detection), with `wallRunFeatures.ts`' columns and real/junk from the key, for `scripts/wall-model/loso.py`. Held-out only with WFT_HELD=1. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR, WFT_OUT and TAKEOFF_WALL_MODEL, and asserts a label folder was found",
     "zzRunModelGate.eval.ts":
