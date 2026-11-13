@@ -16,7 +16,8 @@ const { saveDoorScope } = await import("@/lib/actions/company");
 const { postAutoDoors } = await import("@/lib/plan-ingest/autoDoors");
 const { AUTO_DOORS_ITEM, AUTO_DOORS_LABEL } = await import("@/lib/takeoff/autoPost");
 const { applyTradePreset } = await import("@/lib/actions/tradePresets");
-const { confirmWindows, undoConfirmWindows } = await import("@/lib/actions/symbolCount");
+const { confirmWindows, undoConfirmWindows, confirmDoors, undoConfirmDoors } = await import("@/lib/actions/symbolCount");
+const { DOORS_SUGGESTED } = await import("@/lib/takeoff/doorSuggestions");
 const { WINDOWS_SUGGESTED } = await import("@/lib/takeoff/windowTags");
 
 const MARKUP = { materialMarkupPercent: 10, laborMarkupPercent: 15, overheadPercent: 8, profitPercent: 10 };
@@ -247,5 +248,20 @@ describe("confirmed windows, behind the same setting", () => {
     expect(await windowLines(s.jobId)).toEqual([]);
     expect(await setScope("FRAMES")).toEqual({ ok: true });
     expect((await windowLines(s.jobId)).length).toBe(3);
+  });
+});
+
+describe("found doors a person confirms (#1158), behind the same setting", () => {
+  it("confirming them puts their labor on the bid at once, and undo takes it off", async () => {
+    const s = await setUp("ACOUSTICAL_CEILINGS", 0);
+    expect(await setScope("FRAMES")).toEqual({ ok: true });
+    const doors = [{ x1: 0.2, y1: 0.4, x2: 0.23, y2: 0.4 }, { x1: 0.5, y1: 0.4, x2: 0.53, y2: 0.4 }];
+    await prisma.takeoffPlanTextRead.create({ data: { planId: s.planId, pageNumber: 1, kind: DOORS_SUGGESTED, value: { doors } as never } });
+    const done = await confirmDoors(s.jobId, s.planId, 1, [0, 1]);
+    expect(done.ok).toBe(true);
+    expect((await doorLines(s.jobId)).map((l) => [l.description, Number(l.quantity)])).toEqual([["Labor — Doors — set hollow-metal frames", 2]]);
+    if (!done.ok) return;
+    expect(await undoConfirmDoors(s.jobId, s.planId, 1, done.value.undo)).toEqual({ ok: true });
+    expect(await doorLines(s.jobId)).toEqual([]);
   });
 });

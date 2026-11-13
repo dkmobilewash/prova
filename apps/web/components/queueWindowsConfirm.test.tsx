@@ -49,3 +49,20 @@ describe("a sheet's counted windows in the review queue", () => {
     expect(onAccept).toHaveBeenCalledWith([1, 2]);
   });
 });
+
+describe("the same item confirms a sheet's found doors with no printed mark", () => {
+  const doors = { kind: "doors", key: "doors:4", pageNumber: 4, sheet: "A101", runs: [run(0.1), run(0.2), run(0.3)], tags: ["door", "door", "door"], at: null } as Extract<ReviewItem, { kind: "doors" }>;
+  it("says doors, D drops the one looked at, Enter keeps the rest", () => {
+    const onAccept = vi.fn(), onShow = vi.fn(), onSkip = vi.fn();
+    act(() => root.render(createElement(QueueWindowsConfirm, { item: doors, noun: "door", onAccept, onShow, onSkip })));
+    const count = () => host.querySelector("[data-takeoff=queue-doors-count]")!.textContent;
+    expect(count()).toBe("3 doors with no printed mark · sheet A101");
+    expect(host.querySelector("[data-takeoff=queue-doors-drop]")!.textContent).toBe("Not a door (D)");
+    press("ArrowRight");
+    press("ArrowRight");
+    press("d");
+    expect(count()).toBe("2 doors with no printed mark · sheet A101");
+    press("Enter");
+    expect(onAccept).toHaveBeenCalledWith([0, 2]);
+  });
+});
