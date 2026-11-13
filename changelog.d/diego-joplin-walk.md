@@ -1,0 +1,4 @@
+### Walk: Joplin reaches Send (its floor plan's scale is taken where the workspace offers it)
+
+- Joplin failed at Run takeoff on main ("find-walls never enabled"). Not a product failure: on a 133-page set the walk's scales step runs while the set is still being read, before its floor plan A-101 is (Confirm has nothing to take yet), and at Run takeoff the walk's fallback looked for Baker's sheet name "A101". The workspace does offer A-101's sure scale (1/8", matched by 70 of its 223 printed dimensions); the walk now takes it as a person would: "Use the printed scale 1/8" = 1'-0"" → "Use this dimension" → "Set the scale" (3 presses).
+- Joplin, no AI: fails at Run takeoff → **completes, 56 presses to Send, $124,990.77**. Worth noting for the product: a sure reading takes 3 presses on the workspace path against 1 with the plan set's Confirm.
