@@ -76,9 +76,11 @@ describe.skipIf(CONFIG === "" || LABELS === "")("pre-label generator", () => {
         lengthFeet: r.lengthFeet, thicknessFeet: r.thicknessFeet,
         verdict: held.has(r) ? "not-wall" : "wall",
       }));
+      // A door's point is the middle of its leaf (hinge to strike); a window's is its
+      // segment midpoint. Both are already in the sheet's unit space, like the verdicts.
       const openings = [
-        ...dw.doors.map((o, at) => ({ x: o.x, y: o.y, kind: "door", tag: dw.doorMarks[at] ?? "" })),
-        ...dw.windows.map((o) => ({ x: o.x, y: o.y, kind: "window", tag: "" })),
+        ...dw.doors.map((o, at) => ({ x: (o.hinge.x + o.strike.x) / 2, y: (o.hinge.y + o.strike.y) / 2, kind: "door", tag: dw.doorMarks[at] ?? "" })),
+        ...dw.windows.map((o) => ({ x: (o.x1 + o.x2) / 2, y: (o.y1 + o.y2) / 2, kind: "window", tag: "" })),
       ];
       const accepted = verdicts.filter((v) => v.verdict === "wall").length;
       const file = {
