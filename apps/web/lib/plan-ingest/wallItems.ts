@@ -6,7 +6,7 @@ import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
 import type { WallGroup } from "@/lib/takeoff/wallGroups";
 import { postedType, SOURCE_WORDS, type PostSource } from "@/lib/takeoff/postingGate";
-import { autoLabel } from "@/lib/takeoff/autoPost";
+import { autoLabel, HIGH_CONFIDENCE_WALLS, modelAutoPostAt, modelPostsItself } from "@/lib/takeoff/autoPost";
 import { familyOf, type MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
 import { isPropagatedTag, isSiblingTag, plainTag } from "@/lib/takeoff/planTextTags";
 
@@ -50,7 +50,16 @@ export function runConfidence(run: { modelScore?: number }): number | null {
   return typeof s === "number" && Number.isFinite(s) && s >= 0 && s <= 1 ? s : null;
 }
 
-export async function wallItemsForSheet(input: { planId: string; companyId: string; jobId: string; pageNumber: number; userId: string | null; held?: readonly { x1: number; y1: number; x2: number; y2: number }[] }): Promise<WallItemsOutcome> {
+export async function wallItemsForSheet(input: {
+  planId: string;
+  companyId: string;
+  jobId: string;
+  pageNumber: number;
+  userId: string | null;
+  held?: readonly { x1: number; y1: number; x2: number; y2: number }[];
+  /** The wall model's auto-post score (`modelAutoPostAt("walls")`, the default); a test passes its own. */
+  wallsAutoPostAt?: number | null;
+}): Promise<WallItemsOutcome> {
   const page = await prisma.takeoffPlanPage.findUnique({
     where: { planId_pageNumber: { planId: input.planId, pageNumber: input.pageNumber } },
     select: {
@@ -84,6 +93,9 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
   // the review queue with that type offered first.
   const autoPostOn = (await prisma.company.findUnique({ where: { id: input.companyId }, select: { autoPostOn: true } }))?.autoPostOn === true;
   const autoFrom = new Map<WallGroup, PostSource>();
+  // ── A WALL THE MODEL IS SURE OF IS COUNTED WITHOUT REVIEW (METHOD v2, part 2) ──
+  // Only with the company's switch on AND the wall model's evidence past the bar; null otherwise.
+  const wallsAt = autoPostOn ? (input.wallsAutoPostAt === undefined ? modelAutoPostAt("walls") : input.wallsAutoPostAt) : null;
   const typeOf = (group: WallGroup): MatchableWallType | null => {
     const posted = postedType(group, autoPostOn);
     if (posted !== null) {
@@ -129,7 +141,7 @@ export async function wallItemsForSheet(input: { planId: string; companyId: stri
         // Doubted by the wall model: on the sheet, off the estimate. See `estimateHold.ts`.
         const isHeld = isHeldRun(run, held);
         if (isHeld) heldFeet += Math.hypot(run.x2 - run.x1, run.y2 - run.y1) * feetPerUnit;
-        data.push({ pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [run.x1, run.x2], ys: [run.y1, run.y2], label: isHeld ? HELD_LABEL : label, source: "DETECTED", confidence: runConfidence(run), itemId: isHeld ? await namedItem(tx, input.companyId, input.jobId, HELD_ITEM) : itemId, createdByUserId: input.userId });
+        data.push({ pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [run.x1, run.x2], ys: [run.y1, run.y2], label: isHeld ? HELD_LABEL : auto === undefined && modelPostsItself(runConfidence(run), wallsAt) ? HIGH_CONFIDENCE_WALLS : label, source: "DETECTED", confidence: runConfidence(run), itemId: isHeld ? await namedItem(tx, input.companyId, input.jobId, HELD_ITEM) : itemId, createdByUserId: input.userId });
       }
       const onEstimate = group.feet - (group.runs as Run[]).filter((run) => isHeldRun(run, held)).reduce((n, run) => n + Math.hypot(run.x2 - run.x1, run.y2 - run.y1) * feetPerUnit, 0);
       if (type === null) untypedFeet += onEstimate;
