@@ -125,6 +125,16 @@ export function TakeoffReviewQueue({
     })() ??
     left[0] ??
     null;
+  // ── THE ITEM ON SCREEN STAYS ON SCREEN WHEN THE SERVER'S RE-RENDER LANDS ──
+  // A bulk answer marks its groups done and leaves the cursor on one of them, so the item shown is
+  // "the next after the cursor". The refresh then drops those groups, the cursor's key is nowhere,
+  // and the queue fell to its first item — the existing-walls question just skipped (Baker), or a
+  // height item that had just arrived (Falafel) — under the person's pointer, mid-click. New-customer
+  // walk on main, 5 runs each: Falafel 2/5, Baker 1/5. The cursor follows what is shown.
+  const currentKey = current?.key ?? null;
+  useEffect(() => {
+    if (currentKey !== null && currentKey !== cursor) setCursor(currentKey);
+  }, [currentKey, cursor]);
   // ── ACCEPT ALL SUGGESTIONS ON THIS SHEET ──
   // Every group on the sheet on show whose type the drawing gave (a printed
   // tag or the legend), each with the height Enter would take. Library

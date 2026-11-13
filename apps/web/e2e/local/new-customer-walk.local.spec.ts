@@ -109,6 +109,35 @@ const watched: { page: Page; monitor: HealthMonitor; crashes: number; console: n
 function watch(on: Page): HealthMonitor {
   const monitor = new HealthMonitor(on);
   watched.push({ page: on, monitor, crashes: 0, console: 0 });
+  // ── WHAT A FAILED WALK NEEDS TO NAME ITS CAUSE (2026-11-13, the walk-reliability runs) ──
+  // An uncaught error's stack (pdf.js "Bad end offset" came with no stack, twice), a plan byte range
+  // that failed or came back short, and below, each change of the queue's item, dumped when a step fails.
+  on.on("pageerror", (e) => console.log(`[diag] pageerror ${(e.stack ?? e.message).slice(0, 900)}`));
+  on.on("requestfinished", (r) => {
+    if (!r.url().includes("/api/takeoff/plan/")) return;
+    void (async () => {
+      const res = await r.response().catch(() => null);
+      const sizes = await r.sizes().catch(() => null);
+      const want = Number(res?.headers()["content-length"] ?? NaN);
+      if (sizes !== null && Number.isFinite(want) && sizes.responseBodySize < want) console.log(`[diag] plan SHORT ${r.headers()["range"] ?? "(whole)"} -> ${res?.status()} ${res?.headers()["content-range"] ?? ""} got ${sizes.responseBodySize} of ${want}`);
+    })();
+  });
+  on.on("requestfailed", (r) => {
+    if (r.url().includes("/api/takeoff/plan/")) console.log(`[diag] plan FAILED ${r.headers()["range"] ?? "(whole)"} ${r.failure()?.errorText}`);
+  });
+  on.on("load", () => {
+    void on.evaluate(() => {
+      const w = window as unknown as { __q?: string[] };
+      w.__q = [];
+      let last = "";
+      new MutationObserver(() => {
+        const item = document.querySelector('[data-takeoff="review-queue-item"]');
+        const now = `${item?.getAttribute("data-kind") ?? "none"} | ${document.querySelector('[data-takeoff="review-queue-left"]')?.textContent ?? ""} | ${(item?.textContent ?? "").slice(0, 80)}`;
+        if (now !== last) w.__q!.push(`${(performance.now() / 1000).toFixed(2)} ${now}`);
+        last = now;
+      }).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+    }).catch(() => {});
+  });
   return monitor;
 }
 async function health(): Promise<void> {
@@ -135,6 +164,14 @@ async function step(name: string, body: () => Promise<void>): Promise<void> {
     await body();
   } catch (error) {
     note(`FAILED: ${(error instanceof Error ? error.message : String(error)).split("\n").slice(0, 3).join(" ").slice(0, 400)}`);
+    for (const w of watched) {
+      if (w.page.isClosed()) continue;
+      const q = await Promise.race([
+        w.page.evaluate(() => [`now ${(performance.now() / 1000).toFixed(2)}`, ...((window as unknown as { __q?: string[] }).__q ?? []).slice(-30)]).catch((e) => [`(page did not answer: ${String(e).slice(0, 100)})`]),
+        new Promise<string[]>((r) => setTimeout(() => r(["(no answer in 10 s: the page's main thread is busy)"]), 10_000)),
+      ]);
+      console.log(`[diag] queue changes on ${w.page.url()}:\n  ${q.join("\n  ")}`);
+    }
     throw error;
   } finally {
     const wall = Date.now() - t0;

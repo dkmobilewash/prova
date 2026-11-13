@@ -18,6 +18,8 @@ vi.mock("@/lib/actions", () => {
     confirmSheetSuggestions: async (_job: string, groups: unknown[]) => ({ ok: true, value: { accepted: groups.length, failed: [], undo: { moved: [], created: [], items: [] } } }),
     recordQueueSkip: ok,
     confirmWindows: ok,
+    confirmDoors: ok,
+    undoConfirmDoors: ok,
     undoAutoPost: ok,
     undoConfirmWindows: ok,
     priceLineFromCost: ok,
@@ -61,4 +63,42 @@ describe("after an answer the queue goes on, not back to the item just skipped",
     expect(kind()).toBe("type");
     expect(q("review-queue-rest")?.textContent).toContain("2 groups");
   });
+
+  // ── THE SERVER'S RE-RENDER AFTER THE ANSWER MUST NOT CHANGE THE QUESTION ON SCREEN ──
+  // The new-customer walk on main (#1157+), 5 runs each: Falafel 2/5, Baker 1/5. A bulk answer left the
+  // cursor on a group it had just saved; the server's refresh then dropped that group, the cursor's key
+  // was nowhere, and the queue fell back to its FIRST item — under the person's pointer, mid-click.
+  const render = (list: ReviewItem[]) =>
+    act(() => root!.render(createElement(TakeoffReviewQueue, { jobId: "job-1", planId: "plan-1", items: list, legendCodes: ["W1", "W2"], planSet: [], onShow: () => {}, onClose: () => {} })));
+
+  it("Baker: after Tag C8B, the refresh without its groups keeps the rest question, not the skipped existing walls", async () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    render(items);
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('[data-takeoff="review-queue-item"] button')].find((b) => b.textContent === "Skip")!.click());
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('[data-takeoff="review-queue-tag-code"]')].find((b) => b.textContent === "W1")!.click());
+    await act(async () => (q("review-queue-tag-apply") as HTMLButtonElement).click());
+    expect(q("review-queue-rest")?.textContent).toContain("2 groups");
+    // The server saved C8B's groups: they are no longer in its items.
+    render(items.filter((i) => !i.key.startsWith("c8b")));
+    expect(kind()).toBe("type");
+    expect(q("review-queue-rest")?.textContent).toContain("2 groups");
+  });
+
+  it("Falafel: the doors question on screen stays when the refresh brings new height items ahead of it", async () => {
+    const doors: ReviewItem = { kind: "doors", key: "doors:13", pageNumber: 13, sheet: "A2.00", runs: [{ x1: 0.1, y1: 0.1, x2: 0.12, y2: 0.1 }], tags: ["door"], at: null };
+    const height: ReviewItem = { kind: "height", key: "height:w1", itemId: "w1", name: "W1 walls", pageNumber: 13, sheet: "A2.00", runs: [{ x1: 0.1, y1: 0.5, x2: 0.6, y2: 0.5 }], feet: 208, options: [] };
+    const list = [group("plain-1", 0.5), group("plain-2", 0.6), doors];
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    render(list);
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('[data-takeoff="review-queue-rest-code"]')].find((b) => b.textContent?.startsWith("W1"))!.click());
+    await act(async () => (q("review-queue-rest-apply") as HTMLButtonElement).click());
+    expect(kind()).toBe("doors");
+    render([height, doors]);
+    expect(kind()).toBe("doors");
+  });
 });
+
