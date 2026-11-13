@@ -3,6 +3,7 @@ import { isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deciderFor, type WallModel } from "./wallClassifier";
 import { FEATURE_NAMES } from "./wallFeatures";
+import type { ModelDecision } from "./autoPost";
 
 /**
  * ── THE TRAINED WALL MODEL, FROM A FILE THE NEXT RETRAIN SWAPS ──
@@ -108,26 +109,38 @@ function resolveModelPath(file: string): string {
   return existsSync(fromRepoRoot) ? fromRepoRoot : underApp;
 }
 
-function readWallModel(env: Record<string, string | undefined>): WallModelConfig | null {
-  const named = env.TAKEOFF_WALL_MODEL ?? "";
+/**
+ * ── ONE READER FOR EVERY LEARNED DECISION (METHOD v2, part 3) ──
+ * Walls read `TAKEOFF_WALL_MODEL` today; the second's type and door models plug in by naming their
+ * file in `TAKEOFF_TYPE_MODEL` / `TAKEOFF_DOOR_MODEL` and passing their build's feature columns. The
+ * same contract for all: `gbdt-binary-v1`, columns equal to the build's in order, else refused and
+ * logged once — a model scoring reinterpreted columns is worse than no model. Whether a score then
+ * POSTS is `modelAutoPostAt` in `autoPost.ts`, read off that decision's measured evidence.
+ */
+export const DECISION_MODEL_ENV: Record<ModelDecision, string> = { walls: "TAKEOFF_WALL_MODEL", types: "TAKEOFF_TYPE_MODEL", doors: "TAKEOFF_DOOR_MODEL" };
+
+export function readDecisionModel(decision: ModelDecision, features: readonly string[], env: Record<string, string | undefined> = process.env): { model: WallModel; file: string } | null {
+  const named = env[DECISION_MODEL_ENV[decision]] ?? "";
   if (named === "") return null;
   const file = resolveModelPath(named);
   let model: WallModel;
   try {
     model = JSON.parse(readFileSync(file, "utf8")) as WallModel;
   } catch (err) {
-    console.error("[wall-model] unreadable, so nothing is demoted by it", {
-      file,
-      kind: err instanceof Error ? err.name : "unknown",
-    });
+    console.error(`[${decision}-model] unreadable, so nothing is decided by it`, { file, kind: err instanceof Error ? err.name : "unknown" });
     return null;
   }
-  if (deciderFor(model, FEATURE_NAMES) === null) {
-    console.error("[wall-model] refused: not gbdt-binary-v1 or its columns do not match this build's FEATURE_NAMES", {
-      file,
-    });
+  if (deciderFor(model, features) === null) {
+    console.error(`[${decision}-model] refused: not gbdt-binary-v1 or its columns do not match this build's features`, { file });
     return null;
   }
+  return { model, file };
+}
+
+function readWallModel(env: Record<string, string | undefined>): WallModelConfig | null {
+  const read = readDecisionModel("walls", FEATURE_NAMES, env);
+  if (read === null) return null;
+  const { model, file } = read;
   const inFile = (model as { cut?: unknown }).cut;
   const inEnv = env.TAKEOFF_WALL_MODEL_CUT ?? "";
   const cut = typeof inFile === "number" ? inFile : inEnv !== "" ? Number(inEnv) : DEFAULT_WALL_MODEL_CUT;
