@@ -101,11 +101,25 @@ const NOMINAL_FEET = Number(process.env.ZT_DEFAULT_FEET ?? "9");
 const HEIGHTS = process.env.ZT_HEIGHTS ?? "";
 const heightsByLabelSet: Record<string, Record<string, number>> = {};
 if (HEIGHTS !== "" && existsSync(HEIGHTS)) {
-  const hk = JSON.parse(readFileSync(HEIGHTS, "utf8")) as { sets?: Record<string, { labelSet?: string; types?: Record<string, { feet?: number }> }> };
+  const hk = JSON.parse(readFileSync(HEIGHTS, "utf8")) as { sets?: Record<string, { labelSet?: string; types?: Record<string, { feet?: number; sameAs?: string }> }> };
   for (const one of Object.values(hk.sets ?? {})) {
     if (one.labelSet === undefined) continue;
     const m: Record<string, number> = {};
-    for (const [t, v] of Object.entries(one.types ?? {})) if (typeof v.feet === "number") m[t.toUpperCase()] = v.feet;
+    const types = one.types ?? {};
+    for (const [t, v] of Object.entries(types)) if (typeof v.feet === "number") m[t.toUpperCase()] = v.feet;
+    // A `sameAs` type takes its REFERENT's height (scripts/heights/compare.py's rule), never the
+    // 9 ft default: Green Bay/McAllen IW-2..IW-9, SW A2..B2, Bunkie P06..P09 — 35 entries in r16
+    // that were all pricing as coverage gaps. Chain-safe to 5 hops; an unresolvable chain stays out.
+    for (const [t, v] of Object.entries(types)) {
+      if (typeof v.feet === "number") continue;
+      let at = v.sameAs;
+      for (let hop = 0; hop < 5 && at !== undefined; hop += 1) {
+        const ref = types[at] ?? types[at.toUpperCase()];
+        if (ref === undefined) break;
+        if (typeof ref.feet === "number") { m[t.toUpperCase()] = ref.feet; break; }
+        at = ref.sameAs;
+      }
+    }
     heightsByLabelSet[one.labelSet] = m;
   }
 }
