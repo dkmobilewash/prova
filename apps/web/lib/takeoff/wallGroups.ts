@@ -157,6 +157,13 @@ export function wallGroups(
    * an unhatched one never takes a masonry default (`stageGroups.ts`).
    */
   hatched: ReadonlySet<WallCandidate> = new Set(),
+  /**
+   * Untagged runs a dropped tag sits beside, with its codes (`contestedRuns`). Where the thickness
+   * alone would settle the run as a type the tag does not name, the run is asked instead: a group
+   * of its own whose candidates are the thickness's types and the tag's. A U.N.O. note's group
+   * keeps them (measured: stopping the note there cost more right than wrong).
+   */
+  contested: ReadonlyMap<WallCandidate, readonly string[]> = new Map(),
 ): WallGroup[] {
   const out: WallGroup[] = [];
   for (const cluster of clusters) {
@@ -217,11 +224,25 @@ export function wallGroups(
       const forThisFill = (n: WallTypeFromNote) => MASONRY_NOTE.test(n.note) === isHatched;
       const note = defaults.find((n) => covers(n) && forThisFill(n)) ?? null;
       const atThickness = typesAtThickness(cluster.inches, wallTypes);
+      // Contested runs leave the thickness's group when it would settle them as a type the tag does not name.
+      const askedFor = (run: WallCandidate): MatchableWallType[] | null => {
+        const codes = contested.get(run);
+        if (note !== null || codes === undefined || atThickness.length !== 1) return null;
+        const named = wallTypes.filter((type) => type.id !== atThickness[0]!.id && codes.some((code) => sameDesignation(type.code, code)));
+        return named.length === 0 ? null : [...atThickness, ...named];
+      };
+      const asked = untagged.filter((run) => askedFor(run) !== null);
+      if (asked.length > 0) {
+        const candidates = [...new Map(asked.flatMap((run) => askedFor(run)!).map((type) => [type.id, type])).values()];
+        out.push({ inches: cluster.inches, hatched: isHatched, runs: asked, feet: feetOf(asked), source: { kind: "REMAINDER" }, candidates });
+      }
+      const settled = untagged.filter((run) => askedFor(run) === null);
+      if (settled.length === 0) continue;
       out.push({
         inches: cluster.inches,
         hatched: isHatched,
-        runs: untagged,
-        feet: feetOf(untagged),
+        runs: settled,
+        feet: feetOf(settled),
         source: note !== null ? { kind: "GENERAL_NOTE", note: note.note } : { kind: "REMAINDER" },
         candidates: note !== null ? [note.type, ...atThickness.filter((t) => t.id !== note.type.id)] : atThickness,
       });

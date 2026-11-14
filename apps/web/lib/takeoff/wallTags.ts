@@ -198,6 +198,8 @@ export function tagByRun(
    * beside a legend it cost settled-correct on the training type keys (61.4% → 60.0%, 2026-11-12).
    */
   midSpan = false,
+  /** Collects the tags within reach that the clear margin dropped (`contestedRuns`). */
+  dropped?: WallTypeTag[],
 ): Map<WallCandidate, string> {
   const out = new Map<WallCandidate, string>();
   if (!(feetPerUnit > 0) || walls.length === 0 || tags.length === 0) return out;
@@ -277,14 +279,20 @@ export function tagByRun(
     const { best, second, wall: bestWall, runnerUp } = chosen;
     if (bestWall === null || best > TAG_REACH_FEET) continue;
     if (second < best * TAG_CLEAR_MARGIN) {
-      if (!midSpan) continue;
+      if (!midSpan) {
+        dropped?.push(tag);
+        continue;
+      }
       // ── TOO CLOSE TO CALL BY DISTANCE: THE RUN THE TAG FALLS BESIDE ──
       // Totem Lake sets its tags where two runs meet: of A2.1's 14 tags within reach, 10 were
       // dropped here, the runner-up 1.2–2.1 ft against 0.6–1.9 ft (2026-11-12). Where exactly one
       // of the two takes the tag along its span and the other only at an end, that one is meant.
       const midBest = projectsMidSpan(tag, bestWall, feetPerUnit);
       const midSecond = runnerUp !== null && projectsMidSpan(tag, runnerUp, feetPerUnit);
-      if (midBest === midSecond) continue;
+      if (midBest === midSecond) {
+        dropped?.push(tag);
+        continue;
+      }
       const wall = midBest ? bestWall : runnerUp!;
       const feet = midBest ? best : second;
       if (feet > TAG_REACH_FEET) continue;
@@ -300,6 +308,34 @@ export function tagByRun(
     out.set(claim.wall, claim.name);
   }
   if (midSpan) for (const [wall, name] of runsBesideTag(walls, tags, feetPerUnit, out)) out.set(wall, name);
+  return out;
+}
+
+/**
+ * ── A DROPPED TAG STILL SAYS SOMETHING ABOUT THE RUNS IT SITS BESIDE ──
+ *
+ * A tag too close to call between two runs (`TAG_CLEAR_MARGIN`) names neither, rightly — but it
+ * still says one of the runs within its reach is its type. On the training type keys (labels after
+ * Round 22c, 2026-11-14) the wrong types the chain gave were mostly runs that took a code while a
+ * printed tag of ANOTHER code sat within reach and had been dropped: a type carried along the wall
+ * (`propagateTypes`) or "the only type that thick" answered over it. So such a run is contested:
+ * each untagged run within `TAG_REACH_FEET` of a dropped tag, with the codes of those tags. A carried
+ * type does not cross onto it (`planTextTagByRun`) and thickness alone does not settle it
+ * (`wallGroups`); the person is asked, with both the thickness's types and the tag's.
+ */
+export function contestedRuns(
+  walls: readonly WallCandidate[],
+  byRun: ReadonlyMap<WallCandidate, string>,
+  dropped: readonly WallTypeTag[],
+  feetPerUnit: number,
+): Map<WallCandidate, string[]> {
+  const out = new Map<WallCandidate, string[]>();
+  if (!(feetPerUnit > 0)) return out;
+  for (const wall of walls) {
+    if (byRun.has(wall)) continue;
+    const codes = [...new Set(dropped.filter((tag) => distanceFeet(tag.x, tag.y, wall, feetPerUnit) <= TAG_REACH_FEET).map((tag) => tag.name))];
+    if (codes.length > 0) out.set(wall, codes);
+  }
   return out;
 }
 
