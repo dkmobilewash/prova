@@ -175,7 +175,15 @@ export function readLegendFromText(input: {
   // alone, or beside S6B, it is a section cut or a grid line.
   const strong = [...best.keys()].some((k) => !/^[A-Z]{1,2}$/.test(k));
   const single = [...best.keys()].filter((k) => /^[A-Z]$/.test(k));
-  for (const key of single) if ((strong || single.length < 3) && !/TYPE/i.test(best.get(key)!.line.text)) best.delete(key);
+  // C3 (recall): a boxed letter in a ROW of boxed codes that holds a coded type too is a legend's
+  // detail tag, even beside A1 (Aspen's A B C D1 under "PARTITION TYPES"). A row of letters alone
+  // is a grid (Macon-Bibb's A B D E: kept, they made its A5-1 callouts "variants" of A, 58 ft wrong).
+  const inRow = (c: Cand) => {
+    if (!recall || !c.boxed) return false;
+    const row = [...best.values()].filter((o) => o !== c && o.boxed && Math.abs(o.line.y - c.line.y) <= c.line.h * 0.6);
+    return row.length >= 2 && row.some((o) => !/^[A-Z]{1,2}$/.test(o.key));
+  };
+  for (const key of single) if ((strong || single.length < 3) && !/TYPE/i.test(best.get(key)!.line.text) && !inRow(best.get(key)!)) best.delete(key);
 
 
   // ── 3. EVERY LINE TO ITS NEAREST CODE — TWICE ──
