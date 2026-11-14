@@ -73,6 +73,12 @@ export const CIRCLE_FIT_TOLERANCE = 0.04;
 export const LONGEST_ARC_PIECE_FEET = 1.5;
 /** The leaf's ends must land this close, feet, to the hinge and to the arc's end. */
 export const LEAF_END_TOLERANCE_FEET = 0.5;
+/** A leaf along the radius: both ends this close to the hinge-to-end line, starting within this share of the radius from the hinge, covering this share of it. */
+export const LEAF_SIDE_FEET = 0.3;
+export const LEAF_START_SHARE = 0.35;
+export const LEAF_COVER_SHARE = 0.6;
+/** ...and running no further than this share of the radius past the arc's end or behind the hinge. */
+export const LEAF_OVERRUN_SHARE = 0.15;
 /** Hinge and strike must both lie this close, feet, to the wall run's centreline band. */
 export const ON_WALL_TOLERANCE_FEET = 0.75;
 /** A window's lines are this long at least, and no longer than a storefront. */
@@ -242,6 +248,29 @@ export function doorArcCandidates(
       if (fromHinge === null) continue;
       if (dist(fromHinge, a) <= leafTol) { strike = b; break; }
       if (dist(fromHinge, b) <= leafTol) { strike = a; break; }
+    }
+    // ── A LEAF DRAWN INSET OR AS A THIN RECTANGLE STILL LIES ALONG THE RADIUS ──
+    // Topeka and NG Green Bay draw the open leaf as a thin rectangle or a line inset from the hinge and the
+    // arc's end (a 2.24 ft stroke on a 3 ft swing, 0.4 ft in at each end): the length test above refuses it,
+    // and "leaf not found" was the second-largest cause of missed key doors (32 of 156, Round 23b training).
+    // A straight stroke along the hinge-to-end radius (both ends within `LEAF_SIDE_FEET` of it), starting
+    // near the hinge and covering most of the radius, is that leaf.
+    if (strike === null) {
+      const side = LEAF_SIDE_FEET / feetPerUnit;
+      const along = (e: Pt) => {
+        const ux = (e.x - hinge.x) / fit.r, uy = (e.y - hinge.y) / fit.r;
+        return straight.some((s) => {
+          const t1 = (s.x1 - hinge.x) * ux + (s.y1 - hinge.y) * uy, t2 = (s.x2 - hinge.x) * ux + (s.y2 - hinge.y) * uy;
+          const o1 = Math.abs(-(s.x1 - hinge.x) * uy + (s.y1 - hinge.y) * ux), o2 = Math.abs(-(s.x2 - hinge.x) * uy + (s.y2 - hinge.y) * ux);
+          if (o1 > side || o2 > side) return false;
+          // A leaf ends at the arc; a dimension or extension line through the hinge runs on past it (NG Green Bay, Topeka).
+          if (Math.max(t1, t2) > (1 + LEAF_OVERRUN_SHARE) * fit.r || Math.min(t1, t2) < -LEAF_OVERRUN_SHARE * fit.r) return false;
+          const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(fit.r, Math.max(t1, t2));
+          return Math.min(t1, t2) <= LEAF_START_SHARE * fit.r && hi - lo >= LEAF_COVER_SHARE * fit.r;
+        });
+      };
+      if (along(a)) strike = b;
+      else if (along(b)) strike = a;
     }
     if (strike === null) { out.push({ ...base, sweepDegrees: sweep, reject: "no-leaf" }); continue; }
     out.push({
