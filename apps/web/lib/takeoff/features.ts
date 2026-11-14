@@ -137,7 +137,7 @@ export function takeoffFeatureRows(input: TakeoffFeatureInputs): TakeoffFeatureR
       key: "autoPost",
       title: "Auto-post proven items",
       explain:
-        "A wall group whose type comes from a source measured right at least 97% of the time on training plans and 95% on held-out plans posts to the estimate without the review queue, labelled with its source, with Undo per sheet. No source has cleared that bar yet. No model.",
+        "Marked doors post to the estimate as a count, with Undo per sheet. Walls have their own switch beside it (Auto-post walls), off until an owner turns it on. No model.",
       status: onOff(input.autoPostOn),
       where: { href: "/settings?tab=estimating#auto-post", label: "Settings → Estimating" },
       field: "autoPostOn",

@@ -34,7 +34,7 @@ async function sheet(pageNumber: number) {
 }
 
 beforeAll(async () => {
-  companyId = (await prisma.company.create({ data: { name: "Auto Post Co", autoPostOn: true } })).id;
+  companyId = (await prisma.company.create({ data: { name: "Auto Post Co", autoPostOn: true, autoPostWalls: true } })).id;
   context.company.id = companyId;
   context.id = (await prisma.user.create({ data: { companyId, clerkId: `autopost_${Date.now()}`, email: `autopost_${Date.now()}@example.test`, role: "OWNER" } })).id;
   const contact = await prisma.contact.create({ data: { companyId, name: "GC" } });
@@ -87,8 +87,8 @@ describe("auto-post proven items", () => {
     expect(await prisma.takeoffMeasurement.count({ where: { pageId: page.id, kind: "COUNT" } })).toBe(0);
   });
 
-  it("with the company's setting OFF, nothing posts itself", async () => {
-    await prisma.company.update({ where: { id: companyId }, data: { autoPostOn: false } });
+  it("with BOTH switches OFF, nothing posts itself", async () => {
+    await prisma.company.update({ where: { id: companyId }, data: { autoPostOn: false, autoPostWalls: false } });
     const pageId = await sheet(2);
     const outcome = await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 2, userId: null });
     expect(outcome.kind === "written" && Math.round(outcome.typedFeet)).toBe(0);
@@ -106,7 +106,7 @@ describe("auto-post proven items", () => {
 describe("walls the model is sure of post themselves (METHOD v2, part 2)", () => {
   // An earlier case turns the company's switch off; these start from it on.
   beforeAll(async () => {
-    await prisma.company.update({ where: { id: companyId }, data: { autoPostOn: true } });
+    await prisma.company.update({ where: { id: companyId }, data: { autoPostOn: true, autoPostWalls: true } });
   });
   // `runScore` is the RUN model's (what decides); `modelScore` the pairwise model's (the confidence column only).
   async function scoredSheet(pageNumber: number, withRunScores = true) {
@@ -142,11 +142,16 @@ describe("walls the model is sure of post themselves (METHOD v2, part 2)", () =>
     expect((await labels(pageId)).map((r) => r[1])).not.toContain("Walls (auto, high confidence)");
   });
 
-  it("with the company's switch off nothing posts on its score, even past the bar", async () => {
-    await prisma.company.update({ where: { id: companyId }, data: { autoPostOn: false } });
+  it("with the WALLS switch off nothing posts on its score, even past the bar — and the DOOR switch on posts no wall", async () => {
+    await prisma.company.update({ where: { id: companyId }, data: { autoPostOn: true, autoPostWalls: false } });
     const pageId = await scoredSheet(13);
     await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 13, userId: null });
-    expect((await labels(pageId)).map((r) => r[1])).not.toContain("Walls (auto, high confidence)");
-    await prisma.company.update({ where: { id: companyId }, data: { autoPostOn: true } });
+    const posted = (await labels(pageId)).map((r) => r[1]);
+    expect(posted).not.toContain("Walls (auto, high confidence)");
+    expect(posted.some((l) => typeof l === "string" && l.includes("(auto, from "))).toBe(false);
+    // Doors still post on the door switch alone.
+    const page = await prisma.takeoffPlanPage.create({ data: { planId, pageNumber: 14 } });
+    expect(await postAutoDoors({ planId, pageNumber: 14, pageId: page.id, calibrationId: null, companyId, jobId, userId: null, points: [{ x: 0.1, y: 0.1 }] })).toBe(1);
+    await prisma.company.update({ where: { id: companyId }, data: { autoPostOn: true, autoPostWalls: true } });
   });
 });

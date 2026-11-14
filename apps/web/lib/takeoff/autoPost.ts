@@ -112,7 +112,7 @@ export const AUTO_DOORS_LABEL = "Doors (auto, from printed mark)";
  * other source. `model` names the file the numbers were measured with; a different model is a new
  * measurement. LOSO is valid only on rows from the product's own detection (`productDetection.ts`,
  * parity 0 since 2026-11-13). Walls are filled (below); types and doors are empty, so they post nothing.
- * Behind the company's "Auto-post proven items" switch (`Company.autoPostOn`, off by default).
+ * Behind the company's "Auto-post walls" switch (`Company.autoPostWalls`, off for every company until an owner turns it on).
  */
 export type ModelDecision = "walls" | "types" | "doors";
 export type ModelEvidence = SourceEvidence & { autoPostAt: number | null; model: string | null };

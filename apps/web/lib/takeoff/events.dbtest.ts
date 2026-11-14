@@ -29,7 +29,7 @@ const g4 = [{ x1: 0.6, y1: 0.5, x2: 0.9, y2: 0.5 }];
 const kinds = async () => (await prisma.takeoffEvent.findMany({ where: { jobId }, orderBy: { createdAt: "asc" }, select: { kind: true } })).map((e) => e.kind);
 
 beforeAll(async () => {
-  companyId = (await prisma.company.create({ data: { name: "Events Co", autoPostOn: true } })).id;
+  companyId = (await prisma.company.create({ data: { name: "Events Co", autoPostOn: true, autoPostWalls: true } })).id;
   context.company.id = companyId;
   context.id = (await prisma.user.create({ data: { companyId, clerkId: `events_${Date.now()}`, email: `events_${Date.now()}@example.test`, role: "OWNER" } })).id;
   const contact = await prisma.contact.create({ data: { companyId, name: "GC" } });

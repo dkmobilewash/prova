@@ -77,14 +77,15 @@ export async function suggestPriorPlanChoice(input: { jobId: string; planId: str
   }
 }
 
-/** "Auto-post proven items": ON for a new company, OFF for existing ones until the owner ticks it — see `lib/takeoff/autoPost.ts`. */
+/** The two auto-post switches: doors (`autoPostOn`, ON for a new company) and walls (`autoPostWalls`, OFF for every company until the owner ticks it) — see `lib/takeoff/autoPost.ts`. */
 export async function saveAutoPostSwitch(formData: FormData): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "MANAGE_COMPLIANCE")) return actionFail(SETTINGS_ONLY);
   const refusal = ownerRefusal(context, "Only the account owner can turn this on or off — it changes what posts to every estimate without a review.");
   if (refusal) return refusal;
   const on = formData.get("autoPostOn") === "on";
-  await prisma.company.update({ where: { id: context.company.id }, data: { autoPostOn: on } });
+  const walls = formData.get("autoPostWalls") === "on";
+  await prisma.company.update({ where: { id: context.company.id }, data: { autoPostOn: on, autoPostWalls: walls } });
   revalidatePath("/settings");
   return actionOk;
 }

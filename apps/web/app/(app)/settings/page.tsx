@@ -191,7 +191,7 @@ export default async function SettingsPage({
   // are columns on the same row and there is no reason to ask twice.
   const switches = await prisma.company.findUnique({
     where: { id: company.id },
-    select: { roomFinderOn: true, demotedWallsOff: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOff: true, planCompareOn: true, autoPostOn: true },
+    select: { roomFinderOn: true, demotedWallsOff: true, wholeSetTakeoffOn: true, scannedPlansOn: true, doorsWindowsOn: true, symbolCountOff: true, planCompareOn: true, autoPostOn: true, autoPostWalls: true },
   });
   const roomFinderOn = switches?.roomFinderOn ?? false;
   // The switch reads as ON unless this company turned it off, so the box is
@@ -685,7 +685,7 @@ export default async function SettingsPage({
               <PlanCompareSwitch on={planCompareOn} isOwner={currentUser.role === "OWNER"} />
             </div>
             <div id="auto-post" className="mt-4 scroll-mt-20">
-              <AutoPostSwitch on={switches?.autoPostOn ?? false} isOwner={currentUser.role === "OWNER"} />
+              <AutoPostSwitch on={switches?.autoPostOn ?? false} walls={switches?.autoPostWalls ?? false} isOwner={currentUser.role === "OWNER"} />
             </div>
           </section>
 
