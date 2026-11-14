@@ -92,6 +92,8 @@ describe("every eval refuses to run without a key", () => {
   const KEYLESS_EVALS: Record<string, string> = {
     "legendText.eval.ts":
       "calls no model: AUTOMATION-PLAN item C. The keyless legend read (`readLegendFromText`) on every set page with a cached model read, compared code by code and field by field with that read. Skips without LEGEND_CACHE and REAL_PLAN_DIR, and asserts at least one cached read was compared",
+    "zzZonedHeights.eval.ts":
+      "calls no model: heights on the ZONED training sets wall by wall. Every labelled wall of a zoned key type gets its rooms (closed from the labelled walls, found by the product's own side probe), the key's height from its rooms' zone (the zone keys, ZH_ZONE_KEYS), and the product chain's height through those rooms. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR, HEIGHTS_KEY, ZH_OUT and ZH_ZONE_KEYS, and asserts at least one row was written",
     "zzHeightsByCode.eval.ts":
       "calls no model: AUTOMATION-PLAN item D. Closes rooms from each labelled sheet's walls, reads the set's ceilings, notes and sections by code, and scores each wall's height (the printed rule, the measured-not-shipped level 2, each level-3 convention) and its board dollars against heights-key-v1; held-out only with HB_HELD=1, measured once. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR, HEIGHTS_KEY and HB_OUT, and asserts at least one row was written",
     "zzOpeningFeatureTable.eval.ts":
