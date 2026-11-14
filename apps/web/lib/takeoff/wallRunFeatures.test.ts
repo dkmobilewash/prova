@@ -48,7 +48,7 @@ describe("coverShare", () => {
 });
 
 // The shipped models must read exactly these columns, and score as scikit-learn did when they were trained.
-describe.each(["wall-run-model"])("%s", (name) => {
+describe.each(["wall-run-model", "wall-reno-model"])("%s", (name) => {
   const dir = join(__dirname, "../../models");
   const m = JSON.parse(readFileSync(join(dir, `${name}.json`), "utf8")) as WallModel;
   const control = JSON.parse(readFileSync(join(dir, `${name}.control.json`), "utf8")) as { rows: number[][]; expected: number[] };
