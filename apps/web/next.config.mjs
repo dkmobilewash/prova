@@ -153,6 +153,19 @@ const nextConfig = {
   // Anchoring the first segment at @prisma+client turns 473 directory
   // walks per route into one. The engine binary is still force-included,
   // which is the whole reason this entry exists (see the note above).
+  // ── THE 2026-11-14 DEPLOY OUTAGE'S ROOT CAUSE: BUILD CACHES TRACED INTO EVERY FUNCTION ──
+  //
+  // Webpack's build cache (.next/cache/webpack/*-production/*.pack, hundreds of MB to a GB per
+  // pack) was landing in every function's trace. On Vercel the RESTORED build cache puts those
+  // packs on disk before tracing, so every function carried ~5 GB of cache and the whole deploy
+  // died at the 5 GB function limit — for ~12 hours, from #1179 on, while CI stayed green. The
+  // size depended on the restored cache, not the code, which is why one build passed at 46 MB
+  // per function while its neighbours failed at 5.13 GB. Named by bytes from the .nft.json file
+  // lists, not guessed. .next-chrome is the local pilot serve's dist dir; Vercel never has it,
+  // so excluding it costs nothing and keeps local budget runs honest.
+  outputFileTracingExcludes: {
+    "/**": ["./.next/cache/**", "./.next-chrome/**"],
+  },
   outputFileTracingIncludes: {
     "/**": [
       "../../node_modules/.pnpm/@prisma+client@*/node_modules/.prisma/client/**",
