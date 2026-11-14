@@ -13,6 +13,7 @@ import { assumedHeight, setFigures, setHeightRule, wallHeightByCode, WALL_HEIGHT
 import { roofPartsFor } from "../roofPartsRead";
 import { roomPitched } from "../roofParts";
 import { levelHeight, planLevels } from "../levelHeights";
+import { keyTypeFor } from "../roomZoneKey";
 
 /**
  * ── D. WALL HEIGHTS FROM THE DRAWING, BY CODE: WHAT EACH LABELLED WALL HAS TO GO ON ──
@@ -46,16 +47,6 @@ const DEFAULT_FT = Number(process.env.HB_DEFAULT_FT ?? "10");
 type KeyType = { feet?: number; basis?: string; zones?: { zone: string; kind: string; feet: number }[]; excluded?: boolean; sameAs?: string };
 type KeySet = { heldOut: boolean; labelSet: string; types: Record<string, KeyType> };
 type Label = { page: number; sheet: string; feetPerUnit: number; verdicts: { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; thicknessFeet: number; verdict: string; wallType?: string }[]; traced?: { x1: number; y1: number; x2: number; y2: number; lengthFeet: number; wallType?: string }[] };
-
-/** "C6" → the key's "C" when the key has no "C6" (the letter's entry, as the round-14 scorer did). */
-export function keyTypeFor(types: Record<string, KeyType>, code: string): [string, KeyType] | null {
-  const letter = /^([A-Z]+)\d+$/i.exec(code)?.[1];
-  const found = types[code] ? code : letter && types[letter] ? letter : null;
-  if (found === null) return null;
-  // "IW-4": { sameAs: "IW-1" } is IW-1's height.
-  const t = types[found]!;
-  return t.sameAs && types[t.sameAs] ? [found, { ...types[t.sameAs]!, excluded: t.excluded ?? types[t.sameAs]!.excluded }] : [found, t];
-}
 
 /** The key's height for one wall: a single figure, or the zone its rooms settle, else every zone's figure (lenient only). */
 function keyHeights(setName: string, k: KeyType, sideRooms: readonly (string | null)[], parts: Map<string, string>): { strict: number | null; any: number[] } {

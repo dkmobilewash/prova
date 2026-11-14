@@ -1,6 +1,6 @@
 import { prisma } from "@prova/db";
 import type { PlanPdf } from "@/lib/plan-ingest/planPdf";
-import { pointInRing } from "./drawTools";
+import { wallSideRooms } from "./wallSides";
 import { roomPitched } from "./roofParts";
 import { storeRoofParts, storedRoofParts } from "./roofPartsRead";
 import { setHeightFacts } from "./setHeightFacts";
@@ -47,9 +47,6 @@ async function floorToFloor(planId: string, pageNumber: number, doc: PlanPdf | n
   return feet;
 }
 
-/** A wall's two sides: just past its middle, either way. ponytail: a fixed offset; a wall drawn thicker than ~1.5 ft at 1/8" scale probes inside itself. */
-const SIDE_OFFSET = 0.006;
-
 /**
  * ── EVERY WALL ON A SHEET A HEIGHT ──
  *
@@ -73,23 +70,10 @@ export async function assignWallHeights(input: { planId: string; pageId: string;
   let drawn = 0, assumed = 0;
   const items = new Set<string>();
   for (const wall of walls) {
-    let best = { x1: 0, y1: 0, x2: 0, y2: 0, len: 0 };
-    for (let i = 0; i + 1 < wall.xs.length; i += 1) {
-      const s = { x1: wall.xs[i]!, y1: wall.ys[i]!, x2: wall.xs[i + 1]!, y2: wall.ys[i + 1]! };
-      const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
-      if (len > best.len) best = { ...s, len };
-    }
-    const sides: (number | null)[] = [];
-    const pitched: (boolean | null)[] = [];
-    if (best.len > 0) {
-      for (const sign of [1, -1]) {
-        const px = (best.x1 + best.x2) / 2 + (sign * -(best.y2 - best.y1) / best.len) * SIDE_OFFSET;
-        const py = (best.y1 + best.y2) / 2 + (sign * (best.x2 - best.x1) / best.len) * SIDE_OFFSET;
-        const room = rooms.find((r) => pointInRing(px, py, r.xs, r.ys));
-        sides.push(room?.ceilingHeightFeet ?? null);
-        pitched.push(room && roof ? roomPitched(roof.mask, { xs: room.xs, ys: room.ys, named: room.roomNumber !== null || room.roomName !== null }) : null);
-      }
-    }
+    // The room on each side (`wallSides.ts`, the probe the height evals share).
+    const sideRooms = wallSideRooms(wall, rooms);
+    const sides = sideRooms.map((room) => room?.ceilingHeightFeet ?? null);
+    const pitched = sideRooms.map((room) => (room && roof ? roomPitched(roof.mask, { xs: room.xs, ys: room.ys, named: room.roomNumber !== null || room.roomName !== null }) : null));
     const height = wallHeightChain(plan.rule, sides, pitched, answer, figures);
     await prisma.takeoffMeasurement.update({
       where: { id: wall.id },
