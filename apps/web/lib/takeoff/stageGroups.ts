@@ -5,6 +5,7 @@ import { MIN_VOTES } from "./planCompare";
 import { alignViews, longFaces } from "./viewAlign";
 import { contestedRuns, tagByRun, wallTypeTags, type PageTextItem, type WallTypeTag } from "./wallTags";
 import { defaultWallTypeFromNotes } from "./wallNotes";
+import { wallTagCodes } from "./legendText";
 import { wallGroups, type WallGroup } from "./wallGroups";
 import type { MatchableWallType } from "./wallTypeMatch";
 
@@ -207,4 +208,69 @@ export function siblingPages(sheets: readonly { pageNumber: number; sheetNumber:
   const mine = stem(sheets.find((s) => s.pageNumber === pageNumber)?.sheetNumber ?? null);
   if (mine === null) return [];
   return sheets.filter((s) => s.pageNumber !== pageNumber && stem(s.sheetNumber) === mine && !/\bDEMO/i.test(s.title ?? "")).map((s) => s.pageNumber);
+}
+
+/**
+ * ── THE WALLS STAGE'S TYPE GROUPS, ONE FUNCTION FOR THE PRODUCT AND THE TYPES TABLE ──
+ *
+ * What `detectWallsForCalibration` posts as a sheet's typed groups, and what `zzTypeTable.eval.ts`
+ * scores, from the same calls. Before 2026-11-14 the table rebuilt this by hand and missed two steps,
+ * so the types exam under-measured: a text-read legend's codes the sheet does not print as wall
+ * tags leave the vocabulary (`wallTagCodes`); and a sheet that prints no tag reads them off its
+ * sibling (`siblingPages`, `tagsFromSibling`) — Green Bay's A3.1 from A3.2.
+ *
+ * `finderGroups` is the finder's own grouping when it paired with the types' thicknesses: kept as
+ * it was unless the legend guard drops a code. The sibling is read only when the stage grouped
+ * (not the finder) and the sheet is not a scan, as before.
+ */
+export async function stageTypeGroups(input: {
+  found: FoundOnSheet;
+  segmentsPt: readonly StrokeSegment[];
+  textItems: readonly PageTextItem[];
+  widthPt: number;
+  feetPerUnit: number;
+  wallTypes: readonly MatchableWallType[];
+  /** The legend's own codes, or null. */
+  legendCodes: readonly string[] | null;
+  /** The stage's tag vocabulary (`vocabularyFor`), or null when there is none. */
+  vocabulary: readonly string[] | null;
+  /** The legend was read from the pages' text (not a model): its codes are guarded by the sheet's own tags. */
+  fromText: boolean;
+  /** Set when the finder paired with the thicknesses: its own groups. */
+  finderGroups?: WallGroup[];
+  scanned: boolean;
+  /** The sheet's siblings, asked only when the sheet prints no tag. */
+  siblings: () => Promise<readonly number[]>;
+  readSibling: (page: number) => Promise<SiblingSheet | null>;
+}): Promise<WallGroup[]> {
+  const { found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes, vocabulary } = input;
+  const untrusted =
+    input.fromText && legendCodes !== null
+      ? (() => {
+          const trusted = wallTagCodes({ text: textItems, segments: segmentsPt, walls: found.walls, widthPt, feetPerUnit, codes: legendCodes });
+          return new Set(legendCodes.filter((c) => !trusted.has(c.toUpperCase())));
+        })()
+      : null;
+  const guarded = untrusted === null ? vocabulary : (vocabulary?.filter((c) => !untrusted.has(c.toUpperCase())) ?? null);
+  const midSpan = (legendCodes ?? []).length === 0;
+  let groups =
+    input.finderGroups !== undefined && untrusted === null
+      ? input.finderGroups
+      : groupsForStage({ found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes: guarded, midSpan }).groups;
+  if (input.finderGroups === undefined && vocabulary !== null && !input.scanned && !groups.some((g) => g.source.kind === "TAG")) {
+    try {
+      for (const page of await input.siblings()) {
+        const sibling = await input.readSibling(page);
+        if (sibling === null) continue;
+        const withSibling = groupsForStage({ found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes: vocabulary, sibling, midSpan }).groups;
+        if (withSibling.some((g) => g.source.kind === "TAG")) {
+          groups = withSibling;
+          break;
+        }
+      }
+    } catch (error) {
+      console.error("[takeoff] sibling-sheet tags failed; grouping without them", error);
+    }
+  }
+  return groups;
 }

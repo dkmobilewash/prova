@@ -42,10 +42,12 @@ def measure(path):
 
 off, on = measure(OFF), measure(ON)
 pct = lambda a, b: 100 * a / b if b else float("nan")
-print(f"{'set':34} {'keyft':>6} | {'cand off':>8} {'on':>6} | {'ok off':>6} {'on':>6} | {'wr off':>6} {'on':>6}")
+# keyft = key-code ft a group's runs cover (what candidate recall is over); typed = ALL key-code ft
+# the key holds, covered or not. typed > 0 with keyft 0 means the product found no run there.
+print(f"{'set':34} {'typed':>6} {'keyft':>6} | {'cand off':>8} {'on':>6} | {'ok off':>6} {'on':>6} | {'wr off':>6} {'on':>6}")
 for s in sorted(set(off) | set(on)):
     a, b = off[s], on[s]
-    print(f"{s[:34]:34} {a['keyft']:6.0f} | {a['cand']:8.0f} {b['cand']:6.0f} | {a['correct']:6.0f} {b['correct']:6.0f} | {a['wrong']:6.0f} {b['wrong']:6.0f}")
+    print(f"{s[:34]:34} {a['key_code']:6.0f} {a['keyft']:6.0f} | {a['cand']:8.0f} {b['cand']:6.0f} | {a['correct']:6.0f} {b['correct']:6.0f} | {a['wrong']:6.0f} {b['wrong']:6.0f}")
 for name, per in (("OFF", off), ("ON", on)):
     t = {k: sum(p[k] for p in per.values()) for k in ("keyft", "cand", "key_code", "correct", "wrong", "typed_code")}
     print(f"{name}: candidate recall {pct(t['cand'], t['keyft']):.1f}% ({t['cand']:,.0f} of {t['keyft']:,.0f} ft) | chain settled-correct {pct(t['correct'], t['key_code']):.1f}% ({t['correct']:,.0f} ft) wrong-of-typed {pct(t['wrong'], t['typed_code']):.1f}% ({t['wrong']:,.0f} of {t['typed_code']:,.0f} ft)")
