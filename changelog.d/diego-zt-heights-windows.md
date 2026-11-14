@@ -1,0 +1,3 @@
+### The zero-touch scoreboard prices heights and windows the way the product does
+
+The zero-touch eval's run side now gives every posted wall the product's own height chain (#1157 — the printed rule, else the company's TO_STRUCTURE / CEILING+6 / FIXED answer, imported from `heightsByCode.ts`, no room sides since the eval runs no room finder), so board is priced on both sides and the "board (no height)" cause becomes the real height GAP. Windows now price through the door/window scope setting (#1161) instead of an informational footnote — $0 at the BY_OTHERS default, UNDER money at FRAMES/DOORS_AND_FRAMES. Eval only; the headline TOTAL ERROR stops overstating what automation has not done.
