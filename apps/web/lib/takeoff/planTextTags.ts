@@ -3,8 +3,8 @@ import { splitVariant } from "./variantMark";
 import { legendVocabulary, prefixlessVocabulary, tagsFromSymbols } from "./symbolTagging";
 import { SHEET_REFERENCE, tagSymbols, type SymbolShape, type TextForSymbol } from "./tagSymbols";
 import { propagateTypes } from "./typePropagation";
-import { tagByRun, type WallTypeTag } from "./wallTags";
-import { familyOf, withVariantTypes, type MatchableWallType } from "./wallTypeMatch";
+import { contestedRuns, tagByRun, type WallTypeTag } from "./wallTags";
+import { familyOf, sameDesignation, withVariantTypes, type MatchableWallType } from "./wallTypeMatch";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
@@ -243,7 +243,7 @@ export function planTextTagByRun(input: {
   wallTypes: readonly MatchableWallType[];
   /** The mid-span tie-break (`tagByRun`): on only when no legend has been read. */
   midSpan?: boolean;
-}): { byRun: Map<WallCandidate, string>; report: PlanTextTagReport; wallTypes: MatchableWallType[] } {
+}): { byRun: Map<WallCandidate, string>; report: PlanTextTagReport; wallTypes: MatchableWallType[]; contested: Map<WallCandidate, string[]> } {
   const { segments, text, widthPt, walls, feetPerUnit, textTags } = input;
   const symbols = tagSymbols({ segments, text, unitsPerPaperInch: 72 });
   // ── THE PLAN'S OWN TAGS JOIN THE VOCABULARY AS VARIANTS ──
@@ -319,12 +319,16 @@ export function planTextTagByRun(input: {
     x: b.x,
     y: b.y,
   }));
-  const direct = tagByRun(walls, [...fromSymbols.tags.map(asLegend), ...bareTags, ...loose], feetPerUnit, wallTypes, input.midSpan ?? false);
+  const dropped: WallTypeTag[] = [];
+  const direct = tagByRun(walls, [...fromSymbols.tags.map(asLegend), ...bareTags, ...loose], feetPerUnit, wallTypes, input.midSpan ?? false, dropped);
   const carried = propagateTypes({ walls, tagged: direct, feetPerUnit, defaultCode: null });
   const byRun = new Map<WallCandidate, string>(direct);
+  // A carried type stops at a run a dropped tag of another code sits beside (`contestedRuns`).
+  const contested = contestedRuns(walls, direct, dropped, feetPerUnit);
   let propagated = 0;
   for (const [run, type] of carried.byRun) {
     if (type.source !== "propagated") continue;
+    if ((contested.get(run) ?? []).some((code) => !sameDesignation(code, type.code))) continue;
     byRun.set(run, propagatedTag(type.code));
     propagated += 1;
   }
@@ -332,6 +336,7 @@ export function planTextTagByRun(input: {
   return {
     byRun,
     wallTypes,
+    contested: new Map([...contested].filter(([run]) => !byRun.has(run))),
     report: {
       symbols: symbols.length,
       coded: fromSymbols.counts.knownToLegend,

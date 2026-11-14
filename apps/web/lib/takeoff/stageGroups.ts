@@ -3,7 +3,7 @@ import type { FoundOnSheet } from "./findWallsOnSheet";
 import { planTextTagByRun, siblingTag } from "./planTextTags";
 import { MIN_VOTES } from "./planCompare";
 import { alignViews, longFaces } from "./viewAlign";
-import { tagByRun, wallTypeTags, type PageTextItem } from "./wallTags";
+import { contestedRuns, tagByRun, wallTypeTags, type PageTextItem, type WallTypeTag } from "./wallTags";
 import { defaultWallTypeFromNotes } from "./wallNotes";
 import { wallGroups, type WallGroup } from "./wallGroups";
 import type { MatchableWallType } from "./wallTypeMatch";
@@ -140,15 +140,21 @@ export function groupsForStage(input: {
   const { found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes } = input;
   const tags = wallTypeTags(textItems, widthPt);
   const fromNote = defaultWallTypeFromNotes(textItems, wallTypes);
+  const dropped: WallTypeTag[] = [];
   const own =
     legendCodes === null
-      ? { byRun: tagByRun(found.walls, tags, feetPerUnit, wallTypes), wallTypes: [...wallTypes] }
+      ? (() => {
+          const byRun = tagByRun(found.walls, tags, feetPerUnit, wallTypes, false, dropped);
+          return { byRun, wallTypes: [...wallTypes], contested: contestedRuns(found.walls, byRun, dropped, feetPerUnit) };
+        })()
       : planTextTagByRun({ segments: segmentsPt, text: textItems, widthPt, walls: found.walls, feetPerUnit, legendCodes, textTags: tags, wallTypes, midSpan: input.midSpan ?? false });
   const fromSibling = own.byRun.size === 0 && legendCodes !== null && input.sibling ? tagsFromSibling({ ...input, sibling: input.sibling, legendCodes }) : null;
   const read = fromSibling ?? own;
   const hatched = hatchedRuns(found.walls, found.inUnits, feetPerUnit);
   // The types with the plan's tag variants (C6 of family C), so a variant tag names a type.
-  return { groups: wallGroups(clusterByThickness(found.walls), read.byRun, read.wallTypes, fromNote, hatched), hatched };
+  // A run beside a dropped tag of another code is not settled by thickness alone (`contestedRuns`).
+  const contested = fromSibling === null ? own.contested : new Map<WallCandidate, string[]>();
+  return { groups: wallGroups(clusterByThickness(found.walls), read.byRun, read.wallTypes, fromNote, hatched, contested), hatched };
 }
 
 export type SiblingSheet = { segmentsPt: readonly StrokeSegment[]; textItems: readonly PageTextItem[]; widthPt: number };
