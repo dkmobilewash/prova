@@ -20,9 +20,8 @@ import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
 import { stampSuggestions } from "./suggestionStamp";
 import { matchGroups } from "./proposalMatch";
-import { groupsForStage, siblingPages } from "./stageGroups";
+import { siblingPages, stageTypeGroups } from "./stageGroups";
 import { aiGate } from "@/lib/ai/settings";
-import { wallTagCodes } from "./legendText";
 import { doorScheduleForPlan, doorsOnSheet, LEGEND_TEXT_ON, legendForPlan, typedFeetOf, writeSheetResult } from "./planTextRead";
 
 /**
@@ -375,39 +374,31 @@ export async function detectWallsForCalibration(
     }
     await new Promise((resolve) => setImmediate(resolve));
     const found = { ...detected.found, walls: offered.offeredRuns, groups: detected.found.regroup(offered.offeredRuns) };
-    // The groups: the finder's own when it paired with the thicknesses, else
-    // rebuilt here with them — same runs, same feet, named with the types.
-    // ── A TEXT-READ LEGEND'S GUARD (`wallTagCodes`): its codes this sheet does not print as wall tags
-    // leave the vocabulary, and the groups are rebuilt with the rest — the path the eval measured.
-    const untrusted =
-      fromText && legendCodes !== null
-        ? (() => {
-            const trusted = wallTagCodes({ text: textItems, segments: strokes.segments, walls: found.walls, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, codes: legendCodes });
-            return new Set(legendCodes.filter((c) => !trusted.has(c.toUpperCase())));
-          })()
-        : null;
-    const guardedCodes = untrusted === null ? (planText?.legendCodes ?? null) : (planText?.legendCodes.filter((c) => !untrusted.has(c.toUpperCase())) ?? null);
-    let groups = pairWithThicknesses && untrusted === null
-      ? found.groups
-      : groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: guardedCodes, midSpan: (legendCodes ?? []).length === 0 }).groups;
-    // ── NO TAG ON THIS SHEET: READ THEM OFF ITS SIBLING — see `tagsFromSibling` ──
-    if (!pairWithThicknesses && planText !== undefined && raster === null && !groups.some((g) => g.source.kind === "TAG")) {
-      try {
+    // The groups: the finder's own when it paired with the thicknesses, else rebuilt here with them —
+    // the legend guard (`wallTagCodes`) and the sibling read included. One function with the types
+    // table (`stageTypeGroups`), so the exam scores what this posts.
+    const groups = await stageTypeGroups({
+      found,
+      segmentsPt: strokes.segments,
+      textItems,
+      widthPt: strokes.widthPt,
+      feetPerUnit: target.feetPerUnit,
+      wallTypes,
+      legendCodes,
+      vocabulary: planText?.legendCodes ?? null,
+      fromText,
+      ...(pairWithThicknesses ? { finderGroups: found.groups } : {}),
+      scanned: raster !== null,
+      siblings: async () => {
         const { pairingsForPlan } = await import("./priorPlanLoad");
-        for (const page of siblingPages((await pairingsForPlan(target.planId)).sheets, target.pageNumber)) {
-          if (page < 1 || page > doc.pageCount) continue;
-          const other = await doc.pageStrokes(page);
-          const otherText = (await doc.pageText(page)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
-          const withSibling = groupsForStage({ found, segmentsPt: strokes.segments, textItems, widthPt: strokes.widthPt, feetPerUnit: target.feetPerUnit, wallTypes, legendCodes: planText.legendCodes, sibling: { segmentsPt: other.segments, textItems: otherText, widthPt: other.widthPt }, midSpan: (legendCodes ?? []).length === 0 }).groups;
-          if (withSibling.some((g) => g.source.kind === "TAG")) {
-            groups = withSibling;
-            break;
-          }
-        }
-      } catch (error) {
-        console.error("[takeoff] sibling-sheet tags failed; grouping without them", { planId: target.planId, page: target.pageNumber }, error);
-      }
-    }
+        return siblingPages((await pairingsForPlan(target.planId)).sheets, target.pageNumber).filter((page) => page >= 1 && page <= doc.pageCount);
+      },
+      readSibling: async (page) => {
+        const other = await doc.pageStrokes(page);
+        const otherText = (await doc.pageText(page)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
+        return { segmentsPt: other.segments, textItems: otherText, widthPt: other.widthPt };
+      },
+    });
     // ── WHAT A MARKED TAG MEANS, FOR THE QUEUE (`variantMark.ts`) ──
     // "C6*" types as C6; the words printed with it ride beside the groups so the
     // suggestion can say "C6 (C6* at tub/shower locations, see legend)". Only a

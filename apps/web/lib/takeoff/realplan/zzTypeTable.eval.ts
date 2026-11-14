@@ -10,9 +10,12 @@ import { readPartitionAssembly } from "../partitionAssembly";
 import { typeSource } from "../postingGate";
 import { plainTag } from "../planTextTags";
 import { pageLines } from "../planTextRead";
-import { productDetection, sampledSheetsFor, vocabularyFor } from "../productDetection";
+import { productDetection, productSheetRuns, sampledSheetsFor, vocabularyFor } from "../productDetection";
+import { priorPlanFor } from "../priorPlan";
+import { autoPairs } from "../priorPlanLoad";
+import { pageInventoryWork, type SheetProposalRow } from "../../plan-ingest/pageInventory";
 import { sheetStrokes } from "../sheetStrokes";
-import { groupsForStage } from "../stageGroups";
+import { hatchedRuns, siblingPages, stageTypeGroups } from "../stageGroups";
 import { tagSymbols } from "../tagSymbols";
 import { defaultWallTypeFromNotes } from "../wallNotes";
 import type { MatchableWallType } from "../wallTypeMatch";
@@ -41,6 +44,8 @@ const DIRS = (process.env.REAL_PLAN_DIR ?? "").split(":").filter((d) => d !== ""
 const LABELS = process.env.TAKEOFF_LABEL_DIR ?? "";
 const OUT = process.env.TT_OUT ?? "";
 const HELD = process.env.TT_HELD === "1";
+/** Every labelled sheet, scored or not and why, beside the table (`<TT_OUT>.coverage`): a sheet the table cannot see is said, not silent. */
+const coverage = (row: Record<string, unknown>) => { if (OUT !== "") appendFileSync(`${OUT.replace(/\.part$/, "")}.coverage`, JSON.stringify(row) + "\n"); };
 const flat = (s: string) => s.replace(/\.pdf$/i, "").replace(/[^a-z0-9]+/gi, "").toUpperCase();
 const normCode = (c: string) => c.toUpperCase().replace(/[^A-Z0-9]/g, "");
 const WET = /\b(?:TOILET|RESTROOM|SHOWER|LOCKER|JANITOR|JAN\.?|MOP|KITCHEN|LAB|WOMEN|MEN|BATH)\b/i;
@@ -84,11 +89,31 @@ describe.skipIf(DIRS.length === 0 || LABELS === "" || OUT === "")("wall types ta
       const sheets = names
         .map((n) => ({ sheet: n.slice(0, -5), saved: JSON.parse(readFileSync(join(LABELS, dir, n), "utf8")) as Saved }))
         .filter(({ sheet, saved }) => excludedSheetReason(dir, sheet) === null && [...(saved.verdicts ?? []), ...(saved.traced ?? [])].some((v) => (v.wallType ?? "U").toUpperCase() !== "U" && (v.wallType ?? "") !== ""));
+      for (const n of names) if (!sheets.some((s) => `${s.sheet}.json` === n)) coverage({ set: dir, sheet: n.slice(0, -5), scored: false, why: excludedSheetReason(dir, n.slice(0, -5)) ?? "the key types no wall with a legend code (U or none only)" });
       if (sheets.length === 0) continue;
       const pdf = findPdf(dir);
       if (pdf === null) throw new Error(`${dir}: no PDF under REAL_PLAN_DIR`);
       const bytes = () => Buffer.from(readFileSync(pdf));
       const doc = await openPlanPdf(bytes());
+      // The keyless inventory's sheet numbers and titles, read once and only when a sheet needs them:
+      // the demolition pairing (`autoPairs`) and the sibling (`siblingPages`), as the product reads them.
+      let inventory: { sheets: { pageNumber: number; sheetNumber: string | null; title: string | null }[]; auto: ReturnType<typeof autoPairs> } | null = null;
+      const setSheets = async () => {
+        if (inventory !== null) return inventory;
+        const proposals = new Map<number, SheetProposalRow>();
+        const own = await openPlanPdf(bytes());
+        const work = pageInventoryWork(
+          { planId: "p", companyId: "c", ingestJobId: "i", jobId: "j", startedByUserId: null },
+          { readPlanBytes: async () => ({ ok: true, bytes: Buffer.from("") }), openPdf: async () => own, saveSheetText: async () => {}, saveScaleReading: async () => {}, saveSheetProposal: async (r) => void proposals.set(r.pageNumber, r), sheetNamesOn: async () => true },
+        );
+        for (let p = 1; p <= doc.pageCount; p += 1) {
+          try { await work({ id: `t${p}`, pageNumber: p, stage: "PAGE_INVENTORY", attempts: 0 } as never); } catch { /* an unreadable page is not paired */ }
+        }
+        await own.close().catch(() => {});
+        const sheets = [...proposals.values()].map((r) => ({ pageNumber: r.pageNumber, sheetNumber: r.sheetNumber, title: r.title }));
+        inventory = { sheets, auto: autoPairs(sheets) };
+        return inventory;
+      };
 
       // ── THE SET, ONCE: the keyless legend, and which codes each page prints ──
       const richest = new Map<string, { code: string; lines: string[] }>();
@@ -119,15 +144,42 @@ describe.skipIf(DIRS.length === 0 || LABELS === "" || OUT === "")("wall types ta
       for (const { sheet, saved } of sheets) {
         const page = saved.page, fpu = saved.feetPerUnit;
         const strokes = await sheetStrokes(bytes(), page);
-        if (strokes === null || strokes.segments.length < 50) continue;
+        if (strokes === null || strokes.segments.length < 50) { coverage({ set: dir, sheet, scored: false, why: "no vector drawing (under 50 strokes)" }); continue; }
         const W = strokes.widthPt;
         const items = (await doc.pageText(page)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
         const sampledSheets = await sampledSheetsFor({ pageCount: doc.pageCount, pageNumber: page, own: strokes, read: (p) => doc.pageStrokes(p) });
         const base = { segments: strokes.segments, textItems: items, pageSize: { widthPt: W, heightPt: strokes.heightPt }, feetPerUnit: fpu, wallTypes: legendTypes, legendCodes: legendCodes.length > 0 ? legendCodes : null, scanned: false, sampledSheets };
         const vocabulary = vocabularyFor(base);
         // As the WALLS stage: the finder pairs without the types' thicknesses; the grouping has them.
-        const found = productDetection({ ...base, pairWithThicknesses: false }).found;
-        const staged = groupsForStage({ found, segmentsPt: strokes.segments, textItems: items, widthPt: W, feetPerUnit: fpu, wallTypes: legendTypes, legendCodes: vocabulary.length === 0 ? null : vocabulary, sibling: null, midSpan: legendCodes.length === 0 });
+        // ── WHAT THE WALLS STAGE POSTS (`detectWallsForCalibration`), FOR A NEW COMPANY ──
+        // The runs the viewer offers (set-asides applied), after the demolition-plan compare when the
+        // sheet auto-pairs (new companies have plan comparison on); then the stage's own grouping,
+        // legend guard and sibling read (`stageTypeGroups`, one function with the product).
+        const detected = productDetection({ ...base, pairWithThicknesses: false });
+        const offer = (priorPlan?: { lines: NonNullable<ReturnType<typeof priorPlanFor>["lines"]>; sheet: string }) =>
+          productSheetRuns({ detected, segmentsPt: strokes.segments, widthPt: W, feetPerUnit: fpu, textItems: items, ...(priorPlan === undefined ? {} : { priorPlan }) }).offeredRuns;
+        let offered = offer();
+        const pair = (await setSheets()).auto.get(page);
+        if (pair !== undefined && pair.demoPage >= 1 && pair.demoPage <= doc.pageCount && pair.demoPage !== page) {
+          const ds = await doc.pageStrokes(pair.demoPage);
+          const dt = (await doc.pageText(pair.demoPage)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
+          const prior = priorPlanFor({ demo: { segments: ds.segments, textItems: dt, widthPt: ds.widthPt, heightPt: ds.heightPt }, newPage: { segments: strokes.segments, widthPt: W }, newRuns: offered, feetPerUnit: fpu });
+          if (prior.lines !== null) offered = offer({ lines: prior.lines, sheet: `p${pair.demoPage}` });
+        }
+        const found = { ...detected.found, walls: offered, groups: detected.found.regroup(offered) };
+        let siblingUsed: number | null = null;
+        const stagedGroups = await stageTypeGroups({
+          found, segmentsPt: strokes.segments, textItems: items, widthPt: W, feetPerUnit: fpu, wallTypes: legendTypes,
+          legendCodes: legendCodes.length > 0 ? legendCodes : null, vocabulary: vocabulary.length === 0 ? null : vocabulary, fromText: true, scanned: false,
+          siblings: async () => siblingPages((await setSheets()).sheets, page).filter((p) => p >= 1 && p <= doc.pageCount),
+          readSibling: async (p) => {
+            siblingUsed = p;
+            const other = await doc.pageStrokes(p);
+            return { segmentsPt: other.segments, textItems: (await doc.pageText(p)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height })), widthPt: other.widthPt };
+          },
+        });
+        const staged = { groups: stagedGroups, hatched: hatchedRuns(found.walls, found.inUnits, fpu) };
+        const siblingTyped = stagedGroups.some((g) => g.source.kind === "TAG" && g.source.tag.endsWith(" ⇄"));
         const note = defaultWallTypeFromNotes(items, legendTypes);
         const symbols = tagSymbols({ segments: strokes.segments, text: items, unitsPerPaperInch: 72 });
 
@@ -202,7 +254,8 @@ describe.skipIf(DIRS.length === 0 || LABELS === "" || OUT === "")("wall types ta
             cands,
           };
         });
-        appendFileSync(OUT, JSON.stringify({ set: dir, sheet, page, feetPerUnit: fpu, legend: legendCodes, groups }) + "\n");
+        appendFileSync(OUT, JSON.stringify({ set: dir, sheet, page, feetPerUnit: fpu, legend: legendCodes, sibling: siblingTyped ? siblingUsed : null, groups }) + "\n");
+        coverage({ set: dir, sheet, scored: true });
       }
       await doc.close();
     }
