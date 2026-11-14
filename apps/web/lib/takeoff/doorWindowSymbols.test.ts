@@ -37,6 +37,24 @@ describe("door symbols", () => {
     expect(d.leaves).toBe(1);
   });
 
+  it("takes a leaf drawn inset from the hinge and the arc's end (Topeka): along the radius, most of its length", () => {
+    // A 2.2 ft stroke on a 3 ft swing, 0.4 ft in from the hinge: the old length test refused it.
+    const inset: StrokeSegment = { x1: hinge.x, y1: hinge.y - ft(0.4), x2: hinge.x, y2: hinge.y - ft(2.6) };
+    const doors = doorSymbols([inset, ...arc], walls, FPU);
+    expect(doors).toHaveLength(1);
+    expect(doors[0]!.strike.x).toBeCloseTo(0.53, 3);
+    // A line parallel to the leaf but 0.6 ft off it (a wall face beside the swing) is not the leaf either.
+    expect(doorSymbols([{ x1: hinge.x - ft(0.6), y1: hinge.y - ft(0.2), x2: hinge.x - ft(0.6), y2: hinge.y - ft(2.8) }, ...arc], walls, FPU)).toHaveLength(0);
+    // Too short a piece of the radius is not a leaf.
+    expect(doorSymbols([{ x1: hinge.x, y1: hinge.y - ft(0.4), x2: hinge.x, y2: hinge.y - ft(1.5) }, ...arc], walls, FPU)).toHaveLength(0);
+  });
+
+  it("does not take a dimension or extension line through the hinge as the leaf: it runs on past the arc (NG Green Bay)", () => {
+    const dimension: StrokeSegment = { x1: hinge.x, y1: hinge.y + ft(1), x2: hinge.x, y2: hinge.y - ft(8) };
+    expect(doorSymbols([dimension, ...arc], walls, FPU)).toHaveLength(0);
+    expect(doorArcCandidates([dimension, ...arc], walls, FPU)[0]!.reject).toBe("no-leaf");
+  });
+
   it("needs the leaf: a bare quarter arc is a countertop return, not a door", () => {
     expect(doorSymbols(arc, walls, FPU)).toHaveLength(0);
     const why = doorArcCandidates(arc, walls, FPU);
