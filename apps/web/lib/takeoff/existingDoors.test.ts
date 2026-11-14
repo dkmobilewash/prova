@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { doorsAndWindowsForSheet } from "./doorsWindows";
 import { doorSymbols } from "./doorWindowSymbols";
-import { asideExistingWalls, dashedBoxAround, dashedLines, existingDoors, existingPrefixes, swingSide } from "./existingDoors";
+import { asideExistingWalls, dashedBoxAround, dashedLines, doorPen, existingDoors, existingPrefixes, swingSide } from "./existingDoors";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /** One foot = 0.01 page-width units, so feetPerUnit is 100; the page is 1000 pt wide. */
@@ -167,5 +167,79 @@ describe("a door series the set calls existing", () => {
   it("a keynote or reference shaped like a prefix (E23.04, E5B beside E Street's E-5) is not a door mark: the series takes its hyphen", () => {
     expect(series([markAt("E23.04", 0)], { existingPrefixes: ["E"] })).toEqual([]);
     expect(series([markAt("E5B", 0)], { existingPrefixes: ["E"] })).toEqual([]);
+  });
+});
+
+describe("a door drawn in the existing (grey) pen", () => {
+  // Four 3 ft doors along a wall at y = 0.5; the first is drawn grey, the rest black.
+  const at = [0.2, 0.4, 0.6, 0.8];
+  const doorAt = (x: number, gray: number): StrokeSegment[] => [{ x1: x, y1: 0.5, x2: x, y2: 0.5 - ft(3), gray }, ...swing(x, 0.5, ft(3), -Math.PI / 2, 0).map((s) => ({ ...s, gray }))];
+  const sheet = (grays: number[]) => at.flatMap((x, i) => doorAt(x, grays[i]!));
+  const run = (grays: number[], words: string[]) => {
+    const segs = sheet(grays);
+    const ds = doorSymbols(segs, [wall(0.1, 0.5, 0.9, 0.5)], FPU);
+    return { ds, got: existingDoors({ doors: ds, segments: segs, textPt: words.map((w, i) => word(w, 0.1 + i * 0.01, 0.1)), widthPt: W, feetPerUnit: FPU }) };
+  };
+  const reno = ["(E)", "EXISTING", "EXISTING", "EXISTING"];
+
+  it("reads a door's pen off its own arc and leaf", () => {
+    const { ds } = run([0.6, 0, 0, 0], []);
+    expect(ds).toHaveLength(4);
+    expect(doorPen(ds[0]!, sheet([0.6, 0, 0, 0]), FPU)).toEqual({ grey: 1, dark: 0 });
+    expect(doorPen(ds[1]!, sheet([0.6, 0, 0, 0]), FPU)).toEqual({ grey: 0, dark: 1 });
+  });
+
+  it("on a sheet that shows existing work, the grey door among black ones is set aside", () => {
+    const { got } = run([0.6, 0, 0, 0], reno);
+    expect(got.map((e) => e.route)).toEqual(["grey"]);
+    expect(got[0]!.why).toBe("drawn grey where the sheet draws its doors dark, on a sheet that shows existing work");
+  });
+
+  it("grey alone is not enough: where most doors are grey, or with no renovation words and not nearly all dark, nothing goes", () => {
+    expect(run([0.6, 0.6, 0.6, 0], reno).got).toEqual([]);
+    expect(run([0.6, 0.6, 0, 0], []).got).toEqual([]);
+  });
+
+  it("with no renovation words, a door all grey where three of four doors are dark is set aside", () => {
+    expect(run([0.6, 0, 0, 0], []).got.map((e) => e.why)).toEqual(["drawn grey where the sheet draws nearly all its doors dark"]);
+  });
+
+  // The first door's arc grey and its leaf part dark: `darkFt` of the 3 ft leaf (the arc is ~4.7 ft).
+  const mixed = (darkFt: number) => {
+    const x = at[0]!;
+    const first: StrokeSegment[] = [
+      { x1: x, y1: 0.5, x2: x, y2: 0.5 - ft(3 - darkFt), gray: 0.6 }, { x1: x, y1: 0.5 - ft(3 - darkFt), x2: x, y2: 0.5 - ft(3), gray: 0 },
+      ...swing(x, 0.5, ft(3), -Math.PI / 2, 0).map((g) => ({ ...g, gray: 0.6 })),
+    ];
+    return [...first, ...at.slice(1).flatMap((xx) => doorAt(xx, 0))];
+  };
+  const runSegs = (segs: StrokeSegment[], words: string[]) => {
+    const ds = doorSymbols(segs, [wall(0.1, 0.5, 0.9, 0.5)], FPU);
+    return existingDoors({ doors: ds, segments: segs, textPt: words.map((w, i) => word(w, 0.1 + i * 0.01, 0.1)), widthPt: W, feetPerUnit: FPU });
+  };
+
+  it("a door about 85% grey goes on a renovation sheet, and not on a sheet with no renovation words (that bar is 90%)", () => {
+    expect(doorSymbols(mixed(1.16), [wall(0.1, 0.5, 0.9, 0.5)], FPU)).toHaveLength(4);
+    expect(runSegs(mixed(1.16), reno).map((e) => e.route)).toEqual(["grey"]);
+    expect(runSegs(mixed(1.16), [])).toEqual([]);
+  });
+
+  it("a door a quarter dark stays, even on a renovation sheet", () => {
+    // The leaf grey, five of the arc's twelve pieces dark: about 25% dark by length.
+    const x = at[0]!;
+    const quarter: StrokeSegment[] = [
+      { x1: x, y1: 0.5, x2: x, y2: 0.5 - ft(3), gray: 0.6 },
+      ...swing(x, 0.5, ft(3), -Math.PI / 2, 0).map((g, k) => ({ ...g, gray: k < 5 ? 0 : 0.6 })),
+      ...at.slice(1).flatMap((xx) => doorAt(xx, 0)),
+    ];
+    expect(doorSymbols(quarter, [wall(0.1, 0.5, 0.9, 0.5)], FPU)).toHaveLength(4);
+    expect(runSegs(quarter, reno)).toEqual([]);
+  });
+
+  it("a stroke with no colour is black: a sheet drawn without pen colours sets nothing aside", () => {
+    const plain = at.flatMap((x) => [{ x1: x, y1: 0.5, x2: x, y2: 0.5 - ft(3) }, ...swing(x, 0.5, ft(3), -Math.PI / 2, 0)]);
+    expect(runSegs(plain, reno)).toEqual([]);
+    // A grey door among doors drawn with no colour: they are black, so it goes.
+    expect(runSegs([...doorAt(at[0]!, 0.6), ...plain.slice(13)], reno).map((e) => e.route)).toEqual(["grey"]);
   });
 });
