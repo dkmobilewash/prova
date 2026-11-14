@@ -1,0 +1,3 @@
+### The zero-touch eval applies the run model's remove-only hold when the product would
+
+With `TAKEOFF_WALL_RUN_MODEL` set, the zero-touch eval now holds every posted run the model scores below 0.10, through the product's own `runModelVerdicts` call with the before-compare runs and the aligned demolition prior — the same arguments `detectWallsForCalibration` passes. Found because the first "model ON" re-run printed dollar-identical junk-walls causes to the OFF run: the eval never read the variable, so the measurement was about nothing. The totals now print `ZT RUNMODEL ON/OFF` so a vacuous arm can never pass silently again.
