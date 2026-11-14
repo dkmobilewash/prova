@@ -30,10 +30,9 @@ export function AutoPostSwitch({ on, isOwner }: { on: boolean; isOwner: boolean 
           <span>
             <span className="font-medium text-ink">Auto-post proven items</span>
             <span className="mt-1 block text-xs text-ink-muted">
-              A wall group whose type comes from a source measured right at least 97% of the time on our training
-              plans and 95% on plans it was never tuned on posts straight to the estimate, labelled &ldquo;auto, from
-              &lt;source&gt;&rdquo;. The review queue says how many feet posted this way, with Undo per sheet.
-              Everything else still waits for you. Today no source has cleared that bar, so nothing posts yet.
+              Walls and doors only our measured-best sources are sure of post to the estimate without a review, each with
+              Undo per sheet — off until you turn it on, while the wall evidence is still small (417 ft on plans we never
+              tuned on, none wrong).
             </span>
           </span>
         </label>

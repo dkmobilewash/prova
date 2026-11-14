@@ -231,7 +231,7 @@ export async function adoptCompanyContext(identity: ClerkIdentity) {
           // plan reading is, and not as a column default: existing companies keep
           // their value and no migration touches them.
           // ── AND AUTO-POST OF PROVEN ITEMS (`lib/takeoff/autoPost.ts`) ── on for a new company; existing ones keep the column's default, off.
-          create: { name: companyName, planCompareOn: true, autoPostOn: true, aiSettings: { create: { optedInFeatures: ["PLAN_TEXT_READ"] } } },
+          create: { name: companyName, planCompareOn: true, aiSettings: { create: { optedInFeatures: ["PLAN_TEXT_READ"] } } },
         },
       },
       include: { company: true },
