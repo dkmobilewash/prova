@@ -168,6 +168,13 @@ const nextConfig = {
       // sets the variable and ships no file — and a missing model looks
       // exactly like a classifier that is switched off.
       "./models/wall-model.json",
+      // THE RUN MODEL AND THE RENO MODEL, same trap as the line above: read by
+      // path from TAKEOFF_WALL_RUN_MODEL (#1179) and TAKEOFF_WALL_RENO_MODEL
+      // (#1193). Found missing 2026-11-14 the day Diego turned both on: the
+      // variables were set, the deploy shipped no files, and both models ran
+      // silently off — exactly what the comment above warned about.
+      "./models/wall-run-model.json",
+      "./models/wall-reno-model.json",
       // THE SAMPLE JOB'S DRAWING, read by path for every company's sample
       // (`lib/sample-job/samplePlan.ts`). An invented fixture, never a client's set.
       "./lib/takeoff/fixtures/plans/S13.pdf",
