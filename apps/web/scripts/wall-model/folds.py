@@ -2,7 +2,8 @@
 own format (`zzRunModelGate.eval.ts`). Same table, GBM and weights as loso.py's `loso(every)`, so each fold's
 scores are the ones loso.py's LOSO report read.
 
-Usage: python3 scripts/wall-model/folds.py table.jsonl outdir   # writes outdir/<set>.json
+Usage: python3 scripts/wall-model/folds.py table.jsonl outdir           # run model: writes outdir/<set>.json
+       python3 scripts/wall-model/folds.py table.jsonl outdir --reno    # R: paired-renovation rows only, as reno.py trains
 """
 
 import json
@@ -25,9 +26,12 @@ X = np.array([r["x"] for r in rows], dtype=np.float64)
 ft = np.array([r["ft"] for r in rows])
 y = 1 - np.array([r["junk"] for r in rows])
 sets = np.array([r["set"] for r in rows])
+# R (reno.py) trains on renovation sheets paired with their demolition plan only.
+RENO = "--reno" in sys.argv
+mask = (X[:, names.index("renovation")] == 1) & (X[:, names.index("paired")] == 1) if RENO else np.ones(len(rows), dtype=bool)
 os.makedirs(OUTDIR, exist_ok=True)
-for held in sorted(set(sets)):
-    tr = sets != held
+for held in sorted(set(sets[mask])):
+    tr = mask & (sets != held)
     m = GradientBoostingClassifier(**GBM).fit(X[tr], y[tr], sample_weight=np.sqrt(ft[tr]))
     base = float(m.init_.class_prior_[1])
     tree = lambda t: {"left": t.children_left.tolist(), "right": t.children_right.tolist(), "feature": t.feature.tolist(), "threshold": t.threshold.tolist(), "value": [float(v[0][0]) for v in t.value]}

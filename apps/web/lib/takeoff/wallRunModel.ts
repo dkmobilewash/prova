@@ -32,25 +32,51 @@ export const RUN_MODEL_ENV = "TAKEOFF_WALL_RUN_MODEL";
 /** loso.py's `REMOVE_BELOW`, the line the exam passed at. */
 export const RUN_REMOVE_BELOW = 0.1;
 
-let cached: { key: string; model: WallModel | null } | null = null;
+/**
+ * ── R, THE PAIRED-RENOVATION MODEL, BEHIND `TAKEOFF_WALL_RENO_MODEL` (wired 2026-11-14, its held-out final passed) ──
+ *
+ * `models/wall-reno-model.json` (#1186, `scripts/wall-model/reno.py`) reads the same row as the run
+ * model and decides the same way, remove-only below `RUN_REMOVE_BELOW`, but only on a renovation
+ * sheet paired with its demolition plan (the table's `renovation` = 1 and `paired` = 1): there a
+ * run the hand chain posts and R scores below 0.10 is held back. Held-out final, run once: 2,324 ft
+ * wrong against the hand rules' 2,896, no set worse. Unset, nothing here runs.
+ *
+ * WITH THE RUN MODEL ON (production sets both): each decides on its own and a run either removes is
+ * held — both only ever remove, so the union can only hold more than either alone. Only the run
+ * model's score rides on the run (`runScore`, what auto-post reads); R's is used here and dropped.
+ */
+export const RENO_MODEL_ENV = "TAKEOFF_WALL_RENO_MODEL";
 
-/** The run model named by `TAKEOFF_WALL_RUN_MODEL`, or null (unset, unreadable, or not this build's columns — logged once). */
-export function loadRunModel(env: Record<string, string | undefined> = process.env): WallModel | null {
-  const named = env[RUN_MODEL_ENV] ?? "";
-  if (cached !== null && cached.key === named) return cached.model;
+const cached = new Map<string, { named: string; model: WallModel | null }>();
+
+/** A `kind: "run"` model with this build's columns, named by `envName`, or null (unset, unreadable, refused — logged once per value). */
+function loadRunKind(envName: string, env: Record<string, string | undefined>): WallModel | null {
+  const named = env[envName] ?? "";
+  const hit = cached.get(envName);
+  if (hit !== undefined && hit.named === named) return hit.model;
   let model: WallModel | null = null;
   if (named !== "") {
     const file = resolveModelPath(named);
     try {
       const read = JSON.parse(readFileSync(file, "utf8")) as WallModel & { kind?: string };
       if (read.kind === "run" && deciderFor(read, RUN_FEATURE_NAMES) !== null) model = read;
-      else console.error("[wall-run-model] refused: not a gbdt-binary-v1 run model with this build's RUN_FEATURE_NAMES", { file });
+      else console.error(`[${envName}] refused: not a gbdt-binary-v1 run model with this build's RUN_FEATURE_NAMES`, { file });
     } catch (err) {
-      console.error("[wall-run-model] unreadable, so Run takeoff runs without it", { file, kind: err instanceof Error ? err.name : "unknown" });
+      console.error(`[${envName}] unreadable, so Run takeoff runs without it`, { file, kind: err instanceof Error ? err.name : "unknown" });
     }
   }
-  cached = { key: named, model };
+  cached.set(envName, { named, model });
   return model;
+}
+
+/** The run model named by `TAKEOFF_WALL_RUN_MODEL`, or null. */
+export function loadRunModel(env: Record<string, string | undefined> = process.env): WallModel | null {
+  return loadRunKind(RUN_MODEL_ENV, env);
+}
+
+/** R, named by `TAKEOFF_WALL_RENO_MODEL`, or null. */
+export function loadRenoModel(env: Record<string, string | undefined> = process.env): WallModel | null {
+  return loadRunKind(RENO_MODEL_ENV, env);
 }
 
 /** Renovation words on the sheet (the table's `renovation` column). */
@@ -128,4 +154,13 @@ export function runModelVerdicts(input: RunModelInput, runModel: WallModel): { s
     if (v !== undefined && v.posted && v.score < RUN_REMOVE_BELOW) removed.push(r);
   }
   return { scores, removed };
+}
+
+/**
+ * The kept runs R holds back: none unless the sheet is a renovation sheet paired with its demolition
+ * plan (an aligned prior), else exactly the run model's remove-only rule with R's scores.
+ */
+export function renoModelRemovals(input: RunModelInput, renoModel: WallModel): WallCandidate[] {
+  if (input.prior === undefined || !isRenovationSheet(input.textItems)) return [];
+  return runModelVerdicts(input, renoModel).removed;
 }

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { WallModel } from "./wallClassifier";
 import { storedRunsOrNull } from "./wallProposal";
 import { RUN_FEATURE_NAMES } from "./wallRunFeatures";
-import { loadRunModel, RUN_REMOVE_BELOW, runModelVerdicts } from "./wallRunModel";
+import { loadRenoModel, loadRunModel, renoModelRemovals, RUN_REMOVE_BELOW, runModelVerdicts } from "./wallRunModel";
 import { FEATURE_NAMES } from "./wallFeatures";
 import type { WallCandidate } from "./wallVectors";
 
@@ -44,10 +44,43 @@ describe("the run model at Run takeoff, behind TAKEOFF_WALL_RUN_MODEL", () => {
   it("detection scores with it only when it loads, and its removals join the hold the walls stage posts", () => {
     const detect = read("./detectWallsForCalibration.ts");
     expect(detect).toContain("const runModel = raster === null ? loadRunModel(process.env) : null;");
-    expect(detect).toMatch(/runModelVerdicts\(\s*\{ offered: beforeCompare\.offeredRuns, kept: offered\.offeredRuns,/);
+    expect(detect).toContain("const input = { offered: beforeCompare.offeredRuns, kept: offered.offeredRuns,");
+    expect(detect).toContain("const verdicts = runModelVerdicts(input, runModel);");
     expect(detect).toContain("for (const run of verdicts.removed) if (!held.includes(run)) held.push(run);");
     expect(detect.indexOf("held.push(run)")).toBeLessThan(detect.indexOf("target.onBoundary({ pairings, segments: detected.found.inUnits, held"));
     // The exam's table builds its columns with the same call.
     expect(read("./realplan/zzWallFeatureTable.eval.ts")).toContain("runModelRows({ offered: off, kept, pairings, pairModel: config.model");
+  });
+});
+
+describe("R, the paired-renovation model, behind TAKEOFF_WALL_RENO_MODEL", () => {
+  const a = run(0.1), b = run(0.3);
+  const prior = { lines: [], faces: [] };
+  const base = { offered: [a, b], kept: [{ ...a }, { ...b }], pairings: [], pairModel, segments: [], widthPt: 1000, feetPerUnit: 100 };
+  const renovation = [{ str: "EXISTING WALL" }, { str: "EXISTING DOOR" }, { str: "EXISTING" }].map((t) => ({ ...t, x: 0, y: 0, width: 1, height: 1 }));
+
+  it("is off unless its own variable names it; the run model's variable never turns it on", () => {
+    expect(loadRenoModel({})).toBeNull();
+    expect(loadRenoModel({ TAKEOFF_WALL_RUN_MODEL: "models/wall-run-model.json" })).toBeNull();
+    expect(loadRenoModel({ TAKEOFF_WALL_RENO_MODEL: "models/wall-model.json" }), "the pairwise model has other columns").toBeNull();
+    expect(loadRenoModel({ TAKEOFF_WALL_RENO_MODEL: "models/wall-reno-model.json" })?.features).toEqual([...RUN_FEATURE_NAMES]);
+    // Both loaded at once, each from its own file.
+    expect(loadRunModel({ TAKEOFF_WALL_RUN_MODEL: "models/wall-run-model.json" })).not.toBe(loadRenoModel({ TAKEOFF_WALL_RENO_MODEL: "models/wall-reno-model.json" }));
+  });
+
+  it(`removes below ${RUN_REMOVE_BELOW} only on a renovation sheet paired with its demolition plan`, () => {
+    const low = constant(0.05);
+    expect(renoModelRemovals({ ...base, textItems: renovation, prior }, low)).toEqual([base.kept[0], base.kept[1]]);
+    expect(renoModelRemovals({ ...base, textItems: renovation }, low), "not paired").toEqual([]);
+    expect(renoModelRemovals({ ...base, textItems: [], prior }, low), "not a renovation sheet").toEqual([]);
+    expect(renoModelRemovals({ ...base, textItems: renovation, prior }, constant(0.1001))).toEqual([]);
+  });
+
+  it("detection holds what either model removes, and only the run model's score rides on the run", () => {
+    const detect = read("./detectWallsForCalibration.ts");
+    expect(detect).toContain("const renoModel = raster === null ? loadRenoModel(process.env) : null;");
+    expect(detect).toContain("if (renoModel !== null) for (const run of renoModelRemovals(input, renoModel)) if (!held.includes(run)) held.push(run);");
+    expect(detect.indexOf("renoModelRemovals(input, renoModel)")).toBeLessThan(detect.indexOf("target.onBoundary({ pairings, segments: detected.found.inUnits, held"));
+    expect(detect.match(/runScore = score/g)?.length).toBe(1);
   });
 });

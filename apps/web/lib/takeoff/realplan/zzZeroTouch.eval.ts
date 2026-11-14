@@ -14,6 +14,7 @@ import { autoPairs } from "../priorPlanLoad";
 import { doorsAndWindowsForSheet } from "../doorsWindows";
 import { sheetStrokes } from "../sheetStrokes";
 import { loadWallModel } from "../wallModelFile";
+import { loadRunModel, priorForRuns, runModelVerdicts } from "../wallRunModel";
 import { reviewOrder, runScores } from "../wallReview";
 import type { WallCandidate } from "../wallVectors";
 import { setFigures, setHeightRule, wallHeightChain, type SetFigures, type SetHeightRule, type WallHeightConvention } from "../heightsByCode";
@@ -100,14 +101,36 @@ const NOMINAL_FEET = Number(process.env.ZT_DEFAULT_FEET ?? "9");
 const HEIGHTS = process.env.ZT_HEIGHTS ?? "";
 const heightsByLabelSet: Record<string, Record<string, number>> = {};
 if (HEIGHTS !== "" && existsSync(HEIGHTS)) {
-  const hk = JSON.parse(readFileSync(HEIGHTS, "utf8")) as { sets?: Record<string, { labelSet?: string; types?: Record<string, { feet?: number }> }> };
+  const hk = JSON.parse(readFileSync(HEIGHTS, "utf8")) as { sets?: Record<string, { labelSet?: string; types?: Record<string, { feet?: number; sameAs?: string }> }> };
   for (const one of Object.values(hk.sets ?? {})) {
     if (one.labelSet === undefined) continue;
     const m: Record<string, number> = {};
-    for (const [t, v] of Object.entries(one.types ?? {})) if (typeof v.feet === "number") m[t.toUpperCase()] = v.feet;
+    const types = one.types ?? {};
+    for (const [t, v] of Object.entries(types)) if (typeof v.feet === "number") m[t.toUpperCase()] = v.feet;
+    // A `sameAs` type takes its REFERENT's height (scripts/heights/compare.py's rule), never the
+    // 9 ft default: Green Bay/McAllen IW-2..IW-9, SW A2..B2, Bunkie P06..P09 — 35 entries in r16
+    // that were all pricing as coverage gaps. Chain-safe to 5 hops; an unresolvable chain stays out.
+    for (const [t, v] of Object.entries(types)) {
+      if (typeof v.feet === "number") continue;
+      let at = v.sameAs;
+      for (let hop = 0; hop < 5 && at !== undefined; hop += 1) {
+        const ref = types[at] ?? types[at.toUpperCase()];
+        if (ref === undefined) break;
+        if (typeof ref.feet === "number") { m[t.toUpperCase()] = ref.feet; break; }
+        at = ref.sameAs;
+      }
+    }
     heightsByLabelSet[one.labelSet] = m;
   }
 }
+
+/**
+ * THE RUN MODEL, AS THE PRODUCT RUNS IT (#1179): set TAKEOFF_WALL_RUN_MODEL and every kept run
+ * the hand chain posts but the model scores below 0.10 is held off the zero-touch estimate —
+ * the remove-only rule, measured here so the junk-walls cause answers Diego's question. The
+ * totals print ON/OFF so a run can never be silently vacuous about which arm it measured.
+ */
+const RUN_MODEL = loadRunModel(process.env);
 
 const flat = (s: string) => s.replace(/\.pdf$/i, "").replace(/[^a-z0-9]+/gi, "").toUpperCase();
 const findPdf = (dir: string) => {
@@ -195,7 +218,9 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const d = detectForSheet({ segments: strokes.segments, textItems, pageSize: { widthPt: W, heightPt: strokes.heightPt }, feetPerUnit: fpu, onCandidate: (f, w) => { scored.push({ x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2, thicknessFeet: w.thicknessFeet, features: [...f] }); } });
         const offer = (priorPlan?: { lines: NonNullable<ReturnType<typeof priorPlanFor>["lines"]>; sheet: string }) =>
           offeredCandidates({ walls: d.found.walls, segments: d.found.inUnits.map((u) => ({ ...u, x1: u.x1 * W, y1: u.y1 * W, x2: u.x2 * W, y2: u.y2 * W })), pageSegments: strokes.segments, widthPt: W, feetPerUnit: fpu, planBoxes: d.planBoxes, textItems, ...(priorPlan === undefined ? {} : { priorPlan }) }).offeredRuns;
-        let runs = offer();
+        const runsBefore = offer();
+        let runs = runsBefore;
+        let runPrior: ReturnType<typeof priorForRuns>;
         let paired = "-";
         const pair = auto.get(saved.page);
         if (pair !== undefined) {
@@ -204,6 +229,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           const prior = priorPlanFor({ demo: { segments: ds.segments, textItems: dt, widthPt: ds.widthPt, heightPt: ds.heightPt }, newPage: { segments: strokes.segments, widthPt: W }, newRuns: runs, feetPerUnit: fpu });
           paired = `p${pair.demoPage}`;
           if (prior.lines !== null) runs = offer({ lines: prior.lines, sheet: `p${pair.demoPage}` });
+          if (prior.lines !== null) runPrior = priorForRuns(prior, { segments: ds.segments, widthPt: ds.widthPt }, fpu, W);
         }
         // Doors with a printed mark: the auto-post class. Schedule rows are a
         // DB read this eval does not make; the mark comes off the drawing.
@@ -212,6 +238,11 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         // neither over nor under, they are unkeyed. Only door-keyed sheets enter the door terms.
         const postedDoors = keyDoors === 0 ? 0 : dw.doorMarks.filter((m) => m !== null && m.trim() !== "").length;
         const held = new Set(runsHeldOffEstimate(setConfig.model, runs, scored, fpu, false));
+        // Remove-only, exactly the product's call (detectWallsForCalibration): posted + score < 0.10 -> held.
+        if (RUN_MODEL !== null) {
+          const verdicts = runModelVerdicts({ offered: runsBefore, kept: runs, pairings: scored, pairModel: setConfig.model, segments: strokes.segments, textItems, widthPt: W, feetPerUnit: fpu, ...(runPrior === undefined ? {} : { prior: runPrior }) }, RUN_MODEL);
+          for (const r of verdicts.removed) held.add(r);
+        }
         const zeroLf = runs.reduce((n, r) => n + (held.has(r) ? 0 : r.lengthFeet), 0);
         // N presses, answered from the key, in the shipped order.
         const junk = runs.map((r) => scoreSheet({ set: dir, sheet, key, proposed: [{ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFeet: r.lengthFeet, thicknessFeet: r.thicknessFeet } as ScoredRun], feetPerUnit: fpu }).extraFeet >= 0.5 * r.lengthFeet);
@@ -274,6 +305,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       }
     }
     const group = HELD ? "HELD-OUT" : "TRAINING";
+    console.log(`ZT RUNMODEL ${group}: ${RUN_MODEL === null ? "OFF (TAKEOFF_WALL_RUN_MODEL unset)" : "ON (remove-only below 0.10)"}`);
     let zb = 0, kb = 0, tb = 0;
     let totalErr = 0;
     const cause = { junkNew: 0, junkReno: 0, missed: 0, board: 0, doors: 0, windows: 0, doorsOver: 0, doorsAtFrames: 0, doorsAtFull: 0, windowsInfo: 0, unpricedBoard: 0 };

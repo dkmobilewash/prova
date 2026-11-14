@@ -14,7 +14,7 @@ import { autoPairs } from "../priorPlanLoad";
 import { sheetStrokes } from "../sheetStrokes";
 import { scoreCandidate, type WallModel } from "../wallClassifier";
 import { loadWallModel } from "../wallModelFile";
-import { loadRunModel, priorForRuns, RUN_REMOVE_BELOW, runModelRows, runModelVerdicts } from "../wallRunModel";
+import { loadRenoModel, loadRunModel, priorForRuns, renoModelRemovals, RUN_REMOVE_BELOW, runModelRows, runModelVerdicts } from "../wallRunModel";
 
 /**
  * ── THE RUN MODEL AS RUN TAKEOFF APPLIES IT: GATE OFF vs ON, AND PARITY WITH THE EXAM'S ROWS ──
@@ -31,7 +31,13 @@ import { loadRunModel, priorForRuns, RUN_REMOVE_BELOW, runModelRows, runModelVer
  *   auto-post = posted runs at or above MODEL_EVIDENCE.walls' line: ft ok / false.
  *
  * Training scores each set with its OWN LOSO fold (`scripts/wall-model/folds.py` → RG_FOLDS/<set>.json);
- * a set with no fold is skipped and listed. Held-out (RG_HELD=1) uses TAKEOFF_WALL_RUN_MODEL.
+ * a set with no fold never trained the model, so the committed one is already out-of-sample for it and
+ * is used (listed). Held-out (RG_HELD=1) uses TAKEOFF_WALL_RUN_MODEL.
+ *
+ * R (TAKEOFF_WALL_RENO_MODEL set): BOTH arms keep the run model on, as production runs them together —
+ * gate OFF = the run model alone, gate ON = the run model AND R (`renoModelRemovals`), R scored by its
+ * own LOSO fold (`folds.py --reno` → RG_RENO_FOLDS/<set>.json) or, for a set R never trained on, the
+ * committed R.
  *
  * PARITY (RG_TABLE = the feature table the model was examined on): for every sheet in that table, the
  * product's rows scored by the committed run model must equal the table's rows scored by it, run for run.
@@ -45,6 +51,7 @@ const LABELS = process.env.TAKEOFF_LABEL_DIR ?? "";
 const OUT = process.env.RG_OUT ?? "";
 const HELD = process.env.RG_HELD === "1";
 const FOLDS = process.env.RG_FOLDS ?? "";
+const RENO_FOLDS = process.env.RG_RENO_FOLDS ?? "";
 const TABLE = process.env.RG_TABLE ?? "";
 const MUST = (process.env.RG_PARITY_SHEETS ?? "").split(";").filter((s) => s !== "");
 const flat = (s: string) => s.replace(/\.pdf$/i, "").replace(/[^a-z0-9]+/gi, "").toUpperCase();
@@ -99,6 +106,9 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
   it("measures every keyed sheet through the product's path", { timeout: 14_400_000 }, async () => {
     const pair = loadWallModel();
     const shipped = loadRunModel();
+    // R, when its variable is set: then BOTH arms run the run model and the gate is R off vs on.
+    const renoShipped = loadRenoModel();
+    const renoFolded: string[] = [];
     if (pair === null || shipped === null) throw new Error("TAKEOFF_WALL_MODEL and TAKEOFF_WALL_RUN_MODEL must both load");
     const line = MODEL_EVIDENCE.walls.autoPostAt;
     if (line === null) throw new Error("no walls auto-post line");
@@ -114,10 +124,16 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       const pdf = findPdf(dir);
       if (pdf === null || names.length === 0) continue;
       let runModel: WallModel = shipped;
+      let renoModel = renoShipped;
       if (!HELD) {
-        const fold = loadRunModel({ TAKEOFF_WALL_RUN_MODEL: join(FOLDS, `${dir}.json`) });
-        if (fold === null) { skipped.push(dir); continue; }
-        runModel = fold;
+        const fold = existsSync(join(FOLDS, `${dir}.json`)) ? loadRunModel({ TAKEOFF_WALL_RUN_MODEL: join(FOLDS, `${dir}.json`) }) : null;
+        if (fold === null) skipped.push(dir);
+        else runModel = fold;
+        if (renoShipped !== null && RENO_FOLDS !== "" && existsSync(join(RENO_FOLDS, `${dir}.json`))) {
+          renoModel = loadRenoModel({ TAKEOFF_WALL_RENO_MODEL: join(RENO_FOLDS, `${dir}.json`) });
+          if (renoModel === null) throw new Error(`R fold unreadable for ${dir}`);
+          renoFolded.push(dir);
+        }
       }
       const auto = autoPairs(await sheetsOf(pdf));
       for (const name of names) {
@@ -157,6 +173,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const built = runModelRows(input);
         const verdicts = runModelVerdicts(input, runModel);
         const removed = new Set(verdicts.removed.map((r) => `${r.x1},${r.y1},${r.x2},${r.y2}`));
+        const renoRemoved = new Set(renoModel === null ? [] : renoModelRemovals(input, renoModel).map((r) => `${r.x1},${r.y1},${r.x2},${r.y2}`));
         const scoreOfKept = new Map(kept.map((r, at) => [`${r.x1},${r.y1},${r.x2},${r.y2}`, verdicts.scores[at]!]));
 
         // Parity with the exam's table: the committed model on the product's rows vs on the table's.
@@ -176,10 +193,14 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           // The kept twin of this run (the compare re-offers kept runs as new objects).
           const twin = kept.find((q) => Math.abs(q.x1 - r.x1) < 5e-6 && Math.abs(q.y1 - r.y1) < 5e-6 && Math.abs(q.x2 - r.x2) < 5e-6 && Math.abs(q.y2 - r.y2) < 5e-6);
           const twinKey = twin === undefined ? "" : `${twin.x1},${twin.y1},${twin.x2},${twin.y2}`;
-          const modelPosts = handPosts && !removed.has(twinKey);
-          s.off += handPosts ? extra : ok;
+          // Without R: off = the hand chain, on = it minus the run model's removals. With R: off = the run
+          // model's posting (as production runs today), on = that minus R's removals too.
+          const runPosts = handPosts && !removed.has(twinKey);
+          const offPosts = renoShipped === null ? handPosts : runPosts;
+          const modelPosts = renoShipped === null ? runPosts : runPosts && !renoRemoved.has(twinKey);
+          s.off += offPosts ? extra : ok;
           s.on += modelPosts ? extra : ok;
-          if (handPosts && !modelPosts) { s.removedOk += ok; s.removedJunk += extra; }
+          if (offPosts && !modelPosts) { s.removedOk += ok; s.removedJunk += extra; }
           const score = scoreOfKept.get(twinKey);
           if (modelPosts && score !== undefined && score >= line) { s.autoOk += ok; s.autoFalse += extra; }
           s.offered += r.lengthFeet;
@@ -188,7 +209,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       }
     }
     const t = { off: 0, on: 0, removedOk: 0, removedJunk: 0, autoOk: 0, autoFalse: 0, offered: 0 };
-    const lines: string[] = [`RUN MODEL GATE — ${HELD ? "HELD-OUT (committed model)" : "TRAINING (LOSO folds)"}  remove below ${RUN_REMOVE_BELOW}, auto-post at ${line}`];
+    const lines: string[] = [`${renoShipped === null ? "RUN MODEL GATE (off = hand chain, on = + run model)" : "R GATE (off = run model on, on = run model + R)"} — ${HELD ? "HELD-OUT (committed models)" : "TRAINING (LOSO folds)"}  remove below ${RUN_REMOVE_BELOW}, auto-post at ${line}`];
     lines.push(`${"set".padEnd(36)} ${"offered".padStart(8)} ${"err off".padStart(8)} ${"err on".padStart(8)} ${"pts".padStart(6)} | ${"auto ok".padStart(7)} ${"false".padStart(5)}`);
     let worse = 0;
     for (const [dir, s] of [...bySet.entries()].sort()) {
@@ -200,9 +221,10 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     lines.push(`TOTAL error ft (junk posted + real left off): gate OFF ${t.off.toFixed(0)}  gate ON ${t.on.toFixed(0)}  (${((100 * (t.off - t.on)) / Math.max(t.off, 1)).toFixed(1)}% better; $${((t.off - t.on) * 18).toFixed(0)} at $18/LF)`);
     lines.push(`held back by the model: ${t.removedJunk.toFixed(0)} ft junk, ${t.removedOk.toFixed(0)} ft real; sets worse by > 2 pts AND > 50 ft: ${worse}`);
     lines.push(`auto-post (posted runs at or above the line): ${t.autoOk.toFixed(0)} ft ok / ${t.autoFalse.toFixed(0)} false = ${((100 * t.autoOk) / Math.max(t.autoOk + t.autoFalse, 1)).toFixed(2)}%`);
-    if (skipped.length > 0) lines.push(`skipped (no LOSO fold): ${skipped.join(", ")}`);
+    if (skipped.length > 0) lines.push(`run model: no LOSO fold (never trained on, committed model used): ${skipped.join(", ")}`);
+    if (renoShipped !== null) lines.push(`R: scored by its own LOSO fold on ${renoFolded.length} sets (${renoFolded.join(", ")}); every other set by the committed R, which never trained on it`);
     if (parity.length > 0) lines.push(`PARITY with the exam table: ${parity.filter((p) => p.equal).length} of ${parity.length} sheets equal; unequal: ${parity.filter((p) => !p.equal).map((p) => `${p.sheet} (${p.rows} rows, max ${p.maxDiff.toExponential(1)})`).join("; ") || "none"}`);
-    writeFileSync(OUT, JSON.stringify({ held: HELD, total: t, worse, bySet: Object.fromEntries(bySet), parity, skipped }, null, 1));
+    writeFileSync(OUT, JSON.stringify({ held: HELD, mode: renoShipped === null ? "run-model" : "reno", total: t, worse, bySet: Object.fromEntries(bySet), parity, skipped, renoFolded }, null, 1));
     console.log(lines.join("\n"));
     const measured = [...bySet.keys()];
     expect(measured.length).toBeGreaterThan(0);
