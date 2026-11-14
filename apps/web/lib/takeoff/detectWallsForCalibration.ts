@@ -14,7 +14,7 @@ import type { ScoredPairing } from "./demotedRuns";
 import { runsHeldOffEstimate } from "./estimateHold";
 import { runScores } from "./wallReview";
 import { loadWallModel } from "./wallModelFile";
-import { loadRunModel, priorForRuns, runModelVerdicts } from "./wallRunModel";
+import { loadRenoModel, loadRunModel, priorForRuns, renoModelRemovals, runModelVerdicts } from "./wallRunModel";
 import { SheetTooDenseError, type StrokeSegment, type WallCandidate } from "./wallVectors";
 import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
@@ -348,20 +348,23 @@ export async function detectWallsForCalibration(
       const company = await prisma.company.findUnique({ where: { id: target.companyId }, select: { demotedWallsOff: true } });
       const config = company?.demotedWallsOff === false ? loadWallModel(process.env) : null;
       const held: WallCandidate[] = config === null ? [] : runsHeldOffEstimate(config.model, offered.offeredRuns, scored, target.feetPerUnit, raster !== null);
-      // ── THE RUN MODEL, BEHIND `TAKEOFF_WALL_RUN_MODEL` (`wallRunModel.ts`) ──
-      // Remove-only: a run the hand chain posts and the run model scores below 0.10 is held back too.
-      // Each kept run carries its score (`runScore`), which auto-post reads. Vector sheets only, as trained.
+      // ── THE RUN MODEL AND R, BEHIND `TAKEOFF_WALL_RUN_MODEL` / `TAKEOFF_WALL_RENO_MODEL` (`wallRunModel.ts`) ──
+      // Remove-only: a run the hand chain posts and the run model scores below 0.10 is held back too; on a
+      // renovation sheet paired with its demolition plan, so is one R scores below 0.10. Each kept run carries
+      // the run model's score (`runScore`), which auto-post reads. Vector sheets only, as trained.
       const runModel = raster === null ? loadRunModel(process.env) : null;
-      const pairModel = runModel === null ? null : loadWallModel(process.env);
-      if (runModel !== null && pairModel !== null) {
-        const verdicts = runModelVerdicts(
-          { offered: beforeCompare.offeredRuns, kept: offered.offeredRuns, pairings: scored, pairModel: pairModel.model, segments: strokes.segments, textItems, widthPt: W, feetPerUnit: target.feetPerUnit, ...(runPrior === undefined ? {} : { prior: runPrior }) },
-          runModel,
-        );
-        verdicts.scores.forEach((score, at) => {
-          if (Number.isFinite(score)) (offered.offeredRuns[at] as WallCandidate & { runScore?: number }).runScore = score;
-        });
-        for (const run of verdicts.removed) if (!held.includes(run)) held.push(run);
+      const renoModel = raster === null ? loadRenoModel(process.env) : null;
+      const pairModel = runModel === null && renoModel === null ? null : loadWallModel(process.env);
+      if (pairModel !== null) {
+        const input = { offered: beforeCompare.offeredRuns, kept: offered.offeredRuns, pairings: scored, pairModel: pairModel.model, segments: strokes.segments, textItems, widthPt: W, feetPerUnit: target.feetPerUnit, ...(runPrior === undefined ? {} : { prior: runPrior }) };
+        if (runModel !== null) {
+          const verdicts = runModelVerdicts(input, runModel);
+          verdicts.scores.forEach((score, at) => {
+            if (Number.isFinite(score)) (offered.offeredRuns[at] as WallCandidate & { runScore?: number }).runScore = score;
+          });
+          for (const run of verdicts.removed) if (!held.includes(run)) held.push(run);
+        }
+        if (renoModel !== null) for (const run of renoModelRemovals(input, renoModel)) if (!held.includes(run)) held.push(run);
       }
       // Each run's score rides into the stored walls, so a set-wide review can order every sheet's runs.
       if (config !== null && raster === null) {
