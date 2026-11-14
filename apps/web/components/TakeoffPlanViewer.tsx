@@ -89,7 +89,7 @@ import {
 } from "@/lib/takeoff/wallVectors";
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
 import { addSheetExclusion, clearSheetExclusions, removeSheetExclusion } from "@/lib/actions/takeoffExclusions";
-import { asideExistingWalls, existingDoorsSentence, type ExistingDoor } from "@/lib/takeoff/existingDoors";
+import { asideExistingWalls, existingDoorsSentence, existingPrefixes, type ExistingDoor } from "@/lib/takeoff/existingDoors";
 import { insideWorkArea, openingsInWorkArea, runAt, splitLinesFrom, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
 import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUndo";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
@@ -358,6 +358,7 @@ export function TakeoffPlanViewer({
   demotedWalls = false,
   doorsWindows = false,
   existingDoorsCounted = [],
+  doorSchedulePages = [],
   planCompare = null,
   doorScheduleRows = [],
   windowScheduleRows = [],
@@ -485,6 +486,8 @@ export function TakeoffPlanViewer({
   doorsWindows?: boolean;
   /** Pages whose existing doors a person chose to count: nothing set aside there (`existingDoorsCounted.ts`). */
   existingDoorsCounted?: number[];
+  /** Pages the ingest read a DOOR schedule on: their words can call a door series existing (`existingPrefixes`). */
+  doorSchedulePages?: number[];
   /**
    * Plan comparison (`Company.planCompareOn`): each new plan's demolition plan
    * and the set's sheets for the picker. Null when the company has it off.
@@ -936,6 +939,8 @@ export function TakeoffPlanViewer({
   const [doorAside, setDoorAside] = useState<{ page: number; list: ExistingDoor[] } | null>(null);
   const countedDoorPages = useRef<Set<number>>(new Set(existingDoorsCounted));
   const [countedDoorsTick, setCountedDoorsTick] = useState(0);
+  // The door-mark prefixes the set's door schedule page(s) call existing, read once per document (`existingPrefixes`).
+  const schedulePrefixes = useRef<{ doc: unknown; prefixes: string[] } | null>(null);
   const [hoveredOpening, setHoveredOpening] = useState<string | null>(null);
   /** "Count like this": the box being dragged, and the matches it found, with the ones the estimator dropped. */
   /** The toolbar's offer was pressed: the form opens with the line already drawn, and Save is still the estimator's. */
@@ -4418,6 +4423,14 @@ export function TakeoffPlanViewer({
       if (doorsWindows && answerKey === undefined) {
         const W = pageSize.widthPt;
         await stepDone("before-openings");
+        if (schedulePrefixes.current?.doc !== doc) {
+          const texts: string[] = [];
+          for (const n of doorSchedulePages.filter((n) => n >= 1 && n <= doc.numPages)) {
+            const words = await pageTextItems(await (doc as { getPage: (n: number) => Promise<unknown> }).getPage(n), pdfjs).catch(() => []);
+            texts.push(words.map((w) => w.str).join(" "));
+          }
+          schedulePrefixes.current = { doc, prefixes: existingPrefixes(texts) };
+        }
         const allOpenings = doorsAndWindowsForSheet({
           segments: found.inUnits,
           segmentsPt: found.inUnits.map((one) => ({ ...one, x1: one.x1 * W, y1: one.y1 * W, x2: one.x2 * W, y2: one.y2 * W })),
@@ -4429,7 +4442,7 @@ export function TakeoffPlanViewer({
           windowRows: windowScheduleRows,
           existing: countedDoorPages.current.has(pageNumber)
             ? { counted: true }
-            : { asideWalls: asideExistingWalls(offered?.setAsideLines ?? []), ...(priorDoors === null ? {} : { priorDoors: priorDoors.doors, priorSheet: priorDoors.sheet }) },
+            : { asideWalls: asideExistingWalls(offered?.setAsideLines ?? []), existingPrefixes: schedulePrefixes.current.prefixes, ...(priorDoors === null ? {} : { priorDoors: priorDoors.doors, priorSheet: priorDoors.sheet }) },
         });
         setDoorAside({ page: pageNumber, list: allOpenings.existingDoors });
         const result = openingsInWorkArea(allOpenings, exclusionsRef.current?.workArea ?? []);
