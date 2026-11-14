@@ -167,6 +167,22 @@ describe("C3 recall reads, only with recall on (LEGEND_TEXT_RECALL)", () => {
     expect(read.types.find((x) => x.code === "A3")!.lines).toContain("5/8\" GYPSUM BOARD, EACH SIDE");
     expect(readLegendFromText({ items, ...PAGE, recall: false }).types).toEqual([]);
   });
+  it("boxed letters in a row with boxed D1 (Aspen's PARTITION TYPES) stay types; alone beside D1 they are grid bubbles", () => {
+    const at = (code: string, x: number) => [t("5/8\" GYPSUM BOARD, EACH SIDE", x, 300), t("3 5/8\" 20 GA. MTL. STUD FRAMING @ 16\" O.C.", x, 312), t(code, x + 3, 380, 10)];
+    const items = [...at("A", 200), ...at("B", 650), ...at("C", 1100), ...at("D1", 1550)];
+    const symbols = [200, 650, 1100, 1550].map((x) => ({ x: x + 6, y: 376, radius: 9 }));
+    expect(readLegendFromText({ items, ...PAGE, symbols, recall: true }).types.map((x) => x.code)).toEqual(["A", "B", "C", "D1"]);
+    expect(readLegendFromText({ items, ...PAGE, symbols, recall: false }).types).toEqual([]);
+    // One boxed letter beside D1, off its row: a grid bubble, as before.
+    const lone = [...at("D1", 1550), ...at("D2", 1100), ...at("D3", 650), t("A", 203, 800, 10), t("3 5/8\" MTL. STUDS", 200, 760)];
+    const loneSymbols = [{ x: 209, y: 796, radius: 9 }, ...[650, 1100, 1550].map((x) => ({ x: x + 6, y: 376, radius: 9 }))];
+    expect(readLegendFromText({ items: lone, ...PAGE, symbols: loneSymbols, recall: true }).types.map((x) => x.code)).toEqual(["D3", "D2", "D1"]);
+    // A row of boxed letters with no coded type in it is a grid row (Macon-Bibb), beside D1 elsewhere.
+    const grid = [...at("A", 200), ...at("B", 650), ...at("C", 1100), ...at("E", 2000)];
+    const gridItems = [...grid, t("D1", 600, 900, 10), t("3 5/8\" MTL. STUDS", 600, 860), t("GYP BD EACH SIDE", 600, 872), t("D2", 1200, 900, 10), t("6\" MTL. STUDS", 1200, 860), t("GYP BD EACH SIDE", 1200, 872), t("D3", 1800, 900, 10), t("6\" MTL. STUDS", 1800, 860), t("GYP BD EACH SIDE", 1800, 872)];
+    const gridSymbols = [200, 650, 1100, 2000].map((x) => ({ x: x + 6, y: 376, radius: 9 }));
+    expect(readLegendFromText({ items: gridItems, ...PAGE, symbols: gridSymbols, recall: true }).types.map((x) => x.code)).toEqual(["D1", "D2", "D3"]);
+  });
   it("a list of numbers or a dimension string is not a list of codes", () => {
     const items = [...detail("1 2 3 4", 200), ...detail("A B C", 650), ...detail("B1 B2", 1100)];
     expect(readLegendFromText({ items, ...PAGE, recall: true }).types).toEqual([]);
