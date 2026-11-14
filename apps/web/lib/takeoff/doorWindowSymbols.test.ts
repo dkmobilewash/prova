@@ -55,6 +55,25 @@ describe("door symbols", () => {
     expect(doorArcCandidates([dimension, ...arc], walls, FPU)[0]!.reject).toBe("no-leaf");
   });
 
+  it("takes a door drawn standing open at 45 degrees when it is door-wide, on a wall and uncluttered (Topeka's closets)", () => {
+    // Leaf at -45 degrees, arc from the closed position (0) to it.
+    const openLeaf: StrokeSegment = { x1: hinge.x, y1: hinge.y, x2: hinge.x + ft(3) * Math.cos(-Math.PI / 4), y2: hinge.y + ft(3) * Math.sin(-Math.PI / 4) };
+    const openArc = swing(hinge.x, hinge.y, ft(3), -Math.PI / 4, 0, 6);
+    const doors = doorSymbols([openLeaf, ...openArc], walls, FPU);
+    expect(doors).toHaveLength(1);
+    expect(doors[0]!.sweepDegrees).toBeCloseTo(45, 0);
+    // Off any wall, it is not one.
+    expect(doorSymbols([openLeaf, ...openArc], [], FPU)).toHaveLength(0);
+    // Narrower than a door (2 ft), it is casework.
+    const nLeaf: StrokeSegment = { x1: hinge.x, y1: hinge.y, x2: hinge.x + ft(2) * Math.cos(-Math.PI / 4), y2: hinge.y + ft(2) * Math.sin(-Math.PI / 4) };
+    expect(doorSymbols([nLeaf, ...swing(hinge.x, hinge.y, ft(2), -Math.PI / 4, 0, 6)], [wall(0.4, 0.5, 0.5, 0.5), wall(0.52, 0.5, 0.7, 0.5)], FPU)).toHaveLength(0);
+    // Among a cluster of other arcs (a fixture group, Macon-Bibb's F04s), it is not one.
+    const clutter = [0, 1, 2, 3].flatMap((k) => swing(hinge.x + ft(0.5 + k * 0.4), hinge.y - ft(0.5), ft(0.6), 0, Math.PI / 2, 6));
+    expect(doorSymbols([openLeaf, ...openArc, ...clutter], walls, FPU)).toHaveLength(0);
+    // A 90 degree door among the same clutter still stands: the guard is for open swings only.
+    expect(doorSymbols([leaf, ...arc, ...clutter], walls, FPU)).toHaveLength(1);
+  });
+
   it("needs the leaf: a bare quarter arc is a countertop return, not a door", () => {
     expect(doorSymbols(arc, walls, FPU)).toHaveLength(0);
     const why = doorArcCandidates(arc, walls, FPU);

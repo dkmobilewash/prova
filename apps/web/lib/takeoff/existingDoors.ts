@@ -1,5 +1,7 @@
 import { DOOR_TAG_REACH_FEET, type DoorSymbol } from "./doorWindowSymbols";
-import { nicHatch, textRows, type TextItem } from "./existingWalls";
+import { GREY_PEN, nicHatch, textRows, type TextItem } from "./existingWalls";
+import { renovationMarks, showsExistingWork } from "./renovationMarks";
+import { segmentGrid } from "./segmentGrid";
 import type { StrokeSegment } from "./wallVectors";
 
 /**
@@ -33,11 +35,17 @@ import type { StrokeSegment } from "./wallVectors";
  *      printed tags and all, out of the key and scoring like perfect doors. A prefix counts only with
  *      support, never from its letter: a definition on the sheet or on the set's door schedule page
  *      (`existingPrefixes`), or a paired demolition plan that keeps most of the series' doors. An
- *      `E-` series with neither (an east wing's doors) is left alone.
+ *      `E-` series with neither (an east wing's doors) is left alone;
+ *   6. `grey`: its arc and leaf are drawn in the existing pen, the wall rule's route 3 for doors (Diego,
+ *      2026-11-14): on a sheet whose words say it shows existing work, a door drawn mostly grey (at least
+ *      `GREY_DOOR_SHARE` of its arc and leaf by length, at most `DARK_DOOR_SHARE` dark) where most of the
+ *      sheet's doors are drawn dark; on a sheet with no such words, only a door nearly all grey
+ *      (`NO_WORDS_GREY_DOOR_SHARE`) where at least `NO_WORDS_DARK_DOORS` of the doors are dark. The 2020-09-24
+ *      set's A1.1 draws an existing door open at 45 degrees in grey beside its existing-work keynotes.
  *
  * Pure. Positions in page-width units.
  */
-export type ExistingDoor = { door: DoorSymbol; route: "wall" | "area" | "tag" | "demo" | "series"; why: string };
+export type ExistingDoor = { door: DoorSymbol; route: "wall" | "area" | "tag" | "demo" | "series" | "grey"; why: string };
 
 /** What a caller knows beyond the page itself. Both optional: without them routes 1 and 4 are silent. */
 export type ExistingDoorEvidence = {
@@ -65,6 +73,48 @@ export const DASHED_LINE_PIECES = 4;
 /** A dashed box's sides end this close to the sides across from them (rounded corners). */
 export const BOX_CORNER_FEET = 3;
 export const BOX_LARGEST_FEET = 200;
+/** Route 6: a door's arc and leaf grey by length at least this share, dark at most this, on a sheet showing existing work... */
+export const GREY_DOOR_SHARE = 0.6;
+export const DARK_DOOR_SHARE = 0.2;
+/** ...or, with no renovation words, grey at least this share where at least this share of the sheet's doors are dark. */
+export const NO_WORDS_GREY_DOOR_SHARE = 0.9;
+export const NO_WORDS_DARK_DOORS = 0.75;
+/** A door's own strokes: within this of its arc's circle, or of its open leaf. */
+const ON_DOOR_FEET = 0.12;
+
+/**
+ * How much of a door's arc and open leaf, by length, is drawn grey and how much dark; null with no pen to read.
+ * The arc is the circle of the leaf's radius about the hinge, between the strike and the open leaf; the leaf the
+ * hinge-to-open radius. A stroke with no colour is black, as `existingMarks` reads it.
+ */
+export function doorPen(d: DoorSymbol, segments: readonly StrokeSegment[], feetPerUnit: number): { grey: number; dark: number } | null {
+  if (d.open === undefined) return null;
+  const r = d.widthFeet / d.leaves / feetPerUnit, on = ON_DOOR_FEET / feetPerUnit;
+  if (!(r > 0)) return null;
+  const ang = (p: { x: number; y: number }) => Math.atan2(p.y - d.hinge.y, p.x - d.hinge.x);
+  const a0 = ang(d.leaves === 2 ? { x: d.hinge.x + (d.strike.x - d.hinge.x) / 2, y: d.hinge.y + (d.strike.y - d.hinge.y) / 2 } : d.strike), a1 = ang(d.open);
+  let span = a1 - a0;
+  while (span > Math.PI) span -= 2 * Math.PI;
+  while (span < -Math.PI) span += 2 * Math.PI;
+  const within = (t: number) => { let u = t - a0; while (u > Math.PI) u -= 2 * Math.PI; while (u < -Math.PI) u += 2 * Math.PI; return span >= 0 ? u >= -0.05 && u <= span + 0.05 : u <= 0.05 && u >= span - 0.05; };
+  const ux = (d.open.x - d.hinge.x) / r, uy = (d.open.y - d.hinge.y) / r;
+  let grey = 0, dark = 0;
+  for (const i of segmentGrid(segments).near(d.hinge.x - r - on, d.hinge.y - r - on, d.hinge.x + r + on, d.hinge.y + r + on)) {
+    const s = segments[i]!;
+    const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+    if (len === 0) continue;
+    const m = { x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 };
+    const onArc = Math.abs(Math.hypot(m.x - d.hinge.x, m.y - d.hinge.y) - r) <= on && within(ang(m));
+    const t = (m.x - d.hinge.x) * ux + (m.y - d.hinge.y) * uy, off = Math.abs(-(m.x - d.hinge.x) * uy + (m.y - d.hinge.y) * ux);
+    const onLeaf = off <= on && t >= 0 && t <= r;
+    if (!onArc && !onLeaf) continue;
+    if ((s.gray ?? 0) >= GREY_PEN) grey += len;
+    else dark += len;
+  }
+  const total = grey + dark;
+  return total === 0 ? null : { grey: grey / total, dark: dark / total };
+}
+
 /** A demolition plan supports a series when it keeps at least this many of its doors, and at least half. */
 export const SERIES_KEPT_MIN = 2;
 
@@ -239,6 +289,19 @@ export function existingDoors(input: {
       for (const e of list) set(e.door, "series", `tagged "${e.mark}": ${source}`);
     }
   }
+  // 6. Drawn in the existing pen, where the sheet draws its doors dark.
+  const pens = new Map(doors.map((d) => [d, doorPen(d, segments, fpu)] as const));
+  const read = [...pens.values()].filter((p): p is { grey: number; dark: number } => p !== null);
+  if (read.length > 0) {
+    const darkDoors = read.filter((p) => p.dark >= 0.5).length / read.length;
+    const words = showsExistingWork(renovationMarks(input.textPt.map((t) => t.str).join(" ")));
+    for (const d of doors) {
+      const p = pens.get(d);
+      if (p === null || p === undefined) continue;
+      const grey = words ? darkDoors > 0.5 && p.grey >= GREY_DOOR_SHARE && p.dark <= DARK_DOOR_SHARE : darkDoors >= NO_WORDS_DARK_DOORS && p.grey >= NO_WORDS_GREY_DOOR_SHARE;
+      if (grey) set(d, "grey", words ? "drawn grey where the sheet draws its doors dark, on a sheet that shows existing work" : "drawn grey where the sheet draws nearly all its doors dark");
+    }
+  }
   // 2. Inside a hatched or dashed area labelled existing or not in contract.
   const labels = rows.filter((r) => AREA_LABEL.test(r.str));
   if (labels.length > 0 && doors.some((d) => !out.has(d))) {
@@ -275,6 +338,7 @@ export function existingDoorsSentence(list: readonly ExistingDoor[]): string {
     n("tag") > 0 ? `${n("tag")} tagged (E)` : "",
     n("demo") > 0 ? `${n("demo")} kept on the demolition plan` : "",
     n("series") > 0 ? `${n("series")} in a door series the set calls existing` : "",
+    n("grey") > 0 ? `${n("grey")} drawn in the existing (grey) pen` : "",
   ].filter((s) => s !== "");
   return `${list.length} existing door${list.length === 1 ? "" : "s"} set aside: ${parts.join("; ")}`;
 }

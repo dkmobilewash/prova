@@ -63,9 +63,19 @@ export type WindowSymbol = {
 export const NARROWEST_LEAF_FEET = 1.5;
 /** Wider than this is a gate or a garage door — a different symbol. */
 export const WIDEST_LEAF_FEET = 7;
-/** A swing this far from a quarter circle is a different thing (a 180° swing is a double-acting door, a 30° one a cabinet). */
-/** Baker A101 draws door 101 at 65°; nothing else on four plans fits a circle at 1.5-7 ft with a sweep this low. */
-export const SWEEP_MIN_DEGREES = 55;
+/** A swing this far from a quarter circle is a different thing (a 180° swing is a double-acting door). */
+/**
+ * Doors drawn standing OPEN at 30 to 55 degrees are doors: Topeka's closets and bedrooms are drawn at about
+ * 45 degrees with a thin diagonal leaf, and at 55 they were the largest cause of missed key doors on the
+ * training sheets (45 of 156, Round 23b labels). A cabinet swing is narrower than `NARROWEST_LEAF_FEET`, and
+ * the leaf is still required. Baker A101 draws door 101 at 65 degrees.
+ */
+export const SWEEP_MIN_DEGREES = 30;
+/** Under this a swing is drawn standing open, and must also be door-wide, on a wall and uncluttered. */
+export const OPEN_SWING_DEGREES = 55;
+export const OPEN_SWING_MIN_WIDTH_FEET = 2.5;
+export const OPEN_SWING_CLUTTER_FEET = 3;
+export const OPEN_SWING_MAX_ARCS_NEAR = 3;
 export const SWEEP_MAX_DEGREES = 110;
 /** How far a vertex may sit off the fitted circle, as a fraction of its radius. */
 export const CIRCLE_FIT_TOLERANCE = 0.04;
@@ -289,7 +299,21 @@ export function doorArcCandidates(
       },
     });
   }
-  return out;
+  // ── A DOOR DRAWN STANDING OPEN MUST LOOK LIKE A DOOR ──
+  // Below `OPEN_SWING_DEGREES` the arc is a door drawn open (Topeka's 45-degree closets) or a fixture,
+  // casework or toilet-accessory sweep. Measured on the Round 23b training sheets, the new 30-55 degree doors
+  // were all at least 2.6 ft wide, on a wall, with little arc clutter round the hinge; the false ones were
+  // narrow (median 2.0 ft) or off any wall, among a dozen other arcs (Macon-Bibb's F04/F05 fixtures). So a
+  // low swing stands only with all three; otherwise it is rejected as a sweep, as it was before.
+  const centres = out.filter((c) => c.fit !== null).map((c) => ({ x: c.fit!.cx, y: c.fit!.cy }));
+  const clutterReach = OPEN_SWING_CLUTTER_FEET / feetPerUnit;
+  return out.map((c) => {
+    const d = c.door;
+    if (d === null || d.sweepDegrees >= OPEN_SWING_DEGREES) return c;
+    const clutter = centres.filter((h) => dist(h, d.hinge) <= clutterReach).length - 1;
+    const looksLikeADoor = d.widthFeet >= OPEN_SWING_MIN_WIDTH_FEET && d.wall !== null && clutter <= OPEN_SWING_MAX_ARCS_NEAR;
+    return looksLikeADoor ? c : { ...c, reject: "sweep", door: null };
+  });
 }
 
 export function doorSymbols(
