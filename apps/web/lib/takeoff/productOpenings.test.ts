@@ -37,6 +37,10 @@ describe("openings: training and the product build their inputs one way", () => 
     const table = read("takeoff/realplan/zzOpeningFeatureTable.eval.ts");
     expect(table).toMatch(/productDoorRows\(\{[^}]*existing/);
     expect(table).toMatch(/doorsAndWindowsForSheet\(\{[^\n]*existing \}\)/);
+    // And each hands in the door series the set's schedule calls existing (`existingPrefixes`).
+    expect(call(viewer)[0]).toMatch(/existingPrefixes: schedulePrefixes\.current\.prefixes/);
+    expect(rooms).toMatch(/const existing = \{[^\n]*existingPrefixes: existingPrefixes\(scheduleTexts\)/);
+    expect(table).toMatch(/const existing = \{[^\n]*existingPrefixes: schedulePrefixes/);
   });
   it("page strokes come into page-width units, and the stored runs carry their length at this scale", () => {
     const got = openingInputs({ runs: [{ x1: 0, y1: 0, x2: 0.3, y2: 0.4, thicknessFeet: 0.5 }], feetPerUnit: 100, widthPt: 200, segmentsPt: [{ x1: 20, y1: 40, x2: 100, y2: 40 }] as never });
