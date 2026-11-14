@@ -1,0 +1,54 @@
+# ── A FAILED VERCEL PRODUCTION DEPLOY MUST BE IMPOSSIBLE TO MISS ──
+#
+# 2026-11-14: production deploys were frozen at #1178 for ~12 hours (api/ask over Vercel's 5 GB
+# function limit from #1179 on) while GitHub CI stayed green — Vercel build failures are invisible
+# to the merge gates. Vercel's GitHub integration DOES emit deployment_status events; nothing
+# listened. This workflow is that listener (Diego's order): on a FAILED Production deployment it
+# fails its own run — a red X on the commit on main — and opens/updates a pinned-by-title issue so
+# the failure survives the commit scrolling away. It needs NO secrets: everything is in the event.
+#
+# The companion is the pilot-dashboard card (apps/web/app/pilot/DeployStatus.tsx), which shows the
+# live production deployment state to the operator, and apps/web/scripts/function-size-budget.mjs,
+# which fails a PR in CI before any function can tip over the limit.
+name: Vercel deploy watch
+
+on:
+  deployment_status:
+
+permissions:
+  issues: write
+
+jobs:
+  watch:
+    # Only Production deployments decide anything; preview failures have their own PR surface.
+    if: ${{ github.event.deployment_status.state == 'failure' || github.event.deployment_status.state == 'error' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open or update the outage issue, then fail this run red
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const env = context.payload.deployment?.environment ?? "";
+            const isProd = /^production$/i.test(env);
+            const sha = context.payload.deployment?.sha ?? context.sha;
+            const target = context.payload.deployment_status?.target_url ?? "";
+            const state = context.payload.deployment_status?.state;
+            core.info(`deployment_status: env=${env} state=${state} sha=${sha}`);
+            if (!isProd) { core.info("not Production — nothing to do"); return; }
+            const title = "Vercel PRODUCTION deploy is FAILING";
+            const body = [
+              `A production deployment FAILED (state: ${state}).`,
+              ``,
+              `- commit: ${sha}`,
+              `- deployment: ${target}`,
+              ``,
+              `Until a deploy succeeds, app.cstream.ai serves an OLDER commit than main — nothing merged after the last green deploy is live. See the 2026-11-14 outage postmortem in coordination/log.md (frozen at #1178 for ~12 hours, invisible to CI).`,
+            ].join("\n");
+            const open = await github.rest.issues.listForRepo({ ...context.repo, state: "open", labels: "deploy-outage" });
+            const existing = open.data.find((i) => i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ ...context.repo, title, body, labels: ["deploy-outage"] });
+            }
+            core.setFailed(`Vercel PRODUCTION deploy failed for ${sha} — see the deploy-outage issue.`);

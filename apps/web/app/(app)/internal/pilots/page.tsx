@@ -5,6 +5,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { formatInstant } from "@/lib/render-date";
 import { viewerTimeZone } from "@/lib/viewerToday";
 import { WINDOW_DAYS, formatElapsed, loadPilotMetrics } from "@/lib/internal/pilotMetrics";
+import { DeployStatus } from "./DeployStatus";
 
 export const metadata = { title: "Pilots" };
 
@@ -57,6 +58,7 @@ export default async function InternalPilotsPage() {
   return (
     <PageShell width="working">
       <PageHeader route="/internal/pilots" title="Pilots" />
+      <DeployStatus />
       <p className="mb-4 text-sm text-ink-body">
         Every customer company, most recently active first. Read-only, counted from what the product stores, on every load.
       </p>
