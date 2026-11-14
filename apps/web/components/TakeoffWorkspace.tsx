@@ -1851,6 +1851,7 @@ export function TakeoffWorkspace({
               roomFinder={data.roomFinderOn}
               doorsWindows={data.doorsWindowsOn}
               existingDoorsCounted={data.existingDoorsCounted}
+              doorSchedulePages={data.doorSchedulePages}
               planCompare={data.planCompare}
               doorScheduleRows={data.doorScheduleRows}
               windowScheduleRows={data.windowScheduleRows}

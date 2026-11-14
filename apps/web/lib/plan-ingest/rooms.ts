@@ -1,5 +1,6 @@
+import { existingPrefixes } from "@/lib/takeoff/existingDoors";
 import { existingDoorsCountedOn } from "@/lib/takeoff/existingDoorsCounted";
-import { doorScheduleRowsOf, scheduleRowsOf } from "@/lib/takeoff/workspaceLoad";
+import { doorScheduleRowsOf, doorSchedulePagesOf, scheduleRowsOf } from "@/lib/takeoff/workspaceLoad";
 import { storedLegendCodes } from "@/lib/takeoff/planTextRead";
 import { storedWindowsOf, windowsToStore, WINDOWS_SUGGESTED, type StoredWindows } from "@/lib/takeoff/windowTags";
 import { splitLinesFrom } from "@/lib/takeoff/userExclusions";
@@ -226,7 +227,10 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
     const candidates = inputs.walls;
     const inPoints = inputs.segmentsPt;
     // Existing doors set aside as the viewer does (`existingDoors.ts`); a retry has no boundary, so only the page's own marks.
-    const existing = { ...(input.boundary?.existingDoors ?? {}), counted: await existingDoorsCountedOn(input.planId, input.pageNumber) };
+    // A door series the set's door schedule page(s) call existing (`existingPrefixes`), read from this same file.
+    const scheduleTexts: string[] = [];
+    for (const n of await doorSchedulePagesOf(input.planId)) scheduleTexts.push((await doc.pageText(n)).items.map((i) => i.str).join(" "));
+    const existing = { ...(input.boundary?.existingDoors ?? {}), existingPrefixes: existingPrefixes(scheduleTexts), counted: await existingDoorsCountedOn(input.planId, input.pageNumber) };
     const openings = company.doorsWindowsOn
       ? doorsAndWindowsForSheet({ segments: inUnits as never, segmentsPt: inPoints as never, textPt: text.items as never, widthPt: W, walls: candidates, feetPerUnit, scheduleRows: await doorScheduleRowsOf(input.planId), windowRows: await scheduleRowsOf(input.planId, "WINDOW"), wallCodes: await storedLegendCodes(input.planId), existing })
       : { doors: [], windows: [] };

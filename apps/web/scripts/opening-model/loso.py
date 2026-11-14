@@ -173,7 +173,7 @@ if ASIDE:
     print(f"\nexisting doors set aside before the rows (real = a key door lost, false = a false door removed):")
     for sheet, a in sorted(ASIDE.items()):
         if a:
-            routes = ", ".join(f"{k} {sum(1 for e in a if e['route'] == k)}" for k in ("wall", "area", "tag", "demo") if any(e["route"] == k for e in a))
+            routes = ", ".join(f"{k} {sum(1 for e in a if e['route'] == k)}" for k in ("wall", "area", "tag", "demo", "series") if any(e["route"] == k for e in a))
             print(f"  {sheet[:60]}: {len(a)} set aside, {sum(1 for e in a if not e['real'])} false removed, {sum(1 for e in a if e['real'])} real lost ({routes})")
 print(f"\nkey completeness (printed door marks beside a found door, with no key door by tag or within 6 ft): {sum(len(u) for _, u in UNKEYED.values())} on {len(UNKEYED)} door-keyed sheets")
 for sheet, (n, u) in sorted(UNKEYED.items()):

@@ -1,4 +1,4 @@
-import type { DoorSymbol } from "./doorWindowSymbols";
+import { DOOR_TAG_REACH_FEET, type DoorSymbol } from "./doorWindowSymbols";
 import { nicHatch, textRows, type TextItem } from "./existingWalls";
 import type { StrokeSegment } from "./wallVectors";
 
@@ -26,11 +26,18 @@ import type { StrokeSegment } from "./wallVectors";
  *      paired demolition plan keys them C11.04, "existing wood door to remain"), and route 4 sets them
  *      aside when the sheet is paired; route 3 stays with the door's own tag, as Diego worded it;
  *   4. `demo`: the paired demolition plan draws a door in the same place on a wall it does not
- *      remove (`priorPlanFor`'s `doors`): existing to remain.
+ *      remove (`priorPlanFor`'s `doors`): existing to remain;
+ *   5. `series`: its own mark (the nearest mark-shaped word, within the mark reach) is in a series
+ *      the set calls existing: `E-9` where E Street's door schedule says DOORS WITH PREFIX "E" ARE
+ *      EXISTING DOORS TO REMAIN. Round 22c's door line failed on exactly these: 12 E-numbered doors,
+ *      printed tags and all, out of the key and scoring like perfect doors. A prefix counts only with
+ *      support, never from its letter: a definition on the sheet or on the set's door schedule page
+ *      (`existingPrefixes`), or a paired demolition plan that keeps most of the series' doors. An
+ *      `E-` series with neither (an east wing's doors) is left alone.
  *
  * Pure. Positions in page-width units.
  */
-export type ExistingDoor = { door: DoorSymbol; route: "wall" | "area" | "tag" | "demo"; why: string };
+export type ExistingDoor = { door: DoorSymbol; route: "wall" | "area" | "tag" | "demo" | "series"; why: string };
 
 /** What a caller knows beyond the page itself. Both optional: without them routes 1 and 4 are silent. */
 export type ExistingDoorEvidence = {
@@ -40,6 +47,8 @@ export type ExistingDoorEvidence = {
   priorDoors?: readonly { hinge: { x: number; y: number }; strike: { x: number; y: number } }[];
   /** The demolition plan's sheet number, for the sentence. */
   priorSheet?: string;
+  /** Mark prefixes the set's door schedule page(s) define as existing (`existingPrefixes` over their text). */
+  existingPrefixes?: readonly string[];
   /** A person chose to count this sheet's existing doors (`existingDoorsCounted.ts`): nothing is set aside. */
   counted?: boolean;
 };
@@ -56,6 +65,8 @@ export const DASHED_LINE_PIECES = 4;
 /** A dashed box's sides end this close to the sides across from them (rounded corners). */
 export const BOX_CORNER_FEET = 3;
 export const BOX_LARGEST_FEET = 200;
+/** A demolition plan supports a series when it keeps at least this many of its doors, and at least half. */
+export const SERIES_KEPT_MIN = 2;
 
 /** A short label that puts an area outside the new work. */
 const AREA_LABEL = /^(?:EXISTING\b|EXIST\.|\(E\)|NOT\s+IN\s+(?:CONTRACT|SCOPE)\b|N\.?\s?I\.?\s?C\.?\b|BY\s+OTHERS\b|NO\s+WORK\b)|\(E\)$/i;
@@ -79,6 +90,29 @@ export function swingSide(d: DoorSymbol): -1 | 0 | 1 {
   const v = (d.open.x - d.hinge.x) * -ly + (d.open.y - d.hinge.y) * lx;
   return v > 0 ? 1 : v < 0 ? -1 : 0;
 }
+
+/**
+ * The door-mark prefixes a text defines as existing: `DOORS WITH PREFIX "E" ARE EXISTING DOORS TO REMAIN`
+ * (E Street p31), `PREFIX "E" INDICATES EXISTING`, `EX = EXISTING`. Each text is one page's words joined.
+ */
+export function existingPrefixes(texts: readonly string[]): string[] {
+  const out = new Set<string>();
+  const Q = `["\u201c\u201d']?`;
+  const patterns = [
+    new RegExp(`\\b(?:DOORS?|MARKS?|TAGS?|NUMBERS?|OPENINGS?)\\s+(?:WITH|HAVING|W/)\\s+(?:AN?\\s+|THE\\s+)?PREFIX\\s+${Q}([A-Z]{1,2})-?${Q}\\s+(?:ARE|IS|INDICATES?|DENOTES?|MEANS|=)\\s+(?:AN?\\s+)?EXIST`, "g"),
+    new RegExp(`\\bPREFIX\\s+${Q}([A-Z]{1,2})-?${Q}\\s+(?:INDICATES?|DENOTES?|MEANS|=)\\s+(?:AN?\\s+)?EXIST`, "g"),
+    new RegExp(`(?:^|\\s)${Q}([A-Z]{1,2})-?${Q}\\s*[=:]\\s*EXIST(?:ING|\\.)?\\b`, "g"),
+  ];
+  for (const text of texts) {
+    const t = text.toUpperCase().replace(/\s+/g, " ");
+    for (const re of patterns) for (const m of t.matchAll(re)) out.add(m[1]!);
+  }
+  return [...out].sort();
+}
+
+/** A door mark with a prefix (`E-9`, `E-14.1`) or a plain number (`6`, `12.1`); never a keynote (`E23.04`) or a room name. */
+const PREFIXED_MARK = /^([A-Z]{1,2})-(\d{1,3}(?:\.\d)?[A-Z]?)$/;
+const PLAIN_MARK = /^\d{1,3}(?:\.\d)?[A-Z]?$/;
 
 type DashedLine = { at: number; a: number; b: number };
 
@@ -185,6 +219,26 @@ export function existingDoors(input: {
       if (Math.hypot(mid(p).x - mid(d).x, mid(p).y - mid(d).y) <= same) set(d, "demo", `drawn on ${input.evidence?.priorSheet ?? "the demolition plan"} and not removed — existing to remain`);
     }
   }
+  // 5. Its mark is in a series the set calls existing.
+  const marks = textRows(input.textPt).filter((r) => PREFIXED_MARK.test(r.str) || PLAIN_MARK.test(r.str)).map((r) => ({ str: r.str, at: centre(r) }));
+  if (marks.some((m) => PREFIXED_MARK.test(m.str))) {
+    const reach = DOOR_TAG_REACH_FEET / fpu;
+    const series = new Map<string, { door: DoorSymbol; mark: string }[]>();
+    for (const d of doors) {
+      const own = marks.map((m) => ({ ...m, d: Math.hypot(m.at.x - mid(d).x, m.at.y - mid(d).y) })).filter((m) => m.d <= reach).sort((a, b) => a.d - b.d)[0];
+      const prefix = own === undefined ? null : PREFIXED_MARK.exec(own.str)?.[1] ?? null;
+      if (prefix !== null) (series.get(prefix) ?? series.set(prefix, []).get(prefix)!).push({ door: d, mark: own!.str });
+    }
+    const defined = new Set([...existingPrefixes([input.textPt.map((t) => t.str).join(" ")]), ...(input.evidence?.existingPrefixes ?? [])]);
+    const prior = input.evidence?.priorDoors ?? [];
+    for (const [prefix, list] of series) {
+      const kept = list.filter((e) => prior.some((p) => Math.hypot(mid(p).x - mid(e.door).x, mid(p).y - mid(e.door).y) <= same)).length;
+      const byPlan = prior.length > 0 && kept >= SERIES_KEPT_MIN && kept >= list.length / 2;
+      if (!defined.has(prefix) && !byPlan) continue;
+      const source = defined.has(prefix) ? `the set calls prefix "${prefix}" existing` : `${input.evidence?.priorSheet ?? "the demolition plan"} keeps ${kept} of the ${list.length} "${prefix}-" doors`;
+      for (const e of list) set(e.door, "series", `tagged "${e.mark}": ${source}`);
+    }
+  }
   // 2. Inside a hatched or dashed area labelled existing or not in contract.
   const labels = rows.filter((r) => AREA_LABEL.test(r.str));
   if (labels.length > 0 && doors.some((d) => !out.has(d))) {
@@ -220,6 +274,7 @@ export function existingDoorsSentence(list: readonly ExistingDoor[]): string {
     n("area") > 0 ? `${n("area")} inside an area marked existing or not in contract` : "",
     n("tag") > 0 ? `${n("tag")} tagged (E)` : "",
     n("demo") > 0 ? `${n("demo")} kept on the demolition plan` : "",
+    n("series") > 0 ? `${n("series")} in a door series the set calls existing` : "",
   ].filter((s) => s !== "");
   return `${list.length} existing door${list.length === 1 ? "" : "s"} set aside: ${parts.join("; ")}`;
 }

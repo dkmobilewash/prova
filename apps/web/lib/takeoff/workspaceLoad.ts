@@ -688,10 +688,12 @@ export async function loadTakeoffWorkspace(
   const windowScheduleRows = roomFinder?.doorsWindowsOn ? await scheduleRowsOf(plan.id, "WINDOW") : [];
   // The sheets whose existing doors a person chose to count (the Undo of `existingDoors.ts`).
   const existingDoorsCounted = roomFinder?.doorsWindowsOn ? await countedExistingDoorPages(plan.id) : [];
+  const doorSchedulePages = roomFinder?.doorsWindowsOn ? await doorSchedulePagesOf(plan.id) : [];
 
   return {
     doorsWindowsOn: roomFinder?.doorsWindowsOn ?? false,
     existingDoorsCounted,
+    doorSchedulePages,
     planCompare,
     doorScheduleRows,
     windowScheduleRows,
@@ -920,6 +922,12 @@ export async function takeoffSavedSignature(companyId: string, jobId: string): P
 /** Every row of the newest DOOR schedule read on each page of the plan, flattened. */
 export async function doorScheduleRowsOf(planId: string): Promise<StoredScheduleRow[]> {
   return scheduleRowsOf(planId, "DOOR");
+}
+
+/** The pages the ingest read a DOOR schedule on: their words can define a door series as existing (`existingPrefixes`). */
+export async function doorSchedulePagesOf(planId: string): Promise<number[]> {
+  const rows = await prisma.planScheduleProposal.findMany({ where: { planId, kind: "DOOR" }, select: { pageNumber: true }, distinct: ["pageNumber"] });
+  return rows.map((r) => r.pageNumber).sort((a, b) => a - b);
 }
 
 /** Every row of the newest schedule of this kind read on each page of the plan, flattened. */

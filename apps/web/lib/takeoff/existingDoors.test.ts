@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { doorsAndWindowsForSheet } from "./doorsWindows";
 import { doorSymbols } from "./doorWindowSymbols";
-import { asideExistingWalls, dashedBoxAround, dashedLines, existingDoors, swingSide } from "./existingDoors";
+import { asideExistingWalls, dashedBoxAround, dashedLines, existingDoors, existingPrefixes, swingSide } from "./existingDoors";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /** One foot = 0.01 page-width units, so feetPerUnit is 100; the page is 1000 pt wide. */
@@ -118,5 +118,54 @@ describe("existing doors set aside", () => {
     const counted = doorsAndWindowsForSheet({ segments: door, segmentsPt: [], textPt: [word("(E)", 0.51, 0.485)], widthPt: W, walls, feetPerUnit: FPU, scheduleRows: [], existing: { counted: true } });
     expect(counted.doors).toHaveLength(1);
     expect(counted.existingDoors).toEqual([]);
+  });
+});
+
+describe("a door series the set calls existing", () => {
+  // Three 3 ft doors along a wall at y = 0.5, hinged at x = 0.2, 0.4, 0.6; each mark sits 2 ft above its door's middle.
+  const at = [0.2, 0.4, 0.6];
+  const segs: StrokeSegment[] = at.flatMap((x) => [{ x1: x, y1: 0.5, x2: x, y2: 0.5 - ft(3) }, ...swing(x, 0.5, ft(3), -Math.PI / 2, 0)]);
+  const threeDoors = doorSymbols(segs, [wall(0.1, 0.5, 0.9, 0.5)], FPU);
+  const markAt = (str: string, i: number) => word(str, at[i]! + ft(1.5), 0.5 - ft(2));
+  const series = (text: ReturnType<typeof word>[], evidence?: Parameters<typeof existingDoors>[0]["evidence"]) =>
+    existingDoors({ doors: threeDoors, segments: segs, textPt: text, widthPt: W, feetPerUnit: FPU, ...(evidence === undefined ? {} : { evidence }) });
+  const tags = [markAt("E-1", 0), markAt("E-2", 1), markAt("E-3", 2)];
+
+  it("reads the definitions a set prints, and not a letter that means something else", () => {
+    expect(existingPrefixes(['13. DOORS WITH PREFIX "E" ARE EXISTING DOORS TO REMAIN.'])).toEqual(["E"]);
+    expect(existingPrefixes(["DOORS WITH PREFIX \u201cEX\u201d ARE EXISTING", "EX = EXISTING TO REMAIN"])).toEqual(["EX"]);
+    expect(existingPrefixes(["E = EAST WING", "PREFIX E INDICATES EAST", "SEE DOOR SCHEDULE FOR EXISTING DOOR HARDWARE"])).toEqual([]);
+  });
+
+  it("an E- series the door schedule calls existing is set aside (E Street p31)", () => {
+    expect(threeDoors).toHaveLength(3);
+    const got = series(tags, { existingPrefixes: ["E"] });
+    expect(got.map((e) => e.route)).toEqual(["series", "series", "series"]);
+    expect(got[0]!.why).toBe('tagged "E-1": the set calls prefix "E" existing');
+  });
+
+  it("an E- series with no legend, keynote or demolition plan behind it is left alone (an east wing's doors)", () => {
+    expect(series(tags)).toEqual([]);
+    expect(series(tags, { existingPrefixes: ["X"] })).toEqual([]);
+  });
+
+  it("the sheet's own legend or keynote is support enough", () => {
+    expect(series([...tags, word("DOORS WITH PREFIX E ARE EXISTING TO REMAIN", 0.8, 0.2)]).map((e) => e.route)).toEqual(["series", "series", "series"]);
+  });
+
+  it("a paired demolition plan that keeps most of the series supports the rest; one keeping a third does not", () => {
+    const kept = (i: number) => ({ hinge: threeDoors[i]!.hinge, strike: threeDoors[i]!.strike });
+    expect(series(tags, { priorDoors: [kept(0), kept(1)], priorSheet: "AD1" }).map((e) => e.route)).toEqual(["demo", "demo", "series"]);
+    expect(series(tags, { priorDoors: [kept(0)], priorSheet: "AD1" }).map((e) => e.route)).toEqual(["demo"]);
+  });
+
+  it("a door's own mark is the nearest one: a new door 1 beside existing E-1 stays (E Street's entry)", () => {
+    const mixed = [word("1", at[0]! + ft(1.5), 0.5 - ft(1)), markAt("E-1", 0), markAt("E-2", 1), markAt("E-3", 2)];
+    expect(series(mixed, { existingPrefixes: ["E"] }).map((e) => e.why)).toEqual(['tagged "E-2": the set calls prefix "E" existing', 'tagged "E-3": the set calls prefix "E" existing']);
+  });
+
+  it("a keynote or reference shaped like a prefix (E23.04, E5B beside E Street's E-5) is not a door mark: the series takes its hyphen", () => {
+    expect(series([markAt("E23.04", 0)], { existingPrefixes: ["E"] })).toEqual([]);
+    expect(series([markAt("E5B", 0)], { existingPrefixes: ["E"] })).toEqual([]);
   });
 });
