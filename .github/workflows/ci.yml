@@ -70,6 +70,12 @@ jobs:
           # dropping it breaks production at runtime, not at build time.
           NODE_OPTIONS: --max-old-space-size=8192
 
+      - name: Function size budget (warn 4 GB, fail 4.5 GB per traced entry)
+        # 2026-11-14: api/ask crossed Vercel's 5 GB function limit and froze
+        # production deploys for 12 hours with CI green throughout. This fails
+        # the PR first. See apps/web/scripts/function-size-budget.mjs.
+        run: node apps/web/scripts/function-size-budget.mjs
+
   # The 144 database tests that, until now, nothing ran.
   #
   # `vitest.db.config.mts` (`.ts` until #171) existed with a docstring explaining how to run it
@@ -112,11 +118,6 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      - name: Function size budget (warn 4 GB, fail 4.5 GB per traced entry)
-        # 2026-11-14: api/ask crossed Vercel's 5 GB function limit and froze
-        # production deploys for 12 hours with CI green throughout. This fails
-        # the PR first. See apps/web/scripts/function-size-budget.mjs.
-        run: node apps/web/scripts/function-size-budget.mjs
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
