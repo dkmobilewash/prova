@@ -175,11 +175,16 @@ model Company {
   /// existing to remain. OFF until the owner turns it on in Settings — see
   /// `lib/takeoff/priorPlan.ts`.
   planCompareOn Boolean @default(false)
-  /// "Auto-post proven items": a wall group whose type comes from a source
-  /// measured right ≥97% on training and ≥95% held-out (`lib/takeoff/autoPost.ts`)
-  /// posts without the queue, labelled "auto, from <source>", with Undo. OFF for
-  /// existing companies; new companies are created with it ON (`lib/auth.ts`).
+  /// "Auto-post proven items": marked doors post themselves to the estimate
+  /// (`lib/plan-ingest/autoDoors.ts`), with Undo. OFF for existing companies;
+  /// new companies are created with it ON (`lib/auth.ts`). Walls have their own
+  /// switch, below.
   autoPostOn Boolean @default(false)
+  /// "Auto-post walls": walls the run model is sure of, and wall types from a
+  /// proven source, post themselves (`lib/plan-ingest/wallItems.ts`), with Undo.
+  /// OFF for every company, new ones included, until the walls evidence grows
+  /// (Diego, 2026-11-14: 417 ft held-out). An owner turns it on in Settings.
+  autoPostWalls Boolean @default(false)
 
   /// The unguessable half of this company's inbound intake address:
   /// `docs-<token>@<INTAKE_INBOUND_DOMAIN>`. The token IS the routing — an

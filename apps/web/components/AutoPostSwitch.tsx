@@ -6,7 +6,7 @@ import { saveAutoPostSwitch } from "@/lib/actions";
 import { ActionForm } from "@/components/ActionForm";
 import { SubmitButton } from "@/components/SubmitButton";
 
-export function AutoPostSwitch({ on, isOwner }: { on: boolean; isOwner: boolean }) {
+export function AutoPostSwitch({ on, walls, isOwner }: { on: boolean; walls: boolean; isOwner: boolean }) {
   const router = useRouter();
   const [saved, setSaved] = useState(false);
   return (
@@ -19,24 +19,24 @@ export function AutoPostSwitch({ on, isOwner }: { on: boolean; isOwner: boolean 
           router.refresh();
         }}
       >
-        <label className="flex items-start gap-3 text-sm text-ink-body">
-          <input
-            type="checkbox"
-            name="autoPostOn"
-            defaultChecked={on}
-            disabled={!isOwner}
-            className="mt-0.5 h-5 w-5 shrink-0 rounded border-line-card bg-canvas text-link focus:ring-link disabled:opacity-50"
-          />
-          <span>
-            <span className="font-medium text-ink">Auto-post proven items</span>
-            <span className="mt-1 block text-xs text-ink-muted">
-              A wall group whose type comes from a source measured right at least 97% of the time on our training
-              plans and 95% on plans it was never tuned on posts straight to the estimate, labelled &ldquo;auto, from
-              &lt;source&gt;&rdquo;. The review queue says how many feet posted this way, with Undo per sheet.
-              Everything else still waits for you. Today no source has cleared that bar, so nothing posts yet.
+        {([
+          ["autoPostOn", on, "Auto-post marked doors", "A door with a printed mark beside it posts to the estimate as a count, with Undo per sheet."],
+          ["autoPostWalls", walls, "Auto-post walls", "Walls our wall model is sure of post to the estimate without review, with Undo per sheet — off until you turn it on, while the evidence is small (417 ft on plans we never tuned on, none wrong)."],
+        ] as const).map(([name, checked, title, line]) => (
+          <label key={name} className="mt-3 flex items-start gap-3 text-sm text-ink-body first:mt-0">
+            <input
+              type="checkbox"
+              name={name}
+              defaultChecked={checked}
+              disabled={!isOwner}
+              className="mt-0.5 h-5 w-5 shrink-0 rounded border-line-card bg-canvas text-link focus:ring-link disabled:opacity-50"
+            />
+            <span>
+              <span className="font-medium text-ink">{title}</span>
+              <span className="mt-1 block text-xs text-ink-muted">{line}</span>
             </span>
-          </span>
-        </label>
+          </label>
+        ))}
         {isOwner && (
           <div className="mt-3 flex items-center gap-3">
             <SubmitButton>Save</SubmitButton>

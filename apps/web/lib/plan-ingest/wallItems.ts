@@ -91,7 +91,9 @@ export async function wallItemsForSheet(input: {
   // The type each group is posted as: the drawing's, where its source is one
   // that is right 95% of the time (`postingGate.ts`); everything else waits in
   // the review queue with that type offered first.
-  const autoPostOn = (await prisma.company.findUnique({ where: { id: input.companyId }, select: { autoPostOn: true } }))?.autoPostOn === true;
+  // WALLS have their own switch (`Company.autoPostWalls`, off for every company until an owner turns it on);
+  // the door switch (`autoPostOn`) never posts a wall.
+  const autoPostOn = (await prisma.company.findUnique({ where: { id: input.companyId }, select: { autoPostWalls: true } }))?.autoPostWalls === true;
   const autoFrom = new Map<WallGroup, PostSource>();
   // ── A WALL THE MODEL IS SURE OF IS COUNTED WITHOUT REVIEW (METHOD v2, part 2) ──
   // Only with the company's switch on AND the wall model's evidence past the bar; null otherwise. The score is
