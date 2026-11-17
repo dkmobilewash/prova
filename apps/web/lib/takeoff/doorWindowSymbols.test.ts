@@ -158,13 +158,6 @@ describe("door symbols", () => {
     expect(why[0]!.reject).toBe("no-leaf");
   });
 
-  it("a leaf wider than 4.5 ft is not a door leaf: 4 ft is found, 5 ft is not (Mack A-101's enlarged plans read at the 1/8in scale)", () => {
-    const at = (r: number) => [{ x1: 0.2, y1: 0.5, x2: 0.2, y2: 0.5 - ft(r) }, ...swing(0.2, 0.5, ft(r), -Math.PI / 2, 0)];
-    const on = (r: number) => [wall(0.05, 0.5, 0.2, 0.5), wall(0.2 + ft(r), 0.5, 0.4, 0.5)];
-    expect(doorArcCandidates(at(4), on(4), FPU)[0]!.reject).toBeNull();
-    expect(doorArcCandidates(at(5), on(5), FPU)[0]!.reject).toBe("radius");
-  });
-
   it("rejects arcs that are not door-sized or not a swing", () => {
     const tiny = swing(0.2, 0.2, ft(0.5), 0, Math.PI / 2);
     const tinyLeaf: StrokeSegment = { x1: 0.2, y1: 0.2, x2: 0.2 + ft(0.5), y2: 0.2 };

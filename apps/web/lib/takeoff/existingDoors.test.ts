@@ -89,6 +89,14 @@ describe("existing doors set aside", () => {
     expect(scope(frame)).toBe(1);
   });
 
+  it("a leaf wider than 4.5 ft is not a door the product counts: 4 ft is, 5 ft is not (Mack A-101's enlarged plans read at the 1/8in scale)", () => {
+    const at = (r: number) => doorsInScope({ segments: [{ x1: 0.5, y1: 0.5, x2: 0.5, y2: 0.5 - ft(r) }, ...swing(0.5, 0.5, ft(r), -Math.PI / 2, 0)], walls: [wall(0.4, 0.5, 0.5, 0.5), wall(0.5 + ft(r), 0.5, 0.7, 0.5)], feetPerUnit: FPU, textPt: [], widthPt: W, marks: [] }).all;
+    expect(at(4)).toHaveLength(1);
+    expect(at(5)).toHaveLength(0);
+    // The arc itself is still read: the scale suggester counts it.
+    expect(doorSymbols([{ x1: 0.5, y1: 0.5, x2: 0.5, y2: 0.45 }, ...swing(0.5, 0.5, ft(5), -Math.PI / 2, 0)], [wall(0.4, 0.5, 0.5, 0.5), wall(0.55, 0.5, 0.7, 0.5)], FPU)).toHaveLength(1);
+  });
+
   it("an angle dimension's word inside a door's swing makes the arc the dimension's; outside the swing, across the wall, or a radius word, it does not (Substation A-101, Mack A-101)", () => {
     const found = (text: ReturnType<typeof word>[]) => doorsInScope({ segments: door, walls, feetPerUnit: FPU, textPt: text, widthPt: W, marks: [] }).all.length;
     expect(found([])).toBe(1);

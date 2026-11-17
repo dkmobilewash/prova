@@ -1,5 +1,5 @@
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
-import { DOOR_TAG_REACH_FEET, doorSymbols, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, WINDOW_TAGS_MEAN_ALL, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
+import { DOOR_TAG_REACH_FEET, doorSymbols, WIDEST_DOOR_LEAF_FEET, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, WINDOW_TAGS_MEAN_ALL, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
 import { existingDoors, insideLegendBox, type ExistingDoor, type ExistingDoorEvidence } from "./existingDoors";
 import { joinOpeningsToSchedule, widthAndHeight, type OpeningJoin, type PlacedMark, type ScheduledOpening } from "./openingMarks";
 import { tagSymbols, type TextForSymbol } from "./tagSymbols";
@@ -89,6 +89,7 @@ export function doorsInScope(input: {
   const dims = input.textPt.filter((t) => DIMENSION_WORD.test(t.str.trim())).map((t) => ({ x: (t.x + t.width / 2) / input.widthPt, y: (t.y - t.height / 2) / input.widthPt }));
   const all = doorSymbols(input.segments, input.walls, input.feetPerUnit)
     .filter((d) => legend.length === 0 || !insideLegendBox({ x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2 }, legend))
+    .filter((d) => d.widthFeet / d.leaves <= WIDEST_DOOR_LEAF_FEET)
     .filter((d) => !dims.some((p) => inSwing(d, p, input.feetPerUnit)));
   const existing = existingDoors({ doors: all, segments: input.segments, textPt: input.textPt, widthPt: input.widthPt, feetPerUnit: input.feetPerUnit, ...(input.existing === undefined ? {} : { evidence: input.existing }) });
   const aside = new Set(existing.map((e) => e.door));
