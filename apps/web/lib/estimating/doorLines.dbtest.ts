@@ -181,6 +181,22 @@ describe("posted doors elsewhere", () => {
   });
 });
 
+describe("a posted double door (Diego's ruling, 2026-11-16)", () => {
+  it("is one opening and two leaves: 2 frames and 2 openings' framing for a single and a pair, 3 doors hung; a re-post clears both counts", async () => {
+    const s = await setUp("METAL_FRAMING_DRYWALL", 0);
+    expect(await setScope("DOORS_AND_FRAMES")).toEqual({ ok: true });
+    await postAutoDoors({ planId: s.planId, pageNumber: 1, pageId: s.page.id, calibrationId: s.calibration.id, companyId: s.companyId, jobId: s.jobId, userId: null, points: [{ x: 0.2, y: 0.4 }, { x: 0.3, y: 0.4, leaves: 2 }] });
+    const counts = await prisma.takeoffMeasurement.findMany({ where: { pageId: s.page.id, kind: "COUNT" }, select: { label: true, xs: true } });
+    expect(counts.map((c) => [c.label, c.xs.length]).sort((x, y) => String(x[0]).localeCompare(String(y[0])))).toEqual([[AUTO_DOORS_LABEL, 1], ["Double doors (auto, from printed mark)", 1]]);
+    const lines = await doorLines(s.jobId);
+    const qty = (d: string) => Number(lines.find((l) => l.description === d)?.quantity);
+    expect([qty("Labor — Doors — set hollow-metal frames"), qty("Labor — Doors — hang doors, with hardware")]).toEqual([2, 3]);
+    expect(lines.filter((l) => l.description.startsWith("Doors — opening framing")).map((l) => Number(l.quantity))).toEqual([8, 8]);
+    await postAutoDoors({ planId: s.planId, pageNumber: 1, pageId: s.page.id, calibrationId: s.calibration.id, companyId: s.companyId, jobId: s.jobId, userId: null, points: [] });
+    expect(await prisma.takeoffMeasurement.count({ where: { pageId: s.page.id, kind: "COUNT" } })).toBe(0);
+  });
+});
+
 describe("doors posted before any wall has a type (the Baker walk's order)", () => {
   it("their framing arrives when a wall is typed, though only that wall's lines were synced", async () => {
     // A preset company has no default partition, and the set's doors post while it is read.

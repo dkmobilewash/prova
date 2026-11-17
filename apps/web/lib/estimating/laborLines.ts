@@ -4,7 +4,7 @@ import { openingsFromJson, runGeometry } from "@/lib/wall-assemblies";
 import { openingThresholdSqFt as thresholdFor } from "@/lib/businessScope";
 import { laborAssembly, laborPlan, ratesFromJson, type LaborPlan, type WallForLabor } from "./productionRates";
 import { wallItemsForLabor } from "./takeoff-item-lines";
-import { WINDOW_ITEM_PREFIX, type DoorScope } from "./doorLines";
+import { leavesPerPoint, WINDOW_ITEM_PREFIX, type DoorScope } from "./doorLines";
 import { AUTO_DOORS_ITEM } from "@/lib/takeoff/autoPost";
 
 type Tx = Prisma.TransactionClient;
@@ -123,14 +123,16 @@ export async function wallsForLabor(tx: Tx, companyId: string, jobId: string, de
 }
 
 /** The job's ceiling lines (the takeoff's "Ceiling — …" items), by their square feet. */
-/** The job's posted doors and who installs them: every point counted on its "Doors" item, and the company's door scope. */
-export async function doorsForLabor(tx: Tx, companyId: string, jobId: string): Promise<{ count: number; scope: DoorScope; windows: number }> {
+/** The job's posted doors and who installs them: every point counted on its "Doors" item (openings), the leaves they hold, and the company's door scope. */
+export async function doorsForLabor(tx: Tx, companyId: string, jobId: string): Promise<{ count: number; leaves: number; scope: DoorScope; windows: number }> {
   const company = await tx.company.findUnique({ where: { id: companyId }, select: { doorScope: true } });
   const scope = company?.doorScope ?? "BY_OTHERS";
-  if (scope === "BY_OTHERS") return { count: 0, scope, windows: 0 };
-  const points = async (name: object) => (await tx.takeoffMeasurement.findMany({ where: { kind: "COUNT", item: { jobId, companyId, name } }, select: { xs: true } })).reduce((n, m) => n + m.xs.length, 0);
+  if (scope === "BY_OTHERS") return { count: 0, leaves: 0, scope, windows: 0 };
+  const counts = async (name: object) => tx.takeoffMeasurement.findMany({ where: { kind: "COUNT", item: { jobId, companyId, name } }, select: { xs: true, label: true } });
+  const doors = await counts({ equals: AUTO_DOORS_ITEM });
   // The windows: every confirmed window count, on its "Windows — A" item.
-  return { count: await points({ equals: AUTO_DOORS_ITEM }), scope, windows: await points({ startsWith: WINDOW_ITEM_PREFIX }) };
+  const windows = (await counts({ startsWith: WINDOW_ITEM_PREFIX })).reduce((n, m) => n + m.xs.length, 0);
+  return { count: doors.reduce((n, m) => n + m.xs.length, 0), leaves: doors.reduce((n, m) => n + m.xs.length * leavesPerPoint(m.label), 0), scope, windows };
 }
 
 async function ceilingsForLabor(tx: Tx, jobId: string): Promise<{ description: string; squareFeet: number }[]> {

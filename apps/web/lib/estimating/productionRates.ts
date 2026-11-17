@@ -110,7 +110,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  * forty short runs are one line, not forty roundings. A task with a blank rate writes nothing and its
  * rate is named in `missing`.
  */
-export function laborPlan(walls: readonly WallForLabor[], ceilings: readonly { description: string; squareFeet: number }[], rates: ProductionRates, doors: { count: number; scope: DoorScope; windows?: number } = { count: 0, scope: "BY_OTHERS" }): LaborPlan {
+export function laborPlan(walls: readonly WallForLabor[], ceilings: readonly { description: string; squareFeet: number }[], rates: ProductionRates, doors: { count: number; scope: DoorScope; windows?: number; leaves?: number } = { count: 0, scope: "BY_OTHERS" }): LaborPlan {
   const missing = new Set<string>();
   const sums = new Map<string, { hours: number }>();
   const add = (description: string, hours: number) => sums.set(description, { hours: (sums.get(description)?.hours ?? 0) + hours });
@@ -139,7 +139,7 @@ export function laborPlan(walls: readonly WallForLabor[], ceilings: readonly { d
     if (rates.ceilingSfPerHr === null) missing.add("ceilings (sq ft per hour)");
     else add(`Labor — ${c.description} — install`, c.squareFeet / rates.ceilingSfPerHr);
   }
-  const door = doorLabor(doors.count, doors.scope, rates);
+  const door = doorLabor(doors.count, doors.scope, rates, doors.leaves ?? doors.count);
   const window = windowLabor(doors.windows ?? 0, doors.scope, rates);
   door.lines.push(...window.lines);
   door.missing.push(...window.missing);

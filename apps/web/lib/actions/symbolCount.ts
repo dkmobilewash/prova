@@ -3,7 +3,7 @@
 import { countItemFor } from "@/lib/takeoff/countItem";
 import { storedWindowsOf, windowItemName, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
 import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
-import { CONFIRMED_DOORS_LABEL, DOORS_SUGGESTED, storedDoorsOf } from "@/lib/takeoff/doorSuggestions";
+import { CONFIRMED_DOOR_LABELS, CONFIRMED_DOOR_PAIRS_LABEL, CONFIRMED_DOORS_LABEL, DOORS_SUGGESTED, storedDoorsOf } from "@/lib/takeoff/doorSuggestions";
 import { AUTO_DOORS_ITEM } from "@/lib/takeoff/autoPost";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
@@ -234,11 +234,15 @@ export async function confirmDoors(jobId: string, planId: string, pageNumber: nu
     });
     const itemsBefore = new Set((await prisma.takeoffItem.findMany({ where: { jobId, companyId: company.id }, select: { id: true } })).map((i) => i.id));
     const itemId = await countItemFor(company.id, jobId, AUTO_DOORS_ITEM);
-    const made = await prisma.takeoffMeasurement.create({
-      data: { itemId, pageId: page.id, calibrationId: page.calibrations[0]?.id ?? null, kind: "COUNT", xs: doors.map((d) => (d.x1 + d.x2) / 2), ys: doors.map((d) => (d.y1 + d.y2) / 2), label: CONFIRMED_DOORS_LABEL, createdByUserId: userId },
-      select: { id: true },
-    });
-    undo.measurements.push(made.id);
+    // Singles and pairs are separate counts, so a pair prices as one frame and two leaves (`doorLines.ts`).
+    for (const [label, group] of [[CONFIRMED_DOORS_LABEL, doors.filter((d) => d.leaves !== 2)], [CONFIRMED_DOOR_PAIRS_LABEL, doors.filter((d) => d.leaves === 2)]] as const) {
+      if (group.length === 0) continue;
+      const made = await prisma.takeoffMeasurement.create({
+        data: { itemId, pageId: page.id, calibrationId: page.calibrations[0]?.id ?? null, kind: "COUNT", xs: group.map((d) => (d.x1 + d.x2) / 2), ys: group.map((d) => (d.y1 + d.y2) / 2), label, createdByUserId: userId },
+        select: { id: true },
+      });
+      undo.measurements.push(made.id);
+    }
     if (itemId !== null && !itemsBefore.has(itemId)) undo.items.push(itemId);
     // The doors reach the bid as the company's Doors and frames setting says (`doorLines.ts`).
     if (itemId !== null) await prisma.$transaction((tx) => syncTakeoffItemLines(tx, company.id, jobId, new Set([itemId])), { timeout: 60_000 });
@@ -259,8 +263,8 @@ export async function undoConfirmDoors(jobId: string, planId: string, pageNumber
   const items = (Array.isArray(undo?.items) ? undo.items : []).filter((id): id is string => typeof id === "string");
   const where = { planId_pageNumber_kind: { planId: plan.id, pageNumber, kind: DOORS_SUGGESTED } };
   await prisma.$transaction(async (tx) => {
-    const touched = (await tx.takeoffMeasurement.findMany({ where: { id: { in: ids }, kind: "COUNT", label: CONFIRMED_DOORS_LABEL, page: { planId: plan.id, pageNumber } }, select: { itemId: true } })).flatMap((m) => (m.itemId === null ? [] : [m.itemId]));
-    await tx.takeoffMeasurement.deleteMany({ where: { id: { in: ids }, kind: "COUNT", label: CONFIRMED_DOORS_LABEL, page: { planId: plan.id, pageNumber } } });
+    const touched = (await tx.takeoffMeasurement.findMany({ where: { id: { in: ids }, kind: "COUNT", label: { in: CONFIRMED_DOOR_LABELS }, page: { planId: plan.id, pageNumber } }, select: { itemId: true } })).flatMap((m) => (m.itemId === null ? [] : [m.itemId]));
+    await tx.takeoffMeasurement.deleteMany({ where: { id: { in: ids }, kind: "COUNT", label: { in: CONFIRMED_DOOR_LABELS }, page: { planId: plan.id, pageNumber } } });
     // Their lines go with them, before an item left with nothing is removed.
     if (touched.length > 0) await syncTakeoffItemLines(tx, company.id, jobId, new Set(touched));
     for (const id of items) {

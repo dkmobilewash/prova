@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { doorScopeFrom, framesOpenings, framingAssembly, laborSource, openingFraming, windowOpeningTrackFt } from "./doorLines";
+import { doorLabor, doorScopeFrom, framesOpenings, framingAssembly, laborSource, leavesPerPoint, openingFraming, windowOpeningTrackFt } from "./doorLines";
+import { AUTO_DOOR_PAIRS_LABEL, AUTO_DOORS_LABEL } from "@/lib/takeoff/autoPost";
+import { CONFIRMED_DOOR_PAIRS_LABEL, CONFIRMED_DOORS_LABEL } from "@/lib/takeoff/doorSuggestions";
 import { TRADE_PRESETS } from "@/lib/trade-presets";
 
 // The starter partition's own parts, as `wall-type-starters.ts` writes them.
@@ -58,6 +60,18 @@ describe("where a labor line's price came from", () => {
   it("a cost somebody typed over it is theirs, so the source goes", () => {
     expect(laborSource(line("Labor — Doors — set hollow-metal frames", "60.00"), rates)).toBeNull();
     expect(laborSource({ ...line("Labor — Doors — set hollow-metal frames", "42.50"), costCategory: "MATERIAL" }, rates)).toBeNull();
+  });
+});
+
+describe("a double door: one frame per opening, a door hung per leaf (Diego's ruling, 2026-11-16)", () => {
+  it("a pair's count stands for two leaves, every other count for one", () => {
+    expect([AUTO_DOOR_PAIRS_LABEL, CONFIRMED_DOOR_PAIRS_LABEL].map(leavesPerPoint)).toEqual([2, 2]);
+    expect([AUTO_DOORS_LABEL, CONFIRMED_DOORS_LABEL, "Doors", null].map(leavesPerPoint)).toEqual([1, 1, 1, 1]);
+  });
+  it("3 openings holding 4 leaves: 3 frames set, 4 doors hung; frames only sets 3 and hangs none", () => {
+    const rates = { doorFramesPerHr: 2, doorsPerHr: 1.5 };
+    expect(doorLabor(3, "DOORS_AND_FRAMES", rates, 4).lines.map((l) => [l.description, l.quantity])).toEqual([["Labor — Doors — set hollow-metal frames", 3], ["Labor — Doors — hang doors, with hardware", 4]]);
+    expect(doorLabor(3, "FRAMES", rates, 4).lines.map((l) => [l.description, l.quantity])).toEqual([["Labor — Doors — set hollow-metal frames", 3]]);
   });
 });
 

@@ -15,7 +15,7 @@ import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "
 import { addWallTypeFromLegend } from "./wallLegend";
 import { syncDecidedItems } from "@/lib/estimating/takeoff-item-lines";
 import { sameRunAs } from "@/lib/takeoff/runMatch";
-import { AUTO_DOORS_LABEL, AUTO_MARK, HIGH_CONFIDENCE_WALLS } from "@/lib/takeoff/autoPost";
+import { AUTO_DOOR_LABELS, AUTO_MARK, HIGH_CONFIDENCE_WALLS } from "@/lib/takeoff/autoPost";
 import { DOORS_AUTO_UNDONE } from "@/lib/plan-ingest/autoDoors";
 
 /**
@@ -442,7 +442,7 @@ export async function undoAutoPost(jobId: string, planId: string, pageNumber: nu
     if (page === null) return { ok: false, error: "That sheet isn't on this job any more." };
     const runs = await prisma.$transaction(async (tx) => {
       // The sheet's auto-posted doors go too, and stay gone on a re-run (`autoDoors.ts`).
-      const doors = await tx.takeoffMeasurement.findMany({ where: { pageId: page.id, kind: "COUNT", label: AUTO_DOORS_LABEL }, select: { id: true, itemId: true, xs: true } });
+      const doors = await tx.takeoffMeasurement.findMany({ where: { pageId: page.id, kind: "COUNT", label: { in: AUTO_DOOR_LABELS } }, select: { id: true, itemId: true, xs: true } });
       const doorCount = doors.reduce((n, d) => n + d.xs.length, 0);
       if (doors.length > 0) {
         await tx.takeoffMeasurement.deleteMany({ where: { id: { in: doors.map((d) => d.id) } } });
