@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
-import { doorArcCandidates, doorSymbols, exteriorWalls, tagsNameEveryWindow, windowSymbols, WIDEST_WINDOW_FEET, onlyMarkedDoors, FULL_FRAME_FEET, FULL_FRAME_MAX_FEET } from "./doorWindowSymbols";
+import { arcChains, doorArcCandidates, doorSymbols, exteriorWalls, tagsNameEveryWindow, windowSymbols, WIDEST_WINDOW_FEET, onlyMarkedDoors, FULL_FRAME_FEET, FULL_FRAME_MAX_FEET } from "./doorWindowSymbols";
 
 /** One foot = 0.01 page-width units here, so feetPerUnit is 100. */
 const FPU = 100;
@@ -99,6 +99,37 @@ describe("door symbols", () => {
     // 16 diagonal hatch strokes inside the half disc.
     const hatch: StrokeSegment[] = Array.from({ length: 16 }, (_, k) => ({ x1: 0.483 + k * ft(0.2), y1: 0.495, x2: 0.488 + k * ft(0.2), y2: 0.49 }));
     expect(doorSymbols([...half, ...hatch], onWall, FPU)).toHaveLength(0);
+  });
+
+  it("joins a dashed swing's dashes into one arc (Broadway A1.0), but not pieces that do not carry on ahead", () => {
+    // The quarter arc as 6 dashes of 2 pieces each, with a gap of 1/3 of a dash between them.
+    const dashes: StrokeSegment[] = [];
+    for (let k = 0; k < 6; k += 1) {
+      const a0 = -Math.PI / 2 + (k * Math.PI) / 2 / 6, a1 = a0 + (Math.PI / 2 / 6) * 0.75, am = (a0 + a1) / 2;
+      const p = (a: number) => ({ x: hinge.x + ft(3) * Math.cos(a), y: hinge.y + ft(3) * Math.sin(a) });
+      dashes.push({ x1: p(a0).x, y1: p(a0).y, x2: p(am).x, y2: p(am).y }, { x1: p(am).x, y1: p(am).y, x2: p(a1).x, y2: p(a1).y });
+    }
+    const doors = doorSymbols([leaf, ...dashes], walls, FPU);
+    expect(doors).toHaveLength(1);
+    expect(doors[0]!.widthFeet).toBeCloseTo(3, 1);
+    // The same dashes emitted in reverse order (each piece heading back toward the last) do not chain.
+    expect(doorSymbols([leaf, ...dashes.slice().reverse()], walls, FPU)).toHaveLength(0);
+    // Spread so the gaps exceed DASH_GAP_FEET (a quarter arc's dashes 1.2 ft apart on a 6 ft swing), they do not chain either.
+    const wide: StrokeSegment[] = [];
+    for (let k = 0; k < 6; k += 1) {
+      const a0 = -Math.PI / 2 + (k * Math.PI) / 2 / 6, a1 = a0 + (Math.PI / 2 / 6) * 0.3, am = (a0 + a1) / 2;
+      const p = (a: number) => ({ x: hinge.x + ft(6) * Math.cos(a), y: hinge.y + ft(6) * Math.sin(a) });
+      wide.push({ x1: p(a0).x, y1: p(a0).y, x2: p(am).x, y2: p(am).y }, { x1: p(am).x, y1: p(am).y, x2: p(a1).x, y2: p(a1).y });
+    }
+    // The joined arc keeps every dash's start and end: 1 + 12 piece ends + 5 dash starts.
+    expect(arcChains(dashes, FPU).map((c) => c.length)).toEqual([18]);
+    // A piece starting BESIDE the last one (0.3 ft to its side, a parallel dashed line) is not the next dash.
+    const p0 = dashes[0]!, p1 = dashes[1]!;
+    const nx = -(p1.y2 - p1.y1), ny = p1.x2 - p1.x1, nl = Math.hypot(nx, ny);
+    const beside: StrokeSegment = { x1: p1.x2 + (nx / nl) * ft(0.3), y1: p1.y2 + (ny / nl) * ft(0.3), x2: p1.x2 + (nx / nl) * ft(0.3) + (p1.x2 - p1.x1) * 1.02, y2: p1.y2 + (ny / nl) * ft(0.3) + (p1.y2 - p1.y1) * 1.1 };
+    expect(arcChains([p0, p1, beside, dashes[2]!], FPU)).toEqual([]);
+    const bigLeaf: StrokeSegment = { x1: hinge.x, y1: hinge.y, x2: hinge.x, y2: hinge.y - ft(6) };
+    expect(doorSymbols([bigLeaf, ...wide], [wall(0.3, 0.5, 0.5, 0.5), wall(0.56, 0.5, 0.8, 0.5)], FPU)).toHaveLength(0);
   });
 
   it("needs the leaf: a bare quarter arc is a countertop return, not a door", () => {
