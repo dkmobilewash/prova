@@ -494,9 +494,17 @@ export function AnswerKeyPanel({
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  /** An accepted candidate or a trace: the only walls a type belongs to. */
+  /**
+   * A wall a type can be given: accepted, traced, or not yet decided — a type
+   * on an undecided wall accepts it (`giveType`). A split leaves both halves
+   * undecided, and a picker that waited for A made the reviewer accept, chase
+   * focus back (A moves on) and then type (Round 25, Baker A101). Only a wall
+   * already said NOT to be one gets no picker.
+   */
   function typeable(id: string): boolean {
-    return state.verdicts[id] === "wall" || state.traced.some((t) => t.id === id);
+    if (state.traced.some((t) => t.id === id)) return true;
+    const v = state.verdicts[id];
+    return v === "wall" || v === "unreviewed" || v === "unsure";
   }
 
   function giveTag(id: string, tag: string) {
@@ -507,7 +515,9 @@ export function AnswerKeyPanel({
 
   function giveType(id: string, code: string) {
     noteActivity();
-    const next = setWallType(state, [id], code);
+    // A type says it is a wall: an undecided one is accepted in the same step.
+    const accepted = typeable(id) && state.verdicts[id] !== undefined && state.verdicts[id] !== "wall" ? setVerdict(state, [id], "wall") : state;
+    const next = setWallType(accepted, [id], code);
     onState(next);
     const after = nextUntyped(next, id);
     if (after !== null) onFocus(after);
