@@ -189,6 +189,17 @@ describe("a door drawn in the existing (grey) pen", () => {
     expect(doorPen(ds[1]!, sheet([0.6, 0, 0, 0]), FPU)).toEqual({ grey: 0, dark: 1 });
   });
 
+  it("reads the pen off the arc: a dark line along the leaf does not make a grey door dark (UCCS A2.1.2)", () => {
+    const segs = sheet([0.6, 0, 0, 0]);
+    const d = run([0.6, 0, 0, 0], []).ds[0]!;
+    // A dark boundary dash along the grey door's leaf, the length of the leaf: the door still reads grey.
+    expect(doorPen(d, [...segs, { x1: 0.2, y1: 0.5 + ft(0.2), x2: 0.2, y2: 0.5 - ft(3.2) }], FPU)).toEqual({ grey: 1, dark: 0 });
+    // With no arc stroke to read (only the leaf), the leaf's pen is the door's.
+    const leafOnly = segs.filter((s) => s.x1 === s.x2 && Math.abs(s.x1 - 0.2) < 1e-9);
+    expect(doorPen(d, leafOnly, FPU)).toEqual({ grey: 1, dark: 0 });
+    expect(doorPen(d, leafOnly.map((s) => ({ ...s, gray: 0 })), FPU)).toEqual({ grey: 0, dark: 1 });
+  });
+
   it("on a sheet that shows existing work, the grey door among black ones is set aside", () => {
     const { got } = run([0.6, 0, 0, 0], reno);
     expect(got.map((e) => e.route)).toEqual(["grey"]);
@@ -205,11 +216,12 @@ describe("a door drawn in the existing (grey) pen", () => {
   });
 
   // The first door's arc grey and its leaf part dark: `darkFt` of the 3 ft leaf (the arc is ~4.7 ft).
-  const mixed = (darkFt: number) => {
+  // The pen is read off the arc: `darkPieces` of its twelve pieces dark, the leaf grey.
+  const mixed = (darkPieces: number) => {
     const x = at[0]!;
     const first: StrokeSegment[] = [
-      { x1: x, y1: 0.5, x2: x, y2: 0.5 - ft(3 - darkFt), gray: 0.6 }, { x1: x, y1: 0.5 - ft(3 - darkFt), x2: x, y2: 0.5 - ft(3), gray: 0 },
-      ...swing(x, 0.5, ft(3), -Math.PI / 2, 0).map((g) => ({ ...g, gray: 0.6 })),
+      { x1: x, y1: 0.5, x2: x, y2: 0.5 - ft(3), gray: 0.6 },
+      ...swing(x, 0.5, ft(3), -Math.PI / 2, 0).map((g, k) => ({ ...g, gray: k < darkPieces ? 0 : 0.6 })),
     ];
     return [...first, ...at.slice(1).flatMap((xx) => doorAt(xx, 0))];
   };
@@ -218,10 +230,10 @@ describe("a door drawn in the existing (grey) pen", () => {
     return existingDoors({ doors: ds, segments: segs, textPt: words.map((w, i) => word(w, 0.1 + i * 0.01, 0.1)), widthPt: W, feetPerUnit: FPU });
   };
 
-  it("a door about 85% grey goes on a renovation sheet, and not on a sheet with no renovation words (that bar is 90%)", () => {
-    expect(doorSymbols(mixed(1.16), [wall(0.1, 0.5, 0.9, 0.5)], FPU)).toHaveLength(4);
-    expect(runSegs(mixed(1.16), reno).map((e) => e.route)).toEqual(["grey"]);
-    expect(runSegs(mixed(1.16), [])).toEqual([]);
+  it("a door about 83% grey (2 of 12 arc pieces dark) goes on a renovation sheet, and not on a sheet with no renovation words (that bar is 90%)", () => {
+    expect(doorSymbols(mixed(2), [wall(0.1, 0.5, 0.9, 0.5)], FPU)).toHaveLength(4);
+    expect(runSegs(mixed(2), reno).map((e) => e.route)).toEqual(["grey"]);
+    expect(runSegs(mixed(2), [])).toEqual([]);
   });
 
   it("a door a quarter dark stays, even on a renovation sheet", () => {

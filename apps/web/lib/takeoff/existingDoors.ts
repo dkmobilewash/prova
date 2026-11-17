@@ -38,7 +38,7 @@ import type { StrokeSegment } from "./wallVectors";
  *      `E-` series with neither (an east wing's doors) is left alone;
  *   6. `grey`: its arc and leaf are drawn in the existing pen, the wall rule's route 3 for doors (Diego,
  *      2026-11-14): on a sheet whose words say it shows existing work, a door drawn mostly grey (at least
- *      `GREY_DOOR_SHARE` of its arc and leaf by length, at most `DARK_DOOR_SHARE` dark) where most of the
+ *      `GREY_DOOR_SHARE` of its arc by length, at most `DARK_DOOR_SHARE` dark; `doorPen`) where most of the
  *      sheet's doors are drawn dark; on a sheet with no such words, only a door nearly all grey
  *      (`NO_WORDS_GREY_DOOR_SHARE`) where at least `NO_WORDS_DARK_DOORS` of the doors are dark. The 2020-09-24
  *      set's A1.1 draws an existing door open at 45 degrees in grey beside its existing-work keynotes.
@@ -86,6 +86,11 @@ const ON_DOOR_FEET = 0.12;
  * How much of a door's arc and open leaf, by length, is drawn grey and how much dark; null with no pen to read.
  * The arc is the circle of the leaf's radius about the hinge, between the strike and the open leaf; the leaf the
  * hinge-to-open radius. A stroke with no colour is black, as `existingMarks` reads it.
+ *
+ * ── THE PEN IS READ OFF THE ARC ALONE ── The arc is always the door's own stroke; a straight line from the
+ * hinge may not be. UCCS A2.1.2's grey exterior doors are drawn open, and the finder's "open leaf" there is
+ * the dark dashed boundary line along the jamb (it passes the leaf test), so leaf and arc together read 58%
+ * grey for a door drawn entirely in the grey pen. The leaf counts only for a door with no arc stroke read.
  */
 export function doorPen(d: DoorSymbol, segments: readonly StrokeSegment[], feetPerUnit: number): { grey: number; dark: number } | null {
   if (d.open === undefined) return null;
@@ -98,7 +103,7 @@ export function doorPen(d: DoorSymbol, segments: readonly StrokeSegment[], feetP
   while (span < -Math.PI) span += 2 * Math.PI;
   const within = (t: number) => { let u = t - a0; while (u > Math.PI) u -= 2 * Math.PI; while (u < -Math.PI) u += 2 * Math.PI; return span >= 0 ? u >= -0.05 && u <= span + 0.05 : u <= 0.05 && u >= span - 0.05; };
   const ux = (d.open.x - d.hinge.x) / r, uy = (d.open.y - d.hinge.y) / r;
-  let grey = 0, dark = 0;
+  const arcPen = { grey: 0, dark: 0 }, leafPen = { grey: 0, dark: 0 };
   for (const i of segmentGrid(segments).near(d.hinge.x - r - on, d.hinge.y - r - on, d.hinge.x + r + on, d.hinge.y + r + on)) {
     const s = segments[i]!;
     const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
@@ -108,9 +113,11 @@ export function doorPen(d: DoorSymbol, segments: readonly StrokeSegment[], feetP
     const t = (m.x - d.hinge.x) * ux + (m.y - d.hinge.y) * uy, off = Math.abs(-(m.x - d.hinge.x) * uy + (m.y - d.hinge.y) * ux);
     const onLeaf = off <= on && t >= 0 && t <= r;
     if (!onArc && !onLeaf) continue;
-    if ((s.gray ?? 0) >= GREY_PEN) grey += len;
-    else dark += len;
+    const pen = onArc ? arcPen : leafPen;
+    if ((s.gray ?? 0) >= GREY_PEN) pen.grey += len;
+    else pen.dark += len;
   }
+  const { grey, dark } = arcPen.grey + arcPen.dark > 0 ? arcPen : leafPen;
   const total = grey + dark;
   return total === 0 ? null : { grey: grey / total, dark: dark / total };
 }
