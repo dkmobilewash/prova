@@ -5,7 +5,7 @@ Diego retired the 7 Round-23 sheets from door exams. The exam's 101 false doors 
 48 are real doors missing from the frozen key (queued, not edited), and the rest have finder causes the training
 sheets never showed. This change fixes two of those causes:
 
-- **A door leaf is at most 4.5 ft** (was 7). No real training leaf reads wider than 4.25 ft. Mack Theater A-101 has a
+- **A door the product counts has leaves of at most 4.5 ft** (`WIDEST_DOOR_LEAF_FEET`, applied in `doorsInScope`). The finder's arc bound stays at 7 ft, because the scale suggester counts 4.5-7 ft arcs as evidence when it refuses a scale. Preflight caught a first version that lowered the arc bound. No real training leaf reads wider than 4.25 ft. Mack Theater A-101 has a
   1/8in overview plus two 1/4in enlarged plans of the same rooms; the enlarged plans' doors were read at the overview's
   scale and came out 5-6 ft (18 false doors).
 - **An angle dimension's word (`110.00°`) inside a single door's swing makes the arc the dimension's.** Radius words
@@ -18,5 +18,6 @@ Measured on the frozen key, labels-snap-20261117T1555, against main:
 
 Bluetooth AI101 and HPL I-110 (non-gating, labels-snap-20261117T1930) are unchanged: 38 false there before and after.
 
-Check: `doorWindowSymbols.test.ts` (4 ft found, 5 ft rejected) and `existingDoors.test.ts` (an angle word in the
-swing drops the arc; outside it, across the wall, beyond the radius, or a radius word, it does not). 5 mutations red.
+Check: `existingDoors.test.ts`. A 4 ft door is counted and a 5 ft one is not, while its arc is still read. An angle word in the
+swing drops the arc; outside it, across the wall, beyond the radius, or a radius word, it does not.
+`suggestedScale.test.ts` still refuses on wider arcs. 7 mutations red.
