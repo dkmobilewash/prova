@@ -95,6 +95,8 @@ def run(kind, today_name, new_name, new_word, refs=()):
     col = {n: i for i, n in enumerate(names)}
     X = np.array([r["x"] for r in rows], dtype=np.float64)
     y = np.array([r["real"] for r in rows])
+    # Key points each row took: a two-leaf pair takes both leaves' (Diego's ruling, 2026-11-16); recall counts these.
+    kk = np.array([r.get("keys", r["real"]) for r in rows])
     sets = np.array([r["set"] for r in rows])
     today = X[:, col[today_name]] == 1 if today_name else np.zeros(len(rows), dtype=bool)
     new = X[:, col[new_name]] == 0  # unmarked / untagged
@@ -109,7 +111,7 @@ def run(kind, today_name, new_name, new_word, refs=()):
     scored = ~np.isnan(score)
     t = auto_line(score[scored], y[scored])
     keyn = sum(key.values())
-    print(f"\n== {kind.upper()} MODEL (real vs false), LOSO == {len(rows)} found, {y.sum()} real ({100 * y.mean():.1f}%), key {keyn}, {len(set(sets))} sets")
+    print(f"\n== {kind.upper()} MODEL (real vs false), LOSO == {len(rows)} found, {y.sum()} real ({100 * y.mean():.1f}%), key {keyn} ({kk.sum()} matched, {100 * kk.sum() / max(keyn, 1):.1f}%), {len(set(sets))} sets")
     if skipped:
         print(f"not scored (training side had one class): {', '.join(skipped)}")
     line = f">= {t:.4f}" if t is not None else "none reaches 97%"
@@ -127,7 +129,7 @@ def run(kind, today_name, new_name, new_word, refs=()):
     if t is not None:
         a = scored & (score >= t)
         print(f"  clears it: {p(a)}; of them {new_word}: {p(a & new)}; already posted today: {p(a & today)}")
-        print(f"  {new_word} in the table: {p(new)} -> {(a & new).sum()} would auto-post; recall of key {100 * (a & (y == 1)).sum() / max(keyn, 1):.1f}% (today {100 * (today & (y == 1)).sum() / max(keyn, 1):.1f}%)")
+        print(f"  {new_word} in the table: {p(new)} -> {(a & new).sum()} would auto-post; recall of key {100 * kk[a].sum() / max(keyn, 1):.1f}% (today {100 * kk[today].sum() / max(keyn, 1):.1f}%)")
         both = a | today
         print(f"  today's rule OR the model: {p(both)} (adds {(a & ~today).sum()}: {(a & ~today & (y == 1)).sum()} real, {(a & ~today & (y == 0)).sum()} false)")
     else:

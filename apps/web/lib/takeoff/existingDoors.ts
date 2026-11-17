@@ -38,7 +38,7 @@ import type { StrokeSegment } from "./wallVectors";
  *      `E-` series with neither (an east wing's doors) is left alone;
  *   6. `grey`: its arc and leaf are drawn in the existing pen, the wall rule's route 3 for doors (Diego,
  *      2026-11-14): on a sheet whose words say it shows existing work, a door drawn mostly grey (at least
- *      `GREY_DOOR_SHARE` of its arc and leaf by length, at most `DARK_DOOR_SHARE` dark) where most of the
+ *      `GREY_DOOR_SHARE` of its arc by length, at most `DARK_DOOR_SHARE` dark; `doorPen`) where most of the
  *      sheet's doors are drawn dark; on a sheet with no such words, only a door nearly all grey
  *      (`NO_WORDS_GREY_DOOR_SHARE`) where at least `NO_WORDS_DARK_DOORS` of the doors are dark. The 2020-09-24
  *      set's A1.1 draws an existing door open at 45 degrees in grey beside its existing-work keynotes.
@@ -49,8 +49,8 @@ export type ExistingDoor = { door: DoorSymbol; route: "wall" | "area" | "tag" | 
 
 /** What a caller knows beyond the page itself. Both optional: without them routes 1 and 4 are silent. */
 export type ExistingDoorEvidence = {
-  /** Walls set aside as existing, page-width units. */
-  asideWalls?: readonly { x1: number; y1: number; x2: number; y2: number; thicknessFeet?: number }[];
+  /** Walls set aside as existing, page-width units; `legend` marks a framed legend box's lines instead (`doorsInScope`). */
+  asideWalls?: readonly { x1: number; y1: number; x2: number; y2: number; thicknessFeet?: number; legend?: true }[];
   /** Doors the paired demolition plan keeps, moved onto this sheet. */
   priorDoors?: readonly { hinge: { x: number; y: number }; strike: { x: number; y: number } }[];
   /** The demolition plan's sheet number, for the sentence. */
@@ -86,6 +86,12 @@ const ON_DOOR_FEET = 0.12;
  * How much of a door's arc and open leaf, by length, is drawn grey and how much dark; null with no pen to read.
  * The arc is the circle of the leaf's radius about the hinge, between the strike and the open leaf; the leaf the
  * hinge-to-open radius. A stroke with no colour is black, as `existingMarks` reads it.
+ *
+ * ── THE PEN IS READ OFF THE ARC ALONE ── The arc is always the door's own stroke; a straight line from the
+ * hinge may not be. UCCS A2.1.2's grey exterior doors are drawn open, and the finder's "open leaf" there is
+ * the dark dashed boundary line along the jamb (it passes the leaf test), so leaf and arc together read 58%
+ * grey for a door drawn entirely in the grey pen. The leaf counts only for a door with no arc stroke read.
+ * An arc stroke is one with both ends on the circle, so a straight line crossing it does not count as arc.
  */
 export function doorPen(d: DoorSymbol, segments: readonly StrokeSegment[], feetPerUnit: number): { grey: number; dark: number } | null {
   if (d.open === undefined) return null;
@@ -98,19 +104,24 @@ export function doorPen(d: DoorSymbol, segments: readonly StrokeSegment[], feetP
   while (span < -Math.PI) span += 2 * Math.PI;
   const within = (t: number) => { let u = t - a0; while (u > Math.PI) u -= 2 * Math.PI; while (u < -Math.PI) u += 2 * Math.PI; return span >= 0 ? u >= -0.05 && u <= span + 0.05 : u <= 0.05 && u >= span - 0.05; };
   const ux = (d.open.x - d.hinge.x) / r, uy = (d.open.y - d.hinge.y) / r;
-  let grey = 0, dark = 0;
+  const arcPen = { grey: 0, dark: 0 }, leafPen = { grey: 0, dark: 0 };
   for (const i of segmentGrid(segments).near(d.hinge.x - r - on, d.hinge.y - r - on, d.hinge.x + r + on, d.hinge.y + r + on)) {
     const s = segments[i]!;
     const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
     if (len === 0) continue;
     const m = { x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 };
-    const onArc = Math.abs(Math.hypot(m.x - d.hinge.x, m.y - d.hinge.y) - r) <= on && within(ang(m));
+    // An arc stroke has BOTH ends on the circle; a long wall line can cross it with only its middle there
+    // (UCCS A2.1.2's grey pair: two dark 8.3 ft jamb lines, each with its midpoint on the circle).
+    const onCircle = (p: { x: number; y: number }) => Math.abs(Math.hypot(p.x - d.hinge.x, p.y - d.hinge.y) - r) <= on;
+    const onArc = onCircle(m) && onCircle({ x: s.x1, y: s.y1 }) && onCircle({ x: s.x2, y: s.y2 }) && within(ang(m));
     const t = (m.x - d.hinge.x) * ux + (m.y - d.hinge.y) * uy, off = Math.abs(-(m.x - d.hinge.x) * uy + (m.y - d.hinge.y) * ux);
     const onLeaf = off <= on && t >= 0 && t <= r;
     if (!onArc && !onLeaf) continue;
-    if ((s.gray ?? 0) >= GREY_PEN) grey += len;
-    else dark += len;
+    const pen = onArc ? arcPen : leafPen;
+    if ((s.gray ?? 0) >= GREY_PEN) pen.grey += len;
+    else pen.dark += len;
   }
+  const { grey, dark } = arcPen.grey + arcPen.dark > 0 ? arcPen : leafPen;
   const total = grey + dark;
   return total === 0 ? null : { grey: grey / total, dark: dark / total };
 }
@@ -236,6 +247,7 @@ export function existingDoors(input: {
 
   // 1. On a wall already set aside as existing.
   for (const w of input.evidence?.asideWalls ?? []) {
+    if (w.legend) continue;
     const reach = ((w.thicknessFeet ?? 0.5) / 2 + ON_WALL_FEET) / fpu;
     for (const d of doors) {
       const { d: off, t } = toSegment(mid(d), w);
@@ -326,7 +338,28 @@ export function existingDoors(input: {
  * demolition plan says which doors stay (route 4).
  */
 export function asideExistingWalls(lines: readonly { kind: string; x1: number; y1: number; x2: number; y2: number }[]): NonNullable<ExistingDoorEvidence["asideWalls"]> {
-  return lines.filter((l) => l.kind === "existing").map(({ x1, y1, x2, y2 }) => ({ x1, y1, x2, y2 }));
+  return [
+    ...lines.filter((l) => l.kind === "existing").map(({ x1, y1, x2, y2 }) => ({ x1, y1, x2, y2 })),
+    // A framed legend's lines ride along, so every door path drops the legend's door SAMPLES (`insideLegendBox`).
+    ...lines.filter((l) => l.kind === "legend-box").map(({ x1, y1, x2, y2 }) => ({ x1, y1, x2, y2, legend: true as const })),
+  ];
+}
+
+/**
+ * ── A DOOR INSIDE A FRAMED LEGEND IS A SAMPLE, NOT A DOOR ──
+ * Joplin A-101's FLOOR PLAN LEGEND draws "NEW DOOR" as a real swing with a door tag (101), and it scored as
+ * the sheet's best door. The wall side already sets the frame aside whole (`legendBoxes.ts`, kind `legend-box`);
+ * a point is inside it when that frame's lines bound it on at least three sides. Three, not four: a frame's top
+ * rule under its title is often taken first as the title's underline (Joplin's is), so only three sides come
+ * through as `legend-box`. Legend-box lines exist only round a framed, titled block, so three of them round a
+ * point is the block; two (an L) is not.
+ */
+export function insideLegendBox(p: { x: number; y: number }, lines: readonly { x1: number; y1: number; x2: number; y2: number }[]): boolean {
+  const spans = (a: number, b: number, v: number) => Math.min(a, b) <= v && v <= Math.max(a, b);
+  const across = lines.filter((l) => Math.abs(l.y2 - l.y1) <= 0.1 * Math.abs(l.x2 - l.x1) && spans(l.x1, l.x2, p.x));
+  const down = lines.filter((l) => Math.abs(l.x2 - l.x1) <= 0.1 * Math.abs(l.y2 - l.y1) && spans(l.y1, l.y2, p.y));
+  const sides = [across.some((l) => (l.y1 + l.y2) / 2 < p.y), across.some((l) => (l.y1 + l.y2) / 2 > p.y), down.some((l) => (l.x1 + l.x2) / 2 < p.x), down.some((l) => (l.x1 + l.x2) / 2 > p.x)];
+  return sides.filter(Boolean).length >= 3;
 }
 
 /** One sentence for the panel. */

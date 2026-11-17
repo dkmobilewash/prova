@@ -1,10 +1,24 @@
 import { describe, expect, it } from "vitest";
 import type { DoorSymbol } from "./doorWindowSymbols";
-import { DOOR_FEATURE_NAMES, doorFeatureRows, openingLabels, WINDOW_FEATURE_NAMES, windowFeatureRows } from "./openingFeatures";
+import { DOOR_FEATURE_NAMES, doorFeatureRows, doorLabels, openingLabels, WINDOW_FEATURE_NAMES, windowFeatureRows } from "./openingFeatures";
 
 // 1 unit = 1 ft, so distances read as feet.
 const fpu = 1;
 const quarter = [{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 2.12, y: 2.12 }, { x: 0, y: 3 }];
+
+describe("doorLabels", () => {
+  const fpu = 1;
+  const leafA = [{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 2.1, y: 2.1 }, { x: 0, y: 3 }];
+  const leafB = [{ x: 6, y: 0 }, { x: 6, y: 3 }, { x: 3.9, y: 2.1 }, { x: 3, y: 0 }];
+  it("matches a two-leaf pair to both leaves' key points, and a single door to one", () => {
+    const key = [{ x: 1, y: 1, kind: "door" as const }, { x: 5, y: 1, kind: "door" as const }];
+    expect(doorLabels([{ polygons: [leafA, leafB] }], key, fpu)).toEqual({ real: [1], keys: [2] });
+    expect(doorLabels([{ polygons: [leafA] }, { polygons: [leafB] }], key, fpu)).toEqual({ real: [1, 1], keys: [1, 1] });
+    // One leaf keyed: the pair is real and takes one point; a pair with no key point near it is false.
+    expect(doorLabels([{ polygons: [leafA, leafB] }], [key[0]!], fpu)).toEqual({ real: [1], keys: [1] });
+    expect(doorLabels([{ polygons: [leafA, leafB] }], [{ x: 40, y: 40, kind: "door" }], fpu)).toEqual({ real: [0], keys: [0] });
+  });
+});
 
 describe("openingLabels", () => {
   it("takes a click anywhere in the swing, and one key point per opening", () => {

@@ -120,6 +120,20 @@ export function openingLabels(shapes: readonly Pt[][], key: readonly KeyPoint[],
   return shapes.map((_, i) => (usedI.has(i) ? 1 : 0));
 }
 
+/**
+ * ── A TWO-LEAF PAIR MATCHES BOTH LEAVES' KEY POINTS ── (Diego's ruling, 2026-11-16)
+ *
+ * The key marks a double door as one point per leaf. Each leaf's swing is matched on its own, so a
+ * found pair can take two key points: `real` is 1 when any leaf matched (a door row is real or false),
+ * `keys` is how many key points its leaves took (recall counts those).
+ */
+export function doorLabels(swings: readonly { polygons: Pt[][] }[], key: readonly KeyPoint[], feetPerUnit: number): { real: number[]; keys: number[] } {
+  const owner = swings.flatMap((s, i) => s.polygons.map(() => i));
+  const leaf = openingLabels(swings.flatMap((s) => s.polygons), key, feetPerUnit);
+  const keys = swings.map((_, i) => leaf.reduce((n, v, k) => n + (owner[k] === i ? v : 0), 0));
+  return { real: keys.map((k) => (k > 0 ? 1 : 0)), keys };
+}
+
 /** Share of the closed leaf's span (hinge to strike) that wall-direction lines run across: a doorway is a gap (0). */
 function linesAcross(d: DoorSymbol, segments: readonly StrokeSegment[], bandUnits: number): number {
   const L = dist(d.hinge, d.strike);

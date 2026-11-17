@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
-import { arcChains, doorArcCandidates, doorSymbols, exteriorWalls, tagsNameEveryWindow, windowSymbols, WIDEST_WINDOW_FEET, onlyMarkedDoors, FULL_FRAME_FEET, FULL_FRAME_MAX_FEET } from "./doorWindowSymbols";
+import { arcChains, circleCoverDegrees, doorArcCandidates, doorSymbols, exteriorWalls, tagsNameEveryWindow, windowSymbols, WIDEST_WINDOW_FEET, onlyMarkedDoors, FULL_FRAME_FEET, FULL_FRAME_MAX_FEET } from "./doorWindowSymbols";
 
 /** One foot = 0.01 page-width units here, so feetPerUnit is 100. */
 const FPU = 100;
@@ -99,6 +99,25 @@ describe("door symbols", () => {
     // 16 diagonal hatch strokes inside the half disc.
     const hatch: StrokeSegment[] = Array.from({ length: 16 }, (_, k) => ({ x1: 0.483 + k * ft(0.2), y1: 0.495, x2: 0.488 + k * ft(0.2), y2: 0.49 }));
     expect(doorSymbols([...half, ...hatch], onWall, FPU)).toHaveLength(0);
+  });
+
+  it("an arc of a circle drawn most of the way round is a symbol, not a swing (UCCS callouts, Joplin's north arrows)", () => {
+    // The swing alone is a door.
+    expect(doorSymbols([leaf, ...arc], walls, FPU)).toHaveLength(1);
+    // The same swing with the rest of its circle drawn (a callout bubble): 360 degrees, no door.
+    const rest = swing(hinge.x, hinge.y, ft(3), 0, (3 * Math.PI) / 2, 36);
+    expect(circleCoverDegrees([...arc, ...rest], hinge.x, hinge.y, ft(3))).toBeGreaterThanOrEqual(355);
+    // The rest is drawn as its own arc (the leaf's stroke between), as a bubble's pieces are: it does not chain to the swing.
+    expect(doorSymbols([...arc, leaf, ...rest], walls, FPU)).toHaveLength(0);
+    // 250 degrees drawn (a north arrow's open circle) is still a symbol; 200 is not, and the swing stands.
+    const to = (deg: number) => swing(hinge.x, hinge.y, ft(3), 0, ((deg - 90) * Math.PI) / 180, 24);
+    expect(doorSymbols([...arc, leaf, ...to(250)], walls, FPU)).toHaveLength(0);
+    expect(doorSymbols([...arc, leaf, ...to(200)], walls, FPU)).toHaveLength(1);
+    // Straight strokes that only END on the circle (walls, dimension lines running off it) draw none of it.
+    const off = [10, 55, 100, 145, 190, 235].map((d) => { const t = (d * Math.PI) / 180, p = { x: hinge.x + ft(3) * Math.cos(t), y: hinge.y + ft(3) * Math.sin(t) }; return { x1: p.x, y1: p.y, x2: p.x - ft(2) * Math.sin(t), y2: p.y + ft(2) * Math.cos(t) }; });
+    expect(doorSymbols([...arc, leaf, ...off], walls, FPU)).toHaveLength(1);
+    // A circle round another centre (a column, a tag bubble) does not touch the swing.
+    expect(doorSymbols([...arc, leaf, ...swing(hinge.x + ft(1), hinge.y - ft(1), ft(3), 0, 2 * Math.PI, 48)], walls, FPU)).toHaveLength(1);
   });
 
   it("joins a dashed swing's dashes into one arc (Broadway A1.0), but not pieces that do not carry on ahead", () => {
