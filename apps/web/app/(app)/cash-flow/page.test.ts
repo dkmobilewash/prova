@@ -24,7 +24,9 @@ function jobsWithPaid(paid: number) {
     {
       id: "job-1",
       name: "Riverside Medical",
-      substantialCompletionDate: new Date("2026-11-15T00:00:00.000Z"),
+      // Far in the future on purpose: this was 2026-11-15, and from the 16th the
+      // retainage fell due and joined the Overdue row ($70,000), failing every gate.
+      substantialCompletionDate: new Date("2099-11-15T00:00:00.000Z"),
       contact: { name: "Acme GC", paymentTermsDays: 30 },
       invoices: [
         {
@@ -83,7 +85,7 @@ describe("/cash-flow on an invoice settled to its net amount", () => {
     // the opposite defect, and on this page it would be invisible.
     const html = await render();
     expect(html).toContain("$10,000.00");
-    expect(html).toContain("Nov 15, 2026");
+    expect(html).toContain("Nov 15, 2099");
   });
 
   it("says what it netted out rather than quietly showing a lighter table", async () => {
