@@ -194,6 +194,13 @@ describe("a door drawn in the existing (grey) pen", () => {
     const d = run([0.6, 0, 0, 0], []).ds[0]!;
     // A dark boundary dash along the grey door's leaf, the length of the leaf: the door still reads grey.
     expect(doorPen(d, [...segs, { x1: 0.2, y1: 0.5 + ft(0.2), x2: 0.2, y2: 0.5 - ft(3.2) }], FPU)).toEqual({ grey: 1, dark: 0 });
+    // A dark line 8 ft long with only its MIDDLE on the arc's circle (a jamb line, UCCS's grey pair) is not arc.
+    const crossing = { x1: 0.2 - ft(4), y1: 0.5 - ft(3), x2: 0.2 + ft(4), y2: 0.5 - ft(3) };
+    expect(doorPen(d, [...segs, crossing], FPU)).toEqual({ grey: 1, dark: 0 });
+    // Nor one with its middle and ONE end on the circle, running on past it (a chord carried beyond).
+    const at = (deg: number) => ({ x: 0.2 + ft(3) * Math.cos((deg * Math.PI) / 180), y: 0.5 + ft(3) * Math.sin((deg * Math.PI) / 180) });
+    const p1 = at(-60), p2 = at(-30);
+    expect(doorPen(d, [...segs, { x1: p1.x, y1: p1.y, x2: 2 * p2.x - p1.x, y2: 2 * p2.y - p1.y }], FPU)).toEqual({ grey: 1, dark: 0 });
     // With no arc stroke to read (only the leaf), the leaf's pen is the door's.
     const leafOnly = segs.filter((s) => s.x1 === s.x2 && Math.abs(s.x1 - 0.2) < 1e-9);
     expect(doorPen(d, leafOnly, FPU)).toEqual({ grey: 1, dark: 0 });

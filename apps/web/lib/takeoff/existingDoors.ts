@@ -91,6 +91,7 @@ const ON_DOOR_FEET = 0.12;
  * hinge may not be. UCCS A2.1.2's grey exterior doors are drawn open, and the finder's "open leaf" there is
  * the dark dashed boundary line along the jamb (it passes the leaf test), so leaf and arc together read 58%
  * grey for a door drawn entirely in the grey pen. The leaf counts only for a door with no arc stroke read.
+ * An arc stroke is one with both ends on the circle, so a straight line crossing it does not count as arc.
  */
 export function doorPen(d: DoorSymbol, segments: readonly StrokeSegment[], feetPerUnit: number): { grey: number; dark: number } | null {
   if (d.open === undefined) return null;
@@ -109,7 +110,10 @@ export function doorPen(d: DoorSymbol, segments: readonly StrokeSegment[], feetP
     const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
     if (len === 0) continue;
     const m = { x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 };
-    const onArc = Math.abs(Math.hypot(m.x - d.hinge.x, m.y - d.hinge.y) - r) <= on && within(ang(m));
+    // An arc stroke has BOTH ends on the circle; a long wall line can cross it with only its middle there
+    // (UCCS A2.1.2's grey pair: two dark 8.3 ft jamb lines, each with its midpoint on the circle).
+    const onCircle = (p: { x: number; y: number }) => Math.abs(Math.hypot(p.x - d.hinge.x, p.y - d.hinge.y) - r) <= on;
+    const onArc = onCircle(m) && onCircle({ x: s.x1, y: s.y1 }) && onCircle({ x: s.x2, y: s.y2 }) && within(ang(m));
     const t = (m.x - d.hinge.x) * ux + (m.y - d.hinge.y) * uy, off = Math.abs(-(m.x - d.hinge.x) * uy + (m.y - d.hinge.y) * ux);
     const onLeaf = off <= on && t >= 0 && t <= r;
     if (!onArc && !onLeaf) continue;
