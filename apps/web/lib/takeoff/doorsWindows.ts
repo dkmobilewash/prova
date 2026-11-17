@@ -1,5 +1,5 @@
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
-import { DOOR_TAG_REACH_FEET, doorSymbols, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, WINDOW_TAGS_MEAN_ALL, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
+import { DOOR_TAG_REACH_FEET, doorSymbols, WIDEST_DOOR_LEAF_FEET, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, WINDOW_TAGS_MEAN_ALL, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
 import { existingDoors, insideLegendBox, type ExistingDoor, type ExistingDoorEvidence } from "./existingDoors";
 import { joinOpeningsToSchedule, widthAndHeight, type OpeningJoin, type PlacedMark, type ScheduledOpening } from "./openingMarks";
 import { tagSymbols, type TextForSymbol } from "./tagSymbols";
@@ -57,6 +57,25 @@ export const WINDOW_TAG = /^W?\d{1,2}[A-Z]?$|^[A-Z]$/;
  * `onlyMarkedDoors`. Shared with the door training rows (`productOpenings.ts`), so the rows are the
  * doors the product offers.
  */
+/**
+ * An angle dimension's own word: "110.00°". An arc with one inside its swing is the dimension's arc, not a door's
+ * (Substation A-101's storefront angles, Mack A-101's 86.00°, Holabird A-1.1's second find of X23 through its 110.00°;
+ * the retired Round-23 pool, 2026-11-17). Not a radius word: Substation's "R 3'-0"" sits inside the swing of the real
+ * door 1118 beside the curved wall it dimensions, and rejecting on it lost that door.
+ */
+const DIMENSION_WORD = /^\d{1,3}(?:\.\d{1,2})?\s?°$/;
+
+/** Whether a point lies in a single door's swing: within its radius of the hinge, between the strike and the open leaf. */
+function inSwing(d: DoorSymbol, p: { x: number; y: number }, feetPerUnit: number): boolean {
+  if (d.leaves !== 1 || d.open === undefined) return false;
+  const r = d.widthFeet / feetPerUnit;
+  if (Math.hypot(p.x - d.hinge.x, p.y - d.hinge.y) > r * 1.15) return false;
+  const ang = (q: { x: number; y: number }) => Math.atan2(q.y - d.hinge.y, q.x - d.hinge.x);
+  const norm = (t: number) => { while (t > Math.PI) t -= 2 * Math.PI; while (t < -Math.PI) t += 2 * Math.PI; return t; };
+  const a0 = ang(d.strike), span = norm(ang(d.open) - a0), u = norm(ang(p) - a0);
+  return span >= 0 ? u >= -0.1 && u <= span + 0.1 : u <= 0.1 && u >= span - 0.1;
+}
+
 export function doorsInScope(input: {
   segments: readonly StrokeSegment[];
   walls: readonly WallCandidate[];
@@ -67,7 +86,11 @@ export function doorsInScope(input: {
   existing?: ExistingDoorEvidence;
 }): { all: DoorSymbol[]; existing: ExistingDoor[]; doors: DoorSymbol[] } {
   const legend = (input.existing?.asideWalls ?? []).filter((w) => w.legend);
-  const all = doorSymbols(input.segments, input.walls, input.feetPerUnit).filter((d) => legend.length === 0 || !insideLegendBox({ x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2 }, legend));
+  const dims = input.textPt.filter((t) => DIMENSION_WORD.test(t.str.trim())).map((t) => ({ x: (t.x + t.width / 2) / input.widthPt, y: (t.y - t.height / 2) / input.widthPt }));
+  const all = doorSymbols(input.segments, input.walls, input.feetPerUnit)
+    .filter((d) => legend.length === 0 || !insideLegendBox({ x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2 }, legend))
+    .filter((d) => d.widthFeet / d.leaves <= WIDEST_DOOR_LEAF_FEET)
+    .filter((d) => !dims.some((p) => inSwing(d, p, input.feetPerUnit)));
   const existing = existingDoors({ doors: all, segments: input.segments, textPt: input.textPt, widthPt: input.widthPt, feetPerUnit: input.feetPerUnit, ...(input.existing === undefined ? {} : { evidence: input.existing }) });
   const aside = new Set(existing.map((e) => e.door));
   return { all, existing, doors: onlyMarkedDoors(all.filter((d) => !aside.has(d)), input.marks, input.feetPerUnit) };
