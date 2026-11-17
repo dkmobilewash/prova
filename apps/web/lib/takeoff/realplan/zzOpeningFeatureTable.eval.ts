@@ -12,7 +12,7 @@ import { keyFromLabels } from "../heldOutScore";
 import { productDetection, productSheetRuns, sampledSheetsFor } from "../productDetection";
 import { openingInputs, productDoorRows } from "../productOpenings";
 import {
-  DOOR_FEATURE_NAMES, DOOR_FEATURES_VERSION, doorSwings, openingLabels,
+  DOOR_FEATURE_NAMES, DOOR_FEATURES_VERSION, doorLabels, doorSwings, openingLabels,
   WINDOW_FEATURE_NAMES, WINDOW_FEATURES_VERSION, windowFeatureRows, windowShape, type WindowCandidate,
 } from "../openingFeatures";
 import { sheetStrokes } from "../sheetStrokes";
@@ -151,13 +151,13 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           const productKept = dw.doors.map(k).sort(), trainKept = [...door.kept].map(k).sort();
           parity.sheets += 1;
           if (JSON.stringify(productKept) !== JSON.stringify(trainKept)) { parity.differ += 1; parity.lines.push(`PARITY DIFFER ${dir}/${sheet}: product ${productKept.length} kept, rows ${trainKept.length}`); }
-          const real = openingLabels(doorSwings(doors, arcs, fpu).map((s) => s.polygons.flat()), keyDoors, fpu);
+          const { real, keys } = doorLabels(doorSwings(doors, arcs, fpu), keyDoors, fpu);
           // `page` and `at` (page-width units: hinge and strike) so a confident false door can be opened on its sheet without a rerun.
           const r6 = (v: number) => +v.toFixed(6);
-          doors.forEach((d, i) => appendFileSync(OUT, JSON.stringify({ set: dir, sheet, page: saved.page, kind: "door", real: real[i], at: { hinge: [r6(d.hinge.x), r6(d.hinge.y)], strike: [r6(d.strike.x), r6(d.strike.y)] }, x: x[i]!.map((v) => +v.toFixed(4)) }) + "\n"));
+          doors.forEach((d, i) => appendFileSync(OUT, JSON.stringify({ set: dir, sheet, page: saved.page, kind: "door", real: real[i], keys: keys[i], at: { hinge: [r6(d.hinge.x), r6(d.hinge.y)], strike: [r6(d.strike.x), r6(d.strike.y)] }, x: x[i]!.map((v) => +v.toFixed(4)) }) + "\n"));
           appendFileSync(OUT, JSON.stringify({ set: dir, sheet, kind: "door", keyCount: keyDoors.length }) + "\n");
           // The doors set aside as existing, each against the key on its own: a real one is a door lost.
-          const asideReal = door.existing.length === 0 ? [] : openingLabels(doorSwings(door.existing.map((e) => e.door), arcs, fpu).map((s) => s.polygons.flat()), keyDoors, fpu);
+          const asideReal = door.existing.length === 0 ? [] : doorLabels(doorSwings(door.existing.map((e) => e.door), arcs, fpu), keyDoors, fpu).real;
           appendFileSync(OUT, JSON.stringify({ set: dir, sheet, kind: "door", existingAside: door.existing.map((e, i) => ({ route: e.route, why: e.why, real: asideReal[i], at: [+((e.door.hinge.x + e.door.strike.x) / 2).toFixed(6), +((e.door.hinge.y + e.door.strike.y) / 2).toFixed(6)] })) }) + "\n");
           // ── KEY COMPLETENESS: A PRINTED DOOR TAG MEANS A KEY DOOR ──
           // Joplin A-101's three confident "false" doors were real doors whose printed tags (115, 111, 120)
