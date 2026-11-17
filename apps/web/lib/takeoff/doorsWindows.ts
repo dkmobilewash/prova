@@ -1,6 +1,6 @@
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 import { DOOR_TAG_REACH_FEET, doorSymbols, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, WINDOW_TAGS_MEAN_ALL, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
-import { existingDoors, type ExistingDoor, type ExistingDoorEvidence } from "./existingDoors";
+import { existingDoors, insideLegendBox, type ExistingDoor, type ExistingDoorEvidence } from "./existingDoors";
 import { joinOpeningsToSchedule, widthAndHeight, type OpeningJoin, type PlacedMark, type ScheduledOpening } from "./openingMarks";
 import { tagSymbols, type TextForSymbol } from "./tagSymbols";
 import { windowsByTag, windowTagVocabulary, type TaggedWindows } from "./windowTags";
@@ -66,7 +66,8 @@ export function doorsInScope(input: {
   marks: readonly { x: number; y: number }[];
   existing?: ExistingDoorEvidence;
 }): { all: DoorSymbol[]; existing: ExistingDoor[]; doors: DoorSymbol[] } {
-  const all = doorSymbols(input.segments, input.walls, input.feetPerUnit);
+  const legend = (input.existing?.asideWalls ?? []).filter((w) => w.legend);
+  const all = doorSymbols(input.segments, input.walls, input.feetPerUnit).filter((d) => legend.length === 0 || !insideLegendBox({ x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2 }, legend));
   const existing = existingDoors({ doors: all, segments: input.segments, textPt: input.textPt, widthPt: input.widthPt, feetPerUnit: input.feetPerUnit, ...(input.existing === undefined ? {} : { evidence: input.existing }) });
   const aside = new Set(existing.map((e) => e.door));
   return { all, existing, doors: onlyMarkedDoors(all.filter((d) => !aside.has(d)), input.marks, input.feetPerUnit) };

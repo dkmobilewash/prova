@@ -1,3 +1,4 @@
+import { segmentGrid } from "./segmentGrid";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /**
@@ -90,8 +91,37 @@ export const OPEN_SWING_MAX_ARCS_NEAR = 3;
 export const SWEEP_MAX_DEGREES = 110;
 /** How far a vertex may sit off the fitted circle, as a fraction of its radius. */
 export const CIRCLE_FIT_TOLERANCE = 0.04;
+/**
+ * ── A SWING NEVER CLOSES INTO A CIRCLE ──
+ * A door's arc covers at most a half circle of its own circle. An interior-elevation callout (a full circle with
+ * a filled flag, UCCS A2.1.2) and a north arrow (Joplin A-101's TRUE and PLAN NORTH) draw most of one, and an arc
+ * of it with a straight stroke beside it read as a door: 7 of the 12 false doors on the Round 25 training keys.
+ */
+export const CIRCLE_COVER_DEGREES = 240;
+/** A stroke is on an arc's circle when both its ends are within this share of the radius of it. */
+export const ON_CIRCLE_SHARE = 0.06;
+
+/** How many degrees of the circle (cx, cy, r) the sheet's strokes draw, in 5-degree steps. */
+export function circleCoverDegrees(segments: readonly StrokeSegment[], cx: number, cy: number, r: number): number {
+  const tol = ON_CIRCLE_SHARE * r, steps = new Set<number>();
+  const on = (x: number, y: number) => Math.abs(Math.hypot(x - cx, y - cy) - r) <= tol;
+  const deg = (x: number, y: number) => ((Math.atan2(y - cy, x - cx) * 180) / Math.PI + 360) % 360;
+  for (const i of segmentGrid(segments).near(cx - r - tol, cy - r - tol, cx + r + tol, cy + r + tol)) {
+    const s = segments[i]!;
+    if (!on(s.x1, s.y1) || !on(s.x2, s.y2)) continue;
+    const a = deg(s.x1, s.y1);
+    let span = deg(s.x2, s.y2) - a;
+    if (span > 180) span -= 360;
+    if (span < -180) span += 360;
+    for (let t = 0; t <= Math.abs(span); t += 2.5) steps.add(Math.floor(((a + Math.sign(span) * t + 360) % 360) / 5));
+  }
+  return steps.size * 5;
+}
 /** A piece of a flattened arc is short; one longer than this, in feet, is a wall. */
 export const LONGEST_ARC_PIECE_FEET = 1.5;
+/** A dashed swing's next dash: across a gap of at most this, starting within this many degrees of the last piece's heading. */
+export const DASH_GAP_FEET = 0.6;
+export const DASH_AHEAD_DEGREES = 35;
 /** The leaf's ends must land this close, feet, to the hinge and to the arc's end. */
 export const LEAF_END_TOLERANCE_FEET = 0.5;
 /** A leaf along the radius: both ends this close to the hinge-to-end line, starting within this share of the radius from the hinge, covering this share of it. */
@@ -160,6 +190,7 @@ const turn = (a: StrokeSegment, b: StrokeSegment) => {
 export function arcChains(segments: readonly StrokeSegment[], feetPerUnit: number): Pt[][] {
   const longest = LONGEST_ARC_PIECE_FEET / feetPerUnit;
   const joinTol = 0.02 / feetPerUnit;
+  const dashGap = DASH_GAP_FEET / feetPerUnit;
   const chains: Pt[][] = [];
   let chain: Pt[] = [];
   let prev: StrokeSegment | null = null;
@@ -168,15 +199,25 @@ export function arcChains(segments: readonly StrokeSegment[], feetPerUnit: numbe
   for (const s of segments) {
     const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
     if (len > longest || len === 0) { flush(); continue; }
+    let across = false;
     if (prev !== null) {
-      const joined = Math.hypot(prev.x2 - s.x1, prev.y2 - s.y1) <= joinTol;
+      const gap = Math.hypot(prev.x2 - s.x1, prev.y2 - s.y1);
+      const joined = gap <= joinTol;
       const t = turn(prev, s);
       const small = Math.abs(t) > 0.01 && Math.abs(t) < 0.6;
       const same = sign === 0 || Math.sign(t) === sign;
-      if (!joined || !small || !same) flush();
-      else sign = Math.sign(t);
+      // ── A DASHED SWING: THE NEXT DASH CARRIES ON AHEAD ACROSS A SHORT GAP ──
+      // Broadway A1.0 draws its door swings dashed, so each dash was a separate 9-degree "arc" and no swing on
+      // the sheet was ever whole (10 missed key doors). Across a gap of at most `DASH_GAP_FEET`, a piece that
+      // starts ahead of the last one (within `DASH_AHEAD_DEGREES` of its heading) and turns the same way by a
+      // little continues the chain.
+      const prevLen = Math.hypot(prev.x2 - prev.x1, prev.y2 - prev.y1);
+      const ahead = gap > joinTol && gap <= dashGap && prevLen > 0 &&
+        ((s.x1 - prev.x2) * (prev.x2 - prev.x1) + (s.y1 - prev.y2) * (prev.y2 - prev.y1)) / (gap * prevLen) >= Math.cos((DASH_AHEAD_DEGREES * Math.PI) / 180);
+      if (!(joined || ahead) || !small || !same) flush();
+      else { sign = Math.sign(t); across = ahead; }
     }
-    if (prev === null) chain.push({ x: s.x1, y: s.y1 });
+    if (prev === null || across) chain.push({ x: s.x1, y: s.y1 });
     chain.push({ x: s.x2, y: s.y2 });
     prev = s;
   }
@@ -243,7 +284,7 @@ export type DoorArcCandidate = {
   radiusFeet: number | null;
   sweepDegrees: number | null;
   /** Why it is not a door, or null when it is one. */
-  reject: "no-fit" | "off-circle" | "radius" | "sweep" | "no-leaf" | null;
+  reject: "no-fit" | "off-circle" | "radius" | "circle" | "sweep" | "no-leaf" | null;
   door: DoorSymbol | null;
 };
 
@@ -264,6 +305,7 @@ export function doorArcCandidates(
     if (fit.worst > CIRCLE_FIT_TOLERANCE) { out.push({ ...base, reject: "off-circle" }); continue; }
     const rFeet = fit.r * feetPerUnit;
     if (rFeet < NARROWEST_LEAF_FEET || rFeet > WIDEST_LEAF_FEET) { out.push({ ...base, reject: "radius" }); continue; }
+    if (circleCoverDegrees(segments, fit.cx, fit.cy, fit.r) >= CIRCLE_COVER_DEGREES) { out.push({ ...base, reject: "circle" }); continue; }
     const a = chain[0]!, b = chain[chain.length - 1]!, mid = chain[Math.floor(chain.length / 2)]!;
     const sweep = sweepDegrees(fit, a, b, mid);
     // ── A HALF-CIRCLE SWING WITH NO LEAF, ON A WALL'S LINE ──

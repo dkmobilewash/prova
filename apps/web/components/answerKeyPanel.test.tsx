@@ -190,9 +190,27 @@ describe("round 12: the type picker", () => {
     expect(onState.mock.calls.at(-1)![0].types).toEqual({ w0: "U" });
   });
 
-  it("offers no picker on a wall that is not accepted", () => {
-    const { host } = paint({ focusedId: "w0", legendCodes: ["A"] });
+  it("offers no picker on a wall said not to be one", async () => {
+    const { setVerdict } = await import("@/lib/takeoff/answerKeyReview");
+    const { host } = paint({ state: setVerdict(startReview([cand("w0", 0.1)]), ["w0"], "not-a-wall"), focusedId: "w0", legendCodes: ["A"] });
     expect(q(host, "key-type")).toBeNull();
+  });
+
+  it("types a just-split half from a number key, accepting it in the same step (Round 25, Baker A101)", async () => {
+    const { setVerdict } = await import("@/lib/takeoff/answerKeyReview");
+    const { splitCandidate } = await import("@/lib/takeoff/splitCandidate");
+    const accepted = setVerdict(startReview([cand("w0", 0.1)]), ["w0"], "wall");
+    const w0 = accepted.candidates[0]!;
+    const out = splitCandidate(accepted, "w0", { x: (w0.x1 + w0.x2) / 2, y: (w0.y1 + w0.y2) / 2 }, 100);
+    expect(out.halves).not.toBeNull();
+    const half = out.halves![0];
+    expect(out.state.verdicts[half]).toBe("unreviewed");
+    const { host, onState } = paint({ state: out.state, focusedId: half, legendCodes: ["S6B", "S8B"] });
+    expect(q(host, "key-type")?.textContent).toContain("S8B (2)");
+    act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "2" })); });
+    const after = onState.mock.calls.at(-1)![0];
+    expect(after.verdicts[half]).toBe("wall");
+    expect(after.types).toEqual({ [half]: "S8B" });
   });
 
   it("saves the type with the verdict", async () => {
