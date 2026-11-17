@@ -20,6 +20,12 @@ import type { WallCandidate } from "../wallVectors";
 import { setFigures, setHeightRule, wallHeightChain, type SetFigures, type SetHeightRule, type WallHeightConvention } from "../heightsByCode";
 import { levelHeight, planLevels, type LevelMark } from "../levelHeights";
 import { setHeightFacts } from "../setHeightFacts";
+import { CEILING_PAGE_TITLE } from "../../plan-ingest/rooms";
+import { tableRowsFromPage } from "../../plan-ingest/scheduleTable";
+import { ceilingsForRooms, type CeilingPageText } from "../roomCeilings";
+import { roofPartsFor, type StoredRoofParts } from "../roofPartsRead";
+import { sheetRooms } from "../sheetRooms";
+import { wallChainWithRooms } from "../wallSides";
 import { sheetViews } from "../sheetViews";
 
 /**
@@ -180,7 +186,9 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     const losoSkipped: string[] = [];
     const rows: Record<string, unknown>[] = [];
     const unmatchedSpellings: Record<string, number> = {};
-    const planHeightsBySet = new Map<string, { rule: SetHeightRule | null; figures: Omit<SetFigures, "floorToFloorFt">; marks: LevelMark[] }>();
+    const planHeightsBySet = new Map<string, { rule: SetHeightRule | null; figures: Omit<SetFigures, "floorToFloorFt">; marks: LevelMark[]; roofs: Map<number, StoredRoofParts>; ceilingPages: CeilingPageText[] }>();
+    // #1198 wired: instrument counters for the ROOMSIDES line (one group per process).
+    let rsRooms = 0, rsWalls = 0, rsMoved = 0;
     const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number; zeroBoardSf: number; lf10BoardSf: number }>();
     for (const dir of readdirSync(LABELS).sort()) {
       if (!existsSync(join(LABELS, dir)) || (heldOutReason(dir) !== null) !== HELD) continue;
@@ -250,12 +258,13 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const entries = runs.map((r, at) => ({ at, held: held.has(r), score: scores[at] ?? null, lengthFeet: r.lengthFeet }));
         let lf10 = zeroLf;
         let answered = 0;
+        const flips: { r: (typeof runs)[number]; sign: number }[] = [];
         for (const at of reviewOrder(entries, "doubt")) {
           if (answered >= PRESSES) break;
           answered += 1;
           const r = runs[at]!;
-          if (!held.has(r) && junk[at]) lf10 -= r.lengthFeet;
-          if (held.has(r) && !junk[at]) lf10 += r.lengthFeet;
+          if (!held.has(r) && junk[at]) { lf10 -= r.lengthFeet; flips.push({ r, sign: -1 }); }
+          if (held.has(r) && !junk[at]) { lf10 += r.lengthFeet; flips.push({ r, sign: 1 }); }
         }
         // ── #1157: THE PRODUCT'S HEIGHT FOR EVERY ZERO-TOUCH WALL (no room sides here) ──
         let ph = planHeightsBySet.get(dir);
@@ -263,15 +272,56 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           const facts = await setHeightFacts(doc, { legendPage: 0, maxPages: 120 });
           const rule = setHeightRule(facts.generalNote, facts.facts);
           const figs = setFigures(facts.facts, null);
-          ph = { rule, figures: { structureFt: figs.structureFt, setCeilingFt: figs.setCeilingFt }, marks: facts.levels ?? [] };
+          // #1198 wired: the set's roof parts and ceiling pages, once, for the per-wall chain below.
+          const roofs = rule?.kind === "to-structure-by-roof" ? await roofPartsFor(doc, facts) : new Map<number, StoredRoofParts>();
+          const ceilingPages: CeilingPageText[] = [];
+          for (let n = 1; n <= Math.min(doc.pageCount, 160) && ceilingPages.length < 40; n += 1) {
+            const page = await doc.pageText(n).catch(() => null);
+            if (!page || !CEILING_PAGE_TITLE.test(page.items.map((i) => i.str).join(" "))) continue;
+            const cs = await doc.pageStrokes(n).catch(() => null);
+            ceilingPages.push({ pageNumber: n, items: page.items, widthPt: page.widthPt, tableRows: tableRowsFromPage(page), strokes: cs?.segments.map((g) => ({ x1: g.x1 / cs.widthPt, y1: g.y1 / cs.widthPt, x2: g.x2 / cs.widthPt, y2: g.y2 / cs.widthPt })) });
+          }
+          ph = { rule, figures: { structureFt: figs.structureFt, setCeilingFt: figs.setCeilingFt }, marks: facts.levels ?? [], roofs, ceilingPages };
           planHeightsBySet.set(dir, ph);
         }
         const pageLevels = sheetViews(text.items, W).map((v) => planLevels(v.name)).find((l) => l.length > 0) ?? [];
         const figures: SetFigures = { floorToFloorFt: levelHeight(ph.marks, pageLevels)?.feet ?? null, ...ph.figures };
         const chain = wallHeightChain(ph.rule, [null, null], [null, null], ANSWER, figures);
         const chainFeet = chain?.feet ?? 0;
-        const zeroBoardSf = runs.reduce((n, r) => n + (held.has(r) ? 0 : r.lengthFeet * chainFeet * 2), 0);
-        const lf10BoardSf = lf10 * chainFeet * 2;
+        // ── #1198 WIRED: EACH RUN WALL'S OWN ROOMS, THE PRODUCT'S PROBE AND CHAIN (`wallChainWithRooms`) ──
+        // Rooms close from the walls zero-touch POSTS (held runs out), as the product's room finder
+        // would see them; ceilings from the set's ceiling plans; the roof over each room under a
+        // to-structure-by-roof rule. A wall beside no room falls through the same chain to the same
+        // set-level answer as before, so this is a strict refinement of the #1157 behavior.
+        const kept = runs.filter((r) => !held.has(r));
+        const unitSegments = strokes.segments.map((g) => ({ ...g, x1: g.x1 / W, y1: g.y1 / W, x2: g.x2 / W, y2: g.y2 / W }));
+        const foundRooms = sheetRooms({ pairings: [], runs: kept.map((r) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, thicknessFeet: r.thicknessFeet })) as never, drawn: [], segments: unitSegments, doorLeaves: [], feetPerUnit: fpu, text: text.items, widthPt: W });
+        const ceilings = ceilingsForRooms({ rooms: foundRooms.rooms, current: { pageNumber: saved.page, items: text.items, widthPt: W, tableRows: tableRowsFromPage(text) }, feetPerUnit: fpu, others: ph.ceilingPages.filter((g) => g.pageNumber !== saved.page) });
+        const roof = ph.roofs.get(saved.page);
+        rsRooms += foundRooms.rooms.length;
+        const feetByRun = new Map<(typeof runs)[number], number>();
+        const runFeet = (r: (typeof runs)[number]): number => {
+          const had = feetByRun.get(r);
+          if (had !== undefined) return had;
+          const h = wallChainWithRooms({
+            wall: { xs: [r.x1, r.x2], ys: [r.y1, r.y2] },
+            rooms: foundRooms.rooms,
+            ceilingOf: (room) => ceilings.get(room.id)?.heightFeet ?? null,
+            namedOf: (room) => room.tag !== null,
+            roofMask: roof?.mask,
+            rule: ph.rule,
+            answer: ANSWER,
+            figures,
+          });
+          const f = h?.feet ?? 0;
+          rsWalls += 1;
+          if (f !== chainFeet) rsMoved += 1;
+          feetByRun.set(r, f);
+          return f;
+        };
+        const zeroBoardSf = kept.reduce((n, r) => n + r.lengthFeet * runFeet(r) * 2, 0);
+        let lf10BoardSf = zeroBoardSf;
+        for (const fl of flips) lf10BoardSf += fl.sign * fl.r.lengthFeet * runFeet(fl.r) * 2;
         await doc.close();
         const keyLf = key.reduce((n, k) => n + k.lengthFeet, 0);
         const words = textItems.map((t) => t.str).join(" ");
@@ -301,11 +351,12 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         s.lf += zeroLf; s.lf10 += lf10; s.doors += Math.min(postedDoors, keyDoors); s.doorsOver += Math.max(0, postedDoors - keyDoors); s.keyLf += keyLf; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1; s.junkLf += junkLf; if (renovation) s.junkRenoLf += junkLf; s.missedLf += missedLf; s.keyBoardSf += keyBoardSf; s.unpricedBoardSf += unpricedBoardSf; s.zeroBoardSf += zeroBoardSf; s.lf10BoardSf += lf10BoardSf; s.renovation = s.renovation || renovation;
         for (const [t, ft] of Object.entries(keyByType)) s.keyByType[t] = Math.round(((s.keyByType[t] ?? 0) + ft) * 10) / 10;
         bySet.set(dir, s);
-        rows.push({ set: dir, sheet, paired, renovation, keyLf: Math.round(keyLf), zeroLf: Math.round(zeroLf), lf10: Math.round(lf10), junkLf: Math.round(junkLf), missedLf: Math.round(missedLf), keyBoardSf: Math.round(keyBoardSf), unpricedBoardSf: Math.round(unpricedBoardSf), zeroBoardSf: Math.round(zeroBoardSf), chainFeet, chainFrom: chain?.from ?? null, keyDoors, postedDoors, keyWindows });
+        rows.push({ set: dir, sheet, paired, renovation, keyLf: Math.round(keyLf), zeroLf: Math.round(zeroLf), lf10: Math.round(lf10), junkLf: Math.round(junkLf), missedLf: Math.round(missedLf), keyBoardSf: Math.round(keyBoardSf), unpricedBoardSf: Math.round(unpricedBoardSf), zeroBoardSf: Math.round(zeroBoardSf), chainFeet, chainFrom: chain?.from ?? null, rooms: foundRooms.rooms.length, keyDoors, postedDoors, keyWindows });
       }
     }
     const group = HELD ? "HELD-OUT" : "TRAINING";
     console.log(`ZT RUNMODEL ${group}: ${RUN_MODEL === null ? "OFF (TAKEOFF_WALL_RUN_MODEL unset)" : "ON (remove-only below 0.10)"}`);
+    console.log(`ZT ROOMSIDES ${group}: ON — rooms ${rsRooms} · run walls ${rsWalls} · heights moved by room sides ${rsMoved}`);
     let zb = 0, kb = 0, tb = 0;
     let totalErr = 0;
     const cause = { junkNew: 0, junkReno: 0, missed: 0, board: 0, doors: 0, windows: 0, doorsOver: 0, doorsAtFrames: 0, doorsAtFull: 0, windowsInfo: 0, unpricedBoard: 0 };
@@ -369,7 +420,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     }
     console.log(`ZTDOORS ${group} by scope: BY_OTHERS $0 · FRAMES $${Math.round(cause.doorsAtFrames)} · DOORS_AND_FRAMES $${Math.round(cause.doorsAtFull)} (headline uses ${DOOR_SCOPE}, the product default)`);
     console.log(`ZTWINDOWS ${group} by scope (#1161, windows price through the door/window scope): BY_OTHERS $0 · FRAMES/DOORS_AND_FRAMES $${Math.round(cause.windowsInfo)} at $${PRICE.windowEach}/each (headline uses ${DOOR_SCOPE}, the product default)`);
-    console.log(`ZTBOARD ${group} run board PRICED via the product height chain (#1157, no room sides); key types with no heights-key match at the default ${NOMINAL_FEET}': ${Math.round(cause.unpricedBoard)} SF = $${Math.round(cause.unpricedBoard * PRICE.boardPerSf)} · type spellings with no heights-key match (ft): ${JSON.stringify(Object.fromEntries(Object.entries(unmatchedSpellings).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => [k, Math.round(v)])))}`);
+    console.log(`ZTBOARD ${group} run board PRICED via the product height chain (#1157; run-side room sides wired, #1198); key types with no heights-key match at the default ${NOMINAL_FEET}': ${Math.round(cause.unpricedBoard)} SF = $${Math.round(cause.unpricedBoard * PRICE.boardPerSf)} · type spellings with no heights-key match (ft): ${JSON.stringify(Object.fromEntries(Object.entries(unmatchedSpellings).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, v]) => [k, Math.round(v)])))}`);
     writeFileSync(OUT, JSON.stringify({ group, prices: PRICE, cause, rows }, null, 1));
     expect(rows.length, "no labelled sheet was read").toBeGreaterThan(0);
   });

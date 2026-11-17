@@ -1,12 +1,11 @@
 import { prisma } from "@prova/db";
 import type { PlanPdf } from "@/lib/plan-ingest/planPdf";
-import { wallSideRooms } from "./wallSides";
-import { roomPitched } from "./roofParts";
+import { wallChainWithRooms } from "./wallSides";
 import { storeRoofParts, storedRoofParts } from "./roofPartsRead";
 import { setHeightFacts } from "./setHeightFacts";
 import { levelHeight, planLevels, type LevelMark } from "./levelHeights";
 import { sheetViews } from "./sheetViews";
-import { setFigures, setHeightRule, wallHeightChain, wallHeightConventionFrom, type SetFigures, type SetHeightRule } from "./heightsByCode";
+import { setFigures, setHeightRule, wallHeightConventionFrom, type SetFigures, type SetHeightRule } from "./heightsByCode";
 import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
 
 /** The set's height rule and figures, read once per plan by code (no model) and kept, so no sheet re-walks the set. */
@@ -70,11 +69,17 @@ export async function assignWallHeights(input: { planId: string; pageId: string;
   let drawn = 0, assumed = 0;
   const items = new Set<string>();
   for (const wall of walls) {
-    // The room on each side (`wallSides.ts`, the probe the height evals share).
-    const sideRooms = wallSideRooms(wall, rooms);
-    const sides = sideRooms.map((room) => room?.ceilingHeightFeet ?? null);
-    const pitched = sideRooms.map((room) => (room && roof ? roomPitched(roof.mask, { xs: room.xs, ys: room.ys, named: room.roomNumber !== null || room.roomName !== null }) : null));
-    const height = wallHeightChain(plan.rule, sides, pitched, answer, figures);
+    // The chain over the rooms either side (`wallSides.ts`, the one function zero-touch prices with too).
+    const height = wallChainWithRooms({
+      wall,
+      rooms,
+      ceilingOf: (room) => (room.ceilingHeightFeet === null ? null : Number(room.ceilingHeightFeet)),
+      namedOf: (room) => room.roomNumber !== null || room.roomName !== null,
+      roofMask: roof?.mask,
+      rule: plan.rule,
+      answer,
+      figures,
+    });
     await prisma.takeoffMeasurement.update({
       where: { id: wall.id },
       data: height === null ? { heightFt: null, heightFrom: null, heightAssumed: false } : { heightFt: height.feet, heightFrom: height.from.slice(0, 300), heightAssumed: height.assumed },

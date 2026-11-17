@@ -1,4 +1,6 @@
 import { pointInRing } from "./drawTools";
+import { wallHeightChain, type ChainHeight, type SetFigures, type SetHeightRule, type WallHeightConvention } from "./heightsByCode";
+import { roomPitched, type RoofMask } from "./roofParts";
 
 /**
  * ── THE ROOMS EITHER SIDE OF A WALL ──
@@ -28,4 +30,31 @@ export function wallSideRooms<R extends Ring>(wall: Ring, rooms: readonly R[], o
     const py = (best.y1 + best.y2) / 2 + (sign * (best.x2 - best.x1) / best.len) * offset;
     return rooms.find((r) => pointInRing(px, py, r.xs, r.ys)) ?? null;
   });
+}
+
+/**
+ * ── THE CHAIN OVER A WALL'S OWN ROOMS ──
+ *
+ * One function for the product (`assignWallHeights`) and the zero-touch eval, so the eval prices
+ * exactly the height the product writes: the rooms either side (`wallSideRooms` above), their
+ * ceilings, the roof over each where the set's rule is to-structure-by-roof, then the chain.
+ * `ceilingOf`/`namedOf` adapt the two room shapes (the product's stored rooms, the eval's
+ * `sheetRooms` rooms) without copying the loop.
+ */
+export function wallChainWithRooms<R extends Ring>(input: {
+  wall: Ring;
+  rooms: readonly R[];
+  ceilingOf: (room: R) => number | null;
+  namedOf: (room: R) => boolean;
+  roofMask: RoofMask | undefined;
+  rule: SetHeightRule | null;
+  answer: { convention: WallHeightConvention | null; fixedFt: number | null };
+  figures: SetFigures;
+}): ChainHeight | null {
+  const sideRooms = wallSideRooms(input.wall, input.rooms);
+  const sides = sideRooms.map((room) => (room === null ? null : input.ceilingOf(room)));
+  const pitched = sideRooms.map((room) =>
+    room !== null && input.roofMask !== undefined ? roomPitched(input.roofMask, { xs: room.xs, ys: room.ys, named: input.namedOf(room) }) : null,
+  );
+  return wallHeightChain(input.rule, sides, pitched, input.answer, input.figures);
 }
