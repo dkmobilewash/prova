@@ -89,6 +89,18 @@ describe("existing doors set aside", () => {
     expect(scope(frame)).toBe(1);
   });
 
+  it("an angle dimension's word inside a door's swing makes the arc the dimension's; outside the swing, across the wall, or a radius word, it does not (Substation A-101, Mack A-101)", () => {
+    const found = (text: ReturnType<typeof word>[]) => doorsInScope({ segments: door, walls, feetPerUnit: FPU, textPt: text, widthPt: W, marks: [] }).all.length;
+    expect(found([])).toBe(1);
+    expect(found([word("110.00°", 0.515, 0.49)])).toBe(0);
+    expect(found([word("86°", 0.515, 0.49)])).toBe(0);
+    expect(found([word("110.00°", 0.485, 0.49)])).toBe(1);
+    expect(found([word("110.00°", 0.515, 0.51)])).toBe(1);
+    expect(found([word("110.00°", 0.56, 0.45)])).toBe(1);
+    // Substation's "R 3'-0"" sits in the swing of the real door 1118 beside the curved wall it dimensions.
+    expect(found([word("R 3'-0\"", 0.515, 0.49)])).toBe(1);
+  });
+
   it("a door the demolition plan draws in the same place, and keeps, is existing to remain", () => {
     const got = run([], [], { priorDoors: [{ hinge: { x: 0.5, y: 0.5 }, strike: { x: 0.53, y: 0.5 } }], priorSheet: "AD101" });
     expect(got.map((e) => e.why)).toEqual(["drawn on AD101 and not removed — existing to remain"]);

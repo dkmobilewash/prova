@@ -62,8 +62,14 @@ export type WindowSymbol = {
 
 /** A leaf narrower than this is a cabinet door or a hatch, not a doorway. */
 export const NARROWEST_LEAF_FEET = 1.5;
-/** Wider than this is a gate or a garage door — a different symbol. */
-export const WIDEST_LEAF_FEET = 7;
+/**
+ * Wider than this is not a door leaf. Was 7 ft ("a gate or a garage door"); no real door leaf on the training sheets
+ * reads wider than 4.25 ft (419 found doors, labels-snap-20261117T1555), and a 48-inch leaf is the widest stock door.
+ * What reads wider is a door in an ENLARGED plan read at the sheet's smaller scale: Mack Theater A-101 prints a 1/8in
+ * overview and two 1/4in enlarged plans of the same rooms, and the enlarged plans' doors came out 5 and 6 ft
+ * (18 false doors in the retired Round-23 pool, 2026-11-17).
+ */
+export const WIDEST_LEAF_FEET = 4.5;
 /** A swing this far from a quarter circle is a different thing (a 180° swing is a double-acting door). */
 /**
  * Doors drawn standing OPEN at 30 to 55 degrees are doors: Topeka's closets and bedrooms are drawn at about
