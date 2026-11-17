@@ -74,6 +74,33 @@ describe("door symbols", () => {
     expect(doorSymbols([leaf, ...arc, ...clutter], walls, FPU)).toHaveLength(1);
   });
 
+  it("takes a half-circle swing with no leaf when a wall runs along its diameter (Joplin's doors 140-166)", () => {
+    // A 3 ft half circle hinged at (0.50, 0.50), from (0.47, 0.50) round the north to (0.53, 0.50), on a wall along y = 0.50.
+    const half = swing(hinge.x, hinge.y, ft(3), Math.PI, 2 * Math.PI, 17);
+    const onWall = [wall(0.3, 0.5, 0.47, 0.5), wall(0.5, 0.5, 0.7, 0.5)];
+    const doors = doorSymbols(half, onWall, FPU);
+    expect(doors).toHaveLength(1);
+    expect(doors[0]!.widthFeet).toBeCloseTo(3, 1);
+    // The strike is the end over the opening (west, where no wall runs), the open leaf lies against the wall (east).
+    expect(doors[0]!.strike.x).toBeLessThan(hinge.x);
+    // Off any wall, a half circle is not a door.
+    expect(doorSymbols(half, [], FPU)).toHaveLength(0);
+    // Too small (1.5 ft) or too wide (5 ft) is not a door either.
+    expect(doorSymbols(swing(hinge.x, hinge.y, ft(1.5), Math.PI, 2 * Math.PI, 17), onWall, FPU)).toHaveLength(0);
+    expect(doorSymbols(swing(hinge.x, hinge.y, ft(5), Math.PI, 2 * Math.PI, 17), [wall(0.3, 0.5, 0.45, 0.5), wall(0.5, 0.5, 0.8, 0.5)], FPU)).toHaveLength(0);
+    // A few strokes inside (a tag pill) do not stop it.
+    const pill: StrokeSegment[] = [{ x1: 0.49, y1: 0.48, x2: 0.51, y2: 0.48 }, { x1: 0.49, y1: 0.47, x2: 0.51, y2: 0.47 }];
+    expect(doorSymbols([...half, ...pill], onWall, FPU)).toHaveLength(1);
+  });
+
+  it("does not take a hatched half-round counter end as a door: hatch is many parallel strokes", () => {
+    const half = swing(hinge.x, hinge.y, ft(3), Math.PI, 2 * Math.PI, 17);
+    const onWall = [wall(0.3, 0.5, 0.47, 0.5), wall(0.5, 0.5, 0.7, 0.5)];
+    // 16 diagonal hatch strokes inside the half disc.
+    const hatch: StrokeSegment[] = Array.from({ length: 16 }, (_, k) => ({ x1: 0.483 + k * ft(0.2), y1: 0.495, x2: 0.488 + k * ft(0.2), y2: 0.49 }));
+    expect(doorSymbols([...half, ...hatch], onWall, FPU)).toHaveLength(0);
+  });
+
   it("needs the leaf: a bare quarter arc is a countertop return, not a door", () => {
     expect(doorSymbols(arc, walls, FPU)).toHaveLength(0);
     const why = doorArcCandidates(arc, walls, FPU);

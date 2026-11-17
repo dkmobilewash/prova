@@ -71,6 +71,17 @@ export const WIDEST_LEAF_FEET = 7;
  * the leaf is still required. Baker A101 draws door 101 at 65 degrees.
  */
 export const SWEEP_MIN_DEGREES = 30;
+/** A half-circle swing with no leaf (Joplin): this sweep and this radius, with a found wall along its diameter. */
+export const HALF_SWING_MIN_DEGREES = 165;
+export const HALF_SWING_MAX_DEGREES = 195;
+export const HALF_SWING_MIN_FEET = 2.5;
+export const HALF_SWING_MAX_FEET = 4;
+/**
+ * This many parallel straight strokes inside a half swing is hatch: casework, not a door. Measured: Joplin's
+ * half swings hold at most 10 in one direction (the tag pill, a dimension line), the 2020-09-24 set's hatched
+ * counter end 22.
+ */
+export const HALF_SWING_HATCH_LINES = 15;
 /** Under this a swing is drawn standing open, and must also be door-wide, on a wall and uncluttered. */
 export const OPEN_SWING_DEGREES = 55;
 export const OPEN_SWING_MIN_WIDTH_FEET = 2.5;
@@ -186,6 +197,16 @@ function sweepDegrees(c: { cx: number; cy: number }, a: Pt, b: Pt, mid: Pt): num
   return Math.abs((s * 180) / Math.PI);
 }
 
+/** Whether `p` is inside the polygon `fan` (the hinge and the arc's points). */
+function insideFan(p: Pt, fan: readonly Pt[]): boolean {
+  let c = false;
+  for (let i = 0, j = fan.length - 1; i < fan.length; j = i++) {
+    const a = fan[i]!, b = fan[j]!;
+    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) c = !c;
+  }
+  return c;
+}
+
 function distToSegment(p: Pt, a: Pt, b: Pt): number {
   const dx = b.x - a.x, dy = b.y - a.y;
   const l2 = dx * dx + dy * dy;
@@ -245,6 +266,45 @@ export function doorArcCandidates(
     if (rFeet < NARROWEST_LEAF_FEET || rFeet > WIDEST_LEAF_FEET) { out.push({ ...base, reject: "radius" }); continue; }
     const a = chain[0]!, b = chain[chain.length - 1]!, mid = chain[Math.floor(chain.length / 2)]!;
     const sweep = sweepDegrees(fit, a, b, mid);
+    // ── A HALF-CIRCLE SWING WITH NO LEAF, ON A WALL'S LINE ──
+    // Joplin draws each door as a 180-degree arc from the jamb with no leaf line (doors 140-166): 20 of the
+    // training sheets' missed key doors. A half circle is too common a shape to take alone, so it stands only
+    // door-sized and with a found wall along its diameter (both ends on the wall's line). The end over less
+    // wall is the opening, where the door closes (the strike); the other is where it lies open against the wall.
+    if (sweep >= HALF_SWING_MIN_DEGREES && sweep <= HALF_SWING_MAX_DEGREES && rFeet >= HALF_SWING_MIN_FEET && rFeet <= HALF_SWING_MAX_FEET) {
+      const hinge = { x: fit.cx, y: fit.cy };
+      const wall = wallFor(walls, a, b, feetPerUnit);
+      // Hatched inside is casework, not a swing: the 2020-09-24 set's A1.1 draws a half-round counter end,
+      // filled with diagonal hatch, against a wall. Hatch is many PARALLEL strokes; a door's tag pill is not.
+      const fan = [hinge, ...chain];
+      const inside = straight.filter((s) => {
+        const m = { x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 };
+        return dist(m, hinge) < fit.r && insideFan(m, fan);
+      });
+      const byAngle = new Map<number, number>();
+      for (const s of inside) {
+        const k = Math.round(((Math.atan2(s.y2 - s.y1, s.x2 - s.x1) * 180) / Math.PI + 180) % 180 / 3);
+        byAngle.set(k % 60, (byAngle.get(k % 60) ?? 0) + 1);
+      }
+      const hatched = Math.max(0, ...byAngle.values()) >= HALF_SWING_HATCH_LINES;
+      if (wall !== null && !hatched) {
+        const onLine = (e: Pt) => {
+          const ux = (e.x - hinge.x) / fit.r, uy = (e.y - hinge.y) / fit.r;
+          let covered = 0;
+          for (const w of walls) {
+            const reach = (w.thicknessFeet / 2 + ON_WALL_TOLERANCE_FEET) / feetPerUnit;
+            const off = (p: Pt) => Math.abs(-(p.x - hinge.x) * uy + (p.y - hinge.y) * ux);
+            if (off({ x: w.x1, y: w.y1 }) > reach || off({ x: w.x2, y: w.y2 }) > reach) continue;
+            const t1 = (w.x1 - hinge.x) * ux + (w.y1 - hinge.y) * uy, t2 = (w.x2 - hinge.x) * ux + (w.y2 - hinge.y) * uy;
+            covered = Math.max(covered, Math.min(fit.r, Math.max(t1, t2)) - Math.max(0, Math.min(t1, t2)));
+          }
+          return covered;
+        };
+        const [strike, open] = onLine(a) <= onLine(b) ? [a, b] : [b, a];
+        out.push({ ...base, sweepDegrees: sweep, reject: null, door: { kind: "door", hinge, strike, widthFeet: fit.r * feetPerUnit, wall, leaves: 1, sweepDegrees: sweep, open } });
+        continue;
+      }
+    }
     if (sweep < SWEEP_MIN_DEGREES || sweep > SWEEP_MAX_DEGREES) { out.push({ ...base, sweepDegrees: sweep, reject: "sweep" }); continue; }
     const hinge = { x: fit.cx, y: fit.cy };
     // The leaf: a straight piece from the hinge to one end of the arc. Its
