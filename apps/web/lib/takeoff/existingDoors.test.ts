@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { doorsAndWindowsForSheet } from "./doorsWindows";
 import { doorSymbols } from "./doorWindowSymbols";
-import { asideExistingWalls, dashedBoxAround, dashedLines, doorPen, existingDoors, existingPrefixes, swingSide } from "./existingDoors";
+import { asideExistingWalls, dashedBoxAround, dashedLines, doorPen, existingDoors, existingPrefixes, insideLegendBox, swingSide, type ExistingDoorEvidence } from "./existingDoors";
+import { doorsInScope } from "./doorsWindows";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
 /** One foot = 0.01 page-width units, so feetPerUnit is 100; the page is 1000 pt wide. */
@@ -65,6 +66,26 @@ describe("existing doors set aside", () => {
     expect(asideExistingWalls([{ ...line, kind: "on-prior-plan" }, { ...line, kind: "dashed-faces" }])).toEqual([]);
     // On a paired sheet the demolition plan decides: a door it does not draw stays, on a kept wall or not.
     expect(run([], [], { asideWalls: asideExistingWalls([{ ...line, kind: "on-prior-plan" }]), priorDoors: [{ hinge: { x: 0.6, y: 0.5 }, strike: { x: 0.63, y: 0.5 } }] })).toEqual([]);
+  });
+
+  it("a framed legend's lines ride along, marked legend, and never set a door aside as existing", () => {
+    const line = { x1: 0.4, y1: 0.5, x2: 0.7, y2: 0.5, lengthFeet: 30, why: "" };
+    expect(asideExistingWalls([{ ...line, kind: "legend-box" }])).toEqual([{ x1: 0.4, y1: 0.5, x2: 0.7, y2: 0.5, legend: true }]);
+    expect(run([], [], { asideWalls: asideExistingWalls([{ ...line, kind: "legend-box" }]) })).toEqual([]);
+  });
+
+  it("a door inside a framed legend is a sample and is dropped; one outside the frame, or with no frame, stays (Joplin A-101)", () => {
+    // The frame round the door at (0.5, 0.5): four sides, each a legend-box line.
+    const frame = [{ x1: 0.4, y1: 0.4, x2: 0.65, y2: 0.4 }, { x1: 0.4, y1: 0.6, x2: 0.65, y2: 0.6 }, { x1: 0.4, y1: 0.4, x2: 0.4, y2: 0.6 }, { x1: 0.65, y1: 0.4, x2: 0.65, y2: 0.6 }];
+    expect(insideLegendBox({ x: 0.5, y: 0.5 }, frame)).toBe(true);
+    expect(insideLegendBox({ x: 0.7, y: 0.5 }, frame)).toBe(false);
+    // Three sides is not a frame.
+    expect(insideLegendBox({ x: 0.5, y: 0.5 }, frame.slice(0, 3))).toBe(false);
+    const scope = (asideWalls: NonNullable<ExistingDoorEvidence["asideWalls"]>) => doorsInScope({ segments: door, walls, feetPerUnit: FPU, textPt: [], widthPt: W, marks: [], existing: { asideWalls } }).all.length;
+    expect(scope(frame.map((l) => ({ ...l, legend: true as const })))).toBe(0);
+    expect(scope([])).toBe(1);
+    // The same four lines as existing walls, not a legend: the door is still found.
+    expect(scope(frame)).toBe(1);
   });
 
   it("a door the demolition plan draws in the same place, and keeps, is existing to remain", () => {

@@ -49,8 +49,8 @@ export type ExistingDoor = { door: DoorSymbol; route: "wall" | "area" | "tag" | 
 
 /** What a caller knows beyond the page itself. Both optional: without them routes 1 and 4 are silent. */
 export type ExistingDoorEvidence = {
-  /** Walls set aside as existing, page-width units. */
-  asideWalls?: readonly { x1: number; y1: number; x2: number; y2: number; thicknessFeet?: number }[];
+  /** Walls set aside as existing, page-width units; `legend` marks a framed legend box's lines instead (`doorsInScope`). */
+  asideWalls?: readonly { x1: number; y1: number; x2: number; y2: number; thicknessFeet?: number; legend?: true }[];
   /** Doors the paired demolition plan keeps, moved onto this sheet. */
   priorDoors?: readonly { hinge: { x: number; y: number }; strike: { x: number; y: number } }[];
   /** The demolition plan's sheet number, for the sentence. */
@@ -247,6 +247,7 @@ export function existingDoors(input: {
 
   // 1. On a wall already set aside as existing.
   for (const w of input.evidence?.asideWalls ?? []) {
+    if (w.legend) continue;
     const reach = ((w.thicknessFeet ?? 0.5) / 2 + ON_WALL_FEET) / fpu;
     for (const d of doors) {
       const { d: off, t } = toSegment(mid(d), w);
@@ -337,7 +338,24 @@ export function existingDoors(input: {
  * demolition plan says which doors stay (route 4).
  */
 export function asideExistingWalls(lines: readonly { kind: string; x1: number; y1: number; x2: number; y2: number }[]): NonNullable<ExistingDoorEvidence["asideWalls"]> {
-  return lines.filter((l) => l.kind === "existing").map(({ x1, y1, x2, y2 }) => ({ x1, y1, x2, y2 }));
+  return [
+    ...lines.filter((l) => l.kind === "existing").map(({ x1, y1, x2, y2 }) => ({ x1, y1, x2, y2 })),
+    // A framed legend's lines ride along, so every door path drops the legend's door SAMPLES (`insideLegendBox`).
+    ...lines.filter((l) => l.kind === "legend-box").map(({ x1, y1, x2, y2 }) => ({ x1, y1, x2, y2, legend: true as const })),
+  ];
+}
+
+/**
+ * ── A DOOR INSIDE A FRAMED LEGEND IS A SAMPLE, NOT A DOOR ──
+ * Joplin A-101's FLOOR PLAN LEGEND draws "NEW DOOR" as a real swing with a door tag (101), and it scored as
+ * the sheet's best door. The wall side already sets the frame aside whole (`legendBoxes.ts`, kind `legend-box`);
+ * a point is inside it when that frame's lines bound it on all four sides.
+ */
+export function insideLegendBox(p: { x: number; y: number }, lines: readonly { x1: number; y1: number; x2: number; y2: number }[]): boolean {
+  const spans = (a: number, b: number, v: number) => Math.min(a, b) <= v && v <= Math.max(a, b);
+  const across = lines.filter((l) => Math.abs(l.y2 - l.y1) <= 0.1 * Math.abs(l.x2 - l.x1) && spans(l.x1, l.x2, p.x));
+  const down = lines.filter((l) => Math.abs(l.x2 - l.x1) <= 0.1 * Math.abs(l.y2 - l.y1) && spans(l.y1, l.y2, p.y));
+  return across.some((l) => (l.y1 + l.y2) / 2 < p.y) && across.some((l) => (l.y1 + l.y2) / 2 > p.y) && down.some((l) => (l.x1 + l.x2) / 2 < p.x) && down.some((l) => (l.x1 + l.x2) / 2 > p.x);
 }
 
 /** One sentence for the panel. */
