@@ -10,15 +10,18 @@
  */
 export const DOORS_SUGGESTED = "DOORS_SUGGESTED";
 /** One found door, on its leaf line (hinge to strike), page-width units. */
-export type StoredDoor = { x1: number; y1: number; x2: number; y2: number };
+export type StoredDoor = { x1: number; y1: number; x2: number; y2: number; leaves?: 2 };
 export type StoredDoors = { doors: StoredDoor[]; decided?: boolean };
 
 /** The label a confirmed unmarked door's count carries on the "Doors" item. */
 export const CONFIRMED_DOORS_LABEL = "Doors (confirmed, no printed mark)";
+/** A confirmed two-leaf pair: one point per opening, counted as two leaves (`leavesPerPoint`). */
+export const CONFIRMED_DOOR_PAIRS_LABEL = "Double doors (confirmed, no printed mark)";
+export const CONFIRMED_DOOR_LABELS = [CONFIRMED_DOORS_LABEL, CONFIRMED_DOOR_PAIRS_LABEL];
 
 /** The sheet's found doors with no mark, to store; null when there are none. */
-export function doorsToStore(doors: readonly { hinge: { x: number; y: number }; strike: { x: number; y: number } }[], marks: readonly (string | null)[]): StoredDoors | null {
-  const out = doors.flatMap((d, i) => (marks[i] ? [] : [{ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y }]));
+export function doorsToStore(doors: readonly { hinge: { x: number; y: number }; strike: { x: number; y: number }; leaves?: 1 | 2 }[], marks: readonly (string | null)[]): StoredDoors | null {
+  const out = doors.flatMap((d, i) => (marks[i] ? [] : [{ x1: d.hinge.x, y1: d.hinge.y, x2: d.strike.x, y2: d.strike.y, ...(d.leaves === 2 ? { leaves: 2 as const } : {}) }]));
   return out.length === 0 ? null : { doors: out };
 }
 
@@ -26,6 +29,6 @@ export function doorsToStore(doors: readonly { hinge: { x: number; y: number }; 
 export function storedDoorsOf(value: unknown): StoredDoors | null {
   const v = value as Partial<StoredDoors> | null;
   if (v === null || typeof v !== "object" || !Array.isArray(v.doors)) return null;
-  const doors = v.doors.filter((d): d is StoredDoor => d !== null && typeof d === "object" && [d.x1, d.y1, d.x2, d.y2].every((n) => Number.isFinite(n)));
+  const doors = v.doors.filter((d): d is StoredDoor => d !== null && typeof d === "object" && [d.x1, d.y1, d.x2, d.y2].every((n) => Number.isFinite(n))).map((d) => ({ x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2, ...(d.leaves === 2 ? { leaves: 2 as const } : {}) }));
   return { doors, decided: v.decided === true };
 }

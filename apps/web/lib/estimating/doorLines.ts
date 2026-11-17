@@ -13,6 +13,8 @@
  *   - LABOR, at the company's production rates (`doorFramesPerHr`, `doorsPerHr`) and crew rate: one
  *     EA line per task, "Labor — Doors — set hollow-metal frames". A blank rate writes nothing and is
  *     named, as every production rate is.
+ *   - A DOUBLE DOOR is one opening and two leaves (Diego's ruling, 2026-11-16): one frame and one
+ *     opening's framing, and two doors hung. Its point is counted under a "Double doors (…)" label.
  *   - For a framing trade, THE OPENING'S FRAMING, from the company's own partition assembly: its stud
  *     part as king and jack studs and its track part as the header. Those parts are already linked to
  *     the company's price book and supplier list, so these lines are priced, and show where the price
@@ -103,17 +105,22 @@ export function windowLabor(windows: number, scope: DoorScope, rates: { windowFr
   return { lines: [{ description: WINDOWS_LABOR, unit: "EA", quantity: windows, hours: Math.round((windows / rates.windowFramesPerHr) * 100) / 100, perHr: rates.windowFramesPerHr }], missing: [] };
 }
 
-/** The EA labor lines a job's doors come to at the company's rates; a blank rate writes nothing and is named. */
-export function doorLabor(doors: number, scope: DoorScope, rates: { doorFramesPerHr: number | null; doorsPerHr: number | null }): { lines: { description: string; unit: "EA"; quantity: number; hours: number; perHr: number }[]; missing: string[] } {
+/** How many leaves one counted point stands for: a "Double doors (…)" count's points are pairs. */
+export function leavesPerPoint(label: string | null): 1 | 2 {
+  return label?.startsWith("Double doors (") ? 2 : 1;
+}
+
+/** The EA labor lines a job's doors come to: frames per opening, doors hung per leaf. */
+export function doorLabor(doors: number, scope: DoorScope, rates: { doorFramesPerHr: number | null; doorsPerHr: number | null }, leaves = doors): { lines: { description: string; unit: "EA"; quantity: number; hours: number; perHr: number }[]; missing: string[] } {
   if (scope === "BY_OTHERS" || doors <= 0) return { lines: [], missing: [] };
   const lines: { description: string; unit: "EA"; quantity: number; hours: number; perHr: number }[] = [];
   const missing: string[] = [];
-  const add = (description: string, perHr: number | null, name: string) => {
+  const add = (description: string, perHr: number | null, name: string, n: number) => {
     if (perHr === null) missing.push(name);
-    else lines.push({ description: `${DOORS_LABOR_PREFIX}${description}`, unit: "EA", quantity: doors, hours: Math.round((doors / perHr) * 100) / 100, perHr });
+    else lines.push({ description: `${DOORS_LABOR_PREFIX}${description}`, unit: "EA", quantity: n, hours: Math.round((n / perHr) * 100) / 100, perHr });
   };
-  add("set hollow-metal frames", rates.doorFramesPerHr, "setting door frames (frames per hour)");
-  if (scope === "DOORS_AND_FRAMES") add("hang doors, with hardware", rates.doorsPerHr, "hanging doors (doors per hour)");
+  add("set hollow-metal frames", rates.doorFramesPerHr, "setting door frames (frames per hour)", doors);
+  if (scope === "DOORS_AND_FRAMES") add("hang doors, with hardware", rates.doorsPerHr, "hanging doors (doors per hour)", leaves);
   return { lines, missing };
 }
 

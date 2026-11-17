@@ -102,6 +102,9 @@ export function doorAutoPosts(source: DoorSource): boolean {
 /** The item the auto-posted doors are counted on, and the label their count carries. */
 export const AUTO_DOORS_ITEM = "Doors";
 export const AUTO_DOORS_LABEL = "Doors (auto, from printed mark)";
+/** A marked two-leaf pair: one point per opening, counted as two leaves (`leavesPerPoint`). */
+export const AUTO_DOOR_PAIRS_LABEL = "Double doors (auto, from printed mark)";
+export const AUTO_DOOR_LABELS = [AUTO_DOORS_LABEL, AUTO_DOOR_PAIRS_LABEL];
 
 /**
  * ── A MODEL'S SCORE POSTS ITSELF ONLY PAST ITS OWN MEASURED BAR (METHOD v2, parts 2–3) ──

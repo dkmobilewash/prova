@@ -237,7 +237,7 @@ export async function roomsForSheet(input: { planId: string; companyId: string; 
     await writeWallOpenings(page.id, runs, openings.doors, openings.windows, "join" in openings && openings.join ? openings.join.openings : []);
     // The marked doors post themselves where the company allows it (`autoDoors.ts`).
     if ("doorMarks" in openings) {
-      const points = openings.doors.flatMap((d, i) => (openings.doorMarks[i] ? [{ x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2 }] : []));
+      const points = openings.doors.flatMap((d, i) => (openings.doorMarks[i] ? [{ x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2, leaves: d.leaves }] : []));
       await postAutoDoors({ planId: input.planId, pageNumber: input.pageNumber, pageId: page.id, calibrationId: calibration.id, companyId: input.companyId, jobId: input.jobId, userId: input.userId, points });
       // The doors with no mark never post themselves; the queue asks once for the sheet.
       await writeSuggestedDoors(input.planId, input.pageNumber, doorsToStore(openings.doors, openings.doorMarks));

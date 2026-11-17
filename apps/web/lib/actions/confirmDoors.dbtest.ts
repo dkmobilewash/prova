@@ -55,6 +55,16 @@ describe("confirming a sheet's found doors with no printed mark", () => {
     expect((await loadReviewQueue(companyId, jobId)).items.filter((i) => i.kind === "doors").map((i) => i.key)).toEqual(["doors:4"]);
   });
 
+  it("a kept pair is its own count, and Undo takes both counts back", async () => {
+    await prisma.takeoffPlanTextRead.update({ where: { planId_pageNumber_kind: { planId, pageNumber: 4, kind: DOORS_SUGGESTED } }, data: { value: { doors: [d(0.1), { ...d(0.2), leaves: 2 }] } } });
+    const confirmed = await confirmDoors(jobId, planId, 4, [0, 1]);
+    if (!confirmed.ok) throw new Error(confirmed.error);
+    const counts = await prisma.takeoffMeasurement.findMany({ where: { kind: "COUNT", page: { planId } }, select: { label: true, xs: true } });
+    expect(counts.map((c) => [c.label, c.xs.length]).sort((x, y) => String(x[0]).localeCompare(String(y[0])))).toEqual([[CONFIRMED_DOORS_LABEL, 1], ["Double doors (confirmed, no printed mark)", 1]]);
+    expect(await undoConfirmDoors(jobId, planId, 4, confirmed.value.undo)).toEqual({ ok: true });
+    expect(await prisma.takeoffMeasurement.count({ where: { kind: "COUNT", page: { planId } } })).toBe(0);
+  });
+
   it("an index that is not a door is refused", async () => {
     expect(await confirmDoors(jobId, planId, 4, [7])).toMatchObject({ ok: false });
   });

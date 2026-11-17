@@ -12,4 +12,10 @@ describe("found doors with no printed mark, to confirm", () => {
     expect(storedDoorsOf({ doors: [{ x1: 0, y1: 0, x2: 1, y2: 1 }, { x1: "a" }], decided: true })).toEqual({ doors: [{ x1: 0, y1: 0, x2: 1, y2: 1 }], decided: true });
     expect(storedDoorsOf(null)).toBeNull();
   });
+  it("a two-leaf pair keeps its leaves, stored and read back", () => {
+    const stored = doorsToStore([door(0), { ...door(0.5), leaves: 2 as const }], [null, null])!;
+    expect(stored.doors.map((d) => d.leaves)).toEqual([undefined, 2]);
+    expect(storedDoorsOf(JSON.parse(JSON.stringify(stored)))!.doors.map((d) => d.leaves)).toEqual([undefined, 2]);
+    expect(storedDoorsOf({ doors: [{ x1: 0, y1: 0, x2: 1, y2: 1, leaves: 7 }] })!.doors).toEqual([{ x1: 0, y1: 0, x2: 1, y2: 1 }]);
+  });
 });
