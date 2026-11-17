@@ -19,7 +19,11 @@ describe("the rooms either side of a wall", () => {
   });
   it("is the probe the product and the zoned-heights eval both use", () => {
     const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
-    expect(read("./wallHeightsAssign.ts")).toContain("const sideRooms = wallSideRooms(wall, rooms);");
+    // The product now shares one level higher: assignWallHeights calls wallChainWithRooms, which
+    // is the one place the probe runs for product and zero-touch alike (wallChainWithRooms.test.ts
+    // pins that pair). The zoned-heights eval still probes directly, and that stays pinned here.
+    expect(read("./wallHeightsAssign.ts")).toContain("wallChainWithRooms({");
+    expect(read("./wallSides.ts")).toContain("const sideRooms = wallSideRooms(input.wall, input.rooms);");
     expect(read("./realplan/zzZonedHeights.eval.ts")).toContain("wallSideRooms({ xs: [w.x1, w.x2], ys: [w.y1, w.y2] }, found.rooms)");
   });
 });

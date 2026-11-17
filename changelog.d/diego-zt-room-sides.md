@@ -1,3 +1,5 @@
+### Zero-touch prices run-wall board at each wall's own rooms' height
+
 Zero-touch prices each run wall's board at its own rooms' height, through the product's probe
 (`wallChainWithRooms`, one shared function for `assignWallHeights` and the eval), instead of one
 set-level chain height per sheet (#1157's "no room sides"). A wall beside no room falls through the
