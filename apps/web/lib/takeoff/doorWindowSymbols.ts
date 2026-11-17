@@ -92,6 +92,9 @@ export const SWEEP_MAX_DEGREES = 110;
 export const CIRCLE_FIT_TOLERANCE = 0.04;
 /** A piece of a flattened arc is short; one longer than this, in feet, is a wall. */
 export const LONGEST_ARC_PIECE_FEET = 1.5;
+/** A dashed swing's next dash: across a gap of at most this, starting within this many degrees of the last piece's heading. */
+export const DASH_GAP_FEET = 0.6;
+export const DASH_AHEAD_DEGREES = 35;
 /** The leaf's ends must land this close, feet, to the hinge and to the arc's end. */
 export const LEAF_END_TOLERANCE_FEET = 0.5;
 /** A leaf along the radius: both ends this close to the hinge-to-end line, starting within this share of the radius from the hinge, covering this share of it. */
@@ -160,6 +163,7 @@ const turn = (a: StrokeSegment, b: StrokeSegment) => {
 export function arcChains(segments: readonly StrokeSegment[], feetPerUnit: number): Pt[][] {
   const longest = LONGEST_ARC_PIECE_FEET / feetPerUnit;
   const joinTol = 0.02 / feetPerUnit;
+  const dashGap = DASH_GAP_FEET / feetPerUnit;
   const chains: Pt[][] = [];
   let chain: Pt[] = [];
   let prev: StrokeSegment | null = null;
@@ -168,15 +172,25 @@ export function arcChains(segments: readonly StrokeSegment[], feetPerUnit: numbe
   for (const s of segments) {
     const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
     if (len > longest || len === 0) { flush(); continue; }
+    let across = false;
     if (prev !== null) {
-      const joined = Math.hypot(prev.x2 - s.x1, prev.y2 - s.y1) <= joinTol;
+      const gap = Math.hypot(prev.x2 - s.x1, prev.y2 - s.y1);
+      const joined = gap <= joinTol;
       const t = turn(prev, s);
       const small = Math.abs(t) > 0.01 && Math.abs(t) < 0.6;
       const same = sign === 0 || Math.sign(t) === sign;
-      if (!joined || !small || !same) flush();
-      else sign = Math.sign(t);
+      // ── A DASHED SWING: THE NEXT DASH CARRIES ON AHEAD ACROSS A SHORT GAP ──
+      // Broadway A1.0 draws its door swings dashed, so each dash was a separate 9-degree "arc" and no swing on
+      // the sheet was ever whole (10 missed key doors). Across a gap of at most `DASH_GAP_FEET`, a piece that
+      // starts ahead of the last one (within `DASH_AHEAD_DEGREES` of its heading) and turns the same way by a
+      // little continues the chain.
+      const prevLen = Math.hypot(prev.x2 - prev.x1, prev.y2 - prev.y1);
+      const ahead = gap > joinTol && gap <= dashGap && prevLen > 0 &&
+        ((s.x1 - prev.x2) * (prev.x2 - prev.x1) + (s.y1 - prev.y2) * (prev.y2 - prev.y1)) / (gap * prevLen) >= Math.cos((DASH_AHEAD_DEGREES * Math.PI) / 180);
+      if (!(joined || ahead) || !small || !same) flush();
+      else { sign = Math.sign(t); across = ahead; }
     }
-    if (prev === null) chain.push({ x: s.x1, y: s.y1 });
+    if (prev === null || across) chain.push({ x: s.x1, y: s.y1 });
     chain.push({ x: s.x2, y: s.y2 });
     prev = s;
   }
