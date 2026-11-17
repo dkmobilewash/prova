@@ -349,13 +349,17 @@ export function asideExistingWalls(lines: readonly { kind: string; x1: number; y
  * ── A DOOR INSIDE A FRAMED LEGEND IS A SAMPLE, NOT A DOOR ──
  * Joplin A-101's FLOOR PLAN LEGEND draws "NEW DOOR" as a real swing with a door tag (101), and it scored as
  * the sheet's best door. The wall side already sets the frame aside whole (`legendBoxes.ts`, kind `legend-box`);
- * a point is inside it when that frame's lines bound it on all four sides.
+ * a point is inside it when that frame's lines bound it on at least three sides. Three, not four: a frame's top
+ * rule under its title is often taken first as the title's underline (Joplin's is), so only three sides come
+ * through as `legend-box`. Legend-box lines exist only round a framed, titled block, so three of them round a
+ * point is the block; two (an L) is not.
  */
 export function insideLegendBox(p: { x: number; y: number }, lines: readonly { x1: number; y1: number; x2: number; y2: number }[]): boolean {
   const spans = (a: number, b: number, v: number) => Math.min(a, b) <= v && v <= Math.max(a, b);
   const across = lines.filter((l) => Math.abs(l.y2 - l.y1) <= 0.1 * Math.abs(l.x2 - l.x1) && spans(l.x1, l.x2, p.x));
   const down = lines.filter((l) => Math.abs(l.x2 - l.x1) <= 0.1 * Math.abs(l.y2 - l.y1) && spans(l.y1, l.y2, p.y));
-  return across.some((l) => (l.y1 + l.y2) / 2 < p.y) && across.some((l) => (l.y1 + l.y2) / 2 > p.y) && down.some((l) => (l.x1 + l.x2) / 2 < p.x) && down.some((l) => (l.x1 + l.x2) / 2 > p.x);
+  const sides = [across.some((l) => (l.y1 + l.y2) / 2 < p.y), across.some((l) => (l.y1 + l.y2) / 2 > p.y), down.some((l) => (l.x1 + l.x2) / 2 < p.x), down.some((l) => (l.x1 + l.x2) / 2 > p.x)];
+  return sides.filter(Boolean).length >= 3;
 }
 
 /** One sentence for the panel. */

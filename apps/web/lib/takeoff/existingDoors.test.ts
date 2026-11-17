@@ -79,8 +79,9 @@ describe("existing doors set aside", () => {
     const frame = [{ x1: 0.4, y1: 0.4, x2: 0.65, y2: 0.4 }, { x1: 0.4, y1: 0.6, x2: 0.65, y2: 0.6 }, { x1: 0.4, y1: 0.4, x2: 0.4, y2: 0.6 }, { x1: 0.65, y1: 0.4, x2: 0.65, y2: 0.6 }];
     expect(insideLegendBox({ x: 0.5, y: 0.5 }, frame)).toBe(true);
     expect(insideLegendBox({ x: 0.7, y: 0.5 }, frame)).toBe(false);
-    // Three sides is not a frame.
-    expect(insideLegendBox({ x: 0.5, y: 0.5 }, frame.slice(0, 3))).toBe(false);
+    // Three sides is the frame (Joplin's top rule went to its title's underline); two, an L, is not.
+    expect(insideLegendBox({ x: 0.5, y: 0.5 }, frame.slice(1))).toBe(true);
+    expect(insideLegendBox({ x: 0.5, y: 0.5 }, [frame[1]!, frame[2]!])).toBe(false);
     const scope = (asideWalls: NonNullable<ExistingDoorEvidence["asideWalls"]>) => doorsInScope({ segments: door, walls, feetPerUnit: FPU, textPt: [], widthPt: W, marks: [], existing: { asideWalls } }).all.length;
     expect(scope(frame.map((l) => ({ ...l, legend: true as const })))).toBe(0);
     expect(scope([])).toBe(1);
