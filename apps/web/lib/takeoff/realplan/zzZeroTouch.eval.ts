@@ -26,6 +26,8 @@ import { ceilingsForRooms, type CeilingPageText } from "../roomCeilings";
 import { roofPartsFor, type StoredRoofParts } from "../roofPartsRead";
 import { sheetRooms } from "../sheetRooms";
 import { wallChainWithRooms } from "../wallSides";
+import { keyWallFeet, loadKeyTypes, parseRoomZoneKey, type HeightsKeyType, type RoomZone } from "../roomZoneKey";
+import { wallSideRooms } from "../wallSides";
 import { sheetViews } from "../sheetViews";
 
 /**
@@ -105,28 +107,23 @@ const NOMINAL_FEET = Number(process.env.ZT_DEFAULT_FEET ?? "9");
  * not the whole term.
  */
 const HEIGHTS = process.env.ZT_HEIGHTS ?? "";
-const heightsByLabelSet: Record<string, Record<string, number>> = {};
+// Key-side zoned pricing (Diego 2026-11-17): the full typed entries per labelSet, loaded through
+// `loadKeyTypes` (keys uppercased, sameAs chains materialized to 5 hops — the flat loader's rules),
+// priced per key wall by `keyWallFeet`: sheet zone, then room zone through the set's zone key
+// (ZT_ZONE_KEYS "<labelSet>=<md path>,...", the coordination/*-room-parts-key.md files), then the
+// scalar, then the default — with the default/unresolved walls still feeding the ZTBOARD worklist.
+const keyTypesByLabelSet: Record<string, Record<string, HeightsKeyType>> = {};
+const zoneKeyByLabelSet: Record<string, Map<string, RoomZone>> = {};
+for (const pair of (process.env.ZT_ZONE_KEYS ?? "").split(",").filter((x) => x.includes("="))) {
+  const at = pair.indexOf("=");
+  const labelSet = pair.slice(0, at), path = pair.slice(at + 1);
+  if (existsSync(path)) zoneKeyByLabelSet[labelSet] = parseRoomZoneKey(readFileSync(path, "utf8"));
+}
 if (HEIGHTS !== "" && existsSync(HEIGHTS)) {
-  const hk = JSON.parse(readFileSync(HEIGHTS, "utf8")) as { sets?: Record<string, { labelSet?: string; types?: Record<string, { feet?: number; sameAs?: string }> }> };
+  const hk = JSON.parse(readFileSync(HEIGHTS, "utf8")) as { sets?: Record<string, { labelSet?: string; types?: Record<string, HeightsKeyType> }> };
   for (const one of Object.values(hk.sets ?? {})) {
     if (one.labelSet === undefined) continue;
-    const m: Record<string, number> = {};
-    const types = one.types ?? {};
-    for (const [t, v] of Object.entries(types)) if (typeof v.feet === "number") m[t.toUpperCase()] = v.feet;
-    // A `sameAs` type takes its REFERENT's height (scripts/heights/compare.py's rule), never the
-    // 9 ft default: Green Bay/McAllen IW-2..IW-9, SW A2..B2, Bunkie P06..P09 — 35 entries in r16
-    // that were all pricing as coverage gaps. Chain-safe to 5 hops; an unresolvable chain stays out.
-    for (const [t, v] of Object.entries(types)) {
-      if (typeof v.feet === "number") continue;
-      let at = v.sameAs;
-      for (let hop = 0; hop < 5 && at !== undefined; hop += 1) {
-        const ref = types[at] ?? types[at.toUpperCase()];
-        if (ref === undefined) break;
-        if (typeof ref.feet === "number") { m[t.toUpperCase()] = ref.feet; break; }
-        at = ref.sameAs;
-      }
-    }
-    heightsByLabelSet[one.labelSet] = m;
+    keyTypesByLabelSet[one.labelSet] = loadKeyTypes(one.types ?? {});
   }
 }
 
@@ -189,6 +186,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     const planHeightsBySet = new Map<string, { rule: SetHeightRule | null; figures: Omit<SetFigures, "floorToFloorFt">; marks: LevelMark[]; roofs: Map<number, StoredRoofParts>; ceilingPages: CeilingPageText[] }>();
     // #1198 wired: instrument counters for the ROOMSIDES line (one group per process).
     let rsRooms = 0, rsWalls = 0, rsMoved = 0;
+    let kzSheet = 0, kzRoom = 0, kzUnresolved = 0;
     const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number; zeroBoardSf: number; lf10BoardSf: number }>();
     for (const dir of readdirSync(LABELS).sort()) {
       if (!existsSync(join(LABELS, dir)) || (heldOutReason(dir) !== null) !== HELD) continue;
@@ -329,18 +327,30 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         let junkLf = 0;
         for (let at = 0; at < runs.length; at += 1) if (!held.has(runs[at]!) && junk[at]) junkLf += runs[at]!.lengthFeet;
         const missedLf = Math.max(0, keyLf - (zeroLf - junkLf));
-        const hs = heightsByLabelSet[dir] ?? {};
+        const keyTypes = keyTypesByLabelSet[dir] ?? {};
+        const zoneKey = zoneKeyByLabelSet[dir] ?? null;
+        // Rooms for the KEY walls, only when this set's key has a room-kind zone to resolve: rooms
+        // close from the LABELLED walls (as zzZonedHeights — wall finding is not what is priced here).
+        const keyHasRoomZones = Object.values(keyTypes).some((t) => (t.zones ?? []).some((z) => z.kind !== "sheet"));
+        let keyWallRooms: ((k: (typeof key)[number]) => (string | null)[]) = () => [];
+        if (keyHasRoomZones && zoneKey !== null) {
+          const keyFound = sheetRooms({ pairings: [], runs: key.map((k) => ({ x1: k.x1, y1: k.y1, x2: k.x2, y2: k.y2, thicknessFeet: k.thicknessFeet ?? 0.5 })) as never, drawn: [], segments: unitSegments, doorLeaves: [], feetPerUnit: fpu, text: text.items, widthPt: W });
+          keyWallRooms = (k) => wallSideRooms({ xs: [k.x1, k.x2], ys: [k.y1, k.y2] }, keyFound.rooms).map((r) => r?.tag?.number ?? null);
+        }
         let keyBoardSf = 0;
         let defaultedBoardSf = 0;
         for (const k of key) {
           const t = (((k as { wallType?: string }).wallType ?? "").trim()).toUpperCase();
-          const ft = hs[t];
-          if (ft === undefined) {
+          const r = keyWallFeet({ code: t, types: keyTypes, sheet, sideRoomNumbers: keyWallRooms(k), zoneKey, defaultFeet: NOMINAL_FEET });
+          keyBoardSf += k.lengthFeet * r.feet * 2;
+          if (r.from === "sheet-zone") kzSheet += 1;
+          if (r.from === "room-zone") kzRoom += 1;
+          if (r.from === "zone-unresolved") kzUnresolved += 1;
+          if (r.from === "default" || r.from === "zone-unresolved") {
             defaultedBoardSf += k.lengthFeet * NOMINAL_FEET * 2;
             if (t !== "" && t !== "0" && t !== "U") unmatchedSpellings[`${dir.slice(0, 18)}:${t}`] = (unmatchedSpellings[`${dir.slice(0, 18)}:${t}`] ?? 0) + k.lengthFeet;
-          } else keyBoardSf += k.lengthFeet * ft * 2;
+          }
         }
-        keyBoardSf += defaultedBoardSf;
         const unpricedBoardSf = defaultedBoardSf;
         const keyByType: Record<string, number> = {};
         for (const k of key) {
@@ -357,6 +367,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     const group = HELD ? "HELD-OUT" : "TRAINING";
     console.log(`ZT RUNMODEL ${group}: ${RUN_MODEL === null ? "OFF (TAKEOFF_WALL_RUN_MODEL unset)" : "ON (remove-only below 0.10)"}`);
     console.log(`ZT ROOMSIDES ${group}: ON — rooms ${rsRooms} · run walls ${rsWalls} · heights moved by room sides ${rsMoved}`);
+    console.log(`ZT KEYZONES ${group}: ON — key walls priced sheet-zone ${kzSheet} · room-zone ${kzRoom} · zone-unresolved ${kzUnresolved}`);
     let zb = 0, kb = 0, tb = 0;
     let totalErr = 0;
     const cause = { junkNew: 0, junkReno: 0, missed: 0, board: 0, doors: 0, windows: 0, doorsOver: 0, doorsAtFrames: 0, doorsAtFull: 0, windowsInfo: 0, unpricedBoard: 0 };

@@ -61,7 +61,7 @@ export function wallKeyHeight(sideRooms: readonly (string | null)[], key: Readon
 }
 
 /** A heights-key type entry (heights-key-r16.json): one height, zones, or the same as another type. */
-export type HeightsKeyType = { feet?: number; basis?: string; zones?: { zone: string; kind: string; feet: unknown }[]; excluded?: boolean; sameAs?: string };
+export type HeightsKeyType = { feet?: number; basis?: string; zones?: { zone: string; kind: string; feet: unknown; sheets?: string[] }[]; excluded?: boolean; sameAs?: string };
 
 /** "C6" → the key's "C" when the key has no "C6" (the letter's entry, as the round-14 scorer did). */
 export function keyTypeFor<T extends HeightsKeyType>(types: Record<string, T>, code: string): [string, T] | null {
@@ -71,4 +71,59 @@ export function keyTypeFor<T extends HeightsKeyType>(types: Record<string, T>, c
   // "IW-4": { sameAs: "IW-1" } is IW-1's height.
   const t = types[found]!;
   return t.sameAs && types[t.sameAs] ? [found, { ...types[t.sameAs]!, excluded: t.excluded ?? types[t.sameAs]!.excluded }] : [found, t];
+}
+
+/**
+ * ── THE KEY'S PRICE FOR ONE KEY WALL (zero-touch's key side, Diego 2026-11-17) ──
+ *
+ * The heights key stopped being one scalar per type: a type can be priced by the SHEET it is on
+ * (Hutto's levels, kind "sheet" naming its sheets), by the ROOM ZONE beside the wall (Joplin,
+ * kind "room", through the set's zone key), or by a plain figure. In that order — a zone is more
+ * specific than the type's own scalar (Joplin K prices 9 ft except in the rooms its zone names).
+ * A wall whose zones cannot resolve (no zone key, rooms disagree, no keyed room beside it) prices
+ * at the default and says so, so the ZTBOARD worklist keeps naming it instead of hiding it.
+ */
+export type KeyWallFrom = "scalar" | "sheet-zone" | "room-zone" | "default" | "zone-unresolved";
+export function keyWallFeet(input: {
+  code: string;
+  types: Record<string, HeightsKeyType>;
+  sheet: string;
+  sideRoomNumbers: readonly (string | null)[];
+  zoneKey: ReadonlyMap<string, RoomZone> | null;
+  defaultFeet: number;
+}): { feet: number; from: KeyWallFrom } {
+  const hit = keyTypeFor(input.types, input.code.toUpperCase());
+  if (hit === null || hit[1].excluded) return { feet: input.defaultFeet, from: "default" };
+  const t = hit[1];
+  const zones = t.zones ?? [];
+  const sheetZone = zones.find((z) => z.kind === "sheet" && (z.sheets ?? []).includes(input.sheet) && typeof z.feet === "number");
+  if (sheetZone !== undefined) return { feet: sheetZone.feet as number, from: "sheet-zone" };
+  const roomZones = zones.filter((z) => z.kind !== "sheet");
+  if (roomZones.length > 0 && input.zoneKey !== null) {
+    const h = wallKeyHeight(input.sideRoomNumbers, input.zoneKey, roomZones);
+    if (h !== null) return { feet: h.feet, from: "room-zone" };
+  }
+  if (typeof t.feet === "number") return { feet: t.feet, from: "scalar" };
+  return { feet: input.defaultFeet, from: zones.length > 0 ? "zone-unresolved" : "default" };
+}
+
+/**
+ * A heights-key set's types, LOADED for pricing: keys uppercased (plan codes compare uppercase) and
+ * `sameAs` chains materialized to 5 hops, so `keyTypeFor`'s single hop sees a finished entry — the
+ * r16 flat loader did both and 35 entries depended on it.
+ */
+export function loadKeyTypes(raw: Record<string, HeightsKeyType>): Record<string, HeightsKeyType> {
+  const up: Record<string, HeightsKeyType> = {};
+  for (const [k, v] of Object.entries(raw)) up[k.toUpperCase()] = { ...v, ...(v.sameAs === undefined ? {} : { sameAs: v.sameAs.toUpperCase() }) };
+  const out: Record<string, HeightsKeyType> = {};
+  for (const [k, v] of Object.entries(up)) {
+    let t = v;
+    for (let hop = 0; hop < 5 && t.sameAs !== undefined; hop += 1) {
+      const ref = up[t.sameAs];
+      if (ref === undefined) break;
+      t = { ...ref, excluded: t.excluded ?? ref.excluded };
+    }
+    out[k] = { ...t, sameAs: undefined } as HeightsKeyType;
+  }
+  return out;
 }
