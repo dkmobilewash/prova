@@ -631,6 +631,7 @@ export const estimatingExclusions: Exclusion[] = [
   { action: "deleteTakeoffPlan", reason: "Deletes are never commands (T5)." },
   { action: "saveTakeoffCalibration", reason: "A scale is set by dragging along a dimension on the drawing; a model has not seen the drawing." },
   { action: "confirmSheetScales", reason: "Confirming a set's scales is a person accepting what the plan set screen shows them, sheet by sheet; every quantity on the job is measured at those scales, so the press stays theirs." },
+  { action: "saveViewScale", reason: "On a sheet of several drawings at different scales, which drawing is being measured is the person's pick (Diego, 2026-11-18); nothing chooses it for them, so the press stays theirs." },
   { action: "saveSureScale", reason: "A Sure scale is saved by the person looking at the sheet, who sees the dimension it came from and can Undo it; every quantity on the sheet is measured at it, so the press stays theirs." },
   { action: "undoSheetScale", reason: "Undo of a scale somebody just saved on the toolbar, pressed beside the scale it takes back; it deletes a calibration, which is never a command (T5)." },
   { action: "applyPrintedScales", reason: "Setting every sheet's printed scale in one press is decided from the sheet list, by somebody who can see which sheets print it; it writes a calibration per sheet, the same scale write a model never makes." },

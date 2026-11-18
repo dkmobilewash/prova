@@ -37,6 +37,7 @@
 // The workspace package, resolved the way `set-review-scales.mjs` does it: a
 // bare "@prisma/client" does not resolve from apps/web.
 import pkg from "../../../packages/db/node_modules/@prisma/client/default.js";
+import { viewToCalibrate } from "./view-scale-choice.mjs";
 
 const { PrismaClient } = pkg;
 
@@ -185,29 +186,19 @@ async function main() {
         typeof v.to === "number" &&
         typeof v.from === "number",
     );
-    if (usable.length > 0 && (text?.widthPt ?? 0) > 0) {
-      // By AREA, not width — #1183's fix, which landed in `set-review-scales.mjs`
-      // and missed this copy of the same logic. The width sort put Mid-City
-      // A4.0 (p63) on the ROOF plan's 1/16" while the Building "A" floor plan
-      // prints 3/32": every wall would have measured 1.5x long.
-      const area = (v) => Math.abs(v.to - v.from) * Math.abs((v.toY ?? 0) - (v.fromY ?? 0));
-      const view = [...usable].sort((a, b) => area(b) - area(a))[0];
-      // And when the views DISAGREE on scale, the biggest drawing can still be
-      // the wrong one (Mid-City p63's roof plan out-areas its floor plan), so
-      // say so loudly instead of calibrating in silence. The calibration is
-      // still written — the Mack p9 ruling accepts the biggest view's caption,
-      // with Chrome tracing only inside that view — but a reader building a
-      // round from this output can now see the sheet needs the workspace's own
-      // per-view scale flow instead.
-      const scales = [...new Set(usable.map((v) => v.scaleName))];
-      if (scales.length > 1) {
-        console.log(
-          `  p${reading.pageNumber} WARNING: ${usable.length} views at ${scales.length} scales ` +
-            `(${scales.join(" / ")}); calibrating from the biggest view "${view.name}" ` +
-            `(${view.scaleName}). If the drawing to key is NOT that view, set the scale in the ` +
-            `workspace's per-view flow instead and delete this calibration.`,
-        );
-      }
+    // Views that DISAGREE on scale get no calibration (Diego, 2026-11-18): the
+    // person picks the drawing's scale with one press in the workspace. See
+    // `view-scale-choice.mjs` for Mid-City p63, where the biggest view is wrong.
+    const choice = viewToCalibrate(usable);
+    if (usable.length > 0 && choice.view === null) {
+      notReady.push({
+        page: reading.pageNumber,
+        why: `${usable.length} views at ${choice.scales.length} scales (${choice.scales.join(" / ")}): pick the drawing's scale in the workspace (one press)`,
+      });
+      continue;
+    }
+    if (choice.view !== null && (text?.widthPt ?? 0) > 0) {
+      const view = choice.view;
       const inset = (view.to - view.from) * 0.05;
       const x1 = view.from + inset;
       const x2 = view.to - inset;
