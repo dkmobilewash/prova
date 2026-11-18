@@ -186,7 +186,28 @@ async function main() {
         typeof v.from === "number",
     );
     if (usable.length > 0 && (text?.widthPt ?? 0) > 0) {
-      const view = [...usable].sort((a, b) => b.to - b.from - (a.to - a.from))[0];
+      // By AREA, not width — #1183's fix, which landed in `set-review-scales.mjs`
+      // and missed this copy of the same logic. The width sort put Mid-City
+      // A4.0 (p63) on the ROOF plan's 1/16" while the Building "A" floor plan
+      // prints 3/32": every wall would have measured 1.5x long.
+      const area = (v) => Math.abs(v.to - v.from) * Math.abs((v.toY ?? 0) - (v.fromY ?? 0));
+      const view = [...usable].sort((a, b) => area(b) - area(a))[0];
+      // And when the views DISAGREE on scale, the biggest drawing can still be
+      // the wrong one (Mid-City p63's roof plan out-areas its floor plan), so
+      // say so loudly instead of calibrating in silence. The calibration is
+      // still written — the Mack p9 ruling accepts the biggest view's caption,
+      // with Chrome tracing only inside that view — but a reader building a
+      // round from this output can now see the sheet needs the workspace's own
+      // per-view scale flow instead.
+      const scales = [...new Set(usable.map((v) => v.scaleName))];
+      if (scales.length > 1) {
+        console.log(
+          `  p${reading.pageNumber} WARNING: ${usable.length} views at ${scales.length} scales ` +
+            `(${scales.join(" / ")}); calibrating from the biggest view "${view.name}" ` +
+            `(${view.scaleName}). If the drawing to key is NOT that view, set the scale in the ` +
+            `workspace's per-view flow instead and delete this calibration.`,
+        );
+      }
       const inset = (view.to - view.from) * 0.05;
       const x1 = view.from + inset;
       const x2 = view.to - inset;
