@@ -57,6 +57,8 @@ export type ExistingDoorEvidence = {
   priorSheet?: string;
   /** Mark prefixes the set's door schedule page(s) define as existing (`existingPrefixes` over their text). */
   existingPrefixes?: readonly string[];
+  /** Marks the set's door schedule lists under an EXISTING section (`existingScheduleMarks`), normalised (`normalMark`). */
+  existingMarks?: readonly string[];
   /** A person chose to count this sheet's existing doors (`existingDoorsCounted.ts`): nothing is set aside. */
   counted?: boolean;
 };
@@ -192,6 +194,42 @@ function hatchStrokesNear(segments: readonly StrokeSegment[], p: { x: number; y:
     if (toSegment(p, s).d <= reach) n += 1;
   }
   return n;
+}
+
+/** A door mark as a schedule's MARK column prints it: E118, E-118, S104, 101, 102A. */
+export const SCHEDULE_MARK = /^[A-Z]{0,2}-?\d{1,4}[A-Z]?$/;
+/** A mark as compared: upper case, hyphens and spaces gone (E-118 = E118). */
+export const normalMark = (m: string): string => m.toUpperCase().replace(/[\s-]+/g, "");
+const EXISTING_SCHEDULE = /\bDOOR\b.*\bSCHEDULE\b.*\bEXIST(?:ING\b|\.)|\bEXISTING\b.*\bDOOR\b.*\bSCHEDULE\b/i;
+/** A rehung door is new work even when the existing schedule lists it (Sedgwick's S104-S107: SALVAGE DOOR AND HARDWARE). */
+const SALVAGE = /\b(?:SALVAGE[DS]?|RELOCATED?|REUSED?|REINSTALL(?:ED)?)\b/i;
+
+/**
+ * The marks a set's door schedule lists under a section titled EXISTING ("DOOR & FRAME SCHEDULE - EXISTING",
+ * Sedgwick County Courthouse Annex p63), less those its remarks salvage, relocate, reuse or reinstall. Each page is
+ * its positioned text, page points. Empty when no schedule page has such a section: then nothing changes.
+ */
+export function existingScheduleMarks(pages: readonly (readonly TextItem[])[]): string[] {
+  const out = new Set<string>();
+  const IN = 72;
+  for (const items of pages) {
+    const rows = textRows(items);
+    const headings = rows.filter((r) => /\bSCHEDULE\b/i.test(r.str));
+    for (const h of rows.filter((r) => EXISTING_SCHEDULE.test(r.str))) {
+      const markHead = rows.filter((r) => r.str.trim().toUpperCase() === "MARK" && r.y > h.y && r.y - h.y <= IN && Math.abs(r.x - h.x) <= 1.5 * IN).sort((a, b) => a.y - b.y)[0];
+      const colX = markHead?.x ?? h.x, top = markHead?.y ?? h.y;
+      const rightEdge = Math.min(...headings.filter((o) => o !== h && o.x > h.x + h.width / 2 && Math.abs(o.y - h.y) <= IN).map((o) => o.x), Infinity);
+      const marks = rows.filter((r) => r.y > top && Math.abs(r.x - colX) <= 0.3 * IN && SCHEDULE_MARK.test(r.str.trim())).sort((a, b) => a.y - b.y);
+      let prev = top;
+      for (const m of marks) {
+        if (m.y - prev > 0.5 * IN) break;
+        prev = m.y;
+        const remarks = rows.filter((r) => r !== m && Math.abs(r.y - m.y) <= 2 && r.x > m.x && r.x < rightEdge).map((r) => r.str).join(" ");
+        if (!SALVAGE.test(remarks)) out.add(normalMark(m.str.trim()));
+      }
+    }
+  }
+  return [...out].sort();
 }
 
 /** "NOT IN CONSTRUCTION" on one line (route 2). */
@@ -376,6 +414,17 @@ export function existingDoors(input: {
       if (!defined.has(prefix) && !byPlan) continue;
       const source = defined.has(prefix) ? `the set calls prefix "${prefix}" existing` : `${input.evidence?.priorSheet ?? "the demolition plan"} keeps ${kept} of the ${list.length} "${prefix}-" doors`;
       for (const e of list) set(e.door, "series", `tagged "${e.mark}": ${source}`);
+    }
+  }
+  // 5b. Its own mark is one the door schedule lists under an EXISTING section (Sedgwick p63: E001 ... E229).
+  const listed = new Set(input.evidence?.existingMarks ?? []);
+  if (listed.size > 0) {
+    const reach = DOOR_TAG_REACH_FEET / fpu;
+    const tags = textRows(input.textPt).filter((r) => SCHEDULE_MARK.test(r.str.trim())).map((r) => ({ str: r.str.trim(), at: centre(r) }));
+    for (const d of doors) {
+      if (out.has(d)) continue;
+      const own = tags.map((m) => ({ ...m, d: Math.hypot(m.at.x - mid(d).x, m.at.y - mid(d).y) })).filter((m) => m.d <= reach).sort((a, b) => a.d - b.d)[0];
+      if (own !== undefined && listed.has(normalMark(own.str))) set(d, "series", `marked "${own.str}": the door schedule lists it as existing`);
     }
   }
   // 6. Drawn in the existing pen, where the sheet draws its doors dark.

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { DOOR_TAG_REACH_FEET, tagsNameEveryWindow } from "../doorWindowSymbols";
 import { doorsAndWindowsForSheet } from "../doorsWindows";
-import { asideExistingWalls, existingPrefixes } from "../existingDoors";
+import { asideExistingWalls, existingPrefixes, existingScheduleMarks } from "../existingDoors";
 import { excludedSheetReason, heldOutReason } from "../heldOutSets";
 import { priorPlanFor } from "../priorPlan";
 import { keyFromLabels } from "../heldOutScore";
@@ -93,6 +93,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       // The table's stand-in for the ingest's DOOR schedule pages (`doorSchedulePagesOf`): pages whose words name a door
       // schedule, not a "SEE DOOR SCHEDULE" pointer. Their words can define a door series as existing (`existingPrefixes`).
       let schedulePrefixes: string[] | null = null;
+      let scheduleMarks: string[] = [];
       const windowRows = cachedWindowRows(pdf);
       for (const name of names) {
         const sheet = name.slice(0, -5);
@@ -107,11 +108,14 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
         if (schedulePrefixes === null) {
           const texts: string[] = [];
+          const pages: Parameters<typeof existingScheduleMarks>[0][number][] = [];
           for (let p = 1; p <= doc.pageCount; p += 1) {
-            const words = (await doc.pageText(p)).items.map((i) => i.str).join(" ");
-            if (/(?<!SEE )DOOR SCHEDULE/i.test(words)) texts.push(words);
+            const items = (await doc.pageText(p)).items;
+            const words = items.map((i) => i.str).join(" ");
+            if (/(?<!SEE )DOOR SCHEDULE/i.test(words)) { texts.push(words); pages.push(items); }
           }
           schedulePrefixes = existingPrefixes(texts);
+          scheduleMarks = existingScheduleMarks(pages);
         }
         if (scheduleInSet === null) {
           scheduleInSet = false;
@@ -137,7 +141,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const stored = d.found.regroup(offered.offeredRuns).flatMap((g) => g.runs as readonly { x1: number; y1: number; x2: number; y2: number; thicknessFeet: number }[]).map((r) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, thicknessFeet: r.thicknessFeet }));
         const inputs = openingInputs({ runs: stored, feetPerUnit: fpu, widthPt: W, segmentsPt: strokes.segments });
         // The walls the stage set aside as existing: a door on one is set aside too (`existingDoors.ts`).
-        const existing = { asideWalls: asideExistingWalls(offered.setAsideLines), existingPrefixes: schedulePrefixes, ...(prior === null || prior.lines === null ? {} : { priorDoors: prior.doors ?? [], priorSheet: `p${demoPage}` }) };
+        const existing = { asideWalls: asideExistingWalls(offered.setAsideLines), existingPrefixes: schedulePrefixes, existingMarks: scheduleMarks, ...(prior === null || prior.lines === null ? {} : { priorDoors: prior.doors ?? [], priorSheet: `p${demoPage}` }) };
         const door = productDoorRows({ ...inputs, textPt: textItems, existing });
         const { segments, walls } = inputs;
         const { context, tags } = door;

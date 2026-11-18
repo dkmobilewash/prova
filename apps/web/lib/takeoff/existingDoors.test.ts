@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { doorsAndWindowsForSheet } from "./doorsWindows";
 import { doorSymbols } from "./doorWindowSymbols";
-import { asideExistingWalls, dashedBoxAround, dashedLines, doorPen, existingDoors, existingPrefixes, insideLegendBox, swingSide, type ExistingDoorEvidence } from "./existingDoors";
+import { asideExistingWalls, dashedBoxAround, dashedLines, doorPen, existingDoors, existingPrefixes, existingScheduleMarks, insideLegendBox, swingSide, type ExistingDoorEvidence } from "./existingDoors";
 import { doorsInScope } from "./doorsWindows";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
@@ -464,5 +464,32 @@ describe("a hinge on a centre mark is a radius dimension, not a door (F12: Subst
   it("an x on the hinge, 45 degrees to the leaf, is not a centre mark (F12': Joplin A-101's real door)", () => {
     const x = [{ x1: 0.5 - ft(0.23), y1: 0.5 - ft(0.23), x2: 0.5 + ft(0.23), y2: 0.5 + ft(0.23) }, { x1: 0.5 - ft(0.23), y1: 0.5 + ft(0.23), x2: 0.5 + ft(0.23), y2: 0.5 - ft(0.23) }];
     expect(counted(x)).toBe(1);
+  });
+});
+
+describe("marks a door schedule lists under an EXISTING section (F15: Sedgwick County Courthouse Annex p63)", () => {
+  // Page points, y at the baseline. The EXISTING table at the left, the new-door schedule beside it.
+  const item = (str: string, x: number, y: number) => ({ str, x, y, width: str.length * 4, height: 6 });
+  const page = [
+    item("DOOR & FRAME SCHEDULE - EXISTING", 100, 100), item("MARK", 105, 130), item("REMARKS", 200, 130),
+    item("E001", 105, 142), item("PAINT, NEW HARDWARE", 150, 142),
+    item("E-125", 105, 154), item("PAINT", 150, 154),
+    item("S104", 105, 166), item("SALVAGE DOOR AND HARDWARE", 150, 166),
+    // A long gap ends the section: a later stray mark in the column is not the schedule's.
+    item("E999", 105, 300),
+    item("DOOR & FRAME SCHEDULE", 400, 100), item("MARK", 405, 130), item("101", 405, 142), item("WD", 450, 142),
+  ];
+  it("reads the section's marks, normalised, less the salvaged one, the stray below a gap and the other table's", () => {
+    expect(existingScheduleMarks([page])).toEqual(["E001", "E125"]);
+  });
+  it("a schedule page with no EXISTING section gives nothing, so nothing changes", () => {
+    expect(existingScheduleMarks([page.filter((i) => !i.str.includes("EXISTING"))])).toEqual([]);
+  });
+  it("a plan door tagged with a listed mark is set aside; an unlisted mark, or no list, sets nothing aside", () => {
+    const tag = word("E125", 0.51, 0.515);
+    expect(run([], [tag], { existingMarks: ["E001", "E125"] }).map((e) => e.why)).toEqual(['marked "E125": the door schedule lists it as existing']);
+    expect(run([], [word("E126", 0.51, 0.515)], { existingMarks: ["E001", "E125"] })).toEqual([]);
+    expect(run([], [tag], { existingMarks: [] })).toEqual([]);
+    expect(run([], [tag])).toEqual([]);
   });
 });
