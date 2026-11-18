@@ -27,7 +27,7 @@ import { PLAN_PDF_TRANSPORT } from "@/lib/takeoff/planPdfTransport";
 import { DISTINCT_MARKS, DOOR_COLOUR, LAYER_COLOURS, ROOM_COLOUR, markFor } from "@/lib/takeoff/clusterMarks";
 import { TakeoffLayerPanel, type Layer } from "@/components/TakeoffLayerPanel";
 import { defaultLayerName, layerKeyOf } from "@/lib/takeoff/layerKey";
-import { countExistingDoors, postSheetWalls, renameTakeoffLayer, savePlanComparison, saveSureScale, setWallGroupHeight, takeoffSetPages, undoSheetScale } from "@/lib/actions";
+import { countExistingDoors, postSheetWalls, renameTakeoffLayer, savePlanComparison, saveSureScale, saveViewScale, setWallGroupHeight, takeoffSetPages, undoSheetScale } from "@/lib/actions";
 import { SetWallHeight } from "./SetWallHeight";
 import type { TakeoffItemRow } from "@/lib/takeoff/itemQuantities";
 import { areaLine, ceilingOption, heightFrom, heightOptionsInOrder, wallSquareFeet, type CeilingRoom, type HeightOption } from "@/lib/takeoff/wallHeight";
@@ -5187,6 +5187,20 @@ export function TakeoffPlanViewer({
             So it is on the toolbar either way, and `title` says what is in the
             way. The measuring tools beside it already take exactly this
             posture — disabled until the sheet is calibrated, never hidden. */}
+        {/* ── SEVERAL DRAWINGS AT DIFFERENT SCALES: THE PERSON PICKS, IN ONE PRESS ──
+            Diego (2026-11-18): no automatic calibration on such a sheet; every
+            drawing's printed scale is on the toolbar with the drawing it belongs
+            to, and the one pressed is saved (`saveViewScale`), with Undo. */}
+        {slot(scaleSlot, (!calibration || oneTapScalePage === pageNumber) && tool !== "calibrate" && !scalePrefillByPage[pageNumber] && (viewScalesByPage?.[pageNumber]?.length ?? 0) > 0 && (
+          <ToolbarViewScaleOffer
+            key={`views-${pageNumber}`}
+            views={viewScalesByPage![pageNumber]!}
+            save={(index, view) => saveViewScale(jobId, planId, pageNumber, { index, name: view.name, scaleName: view.scaleName })}
+            undo={(calibrationId) => undoSheetScale(jobId, planId, calibrationId)}
+            onSaved={() => setOneTapScalePage(pageNumber)}
+            onUndone={() => setOneTapScalePage(null)}
+          />
+        ))}
         {slot(scaleSlot, (!calibration || oneTapScalePage === pageNumber) && tool !== "calibrate" && scalePrefillByPage[pageNumber] && (
           <ToolbarScaleOffer
             key={pageNumber}
@@ -8519,6 +8533,91 @@ export function ToolbarScaleOffer({
       >
         Use the printed scale{prefill.scaleName ? ` ${prefill.scaleName}` : ""}
       </button>
+      {error && <span className="text-xs text-tag-rose-ink" role="alert">{error}</span>}
+    </span>
+  );
+}
+
+/**
+ * The drawings of a multi-scale sheet on the toolbar, each with its printed scale (Diego,
+ * 2026-11-18). One press saves that drawing's scale and says what it saved, with Undo — the
+ * same posture as a Sure scale (`ToolbarScaleOffer`). Nothing is picked for the person: the
+ * biggest drawing is not necessarily the one being measured (Mid-City A4.0's roof plan).
+ */
+export function ToolbarViewScaleOffer({
+  views,
+  save,
+  undo,
+  onSaved,
+  onUndone,
+}: {
+  views: readonly ViewScale[];
+  save: (index: number, view: ViewScale) => Promise<{ ok: true; value: { calibrationId: string } } | { ok: false; error: string }>;
+  undo: (calibrationId: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+  onSaved?: () => void;
+  onUndone?: () => void;
+}) {
+  const [saved, setSaved] = useState<{ id: string; view: ViewScale } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = async <T,>(work: () => Promise<T>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      return await work();
+    } catch {
+      setError("It did not save. Try again.");
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (saved !== null) {
+    return (
+      <span data-takeoff="toolbar-view-scale-saved" className="flex min-h-[36px] items-center gap-2 rounded-md border border-line-card bg-surface px-3 text-xs text-ink-body">
+        <span>
+          Scale <span className="font-semibold text-ink">{saved.view.scaleName}</span>, from the caption under {saved.view.name}
+        </span>
+        <button
+          type="button"
+          data-takeoff="toolbar-view-scale-undo"
+          disabled={busy}
+          onClick={async () => {
+            const r = await run(() => undo(saved.id));
+            if (r === null) return;
+            if (!r.ok) return setError(r.error);
+            setSaved(null);
+            onUndone?.();
+          }}
+          className="rounded border border-line-card px-2 py-0.5 hover:bg-rail-hover disabled:opacity-50"
+        >
+          Undo
+        </button>
+        {error && <span className="text-tag-rose-ink" role="alert">{error}</span>}
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2" data-takeoff="toolbar-view-scales">
+      <span className="text-xs text-ink-muted">Drawings at different scales — pick the one you measure:</span>
+      {views.map((view, index) => (
+        <button
+          key={`${view.name}-${index}`}
+          type="button"
+          disabled={busy}
+          data-takeoff="toolbar-view-scale"
+          onClick={async () => {
+            const r = await run(() => save(index, view));
+            if (r === null) return;
+            if (!r.ok) return setError(r.error);
+            setSaved({ id: r.value.calibrationId, view });
+            onSaved?.();
+          }}
+          className="min-h-[36px] rounded-md border border-line-card bg-surface px-3 text-xs text-ink-body hover:bg-rail-hover disabled:opacity-60"
+        >
+          <span className="font-semibold text-ink">{view.scaleName}</span> · {view.name}
+        </button>
+      ))}
       {error && <span className="text-xs text-tag-rose-ink" role="alert">{error}</span>}
     </span>
   );

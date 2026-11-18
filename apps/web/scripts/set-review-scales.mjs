@@ -8,15 +8,17 @@
  *
  * Where ingest declined the page outright — a sheet carrying several drawings
  * at several scales has no one scale, which is the honest answer — it falls
- * back to the scale captioned under the biggest VIEW, exactly as the workspace
- * now offers. That is the weaker evidence and it is recorded as such in the
- * calibration's note, so the key says where its scale came from.
+ * back to the scale captioned under the biggest VIEW only when every view
+ * prints that same scale. When they disagree it writes nothing: the person
+ * picks the drawing's scale with one press in the workspace (Diego,
+ * 2026-11-18; `view-scale-choice.mjs`).
  *
  *   DATABASE_URL=postgresql://…@127.0.0.1:…/prova_dev \
  *   TAKEOFF_LOCAL_PLAN_DIR="/path/to/real-plans" \
  *     node scripts/set-review-scales.mjs A120 A102 A101
  */
 import pkg from "../../../packages/db/node_modules/@prisma/client/default.js";
+import { viewToCalibrate } from "./view-scale-choice.mjs";
 const { PrismaClient } = pkg;
 
 const url = process.env.DATABASE_URL ?? "";
@@ -139,13 +141,14 @@ async function main() {
       console.log(`  ${number} p${reading.pageNumber}: no scale and no captioned view — ${reading.declineReason ?? ""}`);
       continue;
     }
-    // The BIGGEST view by AREA, which is the drawing somebody is most likely
-    // measuring. By width alone a wide, short strip (Mack Theater p9's VCT
-    // floor-pattern view) beats the overview drawing above it, and the key
-    // sheet gets the enlargement's scale — every traced wall then reads at
-    // half its length. Area is what "biggest drawing" means on a sheet.
-    const area = (v) => Math.abs(v.to - v.from) * Math.abs(v.toY - v.fromY);
-    const view = [...views].sort((a, b) => area(b) - area(a))[0];
+    // The biggest view by AREA — and only when every view prints the same
+    // scale (Diego, 2026-11-18). Views that disagree get no calibration: the
+    // person picks with one press in the workspace (`view-scale-choice.mjs`).
+    const { view, scales } = viewToCalibrate(views);
+    if (view === null) {
+      console.log(`  ${number} p${reading.pageNumber}: ${views.length} views at ${scales.length} scales (${scales.join(" / ")}) — no calibration; pick the drawing's scale in the workspace (one press)`);
+      continue;
+    }
     const inset = (view.to - view.from) * 0.05;
     const x1 = view.from + inset;
     const x2 = view.to - inset;

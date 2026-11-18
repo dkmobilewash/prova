@@ -7,6 +7,7 @@ import { namedItem, untypedItem, wallItemsForSheet, wallItemsNoteFor } from "@/l
 import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
 import { planSetFromLoaded } from "@/lib/takeoff/planSet";
+import { calibrationForView } from "@/lib/takeoff/sheetScale";
 import { DROPPED_ITEM, DROPPED_LABEL, HELD_LABEL, KEPT_LABEL } from "@/lib/takeoff/estimateHold";
 import { countItemFor } from "@/lib/takeoff/countItem";
 import { revalidatePath } from "next/cache";
@@ -995,6 +996,44 @@ export async function saveSureScale(jobId: string, planId: string, pageNumber: n
   const id = saved.value.calibrationIds[0];
   if (id === undefined) return actionFail("This sheet's scale is no longer sure. Open Set scale to check it.");
   return { ok: true, value: { calibrationId: id } };
+}
+
+/**
+ * ── ONE PRESS ON A DRAWING'S OWN SCALE, ON A SHEET OF SEVERAL ──
+ *
+ * Diego (2026-11-18): a sheet whose drawings print different scales gets no
+ * automatic calibration — Mid-City A4.0's roof plan (1/16") out-areas the floor
+ * plan (3/32") being measured, so no "biggest view" rule can be right. The
+ * toolbar lists each drawing with its printed scale (`ToolbarViewScaleOffer`)
+ * and this saves the one pressed. The view is read from what ingest stored for
+ * the page, never from the browser; `name` and `scaleName` must still match it,
+ * so a list that changed under the button saves nothing.
+ */
+export async function saveViewScale(
+  jobId: string,
+  planId: string,
+  pageNumber: number,
+  view: { index: number; name: string; scaleName: string },
+): Promise<ActionResultWith<{ calibrationId: string }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company, job } = await requireJobGivenContext(jobId, context);
+  const data = await loadTakeoffWorkspace(company, job);
+  if (data === null || data.plan.id !== planId) return actionFail("That plan set has changed. Reload the page.");
+  const stored = data.viewScalesByPage[pageNumber]?.[view.index];
+  if (stored === undefined || stored.name !== view.name || stored.scaleName !== view.scaleName) {
+    return actionFail("This sheet's drawings have changed. Reload the page and pick again.");
+  }
+  const text = await prisma.planSheetText.findFirst({ where: { planId, pageNumber }, select: { widthPt: true } });
+  const pageWidthPt = text?.widthPt ?? null;
+  if (pageWidthPt === null || !(pageWidthPt > 0)) return actionFail("This sheet's size is not known yet, so a caption cannot be turned into feet. Set the scale by hand.");
+  const line = calibrationForView(stored, pageWidthPt);
+  if (calibrationRefusal(calibrationNotices(line, pageWidthPt, null, null))) return actionFail("That drawing's caption gives a scale this sheet cannot hold. Set the scale by hand.");
+  const note = `From the ${stored.scaleName} captioned under ${stored.name} on this sheet, picked with one press among its drawings. Nothing measurable on the sheet confirmed it.`;
+  const calibrationId = await writeCalibration({ planId, pageNumber, pageLabel: "", pageWidthPt, line, declared: line.declaredDistanceFeet, note, userId: context.id, company });
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/jobs/${jobId}`, "layout");
+  return { ok: true, value: { calibrationId } };
 }
 
 /**

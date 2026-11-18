@@ -94,3 +94,42 @@ describe("a Sure scale saves from the toolbar in one press", () => {
     expect(calls.save).not.toHaveBeenCalled();
   });
 });
+
+// ── SEVERAL DRAWINGS AT DIFFERENT SCALES: THE PERSON PICKS, IN ONE PRESS (Diego, 2026-11-18) ──
+import { ToolbarViewScaleOffer } from "./TakeoffPlanViewer";
+const VIEWS = [
+  { name: "ROOF PLAN", scaleName: '1/16" = 1\'-0"', feetPerInch: 16, from: 0.05, to: 0.75, fromY: 0.05, toY: 0.7 },
+  { name: 'BUILDING "A" FLOOR PLAN', scaleName: '3/32" = 1\'-0"', feetPerInch: 32 / 3, from: 0.5, to: 0.95, fromY: 0.2, toY: 0.68 },
+];
+function mountViews() {
+  const calls = { save: vi.fn(async () => ({ ok: true as const, value: { calibrationId: "cal9" } })), undo: vi.fn(async () => ({ ok: true as const })), onSaved: vi.fn(), onUndone: vi.fn() };
+  const host = document.createElement("div");
+  document.body.append(host);
+  act(() => createRoot(host).render(createElement(ToolbarViewScaleOffer, { views: VIEWS, ...calls })));
+  const all = (hook: string) => [...host.querySelectorAll(`[data-takeoff="${hook}"]`)] as HTMLButtonElement[];
+  return { calls, all };
+}
+
+describe("a multi-scale sheet asks which drawing, on the toolbar", () => {
+  it("shows every drawing's printed scale with the drawing it belongs to, and picks none itself", () => {
+    const { calls, all } = mountViews();
+    expect(all("toolbar-view-scale").map((b) => b.textContent)).toEqual(['1/16" = 1\'-0" · ROOF PLAN', '3/32" = 1\'-0" · BUILDING "A" FLOOR PLAN']);
+    expect(calls.save).not.toHaveBeenCalled();
+  });
+  it("one press saves THAT drawing's scale and says so, with Undo", async () => {
+    const { calls, all } = mountViews();
+    act(() => all("toolbar-view-scale")[1]!.click());
+    await flush();
+    expect(calls.save).toHaveBeenCalledWith(1, VIEWS[1]);
+    expect(calls.onSaved).toHaveBeenCalledOnce();
+    expect(all("toolbar-view-scale-saved")[0]!.textContent).toContain('3/32" = 1\'-0"');
+    act(() => all("toolbar-view-scale-undo")[0]!.click());
+    await flush();
+    expect(calls.undo).toHaveBeenCalledWith("cal9");
+    expect(all("toolbar-view-scale")).toHaveLength(2);
+  });
+  it("is on the toolbar only for an unscaled sheet with drawings and no page-wide offer, wired to the server", () => {
+    expect(viewer).toMatch(/tool !== "calibrate" && !scalePrefillByPage\[pageNumber\] && \(viewScalesByPage\?\.\[pageNumber\]\?\.length \?\? 0\) > 0 && \(\s*<ToolbarViewScaleOffer/);
+    expect(viewer).toMatch(/save=\{\(index, view\) => saveViewScale\(jobId, planId, pageNumber, \{ index, name: view\.name, scaleName: view\.scaleName \}\)\}/);
+  });
+});
