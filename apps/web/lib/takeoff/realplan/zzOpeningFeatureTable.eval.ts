@@ -6,6 +6,7 @@ import { openPlanPdf } from "../../plan-ingest/planPdf";
 import { DOOR_TAG_REACH_FEET, tagsNameEveryWindow } from "../doorWindowSymbols";
 import { doorsAndWindowsForSheet } from "../doorsWindows";
 import { asideExistingWalls, existingPrefixes, existingScheduleMarks } from "../existingDoors";
+import { textRows } from "../existingWalls";
 import { excludedSheetReason, heldOutReason } from "../heldOutSets";
 import { priorPlanFor } from "../priorPlan";
 import { keyFromLabels } from "../heldOutScore";
@@ -112,7 +113,10 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           for (let p = 1; p <= doc.pageCount; p += 1) {
             const items = (await doc.pageText(p)).items;
             const words = items.map((i) => i.str).join(" ");
-            if (/(?<!SEE )DOOR SCHEDULE/i.test(words)) { texts.push(words); pages.push(items); }
+            // Also a row beginning DOOR [AND|& FRAME] SCHEDULE, the product's line-level reading (planTextRead.ts):
+            // Sedgwick p63 prints "DOOR & FRAME SCHEDULE - EXISTING" and the joined-words test never saw it.
+            const titled = textRows(items).some((r) => /^DOOR\s+(?:(?:AND|&)\s+FRAME\s+)?SCHEDULE\b/i.test(r.str.trim()));
+            if (/(?<!SEE )DOOR SCHEDULE/i.test(words) || titled) { texts.push(words); pages.push(items); }
           }
           schedulePrefixes = existingPrefixes(texts);
           scheduleMarks = existingScheduleMarks(pages);
