@@ -165,6 +165,46 @@ export function jambPen(d: DoorSymbol, segments: readonly StrokeSegment[], feetP
 export const SERIES_KEPT_MIN = 2;
 
 /** A short label that puts an area outside the new work. */
+/** A point inside a single door's swing: half a leaf from the hinge, between the closed and open leaves. Null with no open leaf. */
+function swingPoint(d: DoorSymbol, fpu: number): { x: number; y: number } | null {
+  if (d.open === undefined) return null;
+  const r = d.widthFeet / d.leaves / fpu;
+  const ux = d.strike.x - d.hinge.x, uy = d.strike.y - d.hinge.y, vx = d.open.x - d.hinge.x, vy = d.open.y - d.hinge.y;
+  const lu = Math.hypot(ux, uy), lv = Math.hypot(vx, vy);
+  if (lu === 0 || lv === 0) return null;
+  const bx = ux / lu + vx / lv, by = uy / lu + vy / lv, lb = Math.hypot(bx, by);
+  return lb === 0 ? null : { x: d.hinge.x + (0.5 * r * bx) / lb, y: d.hinge.y + (0.5 * r * by) / lb };
+}
+
+/**
+ * How many hatch strokes (nicHatch's reading: >= 2 ft long, 20-70 degrees) pass within 1 ft of a point. nicHatch's
+ * 3 ft cells are coarser than a door, so they cannot tell a swing from the boundary wall it starts at.
+ */
+function hatchStrokesNear(segments: readonly StrokeSegment[], p: { x: number; y: number }, fpu: number): number {
+  const reach = 1 / fpu;
+  let n = 0;
+  for (const i of segmentGrid(segments).near(p.x - reach, p.y - reach, p.x + reach, p.y + reach)) {
+    const s = segments[i]!;
+    const dx = s.x2 - s.x1, dy = s.y2 - s.y1, len = Math.hypot(dx, dy);
+    if (len * fpu < 2) continue;
+    const cos = Math.abs(dx) / len;
+    if (cos < Math.cos((70 * Math.PI) / 180) || cos > Math.cos((20 * Math.PI) / 180)) continue;
+    if (toSegment(p, s).d <= reach) n += 1;
+  }
+  return n;
+}
+
+/** "NOT IN CONSTRUCTION" on one line (route 2). */
+const NOT_IN_CONSTRUCTION = /^NOT\s+IN\s+CONSTRUCTION\b/i;
+/**
+ * "NOT IN" with CONSTRUCTION, CONTRACT or SCOPE one line below it at the same centre: the label stacked over two rows,
+ * as Sedgwick A22.1 prints its "NOT IN / CONSTRUCTION" areas (4 of them). Read row by row, neither line says anything.
+ */
+function stackedNotIn(r: TextItem, rows: readonly TextItem[]): boolean {
+  if (!/^NOT\s+IN$/i.test(r.str.trim())) return false;
+  const cx = r.x + r.width / 2;
+  return rows.some((s) => s !== r && /^(?:CONSTRUCTION|CONTRACT|SCOPE)\b/i.test(s.str.trim()) && Math.abs(s.x + s.width / 2 - cx) <= 72 && s.y > r.y && s.y - s.height - r.y <= 2 * Math.max(r.height, s.height));
+}
 const AREA_LABEL = /^(?:EXISTING\b|EXIST\.|\(E\)|NOT\s+IN\s+(?:CONTRACT|SCOPE)\b|N\.?\s?I\.?\s?C\.?\b|BY\s+OTHERS\b|NO\s+WORK\b)|\(E\)$/i;
 /** A door's own tag saying it is existing: `N141 (E)`, `EXISTING DOOR`. A bare `(E)` must sit in the swing (`BARE_E`). */
 const DOOR_TAG = /\S\s*\(E\)$|^EXIST(?:ING|\.|'G)?\s+DOOR\b/i;
@@ -361,10 +401,12 @@ export function existingDoors(input: {
     }
   }
   // 2. Inside a hatched or dashed area labelled existing or not in contract.
-  const labels = rows.filter((r) => AREA_LABEL.test(r.str));
+  const labels = rows.filter((r) => AREA_LABEL.test(r.str) || NOT_IN_CONSTRUCTION.test(r.str) || stackedNotIn(r, rows));
   if (labels.length > 0 && doors.some((d) => !out.has(d))) {
     const hatch = nicHatch(segments, labels.map(centre), fpu);
-    if (hatch !== null) for (const d of doors) if (hatch(mid(d).x, mid(d).y)) set(d, "area", "inside a hatched area labelled existing or not in contract");
+    // The opening AND the swing inside the hatch: a door in the hatched area's boundary wall that swings out of it is
+    // new work (Sedgwick A22.1's 201, from the NOT IN CONSTRUCTION restrooms' wall into Stair 007).
+    if (hatch !== null) for (const d of doors) { const q = swingPoint(d, fpu); if (hatch(mid(d).x, mid(d).y) && (q === null || hatchStrokesNear(segments, q, fpu) >= 2)) set(d, "area", "inside a hatched area labelled existing or not in contract"); }
     const lines = dashedLines(segments, fpu);
     for (const r of labels) {
       const box = dashedBoxAround(centre(r), lines, fpu);

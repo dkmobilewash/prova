@@ -127,6 +127,23 @@ describe("existing doors set aside", () => {
     expect(run(hatch, [word("N.I.C.", 0.9, 0.9)])).toEqual([]);
   });
 
+  it("NOT IN CONSTRUCTION labels a hatched area too, on one line or stacked over two (F13: Sedgwick A22.1)", () => {
+    const hatch: StrokeSegment[] = [];
+    for (let k = -20; k <= 20; k += 1) hatch.push({ x1: 0.4 + ft(k), y1: 0.4, x2: 0.4 + ft(k) + ft(20), y2: 0.6 });
+    expect(run(hatch, [word("NOT IN CONSTRUCTION", 0.52, 0.47)]).map((e) => e.route)).toEqual(["area"]);
+    expect(run(hatch, [word("NOT IN", 0.52, 0.47), word("CONSTRUCTION", 0.52, 0.476)]).map((e) => e.route)).toEqual(["area"]);
+    // "NOT IN" alone, or with CONSTRUCTION far off, labels nothing.
+    expect(run(hatch, [word("NOT IN", 0.52, 0.47)])).toEqual([]);
+    expect(run(hatch, [word("NOT IN", 0.52, 0.47), word("CONSTRUCTION", 0.52, 0.56)])).toEqual([]);
+  });
+
+  it("a door in the hatched area's boundary wall that swings OUT of the hatch is new work (F13': Sedgwick's 201)", () => {
+    // The hatch only south of the wall (y > 0.5); the door's swing is north of it.
+    const south: StrokeSegment[] = [];
+    for (let k = -20; k <= 20; k += 1) south.push({ x1: 0.4 + ft(k), y1: 0.5, x2: 0.4 + ft(k) + ft(10), y2: 0.6 });
+    expect(run(south, [word("NOT IN CONSTRUCTION", 0.52, 0.55)])).toEqual([]);
+  });
+
   it("a door inside a closed dashed box with an EXISTING label in it is set aside; an open dashed outline is not a box", () => {
     const box = [...dashed(0.45, 0.42, 0.6, 0.42), ...dashed(0.45, 0.56, 0.6, 0.56), ...dashed(0.45, 0.42, 0.45, 0.56), ...dashed(0.6, 0.42, 0.6, 0.56)];
     const label = word("EXISTING", 0.57, 0.45);
@@ -372,6 +389,16 @@ describe("a door found again in another view of the same plan (F5: HPL I-110, Ki
     expect(got.all.map((d) => Math.round(d.hinge.x * 100) / 100)).toEqual([0.7, 0.75, 0.8]);
   });
 
+  it("a copy whose open and closed leaves the finder read the other way round is still a copy (F10: HPL's lighting plan)", () => {
+    // The finish-plan copy drawn with each leaf standing EAST instead of north: same hinges, the leaves swapped.
+    const flipped = (ox: number) => [0.1, 0.15, 0.2].flatMap((hx): StrokeSegment[] => [{ x1: hx + ox, y1: 0.2, x2: hx + ox + ft(3), y2: 0.2 }, ...swing(hx + ox, 0.2, ft(3), -Math.PI / 2, 0)]);
+    const segs = [...flipped(0), ...views[2]!.segs], ws = [wall(0.05, 0.2 - ft(3), 0.05, 0.2), ...views[2]!.ws];
+    const got = doorsInScope({ segments: segs, walls: ws, feetPerUnit: FPU, textPt: [under("FINISH PLAN", 0), under("PARTITION PLAN", 0.6)], widthPt: W, marks: [] });
+    expect(got.all.every((d) => d.hinge.x > 0.5)).toBe(true);
+    // Control: with no titles the flipped copies ARE found (3 of them), so the line above is not vacuous.
+    expect(doorsInScope({ segments: segs, walls: ws, feetPerUnit: FPU, textPt: [], widthPt: W, marks: [] }).all.filter((d) => d.hinge.x < 0.5)).toHaveLength(3);
+  });
+
   it("with no titles, or every view a finish plan, or a notes block nearest, every door stays", () => {
     expect(scope([]).all).toHaveLength(9);
     expect(scope([under("FINISH PLAN", 0), under("FINISH PLAN", 0.3), under("FINISH PLAN", 0.6)]).all).toHaveLength(9);
@@ -400,5 +427,42 @@ describe("a grey door in a grey wall, where the sheet draws its new doors dark (
     expect(run([0.6, 0.6, 0.6, 0], 0, reno)).toEqual([]);
     expect(run([0.6, 0.6, 0.6, 0], 0.6, [])).toEqual([]);
     expect(run([0.6, 0.6, 0.6, 0.6], 0.6, reno)).toEqual([]);
+  });
+});
+
+describe("a symbol legend's door sample is not a door (F11: Bluetooth AI101)", () => {
+  const counted = (text: ReturnType<typeof word>[]) => doorsInScope({ segments: door, walls, feetPerUnit: FPU, textPt: text, widthPt: W, marks: [] }).all.length;
+  it("NEW DOOR or EXISTING DOOR AND FRAME TO REMAIN beside it drops it", () => {
+    expect(counted([word("NEW DOOR", 0.56, 0.49)])).toBe(0);
+    expect(counted([word("EXISTING DOOR AND FRAME TO REMAIN", 0.6, 0.49)])).toBe(0);
+  });
+  it("a bare DOOR (a split tag), a schedule pointer, a tag with a number, a label above, or one too far right does not", () => {
+    expect(counted([word("DOOR", 0.56, 0.49)])).toBe(1);
+    expect(counted([word("DOOR TYPE; SEE DOOR SCHEDULE", 0.6, 0.49)])).toBe(1);
+    expect(counted([word("NEW DOOR 101", 0.56, 0.49)])).toBe(1);
+    expect(counted([word("NEW DOOR", 0.56, 0.40)])).toBe(1);
+    expect(counted([word("NEW DOOR", 0.70, 0.49)])).toBe(1);
+  });
+});
+
+describe("a hinge on a centre mark is a radius dimension, not a door (F12: Substation A-101's curved corners)", () => {
+  const counted = (extra: StrokeSegment[]) => doorsInScope({ segments: [...door, ...extra], walls, feetPerUnit: FPU, textPt: [], widthPt: W, marks: [] }).all.length;
+  const cross = [{ x1: 0.5 - ft(0.7), y1: 0.5, x2: 0.5 + ft(0.7), y2: 0.5 }, { x1: 0.5, y1: 0.5 - ft(0.7), x2: 0.5, y2: 0.5 + ft(0.7) }];
+  const ring = Array.from({ length: 10 }, (_, k) => {
+    const a0 = (2 * Math.PI * k) / 10, a1 = (2 * Math.PI * (k + 1)) / 10, r = ft(0.13);
+    return { x1: 0.5 + r * Math.cos(a0), y1: 0.5 + r * Math.sin(a0), x2: 0.5 + r * Math.cos(a1), y2: 0.5 + r * Math.sin(a1) };
+  });
+  // Substation 1108's jamb near a real hinge: short pieces beside it, none centred on it, no ring.
+  const jamb = [{ x1: 0.5 + ft(0.01), y1: 0.5 + ft(0.005), x2: 0.5 + ft(0.01), y2: 0.5 + ft(0.155) }, { x1: 0.5 - ft(0.53), y1: 0.5 + ft(0.06), x2: 0.5 - ft(0.13), y2: 0.5 + ft(0.06) }, { x1: 0.5 - ft(0.13), y1: 0.5 + ft(0.005), x2: 0.5 - ft(0.13), y2: 0.5 + ft(0.055) }];
+  it("a cross or a small ring centred on the hinge drops it; a jamb beside a real hinge does not", () => {
+    expect(counted([])).toBe(1);
+    expect(counted(cross)).toBe(0);
+    expect(counted(ring)).toBe(0);
+    expect(counted(jamb)).toBe(1);
+  });
+
+  it("an x on the hinge, 45 degrees to the leaf, is not a centre mark (F12': Joplin A-101's real door)", () => {
+    const x = [{ x1: 0.5 - ft(0.23), y1: 0.5 - ft(0.23), x2: 0.5 + ft(0.23), y2: 0.5 + ft(0.23) }, { x1: 0.5 - ft(0.23), y1: 0.5 + ft(0.23), x2: 0.5 + ft(0.23), y2: 0.5 - ft(0.23) }];
+    expect(counted(x)).toBe(1);
   });
 });
