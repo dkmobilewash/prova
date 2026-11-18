@@ -361,6 +361,11 @@ describe("a door on the grey the sheet calls not in contract, read in paint orde
     expect(run([...under, ...swatch, ...fillRect(0.505, 0.485, 0.515, 0.495, 1, 2)], [legend]).map((e) => e.route)).toEqual(["nic"]);
   });
 
+  it("a swatch labelled NO WORK names the grey too (F16: Aldrich A111's EXISTING SCHOOL, NO WORK); NOWORKSHOP does not", () => {
+    expect(run([...under, ...swatch], [word("EXISTING SCHOOL, NO WORK", 0.935, 0.905)]).map((e) => e.route)).toEqual(["nic"]);
+    expect(run([...under, ...swatch], [word("NOWORKSHOP", 0.935, 0.905)])).toEqual([]);
+  });
+
   it("an N.I.C. phrase printed inside the grey names it with no swatch at all (HPL I-110's NIC - REFER TO ARCH PLANS)", () => {
     expect(run(under, [word("NIC - REFER TO ARCH PLANS", 0.6, 0.7)]).map((e) => e.route)).toEqual(["nic"]);
   });

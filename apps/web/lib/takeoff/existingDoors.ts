@@ -506,8 +506,8 @@ export function visibleGround(fills: readonly Fill[], p: { x: number; y: number 
   return null;
 }
 
-/** "NOT IN CONTRACT", "NOT IN SCOPE", "N.I.C." anywhere in a line, not inside a word (CLINIC, PANIC). */
-export const NIC_PHRASE = /(?:^|[^A-Z])(?:NOT\s+IN\s+(?:CONTRACT|SCOPE)|N\.?\s?I\.?\s?C\.?)(?![A-Z])/i;
+/** "NOT IN CONTRACT", "NOT IN SCOPE", "NOT IN CONSTRUCTION", "NO WORK", "N.I.C." anywhere in a line, not inside a word (CLINIC, PANIC). Aldrich A111's swatch reads "EXISTING SCHOOL, NO WORK". */
+export const NIC_PHRASE = /(?:^|[^A-Z])(?:NOT\s+IN\s+(?:CONTRACT|SCOPE|CONSTRUCTION)|NO\s+WORK|N\.?\s?I\.?\s?C\.?)(?![A-Z])/i;
 /** A grey a reader reads as a tone: neither near black (poché) nor near white (paper). */
 export const NIC_GREY_MIN = 0.35;
 export const NIC_GREY_MAX = 0.95;
