@@ -304,3 +304,96 @@ describe("a door drawn in the existing (grey) pen", () => {
     expect(runSegs([...doorAt(at[0]!, 0.6), ...plain.slice(13)], reno).map((e) => e.route)).toEqual(["grey"]);
   });
 });
+
+describe("a door on the grey the sheet calls not in contract, read in paint order (route 7)", () => {
+  // The door above: hinged at (0.50, 0.50), its swing north, so its swing's interior is near (0.51, 0.49).
+  const fillRect = (x1: number, y1: number, x2: number, y2: number, gray: number, path: number): StrokeSegment[] =>
+    [[x1, y1, x2, y1], [x2, y1, x2, y2], [x2, y2, x1, y2], [x1, y2, x1, y1]].map(([a, b, c, d]) => ({ x1: a!, y1: b!, x2: c!, y2: d!, fill: gray, path }));
+  // NW C35NW's shape: ONE grey rectangle under the whole building (0.757), and the legend's swatch a lighter 0.80.
+  const under = fillRect(0.3, 0.3, 0.8, 0.8, 0.757, 0);
+  const swatch = fillRect(0.9, 0.9, 0.92, 0.91, 0.8, 1);
+  // Its label to its right on the same line; the legend's title just above it is NEARER, and is not its label.
+  const legend = word("AREA NOT IN SCOPE", 0.935, 0.905);
+  const title = word("FLOOR PLAN LEGEND", 0.91, 0.895);
+
+  it("a door whose swing stands on that grey is set aside, read off the label beside the swatch, not the title above it", () => {
+    expect(run([...under, ...swatch], [legend, title]).map((e) => e.route)).toEqual(["nic"]);
+    expect(run([...under, ...swatch], [title])).toEqual([]);
+  });
+
+  it("a door in the BOUNDARY wall of the area, grey only on its swing's side, is new work and stays (HPL I-110)", () => {
+    expect(run([...fillRect(0.3, 0.3, 0.8, 0.5, 0.757, 0), ...swatch], [legend])).toEqual([]);
+  });
+
+  it("a door whose grey reaches only about one leaf past its wall is still on the boundary and stays (Appendix 5B 421)", () => {
+    expect(run([...fillRect(0.3, 0.3, 0.8, 0.5 + ft(3), 0.757, 0), ...swatch], [legend])).toEqual([]);
+  });
+
+  it("new work painted white OVER the grey keeps its doors; the same white painted UNDER it does not (paint order decides)", () => {
+    expect(run([...under, ...swatch, ...fillRect(0.45, 0.45, 0.6, 0.495, 1, 2)], [legend])).toEqual([]);
+    const greyOnTop = fillRect(0.3, 0.3, 0.8, 0.8, 0.757, 3);
+    expect(run([...fillRect(0.45, 0.45, 0.6, 0.6, 1, 2), ...greyOnTop, ...swatch], [legend]).map((e) => e.route)).toEqual(["nic"]);
+  });
+
+  it("a fill too small to stand on (a door leaf, a symbol) is not the ground", () => {
+    expect(run([...under, ...swatch, ...fillRect(0.505, 0.485, 0.515, 0.495, 1, 2)], [legend]).map((e) => e.route)).toEqual(["nic"]);
+  });
+
+  it("an N.I.C. phrase printed inside the grey names it with no swatch at all (HPL I-110's NIC - REFER TO ARCH PLANS)", () => {
+    expect(run(under, [word("NIC - REFER TO ARCH PLANS", 0.6, 0.7)]).map((e) => e.route)).toEqual(["nic"]);
+  });
+
+  it("nothing goes with no N.I.C. phrase, with a word that only contains the letters, or with a swatch of another grey", () => {
+    expect(run([...under, ...swatch], [word("AREA OF WORK", 0.93, 0.905)])).toEqual([]);
+    expect(run([...under, ...swatch], [word("CLINIC", 0.93, 0.905)])).toEqual([]);
+    expect(run([...under, ...fillRect(0.9, 0.9, 0.92, 0.91, 0.5, 1)], [legend])).toEqual([]);
+  });
+});
+
+describe("a door found again in another view of the same plan (F5: HPL I-110, Kirkland df9e0224 A100)", () => {
+  // One view: three 3 ft doors along a wall at y = 0.2, hinges 5 ft apart, swings north. Views repeat 30 ft to the right.
+  const view = (ox: number) => {
+    const segs: StrokeSegment[] = [], ws: WallCandidate[] = [wall(0.05 + ox, 0.2, 0.3 + ox, 0.2)];
+    for (const hx of [0.1, 0.15, 0.2]) segs.push({ x1: hx + ox, y1: 0.2, x2: hx + ox, y2: 0.2 - ft(3) }, ...swing(hx + ox, 0.2, ft(3), -Math.PI / 2, 0));
+    return { segs, ws };
+  };
+  const views = [view(0), view(0.3), view(0.6)];
+  const scope = (titles: ReturnType<typeof word>[]) =>
+    doorsInScope({ segments: views.flatMap((v) => v.segs), walls: views.flatMap((v) => v.ws), feetPerUnit: FPU, textPt: titles, widthPt: W, marks: [] });
+  const under = (str: string, ox: number) => word(str, 0.15 + ox, 0.3);
+
+  it("the finish and lighting copies go; the partition plan's doors stay", () => {
+    const got = scope([under("FINISH PLAN - TIER 1 WHITE", 0), under("DECORATIVE LIGHTING PLAN", 0.3), under("PARTITION PLAN - TIER 1 WHITE", 0.6)]);
+    expect(got.all.map((d) => Math.round(d.hinge.x * 100) / 100)).toEqual([0.7, 0.75, 0.8]);
+  });
+
+  it("with no titles, or every view a finish plan, or a notes block nearest, every door stays", () => {
+    expect(scope([]).all).toHaveLength(9);
+    expect(scope([under("FINISH PLAN", 0), under("FINISH PLAN", 0.3), under("FINISH PLAN", 0.6)]).all).toHaveLength(9);
+    expect(scope([under("FLOOR PLAN NOTES", 0), under("FLOOR PLAN", 0.3)]).all).toHaveLength(9);
+  });
+});
+
+describe("a grey door in a grey wall, where the sheet draws its new doors dark (F6: Kirkland df9e0224 A100)", () => {
+  // Kirkland's shape: MOST doors are the existing ones, grey, standing in grey walls; the one new door is black.
+  const at = [0.2, 0.4, 0.6, 0.8];
+  const doorAt = (x: number, gray: number): StrokeSegment[] => [{ x1: x, y1: 0.5, x2: x, y2: 0.5 - ft(3), gray }, ...swing(x, 0.5, ft(3), -Math.PI / 2, 0).map((s) => ({ ...s, gray }))];
+  // The wall's face either side of the opening, 2 ft each way, in the given pen.
+  const jambs = (x: number, gray: number): StrokeSegment[] => [{ x1: x - ft(2), y1: 0.5, x2: x - ft(0.05), y2: 0.5, gray }, { x1: x + ft(3.05), y1: 0.5, x2: x + ft(5), y2: 0.5, gray }];
+  const run = (grays: number[], jambGray: number, words: string[]) => {
+    const segs = at.flatMap((x, i) => [...doorAt(x, grays[i]!), ...jambs(x, grays[i]! > 0 ? jambGray : 0)]);
+    const ds = doorSymbols(segs, [wall(0.1, 0.5, 0.9, 0.5)], FPU);
+    return existingDoors({ doors: ds, segments: segs, textPt: words.map((w, i) => word(w, 0.1 + i * 0.01, 0.1)), widthPt: W, feetPerUnit: FPU });
+  };
+  const reno = ["(E)", "EXISTING", "EXISTING", "EXISTING"];
+
+  it("the three grey doors in grey walls go, though most of the sheet's doors are grey", () => {
+    expect(run([0.6, 0.6, 0.6, 0], 0.6, reno).map((e) => e.why)).toEqual(Array(3).fill("drawn grey in a grey wall, where the sheet draws its new doors dark"));
+  });
+
+  it("not in a dark wall, not with no renovation words, and not where no door is drawn dark", () => {
+    expect(run([0.6, 0.6, 0.6, 0], 0, reno)).toEqual([]);
+    expect(run([0.6, 0.6, 0.6, 0], 0.6, [])).toEqual([]);
+    expect(run([0.6, 0.6, 0.6, 0.6], 0.6, reno)).toEqual([]);
+  });
+});

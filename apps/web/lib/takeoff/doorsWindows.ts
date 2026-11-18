@@ -1,6 +1,7 @@
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 import { DOOR_TAG_REACH_FEET, doorSymbols, WIDEST_DOOR_LEAF_FEET, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, WINDOW_TAGS_MEAN_ALL, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
 import { existingDoors, insideLegendBox, type ExistingDoor, type ExistingDoorEvidence } from "./existingDoors";
+import { textRows } from "./existingWalls";
 import { joinOpeningsToSchedule, widthAndHeight, type OpeningJoin, type PlacedMark, type ScheduledOpening } from "./openingMarks";
 import { tagSymbols, type TextForSymbol } from "./tagSymbols";
 import { windowsByTag, windowTagVocabulary, type TaggedWindows } from "./windowTags";
@@ -76,6 +77,60 @@ function inSwing(d: DoorSymbol, p: { x: number; y: number }, feetPerUnit: number
   return span >= 0 ? u >= -0.1 && u <= span + 0.1 : u <= 0.1 && u >= span - 0.1;
 }
 
+/** Two found doors are copies when hinge and strike move by the same offset, within this, feet. */
+export const COPY_TOLERANCE_FEET = 1;
+/** A copy is another view only this far away, feet: a door beside its twin is a pair or a neighbour, not a view. */
+export const COPY_MIN_OFFSET_FEET = 20;
+/** An offset is a view's when this many door pairs share it. */
+export const VIEW_OFFSET_MIN_DOORS = 3;
+/** A view title: a line naming a PLAN, not a block of notes, a legend, a schedule or a key plan. */
+const VIEW_TITLE = /\bPLAN\b/i;
+const NOT_A_VIEW_TITLE = /\b(?:NOTES?|LEGEND|SCHEDULE|KEY)\b/i;
+/** A view whose doors are not the work: finishes, lighting, ceilings, furniture, power, signage, equipment, demolition. */
+export const NON_DOOR_VIEW = /\b(?:FINISH(?:ES)?|LIGHTING|REFLECTED|CEILING|RCP|FURNITURE|FURNISHINGS?|POWER|ELECTRICAL|SIGNAGE|EQUIPMENT|DEMOLITION|DEMO)\b/i;
+
+/**
+ * The doors found again in another view of the same plan, where that view is not the one the doors are counted in.
+ * HPL I-110 draws one unit three times at 1/4" (finish plan, decorative lighting plan, partition plan) and Kirkland
+ * df9e0224 A100 its demolition floor plan above its floor plan; each copy of a door is found at full size, so the
+ * leaf cap (which caught Mack's 1/4" enlargements of a 1/8" plan) cannot see them. A door goes only when its own view's
+ * title names a non-door view AND a copy of it stands in a view whose title does not: a single-view finish plan, or
+ * copies with no titles to tell them apart, keep every door.
+ */
+export function copiedIntoOtherViews(doors: readonly DoorSymbol[], textPt: readonly TextForSymbol[], widthPt: number, feetPerUnit: number): Set<DoorSymbol> {
+  const out = new Set<DoorSymbol>();
+  if (doors.length < 2 * VIEW_OFFSET_MIN_DOORS || !(widthPt > 0) || !(feetPerUnit > 0)) return out;
+  const tol = COPY_TOLERANCE_FEET / feetPerUnit, far = COPY_MIN_OFFSET_FEET / feetPerUnit;
+  const pairs: { a: number; b: number; dx: number; dy: number }[] = [];
+  for (let a = 0; a < doors.length; a++) for (let b = 0; b < doors.length; b++) {
+    if (a === b) continue;
+    const A = doors[a]!, B = doors[b]!;
+    const dx = B.hinge.x - A.hinge.x, dy = B.hinge.y - A.hinge.y;
+    if (Math.hypot(dx, dy) < far) continue;
+    if (Math.hypot(B.strike.x - A.strike.x - dx, B.strike.y - A.strike.y - dy) > tol) continue;
+    pairs.push({ a, b, dx, dy });
+  }
+  const viewPairs = pairs.filter((p) => pairs.filter((q) => Math.hypot(q.dx - p.dx, q.dy - p.dy) <= tol).length >= VIEW_OFFSET_MIN_DOORS);
+  if (viewPairs.length === 0) return out;
+  const titles = textRows(textPt as never)
+    .filter((r) => r.str.length <= 60 && VIEW_TITLE.test(r.str) && !NOT_A_VIEW_TITLE.test(r.str))
+    .map((r) => ({ str: r.str, x: (r.x + r.width / 2) / widthPt, y: (r.y - r.height / 2) / widthPt }));
+  const titleOf = (d: DoorSymbol): string | null => {
+    const m = { x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2 };
+    let best: { d: number; str: string } | null = null;
+    for (const t of titles) {
+      if (t.y <= m.y) continue;
+      const dist = Math.hypot(t.x - m.x, t.y - m.y);
+      if (best === null || dist < best.d) best = { d: dist, str: t.str };
+    }
+    return best?.str ?? null;
+  };
+  const nonDoor = (i: number) => { const t = titleOf(doors[i]!); return t !== null && NON_DOOR_VIEW.test(t); };
+  const counted = (i: number) => { const t = titleOf(doors[i]!); return t !== null && !NON_DOOR_VIEW.test(t); };
+  for (const p of viewPairs) if (nonDoor(p.a) && counted(p.b)) out.add(doors[p.a]!);
+  return out;
+}
+
 export function doorsInScope(input: {
   segments: readonly StrokeSegment[];
   walls: readonly WallCandidate[];
@@ -87,10 +142,12 @@ export function doorsInScope(input: {
 }): { all: DoorSymbol[]; existing: ExistingDoor[]; doors: DoorSymbol[] } {
   const legend = (input.existing?.asideWalls ?? []).filter((w) => w.legend);
   const dims = input.textPt.filter((t) => DIMENSION_WORD.test(t.str.trim())).map((t) => ({ x: (t.x + t.width / 2) / input.widthPt, y: (t.y - t.height / 2) / input.widthPt }));
-  const all = doorSymbols(input.segments, input.walls, input.feetPerUnit)
+  const found = doorSymbols(input.segments, input.walls, input.feetPerUnit)
     .filter((d) => legend.length === 0 || !insideLegendBox({ x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2 }, legend))
     .filter((d) => d.widthFeet / d.leaves <= WIDEST_DOOR_LEAF_FEET)
     .filter((d) => !dims.some((p) => inSwing(d, p, input.feetPerUnit)));
+  const copied = copiedIntoOtherViews(found, input.textPt, input.widthPt, input.feetPerUnit);
+  const all = found.filter((d) => !copied.has(d));
   const existing = existingDoors({ doors: all, segments: input.segments, textPt: input.textPt, widthPt: input.widthPt, feetPerUnit: input.feetPerUnit, ...(input.existing === undefined ? {} : { evidence: input.existing }) });
   const aside = new Set(existing.map((e) => e.door));
   return { all, existing, doors: onlyMarkedDoors(all.filter((d) => !aside.has(d)), input.marks, input.feetPerUnit) };
