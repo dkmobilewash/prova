@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { doorCount, doorsAndWindowsForSheet, scheduledOpenings } from "./doorsWindows";
+import { COUNTER_GATE_LEAF_FEET, counterGate, doorCount, doorsAndWindowsForSheet, scheduledOpenings } from "./doorsWindows";
+import type { DoorSymbol } from "./doorWindowSymbols";
 import type { WallCandidate } from "./wallVectors";
 
 describe("scheduled openings from stored rows", () => {
@@ -52,5 +54,21 @@ describe("a sheet's doors against its schedule", () => {
     expect(got.join).toBeNull();
     expect(got.unplacedMarks).toEqual([]);
     expect(doorCount(got)).toBe(0);
+  });
+});
+
+describe("a 2 ft leaf in no wall is a counter gate (S1)", () => {
+  const door = (widthFeet: number, wall: number | null, leaves: 1 | 2 = 1) => ({ kind: "door", hinge: { x: 0.5, y: 0.5 }, strike: { x: 0.52, y: 0.5 }, widthFeet, wall, leaves, sweepDegrees: 90 }) as DoorSymbol;
+  it("drops Sloans A1.1's 2'-0\" counter gates, which hang in no wall", () => {
+    expect(counterGate(door(2.01, null))).toBe(true);
+    expect(counterGate(door(COUNTER_GATE_LEAF_FEET, null))).toBe(true);
+  });
+  it("is applied where the sheet's doors are counted (doorsInScope)", () => {
+    expect(readFileSync(new URL("./doorsWindows.ts", import.meta.url), "utf8")).toMatch(/\.filter\(\(d\) => d\.widthFeet \/ d\.leaves <= WIDEST_DOOR_LEAF_FEET\)\s*\.filter\(\(d\) => !counterGate\(d\)\)/);
+  });
+  it("keeps a 2'-0\" closet door in a wall, a 2'-6\" leaf anywhere, and a pair", () => {
+    expect(counterGate(door(2.0, 3))).toBe(false);
+    expect(counterGate(door(2.5, null))).toBe(false);
+    expect(counterGate(door(4.0, null, 2))).toBe(false);
   });
 });

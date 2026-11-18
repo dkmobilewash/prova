@@ -194,6 +194,21 @@ export function copiedIntoOtherViews(doors: readonly DoorSymbol[], textPt: reado
   return out;
 }
 
+/** A single leaf no wider than this, hung in no wall, is a counter gate or casework, not a door (`counterGate`). */
+export const COUNTER_GATE_LEAF_FEET = 2.1;
+
+/**
+ * ── A 2 FT LEAF IN NO WALL IS A COUNTER GATE ──
+ *
+ * Sloans A1.1 draws two pairs of 2'-0" double-swing gates in its service counter, beside "COUNTER
+ * FRIG.": four found doors and none of them a door to take off. Across the training and retired
+ * pools (labels-snap-20261118T1020) no real door has a single leaf under 2.3 ft that is not on a
+ * wall; a 2'-0" closet door hangs in a wall and is kept.
+ */
+export function counterGate(d: DoorSymbol): boolean {
+  return d.leaves === 1 && d.widthFeet <= COUNTER_GATE_LEAF_FEET && d.wall === null;
+}
+
 export function doorsInScope(input: {
   segments: readonly StrokeSegment[];
   walls: readonly WallCandidate[];
@@ -208,6 +223,7 @@ export function doorsInScope(input: {
   const found = doorSymbols(input.segments, input.walls, input.feetPerUnit)
     .filter((d) => legend.length === 0 || !insideLegendBox({ x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2 }, legend))
     .filter((d) => d.widthFeet / d.leaves <= WIDEST_DOOR_LEAF_FEET)
+    .filter((d) => !counterGate(d))
     .filter((d) => !dims.some((p) => inSwing(d, p, input.feetPerUnit)))
     .filter((d) => !legendDoorSample(d, input.textPt, input.widthPt))
     .filter((d) => !onCentreMark(d, input.segments, input.feetPerUnit));
