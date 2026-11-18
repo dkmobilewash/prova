@@ -148,7 +148,10 @@ describe("the sets that must never reach training", () => {
     // EVR, Riverbend), before a label was written.
     // 22 to 25 on 2026-11-11: round 18's three readiness centers (Jefferson
     // City Building 1, Clinton, Anderson), before a label was written.
-    expect(HELD_OUT_SETS).toHaveLength(33);
+    // 25 to 33 on 2026-11-13: eight of that day's 24 keepers.
+    // 33 to 36 on 2026-11-17: the FRESH DOORS EXAM pool (Huffman-Parnell RAD,
+    // The Meadows RAD, Levy County Courthouse), before a label was written.
+    expect(HELD_OUT_SETS).toHaveLength(36);
   });
 
   it("refuses the three that were declared held out in round 7 and only listed in round 9", () => {
@@ -295,6 +298,46 @@ describe("round 16 (2026-11-08), by the real file names on disk", () => {
 
   it("keeps the three renovations in training", () => {
     for (const file of ["SchroederES04-124972DSAApprovedPlans.pdf", "2026-03-05-cmb-pd-cd-set.pdf", "Wendell-Drawings.pdf"]) {
+      expect(isHeldOut(file), file).toBe(false);
+    }
+  });
+});
+
+describe("the 2026-11-17 batch (fresh doors exam pool), by the real file names on disk", () => {
+  // Taken from real-plans/incoming, not typed from the request: a match that
+  // misses the file refuses nothing.
+  it("holds out the three doors-exam sets and says they are never read for doors", () => {
+    for (const file of [
+      "Huffman-parnell-rad-conversion.pdf",
+      "THE MEADOWS RAD RENOVATIONS.pdf",
+      "LEVY CO. COURTHOUSE RENOVATION.pdf",
+    ]) {
+      const why = heldOutReason(file);
+      expect(why, file).not.toBeNull();
+      expect(why, file).toContain("FRESH DOORS EXAM");
+      expect(why, file).toContain("never read for doors");
+    }
+  });
+
+  it("refuses them however the name was punctuated on its way through", () => {
+    expect(isHeldOut("Huffman_parnell_rad_conversion")).toBe(true);
+    expect(isHeldOut("THE_MEADOWS_RAD_RENOVATIONS.pdf")).toBe(true);
+    expect(isHeldOut("levy co courthouse renovation")).toBe(true);
+  });
+
+  it("keeps the ten training keepers trainable, the two restaurants included", () => {
+    for (const file of [
+      "12-4112_Sloans-Prototype.pdf",
+      "Garden-Square_ISSUE-FOR-PERMIT_Full-Set-received-2.14.25-1.pdf",
+      "2020-03-06smmusd-districtofficepricingpackage.pdf",
+      "2204.Mid-City+Combined+Set+-CDs-+Bid+Package+-+08-28-25.pdf",
+      "2609 Aldrich Avenue South Suite 10.pdf",
+      "canton-armory_cd-drawings_issue-for-bid_2025-11-12.pdf",
+      "MENDENHALL COMMUNICATIONS SUITE RENOVATION.pdf",
+      "NG-HQ-Lakewood-CO-Springhill-West-Issue-for-Permit-Phase-04.pdf",
+      "Sedgwick County Courthouse Annex.pdf",
+      "SEWA_CPCN_Application_Exhibit_9_--_SEWA_Building_A_--_03-29-2022.pdf",
+    ]) {
       expect(isHeldOut(file), file).toBe(false);
     }
   });
