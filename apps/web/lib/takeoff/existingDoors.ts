@@ -168,7 +168,8 @@ export const SERIES_KEPT_MIN = 2;
 const AREA_LABEL = /^(?:EXISTING\b|EXIST\.|\(E\)|NOT\s+IN\s+(?:CONTRACT|SCOPE)\b|N\.?\s?I\.?\s?C\.?\b|BY\s+OTHERS\b|NO\s+WORK\b)|\(E\)$/i;
 /** A door's own tag saying it is existing: `N141 (E)`, `EXISTING DOOR`. A bare `(E)` must sit in the swing (`BARE_E`). */
 const DOOR_TAG = /\S\s*\(E\)$|^EXIST(?:ING|\.|'G)?\s+DOOR\b/i;
-const BARE_E = /^\(E\)$/i;
+/** A bare word in the swing: `(E)` (UCCS), or `EXIST.` / `EXIST` / `EXISTING` under the mark (Garden Square A100's 102B, 102C). */
+const BARE_E = /^(?:\(E\)|EXIST(?:ING|\s*\.)?)$/i;
 
 const mid = (d: { hinge: { x: number; y: number }; strike: { x: number; y: number } }) => ({ x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2 });
 
@@ -296,7 +297,7 @@ export function existingDoors(input: {
       if (Math.hypot(at.x - mid(d).x, at.y - mid(d).y) * fpu <= d.widthFeet + 1) set(d, "tag", `tagged "${r.str}"`);
     }
   }
-  const bare = rows.filter((r) => BARE_E.test(r.str)).map(centre);
+  const bare = rows.filter((r) => BARE_E.test(r.str)).map((r) => ({ ...centre(r), str: r.str }));
   if (bare.length > 0) {
     for (const d of doors) {
       if (out.has(d)) continue;
@@ -306,7 +307,8 @@ export function existingDoors(input: {
       const side = swingSide(d);
       if (side === 0) continue;
       // In the swing: on the arc's side of the closed leaf.
-      if (near.some((p) => Math.sign((p.x - d.hinge.x) * (-ly / L) + (p.y - d.hinge.y) * (lx / L)) === side)) set(d, "tag", `"(E)" printed inside its swing`);
+      const inSwing = near.find((p) => Math.sign((p.x - d.hinge.x) * (-ly / L) + (p.y - d.hinge.y) * (lx / L)) === side);
+      if (inSwing) set(d, "tag", `"${inSwing.str}" printed inside its swing`);
     }
   }
   // 4. The paired demolition plan draws it and keeps it.

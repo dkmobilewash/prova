@@ -47,6 +47,11 @@ describe("existing doors set aside", () => {
     expect(run([], [word("(E)", 0.51, 0.485)]).map((e) => e.route)).toEqual(["tag"]);
   });
 
+  it("a bare EXIST. / EXIST / EXISTING inside the swing sets the door aside (Garden Square A100's 102B, 102C)", () => {
+    for (const w of ["EXIST.", "EXIST .", "EXIST", "EXISTING"]) expect(run([], [word(w, 0.51, 0.485)]).map((e) => e.route)).toEqual(["tag"]);
+    expect(run([], [word("EXIST.", 0.515, 0.515)])).toEqual([]);
+    expect(run([], [word("EXISTING WALL", 0.51, 0.485)])).toEqual([]);
+  });
   it("a bare (E) across the wall from the swing is a dimension's, not the door's (E Street A2.1, doors E-9 to E-11)", () => {
     expect(run([], [word("(E)", 0.515, 0.515)])).toEqual([]);
   });
