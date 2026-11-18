@@ -117,6 +117,15 @@ export type StrokeSegment = {
    * stroked line. Set by `sheetStrokes.ts`, read by `existingWalls.ts`.
    */
   fill?: number;
+  /**
+   * Which filled path this edge belongs to, numbered in PAINT ORDER: a later
+   * path is painted over an earlier one. Absent on a stroked line. A fill is
+   * only readable in paint order: NW C35NW draws ONE grey rectangle under the
+   * whole building and paints the new-work area white over it, so what a reader
+   * sees at a point is the LAST fill containing it (`visibleGround`,
+   * `existingDoors.ts`), not any fill whose edge happens to be near.
+   */
+  path?: number;
 };
 
 /** A wall this module is willing to claim: the centreline, in page points. */

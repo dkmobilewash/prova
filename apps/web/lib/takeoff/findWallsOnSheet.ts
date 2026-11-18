@@ -232,6 +232,7 @@ export function inPageWidthUnits(over: number) {
     layer: one.layer,
     gray: one.gray,
     fill: one.fill,
+    path: one.path,
   });
 }
 

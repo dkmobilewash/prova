@@ -271,6 +271,7 @@ export async function segmentsFromOpenPage(
       const segments: StrokeSegment[] = [];
       let pathOperators = 0;
       let imageOperators = 0;
+      let filledPaths = 0;
       let unpaintedPaths = 0;
 
       // The CTM stack. `ctm` is the matrix in force now; `q` pushes a copy and
@@ -538,7 +539,8 @@ export async function segmentsFromOpenPage(
         const filled =
           paint !== undefined &&
           (paint === OPS.fill || paint === OPS.eoFill || paint === OPS.fillStroke || paint === OPS.eoFillStroke || paint === OPS.closeFillStroke || paint === OPS.closeEOFillStroke);
-        const pen = filled ? { width: w, layer, gray, fill: fillGray ?? 0 } : { width: w, layer, gray };
+        // Numbered in paint order, so a reader can ask which fill is ON TOP at a point (`StrokeSegment.path`).
+        const pen = filled ? { width: w, layer, gray, fill: fillGray ?? 0, path: filledPaths++ } : { width: w, layer, gray };
         const toDisplay = (x: number, y: number) => {
           const [dx, dy] = Util.applyTransform([x, y], toPage);
           return { x: dx, y: dy };

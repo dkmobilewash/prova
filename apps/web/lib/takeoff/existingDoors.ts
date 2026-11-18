@@ -45,7 +45,7 @@ import type { StrokeSegment } from "./wallVectors";
  *
  * Pure. Positions in page-width units.
  */
-export type ExistingDoor = { door: DoorSymbol; route: "wall" | "area" | "tag" | "demo" | "series" | "grey"; why: string };
+export type ExistingDoor = { door: DoorSymbol; route: "wall" | "area" | "tag" | "demo" | "series" | "grey" | "nic"; why: string };
 
 /** What a caller knows beyond the page itself. Both optional: without them routes 1 and 4 are silent. */
 export type ExistingDoorEvidence = {
@@ -124,6 +124,41 @@ export function doorPen(d: DoorSymbol, segments: readonly StrokeSegment[], feetP
   const { grey, dark } = arcPen.grey + arcPen.dark > 0 ? arcPen : leafPen;
   const total = grey + dark;
   return total === 0 ? null : { grey: grey / total, dark: dark / total };
+}
+
+/** Route 6b: the jambs of a grey door are this grey, by length, for the wall it stands in to read existing. */
+export const GREY_JAMB_SHARE = 0.6;
+/** How near the hinge or strike a stroke must come to be the jamb's, feet. */
+export const JAMB_FEET = 1;
+
+/**
+ * The share of the strokes at a door's two jambs drawn grey, by length — the wall the door stands in, not the door:
+ * within `JAMB_FEET` of the hinge or the strike, less the door's own arc and leaf. Null with nothing there.
+ * Kirkland df9e0224 A100 draws its existing doors AND walls grey (3,013 ft at grey 0.5) and its new work black, but
+ * most of its doors are the existing ones, so route 6's "most doors dark" never holds there.
+ */
+export function jambPen(d: DoorSymbol, segments: readonly StrokeSegment[], feetPerUnit: number): number | null {
+  if (d.open === undefined) return null;
+  const r = d.widthFeet / d.leaves / feetPerUnit, near = JAMB_FEET / feetPerUnit, on = ON_DOOR_FEET / feetPerUnit;
+  const onCircle = (x: number, y: number) => Math.abs(Math.hypot(x - d.hinge.x, y - d.hinge.y) - r) <= on;
+  const ux = (d.open.x - d.hinge.x) / r, uy = (d.open.y - d.hinge.y) / r;
+  const onLeaf = (x: number, y: number) => { const t = (x - d.hinge.x) * ux + (y - d.hinge.y) * uy; return Math.abs(-(x - d.hinge.x) * uy + (y - d.hinge.y) * ux) <= on && t >= -on && t <= r + on; };
+  let grey = 0, total = 0;
+  const seen = new Set<number>();
+  for (const at of [d.hinge, d.strike]) {
+    for (const i of segmentGrid(segments).near(at.x - near, at.y - near, at.x + near, at.y + near)) {
+      if (seen.has(i)) continue;
+      const s = segments[i]!;
+      if (toSegment(at, s).d > near) continue;
+      seen.add(i);
+      if (onCircle(s.x1, s.y1) && onCircle(s.x2, s.y2)) continue;
+      if (onLeaf(s.x1, s.y1) && onLeaf(s.x2, s.y2)) continue;
+      const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+      total += len;
+      if ((s.gray ?? 0) >= GREY_PEN) grey += len;
+    }
+  }
+  return total === 0 ? null : grey / total;
 }
 
 /** A demolition plan supports a series when it keeps at least this many of its doors, and at least half. */
@@ -313,6 +348,15 @@ export function existingDoors(input: {
       const grey = words ? darkDoors > 0.5 && p.grey >= GREY_DOOR_SHARE && p.dark <= DARK_DOOR_SHARE : darkDoors >= NO_WORDS_DARK_DOORS && p.grey >= NO_WORDS_GREY_DOOR_SHARE;
       if (grey) set(d, "grey", words ? "drawn grey where the sheet draws its doors dark, on a sheet that shows existing work" : "drawn grey where the sheet draws nearly all its doors dark");
     }
+    // 6b. Drawn grey in a grey wall, where the sheet draws new doors dark — whatever most doors are drawn in.
+    if (words && read.some((p) => p.dark >= 0.5)) {
+      for (const d of doors) {
+        const p = pens.get(d);
+        if (out.has(d) || p === null || p === undefined || p.grey < GREY_DOOR_SHARE || p.dark > DARK_DOOR_SHARE) continue;
+        const j = jambPen(d, segments, fpu);
+        if (j !== null && j >= GREY_JAMB_SHARE) set(d, "grey", "drawn grey in a grey wall, where the sheet draws its new doors dark");
+      }
+    }
   }
   // 2. Inside a hatched or dashed area labelled existing or not in contract.
   const labels = rows.filter((r) => AREA_LABEL.test(r.str));
@@ -329,7 +373,112 @@ export function existingDoors(input: {
       }
     }
   }
+  // 7. Standing on the grey the sheet calls not in contract, read in paint order.
+  if (doors.some((d) => !out.has(d))) {
+    const nic = nicGround(segments, input.textPt, W, fpu);
+    if (nic !== null) for (const d of doors) if (!out.has(d) && nic(d)) set(d, "nic", "inside the grey the sheet calls not in contract");
+  }
   return doors.filter((d) => out.has(d)).map((d) => out.get(d)!);
+}
+
+/** A filled path: its edges, its grey, its place in paint order (`StrokeSegment.path`). */
+type Fill = { path: number; gray: number; edges: StrokeSegment[]; x1: number; y1: number; x2: number; y2: number };
+
+/** The sheet's filled paths, from their edges, latest painted first. */
+export function fillsOf(segments: readonly StrokeSegment[]): Fill[] {
+  const by = new Map<number, Fill>();
+  for (const s of segments) {
+    if (s.path === undefined || s.fill === undefined) continue;
+    const f = by.get(s.path) ?? by.set(s.path, { path: s.path, gray: s.fill, edges: [], x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity }).get(s.path)!;
+    f.edges.push(s);
+    f.x1 = Math.min(f.x1, s.x1, s.x2); f.x2 = Math.max(f.x2, s.x1, s.x2);
+    f.y1 = Math.min(f.y1, s.y1, s.y2); f.y2 = Math.max(f.y2, s.y1, s.y2);
+  }
+  return [...by.values()].sort((a, b) => b.path - a.path);
+}
+
+/** Even-odd: whether `p` is inside the region a fill's edges bound. */
+function insideFill(f: Fill, p: { x: number; y: number }): boolean {
+  if (p.x < f.x1 || p.x > f.x2 || p.y < f.y1 || p.y > f.y2) return false;
+  let inside = false;
+  for (const e of f.edges) {
+    if ((e.y1 > p.y) !== (e.y2 > p.y) && e.x1 + ((p.y - e.y1) * (e.x2 - e.x1)) / (e.y2 - e.y1) > p.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** What a reader sees at `p`: the last-painted fill containing it, of those given (latest first), or null for bare paper. */
+export function visibleGround(fills: readonly Fill[], p: { x: number; y: number }): Fill | null {
+  for (const f of fills) if (insideFill(f, p)) return f;
+  return null;
+}
+
+/** "NOT IN CONTRACT", "NOT IN SCOPE", "N.I.C." anywhere in a line, not inside a word (CLINIC, PANIC). */
+export const NIC_PHRASE = /(?:^|[^A-Z])(?:NOT\s+IN\s+(?:CONTRACT|SCOPE)|N\.?\s?I\.?\s?C\.?)(?![A-Z])/i;
+/** A grey a reader reads as a tone: neither near black (poché) nor near white (paper). */
+export const NIC_GREY_MIN = 0.35;
+export const NIC_GREY_MAX = 0.95;
+/** How close a plan's grey must be to an N.I.C. grey: NW C35NW's swatch is 0.80 and its plan area 0.757. */
+export const NIC_GREY_TOLERANCE = 0.08;
+/** A fill smaller than this, sq ft, is a door leaf, a symbol or a text mask, never the ground a door stands on. */
+export const GROUND_MIN_SQ_FEET = 4;
+/** Route 7's ring: this many points, this many leaf widths round the opening's middle. */
+export const NIC_RING_POINTS = 8;
+export const NIC_RING_LEAVES = 1.5;
+/** A legend swatch on paper, inches: at most this on each side, and its label within this of it. */
+export const SWATCH_MAX_INCHES = 1.5;
+export const SWATCH_MIN_INCHES = 0.1;
+
+/**
+ * Route 7's reading: whether a door stands on the grey the sheet calls not in contract. The greys are the legend
+ * swatch an N.I.C. phrase labels (the text beside it on the same line, as a legend row reads) and the ground under an
+ * N.I.C. phrase printed in the plan. The ground is what is painted LAST at a point (NW C35NW's one grey rectangle
+ * with new work painted white over it), read on a ring round the door, so only a door well inside the area goes,
+ * never one in its boundary wall. Null when the sheet names no N.I.C. grey. Measured 2026-11-18: NW's false doors
+ * 10 -> 3 (its exterior-wall doors stay), no real door lost on training or the retired pool.
+ */
+export function nicGround(segments: readonly StrokeSegment[], textPt: readonly TextItem[], W: number, fpu: number): ((d: DoorSymbol) => boolean) | null {
+  const rows = textRows(textPt);
+  const nicRows = rows.filter((r) => NIC_PHRASE.test(r.str));
+  if (nicRows.length === 0) return null;
+  const fills = fillsOf(segments);
+  if (fills.length === 0) return null;
+  const ground = fills.filter((f) => (f.x2 - f.x1) * (f.y2 - f.y1) * fpu * fpu >= GROUND_MIN_SQ_FEET);
+  const isGrey = (g: number) => g >= NIC_GREY_MIN && g <= NIC_GREY_MAX;
+  const greys: number[] = [];
+  const max = (SWATCH_MAX_INCHES * 72) / W, min = (SWATCH_MIN_INCHES * 72) / W;
+  for (const f of fills) {
+    const w = f.x2 - f.x1, h = f.y2 - f.y1;
+    if (!isGrey(f.gray) || w > max || h > max || w < min || h < min) continue;
+    // Its label is the text to its RIGHT on the same line, as a legend row reads (NW C35NW: the legend's title
+    // above the swatch is nearer than its own "N.I.C" beside it).
+    const top = f.y1 * W - 7.2, bottom = f.y2 * W + 7.2, right = f.x2 * W;
+    let best: { gap: number; str: string } | null = null;
+    for (const r of rows) {
+      if (r.y < top || r.y - r.height > bottom || r.x < right - 3.6) continue;
+      const gap = Math.max(0, r.x - right);
+      if (gap <= SWATCH_MAX_INCHES * 72 && (best === null || gap < best.gap)) best = { gap, str: r.str };
+    }
+    if (best !== null && NIC_PHRASE.test(best.str)) greys.push(f.gray);
+  }
+  for (const r of nicRows) {
+    const g = visibleGround(ground, { x: (r.x + r.width / 2) / W, y: (r.y - r.height / 2) / W });
+    if (g !== null && isGrey(g.gray)) greys.push(g.gray);
+  }
+  if (greys.length === 0) return null;
+  return (d) => {
+    // A RING of points 1.5 leaf widths round the opening's middle, all on the N.I.C. grey: the door stands well inside
+    // the area, not in its boundary wall (HPL I-110's keyed door into the N.I.C. area, Appendix 5B's 421 beside the
+    // stair tone). It does not depend on which leaf the finder took for the closed one.
+    const w = d.widthFeet / fpu, R = NIC_RING_LEAVES * w;
+    const cx = (d.hinge.x + d.strike.x) / 2, cy = (d.hinge.y + d.strike.y) / 2;
+    for (let k = 0; k < NIC_RING_POINTS; k++) {
+      const a = (2 * Math.PI * k) / NIC_RING_POINTS;
+      const g = visibleGround(ground, { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
+      if (g === null || !isGrey(g.gray) || !greys.some((n) => Math.abs(n - g.gray) <= NIC_GREY_TOLERANCE)) return false;
+    }
+    return true;
+  };
 }
 
 /**
