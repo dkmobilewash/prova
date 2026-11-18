@@ -109,8 +109,12 @@ export function wallHeightConventionFrom(value: unknown): WallHeightConvention |
   return WALL_HEIGHT_CONVENTIONS.includes(value as WallHeightConvention) ? (value as WallHeightConvention) : null;
 }
 
-/** What the set gives a convention to work from, beside each wall's own rooms. */
-export type SetFigures = { floorToFloorFt: number | null; structureFt: number | null; setCeilingFt: number | null };
+/**
+ * What the set gives a convention to work from, beside each wall's own rooms. `deckAnswerFt`: the
+ * job's answer to "Walls go to deck: deck height?" (`deckQuestion.ts`), which every to-deck wall
+ * on the job takes in place of the datum C-Stream read or the company's usual height.
+ */
+export type SetFigures = { floorToFloorFt: number | null; structureFt: number | null; setCeilingFt: number | null; deckAnswerFt?: number | null };
 
 /** The set's one structure elevation and one ceiling height, when it prints exactly one of each. */
 export function setFigures(facts: readonly HeightFact[], floorToFloorFt: number | null): SetFigures {
@@ -119,6 +123,39 @@ export function setFigures(facts: readonly HeightFact[], floorToFloorFt: number 
     structureFt: onlyValue(facts.filter((f) => f.kind === "structure-elevation" && f.feet !== null && f.feet >= 7).map((f) => f.feet!)),
     setCeilingFt: onlyValue(facts.filter((f) => f.kind === "ceiling-height" && f.feet !== null && f.feet >= 7).map((f) => f.feet!)),
   };
+}
+
+/** The set's one bearing line (T.O. WALL, joist/truss bearing), framing-plan spots aside; null with none or several. */
+export function setBearingFt(facts: readonly HeightFact[]): number | null {
+  return onlyValue(facts.filter((f) => f.kind === "bearing-elevation" && f.feet !== null && f.feet >= 7 && !f.framing).map((f) => f.feet!));
+}
+
+/**
+ * Whether a job's walls go to the deck: the set's general note says so (and printed no single
+ * structure elevation to draw it from), or nothing on the drawing answers and the company's own
+ * walls go to the structure.
+ */
+export function wallsGoToDeck(rule: SetHeightRule | null, company: { convention: WallHeightConvention | null }): boolean {
+  return rule?.kind === "to-structure" || rule?.kind === "to-structure-by-roof" || (rule === null && company.convention === "TO_STRUCTURE");
+}
+
+/** The words a wall's height carries once the job's deck question is answered; a refresh finds them by this. */
+export const DECK_ANSWER_FROM = "you answered: walls go to deck at";
+
+export type DeckPrefill = { feet: number; from: string } | null;
+
+/**
+ * What the box starts with: the floor-to-floor most to-deck walls stand on, else the bearing line,
+ * else the company's usual height; null leaves it empty. `floorToFloor` is per sheet, by wall count.
+ */
+export function deckPrefill(input: { floorToFloor: readonly { feet: number | null; walls: number }[]; bearingFt: number | null; fixedFt: number | null }): DeckPrefill {
+  const byFeet = new Map<number, number>();
+  for (const f of input.floorToFloor) if (f.feet !== null && f.feet > 0) byFeet.set(f.feet, (byFeet.get(f.feet) ?? 0) + f.walls);
+  const most = [...byFeet.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0];
+  if (most !== undefined) return { feet: most[0], from: `floor to floor ${most[0]} ft, read from the sections' level marks` };
+  if (input.bearingFt !== null) return { feet: input.bearingFt, from: `the bearing line on the sections, ${input.bearingFt} ft` };
+  if (input.fixedFt !== null && input.fixedFt > 0) return { feet: input.fixedFt, from: `your usual height, ${input.fixedFt} ft` };
+  return null;
 }
 
 export function assumedHeight(company: { convention: WallHeightConvention | null; fixedFt: number | null }, sides: readonly (number | null)[], figures: SetFigures): WallHeightByCode | null {
@@ -155,6 +192,9 @@ export function wallHeightChain(
 ): ChainHeight | null {
   const drawn = wallHeightByCode(rule, sides, roofPitched);
   if (drawn !== null) return { ...drawn, assumed: false };
+  // The job's one answer to the deck question: every wall that goes to deck takes it, the person's own.
+  const deck = figures.deckAnswerFt ?? null;
+  if (deck !== null && deck > 0 && wallsGoToDeck(rule, company)) return { feet: toTwelfths(deck), from: `${DECK_ANSWER_FROM} ${deck} ft`, assumed: false };
   const assumed = assumedHeight(company, sides, figures);
   return assumed === null ? null : { feet: assumed.feet, from: `assumed: ${assumed.from}`, assumed: true };
 }

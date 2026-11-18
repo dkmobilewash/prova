@@ -25,6 +25,7 @@ import { roomPitched, runPitched } from "@/lib/takeoff/roofParts";
 import { storedRoofParts } from "@/lib/takeoff/roofPartsRead";
 import { answeredTagTypes, doorsItem, fillOfRuns, GENERAL_HEIGHT_KEY, heightItem, reviewQueue, splitByLevel, splitByRoof, suggestType, typeItems, wallItem, windowsItem, type CodeHeight, type LegendState, type QueueSheet, type ReviewItem } from "@/lib/takeoff/reviewQueue";
 import { plainTag } from "@/lib/takeoff/planTextTags";
+import { deckQuestionFor } from "@/lib/takeoff/deckQuestion";
 import { storedWindowsOf, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
 import { DOORS_SUGGESTED, storedDoorsOf } from "@/lib/takeoff/doorSuggestions";
 import { refreshSuggestionsAfterResponse } from "@/lib/takeoff/suggestionRefresh";
@@ -92,6 +93,9 @@ export async function loadReviewQueue(
   };
 
   const items: ReviewItem[] = [...prices];
+  // The job's one deck question (behind TAKEOFF_DECK_QUESTION): first in the queue, one press for every to-deck wall.
+  const deck = await deckQuestionFor(companyId, jobId);
+  if (deck !== null) items.push(deck);
   const untypedPages = pages.filter((page) => page.measurements.some((m) => m.label !== HELD_LABEL));
   // Only the sheets with untyped walls need their stored groups, which are big.
   const proposals = untypedPages.length === 0

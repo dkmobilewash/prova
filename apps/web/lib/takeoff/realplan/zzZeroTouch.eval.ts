@@ -17,7 +17,7 @@ import { loadWallModel } from "../wallModelFile";
 import { loadRunModel, priorForRuns, runModelVerdicts } from "../wallRunModel";
 import { reviewOrder, runScores } from "../wallReview";
 import type { WallCandidate } from "../wallVectors";
-import { setFigures, setHeightRule, wallHeightChain, type SetFigures, type SetHeightRule, type WallHeightConvention } from "../heightsByCode";
+import { setFigures, setHeightRule, wallHeightChain, wallsGoToDeck, type SetFigures, type SetHeightRule, type WallHeightConvention } from "../heightsByCode";
 import { levelHeight, planLevels, type LevelMark } from "../levelHeights";
 import { setHeightFacts } from "../setHeightFacts";
 import { CEILING_PAGE_TITLE } from "../../plan-ingest/rooms";
@@ -26,7 +26,7 @@ import { ceilingsForRooms, type CeilingPageText } from "../roomCeilings";
 import { roofPartsFor, type StoredRoofParts } from "../roofPartsRead";
 import { sheetRooms } from "../sheetRooms";
 import { wallChainWithRooms } from "../wallSides";
-import { keyWallFeet, loadKeyTypes, parseRoomZoneKey, type HeightsKeyType, type RoomZone } from "../roomZoneKey";
+import { keyTypeFor, keyWallFeet, loadKeyTypes, parseRoomZoneKey, type HeightsKeyType, type RoomZone } from "../roomZoneKey";
 import { wallSideRooms } from "../wallSides";
 import { sheetViews } from "../sheetViews";
 
@@ -107,6 +107,16 @@ const NOMINAL_FEET = Number(process.env.ZT_DEFAULT_FEET ?? "9");
  * not the whole term.
  */
 const HEIGHTS = process.env.ZT_HEIGHTS ?? "";
+/**
+ * ── AFTER ONE PRESS: THE JOB'S DECK QUESTION (Diego 2026-11-18, `deckQuestion.ts`) ──
+ * ZT_DECK_PRESS=1: on a set whose walls go to deck with no deck printed, the one press is answered
+ * with THE KEY'S HEIGHT — the LF-weighted most common height of the key walls whose type the key
+ * stated to deck/structure/bearing/plate — and every to-deck run wall takes it, as the product's
+ * chain gives it (`figures.deckAnswerFt`). A set with no such key height keeps the pre-fill (no
+ * change). Printed beside the zero-touch numbers, never instead of them.
+ */
+const DECK_PRESS = process.env.ZT_DECK_PRESS === "1";
+const TO_DECK_BASIS = /deck|struct|joist|truss|bear|roof|plate/i;
 // Key-side zoned pricing (Diego 2026-11-17): the full typed entries per labelSet, loaded through
 // `loadKeyTypes` (keys uppercased, sameAs chains materialized to 5 hops — the flat loader's rules),
 // priced per key wall by `keyWallFeet`: sheet zone, then room zone through the set's zone key
@@ -187,6 +197,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     // #1198 wired: instrument counters for the ROOMSIDES line (one group per process).
     let rsRooms = 0, rsWalls = 0, rsMoved = 0;
     let kzSheet = 0, kzRoom = 0, kzUnresolved = 0;
+    const deckBySet = new Map<string, { deckLf: number; deckBoardSf: number; keyDeck: Map<number, number> }>();
     const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number; zeroBoardSf: number; lf10BoardSf: number }>();
     for (const dir of readdirSync(LABELS).sort()) {
       if (!existsSync(join(LABELS, dir)) || (heldOutReason(dir) !== null) !== HELD) continue;
@@ -298,6 +309,8 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const roof = ph.roofs.get(saved.page);
         rsRooms += foundRooms.rooms.length;
         const feetByRun = new Map<(typeof runs)[number], number>();
+        // The deck question is asked here: walls go to deck and the set prints no deck (`deckQuestionFor`).
+        const deckAsked = wallsGoToDeck(ph.rule, ANSWER) && ph.figures.structureFt === null && ph.rule?.kind !== "to-structure";
         const runFeet = (r: (typeof runs)[number]): number => {
           const had = feetByRun.get(r);
           if (had !== undefined) return had;
@@ -312,6 +325,11 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
             figures,
           });
           const f = h?.feet ?? 0;
+          if (DECK_PRESS && h?.assumed === true && deckAsked) {
+            const d = deckBySet.get(dir) ?? { deckLf: 0, deckBoardSf: 0, keyDeck: new Map<number, number>() };
+            if (!held.has(r)) { d.deckLf += r.lengthFeet; d.deckBoardSf += r.lengthFeet * f * 2; }
+            deckBySet.set(dir, d);
+          }
           rsWalls += 1;
           if (f !== chainFeet) rsMoved += 1;
           feetByRun.set(r, f);
@@ -343,6 +361,11 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           const t = (((k as { wallType?: string }).wallType ?? "").trim()).toUpperCase();
           const r = keyWallFeet({ code: t, types: keyTypes, sheet, sideRoomNumbers: keyWallRooms(k), zoneKey, defaultFeet: NOMINAL_FEET });
           keyBoardSf += k.lengthFeet * r.feet * 2;
+          if (DECK_PRESS && r.from !== "default" && r.from !== "zone-unresolved" && TO_DECK_BASIS.test(keyTypeFor(keyTypes, t)?.[1].basis ?? "")) {
+            const d = deckBySet.get(dir) ?? { deckLf: 0, deckBoardSf: 0, keyDeck: new Map<number, number>() };
+            d.keyDeck.set(r.feet, (d.keyDeck.get(r.feet) ?? 0) + k.lengthFeet);
+            deckBySet.set(dir, d);
+          }
           if (r.from === "sheet-zone") kzSheet += 1;
           if (r.from === "room-zone") kzRoom += 1;
           if (r.from === "zone-unresolved") kzUnresolved += 1;
@@ -398,6 +421,24 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         `ZT ${group} ${dir.slice(0, 26).padEnd(26)} sheets ${s.sheets} · key LF ${Math.round(s.keyLf)} doors ${s.keyDoors} windows ${s.keyWindows} · ` +
           `zero LF ${Math.round(s.lf)} doors ${s.doors} windows 0 · TOTAL ERROR ${totErr} (over $${Math.round(setOver)} + under $${Math.round(setUnder)}) · net ${pct(zBid)} · after ${PRESSES} presses ${pct(tBid)} · key types ${JSON.stringify(s.keyByType)}`,
       );
+    }
+    if (DECK_PRESS) {
+      // Board gap per set as the cause line prices it: |zero board − key board| × board $/SF.
+      let before = 0, after = 0, asked = 0, answered = 0;
+      for (const [dir, s] of [...bySet.entries()].sort()) {
+        const d = deckBySet.get(dir);
+        const gap0 = Math.abs(s.zeroBoardSf - s.keyBoardSf) * PRICE.boardPerSf;
+        let zero1 = s.zeroBoardSf, answer: number | null = null;
+        if (d !== undefined && d.deckLf > 0) {
+          asked += 1;
+          answer = [...d.keyDeck.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]?.[0] ?? null;
+          if (answer !== null) { answered += 1; zero1 = s.zeroBoardSf - d.deckBoardSf + d.deckLf * (Math.round(answer * 12) / 12) * 2; }
+        }
+        const gap1 = Math.abs(zero1 - s.keyBoardSf) * PRICE.boardPerSf;
+        before += gap0; after += gap1;
+        if (d !== undefined && d.deckLf > 0) console.log(`ZTDECK ${group} ${dir.slice(0, 32).padEnd(32)} to-deck run LF ${Math.round(d.deckLf)} · key deck ${answer === null ? "none stated (pre-fill kept)" : `${answer} ft`} · board gap $${Math.round(gap0)} -> $${Math.round(gap1)} (${gap1 - gap0 >= 0 ? "+" : ""}${Math.round(gap1 - gap0)})`);
+      }
+      console.log(`ZTDECK ${group} AFTER 1 PRESS (deck = the key's height): asked on ${asked} sets, key height on ${answered} · board gap $${Math.round(before)} -> $${Math.round(after)} (${after - before >= 0 ? "+" : ""}${Math.round(after - before)})`);
     }
     if (kb > 0) console.log(`ZT ${group} TOTAL bid off ${(((zb - kb) / kb) * 100).toFixed(1)}% zero-touch · ${(((tb - kb) / kb) * 100).toFixed(1)}% after ${PRESSES} presses/sheet (key $${Math.round(kb)})`);
     if (LOSO_DIR !== "") {

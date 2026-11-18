@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { setHeightRule, wallHeightByCode, wallHeightChain } from "./heightsByCode";
+import { deckPrefill, setHeightRule, wallHeightByCode, wallHeightChain } from "./heightsByCode";
 import type { HeightFact } from "./wallHeights";
 import { itemGeometry } from "@/lib/estimating/takeoff-item-lines";
 import { bidChecks } from "@/lib/estimating/bidCheck";
@@ -89,5 +89,31 @@ describe("bid check asks about an assumed height", () => {
   });
   it("none: clear", () => {
     expect(bidChecks(facts({ walls: 0 })).find((c) => c.key === "heights")!.open).toBe(false);
+  });
+});
+
+describe("the job's deck answer (one press, Diego 2026-11-18)", () => {
+  const toStructure = { convention: "TO_STRUCTURE" as const, fixedFt: 10 };
+  const figures = { floorToFloorFt: 14.5, structureFt: null, setCeilingFt: null };
+  it("every to-deck wall takes it, as the person's own, over the floor-to-floor and the usual height", () => {
+    expect(wallHeightChain(null, [null, null], [], toStructure, { ...figures, deckAnswerFt: 16 })).toEqual({ feet: 16, from: "you answered: walls go to deck at 16 ft", assumed: false });
+    expect(wallHeightChain(null, [null, null], [], toStructure, figures)).toMatchObject({ feet: 14.5, assumed: true });
+    // A to-structure-by-roof rule whose roof cannot be told goes to deck too.
+    const byRoof = { kind: "to-structure-by-roof" as const, pitchedFeet: 18, flatFeet: 14, from: "general note" };
+    expect(wallHeightChain(byRoof, [null, null], [null, null], { convention: "FIXED", fixedFt: 10 }, { ...figures, deckAnswerFt: 16 })).toMatchObject({ feet: 16, assumed: false });
+  });
+  it("never where the drawing answers, or where the walls do not go to deck", () => {
+    expect(wallHeightChain({ kind: "to-structure", feet: 15, from: "general note" }, [null, null], [], toStructure, { ...figures, deckAnswerFt: 16 })).toMatchObject({ feet: 15, assumed: false });
+    expect(wallHeightChain(null, [9, null], [], { convention: "CEILING_PLUS_6", fixedFt: 10 }, { ...figures, deckAnswerFt: 16 })).toMatchObject({ feet: 9.5, assumed: true });
+    expect(wallHeightChain({ kind: "above-ceiling", inches: 6, setCeilingFeet: 9, from: "general note" }, [null, null], [], toStructure, { ...figures, deckAnswerFt: 16 })).toMatchObject({ feet: 9.5, assumed: false });
+  });
+});
+
+describe("the deck question's pre-fill", () => {
+  it("the floor-to-floor most walls stand on, else the bearing line, else the usual height, else empty", () => {
+    expect(deckPrefill({ floorToFloor: [{ feet: 14, walls: 3 }, { feet: 12, walls: 9 }, { feet: null, walls: 40 }], bearingFt: 15.6, fixedFt: 10 })).toEqual({ feet: 12, from: "floor to floor 12 ft, read from the sections' level marks" });
+    expect(deckPrefill({ floorToFloor: [{ feet: null, walls: 4 }], bearingFt: 13.83, fixedFt: 10 })).toEqual({ feet: 13.83, from: "the bearing line on the sections, 13.83 ft" });
+    expect(deckPrefill({ floorToFloor: [], bearingFt: null, fixedFt: 10 })).toEqual({ feet: 10, from: "your usual height, 10 ft" });
+    expect(deckPrefill({ floorToFloor: [], bearingFt: null, fixedFt: null })).toBeNull();
   });
 });

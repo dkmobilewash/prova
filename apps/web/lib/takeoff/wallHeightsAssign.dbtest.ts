@@ -11,7 +11,9 @@ import { STARTER_TYPES } from "@/lib/wall-type-starters";
 const context = { company: { id: "" }, companyId: "", id: "", role: "OWNER" as string, jobFunction: null as string | null };
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-const { assignWallHeights, HEIGHT_RULE } = await import("./wallHeightsAssign");
+const { assignWallHeights, FLOOR_TO_FLOOR, HEIGHT_RULE } = await import("./wallHeightsAssign");
+const { setJobDeckHeight } = await import("@/lib/actions/takeoffItems");
+const { deckQuestionFor } = await import("./deckQuestion");
 const { syncTakeoffItemLines } = await import("@/lib/estimating/takeoff-item-lines");
 const { saveWallHeightAnswer } = await import("@/lib/actions/company");
 const { applyTradePreset } = await import("@/lib/actions/tradePresets");
@@ -60,7 +62,7 @@ async function setUp(rule: unknown, answer: { convention: "TO_STRUCTURE" | "CEIL
   for (const x2 of [0.1, 0.2]) await prisma.takeoffMeasurement.create({ data: { pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", source: "DETECTED", xs: [0, x2], ys: [0.5, 0.5], itemId: item.id } });
   await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, job.id));
   const assign = () => assignWallHeights({ planId: plan.id, pageId: page.id, pageNumber: 1, companyId, jobId: job.id, doc: null });
-  return { companyId, jobId: job.id, pageId: page.id, assign };
+  return { companyId, jobId: job.id, pageId: page.id, planId: plan.id, assign };
 }
 const walls = (pageId: string) => prisma.takeoffMeasurement.findMany({ where: { pageId, kind: "LINEAR" }, orderBy: { createdAt: "asc" }, select: { heightFt: true, heightAssumed: true, heightFrom: true } });
 const boardLine = async (jobId: string) => (await prisma.jobLineItem.findMany({ where: { jobId, isDeleted: false } })).find((l) => /Type X board/.test(l.description)) ?? null;
@@ -130,5 +132,57 @@ describe("every wall a height (D)", () => {
       const c = await prisma.company.findUniqueOrThrow({ where: { id: companyId } });
       expect([Number(c.defaultWallHeightFt), c.wallHeightConvention]).toEqual(stored);
     }
+  });
+});
+
+describe("walls go to deck, no deck printed: one press for the job (Diego, 2026-11-18)", () => {
+  const ON = { TAKEOFF_DECK_QUESTION: "1" };
+  it("asked once, pre-filled with the floor-to-floor read; the answer goes on every to-deck wall and its board; Undo puts the read back", async () => {
+    const s = await setUp(null, { convention: "TO_STRUCTURE", fixedFt: 10 });
+    // The sheet's floor-to-floor as `floorToFloor` keeps it: 14'-6".
+    await prisma.takeoffPlanTextRead.create({ data: { planId: s.planId, pageNumber: 1, kind: FLOOR_TO_FLOOR, value: { feet: 14.5 } } });
+    await s.assign();
+    expect((await walls(s.pageId)).map((w) => [w.heightFt, w.heightAssumed])).toEqual([[14.5, true], [14.5, true]]);
+    // Gate off: no question.
+    expect(await deckQuestionFor(s.companyId, s.jobId, {})).toBeNull();
+    const asked = await deckQuestionFor(s.companyId, s.jobId, ON);
+    expect(asked).toEqual({ kind: "deck", key: `deck:${s.jobId}`, walls: 2, prefill: { feet: 14.5, from: "floor to floor 14.5 ft, read from the sections' level marks" } });
+
+    const answered = await setJobDeckHeight(s.jobId, 16);
+    expect(answered).toEqual({ ok: true, value: { was: null, walls: 2 } });
+    expect((await walls(s.pageId)).map((w) => [w.heightFt, w.heightAssumed, w.heightFrom])).toEqual([
+      [16, false, "you answered: walls go to deck at 16 ft"],
+      [16, false, "you answered: walls go to deck at 16 ft"],
+    ]);
+    expect(Number((await boardLine(s.jobId))!.quantity)).toBe(Math.ceil((30 * 16 * 2 * 0.03125) * 1.1));
+    // Answered: it is not asked again.
+    expect(await deckQuestionFor(s.companyId, s.jobId, ON)).toBeNull();
+    // A second answer replaces the first, and says what it replaced.
+    expect(await setJobDeckHeight(s.jobId, 15)).toEqual({ ok: true, value: { was: 16, walls: 2 } });
+    expect((await walls(s.pageId)).map((w) => w.heightFt)).toEqual([15, 15]);
+
+    // Undo (null): back to the floor-to-floor read, assumed, and the question is back.
+    expect(await setJobDeckHeight(s.jobId, null)).toEqual({ ok: true, value: { was: 15, walls: 0 } });
+    expect((await walls(s.pageId)).map((w) => [w.heightFt, w.heightAssumed])).toEqual([[14.5, true], [14.5, true]]);
+    expect(Number((await boardLine(s.jobId))!.quantity)).toBe(Math.ceil((30 * 14.5 * 2 * 0.03125) * 1.1));
+    expect(await deckQuestionFor(s.companyId, s.jobId, ON)).not.toBeNull();
+  });
+
+  it("not asked where walls do not go to deck, or where the set prints the deck", async () => {
+    const ceiling = await setUp(null, { convention: "CEILING_PLUS_6", fixedFt: 10 }, { ceilingHeightFeet: 9 });
+    await ceiling.assign();
+    expect(await deckQuestionFor(ceiling.companyId, ceiling.jobId, ON)).toBeNull();
+    // The company's ceiling answer is untouched by a deck answer: those walls do not go to deck.
+    expect(await setJobDeckHeight(ceiling.jobId, 16)).toEqual({ ok: true, value: { was: null, walls: 0 } });
+    expect((await walls(ceiling.pageId)).map((w) => w.heightFt)).toEqual([9.5, 9.5]);
+    const printed = await setUp({ kind: "to-structure", feet: 15, from: 'general note: "ALL WALLS TO DECK"' }, { convention: "TO_STRUCTURE", fixedFt: 10 });
+    await printed.assign();
+    expect(await deckQuestionFor(printed.companyId, printed.jobId, ON)).toBeNull();
+  });
+
+  it("refuses a height that is not one", async () => {
+    const s = await setUp(null, { convention: "TO_STRUCTURE", fixedFt: 10 });
+    expect(await setJobDeckHeight(s.jobId, 0)).toMatchObject({ ok: false });
+    expect(await setJobDeckHeight(s.jobId, 150)).toMatchObject({ ok: false });
   });
 });

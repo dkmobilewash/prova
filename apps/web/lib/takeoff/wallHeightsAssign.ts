@@ -5,15 +5,25 @@ import { storeRoofParts, storedRoofParts } from "./roofPartsRead";
 import { setHeightFacts } from "./setHeightFacts";
 import { levelHeight, planLevels, type LevelMark } from "./levelHeights";
 import { sheetViews } from "./sheetViews";
-import { setFigures, setHeightRule, wallHeightConventionFrom, type SetFigures, type SetHeightRule } from "./heightsByCode";
+import { DECK_ANSWER_FROM, setBearingFt, setFigures, setHeightRule, wallHeightConventionFrom, type SetFigures, type SetHeightRule } from "./heightsByCode";
 import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
 
 /** The set's height rule and figures, read once per plan by code (no model) and kept, so no sheet re-walks the set. */
 export const HEIGHT_RULE = "HEIGHT_RULE";
 /** One floor plan's floor-to-floor (its caption's level through the sections' level marks), kept per page. */
 export const FLOOR_TO_FLOOR = "FLOOR_TO_FLOOR";
+/** The job's answer to "Walls go to deck: deck height?" (`deckQuestion.ts`), kept on each of its plans at page 0. */
+export const DECK_ANSWER = "DECK_ANSWER";
 
-type PlanHeights = { rule: SetHeightRule | null; structureFt: number | null; setCeilingFt: number | null; marks: LevelMark[] };
+/** `bearingFt`: the set's one bearing line, for the deck question's pre-fill only (absent on a plan read before it). */
+type PlanHeights = { rule: SetHeightRule | null; structureFt: number | null; setCeilingFt: number | null; marks: LevelMark[]; bearingFt?: number | null };
+
+/** The job's deck answer on this plan, in feet; null when nobody answered. */
+export async function deckAnswerFt(planId: string): Promise<number | null> {
+  const kept = await prisma.takeoffPlanTextRead.findUnique({ where: { planId_pageNumber_kind: { planId, pageNumber: 0, kind: DECK_ANSWER } }, select: { value: true } });
+  const feet = (kept?.value as { feet?: unknown } | null | undefined)?.feet;
+  return typeof feet === "number" && feet > 0 ? feet : null;
+}
 
 /** Kept, else read from the set with `doc`; with neither, nothing (a plan read before this existed). */
 export async function planHeights(planId: string, doc: PlanPdf | null): Promise<PlanHeights> {
@@ -21,7 +31,7 @@ export async function planHeights(planId: string, doc: PlanPdf | null): Promise<
   const kept = await prisma.takeoffPlanTextRead.findUnique({ where, select: { value: true } });
   if (kept !== null) {
     const v = (kept.value ?? {}) as Partial<PlanHeights>;
-    return { rule: v.rule ?? null, structureFt: v.structureFt ?? null, setCeilingFt: v.setCeilingFt ?? null, marks: v.marks ?? [] };
+    return { rule: v.rule ?? null, structureFt: v.structureFt ?? null, setCeilingFt: v.setCeilingFt ?? null, marks: v.marks ?? [], bearingFt: v.bearingFt ?? null };
   }
   if (doc === null) return { rule: null, structureFt: null, setCeilingFt: null, marks: [] };
   const facts = await setHeightFacts(doc, { legendPage: 0, maxPages: 120 });
@@ -29,12 +39,12 @@ export async function planHeights(planId: string, doc: PlanPdf | null): Promise<
   // Under several structure levels each wall takes its rooms' roof, which needs the roof plan read.
   if (rule?.kind === "to-structure-by-roof" && (await storedRoofParts(planId)).size === 0) await storeRoofParts(planId, doc, facts);
   const figures = setFigures(facts.facts, null);
-  const read: PlanHeights = { rule, structureFt: figures.structureFt, setCeilingFt: figures.setCeilingFt, marks: facts.levels ?? [] };
+  const read: PlanHeights = { rule, structureFt: figures.structureFt, setCeilingFt: figures.setCeilingFt, marks: facts.levels ?? [], bearingFt: setBearingFt(facts.facts) };
   await prisma.takeoffPlanTextRead.upsert({ where, create: { planId, pageNumber: 0, kind: HEIGHT_RULE, value: read as never }, update: { value: read as never, computedAt: new Date() } });
   return read;
 }
 
-async function floorToFloor(planId: string, pageNumber: number, doc: PlanPdf | null, marks: readonly LevelMark[]): Promise<number | null> {
+export async function floorToFloor(planId: string, pageNumber: number, doc: PlanPdf | null, marks: readonly LevelMark[]): Promise<number | null> {
   const where = { planId_pageNumber_kind: { planId, pageNumber, kind: FLOOR_TO_FLOOR } };
   const kept = await prisma.takeoffPlanTextRead.findUnique({ where, select: { value: true } });
   if (kept !== null) return ((kept.value as { feet?: number | null } | null)?.feet ?? null) as number | null;
@@ -56,14 +66,14 @@ async function floorToFloor(planId: string, pageNumber: number, doc: PlanPdf | n
  */
 export async function assignWallHeights(input: { planId: string; pageId: string; pageNumber: number; companyId: string; jobId: string; doc: PlanPdf | null; refresh?: boolean }): Promise<{ drawn: number; assumed: number }> {
   const walls = await prisma.takeoffMeasurement.findMany({
-    where: { pageId: input.pageId, kind: "LINEAR", item: { companyId: input.companyId }, ...(input.refresh ? { OR: [{ heightFt: null }, { heightAssumed: true }] } : { heightFt: null }) },
+    where: { pageId: input.pageId, kind: "LINEAR", item: { companyId: input.companyId }, ...(input.refresh ? { OR: [{ heightFt: null }, { heightAssumed: true }, { heightFrom: { startsWith: DECK_ANSWER_FROM } }] } : { heightFt: null }) },
     select: { id: true, xs: true, ys: true, itemId: true },
   });
   if (walls.length === 0) return { drawn: 0, assumed: 0 };
   const company = await prisma.company.findUnique({ where: { id: input.companyId }, select: { defaultWallHeightFt: true, wallHeightConvention: true } });
   const answer = { convention: wallHeightConventionFrom(company?.wallHeightConvention), fixedFt: company?.defaultWallHeightFt == null ? null : Number(company.defaultWallHeightFt) };
   const plan = await planHeights(input.planId, input.doc);
-  const figures: SetFigures = { floorToFloorFt: await floorToFloor(input.planId, input.pageNumber, input.doc, plan.marks), structureFt: plan.structureFt, setCeilingFt: plan.setCeilingFt };
+  const figures: SetFigures = { floorToFloorFt: await floorToFloor(input.planId, input.pageNumber, input.doc, plan.marks), structureFt: plan.structureFt, setCeilingFt: plan.setCeilingFt, deckAnswerFt: await deckAnswerFt(input.planId) };
   const roof = plan.rule?.kind === "to-structure-by-roof" ? (await storedRoofParts(input.planId)).get(input.pageNumber) : undefined;
   const rooms = await prisma.takeoffMeasurement.findMany({ where: { pageId: input.pageId, source: "ROOM_FINDER" }, select: { xs: true, ys: true, ceilingHeightFeet: true, roomNumber: true, roomName: true } });
   let drawn = 0, assumed = 0;

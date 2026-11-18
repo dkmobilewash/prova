@@ -1,4 +1,5 @@
 import type { CostCategoryValue } from "@/lib/bid-recap";
+import type { DeckItem } from "./deckQuestion";
 import { variantLabel } from "./variantMark";
 import { ceilingOption, heightOptionsInOrder, type CeilingRoom, type HeightOption } from "./wallHeight";
 import type { WallGroup } from "./wallGroups";
@@ -107,7 +108,9 @@ export type ReviewItem =
    * picks (`setAsideLike.ts`). Not on a sheet a demolition plan handles (plan comparison).
    */
   | { kind: "existing"; key: string; pageNumber: number; sheet: string; walls: number; feet: number | null }
-  | { kind: "price"; key: string; lineItemId: string; description: string; quantity: string; unit: string | null; askCost: boolean; costCategory: CostCategoryValue | null };
+  | { kind: "price"; key: string; lineItemId: string; description: string; quantity: string; unit: string | null; askCost: boolean; costCategory: CostCategoryValue | null }
+  /** The job's one deck question (`deckQuestion.ts`): its to-deck walls, and the pre-filled answer with its source. */
+  | DeckItem;
 
 const length = (run: QueueRun) => Math.hypot(run.x2 - run.x1, run.y2 - run.y1);
 const feetOf = (runs: readonly QueueRun[], feetPerUnit: number | null) =>
@@ -520,10 +523,10 @@ export function sameWindowsOnOtherFloors(
 // then the held walls, sheet by sheet.
 // A renovation sheet's existing walls go first: typing or keeping a wall that is not new work is
 // the press that is wasted.
-const KIND_ORDER: ReviewItem["kind"][] = ["existing", "type", "height", "windows", "doors", "wall", "scale", "price"];
+const KIND_ORDER: ReviewItem["kind"][] = ["deck", "existing", "type", "height", "windows", "doors", "wall", "scale", "price"];
 
 /** What the queue counts each kind as, for "Groups 3 of 8 · Held walls 0 of 34". */
-export const QUEUE_PART: Record<ReviewItem["kind"], string> = { existing: "Existing walls", type: "Groups", height: "Groups", windows: "Windows", doors: "Doors", wall: "Held walls", scale: "Scales", price: "Prices" };
+export const QUEUE_PART: Record<ReviewItem["kind"], string> = { deck: "Deck height", existing: "Existing walls", type: "Groups", height: "Groups", windows: "Windows", doors: "Doors", wall: "Held walls", scale: "Scales", price: "Prices" };
 
 /** A sheet's suggested windows, until they are confirmed. */
 export function windowsItem(sheet: QueueSheet, stored: { windows: readonly ({ tag: string } & QueueRun)[]; decided?: boolean }): ReviewItem | null {

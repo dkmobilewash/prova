@@ -11,6 +11,8 @@ import { cutoutInside } from "@/lib/takeoff/drawTools";
 import { cutoutsFromJson } from "@/lib/takeoff/itemQuantities";
 import { syncDecidedItems, syncTakeoffItemLines, type ItemLineSummary } from "@/lib/estimating/takeoff-item-lines";
 import { can } from "@/lib/permissions";
+import { assignWallHeights, DECK_ANSWER, deckAnswerFt } from "@/lib/takeoff/wallHeightsAssign";
+import { DECK_ANSWER_FROM } from "@/lib/takeoff/heightsByCode";
 import { colorProblem, nextItemColor } from "@/lib/takeoff/itemColors";
 import {
   actionFail,
@@ -282,6 +284,41 @@ export async function setWallGroupHeight(jobId: string, itemId: string, heightFt
   revalidatePath(`/jobs/${jobId}`, "layout");
   revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { was } };
+}
+
+/**
+ * ── THE JOB'S DECK HEIGHT, IN ONE PRESS (`deckQuestion.ts`) ──
+ *
+ * Kept on each of the job's plans and given to every to-deck wall at once (`assignWallHeights`
+ * with refresh re-heights every assumed wall and every wall an earlier answer set). `null` takes the
+ * answer away, which is Undo: the walls go back to the datum or the usual height they had. Returns
+ * what it replaced, so Undo puts exactly that back.
+ */
+export async function setJobDeckHeight(jobId: string, heightFt: number | null): Promise<ActionResultWith<{ was: number | null; walls: number }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+  const job = await assertJobInCompany(jobId, company.id);
+  assertEditableDirectly(job);
+  if (heightFt !== null && (!Number.isFinite(heightFt) || heightFt <= 0 || heightFt >= 100)) return actionFail("A deck height is a number of feet between 0 and 100.");
+  const plans = await prisma.takeoffPlan.findMany({ where: { jobId, companyId: company.id }, orderBy: { createdAt: "desc" }, select: { id: true } });
+  if (plans.length === 0) return actionFail("This job has no plan set to answer for.");
+  const was = await deckAnswerFt(plans[0]!.id);
+  for (const plan of plans) {
+    const where = { planId_pageNumber_kind: { planId: plan.id, pageNumber: 0, kind: DECK_ANSWER } };
+    if (heightFt === null) await prisma.takeoffPlanTextRead.deleteMany({ where: { planId: plan.id, pageNumber: 0, kind: DECK_ANSWER } });
+    else await prisma.takeoffPlanTextRead.upsert({ where, create: { planId: plan.id, pageNumber: 0, kind: DECK_ANSWER, value: { feet: heightFt } }, update: { value: { feet: heightFt }, computedAt: new Date() } });
+  }
+  const pages = await prisma.takeoffPlanPage.findMany({
+    where: { planId: { in: plans.map((p) => p.id) }, measurements: { some: { kind: "LINEAR", item: { companyId: company.id }, OR: [{ heightFt: null }, { heightAssumed: true }, { heightFrom: { startsWith: DECK_ANSWER_FROM } }] } } },
+    select: { id: true, pageNumber: true, planId: true },
+  });
+  for (const page of pages) await assignWallHeights({ planId: page.planId, pageId: page.id, pageNumber: page.pageNumber, companyId: company.id, jobId, doc: null, refresh: true });
+  const walls = heightFt === null ? 0 : await prisma.takeoffMeasurement.count({ where: { kind: "LINEAR", page: { planId: { in: plans.map((p) => p.id) } }, heightFrom: { startsWith: DECK_ANSWER_FROM } } });
+  await recordTakeoffEvents([{ companyId: company.id, jobId, kind: "HEIGHT_EDIT", userId: context.id }]);
+  revalidatePath(`/jobs/${jobId}`, "layout");
+  revalidatePath(`/takeoff/${jobId}`);
+  return { ok: true, value: { was, walls } };
 }
 
 /**

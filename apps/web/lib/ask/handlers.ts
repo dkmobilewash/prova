@@ -5135,6 +5135,7 @@ const KIND_WORDS: Record<ReviewItem["kind"], string> = {
   scale: "floor plans with no scale",
   price: "estimate lines with no cost or price",
   existing: "renovation sheets whose existing walls are still among the walls",
+  deck: "the job's deck height, for its walls that go to deck",
 };
 
 async function takeoffReview(companyId: string, input: Input): Promise<ToolResult> {
@@ -5202,6 +5203,8 @@ function describe(item: ReviewItem): string {
       return item.sheet;
     case "existing":
       return `${item.sheet}: ${item.walls} walls${item.feet === null ? "" : `, ${Math.round(item.feet)} ft`}, existing work not set aside yet`;
+    case "deck":
+      return `${item.walls} walls go to deck${item.prefill ? `, suggested ${item.prefill.feet} ft (${item.prefill.from})` : ", no height read"}`;
   }
 }
 

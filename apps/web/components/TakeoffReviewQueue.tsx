@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/actions/shared";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
-import { confirmDoors, confirmSheetScales, confirmSheetSuggestions, recordQueueSkip, confirmWindows, undoAutoPost, undoConfirmDoors, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
+import { QueueDeckQuestion } from "./QueueDeckQuestion";
+import { confirmDoors, confirmSheetScales, confirmSheetSuggestions, recordQueueSkip, confirmWindows, undoAutoPost, undoConfirmDoors, undoConfirmWindows, priceLineFromCost, reviewWall, setJobDeckHeight, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
 import { shortScaleName } from "@/lib/takeoff/scaleFromDimensions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
@@ -798,6 +799,20 @@ export function TakeoffReviewQueue({
                 });
               }}
               onUndoable={onUndoable}
+            />
+          )}
+          {current.kind === "deck" && (
+            <QueueDeckQuestion
+              key={current.key}
+              item={current}
+              onSkip={() => setCursor(after(current.key))}
+              onAnswer={(feet) =>
+                acceptNow(current.key, "Deck height", () => setJobDeckHeight(jobId, feet), {
+                  label: `Deck height ${feet} ft on every to-deck wall`,
+                  undo: (saved) => setJobDeckHeight(jobId, saved.value.was),
+                  redo: () => setJobDeckHeight(jobId, feet),
+                })
+              }
             />
           )}
           {current.kind === "existing" && (
