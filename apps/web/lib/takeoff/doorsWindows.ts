@@ -2,6 +2,7 @@ import type { StrokeSegment, WallCandidate } from "./wallVectors";
 import { DOOR_TAG_REACH_FEET, doorSymbols, WIDEST_DOOR_LEAF_FEET, onlyMarkedDoors, tagsNameEveryWindow, windowSymbols, WINDOW_TAGS_MEAN_ALL, type DoorSymbol, type WindowSymbol } from "./doorWindowSymbols";
 import { existingDoors, insideLegendBox, type ExistingDoor, type ExistingDoorEvidence } from "./existingDoors";
 import { textRows } from "./existingWalls";
+import { segmentGrid } from "./segmentGrid";
 import { joinOpeningsToSchedule, widthAndHeight, type OpeningJoin, type PlacedMark, type ScheduledOpening } from "./openingMarks";
 import { tagSymbols, type TextForSymbol } from "./tagSymbols";
 import { windowsByTag, windowTagVocabulary, type TaggedWindows } from "./windowTags";
@@ -77,6 +78,64 @@ function inSwing(d: DoorSymbol, p: { x: number; y: number }, feetPerUnit: number
   return span >= 0 ? u >= -0.1 && u <= span + 0.1 : u <= 0.1 && u >= span - 0.1;
 }
 
+/**
+ * A legend's label for its door sample: NEW DOOR, EXISTING DOOR AND FRAME TO REMAIN. It names the KIND of door first,
+ * so a door tag split over two rows ("DOOR" above "02", 3.-2024 A1.0) and a schedule pointer ("DOOR TYPE; SEE DOOR
+ * SCHEDULE", Topeka p74) are not labels (both cost real doors in F8's first measurement, 2026-11-18).
+ */
+const LEGEND_DOOR_LABEL = /^(?:NEW|EXISTING|EXIST\.|RELOCATED?)\s+(?:\S+\s+){0,3}DOOR\b/i;
+/** How far right of the sample its label may start, inches on paper. */
+export const LEGEND_LABEL_GAP_INCHES = 1.5;
+
+/** Whether a door is a symbol legend's sample: its nearest text to the right on the same line is a legend label with no digit. */
+export function legendDoorSample(d: DoorSymbol, textPt: readonly TextForSymbol[], widthPt: number): boolean {
+  if (!(widthPt > 0)) return false;
+  const pts = [d.hinge, d.strike, ...(d.open === undefined ? [] : [d.open])];
+  const x2 = Math.max(...pts.map((p) => p.x)) * widthPt, y1 = Math.min(...pts.map((p) => p.y)) * widthPt, y2 = Math.max(...pts.map((p) => p.y)) * widthPt;
+  let best: { gap: number; str: string } | null = null;
+  for (const r of textRows(textPt as never)) {
+    if (r.y < y1 || r.y - r.height > y2 || r.x < x2 - 3.6) continue;
+    const gap = Math.max(0, r.x - x2);
+    if (gap <= LEGEND_LABEL_GAP_INCHES * 72 && (best === null || gap < best.gap)) best = { gap, str: r.str };
+  }
+  return best !== null && LEGEND_DOOR_LABEL.test(best.str.trim()) && !/\d/.test(best.str);
+}
+
+/**
+ * Whether a door's hinge sits on a centre mark: the radius dimension of a curved wall, whose line from the mark reads
+ * as a leaf and whose inner face reads as a swing (Substation A-101's two curved corners, the retired Round-23 pool).
+ * A real hinge sits on a jamb. The mark is a CROSS (two short strokes centred on the point, about square to each other)
+ * or a small RING round it.
+ */
+export function onCentreMark(d: DoorSymbol, segments: readonly StrokeSegment[], feetPerUnit: number): boolean {
+  if (d.leaves !== 1 || !(feetPerUnit > 0)) return false;
+  const h = d.hinge, f = (v: number) => v / feetPerUnit, reach = f(2);
+  const near = [...segmentGrid(segments).near(h.x - reach, h.y - reach, h.x + reach, h.y + reach)].map((i) => segments[i]!);
+  const crossArms = near.filter((s) => {
+    const len = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+    return len >= f(0.3) && len <= f(2) && Math.hypot((s.x1 + s.x2) / 2 - h.x, (s.y1 + s.y2) / 2 - h.y) <= f(0.05);
+  });
+  // A "+" square to the leaf, not an "x": Joplin A-101 marks a real hinge with an x at 45 degrees (F12's first
+  // measurement lost that door), while a radius dimension's centre mark is drawn square to the plan.
+  const leaf = Math.atan2(d.strike.y - h.y, d.strike.x - h.x);
+  const off = (s: StrokeSegment, to: number) => { const t = Math.abs(((Math.atan2(s.y2 - s.y1, s.x2 - s.x1) - to) * 180) / Math.PI) % 180; return Math.min(t, 180 - t); };
+  for (let i = 0; i < crossArms.length; i++) for (let j = i + 1; j < crossArms.length; j++) {
+    const a = crossArms[i]!, b = crossArms[j]!;
+    if ((off(a, leaf) <= 20 && off(b, leaf + Math.PI / 2) <= 20) || (off(b, leaf) <= 20 && off(a, leaf + Math.PI / 2) <= 20)) return true;
+  }
+  const steps = new Set<number>();
+  const deg = (x: number, y: number) => ((Math.atan2(y - h.y, x - h.x) * 180) / Math.PI + 360) % 360;
+  for (const s of near) {
+    const r1 = Math.hypot(s.x1 - h.x, s.y1 - h.y), r2 = Math.hypot(s.x2 - h.x, s.y2 - h.y), rm = Math.hypot((s.x1 + s.x2) / 2 - h.x, (s.y1 + s.y2) / 2 - h.y);
+    if (r1 < f(0.05) || r1 > f(0.25) || Math.abs(r1 - r2) > f(0.02) || Math.abs(rm - (r1 + r2) / 2) > f(0.02)) continue;
+    let a = deg(s.x1, s.y1), span = deg(s.x2, s.y2) - a;
+    if (span > 180) span -= 360;
+    if (span < -180) span += 360;
+    for (let t = 0; t <= Math.abs(span); t += 2.5) steps.add(Math.floor(((a + Math.sign(span) * t + 360) % 360) / 5));
+  }
+  return steps.size * 5 >= 180;
+}
+
 /** Two found doors are copies when hinge and strike move by the same offset, within this, feet. */
 export const COPY_TOLERANCE_FEET = 1;
 /** A copy is another view only this far away, feet: a door beside its twin is a pair or a neighbour, not a view. */
@@ -107,7 +166,10 @@ export function copiedIntoOtherViews(doors: readonly DoorSymbol[], textPt: reado
     const A = doors[a]!, B = doors[b]!;
     const dx = B.hinge.x - A.hinge.x, dy = B.hinge.y - A.hinge.y;
     if (Math.hypot(dx, dy) < far) continue;
-    if (Math.hypot(B.strike.x - A.strike.x - dx, B.strike.y - A.strike.y - dy) > tol) continue;
+    // Either leaf end of one, moved by the offset, on either leaf end of the other: a copy whose open and closed
+    // leaves the finder read the other way round is still a copy (HPL I-110's lighting-plan copies).
+    const ends = (D: DoorSymbol) => (D.open === undefined ? [D.strike] : [D.strike, D.open]);
+    if (!ends(B).some((q) => ends(A).some((p) => Math.hypot(q.x - p.x - dx, q.y - p.y - dy) <= tol))) continue;
     pairs.push({ a, b, dx, dy });
   }
   const viewPairs = pairs.filter((p) => pairs.filter((q) => Math.hypot(q.dx - p.dx, q.dy - p.dy) <= tol).length >= VIEW_OFFSET_MIN_DOORS);
@@ -145,7 +207,9 @@ export function doorsInScope(input: {
   const found = doorSymbols(input.segments, input.walls, input.feetPerUnit)
     .filter((d) => legend.length === 0 || !insideLegendBox({ x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2 }, legend))
     .filter((d) => d.widthFeet / d.leaves <= WIDEST_DOOR_LEAF_FEET)
-    .filter((d) => !dims.some((p) => inSwing(d, p, input.feetPerUnit)));
+    .filter((d) => !dims.some((p) => inSwing(d, p, input.feetPerUnit)))
+    .filter((d) => !legendDoorSample(d, input.textPt, input.widthPt))
+    .filter((d) => !onCentreMark(d, input.segments, input.feetPerUnit));
   const copied = copiedIntoOtherViews(found, input.textPt, input.widthPt, input.feetPerUnit);
   const all = found.filter((d) => !copied.has(d));
   const existing = existingDoors({ doors: all, segments: input.segments, textPt: input.textPt, widthPt: input.widthPt, feetPerUnit: input.feetPerUnit, ...(input.existing === undefined ? {} : { evidence: input.existing }) });
