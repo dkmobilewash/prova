@@ -498,3 +498,22 @@ describe("marks a door schedule lists under an EXISTING section (F15: Sedgwick C
     expect(run([], [tag])).toEqual([]);
   });
 });
+
+describe("a pair tagged EXIST. where its leaves meet is existing (F17: Garden Square A100)", () => {
+  // Two 3 ft leaves hinged at x = 0.50 and x = 0.56 on a wall at y = 0.5, both swinging north, meeting at x = 0.53.
+  const pair: StrokeSegment[] = [
+    { x1: 0.5, y1: 0.5, x2: 0.5, y2: 0.5 - ft(3) }, ...swing(0.5, 0.5, ft(3), -Math.PI / 2, 0),
+    { x1: 0.56, y1: 0.5, x2: 0.56, y2: 0.5 - ft(3) }, ...swing(0.56, 0.5, ft(3), -Math.PI, -Math.PI / 2),
+  ];
+  const pw = [wall(0.4, 0.5, 0.5, 0.5), wall(0.56, 0.5, 0.7, 0.5)];
+  const ds = doorSymbols(pair, pw, FPU);
+  const go = (text: ReturnType<typeof word>[]) => existingDoors({ doors: ds, segments: pair, textPt: text, widthPt: W, feetPerUnit: FPU });
+  it("finds the pair as one door", () => {
+    expect(ds).toHaveLength(1);
+    expect(ds[0]!.leaves).toBe(2);
+  });
+  it("EXIST. in the swing where the leaves meet sets the pair aside; the same word across the wall does not", () => {
+    expect(go([word("EXIST.", 0.53, 0.485)]).map((e) => e.why)).toEqual(['"EXIST." printed inside its swing']);
+    expect(go([word("EXIST.", 0.53, 0.515)])).toEqual([]);
+  });
+});

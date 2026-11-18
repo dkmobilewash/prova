@@ -380,7 +380,8 @@ export function existingDoors(input: {
     for (const d of doors) {
       if (out.has(d)) continue;
       const r = d.widthFeet / d.leaves / fpu, lx = d.strike.x - d.hinge.x, ly = d.strike.y - d.hinge.y, L = Math.hypot(lx, ly);
-      const near = bare.filter((p) => Math.hypot(p.x - d.hinge.x, p.y - d.hinge.y) <= r || Math.hypot(p.x - d.strike.x, p.y - d.strike.y) <= r);
+      // A pair's word sits where its leaves meet, a leaf from either jamb (Garden Square A100's EXIST. pairs).
+      const near = bare.filter((p) => Math.hypot(p.x - d.hinge.x, p.y - d.hinge.y) <= r || Math.hypot(p.x - d.strike.x, p.y - d.strike.y) <= r || (d.leaves === 2 && Math.hypot(p.x - mid(d).x, p.y - mid(d).y) <= r));
       if (near.length === 0 || L === 0) continue;
       const side = swingSide(d);
       if (side === 0) continue;
