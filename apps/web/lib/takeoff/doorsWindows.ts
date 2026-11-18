@@ -128,7 +128,8 @@ export function onCentreMark(d: DoorSymbol, segments: readonly StrokeSegment[], 
   for (const s of near) {
     const r1 = Math.hypot(s.x1 - h.x, s.y1 - h.y), r2 = Math.hypot(s.x2 - h.x, s.y2 - h.y), rm = Math.hypot((s.x1 + s.x2) / 2 - h.x, (s.y1 + s.y2) / 2 - h.y);
     if (r1 < f(0.05) || r1 > f(0.25) || Math.abs(r1 - r2) > f(0.02) || Math.abs(rm - (r1 + r2) / 2) > f(0.02)) continue;
-    let a = deg(s.x1, s.y1), span = deg(s.x2, s.y2) - a;
+    const a = deg(s.x1, s.y1);
+    let span = deg(s.x2, s.y2) - a;
     if (span > 180) span -= 360;
     if (span < -180) span += 360;
     for (let t = 0; t <= Math.abs(span); t += 2.5) steps.add(Math.floor(((a + Math.sign(span) * t + 360) % 360) / 5));
