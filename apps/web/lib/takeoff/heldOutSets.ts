@@ -238,6 +238,30 @@ export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: str
     match: "RIVERBEND CD BID Drawings",
     why: "multifamily housing, new build, diamond wall tags + window tags — held out 2026-11-08 (round 16), before a label was written",
   },
+  // ── THE 2026-11-17 BATCH: 15 public sets arrived, 13 survived the survey, 3 held out BEFORE labelling ──
+  //
+  // Diego's order shaped this split differently from the 2:1 batches: the door-heaviest
+  // keepers are reserved as the FRESH DOORS EXAM pool — held out AND never read for
+  // doors by any session, so a future doors exam has sets no finder has studied — and
+  // the sets that PRINT deck/bearing elevations (Aldrich 109'-4" T.O. MASONRY, SEWA
+  // truss brg 13'-10" A.F.F., Canton's structural sections) go to TRAINING for heights
+  // truth. Survey + reasoning: coordination/survey-new-sets.md and coordination/log.md.
+  // Rejected outright, never candidates: LCPS-Admin-3rd-Floor-Addendum-1.pdf (addendum
+  // reissue — specs plus A110/A120/A130/A201-203, no new-work partition plan at all)
+  // and SPOKANE TRANSIT AUTHORITY STA PLAZA UPGRADE.pdf (site/electrical upgrade, no
+  // architectural floor plans).
+  {
+    match: "Huffman-parnell-rad-conversion",
+    why: "public-housing RAD duplex conversion, Dayton OH, 8 door-schedule pages — FRESH DOORS EXAM pool, held out 2026-11-17 before a label was written; never read for doors",
+  },
+  {
+    match: "THE MEADOWS RAD RENOVATIONS",
+    why: "CMHA public-housing RAD renovation, doors+windows scope, 8 door-schedule pages — FRESH DOORS EXAM pool, held out 2026-11-17 before a label was written; never read for doors",
+  },
+  {
+    match: "LEVY CO. COURTHOUSE RENOVATION",
+    why: "county courthouse renovation, phased, full CD set — FRESH DOORS EXAM pool (civic variety), held out 2026-11-17 before a label was written; never read for doors",
+  },
 ];
 
 /** Punctuation and extension removed, so one spelling matches another. */
