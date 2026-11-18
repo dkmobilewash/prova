@@ -59,8 +59,10 @@ export type TradePreset = {
   clauses: { inclusions: string[]; exclusions: string[] };
   /**
    * Who installs the doors and frames: the trade setting `Company.doorScope`, which the trade step
-   * also asks. By others for every trade (Diego, 2026-11-12): a posted door adds nothing until the
-   * company says it installs them.
+   * also asks. Diego, 2026-11-17: a FRAMING trade starts at frames (it frames the rough opening of
+   * every door and window, so a posted one is priced); every other trade stays by others (2026-11-12:
+   * a posted door adds nothing until the company says it installs them). A starting value only: the
+   * trade step's own answer wins, and a company that already exists is never touched.
    */
   doorScope: DoorScope;
   /**
@@ -102,7 +104,7 @@ export const TRADE_PRESETS: TradePreset[] = [
         { description: "Clean up and haul off", unit: "ls" },
       ],
     },
-    doorScope: "BY_OTHERS",
+    doorScope: "FRAMES",
     defaultWallHeightFt: 10,
     wallHeightConvention: "TO_STRUCTURE",
     clauses: { inclusions: ["Metal stud framing, gypsum board, hang, tape and finish per the wall types listed"], exclusions: ["Fire caulking and firestopping", "Paint and wall coverings", "Insulation not listed in the wall types", "Work on existing walls to remain"] },

@@ -213,13 +213,20 @@ describe("doors posted before any wall has a type (the Baker walk's order)", () 
 });
 
 describe("the same choice at the trade pick", () => {
-  it("a new company's trade step writes its door answer, and by others when it gives none", async () => {
-    for (const [answer, stored] of [["DOORS_AND_FRAMES", "DOORS_AND_FRAMES"], [undefined, "BY_OTHERS"]] as const) {
+  it("a new company's trade step writes its door answer; given none, framing starts at frames and every other trade by others (Diego, 2026-11-17)", async () => {
+    const cases = [
+      ["FRAMING_DRYWALL", "DOORS_AND_FRAMES", "DOORS_AND_FRAMES"],
+      ["FRAMING_DRYWALL", "BY_OTHERS", "BY_OTHERS"],
+      ["FRAMING_DRYWALL", undefined, "FRAMES"],
+      ["ACOUSTICAL_CEILINGS", undefined, "BY_OTHERS"],
+      ["PLASTER_EIFS", undefined, "BY_OTHERS"],
+    ] as const;
+    for (const [trade, answer, stored] of cases) {
       const companyId = (await prisma.company.create({ data: { name: "Fresh doors" } })).id;
       made.push(companyId);
       context.company.id = companyId;
       context.companyId = companyId;
-      expect(await applyTradePreset("FRAMING_DRYWALL", answer)).toEqual({ ok: true });
+      expect(await applyTradePreset(trade, answer)).toEqual({ ok: true });
       expect((await prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { doorScope: true } })).doorScope).toBe(stored);
     }
     expect(await applyTradePreset("FRAMING_DRYWALL", "SOMETIMES")).toMatchObject({ ok: false });

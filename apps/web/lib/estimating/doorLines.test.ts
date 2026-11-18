@@ -42,8 +42,10 @@ describe("the setting", () => {
   it("takes only its three answers", () => {
     expect(["BY_OTHERS", "FRAMES", "DOORS_AND_FRAMES", "ALL", ""].map(doorScopeFrom)).toEqual(["BY_OTHERS", "FRAMES", "DOORS_AND_FRAMES", null, null]);
   });
-  it("every trade preset starts at by others", () => {
-    expect(TRADE_PRESETS.map((p) => p.doorScope)).toEqual(TRADE_PRESETS.map(() => "BY_OTHERS"));
+  it("a framing trade's preset starts at frames, every other trade's at by others (Diego, 2026-11-17)", () => {
+    expect(TRADE_PRESETS.map((p) => [p.choice, p.doorScope])).toEqual(TRADE_PRESETS.map((p) => [p.choice, framesOpenings(p.scopes) ? "FRAMES" : "BY_OTHERS"]));
+    // The ruling reaches a company only if some preset frames openings; a rename of the scope must not quietly empty it.
+    expect(TRADE_PRESETS.filter((p) => p.doorScope === "FRAMES").map((p) => p.choice)).toEqual(["FRAMING_DRYWALL"]);
   });
 });
 

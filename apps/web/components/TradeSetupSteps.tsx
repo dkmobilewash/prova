@@ -28,7 +28,8 @@ export function TradeSetupSteps({ initial, planReadingOn }: { initial: SetupStep
   const [step, setStep] = useState<SetupStep>(initial);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [doorScope, setDoorScope] = useState<DoorScope>("BY_OTHERS");
+  // Null until the person picks: the trade they tap then starts it (framing at frames, the rest by others).
+  const [doorScope, setDoorScope] = useState<DoorScope | null>(null);
   const [wallHeight, setWallHeight] = useState("10");
   const [convention, setConvention] = useState<WallHeightConvention>(TRADE_PRESETS[0]!.wallHeightConvention);
   const router = useRouter();
@@ -61,9 +62,11 @@ export function TradeSetupSteps({ initial, planReadingOn }: { initial: SetupStep
               We&apos;ll start you with that trade&apos;s wall types, takeoff tools and estimate lines. No prices — those are yours.
             </p>
             {/* The same choice as Settings' "Doors and frames", asked before the tap so the trade's
-                setup carries it; by others unless changed, as every preset starts. */}
+                setup carries it. Left unanswered, the trade tapped decides: framing and drywall starts
+                at frames, every other trade at by others (Diego, 2026-11-17). */}
             <fieldset className="mt-5" data-setup="door-scope">
               <legend className="text-sm font-medium text-ink">Doors and frames</legend>
+              <p className="text-xs text-ink-muted">Leave it and your trade decides: framing and drywall starts at frames, other trades by others.</p>
               <div className="mt-1 flex flex-col gap-1">
                 {DOOR_SCOPES.map((scope) => (
                   <label key={scope} className="flex min-h-11 items-center gap-2 text-sm text-ink-body">
@@ -107,7 +110,7 @@ export function TradeSetupSteps({ initial, planReadingOn }: { initial: SetupStep
                   <button
                     type="button"
                     disabled={isPending}
-                    onClick={() => run(() => applyTradePreset(preset.choice, doorScope, wallHeight, convention), "sample")}
+                    onClick={() => run(() => applyTradePreset(preset.choice, doorScope ?? undefined, wallHeight, convention), "sample")}
                     className="flex min-h-12 w-full items-center rounded-md border border-line-card px-4 text-left text-sm font-medium text-ink hover:border-link hover:text-link disabled:opacity-50"
                   >
                     {preset.label}
