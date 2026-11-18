@@ -354,6 +354,10 @@ export const EXCLUSIONS: Exclusion[] = [
     reason: "The workspace's Send to estimate. post_takeoff_to_estimate already hands that decision to the takeoff tab, where the measurements are read before they are added.",
   },
   { action: "setAssemblyLibraryPin", reason: "Pins the assembly library open in the workspace's rail; a layout preference, not a record." },
+  {
+    action: "setJobDeckHeight",
+    reason: "The review queue's deck question, behind TAKEOFF_DECK_QUESTION and OFF by default. A deck height is a number a person can say, so it becomes a command like set_wall_height once the question ships; until then Ask would be reaching a write the product does not show.",
+  },
   // wallGroupType.* was one wildcard until accept_sheet_suggestions
   // (commands/takeoff.ts) registered confirmSheetSuggestions: the groups it
   // takes are the ones the DRAWING already named, so a person can say "accept
