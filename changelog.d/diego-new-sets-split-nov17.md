@@ -1,0 +1,6 @@
+### The fresh doors exam pool: three of the 15 new sets can never become training rows, and no session reads them for doors (Diego)
+`diego-new-sets-split-nov17`
+
+Fifteen public plan sets landed in real-plans/incoming on 2026-11-17 and were surveyed before any label (coordination/survey-new-sets.md). Two were rejected — the LCPS Admin addendum carries no new-work partition plan at all, and the Spokane Transit plaza upgrade has no architectural floor plans. Of the thirteen keepers, the three door-heaviest (Huffman-Parnell RAD conversion and The Meadows RAD, with eight door-schedule pages each, plus the Levy County courthouse renovation for civic variety) are reserved as the FRESH DOORS EXAM pool: held out in `HELD_OUT_SETS` before a label exists, with "never read for doors" in the reason, so a future doors exam has sets no finder has studied. The ten training keepers were chosen to favour stated deck heights (Aldrich prints 109'-4" T.O. MASONRY, SEWA prints truss bearing 13'-10" A.F.F., Canton Armory's structural sections carry values) and bring the first two restaurants into training (Sloan's prototype, Garden Square).
+
+Check: `heldOutSets.test.ts` refuses the three by their real file names and re-punctuated, requires "FRESH DOORS EXAM" and "never read for doors" in each reason, keeps all ten training keepers trainable, and pins the list at 36.
