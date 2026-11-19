@@ -115,6 +115,14 @@ export type ReviewState = {
    * this has none.
    */
   openings?: Opening[];
+  /**
+   * ── CANDIDATES A SAVED DECISION LIES ON BUT COULD NOT BE RE-ATTACHED TO ──
+   *
+   * Set by a reopen (`restoreSaved`). The decisions themselves are kept in the
+   * file and written back by every save; these ids only stop the candidate
+   * under them reading as fresh, unreviewed work. Optional: older states have none.
+   */
+  needsLook?: string[];
 };
 
 export type Opening = { id: string; x: number; y: number; kind: "window" | "door"; tag?: string };
@@ -324,6 +332,9 @@ export type Progress = {
   notWalls: number;
   unsure: number;
   traced: number;
+  /** Still unreviewed, but a saved decision lies on it that the reopen could not
+   *  re-attach: not unreviewed work, a thing to look at. */
+  needsLook: number;
   /** Feet the key would carry if saved now. */
   feet: number;
 };
@@ -334,9 +345,14 @@ export function progressOf(state: ReviewState): Progress {
   let notWalls = 0;
   let unsure = 0;
   let feet = 0;
+  let needsLook = 0;
+  const look = new Set(state.needsLook ?? []);
   for (const one of state.candidates) {
     const verdict = state.verdicts[one.id] ?? "unreviewed";
-    if (verdict === "unreviewed") continue;
+    if (verdict === "unreviewed") {
+      if (look.has(one.id)) needsLook += 1;
+      continue;
+    }
     reviewed += 1;
     if (verdict === "wall") {
       walls += 1;
@@ -358,8 +374,63 @@ export function progressOf(state: ReviewState): Progress {
     notWalls,
     unsure,
     traced: state.traced.length,
+    needsLook,
     feet,
   };
+}
+
+/** What a save writes for each decided candidate and each trace — never an unreviewed one. */
+export function verdictsForSave(state: ReviewState) {
+  return [
+    ...state.candidates
+      .map((c) => ({ c, v: state.verdicts[c.id] ?? "unreviewed" }))
+      .filter((x) => x.v === "wall" || x.v === "not-a-wall" || x.v === "unsure")
+      .map((x) => ({
+        x1: x.c.x1,
+        y1: x.c.y1,
+        x2: x.c.x2,
+        y2: x.c.y2,
+        lengthFeet: x.c.lengthFeet,
+        thicknessFeet: (x.c.thicknessIn ?? 0) / 12,
+        // "not-wall", not "not-a-wall": `LabelVerdict` spells it the
+        // short way and `labelFile` counts rejections by that literal.
+        //
+        // And "unsure" travels as itself. It did not travel at all once,
+        // so every unsure run's pairings reached the file as confident
+        // negatives — 483 of them on one sheet.
+        verdict: x.v === "wall" ? "wall" : x.v === "unsure" ? "unsure" : "not-wall",
+        ...(x.v === "wall" && (state.types ?? {})[x.c.id] !== undefined ? { wallType: state.types![x.c.id] } : {}),
+      })),
+    ...state.traced.map((t) => ({
+      x1: t.x1,
+      y1: t.y1,
+      x2: t.x2,
+      y2: t.y2,
+      lengthFeet: t.lengthFeet,
+      thicknessFeet: 0,
+      verdict: "traced" as const,
+      ...((state.types ?? {})[t.id] !== undefined ? { wallType: state.types![t.id] } : {}),
+    })),
+  ];
+}
+
+/**
+ * ── EACH SPLIT WRITTEN ONCE ──
+ *
+ * The splits made or re-applied in this state, plus the recorded ones a reopen
+ * could not re-attach. It wrote `[...state.splits, ...carried]` with `carried`
+ * holding EVERY recorded split — and the re-applied ones are already in
+ * `state.splits` — so each reopen and save doubled every record in the file.
+ */
+export function splitsForSave(state: ReviewState, carried: readonly SplitRecord[] = []): SplitRecord[] {
+  const out: SplitRecord[] = [];
+  for (const s of [...(state.splits ?? []), ...carried]) if (!out.some((o) => sameSplit(o, s))) out.push(s);
+  return out;
+}
+
+export function sameSplit(a: SplitRecord, b: SplitRecord): boolean {
+  const near = (p: number, q: number) => Math.abs(p - q) < 1e-9;
+  return near(a.x1, b.x1) && near(a.y1, b.y1) && near(a.x2, b.x2) && near(a.y2, b.y2) && near(a.cutX, b.cutX) && near(a.cutY, b.cutY);
 }
 
 /** The next thing needing a decision after `afterId`, wrapping once. */
