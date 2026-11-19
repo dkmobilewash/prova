@@ -203,6 +203,10 @@ export const normalMark = (m: string): string => m.toUpperCase().replace(/[\s-]+
 const EXISTING_SCHEDULE = /\bDOOR\b.*\bSCHEDULE\b.*\bEXIST(?:ING\b|\.)|\bEXISTING\b.*\bDOOR\b.*\bSCHEDULE\b/i;
 /** A rehung door is new work even when the existing schedule lists it (Sedgwick's S104-S107: SALVAGE DOOR AND HARDWARE). */
 const SALVAGE = /\b(?:SALVAGE[DS]?|RELOCATED?|REUSED?|REINSTALL(?:ED)?)\b/i;
+/** A schedule cell that says existing on its own: NG-Lakewood A9.0's "(E)", Bluetooth's "EXST.". */
+const EXISTING_CELL = /^(?:\(E\)|EXST\.?|EXIST\.?|EXISTING)$/i;
+/** A row is the existing door's when at least this many of its cells say so on their own: its door AND its frame. */
+export const EXISTING_CELLS_MIN = 2;
 
 /**
  * The marks a set's door schedule lists under a section titled EXISTING ("DOOR & FRAME SCHEDULE - EXISTING",
@@ -227,6 +231,14 @@ export function existingScheduleMarks(pages: readonly (readonly TextItem[])[]): 
         const remarks = rows.filter((r) => r !== m && Math.abs(r.y - m.y) <= 2 && r.x > m.x && r.x < rightEdge).map((r) => r.str).join(" ");
         if (!SALVAGE.test(remarks)) out.add(normalMark(m.str.trim()));
       }
+    }
+    // E1 (Diego, 2026-11-19): a row whose spec cells say existing on their own, door AND frame, with no section
+    // heading to say so: NG-Lakewood A9.0's 500A "(E) (E) (E)...", Green Bay's 111A, UCCS's NE180B, Bluetooth's 318
+    // "EXST.". Read along the mark's own baseline in the PDF's own text items: the joined-row reader splits
+    // NG-Lakewood's cells off the mark's row and merges Bluetooth's five "EXST." (5 pt apart) into one string.
+    for (const m of items.filter((r) => SCHEDULE_MARK.test(r.str.trim()))) {
+      const line = items.filter((r) => r !== m && Math.abs(r.y - m.y) <= 2 && r.x > m.x && r.x - m.x <= 12 * IN);
+      if (line.filter((r) => EXISTING_CELL.test(r.str.trim())).length >= EXISTING_CELLS_MIN && !line.some((r) => SALVAGE.test(r.str))) out.add(normalMark(m.str.trim()));
     }
   }
   return [...out].sort();
