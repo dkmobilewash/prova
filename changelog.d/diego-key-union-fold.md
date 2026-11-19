@@ -1,3 +1,5 @@
+### Key wall LF is the union of overlapping verdicts, never the sum
+
 The zero-touch and scanned evals now pass `feetPerUnit` to `keyFromLabels`, turning on the
 overlap fold the function already had: two accepted wall rows on the same geometry (one left by
 an older finder version) count once in the key, never twice. Found by Chrome in Round 33 — the
