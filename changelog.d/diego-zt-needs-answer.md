@@ -1,0 +1,8 @@
+### A wall height the documents cannot state stops pricing at a default, and says who has to answer it (Diego)
+`diego/zt-needs-answer`
+
+Diego's H4/H5 rulings (BOARD.md 2026-11-19): a key type the drawings send "to deck" with no printed deck elevation — or give no rule at all — has a height nobody can read off the documents, so the zero-touch eval must not price it at the 9' default; and a bare-CMU type carries no gypsum at all. The default-height pricing of exactly these types was most of the $1.21M training board-gap cause in BASELINE-20261119.md.
+
+`HeightsKeyType` grows `needsAnswer` and `noBoard`; `keyWallFeet` returns feet 0 with `from: "needs-answer" | "no-board"`, checked before zones and scalars so a stale number in an older revision cannot resurrect a height Diego ruled unknowable. The eval keeps those walls' LF and type scoring, removes their board from BOTH the key and the posted totals (posted side at the eval's own set-level granularity: the excluded fraction of key LF, taken off the sheet's posted board — coarse by design and said in the comment), and prints one pooled line per group: `HEIGHT NEEDS CONTRACTOR ANSWER: <LF> ($ at the company-answer default, for reference)`, plus a no-board line.
+
+Check: `roomZoneKey.test.ts` pins needs-answer and no-board returns, the flags outranking a stale scalar, and unflagged behaviour unchanged. heights-key-r19.json (coordination side) carries the H1–H3 printed values (Topeka P13 and Mid-City's three types at 9'-1 1/8", 2020-09-24 A at 10'-8") and the H4/H5 flags; the ZT rerun updates BASELINE-20261119.md with the board cause split into real-gap vs needs-answer.
