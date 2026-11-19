@@ -167,6 +167,18 @@ function along(
   return { lo: Math.min(t1, t2), hi: Math.max(t1, t2) };
 }
 
+/** The two overlap along the line by at least half the shorter one. */
+function sameStretch(
+  a: { x1: number; y1: number; x2: number; y2: number },
+  b: { x1: number; y1: number; x2: number; y2: number },
+  feetPerUnit: number,
+): boolean {
+  const la = len(a) * feetPerUnit;
+  const span = along(a, b, feetPerUnit);
+  const overlap = Math.min(la, span.hi) - Math.max(0, span.lo);
+  return overlap >= Math.min(la, span.hi - span.lo) / 2;
+}
+
 const DECIDED: Record<string, Verdict> = {
   wall: "wall",
   "not-wall": "not-a-wall",
@@ -200,6 +212,11 @@ export function candidateFor(
     // wall, and without this a short candidate would claim a long decision.
     const longer = Math.max(saved.lengthFeet, c.lengthFeet, 1e-9);
     if (Math.abs(saved.lengthFeet - c.lengthFeet) / longer > 0.35) continue;
+    // ── AND IT HAS TO BE IN THE SAME PLACE ALONG THE LINE ──
+    // Parallel, on the line and of similar length was all this asked, and a
+    // twin further along the same grid line answers all three: on Mid-City a
+    // reviewed 8 ft half landed on a 12 ft wall 100 ft away.
+    if (!sameStretch(saved, c, feetPerUnit)) continue;
     if (best === null || off < best.off) best = { candidate: c, off };
   }
   return best === null ? null : best.candidate;
@@ -240,6 +257,8 @@ export function candidateFor(
  * sheet that looks right.
  */
 const ABUT_FEET = 0.25;
+/** How far a recorded split's ends may sit from the candidate it is re-applied to. */
+export const SPLIT_END_FEET = 1.5;
 const SAME_LENGTH_FEET = 0.5;
 const SAME_THICKNESS_IN = 0.5;
 
@@ -248,36 +267,44 @@ export function reapplySplits(
   state: ReviewState,
   feetPerUnit: number,
   recorded: readonly SplitRecord[] = [],
-): { state: ReviewState; splits: number; declined: number } {
+): { state: ReviewState; splits: number; declined: number; declinedRecords: SplitRecord[] } {
   let working = state;
   let splits = 0;
   let declined = 0;
+  const declinedRecords: SplitRecord[] = [];
 
   // ── RECORDED SPLITS FIRST, AND THEY NEED NO AGREEMENT FROM THE VERDICTS ──
+  //
+  // A record goes to the candidate it was MADE ON: parallel, on its line, both
+  // ends within `SPLIT_END_FEET` of the record's ends, cut where the reviewer cut
+  // it — nearest ends wins. It used to take the first candidate parallel, near
+  // the line and within half a foot of the length, wherever it lay along the
+  // line. Mid-City repeats its units, so that was often a twin 85-122 ft along
+  // the same grid line; the cut fell off it, the split was declined, and the
+  // real wall reopened whole and unreviewed (Chrome Round 31, A4.1: 10 of 16).
+  // Ends rather than length, so a finder that moves an end a little still finds it.
   for (const record of recorded) {
-    const target = working.candidates.find((c) => {
-      if (!parallel(record, c)) return false;
-      if (Math.abs(record.lengthFeet - c.lengthFeet) > SAME_LENGTH_FEET) return false;
-      const off = Math.max(
-        offLine(c, record.x1, record.y1, feetPerUnit),
-        offLine(c, record.x2, record.y2, feetPerUnit),
-      );
-      return off <= 1.5;
-    });
-    if (target === undefined) {
-      declined += 1;
-      continue;
+    let target: { c: Candidate; ends: number } | null = null;
+    for (const c of working.candidates) {
+      if (!parallel(record, c)) continue;
+      const off = Math.max(offLine(record, c.x1, c.y1, feetPerUnit), offLine(record, c.x2, c.y2, feetPerUnit));
+      if (off > SAME_WALL_FEET) continue;
+      const span = along(record, c, feetPerUnit);
+      const ends = Math.max(Math.abs(span.lo), Math.abs(span.hi - len(record) * feetPerUnit));
+      if (ends > SPLIT_END_FEET) continue;
+      if (target === null || ends < target.ends) target = { c, ends };
     }
-    const out = splitCandidate(working, target.id, { x: record.cutX, y: record.cutY }, feetPerUnit);
-    if (out.halves === null) {
+    const out = target === null ? null : splitCandidate(working, target.c.id, { x: record.cutX, y: record.cutY }, feetPerUnit);
+    if (out === null || out.halves === null) {
       declined += 1;
+      declinedRecords.push(record);
       continue;
     }
     working = out.state;
     splits += 1;
   }
 
-  if (recorded.length > 0) return { state: working, splits, declined };
+  if (recorded.length > 0) return { state: working, splits, declined, declinedRecords };
 
   // ── NO RECORD: INFER ONLY WHAT CANNOT BE ANYTHING ELSE ──
   // Why a split was declined, when asked. Off by default: this is a
@@ -376,7 +403,7 @@ export function reapplySplits(
     splits += 1;
   }
 
-  return { state: working, splits, declined };
+  return { state: working, splits, declined, declinedRecords };
 }
 
 /** Two traces with the same ends, either way round, to well under a pixel. */
@@ -459,11 +486,30 @@ export function restoreSaved(
 
   const carried = decisions.filter((v) => !pairs.some((p) => p.saved === v));
 
+  // ── WHAT A CARRIED DECISION LIES ON IS NOT FRESH WORK ──
+  // A still-unreviewed candidate under a decision that could not be re-attached
+  // was reviewed, in a form this reopen cannot show. It is flagged to look at,
+  // and the counter does not call it unreviewed.
+  const needsLook = state.candidates
+    .filter((c) => (state.verdicts[c.id] ?? "unreviewed") === "unreviewed")
+    .filter((c) =>
+      carried.some((v) => {
+        if (!parallel(v, c)) return false;
+        const off = Math.max(offLine(v, c.x1, c.y1, feetPerUnit), offLine(v, c.x2, c.y2, feetPerUnit));
+        return off <= bandFeet(v, { thicknessFeet: c.thicknessIn === null ? 0 : c.thicknessIn / 12 }) && sameStretch(v, c, feetPerUnit);
+      }),
+    )
+    .map((c) => c.id);
+  if (needsLook.length > 0) state = { ...state, needsLook };
+  const lookNote = needsLook.length > 0 ? ` ${needsLook.length} candidate${needsLook.length === 1 ? "" : "s"} need a look: a saved decision lies on ${needsLook.length === 1 ? "it" : "each"} that did not re-attach, and is kept.` : "";
+
   return {
     ok: true,
     state,
     carried,
-    carriedSplits: [...(saved.splits ?? [])],
+    // Only the records NOT re-applied: the re-applied ones are in `state.splits`
+    // already, and the save writes both (`splitsForSave`).
+    carriedSplits: prepared.declinedRecords,
     sourceFinderVersion: typeof saved.finderVersion === "string" ? saved.finderVersion : null,
     traceOnly,
     reviewedBy: typeof saved.reviewedBy === "string" && saved.reviewedBy !== "" ? saved.reviewedBy : null,
@@ -493,7 +539,7 @@ export function restoreSaved(
           ? ""
           : ` since finder ${saved.finderVersion.slice(0, 12)}`) +
         `. ${pairs.length} of ${decisions.length} still fit, so this sheet is for TRACING — ` +
-        `add what the finder missed and save; nothing already decided is lost.`
+        `add what the finder missed and save; nothing already decided is lost.` + lookNote
       : `Restored ${pairs.length} saved decision${pairs.length === 1 ? "" : "s"}` +
       (traces.length > 0 ? ` and ${traces.length} trace${traces.length === 1 ? "" : "s"}` : "") +
       (prepared.splits > 0 ? `, ${prepared.splits} split re-applied` : "") +
@@ -510,6 +556,6 @@ export function restoreSaved(
         ? `, ${prepared.declined} possible split not re-applied (not provable)`
         : "") +
         (unmatched > 0 ? `, ${unmatched} kept but not shown — their candidates moved` : "") +
-        ". Add what is missing and save again.",
+        "." + lookNote + " Add what is missing and save again.",
   };
 }
