@@ -353,6 +353,19 @@ export const PERSONAS = {
     username: "e2e_samplejob",
     phone: "+15555550193",
   },
+  /**
+   * ── TWO TABS ON ONE TAKEOFF ──
+   *
+   * `two-tab-changed.spec.ts` signs this one person into two browser contexts on
+   * the same workspace, so a save in one must reach the other as "changed in
+   * another tab". Its own persona, so no parallel spec saves into its takeoff.
+   */
+  twoTab: {
+    email: "e2e-twotab+clerk_test@example.com",
+    label: "TWO_TAB",
+    username: "e2e_twotab",
+    phone: "+15555550194",
+  },
 } as const;
 
 export type PersonaKey = keyof typeof PERSONAS;
