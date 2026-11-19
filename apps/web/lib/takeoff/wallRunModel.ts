@@ -74,8 +74,25 @@ export function loadRunModel(env: Record<string, string | undefined> = process.e
   return loadRunKind(RUN_MODEL_ENV, env);
 }
 
-/** R, named by `TAKEOFF_WALL_RENO_MODEL`, or null. */
-export function loadRenoModel(env: Record<string, string | undefined> = process.env): WallModel | null {
+/**
+ * ── R ON EVERY RENOVATION SHEET, NOT ONLY THE PAIRED ONES (behind TAKEOFF_RENO_UNPAIRED=1) ──
+ *
+ * The 2026-11-19 census of renovation junk: 10 of the 12 sets carrying 80% of it are paired with no
+ * demolition plan, so R never ran there, and the biggest cause was existing walls drawn plain or grey.
+ * R-ALL is R retrained on every renovation sheet's runs (same columns, same settings, same 0.10
+ * cut), named by `TAKEOFF_WALL_RENO_ALL_MODEL`. With the flag on and that model readable, it is the
+ * model returned and it runs with or without a prior; otherwise R is exactly as before.
+ */
+export const RENO_UNPAIRED_FLAG = "TAKEOFF_RENO_UNPAIRED";
+export const RENO_ALL_MODEL_ENV = "TAKEOFF_WALL_RENO_ALL_MODEL";
+export type RenoModel = WallModel & { unpaired?: true };
+
+/** R, named by `TAKEOFF_WALL_RENO_MODEL` (or R-ALL, see above), or null. */
+export function loadRenoModel(env: Record<string, string | undefined> = process.env): RenoModel | null {
+  if (env[RENO_UNPAIRED_FLAG] === "1") {
+    const all = loadRunKind(RENO_ALL_MODEL_ENV, env);
+    if (all !== null) return { ...all, unpaired: true };
+  }
   return loadRunKind(RENO_MODEL_ENV, env);
 }
 
@@ -158,9 +175,11 @@ export function runModelVerdicts(input: RunModelInput, runModel: WallModel): { s
 
 /**
  * The kept runs R holds back: none unless the sheet is a renovation sheet paired with its demolition
- * plan (an aligned prior), else exactly the run model's remove-only rule with R's scores.
+ * plan (an aligned prior) — or any renovation sheet when R-ALL is loaded — else exactly the run
+ * model's remove-only rule with R's scores.
  */
-export function renoModelRemovals(input: RunModelInput, renoModel: WallModel): WallCandidate[] {
-  if (input.prior === undefined || !isRenovationSheet(input.textItems)) return [];
+export function renoModelRemovals(input: RunModelInput, renoModel: RenoModel): WallCandidate[] {
+  if (!isRenovationSheet(input.textItems)) return [];
+  if (input.prior === undefined && renoModel.unpaired !== true) return [];
   return runModelVerdicts(input, renoModel).removed;
 }

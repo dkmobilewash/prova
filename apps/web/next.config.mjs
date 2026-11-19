@@ -188,6 +188,7 @@ const nextConfig = {
       // silently off — exactly what the comment above warned about.
       "./models/wall-run-model.json",
       "./models/wall-reno-model.json",
+      "./models/wall-reno-all-model.json",
       // THE SAMPLE JOB'S DRAWING, read by path for every company's sample
       // (`lib/sample-job/samplePlan.ts`). An invented fixture, never a client's set.
       "./lib/takeoff/fixtures/plans/S13.pdf",

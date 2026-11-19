@@ -76,6 +76,22 @@ describe("R, the paired-renovation model, behind TAKEOFF_WALL_RENO_MODEL", () =>
     expect(renoModelRemovals({ ...base, textItems: renovation, prior }, constant(0.1001))).toEqual([]);
   });
 
+  it("R-ALL (TAKEOFF_RENO_UNPAIRED=1 + TAKEOFF_WALL_RENO_ALL_MODEL) runs on an UNPAIRED renovation sheet too; off, or with no such file, R is as before", () => {
+    const named = { TAKEOFF_WALL_RENO_MODEL: "models/wall-reno-model.json" };
+    expect(loadRenoModel({ ...named, TAKEOFF_RENO_UNPAIRED: "1", TAKEOFF_WALL_RENO_ALL_MODEL: "models/wall-reno-model.json" })?.unpaired).toBe(true);
+    expect(loadRenoModel({ ...named, TAKEOFF_WALL_RENO_ALL_MODEL: "models/wall-reno-model.json" })?.unpaired, "flag off").toBeUndefined();
+    expect(loadRenoModel({ ...named, TAKEOFF_RENO_UNPAIRED: "1" })?.unpaired, "flag on, no R-ALL file: R as before").toBeUndefined();
+    const all = { ...constant(0.05), unpaired: true as const };
+    expect(renoModelRemovals({ ...base, textItems: renovation }, all), "unpaired renovation sheet").toEqual([base.kept[0], base.kept[1]]);
+    expect(renoModelRemovals({ ...base, textItems: [] }, all), "still never on a sheet that is not a renovation").toEqual([]);
+    expect(renoModelRemovals({ ...base, textItems: renovation }, constant(0.05)), "plain R still needs the pairing").toEqual([]);
+  });
+
+  it("the zero-touch eval runs R the way detection does (it had no R step before 2026-11-19)", () => {
+    const zt = read("./realplan/zzZeroTouch.eval.ts");
+    expect(zt).toContain("for (const r of renoModelRemovals({ offered: runsBefore, kept: runs,");
+  });
+
   it("detection holds what either model removes, and only the run model's score rides on the run", () => {
     const detect = read("./detectWallsForCalibration.ts");
     expect(detect).toContain("const renoModel = raster === null ? loadRenoModel(process.env) : null;");
