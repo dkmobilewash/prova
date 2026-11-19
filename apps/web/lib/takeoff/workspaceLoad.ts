@@ -892,18 +892,21 @@ export async function takeoffSavedSignature(companyId: string, jobId: string): P
   });
   if (plan === null) return "no-plan";
 
-  const [calibrations, measurements, proposals, names] = await Promise.all([
+  // ── WALL PROPOSALS ARE NOT IN IT, AND THAT IS THE POINT ──
+  //
+  // Every scale save queues the wall finder AFTER its response (`writeCalibration`), and that
+  // background job is the only writer of `TakeoffWallProposal`. Counting proposals here made a tab's
+  // OWN save trip its own "changed in another tab" banner on the next focus: the page re-rendered with
+  // the new signature, then the finder's rows landed (Round 30, Mid-City on serve75, one tab open).
+  // A real second tab is still caught — its proposals only ever follow its calibration save, which is
+  // counted below, as are its measurements and renames. `savedSignature.dbtest.ts` holds both halves.
+  const [calibrations, measurements, names] = await Promise.all([
     prisma.takeoffScaleCalibration.aggregate({
       where: { page: { planId: plan.id } },
       _count: { _all: true },
       _max: { createdAt: true },
     }),
     prisma.takeoffMeasurement.aggregate({
-      where: { page: { planId: plan.id } },
-      _count: { _all: true },
-      _max: { createdAt: true },
-    }),
-    prisma.takeoffWallProposal.aggregate({
       where: { page: { planId: plan.id } },
       _count: { _all: true },
       _max: { createdAt: true },
@@ -916,7 +919,7 @@ export async function takeoffSavedSignature(companyId: string, jobId: string): P
   const part = (group: { _count: { _all: number }; _max: { createdAt: Date | null } }) =>
     `${group._count._all}@${group._max.createdAt?.toISOString() ?? "-"}`;
   const named = `${names._count._all}@${names._max.updatedAt?.toISOString() ?? "-"}`;
-  return [plan.id, part(calibrations), part(measurements), part(proposals), named].join("|");
+  return [plan.id, part(calibrations), part(measurements), named].join("|");
 }
 
 /** Every row of the newest DOOR schedule read on each page of the plan, flattened. */
