@@ -487,6 +487,19 @@ describe("marks a door schedule lists under an EXISTING section (F15: Sedgwick C
   it("reads the section's marks, normalised, less the salvaged one, the stray below a gap and the other table's", () => {
     expect(existingScheduleMarks([page])).toEqual(["E001", "E125"]);
   });
+  it("E1: a row whose door AND frame cells each say existing on their own baseline is existing; one cell, a salvaged row or a remark is not", () => {
+    // NG-Lakewood A9.0: 500A 3'-0" 7'-0" (E) (E) (E). Bluetooth: 318 EXST. EXST. Canton: EXISTING only in a remark.
+    const rows = [
+      item("DOOR AND FRAME SCHEDULE", 100, 100), item("MARK", 105, 130),
+      item("500A", 105, 152.3), item("3' - 0\"", 150, 152.3), item("(E)", 220, 152.3), item("(E)", 260, 152.3), item("(E)", 300, 152.3),
+      item("318", 105, 170), item("EXST.", 220, 170), item("EXST.", 260, 170),
+      item("121", 105, 190), item("(E)", 220, 190), item("HM", 260, 190),
+      item("405", 105, 210), item("EXISTING", 220, 210), item("EXISTING", 300, 210), item("SALVAGED", 380, 210),
+      item("100A", 105, 230), item("HM", 220, 230), item("FRAME SIZE TO MATCH EXISTING MASONRY", 260, 230),
+      item("S219", 105, 250), item("SALVAGE DOOR AND HARDWARE; WF-2", 150, 250), item("3'-0\"", 300, 250),
+    ];
+    expect(existingScheduleMarks([rows])).toEqual(["318", "500A"]);
+  });
   it("a schedule page with no EXISTING section gives nothing, so nothing changes", () => {
     expect(existingScheduleMarks([page.filter((i) => !i.str.includes("EXISTING"))])).toEqual([]);
   });
