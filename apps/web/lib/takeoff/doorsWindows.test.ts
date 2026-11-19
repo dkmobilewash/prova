@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { COUNTER_GATE_LEAF_FEET, counterGate, doorCount, doorsAndWindowsForSheet, scheduledOpenings } from "./doorsWindows";
+import { COUNTER_GATE_LEAF_FEET, counterGate, doorCount, doorsAndWindowsForSheet, scheduledOpenings, toiletStallDoors } from "./doorsWindows";
 import type { DoorSymbol } from "./doorWindowSymbols";
 import type { WallCandidate } from "./wallVectors";
 
@@ -70,5 +70,34 @@ describe("a 2 ft leaf in no wall is a counter gate (S1)", () => {
     expect(counterGate(door(2.0, 3))).toBe(false);
     expect(counterGate(door(2.5, null))).toBe(false);
     expect(counterGate(door(4.0, null, 2))).toBe(false);
+  });
+});
+
+describe("S2: a toilet stall's door is not a door (prereg-S2.md)", () => {
+  // fpu 1 and a 1-pt page, so units are feet and points alike. A room 20 ft wide between boundary walls at y -5 and y 10.
+  const door = (hx: number, hy: number, w = 2, wall: number | null = null): DoorSymbol => ({ kind: "door", hinge: { x: hx, y: hy }, strike: { x: hx + w, y: hy }, open: { x: hx, y: hy + w }, widthFeet: w, wall, leaves: 1, sweepDegrees: 90 });
+  const walls = [
+    { x1: -10, y1: -5, x2: 12, y2: -5, thicknessFeet: 0.5 }, { x1: -10, y1: 10, x2: 12, y2: 10, thicknessFeet: 0.5 },
+    { x1: -10, y1: -5, x2: -10, y2: 10, thicknessFeet: 0.5 }, { x1: 12, y1: -5, x2: 12, y2: 10, thicknessFeet: 0.5 },
+  ] as unknown as WallCandidate[];
+  const label = [{ str: "WOMENS", x: 1.5, y: 4.5, width: 1, height: 1 }];
+  const stallA = door(0, 0), stallB = door(2.5, 0);
+  const entry = door(6, -5, 3, 0), lone = door(-8, 3), outsideA = door(0, -8), outsideB = door(2.5, -8);
+  const run = (doors: DoorSymbol[], marks: { x: number; y: number }[] = [], textPt = label) => toiletStallDoors({ doors, walls, marks, textPt, widthPt: 1, feetPerUnit: 1 });
+
+  it("drops the untagged row inside the toilet room, and only that row", () => {
+    expect([...run([stallA, stallB, entry, lone, outsideA, outsideB])]).toEqual([stallA, stallB]);
+  });
+  it("spares a row with a tagged door (the tagged one, and so its partner), and every door with no toilet label", () => {
+    expect([...run([stallA, stallB], [{ x: 3.5, y: 0.5 }])]).toEqual([]);
+    expect([...run([stallA, stallB], [], [{ str: "OFFICE", x: 1.5, y: 4.5, width: 1, height: 1 }])]).toEqual([]);
+  });
+  it("spares a pair of different widths and a pair not in a row", () => {
+    expect([...run([stallA, door(2.5, 0, 3)])]).toEqual([]);
+    // Within 1.5 widths of A (1.8 ft) but 1.5 ft off its leaf line: not a row.
+    expect([...run([stallA, door(1, 1.5)])]).toEqual([]);
+  });
+  it("spares two doors in a row ON the room's boundary wall (a double entry)", () => {
+    expect([...run([door(6, -5, 2, 0), door(8.5, -5, 2, 0)])]).toEqual([]);
   });
 });
