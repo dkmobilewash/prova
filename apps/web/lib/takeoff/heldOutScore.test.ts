@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyFromLabels, scoreSheet, totalScore, type ScoredRun } from "./heldOutScore";
+import { keyFromLabels, scoreSheet, totalScore, wallTestFromLabels, type ScoredRun } from "./heldOutScore";
 
 /**
  * ── THE SCORER'S OWN FAILURE MODES ──
@@ -440,5 +440,30 @@ describe("a wall both traced and accepted is counted once", () => {
     const score = scoreSheet({ set: "s", sheet: "A1", key, proposed: key, feetPerUnit: FPU });
     expect(score.keyFeet, "keyFeet still carries the double").toBeCloseTo(100, 0);
     expect(score.recallPercent).toBeCloseTo(100, 0);
+  });
+});
+
+describe("wallTestFromLabels — a set with no reviewed walls is not a wall test (Diego 2026-11-19)", () => {
+  const wall = { verdict: "wall" };
+  const rejected = { verdict: "not-wall" };
+
+  it("excludes a fresh doors-exam label: door keys only, wall candidates left unreviewed", () => {
+    // The shape that produced the $556,750 held-out artifact in
+    // BASELINE-20261119.md: zero accepted, zero traced, only the app's load
+    // auto-rejections decided, everything else unreviewed.
+    expect(wallTestFromLabels({ verdicts: [rejected, rejected], counts: { unreviewed: 122 } })).toBe(false);
+  });
+
+  it("keeps a fully reviewed all-rejected sheet: its empty key is honest, posted walls there ARE junk", () => {
+    expect(wallTestFromLabels({ verdicts: [rejected, rejected], counts: { unreviewed: 0 } })).toBe(true);
+  });
+
+  it("keeps any label with an accepted or traced wall", () => {
+    expect(wallTestFromLabels({ verdicts: [wall, rejected], counts: { unreviewed: 5 } })).toBe(true);
+    expect(wallTestFromLabels({ verdicts: [{ verdict: "traced" }], counts: { unreviewed: 0 } })).toBe(true);
+  });
+
+  it("treats a label with no counts at all as reviewed (old files predate the field)", () => {
+    expect(wallTestFromLabels({ verdicts: [rejected] })).toBe(true);
   });
 });
