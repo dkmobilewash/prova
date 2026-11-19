@@ -21,6 +21,16 @@ describe("doorLabels", () => {
 });
 
 describe("openingLabels", () => {
+  it("a key point on a door's hinge jamb matches its own swing, not a neighbour whose centre is nearer (Canton A101 121)", () => {
+    // fpu 1: units are feet. Door A hinged at the origin, leaf up to (0, -3), its swing the quarter circle to (3, 0).
+    const arc = Array.from({ length: 13 }, (_, k) => { const a = -Math.PI / 2 + (Math.PI / 2) * (k / 12); return { x: 3 * Math.cos(a), y: 3 * Math.sin(a) }; });
+    const doorA = [{ x: 0, y: 0 }, ...arc];
+    // A neighbour's swing below: its edge 1 ft from the key point, its centre nearer than door A's centre.
+    const neighbour = [{ x: -0.5, y: 1 }, { x: 0.5, y: 1 }, { x: 0.5, y: 2 }, { x: -0.5, y: 2 }];
+    const key = [{ x: -0.04, y: 0, kind: "door" as const }];
+    expect(openingLabels([doorA, neighbour], key, 1)).toEqual([1, 0]);
+  });
+
   it("takes a click anywhere in the swing, and one key point per opening", () => {
     // Inside the quarter circle, 1.5 ft from every edge: still this door.
     expect(openingLabels([quarter], [{ x: 1.2, y: 1.2, kind: "door" }], fpu)).toEqual([1]);

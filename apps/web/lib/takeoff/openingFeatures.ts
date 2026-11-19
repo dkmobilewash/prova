@@ -103,11 +103,13 @@ export function openingLabels(shapes: readonly Pt[][], key: readonly KeyPoint[],
   const pairs: { i: number; j: number; d: number }[] = [];
   shapes.forEach((shape, i) => {
     const edges: Line[] = shape.length === 1 ? [{ x1: shape[0]!.x, y1: shape[0]!.y, x2: shape[0]!.x, y2: shape[0]!.y }] : shape.map((a, k) => { const b = shape[(k + 1) % shape.length]!; return { x1: a.x, y1: a.y, x2: b.x, y2: b.y }; });
-    const centre = { x: shape.reduce((n, p) => n + p.x, 0) / shape.length, y: shape.reduce((n, p) => n + p.y, 0) / shape.length };
     key.forEach((p, j) => {
       const inside = shape.length >= 3 && insidePolygon(p, shape);
       const edge = Math.min(...edges.map((e) => toSegment(p, e)));
-      if (inside || edge <= reach) pairs.push({ i, j, d: inside ? 0 : dist(p, centre) });
+      // Closest pairs first by distance to the SHAPE, not its centre: a key point on a door's hinge jamb (the
+      // convention Mid-City keys every leaf by, and Canton A101's 121) is on its own swing's edge but a door's
+      // width from that swing's centre, so ranking by centre let a neighbour's swing take it (Diego, 2026-11-19).
+      if (inside || edge <= reach) pairs.push({ i, j, d: inside ? 0 : edge });
     });
   });
   pairs.sort((a, b) => a.d - b.d);
