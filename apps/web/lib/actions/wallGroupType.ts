@@ -14,7 +14,8 @@ import { storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "./shared";
 import { addWallTypeFromLegend } from "./wallLegend";
 import { syncDecidedItems } from "@/lib/estimating/takeoff-item-lines";
-import { sameRunAs } from "@/lib/takeoff/runMatch";
+import { nearestWallRun, sameRunAs, sameWallRun } from "@/lib/takeoff/runMatch";
+import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { AUTO_DOOR_LABELS, AUTO_MARK, HIGH_CONFIDENCE_WALLS } from "@/lib/takeoff/autoPost";
 import { DOORS_AUTO_UNDONE } from "@/lib/plan-ingest/autoDoors";
 
@@ -306,9 +307,10 @@ async function typeGroup(
 
   const page = await prisma.takeoffPlanPage.findFirst({
     where: { planId: input.planId, pageNumber: input.pageNumber, plan: { job: { id: jobId, companyId } } },
-    select: { id: true, calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true } } },
+    select: { id: true, calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { id: true, x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } } },
   });
   if (page === null) return actionFail("That sheet is no longer on this job. Reload the page.");
+  const feetPerUnit = feetOf(page.calibrations[0]);
 
   let type = await prisma.wallType.findFirst({ where: { companyId, code: { equals: code, mode: "insensitive" } }, select: { id: true, code: true, name: true, thicknessIn: true, defaultHeightFt: true, sides: true, _count: { select: { components: true } } } });
   if (type === null) {
@@ -352,7 +354,11 @@ async function typeGroup(
     for (const run of runs) {
       // The run already on the job, found again by a re-run a hair off (`sameRunAs`):
       // matched exactly, it was written a second time and the wall counted twice.
-      const at = posted.filter((m) => sameRunAs(run, m.xs, m.ys));
+      // And by `sameWallRun` when the sheet has a scale: after a finder deploy the
+      // viewer's run can sit feet off the stored row, past `sameRunAs`' 3½", and
+      // Set type counted that wall twice (prereg-reattach-P0.md).
+      const near = feetPerUnit === null ? null : nearestWallRun(run, posted, lineOfRow, feetPerUnit);
+      const at = near !== null ? [near] : posted.filter((m) => sameRunAs(run, m.xs, m.ys));
       if (at.length === 0) {
         data.push({ pageId: page.id, calibrationId: page.calibrations[0]?.id ?? null, kind: "LINEAR" as const, xs: [run.x1, run.x2], ys: [run.y1, run.y2], label, source: "DETECTED" as const, itemId, createdByUserId: context.id });
         continue;
@@ -397,14 +403,18 @@ export async function clearWallGroupType(
   const companyId = context.company.id;
   const runs = Array.isArray(input.runs) ? input.runs.filter((r) => [r.x1, r.y1, r.x2, r.y2].every(Number.isFinite)) : [];
   if (runs.length === 0 || runs.length > RUNS_MAX) return actionFail("That group has no walls to clear. Reload the page.");
-  const page = await prisma.takeoffPlanPage.findFirst({ where: { planId: input.planId, pageNumber: input.pageNumber, plan: { job: { id: jobId, companyId } } }, select: { id: true } });
+  const page = await prisma.takeoffPlanPage.findFirst({
+    where: { planId: input.planId, pageNumber: input.pageNumber, plan: { job: { id: jobId, companyId } } },
+    select: { id: true, calibrations: { orderBy: { createdAt: "desc" }, take: 1, select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } } },
+  });
   if (page === null) return actionFail("That sheet is no longer on this job. Reload the page.");
+  const feetPerUnit = feetOf(page.calibrations[0]);
   const moved = await prisma.$transaction(async (tx) => {
     const posted = await tx.takeoffMeasurement.findMany({
       where: { pageId: page.id, kind: "LINEAR", source: "DETECTED", itemId: { not: null }, item: { name: { not: UNTYPED_ITEM } } },
       select: { id: true, xs: true, ys: true, itemId: true, label: true },
     });
-    const ours = posted.filter((m) => runs.some((r) => sameRunAs(r, m.xs, m.ys)));
+    const ours = posted.filter((m) => runs.some((r) => sameRunAs(r, m.xs, m.ys) || (feetPerUnit !== null && m.xs.length === 2 && sameWallRun(r, lineOfRow(m), feetPerUnit))));
     if (ours.length === 0) return [];
     const untyped = await untypedItem(tx, companyId, jobId);
     await tx.takeoffMeasurement.updateMany({ where: { id: { in: ours.map((m) => m.id) } }, data: { itemId: untyped, label: "wall, untyped" } });
@@ -472,4 +482,10 @@ export async function undoAutoPost(jobId: string, planId: string, pageNumber: nu
   } finally {
     working.end();
   }
+}
+
+const lineOfRow = (m: { xs: number[]; ys: number[] }) => ({ x1: m.xs[0] ?? NaN, y1: m.ys[0] ?? NaN, x2: m.xs[1] ?? NaN, y2: m.ys[1] ?? NaN });
+function feetOf(c: { x1: number; y1: number; x2: number; y2: number; declaredDistanceFeet: unknown } | undefined): number | null {
+  if (c === undefined) return null;
+  return feetPerPageWidth({ x1: c.x1, y1: c.y1, x2: c.x2, y2: c.y2, declaredDistanceFeet: Number(c.declaredDistanceFeet) });
 }

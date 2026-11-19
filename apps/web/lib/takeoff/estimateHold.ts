@@ -1,3 +1,4 @@
+import { matchWallRuns } from "./runMatch";
 import { modelVerdicts, type ScoredPairing } from "./demotedRuns";
 import type { WallModel } from "./wallClassifier";
 
@@ -46,6 +47,12 @@ export const DROPPED_LABEL = "wall, dropped";
 export const KEPT_LABEL = "wall, kept";
 /** Labels only a person writes. A re-find keeps these and re-reads every other from the model. */
 export const PERSON_LABELS: readonly string[] = [KEPT_LABEL, DROPPED_LABEL];
+/** Typed by a person: Set type, and Accept in the review queue, write "<code> wall (set by hand)". */
+export const SET_BY_HAND = " (set by hand)";
+/** A person decided this row: kept, dropped, or typed by hand. A finder re-run must never reset it. */
+export function personDecided(label: string | null): boolean {
+  return label !== null && (PERSON_LABELS.includes(label) || label.endsWith(SET_BY_HAND));
+}
 /** Items the estimate leaves out: nothing on them is a wall anybody has accepted. */
 export const OFF_ESTIMATE_ITEMS: readonly string[] = [HELD_ITEM, DROPPED_ITEM];
 
@@ -75,4 +82,36 @@ export function isHeldRun(run: Line, held: readonly Line[]): boolean {
 export function sameRun(a: Line, b: Line, tolerance = 1e-6): boolean {
   const near = (p: number, q: number) => Math.abs(p - q) <= tolerance;
   return (near(a.x1, b.x1) && near(a.y1, b.y1) && near(a.x2, b.x2) && near(a.y2, b.y2)) || (near(a.x1, b.x2) && near(a.y1, b.y2) && near(a.x2, b.x1) && near(a.y2, b.y1));
+}
+
+/**
+ * ── KEEP / DROP NEVER CHANGES THE SCREEN WITHOUT THE SERVER (prereg-reattach-P0.md) ──
+ *
+ * What a review decision does with the stored row it matched. It decided on screen
+ * and wrote nothing whenever no row matched, which after a finder deploy was every
+ * moved run: the reviewer saw the drop, and it was gone on reload.
+ *   "write"   a drop, or any decision on a held run: the row changes on the server;
+ *   "screen"  a keep on a run already counted (nothing to change), or a run on a
+ *             sheet with no walls on the job yet (the panel says "not on the job yet");
+ *   "refuse"  the sheet's walls ARE on the job and none is this run: say so, decide nothing.
+ */
+export function reviewWrite(posted: { label: string | null } | null, kind: "keep" | "drop", sheetHasWalls: boolean): "write" | "screen" | "refuse" {
+  if (posted === null) return sheetHasWalls ? "refuse" : "screen";
+  return kind === "drop" || posted.label === HELD_LABEL ? "write" : "screen";
+}
+
+/**
+ * ── "NEEDS A LOOK", DERIVED ON READ AND NEVER STORED ──
+ *
+ * How many of a sheet's person-decided wall rows (kept, dropped, typed by hand)
+ * match no run of the current reading (`matchWallRuns`). They stay as the person
+ * left them, and this says so. Zero when there is no reading to compare against.
+ */
+export function needsLookCount(rows: readonly { id: string; kind: string; xs: number[]; ys: number[]; label: string | null }[], runs: readonly Line[], feetPerUnit: number | null): number {
+  if (runs.length === 0 || feetPerUnit === null) return 0;
+  const people = rows.filter((m) => m.kind === "LINEAR" && m.xs.length === 2 && personDecided(m.label));
+  const fresh = runs.map((r, at) => ({ ...r, id: `r${at}` }));
+  const lineOfRow = (m: (typeof people)[number]) => ({ x1: m.xs[0]!, y1: m.ys[0]!, x2: m.xs[1]!, y2: m.ys[1]! });
+  const pairs = matchWallRuns(people, fresh, lineOfRow, (r) => r, feetPerUnit);
+  return people.filter((m) => !pairs.has(m.id)).length;
 }

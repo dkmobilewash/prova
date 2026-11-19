@@ -16,8 +16,11 @@ export function TakeoffHeldWalls({
   defaultOpen = false,
   onHover,
   onShow,
+  needsLook = 0,
 }: {
   walls: readonly HeldWall[];
+  /** A person's decisions (kept, dropped, typed) on walls this reading no longer finds: kept as they were. */
+  needsLook?: number;
   /** The workspace's layer panel: one "Needs review" row that opens in place. */
   asRow?: boolean;
   /** Starts open: opened from the job stepper's Review. */
@@ -31,7 +34,13 @@ export function TakeoffHeldWalls({
 }) {
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  if (walls.length === 0) return null;
+  const look =
+    needsLook > 0 ? (
+      <p className="shrink-0 text-xs text-tag-amber-ink" data-takeoff="needs-a-look">
+        {needsLook} of your decisions {needsLook === 1 ? "is" : "are"} on {needsLook === 1 ? "a wall" : "walls"} this reading no longer finds. Kept as you left {needsLook === 1 ? "it" : "them"}: needs a look.
+      </p>
+    ) : null;
+  if (walls.length === 0) return look;
   const total = Math.round(walls.reduce((n, w) => n + w.feet, 0));
   async function confirm(id: string) {
     setSaving(id);
@@ -39,6 +48,8 @@ export function TakeoffHeldWalls({
     setSaving(null);
   }
   return (
+    <>
+    {look}
     <details
       open={defaultOpen || undefined}
       className={`shrink-0 text-xs text-ink-muted${asRow ? " rounded-md px-1.5 py-1.5 hover:bg-rail" : ""}`}
@@ -95,5 +106,6 @@ export function TakeoffHeldWalls({
         ))}
       </ul>
     </details>
+    </>
   );
 }

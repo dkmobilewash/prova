@@ -140,7 +140,7 @@ describe("whole-set takeoff", () => {
     const refreshed: number[] = [];
     const refresh = async (target: DetectTarget) => {
       refreshed.push(target.pageNumber);
-      return { kind: "replaced" as const };
+      return { kind: "replaced" as const, needsLook: 0 };
     };
     // A sheet found again has its windows counted too: one found before #1008 never had (Chrome on Baker).
     const counted: number[] = [];
