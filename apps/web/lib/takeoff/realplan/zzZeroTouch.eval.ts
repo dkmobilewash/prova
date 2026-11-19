@@ -7,7 +7,7 @@ import { openPlanPdf } from "../../plan-ingest/planPdf";
 import type { ScoredPairing } from "../demotedRuns";
 import { runsHeldOffEstimate } from "../estimateHold";
 import { excludedSheetReason, heldOutReason } from "../heldOutSets";
-import { keyFromLabels, scoreSheet, type ScoredRun } from "../heldOutScore";
+import { keyFromLabels, scoreSheet, wallTestFromLabels, type ScoredRun } from "../heldOutScore";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { priorPlanFor } from "../priorPlan";
 import { autoPairs } from "../priorPlanLoad";
@@ -140,7 +140,7 @@ const findPdf = (dir: string) => {
   for (const root of [DIR, DIR2].filter((r) => r !== "")) for (const n of readdirSync(root)) if (n.toLowerCase().endsWith(".pdf") && flat(n) === flat(dir)) return join(root, n);
   return null;
 };
-type Saved = Parameters<typeof keyFromLabels>[0] & { page: number; feetPerUnit: number };
+type Saved = Parameters<typeof keyFromLabels>[0] & Parameters<typeof wallTestFromLabels>[0] & { page: number; feetPerUnit: number };
 
 async function sheetsOf(pdf: string): Promise<{ pageNumber: number; sheetNumber: string | null; title: string | null }[]> {
   const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
@@ -214,6 +214,12 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const keyDoors = got.openings.filter((o) => o.kind === "door").length;
         const keyWindows = got.openings.filter((o) => o.kind === "window").length;
         if (key.length === 0 && keyDoors === 0 && keyWindows === 0) continue;
+        // A label whose wall review never ran (door keys only, candidates left
+        // unreviewed) is not a wall test — see wallTestFromLabels. Its door
+        // and window keys still count below; its WALL and BOARD terms are
+        // zeroed at the accumulation, or everything the product posts would
+        // price as pure over against a key nobody made.
+        const wallTest = wallTestFromLabels(saved);
         const strokes = await sheetStrokes(Buffer.from(readFileSync(pdf)), saved.page);
         if (strokes === null || strokes.segments.length < 50) continue;
         const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
@@ -358,10 +364,13 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           keyByType[t] = Math.round(((keyByType[t] ?? 0) + k.lengthFeet) * 10) / 10;
         }
         const s = bySet.get(dir) ?? { lf: 0, doors: 0, windows: 0, lf10: 0, keyLf: 0, keyDoors: 0, keyWindows: 0, keyByType: {}, sheets: 0, junkLf: 0, junkRenoLf: 0, missedLf: 0, keyBoardSf: 0, renovation: false, doorsOver: 0, unpricedBoardSf: 0, zeroBoardSf: 0, lf10BoardSf: 0 };
-        s.lf += zeroLf; s.lf10 += lf10; s.doors += Math.min(postedDoors, keyDoors); s.doorsOver += Math.max(0, postedDoors - keyDoors); s.keyLf += keyLf; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1; s.junkLf += junkLf; if (renovation) s.junkRenoLf += junkLf; s.missedLf += missedLf; s.keyBoardSf += keyBoardSf; s.unpricedBoardSf += unpricedBoardSf; s.zeroBoardSf += zeroBoardSf; s.lf10BoardSf += lf10BoardSf; s.renovation = s.renovation || renovation;
-        for (const [t, ft] of Object.entries(keyByType)) s.keyByType[t] = Math.round(((s.keyByType[t] ?? 0) + ft) * 10) / 10;
+        // Not a wall test: every wall/board term is zeroed, doors/windows stay.
+        const w = wallTest ? 1 : 0;
+        s.lf += zeroLf * w; s.lf10 += lf10 * w; s.doors += Math.min(postedDoors, keyDoors); s.doorsOver += Math.max(0, postedDoors - keyDoors); s.keyLf += keyLf * w; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1; s.junkLf += junkLf * w; if (renovation) s.junkRenoLf += junkLf * w; s.missedLf += missedLf * w; s.keyBoardSf += keyBoardSf * w; s.unpricedBoardSf += unpricedBoardSf * w; s.zeroBoardSf += zeroBoardSf * w; s.lf10BoardSf += lf10BoardSf * w; s.renovation = s.renovation || (renovation && wallTest);
+        if (wallTest) for (const [t, ft] of Object.entries(keyByType)) s.keyByType[t] = Math.round(((s.keyByType[t] ?? 0) + ft) * 10) / 10;
         bySet.set(dir, s);
-        rows.push({ set: dir, sheet, paired, renovation, keyLf: Math.round(keyLf), zeroLf: Math.round(zeroLf), lf10: Math.round(lf10), junkLf: Math.round(junkLf), missedLf: Math.round(missedLf), keyBoardSf: Math.round(keyBoardSf), unpricedBoardSf: Math.round(unpricedBoardSf), zeroBoardSf: Math.round(zeroBoardSf), chainFeet, chainFrom: chain?.from ?? null, rooms: foundRooms.rooms.length, keyDoors, postedDoors, keyWindows });
+        rows.push({ set: dir, sheet, paired, renovation, keyLf: Math.round(keyLf * w), zeroLf: Math.round(zeroLf * w), lf10: Math.round(lf10 * w), junkLf: Math.round(junkLf * w), missedLf: Math.round(missedLf * w), keyBoardSf: Math.round(keyBoardSf * w), unpricedBoardSf: Math.round(unpricedBoardSf * w), zeroBoardSf: Math.round(zeroBoardSf * w), chainFeet, chainFrom: chain?.from ?? null, rooms: foundRooms.rooms.length, keyDoors, postedDoors, keyWindows });
+        if (!wallTest) console.log(`ZT ${HELD ? "HELD-OUT" : "TRAINING"} ${dir.slice(0, 26)} ${sheet}: wall review never ran (door/window keys only) — wall and board terms excluded (wallTestFromLabels)`);
       }
     }
     const group = HELD ? "HELD-OUT" : "TRAINING";

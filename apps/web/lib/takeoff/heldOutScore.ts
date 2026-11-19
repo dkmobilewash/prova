@@ -284,6 +284,29 @@ export function totalScore(sheets: readonly SheetScore[]): {
  * Exported because getting this wrong is silent — a key built from accepted
  * runs alone looks complete and measures the finder against its own output.
  */
+/**
+ * Whether this label is a WALL test at all.
+ *
+ * A fresh doors-exam label holds door keys and nothing else on walls: zero
+ * accepted, zero traced, and every candidate left UNREVIEWED (the app's load
+ * auto-rejections aside). Pricing posted walls against that "key" counts
+ * every real wall as pure over — the $556,750 held-out artifact documented in
+ * BASELINE-20261119.md. Diego's rule (2026-11-19): a set with no reviewed
+ * walls is not a wall test.
+ *
+ * The discriminator is deliberately UNREVIEWED, not "key is empty": a sheet
+ * whose reviewer looked at everything and rejected it all (unreviewed 0) has
+ * an honestly empty key, and posting walls there IS junk. Only a label whose
+ * wall review never finished is excluded.
+ */
+export function wallTestFromLabels(saved: {
+  verdicts: ReadonlyArray<{ verdict: string }>;
+  counts?: { unreviewed?: number };
+}): boolean {
+  const reviewed = saved.verdicts.some((v) => v.verdict === "wall" || v.verdict === "traced");
+  return reviewed || (saved.counts?.unreviewed ?? 0) === 0;
+}
+
 export function keyFromLabels(
   saved: {
     verdicts: ReadonlyArray<{
