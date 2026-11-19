@@ -63,28 +63,31 @@ describe("R, the paired-renovation model, behind TAKEOFF_WALL_RENO_MODEL", () =>
     expect(loadRenoModel({})).toBeNull();
     expect(loadRenoModel({ TAKEOFF_WALL_RUN_MODEL: "models/wall-run-model.json" })).toBeNull();
     expect(loadRenoModel({ TAKEOFF_WALL_RENO_MODEL: "models/wall-model.json" }), "the pairwise model has other columns").toBeNull();
-    expect(loadRenoModel({ TAKEOFF_WALL_RENO_MODEL: "models/wall-reno-model.json" })?.features).toEqual([...RUN_FEATURE_NAMES]);
+    expect(loadRenoModel({ TAKEOFF_WALL_RENO_MODEL: "models/wall-reno-model.json" })?.paired?.features).toEqual([...RUN_FEATURE_NAMES]);
     // Both loaded at once, each from its own file.
     expect(loadRunModel({ TAKEOFF_WALL_RUN_MODEL: "models/wall-run-model.json" })).not.toBe(loadRenoModel({ TAKEOFF_WALL_RENO_MODEL: "models/wall-reno-model.json" }));
   });
 
   it(`removes below ${RUN_REMOVE_BELOW} only on a renovation sheet paired with its demolition plan`, () => {
-    const low = constant(0.05);
+    const low = { paired: constant(0.05), unpaired: null };
     expect(renoModelRemovals({ ...base, textItems: renovation, prior }, low)).toEqual([base.kept[0], base.kept[1]]);
     expect(renoModelRemovals({ ...base, textItems: renovation }, low), "not paired").toEqual([]);
     expect(renoModelRemovals({ ...base, textItems: [], prior }, low), "not a renovation sheet").toEqual([]);
-    expect(renoModelRemovals({ ...base, textItems: renovation, prior }, constant(0.1001))).toEqual([]);
+    expect(renoModelRemovals({ ...base, textItems: renovation, prior }, { paired: constant(0.1001), unpaired: null })).toEqual([]);
   });
 
-  it("R-ALL (TAKEOFF_RENO_UNPAIRED=1 + TAKEOFF_WALL_RENO_ALL_MODEL) runs on an UNPAIRED renovation sheet too; off, or with no such file, R is as before", () => {
+  it("R-UNPAIRED (TAKEOFF_RENO_UNPAIRED=1 + TAKEOFF_WALL_RENO_ALL_MODEL): R-ALL only where there is NO prior; paired sheets keep R exactly", () => {
     const named = { TAKEOFF_WALL_RENO_MODEL: "models/wall-reno-model.json" };
-    expect(loadRenoModel({ ...named, TAKEOFF_RENO_UNPAIRED: "1", TAKEOFF_WALL_RENO_ALL_MODEL: "models/wall-reno-model.json" })?.unpaired).toBe(true);
-    expect(loadRenoModel({ ...named, TAKEOFF_WALL_RENO_ALL_MODEL: "models/wall-reno-model.json" })?.unpaired, "flag off").toBeUndefined();
-    expect(loadRenoModel({ ...named, TAKEOFF_RENO_UNPAIRED: "1" })?.unpaired, "flag on, no R-ALL file: R as before").toBeUndefined();
-    const all = { ...constant(0.05), unpaired: true as const };
-    expect(renoModelRemovals({ ...base, textItems: renovation }, all), "unpaired renovation sheet").toEqual([base.kept[0], base.kept[1]]);
-    expect(renoModelRemovals({ ...base, textItems: [] }, all), "still never on a sheet that is not a renovation").toEqual([]);
-    expect(renoModelRemovals({ ...base, textItems: renovation }, constant(0.05)), "plain R still needs the pairing").toEqual([]);
+    const on = loadRenoModel({ ...named, TAKEOFF_RENO_UNPAIRED: "1", TAKEOFF_WALL_RENO_ALL_MODEL: "models/wall-reno-model.json" });
+    expect(on?.paired?.features).toEqual([...RUN_FEATURE_NAMES]);
+    expect(on?.unpaired?.features).toEqual([...RUN_FEATURE_NAMES]);
+    expect(loadRenoModel({ ...named, TAKEOFF_WALL_RENO_ALL_MODEL: "models/wall-reno-model.json" })?.unpaired, "flag off").toBeNull();
+    expect(loadRenoModel({ ...named, TAKEOFF_RENO_UNPAIRED: "1" })?.unpaired, "flag on, no R-ALL file").toBeNull();
+    // R keeps everything (0.5), R-ALL removes everything (0.05): which one ran is visible in the result.
+    const both = { paired: constant(0.5), unpaired: constant(0.05) };
+    expect(renoModelRemovals({ ...base, textItems: renovation }, both), "unpaired renovation sheet: R-ALL").toEqual([base.kept[0], base.kept[1]]);
+    expect(renoModelRemovals({ ...base, textItems: renovation, prior }, both), "paired sheet: shipped R, not R-ALL").toEqual([]);
+    expect(renoModelRemovals({ ...base, textItems: [] }, both), "never on a sheet that is not a renovation").toEqual([]);
   });
 
   it("the zero-touch eval runs R the way detection does (it had no R step before 2026-11-19)", () => {

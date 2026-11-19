@@ -75,25 +75,25 @@ export function loadRunModel(env: Record<string, string | undefined> = process.e
 }
 
 /**
- * ── R ON EVERY RENOVATION SHEET, NOT ONLY THE PAIRED ONES (behind TAKEOFF_RENO_UNPAIRED=1) ──
+ * ── R-UNPAIRED: SHIPPED R WHERE THERE IS A DEMOLITION PLAN, R-ALL WHERE THERE IS NONE (behind TAKEOFF_RENO_UNPAIRED=1) ──
  *
  * The 2026-11-19 census of renovation junk: 10 of the 12 sets carrying 80% of it are paired with no
- * demolition plan, so R never ran there, and the biggest cause was existing walls drawn plain or grey.
- * R-ALL is R retrained on every renovation sheet's runs (same columns, same settings, same 0.10
- * cut), named by `TAKEOFF_WALL_RENO_ALL_MODEL`. With the flag on and that model readable, it is the
- * model returned and it runs with or without a prior; otherwise R is exactly as before.
+ * demolition plan, so R never ran there. R-ALL (R retrained on every renovation sheet's runs, same
+ * columns, settings and 0.10 cut; `scripts/wall-model/reno_all.py`) failed as a replacement: worse
+ * than R on the PAIRED sheets, better on the unpaired. So the paired sheets keep R exactly, and R-ALL,
+ * named by `TAKEOFF_WALL_RENO_ALL_MODEL`, runs only where there is no prior. That split was chosen
+ * AFTER those numbers; its only valid gate is the next release's held-out exam. Flag off, or no R-ALL
+ * file: `unpaired` is null and nothing changes.
  */
 export const RENO_UNPAIRED_FLAG = "TAKEOFF_RENO_UNPAIRED";
 export const RENO_ALL_MODEL_ENV = "TAKEOFF_WALL_RENO_ALL_MODEL";
-export type RenoModel = WallModel & { unpaired?: true };
+export type RenoModels = { paired: WallModel | null; unpaired: WallModel | null };
 
-/** R, named by `TAKEOFF_WALL_RENO_MODEL` (or R-ALL, see above), or null. */
-export function loadRenoModel(env: Record<string, string | undefined> = process.env): RenoModel | null {
-  if (env[RENO_UNPAIRED_FLAG] === "1") {
-    const all = loadRunKind(RENO_ALL_MODEL_ENV, env);
-    if (all !== null) return { ...all, unpaired: true };
-  }
-  return loadRunKind(RENO_MODEL_ENV, env);
+/** R (`TAKEOFF_WALL_RENO_MODEL`) for paired sheets and, with the flag, R-ALL for unpaired ones; null when neither is loaded. */
+export function loadRenoModel(env: Record<string, string | undefined> = process.env): RenoModels | null {
+  const paired = loadRunKind(RENO_MODEL_ENV, env);
+  const unpaired = env[RENO_UNPAIRED_FLAG] === "1" ? loadRunKind(RENO_ALL_MODEL_ENV, env) : null;
+  return paired === null && unpaired === null ? null : { paired, unpaired };
 }
 
 /** Renovation words on the sheet (the table's `renovation` column). */
@@ -174,12 +174,11 @@ export function runModelVerdicts(input: RunModelInput, runModel: WallModel): { s
 }
 
 /**
- * The kept runs R holds back: none unless the sheet is a renovation sheet paired with its demolition
- * plan (an aligned prior) — or any renovation sheet when R-ALL is loaded — else exactly the run
- * model's remove-only rule with R's scores.
+ * The kept runs held back on a renovation sheet: with an aligned demolition prior, R's remove-only
+ * verdicts; with none, R-ALL's (only when loaded, see above); never on a sheet that is not a renovation.
  */
-export function renoModelRemovals(input: RunModelInput, renoModel: RenoModel): WallCandidate[] {
+export function renoModelRemovals(input: RunModelInput, models: RenoModels): WallCandidate[] {
   if (!isRenovationSheet(input.textItems)) return [];
-  if (input.prior === undefined && renoModel.unpaired !== true) return [];
-  return runModelVerdicts(input, renoModel).removed;
+  const model = input.prior !== undefined ? models.paired : models.unpaired;
+  return model === null ? [] : runModelVerdicts(input, model).removed;
 }
