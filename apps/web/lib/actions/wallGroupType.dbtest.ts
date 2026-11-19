@@ -177,3 +177,18 @@ describe("Undo of an accept that added a library type (Chrome on Baker: C8B stay
     expect(await prisma.wallType.count({ where: { id: c!.id } })).toBe(1);
   });
 });
+
+describe("Set type on a run the finder moved since it was posted (P0, prereg-reattach-P0.md)", () => {
+  it("updates the stored row and writes no second one; Clear finds it", async () => {
+    const stored = [{ x1: 0.1, y1: 0.6, x2: 0.22, y2: 0.6 }];
+    const pageId = await sheet(8, stored);
+    await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 8, userId: null });
+    // The viewer's find after a deploy: the same wall, its end 2 ft shorter (100 ft per page width).
+    const moved = [{ x1: 0.1, y1: 0.6, x2: 0.2, y2: 0.6 }];
+    expect(await setWallGroupType(jobId, { planId, pageNumber: 8, code: "C", inches: 7, runs: moved })).toEqual({ ok: true });
+    const rows = await prisma.takeoffMeasurement.findMany({ where: { pageId }, select: { item: { select: { name: true } } } });
+    expect(rows.map((r) => r.item?.name)).toEqual(["C walls"]);
+    expect((await clearWallGroupType(jobId, { planId, pageNumber: 8, runs: moved })).ok).toBe(true);
+    expect((await prisma.takeoffMeasurement.findMany({ where: { pageId }, select: { item: { select: { name: true } } } })).map((r) => r.item?.name)).toEqual([UNTYPED_ITEM]);
+  });
+});

@@ -1,6 +1,8 @@
 import { prisma } from "@prova/db";
 import { wallItemsForSheet } from "@/lib/plan-ingest/wallItems";
-import { isHeldRun, PERSON_LABELS } from "./estimateHold";
+import type { Prisma } from "@prova/db";
+import { personDecided } from "./estimateHold";
+import { liesMostlyOn, matchWallRuns } from "./runMatch";
 import { detectWallsForCalibration, oneFinderSlot, type DetectTarget } from "./detectWallsForCalibration";
 
 /**
@@ -30,7 +32,9 @@ type Line = { x1: number; y1: number; x2: number; y2: number };
 const lineOf = (m: { xs: number[]; ys: number[] }): Line => ({ x1: m.xs[0] ?? NaN, y1: m.ys[0] ?? NaN, x2: m.xs[1] ?? NaN, y2: m.ys[1] ?? NaN });
 
 export type RefreshOutcome =
-  | { kind: "replaced" | "emptied" | "posted-left-alone" | "failed" }
+  | { kind: "emptied" | "posted-left-alone" | "failed" }
+  /** `needsLook`: person decisions the new reading has no wall for, kept exactly as they were. */
+  | { kind: "replaced"; needsLook: number }
   /** Found again, and nothing of the sheet's is on the job yet: the run posts it, with the runs held to confirm. */
   | { kind: "proposals-only"; held?: readonly Line[] };
 
@@ -46,16 +50,43 @@ export async function refreshSheetWalls(target: DetectTarget & { jobId: string; 
   if (total === 0) return { kind: "proposals-only", held };
   const posted = await prisma.takeoffMeasurement.count({ where: { ...detected, postedAt: { not: null } } });
   if (posted > 0) return { kind: "posted-left-alone" };
-  const before = await prisma.takeoffMeasurement.findMany({ where: detected, select: { xs: true, ys: true, itemId: true, label: true } });
+  const before = await prisma.takeoffMeasurement.findMany({ where: detected });
+  // A reading that found nothing takes the model's rows away and leaves a person's.
+  if (outcome === "nothing-found") {
+    await prisma.takeoffMeasurement.deleteMany({ where: { id: { in: before.filter((old) => !personDecided(old.label)).map((old) => old.id) } } });
+    return { kind: "emptied" };
+  }
   await prisma.takeoffMeasurement.deleteMany({ where: detected });
-  if (outcome === "nothing-found") return { kind: "emptied" };
   await wallItemsForSheet({ planId: target.planId, companyId: target.companyId, jobId: target.jobId, pageNumber: target.pageNumber, userId: target.userId, held });
   const after = await prisma.takeoffMeasurement.findMany({ where: detected, select: { id: true, xs: true, ys: true, itemId: true, label: true } });
-  for (const row of after) {
-    const was = before.find((old) => old.label !== null && PERSON_LABELS.includes(old.label) && isHeldRun(lineOf(old), [lineOf(row)]));
-    if (was && (was.itemId !== row.itemId || was.label !== row.label)) {
-      await prisma.takeoffMeasurement.update({ where: { id: row.id }, data: { itemId: was.itemId, label: was.label } });
+  // ── A PERSON'S DECISION IS NEVER DELETED OR SILENTLY RESET (prereg-reattach-P0.md) ──
+  //
+  // This matched to 1e-9, so after a finder deploy that moved a run's end, a
+  // person's kept or dropped was gone: a dropped wall went back on the estimate.
+  // Now every person-decided row (kept, dropped, typed by hand) goes to the new
+  // row that is the same wall (`matchWallRuns`: 5°, offset, 60% overlap, best
+  // overlap first, one each) and gives it its label and item. One the new reading
+  // has no wall for is written back exactly as it was, and any new row lying
+  // mostly along it is taken away, so a dropped wall cannot come back as pieces.
+  // Those are "needs a look", which is derived on read and never stored.
+  const people = before.filter((old) => personDecided(old.label));
+  const pairs = matchWallRuns(people, after, lineOf, lineOf, target.feetPerUnit);
+  let needsLook = 0;
+  for (const old of people) {
+    const row = pairs.get(old.id);
+    if (row !== undefined) {
+      if (old.itemId !== row.itemId || old.label !== row.label) {
+        await prisma.takeoffMeasurement.update({ where: { id: row.id }, data: { itemId: old.itemId, label: old.label } });
+      }
+      continue;
     }
+    needsLook += 1;
+    const matched = new Set([...pairs.values()].map((f) => f.id));
+    const under = after.filter((f) => !matched.has(f.id) && liesMostlyOn(lineOf(f), lineOf(old), target.feetPerUnit)).map((f) => f.id);
+    if (under.length > 0) await prisma.takeoffMeasurement.deleteMany({ where: { id: { in: under } } });
+    const { id: _id, cutouts, openings, ...rest } = old;
+    await prisma.takeoffMeasurement.create({ data: { ...rest, cutouts: cutouts as Prisma.InputJsonValue, openings: openings as Prisma.InputJsonValue } });
   }
-  return { kind: "replaced" };
+  return { kind: "replaced", needsLook };
+
 }

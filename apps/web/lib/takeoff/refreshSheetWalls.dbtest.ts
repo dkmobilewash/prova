@@ -71,3 +71,36 @@ describe("to confirm survives a work area and a re-find, and stale labels are re
     expect((await at(doubtedB)).item?.name).toBe(HELD_ITEM);
   });
 });
+
+describe("A PERSON'S KEEP AND DROP SURVIVE A FINDER CHANGE THAT MOVED THEIR RUNS (P0, prereg-reattach-P0.md)", () => {
+  // 100 ft per page width: 0.003 = 0.3 ft, 0.02 = 2 ft.
+  const A = { x1: 0.1, y1: 0.3, x2: 0.22, y2: 0.3, thicknessFeet: 0.33 };
+  const B = { x1: 0.4, y1: 0.3, x2: 0.52, y2: 0.3, thicknessFeet: 0.33 };
+  const C = { x1: 0.7, y1: 0.3, x2: 0.82, y2: 0.3, thicknessFeet: 0.33 };
+  const A2 = { ...A, x1: 0.103 };
+  const B2 = { ...B, x2: 0.5 };
+  const D = { x1: 0.1, y1: 0.9, x2: 0.3, y2: 0.9, thicknessFeet: 0.33 };
+  let page = "";
+  let cal = "";
+  const rowsNear = async (r: { x1: number; x2: number; y1: number }) =>
+    (await prisma.takeoffMeasurement.findMany({ where: { pageId: page, source: "DETECTED" }, select: { xs: true, ys: true, label: true } })).filter(
+      (m) => Math.abs(m.ys[0]! - r.y1) < 1e-6 && Math.min(m.xs[1]!, r.x2) - Math.max(m.xs[0]!, r.x1) > 0,
+    );
+  it("keeps kept on the moved run, dropped on the moved run, and a dropped wall the finder no longer proposes, one row each", async () => {
+    page = (await prisma.takeoffPlanPage.create({ data: { planId, pageNumber: 7 } })).id;
+    cal = (await prisma.takeoffScaleCalibration.create({ data: { pageId: page, x1: 0, y1: 0, x2: 1, y2: 0, declaredDistanceFeet: "100" } })).id;
+    await prisma.takeoffWallProposal.create({ data: { pageId: page, calibrationId: cal, thicknessInches: 4, source: "REMAINDER", runs: [A, B, C] } });
+    await wallItemsForSheet({ planId, companyId, jobId, pageNumber: 7, userId: null, held: [] });
+    const dropped = (await prisma.takeoffItem.findFirst({ where: { jobId, name: DROPPED_ITEM } }))?.id ?? (await prisma.takeoffItem.create({ data: { companyId, jobId, name: DROPPED_ITEM, type: "LINEAR", colorHex: "#888888" } })).id;
+    const on = async (r: typeof A) => (await prisma.takeoffMeasurement.findFirstOrThrow({ where: { pageId: page, source: "DETECTED", xs: { has: r.x1 } } })).id;
+    await prisma.takeoffMeasurement.update({ where: { id: await on(A) }, data: { label: KEPT_LABEL, itemId: await itemId(UNTYPED_ITEM) } });
+    await prisma.takeoffMeasurement.update({ where: { id: await on(B) }, data: { label: DROPPED_LABEL, itemId: dropped } });
+    await prisma.takeoffMeasurement.update({ where: { id: await on(C) }, data: { label: DROPPED_LABEL, itemId: dropped } });
+    // The finder after a deploy: A's start moved 0.3 ft, B's end 2 ft, C gone, D new.
+    await prisma.takeoffWallProposal.create({ data: { pageId: page, calibrationId: cal, thicknessInches: 4, source: "REMAINDER", runs: [A2, B2, D] } });
+    expect((await refreshSheetWalls({ pageId: page, calibrationId: cal, planId, companyId, pageNumber: 7, feetPerUnit: 100, wallTypes: [], jobId, userId: null })).kind).toBe("replaced");
+    expect((await rowsNear(A)).map((m) => m.label)).toEqual([KEPT_LABEL]);
+    expect((await rowsNear(B)).map((m) => m.label)).toEqual([DROPPED_LABEL]);
+    expect((await rowsNear(C)).map((m) => m.label)).toEqual([DROPPED_LABEL]);
+  });
+});

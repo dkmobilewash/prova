@@ -95,8 +95,8 @@ import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUn
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { renovationMarks, showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
-import { DROPPED_LABEL, HELD_ITEM, HELD_LABEL, sameRun } from "@/lib/takeoff/estimateHold";
-import { sameRunAs } from "@/lib/takeoff/runMatch";
+import { DROPPED_LABEL, HELD_ITEM, HELD_LABEL, needsLookCount, reviewWrite, sameRun } from "@/lib/takeoff/estimateHold";
+import { nearestWallRun, sameRunAs } from "@/lib/takeoff/runMatch";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 import { TakeoffHeldWalls } from "./TakeoffHeldWalls";
 import { TakeoffWallReview } from "./TakeoffWallReview";
@@ -3086,10 +3086,14 @@ export function TakeoffPlanViewer({
   /** What the server had for a run before a decision moved it, so undo can put it back. */
   const reviewWas = useRef(new Map<number, { measurementId: string; was: { itemId: string | null; label: string | null } }>());
   /** The wall on the job a found run is, if a whole-set run posted it: the finder's own coordinates. */
-  const measurementForRun = (run: { x1: number; y1: number; x2: number; y2: number }) =>
-    (sheet?.measurements ?? []).find(
-      (m) => m.kind === "LINEAR" && m.xs.length === 2 && sameRun({ x1: m.xs[0]!, y1: m.ys[0]!, x2: m.xs[1]!, y2: m.ys[1]! }, run),
-    ) ?? null;
+  // Exact first, then the same wall (`sameWallRun`): after a finder deploy the live
+  // find sits off the stored rows, and an exact-only match re-showed dropped walls
+  // and let Keep/Drop write nothing (prereg-reattach-P0.md).
+  const measurementForRun = (run: { x1: number; y1: number; x2: number; y2: number }) => {
+    const rows = (sheet?.measurements ?? []).filter((m) => m.kind === "LINEAR" && m.xs.length === 2);
+    const line = (m: (typeof rows)[number]) => ({ x1: m.xs[0]!, y1: m.ys[0]!, x2: m.xs[1]!, y2: m.ys[1]! });
+    return rows.find((m) => sameRun(line(m), run)) ?? (feetPerUnit === null ? null : nearestWallRun(run, rows, line, feetPerUnit));
+  };
   /** A run a reviewer dropped, here or in the set review: on the sheet, out of its total. */
   /** On a sheet the set does not count, keeping a wall saves nothing, and the line says so (Chrome round 6). */
   const notCounted = notCountedByPage[pageNumber] === undefined ? null : `This sheet isn't counted: ${notCountedByPage[pageNumber]} shows the same level`;
@@ -3126,10 +3130,15 @@ export function TakeoffPlanViewer({
     if (at === null) return;
     const run = runsRef.current[at];
     const posted = run === undefined ? null : measurementForRun(run);
+    const write = reviewWrite(posted, kind, (sheet?.measurements ?? []).some((m) => m.kind === "LINEAR" && /\bwall\b/i.test(m.label ?? "")));
+    if (write === "refuse") {
+      setReviewError("This wall isn't on the job as stored, so the decision can't be saved. Press Find walls again, or reload.");
+      return;
+    }
     setReviewBusy(true);
     setReviewError(null);
     try {
-      if (posted !== null && (kind === "drop" || posted.label === HELD_LABEL)) {
+      if (write === "write" && posted !== null) {
         const saved = await reviewWall(jobId, posted.id, kind);
         if (!saved.ok) {
           setReviewError(saved.error);
@@ -5681,6 +5690,7 @@ export function TakeoffPlanViewer({
           defaultOpen={openReview}
           onHover={setHeldHover}
           onShow={(id) => setHeldShown({ id, at: Date.now() })}
+          needsLook={needsLookCount(sheet?.measurements ?? [], runsRef.current, feetPerUnit)}
           walls={(sheet?.measurements ?? [])
             .filter((m) => m.label === HELD_LABEL)
             .map((m) => ({ id: m.id, feet: Math.hypot(m.xs[1]! - m.xs[0]!, m.ys[1]! - m.ys[0]!) * feetPerUnit }))}

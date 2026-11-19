@@ -25,7 +25,8 @@ describe("the review finds the wall it is dropping", () => {
   });
   it("the viewer matches by it, and a dropped wall leaves the sheet's total at find time and when a set review drops it", () => {
     const viewer = read("../../components/TakeoffPlanViewer.tsx");
-    expect(viewer).toContain("sameRun({ x1: m.xs[0]!, y1: m.ys[0]!, x2: m.xs[1]!, y2: m.ys[1]! }, run)");
+    // Exact first, then the same wall after a finder change (prereg-reattach-P0.md, `sameWallRun.test.ts`).
+    expect(viewer).toContain("rows.find((m) => sameRun(line(m), run)) ?? (feetPerUnit === null ? null : nearestWallRun(run, rows, line, feetPerUnit))");
     expect(viewer).toContain("!dropped.has(i) && !droppedOnJob(r)");
     expect(viewer).toContain("regroup(runs.filter((r, at) => !doubted?.has(at) && !droppedOnJob(r)))");
     expect(viewer).toMatch(/useEffect\(\(\) => \{\n\s+if \(droppedKeyWas\.current === droppedKey\) return;[\s\S]{0,200}rebuildFound\(/);
