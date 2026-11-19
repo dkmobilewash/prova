@@ -12,6 +12,9 @@ const HELD_OUT_FILES = [
   "Gen-BBQ-Sacramento-CA.pdf",
   "SLN-Terminal-Public-Area-Improvements-Plans.pdf",
   "stem-bid-drawings (1).pdf",
+  "SFRD #172_BID SET - Architectural Set_2024.01.05.pdf",
+  "2016-4-04-100701-CENTRAL-Arts-Warehouse-Bid-Set-1.pdf",
+  "REQUEST-FOR-QUALIFICATIONS-AND-PROPOSALS-FOOTHILL-HIGH-SCHOOL-BASEBALL-SOFTBALL-COMPLEX-DRAWINGS.pdf",
 ];
 
 const TRAINING_FILES = [
@@ -151,7 +154,10 @@ describe("the sets that must never reach training", () => {
     // 25 to 33 on 2026-11-13: eight of that day's 24 keepers.
     // 33 to 36 on 2026-11-17: the FRESH DOORS EXAM pool (Huffman-Parnell RAD,
     // The Meadows RAD, Levy County Courthouse), before a label was written.
-    expect(HELD_OUT_SETS).toHaveLength(36);
+    // 36 to 39 on 2026-11-20: data-growth wave 2's 2:1 split (SFRD #172,
+    // CENTRAL Arts Warehouse, Foothill athletic complex), before a label was
+    // written.
+    expect(HELD_OUT_SETS).toHaveLength(39);
   });
 
   it("refuses the three that were declared held out in round 7 and only listed in round 9", () => {
@@ -212,8 +218,8 @@ describe("splitting labelled sets for a training run", () => {
     // wasted without anybody noticing.
     const got = splitForTraining(HELD_OUT_FILES.map((f) => rowsFor(f, 10)));
     expect(got.train).toHaveLength(0);
-    expect(got.refused).toHaveLength(4);
-    expect(got.refused.reduce((n, r) => n + r.rows, 0)).toBe(40);
+    expect(got.refused).toHaveLength(7);
+    expect(got.refused.reduce((n, r) => n + r.rows, 0)).toBe(70);
     for (const one of got.refused) expect(one.why.length).toBeGreaterThan(0);
   });
 
