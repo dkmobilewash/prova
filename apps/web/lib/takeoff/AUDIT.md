@@ -1034,11 +1034,18 @@ numbers that are no longer current with nothing to say so.
 **`TakeoffPlan` has no `updatedAt`.** Only `createdAt`, set when the drawing
 was uploaded, so no column moves when a measurement is saved. Rather than add
 one, the signature is DERIVED in `takeoffSavedSignature`: counts and the newest
-`createdAt` across the three tables a save writes — calibrations, measurements
-and wall proposals. A new row moves the date, a delete moves the count, and the
-other tab asks for it on focus rather than polling.
+`createdAt` across the tables a person's save writes — calibrations and
+measurements — plus layer renames. A new row moves the date, a delete moves the
+count, and the other tab asks for it on focus rather than polling.
 
-**Why that is a shortcut and not a design.** It is three aggregates where one
+**Wall proposals were in it and are NOT any more (2026-11-19).** They are written
+only by the wall finder a scale save queues AFTER its response, so a tab's OWN
+save changed the signature again once its page had re-rendered, and the next
+focus said "changed in another tab" with one tab open (Round 30, Mid-City on
+serve75). A real second tab is still caught by its calibration, which always
+precedes its proposals. `savedSignature.dbtest.ts` holds both halves.
+
+**Why that is a shortcut and not a design.** It is several aggregates where one
 column read would do; it cannot see an UPDATE that changes a row without
 changing a count or a timestamp; and it has no bearing on who wins, so two
 people editing the same sheet still silently overwrite each other — the notice

@@ -1,0 +1,5 @@
+### A scale save in this tab no longer says the takeoff "changed in another tab"
+
+With one tab open, the workspace said "This takeoff changed in another tab or window" after a scale was set — first seen on Mid-City from A4.1 on (serve75, the one-press multi-scale flow, #1215). Every scale save queues the wall finder after its response, and that background job writes the sheet's wall proposals once the page has already re-rendered; the "is this still current" signature counted those proposals, so the tab's own save tripped its own check on the next focus. Proposals are no longer part of the signature (`takeoffSavedSignature`). They are only ever written after a calibration save, which is counted, so a real second tab's scale save — and its measurements and renames — still raise the notice.
+
+Check: `savedSignature.dbtest.ts` — the same tab's save followed by its background proposals leaves the signature unchanged (red before the fix), and a second tab's scale save or measurement changes it.
