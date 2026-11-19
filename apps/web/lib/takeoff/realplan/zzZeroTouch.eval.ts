@@ -187,7 +187,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     // #1198 wired: instrument counters for the ROOMSIDES line (one group per process).
     let rsRooms = 0, rsWalls = 0, rsMoved = 0;
     let kzSheet = 0, kzRoom = 0, kzUnresolved = 0;
-    const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number; zeroBoardSf: number; lf10BoardSf: number }>();
+    const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number; zeroBoardSf: number; lf10BoardSf: number; needsAnswerLf: number; noBoardLf: number }>();
     for (const dir of readdirSync(LABELS).sort()) {
       if (!existsSync(join(LABELS, dir)) || (heldOutReason(dir) !== null) !== HELD) continue;
       if (process.env.ZT_ONLY !== undefined && !dir.includes(process.env.ZT_ONLY)) continue;
@@ -345,6 +345,13 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         }
         let keyBoardSf = 0;
         let defaultedBoardSf = 0;
+        // H4/H5 (Diego 2026-11-19): needs-answer walls (height unknowable from
+        // the documents) and no-board walls (bare CMU) price NO board on the
+        // key side (keyWallFeet returns feet 0), and the SAME share leaves the
+        // posted side below — a key the documents cannot price must not charge
+        // the product for pricing it either way.
+        let needsAnswerLf = 0;
+        let noBoardLf = 0;
         for (const k of key) {
           const t = (((k as { wallType?: string }).wallType ?? "").trim()).toUpperCase();
           const r = keyWallFeet({ code: t, types: keyTypes, sheet, sideRoomNumbers: keyWallRooms(k), zoneKey, defaultFeet: NOMINAL_FEET });
@@ -352,24 +359,34 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           if (r.from === "sheet-zone") kzSheet += 1;
           if (r.from === "room-zone") kzRoom += 1;
           if (r.from === "zone-unresolved") kzUnresolved += 1;
+          if (r.from === "needs-answer") needsAnswerLf += k.lengthFeet;
+          if (r.from === "no-board") noBoardLf += k.lengthFeet;
           if (r.from === "default" || r.from === "zone-unresolved") {
             defaultedBoardSf += k.lengthFeet * NOMINAL_FEET * 2;
             if (t !== "" && t !== "0" && t !== "U") unmatchedSpellings[`${dir.slice(0, 18)}:${t}`] = (unmatchedSpellings[`${dir.slice(0, 18)}:${t}`] ?? 0) + k.lengthFeet;
           }
         }
         const unpricedBoardSf = defaultedBoardSf;
+        // The posted-side share for the excluded walls, at this eval's own
+        // set-level granularity: the excluded fraction of the key's LF, taken
+        // off the posted board at the sheet's average posted height. Coarse by
+        // design — the eval matches LF per sheet, not wall-to-wall — and said
+        // here rather than discovered in a diff.
+        const exclFraction = keyLf > 0 ? Math.min(1, (needsAnswerLf + noBoardLf) / keyLf) : 0;
+        const zeroBoardSfAdj = zeroBoardSf * (1 - exclFraction);
+        const lf10BoardSfAdj = lf10BoardSf * (1 - exclFraction);
         const keyByType: Record<string, number> = {};
         for (const k of key) {
           const t = ((k as { wallType?: string }).wallType ?? "0").trim() || "0";
           keyByType[t] = Math.round(((keyByType[t] ?? 0) + k.lengthFeet) * 10) / 10;
         }
-        const s = bySet.get(dir) ?? { lf: 0, doors: 0, windows: 0, lf10: 0, keyLf: 0, keyDoors: 0, keyWindows: 0, keyByType: {}, sheets: 0, junkLf: 0, junkRenoLf: 0, missedLf: 0, keyBoardSf: 0, renovation: false, doorsOver: 0, unpricedBoardSf: 0, zeroBoardSf: 0, lf10BoardSf: 0 };
+        const s = bySet.get(dir) ?? { lf: 0, doors: 0, windows: 0, lf10: 0, keyLf: 0, keyDoors: 0, keyWindows: 0, keyByType: {}, sheets: 0, junkLf: 0, junkRenoLf: 0, missedLf: 0, keyBoardSf: 0, renovation: false, doorsOver: 0, unpricedBoardSf: 0, zeroBoardSf: 0, lf10BoardSf: 0, needsAnswerLf: 0, noBoardLf: 0 };
         // Not a wall test: every wall/board term is zeroed, doors/windows stay.
         const w = wallTest ? 1 : 0;
-        s.lf += zeroLf * w; s.lf10 += lf10 * w; s.doors += Math.min(postedDoors, keyDoors); s.doorsOver += Math.max(0, postedDoors - keyDoors); s.keyLf += keyLf * w; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1; s.junkLf += junkLf * w; if (renovation) s.junkRenoLf += junkLf * w; s.missedLf += missedLf * w; s.keyBoardSf += keyBoardSf * w; s.unpricedBoardSf += unpricedBoardSf * w; s.zeroBoardSf += zeroBoardSf * w; s.lf10BoardSf += lf10BoardSf * w; s.renovation = s.renovation || (renovation && wallTest);
+        s.lf += zeroLf * w; s.lf10 += lf10 * w; s.doors += Math.min(postedDoors, keyDoors); s.doorsOver += Math.max(0, postedDoors - keyDoors); s.keyLf += keyLf * w; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1; s.junkLf += junkLf * w; if (renovation) s.junkRenoLf += junkLf * w; s.missedLf += missedLf * w; s.keyBoardSf += keyBoardSf * w; s.unpricedBoardSf += unpricedBoardSf * w; s.zeroBoardSf += zeroBoardSfAdj * w; s.lf10BoardSf += lf10BoardSfAdj * w; s.needsAnswerLf += needsAnswerLf * w; s.noBoardLf += noBoardLf * w; s.renovation = s.renovation || (renovation && wallTest);
         if (wallTest) for (const [t, ft] of Object.entries(keyByType)) s.keyByType[t] = Math.round(((s.keyByType[t] ?? 0) + ft) * 10) / 10;
         bySet.set(dir, s);
-        rows.push({ set: dir, sheet, paired, renovation, keyLf: Math.round(keyLf * w), zeroLf: Math.round(zeroLf * w), lf10: Math.round(lf10 * w), junkLf: Math.round(junkLf * w), missedLf: Math.round(missedLf * w), keyBoardSf: Math.round(keyBoardSf * w), unpricedBoardSf: Math.round(unpricedBoardSf * w), zeroBoardSf: Math.round(zeroBoardSf * w), chainFeet, chainFrom: chain?.from ?? null, rooms: foundRooms.rooms.length, keyDoors, postedDoors, keyWindows });
+        rows.push({ set: dir, sheet, paired, renovation, keyLf: Math.round(keyLf * w), zeroLf: Math.round(zeroLf * w), lf10: Math.round(lf10 * w), junkLf: Math.round(junkLf * w), missedLf: Math.round(missedLf * w), keyBoardSf: Math.round(keyBoardSf * w), unpricedBoardSf: Math.round(unpricedBoardSf * w), zeroBoardSf: Math.round(zeroBoardSfAdj * w), chainFeet, chainFrom: chain?.from ?? null, rooms: foundRooms.rooms.length, keyDoors, postedDoors, keyWindows });
         if (!wallTest) console.log(`ZT ${HELD ? "HELD-OUT" : "TRAINING"} ${dir.slice(0, 26)} ${sheet}: wall review never ran (door/window keys only) — wall and board terms excluded (wallTestFromLabels)`);
       }
     }
@@ -437,6 +454,13 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     named.push(["other (residual vs |total error|)", Math.max(0, err - sum)]);
     for (const [label, v] of [...named].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))) {
       console.log(`ZTCAUSE ${group} $${Math.round(Math.abs(v))} · ${label}`);
+    }
+    {
+      const naLf = [...bySet.values()].reduce((n, x) => n + x.needsAnswerLf, 0);
+      const nbLf = [...bySet.values()].reduce((n, x) => n + x.noBoardLf, 0);
+      const refDollars = Math.round(naLf * NOMINAL_FEET * 2 * PRICE.boardPerSf);
+      if (naLf > 0) console.log(`ZT ${group} HEIGHT NEEDS CONTRACTOR ANSWER: ${Math.round(naLf)} LF ($${refDollars} at the ${NOMINAL_FEET}' company-answer default, for reference — excluded from board $ on both sides per H4)`);
+      if (nbLf > 0) console.log(`ZT ${group} NO-BOARD TYPES (bare CMU, H5): ${Math.round(nbLf)} LF — excluded from board $`);
     }
     console.log(`ZTDOORS ${group} by scope: BY_OTHERS $0 · FRAMES $${Math.round(cause.doorsAtFrames)} · DOORS_AND_FRAMES $${Math.round(cause.doorsAtFull)} (headline uses ${DOOR_SCOPE}, the product default)`);
     console.log(`ZTWINDOWS ${group} by scope (#1161, windows price through the door/window scope): BY_OTHERS $0 · FRAMES/DOORS_AND_FRAMES $${Math.round(cause.windowsInfo)} at $${PRICE.windowEach}/each (headline uses ${DOOR_SCOPE}, the product default)`);
