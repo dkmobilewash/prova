@@ -6,7 +6,7 @@ import { pageInventoryWork, type SheetProposalRow } from "../../plan-ingest/page
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import type { ScoredPairing } from "../demotedRuns";
 import { runsHeldOffEstimate } from "../estimateHold";
-import { excludedSheetReason, heldOutReason } from "../heldOutSets";
+import { enlargedPlanReason, excludedSheetReason, heldOutReason } from "../heldOutSets";
 import { keyFromLabels, scoreSheet, wallTestFromLabels, type ScoredRun } from "../heldOutScore";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { priorPlanFor } from "../priorPlan";
@@ -221,7 +221,11 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         // and window keys still count below; its WALL and BOARD terms are
         // zeroed at the accumulation, or everything the product posts would
         // price as pure over against a key nobody made.
-        const wallTest = wallTestFromLabels(saved);
+        // An enlarged-plan sheet prices no wall LF (Diego's ruling, BOARD.md
+        // 2026-11-19): same zeroing as a sheet whose wall review never ran,
+        // and doors/windows/types still count.
+        const enlargedWhy = enlargedPlanReason(dir, sheet);
+        const wallTest = wallTestFromLabels(saved) && enlargedWhy === null;
         const strokes = await sheetStrokes(Buffer.from(readFileSync(pdf)), saved.page);
         if (strokes === null || strokes.segments.length < 50) continue;
         const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
@@ -389,7 +393,8 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         if (wallTest) for (const [t, ft] of Object.entries(keyByType)) s.keyByType[t] = Math.round(((s.keyByType[t] ?? 0) + ft) * 10) / 10;
         bySet.set(dir, s);
         rows.push({ set: dir, sheet, paired, renovation, keyLf: Math.round(keyLf * w), zeroLf: Math.round(zeroLf * w), lf10: Math.round(lf10 * w), junkLf: Math.round(junkLf * w), missedLf: Math.round(missedLf * w), keyBoardSf: Math.round(keyBoardSf * w), unpricedBoardSf: Math.round(unpricedBoardSf * w), zeroBoardSf: Math.round(zeroBoardSfAdj * w), chainFeet, chainFrom: chain?.from ?? null, rooms: foundRooms.rooms.length, keyDoors, postedDoors, keyWindows });
-        if (!wallTest) console.log(`ZT ${HELD ? "HELD-OUT" : "TRAINING"} ${dir.slice(0, 26)} ${sheet}: wall review never ran (door/window keys only) — wall and board terms excluded (wallTestFromLabels)`);
+        if (enlargedWhy !== null) console.log(`ZT ${HELD ? "HELD-OUT" : "TRAINING"} ${dir.slice(0, 26)} ${sheet}: ENLARGED PLAN — wall and board terms excluded (enlargedPlanReason)`);
+        else if (!wallTest) console.log(`ZT ${HELD ? "HELD-OUT" : "TRAINING"} ${dir.slice(0, 26)} ${sheet}: wall review never ran (door/window keys only) — wall and board terms excluded (wallTestFromLabels)`);
       }
     }
     const group = HELD ? "HELD-OUT" : "TRAINING";

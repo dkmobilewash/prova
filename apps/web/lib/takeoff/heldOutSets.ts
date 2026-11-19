@@ -407,3 +407,57 @@ export function excludedSheetReason(set: string, sheet: string): string | null {
   }
   return null;
 }
+
+/**
+ * Sheets whose keyed walls sit on ENLARGED plan or detail views of rooms that
+ * also appear on a keyed main floor plan in the same set. Diego's ruling
+ * (BOARD.md 2026-11-19): a wall is priced ONCE, from the main plan, so these
+ * sheets' WALL and BOARD terms are zeroed in the eval exactly like a sheet
+ * whose wall review never ran — doors, windows, types and heights still count.
+ * This is NOT the EXCLUDED_SHEETS list above, which drops a sheet entirely.
+ *
+ * Only sheets where the main-plan duplication is established go here. A sheet
+ * that merely says "SEE ENLARGED PLANS" in its notes, or whose "ENLARGED BLDG
+ * AREA" views ARE the set's pricing plans (Mid-City A4.0-A4.3, K-4 A3.10's
+ * AREA A), stays out — an area plan is a main plan.
+ */
+const ENLARGED_PLAN_SHEETS: { set: string; sheet: string; why: string }[] = [
+  {
+    set: "Joplin-community-center",
+    sheet: "A-111",
+    why:
+      "every view is captioned ENLARGED PLAN (storm shelter, typ. toilet/shower, typ. individual " +
+      "toilet) and the rooms are keyed on the A-101 main plan; Chrome's Round 35 report named the " +
+      "B3/B4 detail walls as duplicates. Diego's enlarged-plans ruling, BOARD.md 2026-11-19.",
+  },
+  {
+    set: "Camp_Bow_Wow_-_100_CD_ARCH_2_1_",
+    sheet: "A103",
+    why:
+      "captioned ENLARGED RECEPTION FLOOR PLAN; reception is on the keyed A101 main plan. " +
+      "Diego's enlarged-plans ruling, BOARD.md 2026-11-19.",
+  },
+  {
+    set: "Camp_Bow_Wow_-_100_CD_ARCH_2_1_",
+    sheet: "A104",
+    why:
+      "captioned ENLARGED BREAK/PREP ROOM FLOOR PLAN; those rooms are on the keyed A101 main plan. " +
+      "Diego's enlarged-plans ruling, BOARD.md 2026-11-19.",
+  },
+  {
+    set: "Camp_Bow_Wow_-_100_CD_ARCH_2_1_",
+    sheet: "A120",
+    why:
+      "captioned RESTROOM - ENLARGED PLAN; the restrooms are on the keyed A101 main plan. " +
+      "Diego's enlarged-plans ruling, BOARD.md 2026-11-19.",
+  },
+];
+
+/** The reason this sheet's walls price at zero (enlarged view of a main-plan room), or null. */
+export function enlargedPlanReason(set: string, sheet: string): string | null {
+  const want = flatten(set);
+  for (const one of ENLARGED_PLAN_SHEETS) {
+    if (flatten(one.set) === want && flatten(one.sheet) === flatten(sheet)) return one.why;
+  }
+  return null;
+}
