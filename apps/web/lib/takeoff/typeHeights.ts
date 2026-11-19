@@ -1,3 +1,4 @@
+import { deckHeightAt, type DeckZones } from "./deckHeights";
 import { heightBasis, type HeightFact } from "./wallHeights";
 
 /**
@@ -136,4 +137,32 @@ export function wallTypeHeight(rule: TypeHeightRule | null, sideCeilings: readon
     case "to-ceiling":
       return ceiling === null ? ask("to the ceiling, and no ceiling is known on either side") : { kind: "height", feet: ceiling, from: `type: "${rule.why}"; ${where} ${ceiling} ft` };
   }
+}
+
+/**
+ * ── ONE WALL: ITS TYPE, ELSE THE PLAN'S RULE FOR UNTYPED WALLS, THEN THE DECK ZONES ──
+ *
+ * The one function the product's height assignment and the zero-touch eval both call (parity).
+ * Null means the documents give this wall no type rule, and today's chain decides it, unchanged.
+ */
+export function wallHeightByType(input: {
+  code: string | null;
+  rules: ReadonlyMap<string, TypeHeightRule>;
+  general: { typeCode: string } | { rule: TypeHeightRule } | null;
+  sideCeilings: readonly (number | null)[];
+  setCeilingFt: number | null;
+  /** The plan's deck zones and this wall's midpoint on the deck sheet, when one was laid over this plan. */
+  deck: { zones: DeckZones; at: { x: number; y: number }; feetPerUnit: number } | null;
+}): WallTypeHeight | null {
+  const own = input.code === null ? undefined : input.rules.get(input.code.toUpperCase());
+  const general = own === undefined && input.general !== null
+    ? ("typeCode" in input.general ? input.rules.get(input.general.typeCode.toUpperCase()) ?? null : input.general.rule)
+    : null;
+  const rule = own ?? general;
+  if (rule === null || rule === undefined) return null;
+  if (rule.kind === "to-structure" && rule.feet === null && input.deck !== null) {
+    const h = deckHeightAt(input.deck.zones, input.deck.at, input.deck.feetPerUnit);
+    if (h !== null) return { kind: "height", feet: h.feet, from: `type: "${rule.why}"; deck: ${h.from}` };
+  }
+  return wallTypeHeight(rule, input.sideCeilings, input.setCeilingFt);
 }

@@ -121,3 +121,33 @@ describe("assignment: a wall's height from its type's rule and the rooms either 
     expect(at(null)).toBeNull();
   });
 });
+
+describe("one wall, its type, the plan's general rule and the deck zones together (product and eval call this)", async () => {
+  const { wallHeightByType } = await import("./typeHeights");
+  const { deckZones, deckValues } = await import("./deckHeights");
+  const rules = new Map<string, TypeHeightRule>([
+    ["C", { kind: "fixed", feet: 4, why: "4'-0\"" }],
+    ["P0B", { kind: "above-ceiling", inches: 4, why: '4" ABOVE CEILING' }],
+    ["A", { kind: "to-structure", feet: null, why: "TO DECK" }],
+    ["M8", { kind: "no-board", why: '8" CMU' }],
+  ]);
+  const deck = { zones: deckZones(deckValues([{ str: 'BOTTOM OF ROOF DECK ELEVATION = 112\'-6" UNO', x: 0.1, y: 0.1, height: 0.004 }]), { floorElevation: 100 }), at: { x: 0.5, y: 0.5 }, feetPerUnit: 100 };
+  const base = { rules, general: null, sideCeilings: [9, 8] as (number | null)[], setCeilingFt: null, deck: null };
+  it("a typed wall takes its type's rule", () => {
+    expect(wallHeightByType({ ...base, code: "C" })).toMatchObject({ kind: "height", feet: 4 });
+    expect(wallHeightByType({ ...base, code: "P0B" })).toMatchObject({ kind: "height", feet: 9 + 4 / 12 });
+    expect(wallHeightByType({ ...base, code: "M8" })).toMatchObject({ kind: "no-board" });
+  });
+  it("a to-deck type takes the deck zone's printed value; with no zone, the one question", () => {
+    expect(wallHeightByType({ ...base, code: "A", deck })).toMatchObject({ kind: "height", feet: 12.5 });
+    expect(wallHeightByType({ ...base, code: "A" })).toMatchObject({ kind: "needs-answer" });
+  });
+  it("an untyped wall takes the plan's general rule: a named type, or a rule", () => {
+    expect(wallHeightByType({ ...base, code: null, general: { typeCode: "C" } })).toMatchObject({ kind: "height", feet: 4 });
+    expect(wallHeightByType({ ...base, code: null, general: { rule: { kind: "to-structure", feet: null, why: "ALL WALLS TO DECK U.N.O." } }, deck })).toMatchObject({ kind: "height", feet: 12.5 });
+  });
+  it("a type the legend gives no rule for, and an untyped wall with no general rule, fall through to today's chain", () => {
+    expect(wallHeightByType({ ...base, code: "ZZ" })).toBeNull();
+    expect(wallHeightByType({ ...base, code: null })).toBeNull();
+  });
+});
