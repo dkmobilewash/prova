@@ -60,8 +60,19 @@ export function wallKeyHeight(sideRooms: readonly (string | null)[], key: Readon
   return heights.length === 1 ? found[0]! : null;
 }
 
-/** A heights-key type entry (heights-key-r16.json): one height, zones, or the same as another type. */
-export type HeightsKeyType = { feet?: number; basis?: string; zones?: { zone: string; kind: string; feet: unknown; sheets?: string[] }[]; excluded?: boolean; sameAs?: string };
+/**
+ * A heights-key type entry (heights-key-r16.json; r19 adds the last two flags):
+ * one height, zones, or the same as another type.
+ *
+ * `needsAnswer` (Diego's H4, 2026-11-19): the drawing sends this type "to deck /
+ * structure" with NO printed elevation, or states no rule at all — the true
+ * height cannot be read from the documents, so the key must NOT price it at a
+ * default. It scores on LF and type only; its board $ leaves both key and
+ * posted totals and is reported on the HEIGHT NEEDS CONTRACTOR ANSWER line.
+ *
+ * `noBoard` (H5): the assembly carries no gypsum (bare CMU) — never board $.
+ */
+export type HeightsKeyType = { feet?: number; basis?: string; zones?: { zone: string; kind: string; feet: unknown; sheets?: string[] }[]; excluded?: boolean; sameAs?: string; needsAnswer?: boolean; noBoard?: boolean };
 
 /** "C6" → the key's "C" when the key has no "C6" (the letter's entry, as the round-14 scorer did). */
 export function keyTypeFor<T extends HeightsKeyType>(types: Record<string, T>, code: string): [string, T] | null {
@@ -83,7 +94,7 @@ export function keyTypeFor<T extends HeightsKeyType>(types: Record<string, T>, c
  * A wall whose zones cannot resolve (no zone key, rooms disagree, no keyed room beside it) prices
  * at the default and says so, so the ZTBOARD worklist keeps naming it instead of hiding it.
  */
-export type KeyWallFrom = "scalar" | "sheet-zone" | "room-zone" | "default" | "zone-unresolved";
+export type KeyWallFrom = "scalar" | "sheet-zone" | "room-zone" | "default" | "zone-unresolved" | "needs-answer" | "no-board";
 export function keyWallFeet(input: {
   code: string;
   types: Record<string, HeightsKeyType>;
@@ -95,6 +106,12 @@ export function keyWallFeet(input: {
   const hit = keyTypeFor(input.types, input.code.toUpperCase());
   if (hit === null || hit[1].excluded) return { feet: input.defaultFeet, from: "default" };
   const t = hit[1];
+  // Feet 0 so no board SF accrues; the caller reads `from` to route the LF to
+  // its own line instead of the default-height bucket. Checked before zones
+  // and scalars: a type Diego ruled unknowable stays unknowable even if an
+  // older revision carried a number for it.
+  if (t.noBoard) return { feet: 0, from: "no-board" };
+  if (t.needsAnswer) return { feet: 0, from: "needs-answer" };
   const zones = t.zones ?? [];
   const sheetZone = zones.find((z) => z.kind === "sheet" && (z.sheets ?? []).includes(input.sheet) && typeof z.feet === "number");
   if (sheetZone !== undefined) return { feet: sheetZone.feet as number, from: "sheet-zone" };
