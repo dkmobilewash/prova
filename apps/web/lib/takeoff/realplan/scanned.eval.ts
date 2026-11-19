@@ -124,7 +124,7 @@ describe.skipIf(DIR === "" || LABELS === "")("the finder on scanned sheets", () 
     const workers: SheetWorker[] = [];
     for (const file of labels) {
       const saved = JSON.parse(readFileSync(file.path, "utf8")) as Saved;
-      const { key, fromTracedFeet } = keyFromLabels(saved);
+      const { key, fromTracedFeet } = keyFromLabels(saved, saved.feetPerUnit);
       if (key.length === 0) continue;
       const pdf = findPdf(file.dir);
       if (pdf === null) {

@@ -209,7 +209,9 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const sheet = name.slice(0, -5);
         if (excludedSheetReason(dir, sheet) !== null) continue;
         const saved = JSON.parse(readFileSync(join(LABELS, dir, name), "utf8")) as Saved;
-        const got = keyFromLabels(saved);
+        // feetPerUnit turns on the overlap fold: two accepted rows on one wall
+        // (one from an older finder version) count once, never twice.
+        const got = keyFromLabels(saved, saved.feetPerUnit);
         const key = got.key;
         const keyDoors = got.openings.filter((o) => o.kind === "door").length;
         const keyWindows = got.openings.filter((o) => o.kind === "window").length;
