@@ -198,6 +198,68 @@ export function copiedIntoOtherViews(doors: readonly DoorSymbol[], textPt: reado
 export const COUNTER_GATE_LEAF_FEET = 2.1;
 
 /**
+ * ── S2: A TOILET STALL'S DOOR IS NOT A DOOR (Diego's ruling, Division 10 partitions; prereg-S2.md, 2026-11-19) ──
+ *
+ * Attachment-C's TLT F 121 and TLT M 123 and Canton's WOMENS 121 draw their stall doors as door swings in a row inside
+ * the room. A stall door is UNTAGGED, INSIDE a room labelled as a toilet room (a clear sight line to the label past
+ * every boundary wall), its swing stays in that room (its own wall, if any, is a partition, and its hinge, strike and
+ * open end all see the label), and it stands IN A ROW with another such door of its width. The room's entry door sits
+ * on the boundary wall and a lone accessible room door has no row partner, so both stay; a tagged door always stays.
+ */
+export const STALL_ROOM_LABEL = /\b(?:TOILETS?|TLT|RESTROOMS?|UNISEX|WOMEN(?:['’]?S)?|MEN(?:['’]?S)?)\b|\bR\.?R\b/i;
+/** The toilet label must be this near the door's centre, feet. */
+export const STALL_LABEL_FEET = 25;
+/** A stored run this thick or more is a room's boundary; a toilet partition (about 1") is not, feet. */
+export const BOUNDARY_WALL_FEET = 0.25;
+/** Row partners: width within, centre within this many widths, leaves parallel within, partner centre this near the leaf line. */
+export const STALL_ROW = { widthFeet: 0.5, widths: 1.5, parallelDegrees: 15, lineFeet: 1 } as const;
+
+type P = { x: number; y: number };
+function segmentsCross(a: P, b: P, c: P, d: P): boolean {
+  const o = (p: P, q: P, r: P) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+  return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0;
+}
+
+export function toiletStallDoors(input: { doors: readonly DoorSymbol[]; walls: readonly WallCandidate[]; marks: readonly P[]; textPt: readonly TextForSymbol[]; widthPt: number; feetPerUnit: number }): Set<DoorSymbol> {
+  const { walls, feetPerUnit: fpu, widthPt: W } = input;
+  const out = new Set<DoorSymbol>();
+  if (!(fpu > 0) || input.doors.length < 2) return out;
+  const labels = input.textPt.filter((t) => STALL_ROOM_LABEL.test(t.str)).map((t) => ({ x: (t.x + t.width / 2) / W, y: (t.y - t.height / 2) / W }));
+  if (labels.length === 0) return out;
+  const boundary = walls.filter((w) => w.thicknessFeet >= BOUNDARY_WALL_FEET);
+  const clear = (p: P, q: P) => !boundary.some((w) => segmentsCross(p, q, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }));
+  const dist = (a: P, b: P) => Math.hypot(a.x - b.x, a.y - b.y);
+  const centre = (d: DoorSymbol) => ({ x: (d.hinge.x + d.strike.x) / 2, y: (d.hinge.y + d.strike.y) / 2 });
+  const inRoom = new Map<DoorSymbol, number>();
+  for (const d of input.doors) {
+    const c = centre(d);
+    if (input.marks.some((m) => dist(m, c) * fpu <= DOOR_TAG_REACH_FEET)) continue;
+    let li = -1;
+    labels.forEach((l, k) => { if (li < 0 || dist(l, c) < dist(labels[li]!, c)) li = k; });
+    const label = labels[li]!;
+    if (dist(label, c) * fpu > STALL_LABEL_FEET || !clear(c, label)) continue;
+    if (d.wall !== null && (walls[d.wall]?.thicknessFeet ?? 0) >= BOUNDARY_WALL_FEET) continue;
+    if (![d.hinge, d.strike, ...(d.open === undefined ? [] : [d.open])].every((p) => clear(p, label))) continue;
+    inRoom.set(d, li);
+  }
+  const dir = (d: DoorSymbol) => Math.atan2(d.strike.y - d.hinge.y, d.strike.x - d.hinge.x);
+  for (const [d, li] of inRoom) {
+    const c = centre(d), a = dir(d), ux = Math.cos(a), uy = Math.sin(a);
+    const partner = [...inRoom].some(([o, lo]) => {
+      if (o === d || lo !== li || Math.abs(o.widthFeet - d.widthFeet) > STALL_ROW.widthFeet) return false;
+      const oc = centre(o);
+      if (dist(oc, c) * fpu > STALL_ROW.widths * Math.max(o.widthFeet, d.widthFeet)) return false;
+      let t = Math.abs(dir(o) - a) % Math.PI;
+      if (t > Math.PI / 2) t = Math.PI - t;
+      if (t > (STALL_ROW.parallelDegrees * Math.PI) / 180) return false;
+      return Math.abs(-(oc.x - c.x) * uy + (oc.y - c.y) * ux) * fpu <= STALL_ROW.lineFeet;
+    });
+    if (partner) out.add(d);
+  }
+  return out;
+}
+
+/**
  * ── A 2 FT LEAF IN NO WALL IS A COUNTER GATE ──
  *
  * Sloans A1.1 draws two pairs of 2'-0" double-swing gates in its service counter, beside "COUNTER
@@ -228,7 +290,9 @@ export function doorsInScope(input: {
     .filter((d) => !legendDoorSample(d, input.textPt, input.widthPt))
     .filter((d) => !onCentreMark(d, input.segments, input.feetPerUnit));
   const copied = copiedIntoOtherViews(found, input.textPt, input.widthPt, input.feetPerUnit);
-  const all = found.filter((d) => !copied.has(d));
+  const unique = found.filter((d) => !copied.has(d));
+  const stalls = toiletStallDoors({ doors: unique, walls: input.walls, marks: input.marks, textPt: input.textPt, widthPt: input.widthPt, feetPerUnit: input.feetPerUnit });
+  const all = unique.filter((d) => !stalls.has(d));
   const existing = existingDoors({ doors: all, segments: input.segments, textPt: input.textPt, widthPt: input.widthPt, feetPerUnit: input.feetPerUnit, ...(input.existing === undefined ? {} : { evidence: input.existing }) });
   const aside = new Set(existing.map((e) => e.door));
   return { all, existing, doors: onlyMarkedDoors(all.filter((d) => !aside.has(d)), input.marks, input.feetPerUnit) };
