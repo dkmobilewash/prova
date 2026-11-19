@@ -28,7 +28,7 @@ export type DeckValue = {
 const LABELS: [DeckValue["kind"], RegExp][] = [
   ["eave", /\b(?:T\.?\s?O\.?\s+)?(?:(?:LOW|HIGH)\s+)?EAVE(?:\s+EL(?:EV(?:ATION)?)?\.?)?/i],
   ["ridge", /\b(?:T\.?\s?O\.?\s+)?RIDGE(?:\s+EL(?:EV(?:ATION)?)?\.?)?/i],
-  ["top-of-steel", /\bT\.?\s?O\.?\s?S\.?(?=\s|=|$)|\b(?:T\.?\s?O\.?|TOP\s+OF)\s+STEEL\b/i],
+  ["top-of-steel", /\bT\.?\s?O\.?\s?S\.?(?=\s|=|:|$)|\b(?:T\.?\s?O\.?|TOP\s+OF)\s+STEEL\b/i],
   ["bearing", /\b(?:JOIST|TRUSS)\s+(?:BRG\.?|BEARING)(?:\s+EL(?:EV(?:ATION)?)?\.?)?|\bJ\.?B\.?E\.?(?=\s|=|$)|\bBRG\.?\s+EL(?:EV)?\.?/i],
   ["bottom-of-deck", /\b(?:B\.?\s?O\.?|BOTTOM\s+OF|U\/S\s+OF|UNDERSIDE\s+OF)\s+(?:ROOF\s+)?DECK(?:ING)?\b|\bB\/(?:HIGH\s+|LOW\s+)?DECK\b|\bB\.?O\.?D\.?(?=\s|=|$)/i],
 ];
@@ -47,9 +47,12 @@ export function deckValues(items: readonly { str: string; x: number; y: number; 
     let figureText: string | null = FIGURE.test(after) ? after.slice(FIGURE.exec(after)!.index) : null;
     if (figureText === null) {
       // The figure printed beside the label, on its row.
+      // The figure beside the label on its row, or stacked just above or below it (a level marker).
+      const near = (o: (typeof clean)[number]) =>
+        (Math.abs(o.y - i.y) < 2.5 * i.height && o.x > i.x && o.x - i.x < 0.1) || (Math.abs(o.x - i.x) < 0.05 && Math.abs(o.y - i.y) < 3 * i.height);
       const beside = clean
-        .filter((o) => o !== i && Math.abs(o.y - i.y) < 2.5 * i.height && o.x > i.x && o.x - i.x < 0.1 && FIGURE.test(o.str) && !LABELS.some(([, r]) => r.test(o.str)))
-        .sort((a, b) => a.x - b.x)[0];
+        .filter((o) => o !== i && near(o) && FIGURE.test(o.str) && !LABELS.some(([, r]) => r.test(o.str)))
+        .sort((a, b) => Math.hypot(a.x - i.x, a.y - i.y) - Math.hypot(b.x - i.x, b.y - i.y))[0];
       figureText = beside?.str ?? null;
     }
     if (figureText === null) continue;
@@ -106,4 +109,54 @@ export function deckHeightAt(z: DeckZones, at: { x: number; y: number }, feetPer
   const values = [...new Set(z.points.map((p) => Math.round(p.feet * 96) / 96))];
   if (values.length === 1) return { feet: values[0]!, from: `"${z.points[0]!.phrase}", the one value printed` };
   return null;
+}
+
+/**
+ * The floor's absolute elevation where a sentence states it ("ARCHITECTURAL FINISH FLOOR ELEVATION
+ * OF 100'-0" EQUALS …", 114026; "FIRST FLOOR EL. 100'-0""), anywhere in a text item. A floor-to-floor
+ * figure, a slab thickness, or a relative 0" is not one.
+ */
+export function floorElevationIn(text: string): number | null {
+  return floorStatement(text)?.feet ?? null;
+}
+
+/** As `floorElevationIn`, saying whether the sentence names the FINISH FLOOR (strong) or a slab top (weak: K-4 prints depressed slabs). */
+export function floorStatement(text: string): { feet: number; slab: boolean } | null {
+  const m = /\b(?:(?:ARCHITECTURAL\s+)?FIN(?:ISH(?:ED)?)?\.?\s+FL(?:OO)?R\.?|(?:FIRST|1ST|GROUND|MAIN)\s+FLOOR|F\.?F\.?E\.?|T\.?\s?O\.?\s+(?:CONC(?:RETE|\.)?\s+)?SLAB)\s*(?:ELEVATION|ELEV\.?|EL\.?)?\s*(?:OF|=|:|@)?\s*(\d{2,3}\s*'\s*[-–]?\s*\d{0,2}(?:\s+\d\/\d)?\s*(?:"|”)?)/i.exec(text);
+  if (m === null || /\bFLOOR\s+TO\s+FLOOR\b/i.test(text)) return null;
+  const feet = feetInches(m[1]!);
+  return feet !== null && feet > ABSOLUTE_FEET ? { feet, slab: /\bSLAB\b/i.test(m[0]) } : null;
+}
+
+/**
+ * A sloped roof's eave and ridge, placed: the ROOF PLAN prints where they are ("LOW EAVE", "RIDGE",
+ * no figure) and the sections print how high (Camp Clark: "T.O. LOW EAVE EL. 112'-0"",
+ * "T.O. RIDGE EL. 120'-1 1/2""). Placed only when the sections give ONE eave and ONE ridge value.
+ */
+export function slopeFromRoofPlan(roofItems: readonly { str: string; x: number; y: number }[], sectionValues: readonly DeckValue[]): DeckValue[] {
+  const one = (kind: "eave" | "ridge") => {
+    const v = [...new Set(sectionValues.filter((s) => s.kind === kind).map((s) => Math.round(s.elevation * 96) / 96))];
+    return v.length === 1 ? v[0]! : null;
+  };
+  const eave = one("eave"), ridge = one("ridge");
+  if (eave === null || ridge === null) return [];
+  const out: DeckValue[] = [];
+  for (const i of roofItems) {
+    const s = i.str.replace(/\s+/g, " ").trim();
+    if (FIGURE.test(s)) continue;
+    if (/^(?:T\.?\s?O\.?\s+)?(?:LOW\s+)?EAVE$/i.test(s)) out.push({ kind: "eave", elevation: eave, uno: false, x: i.x, y: i.y, phrase: `${s} (sections: ${eave.toFixed(2)})` });
+    else if (/^(?:T\.?\s?O\.?\s+)?RIDGE$/i.test(s)) out.push({ kind: "ridge", elevation: ridge, uno: false, x: i.x, y: i.y, phrase: `${s} (sections: ${ridge.toFixed(2)})` });
+  }
+  return out;
+}
+
+/** The level a framing plan frames (its walls are the level below), "roof" for the roof, null when it does not say. */
+export function framingLevel(caption: string): number | "roof" | null {
+  const c = caption.toUpperCase();
+  if (/\bROOF\b/.test(c)) return "roof";
+  if (!/\bFRAMING\b/.test(c)) return null;
+  const words: Record<string, number> = { FIRST: 1, SECOND: 2, THIRD: 3, FOURTH: 4, FIFTH: 5, SIXTH: 6 };
+  const m = /\b(FIRST|SECOND|THIRD|FOURTH|FIFTH|SIXTH|(\d{1,2})(?:ST|ND|RD|TH))\s+FLOOR\b|\bLEVEL\s+(\d{1,2})\b/.exec(c);
+  if (m === null) return null;
+  return m[3] !== undefined ? Number(m[3]) : m[2] !== undefined ? Number(m[2]) : words[m[1]!]!;
 }
