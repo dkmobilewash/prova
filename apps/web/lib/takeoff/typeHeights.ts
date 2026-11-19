@@ -39,12 +39,18 @@ const SEE_ELEVATIONS = /\bSEE\s+(?:INTERIOR\s+)?ELEVATIONS?\b/i;
 const INCH_HEIGHT = /^\s*(\d{2})(?:\s+\d\/\d)?\s*(?:"|''|”)\s*(?:HIGH|TALL|HT\.?|A\.?F\.?F\.?)/i;
 const MASONRY = /\bCMU\b|\bCONCRETE\s+MASONRY\b|\bMASONRY\s+UNIT\b|\bBRICK\b|\bCONC(?:RETE|\.)?\s+WALL\b/i;
 const BOARD = /\bGWB\b|\bGYP(?:SUM|\.)?\b|\bDRYWALL\b|\bSHEETROCK\b|\bBOARD\b|\bFURRING\b|\bHAT\s+CHANNEL\b|\bVENEER\s+PLASTER\b/i;
+/**
+ * A figure that is not the wall's height: a drawing scale ("SCALE: 1/2" - 1' - 0"", "1/2" = 1'-0""),
+ * a taper ("1/4" PER 1'"), a mesh or wainscot band ("MESH UP TO 8'-0""). Seen on the CBW, Joplin,
+ * K-4 and Green Bay legends; read as 1 ft and 8 ft walls before this.
+ */
+const NOT_A_HEIGHT = /\bSCALE\b|=\s*1\s*'\s*-?\s*0|\bPER\s+1\s*'|\bMESH\b/i;
 /** Below this a fixed figure is a partial-height wall, not a room-height one. */
 export const PARTIAL_UNDER_FEET = 7;
 
 function onePhrase(phrase: string, facts: readonly HeightFact[]): TypeHeightRule | null {
   const why = phrase.replace(/\s+/g, " ").trim();
-  if (why === "") return null;
+  if (why === "" || NOT_A_HEIGHT.test(why)) return null;
   if (PLATE.test(why)) return { kind: "plate", feet: feetInches(why.slice(PLATE.exec(why)!.index)), why };
   if (SOFFIT.test(why)) return { kind: "to-soffit", why };
   const inch = INCH_HEIGHT.exec(why);

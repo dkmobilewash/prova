@@ -65,6 +65,15 @@ describe("the type-rule reader: what a partition type says its height is", () =>
     expect(rule(['6" CMU', '7/8" HAT CHANNEL FURRING', '5/8" GWB'])?.kind).not.toBe("no-board");
   });
 
+  it("a scale caption, a taper or a mesh height is not the wall's height (CBW, Joplin, K-4, Green Bay legends)", () => {
+    expect(rule(['SCALE: 1/2" - 1\' - 0"'])).toBeNull();
+    expect(rule(['1/2" = 1\'-0"'])).toBeNull();
+    expect(rule(['1/4" PER 1\' TAPERED'])).toBeNull();
+    expect(rule(['MESH UP TO 8\'-0" ON NON'])).toBeNull();
+    // CBW D: the scale caption comes first in the legend's lines; the printed 10'-0" is the height.
+    expect(rule(['SCALE: 1/2" - 1\' - 0"', "10' - 0\""])).toMatchObject({ kind: "fixed", feet: 10 });
+  });
+
   it("says nothing when the type's words say nothing about height", () => {
     expect(rule(['3 5/8" METAL STUDS @ 16" O.C.', '5/8" GYP. BD. EACH SIDE'])).toBeNull();
   });
