@@ -15,6 +15,9 @@ import {
   nextUntyped,
   openingsForSave,
   progressOf,
+  splitsForSave,
+  verdictsForSave,
+  type SplitRecord,
   removeTraced,
   setOpeningTag,
   setVerdict,
@@ -595,37 +598,7 @@ export function AnswerKeyPanel({
     }
     setSavingLabels(true);
     try {
-      const verdicts = [
-        ...state.candidates
-          .map((c) => ({ c, v: state.verdicts[c.id] ?? "unreviewed" }))
-          .filter((x) => x.v === "wall" || x.v === "not-a-wall" || x.v === "unsure")
-          .map((x) => ({
-            x1: x.c.x1,
-            y1: x.c.y1,
-            x2: x.c.x2,
-            y2: x.c.y2,
-            lengthFeet: x.c.lengthFeet,
-            thicknessFeet: (x.c.thicknessIn ?? 0) / 12,
-            // "not-wall", not "not-a-wall": `LabelVerdict` spells it the
-            // short way and `labelFile` counts rejections by that literal.
-            //
-            // And "unsure" travels as itself. It did not travel at all once,
-            // so every unsure run's pairings reached the file as confident
-            // negatives — 483 of them on one sheet.
-            verdict: x.v === "wall" ? "wall" : x.v === "unsure" ? "unsure" : "not-wall",
-            ...(x.v === "wall" && (state.types ?? {})[x.c.id] !== undefined ? { wallType: state.types![x.c.id] } : {}),
-          })),
-        ...state.traced.map((t) => ({
-          x1: t.x1,
-          y1: t.y1,
-          x2: t.x2,
-          y2: t.y2,
-          lengthFeet: t.lengthFeet,
-          thicknessFeet: 0,
-          verdict: "traced" as const,
-          ...((state.types ?? {})[t.id] !== undefined ? { wallType: state.types![t.id] } : {}),
-        })),
-      ];
+      const verdicts = verdictsForSave(state);
       const response = await fetch("/api/takeoff/labels", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -640,14 +613,15 @@ export function AnswerKeyPanel({
           openings: openingsForSave(state),
           // Only a sheet the reviewer finished can say that an unproposed
           // place is NOT a wall — see `labelRows`.
-          reviewComplete: progress.reviewed >= progress.total,
+          // A candidate that only needs a look has a saved decision on it, kept in `carried`.
+          reviewComplete: progress.reviewed + progress.needsLook >= progress.total,
           // ── THE COUNT OF WHAT NOBODY LOOKED AT ──
           //
           // This sent `progress.unsure` under the name `unreviewed`, back
           // when they were one number. They are not: unsure is reviewed and
           // excluded, unreviewed is nobody looked. The file now carries both
           // and the second has to be the real one.
-          unreviewed: Math.max(0, progress.total - progress.reviewed),
+          unreviewed: Math.max(0, progress.total - progress.reviewed - progress.needsLook),
           // ── WHICH PAIRINGS THE REVIEWER WAS ACTUALLY SHOWN ──
           //
           // `pairings` is EVERY pairing the finder considered, greedy
@@ -691,7 +665,7 @@ export function AnswerKeyPanel({
             ...(v.wallType === undefined ? {} : { wallType: v.wallType }),
             finderVersion: sourceFinderVersion ?? undefined,
           })),
-          splits: [...(state.splits ?? []), ...(carriedSplits ?? [])],
+          splits: splitsForSave(state, (carriedSplits ?? []) as SplitRecord[]),
           carriedRows: carriedRows ?? null,
         }),
       });
@@ -1105,6 +1079,8 @@ export function AnswerKeyPanel({
               screen and the reviewer cannot see how many they parked. */}
           {progress.unsure > 0 ? ` · ${progress.unsure} not sure` : ""}
           {progress.traced > 0 ? ` · ${progress.traced} traced` : ""}
+          {/* Saved decisions the reopen could not re-attach: kept, not unreviewed. */}
+          {progress.needsLook > 0 ? ` · ${progress.needsLook} need a look` : ""}
         </p>
         <p className="mt-0.5 text-[11px] text-ink-muted" data-takeoff="key-time">
           {progress.feet.toFixed(0)} ft in the key so far ·{" "}
@@ -1417,7 +1393,9 @@ export function AnswerKeyPanel({
                       : "single line"}
                   </span>
                 </span>
-                <span className="shrink-0 text-ink-muted">{one.note}</span>
+                <span className="shrink-0 text-ink-muted" data-needs-look={verdict === "unreviewed" && (state.needsLook ?? []).includes(one.id) ? "true" : undefined}>
+                  {verdict === "unreviewed" && (state.needsLook ?? []).includes(one.id) ? "needs a look: a saved decision here did not re-attach" : one.note}
+                </span>
               </button>
               {focusedId === one.id && (
                 <div className="mt-1 flex gap-1 pl-4">
