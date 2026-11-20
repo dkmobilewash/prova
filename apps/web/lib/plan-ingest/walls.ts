@@ -14,6 +14,7 @@ import { sheetIndexFor } from "./sheetIndexQuery";
 import { roomsForSheet, windowsForSheet, type WindowsOutcome, type RoomsOutcome } from "./rooms";
 import { refreshSheetWalls, type RefreshOutcome } from "@/lib/takeoff/refreshSheetWalls";
 import type { StageCtx, StageWork } from "./stages";
+import { projectIdentityOn, projectTags, type ProjectQuestion, type ProjectTag } from "./projectIdentity";
 
 /**
  * ── WHOLE-SET TAKEOFF: "Find walls on every floor plan" ──
@@ -59,13 +60,21 @@ export type WallsSheet = {
   renovation?: string[];
   /** The page inventory's own read (`sureFloorPlans.ts`): false = read, and not a floor plan by its title or captions. Absent = not read (a scan). */
   sure?: boolean;
+  /** With TAKEOFF_PROJECT_IDENTITY on and an upload holding two projects (`projectIdentity.ts`): this sheet waits for
+   *  the user to say which project they are bidding, or belongs to the one they did not choose. Absent otherwise. */
+  project?: ProjectTag;
 };
 
-export type WallsSkip = "no scale" | "not a floor plan" | "already found" | `same level as ${string}`;
+export const OTHER_PROJECT = "another project in this upload";
+export const WHICH_PROJECT = "waiting to be told which project to take off";
+export type WallsSkip = "no scale" | "not a floor plan" | "already found" | `same level as ${string}` | typeof OTHER_PROJECT | typeof WHICH_PROJECT;
 
 /** Why a sheet, on its own, is not a task — or null when it could be one.
  *  Pure. The set-level rule, one plan per floor, is `wallsPlan` below. */
 export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
+  // Whose drawing it is comes first: Kurita's A101 is never counted on Excell's bid, scaled or not.
+  if (sheet.project === "other project") return OTHER_PROJECT;
+  if (sheet.project === "unasked") return WHICH_PROJECT;
   if (!sheet.hasScale) return "no scale";
   // ── WHAT THE SHEET IS COMES BEFORE WHETHER IT HAS WALLS ──
   //
@@ -301,6 +310,33 @@ function preferWholeFloor(a: WallsSheet, b: WallsSheet): number {
 /** Every sheet of the set as the planner sees it: the inventory's rows joined
  *  to the pages that have a scale and the walls stored against it. */
 export async function wallsSheetsFor(planId: string, companyId: string): Promise<WallsSheet[]> {
+  const sheets = await ownSheetsFor(planId, companyId);
+  if (!projectIdentityOn()) return sheets;
+  const { tags } = await projectsOf(planId, sheets);
+  return tags.size === 0 ? sheets : sheets.map((sheet) => (tags.has(sheet.pageNumber) ? { ...sheet, project: tags.get(sheet.pageNumber)! } : sheet));
+}
+
+/** The question the panel asks (and, once answered, the projects it can switch between), or null: flag off, or one project. */
+export async function uploadProjectQuestion(planId: string, companyId: string): Promise<ProjectQuestion | null> {
+  if (!projectIdentityOn()) return null;
+  return (await projectsOf(planId, await ownSheetsFor(planId, companyId))).question;
+}
+
+/** A project owns a "counted" sheet when the run would take it with every sheet scaled — the sweep's own measure. */
+async function projectsOf(planId: string, sheets: WallsSheet[]) {
+  const [texts, plan] = await Promise.all([
+    prisma.planSheetText.findMany({ where: { planId }, select: { pageNumber: true, titleBlockText: true } }),
+    prisma.takeoffPlan.findUnique({ where: { id: planId }, select: { projectPages: true } }),
+  ]);
+  const text = new Map(texts.map((t) => [t.pageNumber, t.titleBlockText]));
+  const asIfScaled = wallsPlan(sheets.map((sheet) => ({ ...sheet, hasScale: true, hasWalls: false, onJob: false })));
+  return projectTags(
+    sheets.map((sheet) => ({ pageNumber: sheet.pageNumber, titleBlockText: text.get(sheet.pageNumber) ?? null, counted: asIfScaled.get(sheet.pageNumber) === null })),
+    plan?.projectPages ?? [],
+  );
+}
+
+async function ownSheetsFor(planId: string, companyId: string): Promise<WallsSheet[]> {
   const [rows, pages, texts, sure] = await Promise.all([
     sheetIndexFor(planId, companyId),
     prisma.takeoffPlanPage.findMany({
@@ -592,7 +628,7 @@ export function wallsSummaryRows(input: {
     // Walls found on a sheet the run leaves to another of the same level are on
     // the page, not in the count, and the row says which sheet counts instead.
     const skip = plan.get(sheet.pageNumber) ?? null;
-    const notCounted = skip !== null && skip.startsWith("same level as ") ? { notCounted: skip } : {};
+    const notCounted = skip !== null && (skip.startsWith("same level as ") || skip === OTHER_PROJECT || skip === WHICH_PROJECT) ? { notCounted: skip } : {};
     if (found) status = { kind: "walls", ...found, ...(input.rooms?.get(sheet.pageNumber) ?? {}), ...notCounted };
     else if (task?.finishedAt && task.note) status = { kind: "looked", note: task.note };
     else if (task && !task.finishedAt && task.error && task.attempts >= input.maxAttempts) status = { kind: "failed", error: task.error };
