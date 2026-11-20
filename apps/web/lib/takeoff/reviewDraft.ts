@@ -325,7 +325,14 @@ export function keepReview(existing: ReviewState | null, fresh: ReviewState): Re
     if (id in verdicts && verdict !== "unreviewed") verdicts[id] = verdict;
   }
   const kept = withTraces({ ...fresh, verdicts }, existing.traced);
-  return existing.openings === undefined ? kept : { ...kept, openings: existing.openings };
+  // ── AND THE TYPES THE REVIEWER GAVE THEM ──
+  // A re-read rebuilt the state from `fresh`, which has no types, so every type typed before it went:
+  // Permit-Drawings A1.01 saved 4 accepted walls with 0 types and reopened "Can't tell", while sheets
+  // with no re-read after the typing (Gen-BBQ) kept theirs. A type stays on a wall still accepted or traced.
+  const live = new Set([...Object.entries(verdicts).filter(([, v]) => v === "wall").map(([id]) => id), ...kept.traced.map((t) => t.id)]);
+  const types = Object.fromEntries(Object.entries(existing.types ?? {}).filter(([id]) => live.has(id)));
+  const typed = Object.keys(types).length > 0 ? { ...kept, types } : kept;
+  return existing.openings === undefined ? typed : { ...typed, openings: existing.openings };
 }
 
 /**
