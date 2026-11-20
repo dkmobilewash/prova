@@ -25,7 +25,7 @@ import { sheetSuitability, duplicateWallsCaution } from "@/lib/takeoff/sheetSuit
 import { latestIngestFor } from "@/lib/plan-ingest/claim";
 import { queueLegendRead } from "@/lib/plan-ingest/legendAutoStart";
 import { MAX_ATTEMPTS } from "@/lib/plan-ingest/runner";
-import { wholeSetSummary } from "@/lib/plan-ingest/walls";
+import { planOfWorkQuestion, uploadProjectQuestion, wholeSetSummary } from "@/lib/plan-ingest/walls";
 import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
 import { TakeoffPlanRevisionForm } from "@/components/TakeoffPlanRevisionForm";
 import { loadTakeoffCurrency } from "@/lib/takeoff-currency-query";
@@ -382,6 +382,8 @@ export default async function JobTakeoffPage({
           planId={plan.id}
           existing={await latestIngestFor(plan.id, "WALLS")}
           summary={await wholeSetSummary(plan.id, company.id, MAX_ATTEMPTS)}
+          projects={await uploadProjectQuestion(plan.id, company.id)}
+          planQuestion={await planOfWorkQuestion(plan.id, company.id)}
         />
       )}
       {isEstimateStage && (

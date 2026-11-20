@@ -90,6 +90,8 @@ describe("every eval refuses to run without a key", () => {
    * and one the guard re-proves is a second kind of guarantee.
    */
   const KEYLESS_EVALS: Record<string, string> = {
+    "zzTypeHeights.eval.ts":
+      "calls no model: per-type wall heights measured once (prereg-type-heights.md). The zero-touch eval with, per key wall, today's chain height and the per-type height (legend rules from the cached legend reads, ZT_LEGEND_CACHE; the plan's untyped rule; deck zones), against the heights key. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR, ZT_OUT and TAKEOFF_WALL_MODEL, as zzZeroTouch does",
     "legendText.eval.ts":
       "calls no model: AUTOMATION-PLAN item C. The keyless legend read (`readLegendFromText`) on every set page with a cached model read, compared code by code and field by field with that read. Skips without LEGEND_CACHE and REAL_PLAN_DIR, and asserts at least one cached read was compared",
     "zzZonedHeights.eval.ts":

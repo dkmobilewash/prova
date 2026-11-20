@@ -109,6 +109,16 @@ model TakeoffPlan {
   revisionLabel String?
   sheetIssuedOn DateTime?
 
+  /// The pages of the project the user said they are bidding, when one upload holds drawings from two projects
+  /// (`lib/plan-ingest/projectIdentity.ts`, behind TAKEOFF_PROJECT_IDENTITY). Empty until they answer, and empty for
+  /// every one-project upload. The user's own answer, so a re-run never asks again; never derived, never defaulted.
+  projectPages Int[] @default([])
+
+  /// The sheet(s) the user said are the plan of the work, when the walls run would otherwise count nothing on this
+  /// upload (or on the project they chose) — `planOfWork` in `lib/plan-ingest/walls.ts`, behind
+  /// TAKEOFF_PROJECT_IDENTITY. Empty until they answer. Their answer, never derived, never defaulted.
+  planOfWorkPages Int[] @default([])
+
   uploadedByUserId String?
   uploadedBy       User?   @relation("TakeoffPlanUploadedBy", fields: [uploadedByUserId], references: [id])
 
