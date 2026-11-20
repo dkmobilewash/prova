@@ -132,3 +132,55 @@ describe("every wall a height (D)", () => {
     }
   });
 });
+
+describe("per-type heights behind TAKEOFF_TYPE_HEIGHTS (prereg-type-heights.md)", async () => {
+  const { TYPE_HEIGHTS } = await import("./wallHeightsAssign");
+  /** The walls on a type `code`'s item, and the plan's type rules as `planTypeHeights` keeps them (no PDF). */
+  async function typed(s: Awaited<ReturnType<typeof setUp>>, code: string, rules: Record<string, unknown>) {
+    const plan = (await prisma.takeoffPlanPage.findUniqueOrThrow({ where: { id: s.pageId }, select: { planId: true } })).planId;
+    const type = await prisma.wallType.create({ data: { companyId: s.companyId, code, name: `Type ${code}` } });
+    const item = await prisma.takeoffItem.create({ data: { companyId: s.companyId, jobId: s.jobId, name: `${code} walls`, type: "LINEAR", colorHex: "#222222", wallTypeId: type.id } });
+    await prisma.takeoffMeasurement.updateMany({ where: { pageId: s.pageId, kind: "LINEAR" }, data: { itemId: item.id } });
+    await prisma.takeoffPlanTextRead.create({ data: { planId: plan, pageNumber: 0, kind: TYPE_HEIGHTS, value: { rules: Object.entries(rules), general: null } as never } });
+  }
+  it("a fixed type: both walls 4'-0\", printed, not assumed", async () => {
+    vi.stubEnv("TAKEOFF_TYPE_HEIGHTS", "1");
+    const s = await setUp(null, { convention: "FIXED", fixedFt: 10 });
+    await typed(s, "C", { C: { kind: "fixed", feet: 4, why: "4'-0\"" } });
+    await s.assign();
+    expect((await walls(s.pageId)).map((w) => [w.heightFt, w.heightAssumed, w.heightFrom])).toEqual([[4, false, 'type: "4\'-0""'], [4, false, 'type: "4\'-0""']]);
+    vi.unstubAllEnvs();
+  });
+  it("N above the ceiling: the stored room's 9 ft ceiling + 4\"", async () => {
+    vi.stubEnv("TAKEOFF_TYPE_HEIGHTS", "1");
+    const s = await setUp(null, { convention: "FIXED", fixedFt: 10 }, { ceilingHeightFeet: 9 });
+    await typed(s, "P0B", { P0B: { kind: "above-ceiling", inches: 4, why: '4" ABOVE CEILING' } });
+    await s.assign();
+    expect((await walls(s.pageId)).map((w) => [Number(w.heightFt!.toFixed(4)), w.heightAssumed])).toEqual([[9.3333, false], [9.3333, false]]);
+    vi.unstubAllEnvs();
+  });
+  it("a question the documents leave open: the company's answer, ASSUMED, and it says why", async () => {
+    vi.stubEnv("TAKEOFF_TYPE_HEIGHTS", "1");
+    const s = await setUp(null, { convention: "FIXED", fixedFt: 10 });
+    await typed(s, "A", { A: { kind: "to-structure", feet: null, why: "TO DECK" } });
+    await s.assign();
+    const w = (await walls(s.pageId))[0]!;
+    expect([w.heightFt, w.heightAssumed]).toEqual([10, true]);
+    expect(w.heightFrom).toMatch(/^needs answer: to deck\/structure/);
+    vi.unstubAllEnvs();
+  });
+  it("no board: 0, said so", async () => {
+    vi.stubEnv("TAKEOFF_TYPE_HEIGHTS", "1");
+    const s = await setUp(null, { convention: "FIXED", fixedFt: 10 });
+    await typed(s, "M8", { M8: { kind: "no-board", why: '8" CMU' } });
+    await s.assign();
+    expect((await walls(s.pageId)).map((w) => [w.heightFt, w.heightFrom])).toEqual([[0, 'no board: type: "8" CMU"'], [0, 'no board: type: "8" CMU"']]);
+    vi.unstubAllEnvs();
+  });
+  it("flag OFF: today's chain, untouched, even with a type rule stored", async () => {
+    const s = await setUp(null, { convention: "FIXED", fixedFt: 10 });
+    await typed(s, "C", { C: { kind: "fixed", feet: 4, why: "4'-0\"" } });
+    await s.assign();
+    expect((await walls(s.pageId))[0]).toEqual({ heightFt: 10, heightAssumed: true, heightFrom: "assumed: your usual height, 10 ft" });
+  });
+});
