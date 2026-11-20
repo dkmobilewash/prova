@@ -224,6 +224,9 @@ import { ROOM_BOUNDARY_LABEL, isRoomBoundary, openRoomTags, snapToWallEnd, wallE
 
 type Draft = { xs: number[]; ys: number[] };
 
+/** Build-time: the parity harness's live-list digest (`data-takeoff-live`). Off in every customer build. */
+const LIVE_DIGEST = process.env.NEXT_PUBLIC_TAKEOFF_LIVE_DIGEST === "1";
+
 const EMPTY: Draft = { xs: [], ys: [] };
 
 /** How wide one PDF point is rendered, before zoom. 1.5 gives a legible
@@ -6576,6 +6579,11 @@ export function TakeoffPlanViewer({
         // button's own `disabled` already covers.
         data-sheet-ready={pageCount !== null && pageSize !== null ? "true" : "false"}
         data-takeoff-detect={detectSeen ?? undefined}
+        // ── THE CUSTOMER'S LIVE LIST, FOR THE PARITY HARNESS ONLY (prereg-live-list-parity.md) ──
+        // Every run the contractor sees after Run takeoff, page-width units, so
+        // `e2e/local/takeoff-app-equals-eval.local.spec.ts` can hold it run for run against server detection.
+        // A build-time switch: unset in every customer build, so nothing is serialised for them.
+        data-takeoff-live={LIVE_DIGEST && found !== null && answerKey === undefined ? JSON.stringify(shownGroups.flatMap((group) => group.runs.map((run) => [run.x1, run.y1, run.x2, run.y2]))) : undefined}
       >
         {/* ── THE BANNER THAT SAYS TRACING IS ON, AND WHAT TO DO NEXT ──
 

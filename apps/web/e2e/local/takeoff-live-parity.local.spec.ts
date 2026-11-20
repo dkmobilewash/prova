@@ -1,0 +1,116 @@
+import path from "node:path";
+import { appendFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { test, expect, type Page } from "@playwright/test";
+import { signInAs } from "../lib/signIn";
+import { PERSONAS } from "../lib/personas";
+import { HealthMonitor } from "../lib/health";
+import { stubDocumentUpload } from "../lib/blobStub";
+import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/journey";
+
+/**
+ * ── THE CUSTOMER'S LIVE LIST, RECORDED RUN FOR RUN (prereg-live-list-parity.md) ──
+ *
+ * After Run takeoff, the viewer's plan port carries `data-takeoff-live`: every run the contractor sees, in
+ * page-width units — written only in a build with NEXT_PUBLIC_TAKEOFF_LIVE_DIGEST=1. This drives the real app
+ * on real sheets (customer mode, not key mode) and appends one line per sheet to LIVE_OUT, so
+ * `realplan/zzLiveParity.eval.ts` can hold it against server detection's offered-minus-held on the same PDF,
+ * page and scale.
+ *
+ * The scale is set as `takeoff-app-equals-eval.local.spec.ts` sets it: two clicks half a page width apart
+ * declared 144 ft (288 ft per page width), and the stored line is recorded so the Node side derives the
+ * same feet per unit.
+ *
+ * Resumable: a sheet already in LIVE_OUT is skipped, so a walk cut at the heavy-lock limit continues.
+ * LIVE_SHEETS is `<pdf file name>:<page>,…`; one upload per set.
+ */
+const PLANS = process.env.REAL_PLAN_DIR ?? "";
+const OUT = process.env.LIVE_OUT ?? "";
+const SHEETS = (process.env.LIVE_SHEETS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter((s) => s.includes(":"))
+  .map((s) => ({ file: s.slice(0, s.lastIndexOf(":")), page: Number(s.slice(s.lastIndexOf(":") + 1)) }));
+const done = new Set(
+  OUT !== "" && existsSync(OUT)
+    ? readFileSync(OUT, "utf8").split("\n").filter(Boolean).map((l) => { const r = JSON.parse(l) as { file: string; page: number }; return `${r.file}:${r.page}`; })
+    : [],
+);
+const bySet = new Map<string, number[]>();
+for (const s of SHEETS) if (!done.has(`${s.file}:${s.page}`)) (bySet.get(s.file) ?? bySet.set(s.file, []).get(s.file)!).push(s.page);
+
+test.describe.configure({ mode: "serial" });
+
+test.describe("the customer's live list, for parity with server detection", () => {
+  test.skip(PLANS === "" || OUT === "" || SHEETS.length === 0, "needs REAL_PLAN_DIR, LIVE_OUT and LIVE_SHEETS");
+  test.setTimeout(1_500_000);
+  let page: Page;
+  let monitor: HealthMonitor;
+  let served: Buffer | null = null;
+
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+    monitor = new HealthMonitor(page);
+    await page.route("**/api/takeoff/plan/**", async (route) => {
+      if (served === null) return route.continue();
+      return route.fulfill({ status: 200, contentType: "application/pdf", body: served });
+    });
+    await signInAs(page, PERSONAS.takeoff.email);
+    await landOnDashboard(page, monitor);
+  });
+
+  const picker = () => page.locator('[data-takeoff="sheet-picker"]');
+  async function toSheet(n: number): Promise<void> {
+    await picker().selectOption(String(n));
+    await expect
+      .poll(async () => page.locator('[data-testid="takeoff-plan-port"] canvas').evaluate((node) => (node as HTMLCanvasElement).width), { timeout: 180_000, message: `sheet ${n} never rendered` })
+      .toBeGreaterThan(0);
+    await expect(picker()).toHaveValue(String(n));
+    await page.waitForTimeout(600);
+  }
+
+  for (const [file, pages] of bySet) {
+    test(`${file}: ${pages.length} sheet(s)`, async () => {
+      const full = path.join(PLANS, file);
+      expect(existsSync(full), `${file} not in REAL_PLAN_DIR`).toBe(true);
+      expect(readdirSync(PLANS).includes(file)).toBe(true);
+      served = readFileSync(full);
+      const id = await startJob(page, monitor, { name: `ZZ-E2E Live parity ${file.slice(0, 40)}`, gcName: "ZZ-E2E Live parity GC" });
+      await finishWizard(page, monitor, id);
+      await openJobTab(page, "Takeoff");
+      await page.waitForURL(new RegExp(`/jobs/${id}/takeoff$`));
+      await stubDocumentUpload(page);
+      await page.locator('input[type="file"]').setInputFiles(full);
+      await expect(page.getByRole("button", { name: "Which revision is this?" })).toBeVisible({ timeout: 180_000 });
+      await page.goto(`/takeoff/${id}`);
+      await expect(page.locator('[data-takeoff="workspace"]')).toBeVisible();
+      await expect(picker()).toBeVisible({ timeout: 60_000 });
+      for (const n of pages) {
+        await toSheet(n);
+        const overlay = page.locator('[data-testid="takeoff-plan-port"] svg');
+        await page.getByRole("button", { name: "Set scale" }).click();
+        const box = await overlay.boundingBox();
+        expect(box).not.toBeNull();
+        await overlay.click({ position: { x: box!.width * 0.2, y: box!.width * 0.3 } });
+        await overlay.click({ position: { x: box!.width * 0.7, y: box!.width * 0.3 } });
+        const form = page.locator("form").filter({ has: page.getByRole("button", { name: "Set the scale" }) });
+        await form.locator('input[name="declaredDistanceFeet"]').fill("144");
+        await form.locator('input[name="pageLabel"]').fill(`P${n}`);
+        const calibration = {
+          points: await form.locator('input[name="points"]').inputValue(),
+          declaredDistanceFeet: await form.locator('input[name="declaredDistanceFeet"]').inputValue(),
+        };
+        await form.getByRole("button", { name: "Set the scale" }).click();
+        await expect(page.getByText(/^Scale set/)).toBeVisible({ timeout: 60_000 });
+        const find = page.locator('[data-takeoff="find-walls"]');
+        await expect(find).toBeEnabled({ timeout: 60_000 });
+        await find.click();
+        await expect(find).toHaveText(/^(Find the walls|Run takeoff)$/, { timeout: 600_000 });
+        const port = page.locator('[data-testid="takeoff-plan-port"]');
+        // Absent means the build lacks the switch or the viewer found nothing; either way the line says which.
+        await expect.poll(async () => (await port.getAttribute("data-takeoff-live")) !== null, { timeout: 30_000 }).toBe(true).catch(() => undefined);
+        const live = await port.getAttribute("data-takeoff-live");
+        appendFileSync(OUT, JSON.stringify({ file, page: n, calibration, live: live === null ? null : (JSON.parse(live) as number[][]) }) + "\n");
+      }
+    });
+  }
+});
