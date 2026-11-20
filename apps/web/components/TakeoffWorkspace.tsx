@@ -20,7 +20,7 @@ import { AnswerKeyPanel } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
 import { restoreSaved, type SavedSheet } from "@/lib/takeoff/restoreSaved";
 import { restoreGate, type RestoreBaseline } from "@/lib/takeoff/restoreGate";
-import { addOpening, addTraced, removeOpening, removeTraced, startReview, tracedWall, type ReviewState } from "@/lib/takeoff/answerKeyReview";
+import { addOpening, addTraced, removeOpening, removeTraced, startReview, tracedWall, undoLastEdit, type ReviewState } from "@/lib/takeoff/answerKeyReview";
 import { splitCandidate, splitPress } from "@/lib/takeoff/splitCandidate";
 import { labelSheetKey } from "@/lib/takeoff/labelRows";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
@@ -636,10 +636,18 @@ export function TakeoffWorkspace({
         // render and is the only reading of current state that cannot be
         // stale.
         const review = keyStateRef.current;
-        const lastTrace = review?.traced[review.traced.length - 1];
-        if (!event.shiftKey && lastTrace !== undefined && review !== null) {
-          setKeyState(removeTraced(review, lastTrace.id));
-          return;
+        // The last thing done in the review: a trace drawn or a tag given (Round 39: a tag could not be taken back).
+        if (!event.shiftKey && review !== null) {
+          const back = undoLastEdit(review);
+          if (back.undone !== null) {
+            setKeyState(back.state);
+            return;
+          }
+          const lastTrace = review.traced[review.traced.length - 1];
+          if (lastTrace !== undefined) {
+            setKeyState(removeTraced(review, lastTrace.id));
+            return;
+          }
         }
         void runUndo(event.shiftKey ? "redo" : "undo");
         return;
