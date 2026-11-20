@@ -3,6 +3,7 @@ import { prisma } from "@prova/db";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { detectWallsForCalibration, oneFinderSlot, type DetectedBoundary, type DetectOutcome, type DetectTarget } from "@/lib/takeoff/detectWallsForCalibration";
 import { takeoffSheetVerdict } from "@/lib/takeoff/takeoffSheet";
+import { disciplineFromNumber } from "@/lib/takeoff/sheetSuitability";
 import { sureFloorPlanReads } from "@/lib/takeoff/sureFloorPlans";
 import { sheetCategory } from "@/lib/takeoff/planSet";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
@@ -63,6 +64,9 @@ export type WallsSheet = {
   /** With TAKEOFF_PROJECT_IDENTITY on and an upload holding two projects (`projectIdentity.ts`): this sheet waits for
    *  the user to say which project they are bidding, or belongs to the one they did not choose. Absent otherwise. */
   project?: ProjectTag;
+  /** The contractor said this sheet is the plan of the work, on a project the run would otherwise count nothing on
+   *  (`planOfWork`). Counted whatever its title says, and never folded into another sheet's level. */
+  planOfWork?: true;
 };
 
 export const OTHER_PROJECT = "another project in this upload";
@@ -76,6 +80,8 @@ export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
   if (sheet.project === "other project") return OTHER_PROJECT;
   if (sheet.project === "unasked") return WHICH_PROJECT;
   if (!sheet.hasScale) return "no scale";
+  // The contractor's own answer outranks what the title says (`planOfWork`).
+  if (sheet.planOfWork) return sheet.hasWalls || sheet.onJob ? "already found" : null;
   // ── WHAT THE SHEET IS COMES BEFORE WHETHER IT HAS WALLS ──
   //
   // Chrome's re-test on E Street: A1.1 "DEMOLITION - FLOOR PLAN" had walls
@@ -109,7 +115,7 @@ export function wallsSkipReason(sheet: WallsSheet): WallsSkip | null {
  * with the takeoff disabled (#996, found by the new-customer walk).
  */
 export function floorPlansOfTheWork(sheets: readonly WallsSheet[]): number[] {
-  const floor = new Set(sheets.filter((s) => sheetCategory(s.sheetNumber, s.title, null) === "floor").map((s) => s.pageNumber));
+  const floor = new Set(sheets.filter((s) => s.planOfWork || sheetCategory(s.sheetNumber, s.title, null) === "floor").map((s) => s.pageNumber));
   // And as if nothing were found yet: walls stored on a sheet say only which
   // scale was saved first. The run's own preference ranks them above "not
   // OVERALL", which is right for counting and wrong for opening — walk v3
@@ -151,7 +157,7 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
   const byNumber = new Map<string, WallsSheet[]>();
   for (const sheet of sheets) {
     const reason = out.get(sheet.pageNumber);
-    if (sheet.sheetNumber === null || !(reason === null || reason === "already found")) continue;
+    if (sheet.planOfWork || sheet.sheetNumber === null || !(reason === null || reason === "already found")) continue;
     (byNumber.get(sheet.sheetNumber) ?? byNumber.set(sheet.sheetNumber, []).get(sheet.sheetNumber)!).push(sheet);
   }
   for (const same of byNumber.values()) {
@@ -159,9 +165,10 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
     const keep = same.find((sheet) => sheet.onJob === true) ?? same[0]!;
     for (const sheet of same) if (sheet !== keep) out.set(sheet.pageNumber, `same level as ${nameOf(keep, sheets)}`);
   }
+  // A sheet the contractor named as the plan of the work is kept as they said: never "same level as" another.
   const candidates = sheets.filter((sheet) => {
     const reason = out.get(sheet.pageNumber);
-    return reason === null || reason === "already found";
+    return !sheet.planOfWork && (reason === null || reason === "already found");
   });
   // A sheet that already has walls is still the same level as the one kept:
   // Baker A100's scale save stored its walls, and "already found" hid that
@@ -237,6 +244,34 @@ export function wallsPlan(sheets: readonly WallsSheet[]): Map<number, WallsSkip 
   return out;
 }
 
+export type PlanOfWorkQuestion = {
+  /** The sheets offered: the project's architectural sheets titled as a plan, or every sheet of it when none is. */
+  candidates: number[];
+  /** What the contractor chose, empty until they do. */
+  chosen: number[];
+};
+
+/**
+ * ── NOTHING TO COUNT IS A QUESTION, NEVER A SILENT ZERO (Diego, 2026-11-21) ──
+ *
+ * Excell's side of Aldrich, once Kurita's sheets stand aside and its LIFE-SAFETY plan is refused, leaves the run
+ * nothing to count: the job's plan, A111, is an enlarged floor plan sharing its sheet with toilet elevations, which
+ * the title rule refuses. Rather than price nothing, or guess, the panel asks which sheet(s) are the plan of the work.
+ * Asked only when the run would count no sheet at all (every sheet as if scaled), after any which-project question,
+ * and never about the other project's sheets. The answer is the contractor's (`TakeoffPlan.planOfWorkPages`).
+ */
+export function planOfWork(sheets: WallsSheet[], chosenPages: readonly number[]): { sheets: WallsSheet[]; question: PlanOfWorkQuestion | null } {
+  if (sheets.some((sheet) => sheet.project === "unasked")) return { sheets, question: null };
+  const own = sheets.filter((sheet) => sheet.project === undefined);
+  const asIfScaled = wallsPlan(own.map((sheet) => ({ ...sheet, hasScale: true, hasWalls: false, onJob: false, planOfWork: undefined })));
+  if (own.length === 0 || [...asIfScaled.values()].some((skip) => skip === null)) return { sheets, question: null };
+  const titledPlan = own.filter((sheet) => disciplineFromNumber(sheet.sheetNumber) === null && /\bPLANS?\b/i.test(sheet.title ?? ""));
+  const candidates = (titledPlan.length > 0 ? titledPlan : own).map((sheet) => sheet.pageNumber);
+  const chosen = chosenPages.filter((page) => own.some((sheet) => sheet.pageNumber === page));
+  const keep = new Set(chosen);
+  return { sheets: keep.size === 0 ? sheets : sheets.map((sheet) => (keep.has(sheet.pageNumber) ? { ...sheet, planOfWork: true as const } : sheet)), question: { candidates, chosen } };
+}
+
 /** The sheets a run does: every counted floor plan, a found one again, so stale labels are read again (`wallsWork`). */
 export function wallsTaskPages(sheets: readonly WallsSheet[]): number[] {
   const plan = wallsPlan(sheets);
@@ -310,30 +345,42 @@ function preferWholeFloor(a: WallsSheet, b: WallsSheet): number {
 /** Every sheet of the set as the planner sees it: the inventory's rows joined
  *  to the pages that have a scale and the walls stored against it. */
 export async function wallsSheetsFor(planId: string, companyId: string): Promise<WallsSheet[]> {
-  const sheets = await ownSheetsFor(planId, companyId);
-  if (!projectIdentityOn()) return sheets;
-  const { tags } = await projectsOf(planId, sheets);
-  return tags.size === 0 ? sheets : sheets.map((sheet) => (tags.has(sheet.pageNumber) ? { ...sheet, project: tags.get(sheet.pageNumber)! } : sheet));
+  if (!projectIdentityOn()) return ownSheetsFor(planId, companyId);
+  return (await askedFor(planId, companyId)).sheets;
 }
 
-/** The question the panel asks (and, once answered, the projects it can switch between), or null: flag off, or one project. */
+/** The which-project question (and, once answered, the projects it can switch between), or null: flag off, or one project. */
 export async function uploadProjectQuestion(planId: string, companyId: string): Promise<ProjectQuestion | null> {
   if (!projectIdentityOn()) return null;
-  return (await projectsOf(planId, await ownSheetsFor(planId, companyId))).question;
+  return (await askedFor(planId, companyId)).projects;
 }
 
-/** A project owns a "counted" sheet when the run would take it with every sheet scaled — the sweep's own measure. */
-async function projectsOf(planId: string, sheets: WallsSheet[]) {
-  const [texts, plan] = await Promise.all([
+/** The which-sheet-is-the-plan question, or null: flag off, or the run has a plan to count (`planOfWork`). */
+export async function planOfWorkQuestion(planId: string, companyId: string): Promise<PlanOfWorkQuestion | null> {
+  if (!projectIdentityOn()) return null;
+  return (await askedFor(planId, companyId)).planOfWork;
+}
+
+/**
+ * The two questions the panel asks before it counts, in order, with the stored answers applied: which project, then
+ * (on that project) which sheet is the plan of the work. A project owns a "counted" sheet when the run would take it
+ * with every sheet scaled — the sweep's own measure.
+ */
+async function askedFor(planId: string, companyId: string) {
+  const [own, texts, plan] = await Promise.all([
+    ownSheetsFor(planId, companyId),
     prisma.planSheetText.findMany({ where: { planId }, select: { pageNumber: true, titleBlockText: true } }),
-    prisma.takeoffPlan.findUnique({ where: { id: planId }, select: { projectPages: true } }),
+    prisma.takeoffPlan.findUnique({ where: { id: planId }, select: { projectPages: true, planOfWorkPages: true } }),
   ]);
   const text = new Map(texts.map((t) => [t.pageNumber, t.titleBlockText]));
-  const asIfScaled = wallsPlan(sheets.map((sheet) => ({ ...sheet, hasScale: true, hasWalls: false, onJob: false })));
-  return projectTags(
-    sheets.map((sheet) => ({ pageNumber: sheet.pageNumber, titleBlockText: text.get(sheet.pageNumber) ?? null, counted: asIfScaled.get(sheet.pageNumber) === null })),
+  const asIfScaled = wallsPlan(own.map((sheet) => ({ ...sheet, hasScale: true, hasWalls: false, onJob: false })));
+  const { tags, question: projects } = projectTags(
+    own.map((sheet) => ({ pageNumber: sheet.pageNumber, titleBlockText: text.get(sheet.pageNumber) ?? null, counted: asIfScaled.get(sheet.pageNumber) === null })),
     plan?.projectPages ?? [],
   );
+  const tagged = tags.size === 0 ? own : own.map((sheet) => (tags.has(sheet.pageNumber) ? { ...sheet, project: tags.get(sheet.pageNumber)! } : sheet));
+  const { sheets, question } = planOfWork(tagged, plan?.planOfWorkPages ?? []);
+  return { sheets, projects, planOfWork: question };
 }
 
 async function ownSheetsFor(planId: string, companyId: string): Promise<WallsSheet[]> {
