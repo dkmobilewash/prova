@@ -241,6 +241,15 @@ describe("round 13: marking windows", () => {
     expect(onMarking).toHaveBeenCalledWith(false, "window");
   });
 
+  it("THE STRIP SAYS WHICH MARK A TAG WILL GO TO: the ringed one, by its number, with its tag so far (Round 39)", async () => {
+    const { addOpening, setOpeningTag } = await import("@/lib/takeoff/answerKeyReview");
+    const two = addOpening(addOpening(startReview([]), { x: 0.1, y: 0.1, kind: "window" }), { x: 0.2, y: 0.1, kind: "window" });
+    const { host } = paint({ state: two, marking: true, focusedOpening: "o2", windowTags: ["W1", "W2"] });
+    expect(q(host, "key-window-tag-target")?.textContent).toBe("→ window 2 (the larger ring), no tag yet");
+    const tagged = paint({ state: setOpeningTag(two, "o1", "W1"), marking: true, focusedOpening: "o1", windowTags: ["W1", "W2"] });
+    expect(q(tagged.host, "key-window-tag-target")?.textContent).toBe("→ window 1 (the larger ring), tagged W1");
+  });
+
   it("0 is no tag shown", async () => {
     const { addOpening } = await import("@/lib/takeoff/answerKeyReview");
     const { onState } = paint({ state: addOpening(startReview([]), { x: 0.1, y: 0.1, kind: "window" }), marking: true, focusedOpening: "o1", windowTags: [] });
