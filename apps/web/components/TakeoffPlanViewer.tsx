@@ -170,6 +170,7 @@ import {
   type ReviewState,
 } from "@/lib/takeoff/answerKeyReview";
 import { offeredCandidates } from "@/lib/takeoff/offeredCandidates";
+import { afterKeyModeOff } from "@/lib/takeoff/keyModeList";
 import { FIND_BUDGET_MS, FIND_LIMIT_MS, detectOffThread } from "@/lib/takeoff/detectOffThread";
 import { SheetTooSlowError } from "@/lib/takeoff/timeBudget";
 import type { MatchableWallType } from "@/lib/takeoff/wallTypeMatch";
@@ -974,6 +975,10 @@ export function TakeoffPlanViewer({
   /** Feet across the page width, as the find that produced these runs read it. */
   const feetAcrossRef = useRef<number>(0);
   const regroupRef = useRef<((runs: WallCandidate[]) => WallGroup[]) | null>(null);
+  /** The customer offer the last find computed, kept even in answer-key mode — see `keyModeList.ts`. */
+  const customerOfferRef = useRef<{ page: number; runs: WallCandidate[] } | null>(null);
+  /** The list on the panel came from a find made in answer-key mode (the finder's raw runs). */
+  const foundInKeyMode = useRef(false);
   /**
    * ── EVERYTHING A FIND PRODUCES IS KEPT PER PAGE, WITHOUT EXCEPTION ──
    *
@@ -1508,6 +1513,25 @@ export function TakeoffPlanViewer({
       answerKey.onSetAside?.(setAsideRef.current);
     }
   }, [answerKey, candidatesFromLastDetect]);
+
+  // ── TURNING ANSWER-KEY MODE OFF TAKES ITS RAW LIST OFF THE CUSTOMER PANEL — see `keyModeList.ts` ──
+  const keyOn = answerKey !== undefined;
+  useEffect(() => {
+    if (keyOn) return;
+    const next = afterKeyModeOff({ builtInKeyMode: foundInKeyMode.current, pageNumber, customer: customerOfferRef.current, paired: planCompare?.pairs[pageNumber] !== undefined });
+    if (next.kind === "keep") return;
+    foundInKeyMode.current = false;
+    setLabels(null);
+    const regroup = regroupRef.current;
+    if (next.kind === "clear" || regroup === null) {
+      runsRef.current = [];
+      setFound(null);
+      return;
+    }
+    runsRef.current = next.runs;
+    setFound(regroup(next.runs));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on the mode and the sheet only; planCompare is read as it stands
+  }, [keyOn, pageNumber]);
 
   /** The ends of the wall being traced in answer-key mode, in page-width
    *  units. `traceTo` set means both ends are down and Enter will commit. */
@@ -4349,6 +4373,9 @@ export function TakeoffPlanViewer({
       };
       await stepDone("hand-back");
       let offered = answerKey !== undefined ? null : offerHere();
+      // Key mode shows the raw runs; the customer offer is kept for when the mode turns off.
+      if (answerKey !== undefined) customerOfferRef.current = { page: pageNumber, runs: offerHere().offeredRuns };
+      else customerOfferRef.current = null;
       await stepDone("set-asides");
       // ── PLAN COMPARISON, ON A PAIRED SHEET — see `priorPlan.ts` ──
       //
@@ -4475,6 +4502,7 @@ export function TakeoffPlanViewer({
       await stepDone("openings");
       console.info("[takeoff] Run takeoff steps after the finder (ms)", stepMs);
       if (!quietFind.current) onResults?.();
+      foundInKeyMode.current = answerKey !== undefined;
       setFound(
         doubted !== null || runs.some(droppedOnJob)
           ? regroup(runs.filter((r, at) => !doubted?.has(at) && !droppedOnJob(r)))
