@@ -21,12 +21,13 @@ import { finishWizard, landOnDashboard, openJobTab, startJob } from "../lib/jour
  * same feet per unit.
  *
  * Resumable: a sheet already in LIVE_OUT is skipped, so a walk cut at the heavy-lock limit continues.
- * LIVE_SHEETS is `<pdf file name>:<page>,…`; one upload per set.
+ * LIVE_SHEETS is `<pdf file name>:<page>|…`; one upload per set.
  */
 const PLANS = process.env.REAL_PLAN_DIR ?? "";
 const OUT = process.env.LIVE_OUT ?? "";
+// Separated by "|": real file names carry commas ("Falafel Fresh, Lake St, Kirkland WA.pdf").
 const SHEETS = (process.env.LIVE_SHEETS ?? "")
-  .split(",")
+  .split("|")
   .map((s) => s.trim())
   .filter((s) => s.includes(":"))
   .map((s) => ({ file: s.slice(0, s.lastIndexOf(":")), page: Number(s.slice(s.lastIndexOf(":") + 1)) }));
