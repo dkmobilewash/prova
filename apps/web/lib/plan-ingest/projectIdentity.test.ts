@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { uploadProjects } from "./projectIdentity";
+import { labelledIdentity, uploadProjects } from "./projectIdentity";
 
+// Every Minnesota-sealed sheet prints its licence certification, whoever's project it is (measured on Aldrich: the
+// first reader joined Excell to Kurita through these lines).
+const CERTIFY = ["I HEREBY CERTIFY THAT THIS PLAN, SPECIFICATION OR REPORT", "WAS PREPARED BY ME OR UNDER MY DIRECT SUPERVISION", "LAWS OF THE STATE OF MINNESOTA"];
 // Title-block text as the inventory stores it (`titleBlockText`): one line per baseline, top down.
 const excell = (sheet: string) =>
-  ["U+B ARCHITECTURE & DESIGN, INC.", "2609 ALDRICH AVENUE SOUTH SUITE 100", "MINNEAPOLIS, MINNESOTA 55408", "Excell Academy for Higher Learning", "6510 Zane Ave. N.", "Brooklyn Park, MN 55429", "Project: 2019015_EXC-6", "DESIGN DEVELOPMENT DRAWINGS", "NOT FOR CONSTRUCTION", sheet].join("\n");
+  ["U+B ARCHITECTURE & DESIGN, INC.", "2609 ALDRICH AVENUE SOUTH SUITE 100", "MINNEAPOLIS, MINNESOTA 55408", "Excell Academy for Higher Learning", "6510 Zane Ave. N.", "Brooklyn Park, MN 55429", "Project: 2019015_EXC-6", "DESIGN DEVELOPMENT DRAWINGS", "NOT FOR CONSTRUCTION", ...CERTIFY, sheet].join("\n");
 const kurita = (sheet: string) =>
-  ["RYAN A+E, INC.", "533 SOUTH THIRD STREET, SUITE 100", "PROJECT INFORMATION", "KURITA", "6600 94th Ave N", "Brooklyn Park, MN", "CITY RESUBMITTAL SET", "NOT FOR CONSTRUCTION", sheet].join("\n");
+  ["RYAN A+E, INC.", "533 SOUTH THIRD STREET, SUITE 100", "PROJECT INFORMATION", "KURITA", "6600 94th Ave N", "Brooklyn Park, MN", "CITY RESUBMITTAL SET", "NOT FOR CONSTRUCTION", "PROJECT NO. 905-586", ...CERTIFY, sheet].join("\n");
 
 describe("uploadProjects: an upload that holds more than one project (prereg-project-identity.md)", () => {
   it("Aldrich: Excell Academy and Kurita are two projects, each owning a counted sheet, so it asks", () => {
@@ -20,6 +23,7 @@ describe("uploadProjects: an upload that holds more than one project (prereg-pro
     expect(got.groups.map((g) => g.pages)).toEqual([[18, 26, 27], [66, 67]]);
     // Excell labels only its number ("Project: 2019015_EXC-6"); Kurita labels its name under PROJECT INFORMATION.
     expect(got.groups.map((g) => g.label)).toEqual(["Project 2019015_EXC-6", "KURITA"]);
+    expect(got.groups.map((g) => g.number)).toEqual(["2019015_EXC-6", "905-586"]);
     // What the question shows beside the label: each group's own repeated title-block lines.
     expect(got.groups[0]!.lines).toContain("Excell Academy for Higher Learning");
   });
@@ -71,5 +75,22 @@ describe("uploadProjects: an upload that holds more than one project (prereg-pro
       { pageNumber: 4, titleBlockText: "SOME ONE-OFF COVER PAGE\nINDEX OF DRAWINGS", counted: true },
     ]);
     expect(got.asks).toBe(false);
+  });
+
+  it("a sheet with no printed number joins the template it shares the most lines with, not the first boilerplate match", () => {
+    const a = ["PROJECT NO. 1001", "NOT FOR CONSTRUCTION", ...CERTIFY.slice(1)].join("\n");
+    const tpl = ["RYAN A+E, INC.", "533 SOUTH THIRD STREET, SUITE 100", "CITY RESUBMITTAL SET", "BROOKLYN PARK, MINNESOTA"];
+    const got = uploadProjects([
+      { pageNumber: 1, titleBlockText: a, counted: true },
+      { pageNumber: 2, titleBlockText: [...tpl, ...CERTIFY.slice(1), "C100"].join("\n"), counted: false },
+      { pageNumber: 3, titleBlockText: [...tpl, "PROJECT NO. 2002", "A101"].join("\n"), counted: true },
+      { pageNumber: 4, titleBlockText: [...tpl, "PROJECT NO. 2002", "A102"].join("\n"), counted: true },
+    ]);
+    expect(got.groups.map((g) => g.pages)).toEqual([[1], [2, 3, 4]]);
+  });
+
+  it("a table header under a project-number label is not a number", () => {
+    expect(labelledIdentity("PROJECT NO. DATE\nA101").number).toBeNull();
+    expect(labelledIdentity("PROJECT NO. 905-586\nA101").number).toBe("905-586");
   });
 });

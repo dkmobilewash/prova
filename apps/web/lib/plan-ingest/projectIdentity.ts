@@ -58,7 +58,8 @@ export function labelledIdentity(titleBlockText: string): { name: string | null;
   lines.forEach((line, i) => {
     const num = NUMBER_LABEL.exec(line);
     if (num) {
-      if (number === null && num[1] && !PLACEHOLDER.test(num[1])) number = norm(num[1]).replace(/\s/g, "");
+      // A project number has a digit: "PROJECT NO. | DATE" is a table header, not a number.
+      if (number === null && num[1] && /\d/.test(num[1]) && !PLACEHOLDER.test(num[1])) number = norm(num[1]).replace(/\s/g, "");
       return;
     }
     const nm = NAME_LABEL.exec(line);
@@ -102,13 +103,27 @@ export function uploadProjects(pages: readonly ProjectPage[]): { groups: Project
   const signal = read.filter((r) => r.lines.size > 0 || r.name !== null || r.number !== null);
   const parent = signal.map((_, i) => i);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
+  // Each group carries at most one labelled number: two different numbers are two projects, however much boilerplate
+  // (a state's licence certification, "NOT FOR CONSTRUCTION") their sheets share. So links are applied strongest first
+  // (same number, then same name, then most shared lines) and a link joining two numbers is skipped.
+  const numberOf = signal.map((r) => r.number);
+  const links: { i: number; j: number; strength: number }[] = [];
   for (let i = 0; i < signal.length; i += 1) {
     for (let j = i + 1; j < signal.length; j += 1) {
       const a = signal[i]!, b = signal[j]!;
       const shared = [...a.lines].filter((l) => b.lines.has(l)).length;
-      const same = shared >= SHARED_LINES_MIN || (a.number !== null && a.number === b.number) || (a.name !== null && b.name !== null && namesMatch(a.name, b.name));
-      if (same) parent[find(i)] = find(j);
+      const strength = a.number !== null && a.number === b.number ? Infinity : a.name !== null && b.name !== null && namesMatch(a.name, b.name) ? 1e6 : shared >= SHARED_LINES_MIN ? shared : 0;
+      if (strength > 0) links.push({ i, j, strength });
     }
+  }
+  links.sort((p, q) => q.strength - p.strength);
+  for (const { i, j } of links) {
+    const [ri, rj] = [find(i), find(j)];
+    if (ri === rj) continue;
+    const [ni, nj] = [numberOf[ri], numberOf[rj]];
+    if (ni != null && nj != null && ni !== nj) continue;
+    parent[ri] = rj;
+    numberOf[rj] = nj ?? ni ?? null;
   }
   const byRoot = new Map<number, typeof signal>();
   signal.forEach((r, i) => (byRoot.get(find(i)) ?? byRoot.set(find(i), []).get(find(i))!).push(r));
