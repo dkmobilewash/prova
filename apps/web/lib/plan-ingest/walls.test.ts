@@ -23,6 +23,15 @@ describe("which sheets a whole-set run takes on", () => {
   it("passes over a sheet the title says is not a floor plan", () => {
     expect(wallsSkipReason(sheet({ sheetNumber: "A601", title: "DOOR SCHEDULE" }))).toBe("not a floor plan");
   });
+  it("passes over a life-safety, egress or code plan: a code drawing of the building, never the plan of the work (prereg-life-safety-plan.md)", () => {
+    // Aldrich's A001 LIFE-SAFETY PLAN is the whole existing school shaded "no work"; priced, it was the job's walls.
+    for (const title of ["LIFE-SAFETY PLAN", "LIFE SAFETY PLAN", "EGRESS PLAN", "CODE PLAN", "CODE ANALYSIS PLAN", "first floor life safety plan"]) {
+      expect(wallsSkipReason(sheet({ sheetNumber: "A001", title })), title).toBe("not a floor plan");
+    }
+    expect(wallsSkipReason(sheet({ title: "FIRST FLOOR PLAN" }))).toBeNull();
+    expect(wallsSkipReason(sheet({ title: "ENCODE PLAN" }))).toBeNull();
+    expect(floorPlansOfTheWork([sheet({ pageNumber: 18, sheetNumber: "A001", title: "LIFE-SAFETY PLAN" })])).toEqual([]);
+  });
   it("takes a sheet the inventory never named — unknown is not 'not a plan'", () => {
     expect(wallsSkipReason(sheet({ sheetNumber: null, title: null }))).toBeNull();
   });
