@@ -4414,7 +4414,8 @@ export function TakeoffPlanViewer({
             newRuns: offered.offeredRuns,
             feetPerUnit,
           });
-          runPrior = priorForRuns(lines, { segments: read.segments, widthPt: read.widthPt }, feetPerUnit, W);
+          // Only with the parity switch on: with it off, nothing new runs inside this try (prereg amendment 1).
+          if (liveHeldModels !== null) runPrior = priorForRuns(lines, { segments: read.segments, widthPt: read.widthPt }, feetPerUnit, W);
           if (lines.lines === null) {
             prior = { page: pageNumber, pairing, sheet, n: 0, feet: 0, why: lines.why };
           } else {
