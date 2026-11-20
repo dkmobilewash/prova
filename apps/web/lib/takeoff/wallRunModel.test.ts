@@ -83,4 +83,12 @@ describe("R, the paired-renovation model, behind TAKEOFF_WALL_RENO_MODEL", () =>
     expect(detect.indexOf("renoModelRemovals(input, renoModel)")).toBeLessThan(detect.indexOf("target.onBoundary({ pairings, segments: detected.found.inUnits, held"));
     expect(detect.match(/runScore = score/g)?.length).toBe(1);
   });
+
+  it("the zero-touch eval holds what R removes, with detection's inputs, after the run model's step", () => {
+    const zt = read("./realplan/zzZeroTouch.eval.ts");
+    expect(zt).toContain("const RENO_MODEL = loadRenoModel(process.env);");
+    expect(zt).toContain("if (RENO_MODEL !== null) for (const r of renoModelRemovals({ offered: runsBefore, kept: runs, pairings: scored, pairModel: setConfig.model, segments: strokes.segments, textItems, widthPt: W, feetPerUnit: fpu, ...(runPrior === undefined ? {} : { prior: runPrior }) }, RENO_MODEL)) held.add(r);");
+    expect(zt.indexOf("renoModelRemovals({ offered: runsBefore")).toBeGreaterThan(zt.indexOf("for (const r of verdicts.removed) held.add(r);"));
+    expect(zt.indexOf("renoModelRemovals({ offered: runsBefore")).toBeLessThan(zt.indexOf("const zeroLf = runs.reduce"));
+  });
 });
