@@ -96,6 +96,8 @@ import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { renovationMarks, showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
 import { DROPPED_LABEL, HELD_ITEM, HELD_LABEL, needsLookCount, reviewWrite, sameRun } from "@/lib/takeoff/estimateHold";
+import { heldOnSheet, type HeldModels } from "@/lib/takeoff/heldOnSheet";
+import { priorForRuns } from "@/lib/takeoff/wallRunVerdicts";
 import { nearestWallRun, sameRunAs } from "@/lib/takeoff/runMatch";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 import { TakeoffHeldWalls } from "./TakeoffHeldWalls";
@@ -367,6 +369,7 @@ export function TakeoffPlanViewer({
   doorScheduleRows = [],
   windowScheduleRows = [],
   wallModel = null,
+  liveHeldModels = null,
   ceilingPages = [],
   onMeasurementSaved,
   onUndoable,
@@ -521,6 +524,12 @@ export function TakeoffPlanViewer({
    * no model call. Null when no file is configured; inert with the switch off.
    */
   wallModel?: { model: WallModel; cut: number } | null;
+  /**
+   * The models server detection holds runs back with (`heldOnSheet`), sent only with TAKEOFF_LIVE_MODEL_PARITY
+   * on. With them, the live list is the offered runs less exactly the runs detection holds — the pairwise 0.55
+   * hold, the run model and R — instead of the configured-cut demotion alone (prereg-live-list-parity.md).
+   */
+  liveHeldModels?: HeldModels | null;
   /**
    * The plan's pages whose title block names a reflected ceiling plan or a
    * finish schedule. When the rooms are found, their text is read from the
@@ -3104,6 +3113,8 @@ export function TakeoffPlanViewer({
   const demoted = demote ? demotedRuns(labels, runsRef.current) : [];
   /** The model the find scores with — a ref, so the find callback need not re-bind on it. */
   const wallModelRef = useRef<{ model: WallModel; cut: number } | null>(null);
+  /** The runs `heldOnSheet` held on the last Run takeoff (indices into `runsRef`), so a rebuild keeps them off. */
+  const liveHeldRef = useRef<Set<number> | null>(null);
   wallModelRef.current = demote ? wallModel : null;
   const [hoveredDemoted, setHoveredDemoted] = useState<number | null>(null);
   // ── REVIEW WALLS: one run at a time, most doubted first. See `wallReview.ts`. ──
@@ -3129,7 +3140,7 @@ export function TakeoffPlanViewer({
   const rebuildFound = (dropped: Set<number>) => {
     const regroup = regroupRef.current;
     if (!regroup) return;
-    setFound(regroup(runsRef.current.filter((r, i) => !dropped.has(i) && !droppedOnJob(r) && !(labels?.get(i) && demotes(labels.get(i)!.label)))));
+    setFound(regroup(runsRef.current.filter((r, i) => !dropped.has(i) && !liveHeldRef.current?.has(i) && !droppedOnJob(r) && !(labels?.get(i) && demotes(labels.get(i)!.label)))));
   };
   // A drop from the set review lands as a dropped measurement; the sheet's total follows it.
   const droppedKey = (sheet?.measurements ?? []).filter((m) => m.label === DROPPED_LABEL).map((m) => m.id).sort().join(",");
@@ -4376,6 +4387,9 @@ export function TakeoffPlanViewer({
       };
       await stepDone("hand-back");
       let offered = answerKey !== undefined ? null : offerHere();
+      // Detection's run columns read the offer BEFORE the demolition compare and the aligned plan's lines and faces.
+      const beforeCompare = offered;
+      let runPrior: ReturnType<typeof priorForRuns>;
       // Key mode shows the raw runs; the customer offer is kept for when the mode turns off.
       if (answerKey !== undefined) customerOfferRef.current = { page: pageNumber, runs: offerHere().offeredRuns };
       else customerOfferRef.current = null;
@@ -4400,6 +4414,7 @@ export function TakeoffPlanViewer({
             newRuns: offered.offeredRuns,
             feetPerUnit,
           });
+          runPrior = priorForRuns(lines, { segments: read.segments, widthPt: read.widthPt }, feetPerUnit, W);
           if (lines.lines === null) {
             prior = { page: pageNumber, pairing, sheet, n: 0, feet: 0, why: lines.why };
           } else {
@@ -4439,8 +4454,31 @@ export function TakeoffPlanViewer({
       // not labelling mode, in which case every run scoring below the cut
       // leaves the list demoted — the same walls the finder's veto would have
       // dropped, kept on screen instead. See `modelVerdicts`.
+      // ── WITH TAKEOFF_LIVE_MODEL_PARITY: EXACTLY THE RUNS DETECTION HOLDS (`heldOnSheet`) ──
+      // The same function detection calls, with the same inputs and models, so the list a contractor watches is
+      // the list posting and auto-post use. It replaces the configured-cut demotion below, which only the screen had.
+      const liveHeld =
+        liveHeldModels !== null && offered !== null && beforeCompare !== null
+          ? new Set(
+              heldOnSheet(
+                {
+                  beforeCompare: beforeCompare.offeredRuns,
+                  kept: offered.offeredRuns,
+                  pairings,
+                  segments,
+                  textItems,
+                  widthPt: pageSize.widthPt,
+                  feetPerUnit,
+                  scanned: raster !== undefined,
+                  ...(runPrior === undefined ? {} : { prior: runPrior }),
+                },
+                liveHeldModels,
+              ).held.map((run) => walls.indexOf(run)),
+            )
+          : null;
+      liveHeldRef.current = liveHeld;
       const byModel =
-        wallModelRef.current !== null
+        liveHeld === null && wallModelRef.current !== null
           ? modelVerdicts(wallModelRef.current.model, wallModelRef.current.cut, walls, pairings, feetPerUnit, { scanned: raster !== undefined })
           : null;
       const doubted = byModel !== null && byModel.size > 0 ? byModel : null;
@@ -4507,8 +4545,8 @@ export function TakeoffPlanViewer({
       if (!quietFind.current) onResults?.();
       foundInKeyMode.current = answerKey !== undefined;
       setFound(
-        doubted !== null || runs.some(droppedOnJob)
-          ? regroup(runs.filter((r, at) => !doubted?.has(at) && !droppedOnJob(r)))
+        doubted !== null || liveHeld !== null || runs.some(droppedOnJob)
+          ? regroup(runs.filter((r, at) => !doubted?.has(at) && !liveHeld?.has(at) && !droppedOnJob(r)))
           : runs === found.walls
             ? found.groups
             : regroup(runs),
