@@ -242,6 +242,30 @@ export function newInfillLegend(rows: readonly TextRow[], existingRow: string, s
   return rows.some((r) => /^(?:\(N\)|NEW\b)/i.test(r.str.trim()) && !DEMOLITION.test(r.str) && swatch(r));
 }
 
+/**
+ * ── A LEGEND'S SAMPLE IS NOT A WALL (prereg-legend-new-infill.md, amendment 1) ──
+ *
+ * The swatch box of every legend row — LEGEND_EXISTING, LEGEND_NEW, or a row starting "(N)", "(E)",
+ * "NEW " or "EXIST" — in page-width units: left of the row from 0.2 to `INFILL_REACH_HEIGHTS` text
+ * heights, within one text height of its centre line. A run with both ends in one is the sample.
+ */
+export type SwatchBox = { x0: number; x1: number; cy: number; h: number };
+const LEGEND_ROW_START = /^(?:\(N\)|\(E\)|NEW\s|EXIST)/i;
+export function legendSwatchBoxes(rows: readonly TextRow[], widthPt: number): SwatchBox[] {
+  return rows
+    .filter((r) => LEGEND_EXISTING.test(r.str.trim()) || LEGEND_NEW.test(r.str.trim()) || LEGEND_ROW_START.test(r.str.trim()))
+    .map((r) => {
+      const h = r.height / widthPt;
+      const x1 = r.x / widthPt - 0.2 * h;
+      return { x0: x1 - INFILL_REACH_HEIGHTS * h, x1, cy: (r.y - r.height / 2) / widthPt, h };
+    });
+}
+export function inLegendSample(w: WallCandidate, boxes: readonly SwatchBox[], feetPerUnit: number): boolean {
+  const half = w.thicknessFeet / 2 / feetPerUnit;
+  const inBox = (b: SwatchBox, x: number, y: number) => x >= b.x0 && x <= b.x1 && Math.abs(y - b.cy) <= b.h + half;
+  return boxes.some((b) => inBox(b, w.x1, w.y1) && inBox(b, w.x2, w.y2));
+}
+
 /** Slack past a face an interior stroke's end may sit, in feet; a stroke this far off a face is not on it, as a share of the thickness. */
 const INFILL_END_SLACK_FEET = 0.1;
 const INFILL_OFF_FACE_SHARE = 0.1;
