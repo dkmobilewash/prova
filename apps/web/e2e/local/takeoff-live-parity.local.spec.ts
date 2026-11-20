@@ -100,7 +100,9 @@ test.describe("the customer's live list, for parity with server detection", () =
           declaredDistanceFeet: await form.locator('input[name="declaredDistanceFeet"]').inputValue(),
         };
         await form.getByRole("button", { name: "Set the scale" }).click();
-        await expect(page.getByText(/^Scale set/)).toBeVisible({ timeout: 60_000 });
+        // The form closing is the save, on a fresh sheet and on one whose printed scale was already applied
+        // (11 Chestnut A2.0 shows no "Scale set" line; the scale chip changes instead).
+        await expect(form).toHaveCount(0, { timeout: 60_000 });
         const find = page.locator('[data-takeoff="find-walls"]');
         await expect(find).toBeEnabled({ timeout: 60_000 });
         await find.click();
