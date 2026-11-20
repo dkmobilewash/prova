@@ -268,6 +268,14 @@ describe("a re-detect must not wipe the sheet", () => {
     expect(keepReview(reviewed(), fresh(["w0", "w1", "w2"])).traced).toHaveLength(2);
   });
 
+  it("KEEPS THE WALL TYPES, on accepted candidates and on traces (Permit-Drawings A1.01: 4 typed, 0 saved)", async () => {
+    const { setWallType } = await import("./answerKeyReview");
+    const base = reviewed();
+    const typed = setWallType(setWallType(base, ["w0"], "C"), [base.traced[0]!.id], "A");
+    const got = keepReview(typed, fresh(["w0", "w1", "w2"]));
+    expect(got.types).toEqual({ w0: "C", [base.traced[0]!.id]: "A" });
+  });
+
   it("takes the FRESH review when the sheet really was re-read", () => {
     // ── ONE MORE CANDIDATE IS A RE-READ AS FAR AS THIS FUNCTION GOES ──
     //
