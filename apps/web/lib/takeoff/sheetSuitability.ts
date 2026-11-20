@@ -103,7 +103,9 @@ const PREFIX_KINDS: ReadonlyArray<readonly [RegExp, string, string]> = [
  */
 export const NOT_A_FLOOR_PLAN_SHEET: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bCODE\b/i, "a code plan"],
-  [/\bLIFE\s+SAFETY\b/i, "a life-safety plan"],
+  // "LIFE-SAFETY" too: Aldrich's A001 LIFE-SAFETY PLAN (the whole existing school, shaded "no work") was Excell's
+  // only counted plan because of the hyphen (prereg-life-safety-plan.md, Diego 2026-11-21).
+  [/\bLIFE[-\s]+SAFETY\b/i, "a life-safety plan"],
   [/\bF\.?\s?F\.?\s?&?\s?E\.?\b/i, "an FF&E plan"],
   [/\bCEILING\s+PLAN\b/i, "a ceiling plan"],
   [/\bFIRE\s+PROTECTION\b/i, "a fire protection plan"],

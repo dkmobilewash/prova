@@ -61,7 +61,7 @@ const THUMB_WIDTH = 72;
  * turns a scroll into a forty-deep queue that is still draining after the user
  * has gone somewhere else.
  */
-function useThumbnails(planId: string, enabled: boolean) {
+export function useThumbnails(planId: string, enabled: boolean) {
   const [, bump] = useState(0);
   const cache = useRef(new Map<number, string>());
   const wanted = useRef(new Set<number>());
