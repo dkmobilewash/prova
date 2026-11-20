@@ -100,7 +100,7 @@ describe.skipIf(DIR === "" || LABELS === "")("view detection on the app's candid
       // captions only, placed by `viewsInRegions`, the primary view alone.
       const before = ((): SheetDetectResult => {
         const views = viewsInRegions(sheetViews(textItems, pageSize.widthPt), viewRegions(strokes.segments, pageSize));
-        const empty = { kept: [], others: [], leftOut: [] };
+        const empty = { kept: [], others: [], leftOut: [], textBlocks: [] };
         if (views.length < 2) {
           const drawing = drawingRegions(viewRegions(strokes.segments, pageSize), strokes.segments, pageSize.widthPt);
           return { found: findWallsOnSheet({ ...base, segments: segmentsInRegions(strokes.segments, drawing, pageSize.widthPt), wallTypes: [], sampledSheets: null }), planBoxes: drawing.length > 0 ? [...drawing] : null, views: views.length, primaryName: null, ...empty };

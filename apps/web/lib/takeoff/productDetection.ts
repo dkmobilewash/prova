@@ -112,6 +112,7 @@ export function productSheetRuns(input: {
     widthPt: W,
     feetPerUnit: input.feetPerUnit,
     planBoxes: input.detected.planBoxes,
+    textBlocks: input.detected.textBlocks,
     textItems: input.textItems,
     ...(input.user === undefined ? {} : { user: input.user }),
     ...(input.priorPlan === undefined ? {} : { priorPlan: input.priorPlan }),
