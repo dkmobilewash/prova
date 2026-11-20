@@ -45,14 +45,15 @@ test.describe("the customer's live list, for parity with server detection", () =
   test.setTimeout(1_500_000);
   let page: Page;
   let monitor: HealthMonitor;
-  let served: Buffer | null = null;
+  // A PATH, not the bytes: ELEVEN03 is 342 MB, and a body that size sent through `route.fulfill` ran the worker out of memory.
+  let served: string | null = null;
 
   test.beforeAll(async ({ browser }) => {
     page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
     monitor = new HealthMonitor(page);
     await page.route("**/api/takeoff/plan/**", async (route) => {
       if (served === null) return route.continue();
-      return route.fulfill({ status: 200, contentType: "application/pdf", body: served });
+      return route.fulfill({ status: 200, contentType: "application/pdf", path: served });
     });
     await signInAs(page, PERSONAS.takeoff.email);
     await landOnDashboard(page, monitor);
@@ -73,7 +74,7 @@ test.describe("the customer's live list, for parity with server detection", () =
       const full = path.join(PLANS, file);
       expect(existsSync(full), `${file} not in REAL_PLAN_DIR`).toBe(true);
       expect(readdirSync(PLANS).includes(file)).toBe(true);
-      served = readFileSync(full);
+      served = full;
       const id = await startJob(page, monitor, { name: `ZZ-E2E Live parity ${file.slice(0, 40)}`, gcName: "ZZ-E2E Live parity GC" });
       await finishWizard(page, monitor, id);
       await openJobTab(page, "Takeoff");
