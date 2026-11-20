@@ -226,6 +226,9 @@ export function legendPens(rows: readonly TextRow[], segments: readonly StrokeSe
  */
 export const INFILL_REACH_HEIGHTS = 14;
 export const INFILL_MIN_STROKES = 5;
+/** Amendment 2's join/collinear tolerances, as shares of the row's text height. */
+const INFILL_JOIN_HEIGHTS = 0.1;
+const INFILL_COLLINEAR_HEIGHTS = 0.05;
 export function newInfillLegend(rows: readonly TextRow[], existingRow: string, segments: readonly StrokeSegment[], widthPt: number): boolean {
   const swatch = (row: TextRow) => {
     const h = row.height / widthPt;
@@ -234,8 +237,36 @@ export function newInfillLegend(rows: readonly TextRow[], existingRow: string, s
     const inside = (x: number, y: number) => x >= x0 && x <= x1 && Math.abs(y - cy) <= h;
     const strokes = segments.filter((s) => inside(s.x1, s.y1) && inside(s.x2, s.y2));
     const dark = strokes.some((s) => s.fill !== undefined && s.fill < WHITE_FILL);
-    const pattern = strokes.filter((s) => Math.abs(s.y2 - s.y1) > 0.1 * Math.abs(s.x2 - s.x1)).length;
-    return dark || pattern >= INFILL_MIN_STROKES;
+    if (dark) return true;
+    // ── AMENDMENT 2 (prereg, second attempt): an empty sample whose only strokes are its own
+    // outline drawn twice plus a tag leader must read as EMPTY. Two ignores in the pattern count:
+    // a stroke chained to one that leaves the box (a leader, a callout circle's arc poking in),
+    // and duplicate collinear strokes (an outline's stroke + its fill path's edge count once).
+    const join = INFILL_JOIN_HEIGHTS * h, tol = INFILL_COLLINEAR_HEIGHTS * h;
+    const nearBox = (x: number, y: number) => x >= x0 - join && x <= x1 + join && Math.abs(y - cy) <= h + join;
+    const outsiders = segments.filter((s) => (nearBox(s.x1, s.y1) || nearBox(s.x2, s.y2)) && !(inside(s.x1, s.y1) && inside(s.x2, s.y2)));
+    const meets = (s: StrokeSegment, x: number, y: number) => Math.hypot(s.x1 - x, s.y1 - y) <= join || Math.hypot(s.x2 - x, s.y2 - y) <= join;
+    const chained = (s: StrokeSegment) => outsiders.some((o) => meets(o, s.x1, s.y1) || meets(o, s.x2, s.y2));
+    const nonH = strokes.filter((s) => Math.abs(s.y2 - s.y1) > 0.1 * Math.abs(s.x2 - s.x1) && !chained(s));
+    // Collinear overlapping (or touching) strokes are one group; the bar counts groups.
+    const sameLine = (a: StrokeSegment, b: StrokeSegment) => {
+      const l = Math.hypot(b.x2 - b.x1, b.y2 - b.y1);
+      const off = (x: number, y: number) => (l === 0 ? Math.hypot(x - b.x1, y - b.y1) : Math.abs(((x - b.x1) * (b.y2 - b.y1) - (y - b.y1) * (b.x2 - b.x1)) / l));
+      if (off(a.x1, a.y1) > tol || off(a.x2, a.y2) > tol) return false;
+      const t = (x: number, y: number) => (l === 0 ? 0 : ((x - b.x1) * (b.x2 - b.x1) + (y - b.y1) * (b.y2 - b.y1)) / l);
+      const [a0, a1] = [t(a.x1, a.y1), t(a.x2, a.y2)].sort((p, q) => p - q);
+      return a1 >= -tol && a0 <= l + tol;
+    };
+    const groups: StrokeSegment[][] = [];
+    for (const s of nonH) {
+      const mine = groups.filter((g) => g.some((t) => sameLine(s, t) || sameLine(t, s)));
+      if (mine.length === 0) groups.push([s]);
+      else {
+        mine[0].push(s);
+        for (const other of mine.slice(1)) { mine[0].push(...other); groups.splice(groups.indexOf(other), 1); }
+      }
+    }
+    return groups.length >= INFILL_MIN_STROKES;
   };
   const existing = rows.find((r) => r.str === existingRow);
   if (existing === undefined || swatch(existing)) return false;

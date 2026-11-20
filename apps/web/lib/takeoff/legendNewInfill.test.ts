@@ -19,6 +19,33 @@ const patternedNew = [...box(0.38, 0.132, 0.49, 0.138), ...ticks(0.38, 0.49, 0.1
 const rows = textRows([word("(E) PARTITION TO REMAIN", 100), word('(N) 6" MTL STUD PLUMBING WALL W/ 5/8" WR TYPE X', 140)]);
 
 describe("the legend draws its NEW types filled or patterned and its existing one empty", () => {
+  // ── AMENDMENT 2 (second attempt): Jane Hahan A2.1's real (E) swatch shape. The sample's outline is
+  // drawn TWICE (a stroked path and a white-fill path, byte-near-identical), and the NEXT row's detail
+  // callout circle pokes its top arc into the box. Six non-horizontal strokes, zero pattern.
+  const emptyExistingTwice = [...emptyExisting, ...box(0.38, 0.092, 0.49, 0.098, { width: 1.5 })];
+  // A callout circle's top arc poking over the box's bottom edge (y 0.105): two steep segments fully
+  // inside, each chained to a tail outside. `at` shifts it along x.
+  const calloutArc = (at: number) => [seg(at - 0.002, 0.106, at, 0.103), seg(at, 0.103, at + 0.0025, 0.1005), seg(at + 0.0025, 0.1005, at + 0.005, 0.103), seg(at + 0.005, 0.103, at + 0.007, 0.106)];
+
+  it("an empty sample whose outline is drawn twice, with a callout arc poking in, reads EMPTY (the second attempt's defect)", () => {
+    expect(newInfillLegend(rows, "(E) PARTITION TO REMAIN", [...emptyExistingTwice, ...calloutArc(0.4), ...patternedNew], W)).toBe(true);
+  });
+
+  it("duplicate collinear strokes count once: an outline drawn three times is still empty", () => {
+    const thrice = [...emptyExistingTwice, ...box(0.38, 0.092, 0.49, 0.098, { width: 0.2 })];
+    expect(newInfillLegend(rows, "(E) PARTITION TO REMAIN", [...thrice, ...patternedNew], W)).toBe(true);
+  });
+
+  it("a stroke chained to one leaving the box is a leader or callout, not a pattern", () => {
+    // One outline (2 caps) + two callout arcs (4 steep chained segments): empty, not 6 pattern strokes.
+    expect(newInfillLegend(rows, "(E) PARTITION TO REMAIN", [...emptyExisting, ...calloutArc(0.4), ...calloutArc(0.45), ...patternedNew], W)).toBe(true);
+  });
+
+  it("a genuinely patterned existing sample still blocks the read — ticks are distinct lines, never deduped", () => {
+    const patterned = [...emptyExistingTwice, ...ticks(0.38, 0.49, 0.0925, 0.0975, 12)];
+    expect(newInfillLegend(rows, "(E) PARTITION TO REMAIN", [...patterned, ...patternedNew], W)).toBe(false);
+  });
+
   it("reads so only when the existing sample is empty and a (N)/NEW sample carries a fill or a pattern", () => {
     expect(newInfillLegend(rows, "(E) PARTITION TO REMAIN", [...emptyExisting, ...patternedNew], W)).toBe(true);
     expect(newInfillLegend(rows, "(E) PARTITION TO REMAIN", [...emptyExisting, ...box(0.38, 0.132, 0.49, 0.138)], W), "the new sample is empty too").toBe(false);
