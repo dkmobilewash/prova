@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { advancePlanIngest, startPlanIngest, wholeSetTakeoffSummary } from "@/lib/actions";
+import { advancePlanIngest, chooseUploadProject, startPlanIngest, wholeSetTakeoffSummary } from "@/lib/actions";
+import type { ProjectQuestion } from "@/lib/plan-ingest/projectIdentity";
 import type { IngestView } from "@/lib/plan-ingest/runner";
 import type { WallsSummaryRow } from "@/lib/plan-ingest/walls";
 import { formatFeetInches } from "@/lib/feet-inches";
@@ -23,10 +24,13 @@ export function WholeSetTakeoffPanel({
   planId,
   existing,
   summary: initialSummary,
+  projects = null,
 }: {
   planId: string;
   existing: IngestView | null;
   summary: WallsSummaryRow[];
+  /** One upload, two projects (`projectIdentity.ts`, TAKEOFF_PROJECT_IDENTITY): the question, and the stored answer. */
+  projects?: ProjectQuestion | null;
 }) {
   const router = useRouter();
   const [view, setView] = useState<IngestView | null>(existing);
@@ -93,6 +97,27 @@ export function WholeSetTakeoffPanel({
     });
   }
 
+  function onChoose(pageNumber: number) {
+    setError(null);
+    startTransition(async () => {
+      const result = await chooseUploadProject(planId, pageNumber);
+      if (!alive.current) return;
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      await refreshSummary();
+      router.refresh();
+    });
+  }
+  // The sheet numbers a project's pages carry, from the summary's own labels ("A101 — FLOOR PLAN").
+  const labelOf = new Map(summary.map((row) => [row.pageNumber, row.label.split(" — ")[0]]));
+  const describe = (pages: number[]) => {
+    const numbers = pages.map((p) => labelOf.get(p)).filter((n): n is string => n !== undefined && !n.startsWith("Sheet "));
+    return `${pages.length} ${pages.length === 1 ? "sheet" : "sheets"}${numbers.length > 0 ? `: ${numbers.slice(0, 4).join(", ")}${numbers.length > 4 ? "…" : ""}` : ""}`;
+  };
+  const asking = projects !== null && projects.chosen === null;
+
   const counted = (row: WallsSummaryRow) => row.status.kind === "walls" && row.status.notCounted === undefined;
   const found = summary.filter(counted);
   const passed = summary.filter((row) => !counted(row) && (row.status.kind === "walls" || row.status.kind === "skipped" || row.status.kind === "looked"));
@@ -101,8 +126,55 @@ export function WholeSetTakeoffPanel({
 
   return (
     <section data-takeoff="whole-set" className="rounded-lg border border-line-card bg-surface p-4">
+      {projects !== null && asking && (
+        <div data-takeoff="which-project" className="mb-3">
+          {/* NEVER PICKED FOR THEM: no default, no pre-selection, upload order. Nothing is counted until they answer. */}
+          <p className="text-sm font-semibold text-ink-body">This upload has drawings from more than one project. Which one are you bidding?</p>
+          <p className="mt-1 text-xs text-ink-muted">No walls are counted until you choose. The other project&apos;s sheets stay in the set and are not counted.</p>
+          <ul className="mt-2 grid gap-2">
+            {projects.groups.map((group) => (
+              <li key={group.pages[0]}>
+                <button
+                  type="button"
+                  data-takeoff="choose-project"
+                  data-page={group.pages[0]}
+                  onClick={() => onChoose(group.pages[0]!)}
+                  disabled={pending}
+                  className="w-full rounded-md border border-line-card px-3 py-2 text-left text-sm text-ink-body hover:bg-rail-hover disabled:opacity-50"
+                >
+                  <span className="font-semibold">{group.label}</span>
+                  {group.lines.filter((line) => line !== group.label).slice(0, 2).map((line) => (
+                    <span key={line} className="block text-xs text-ink-muted">{line}</span>
+                  ))}
+                  <span className="block text-xs text-ink-muted">{describe(group.pages)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {projects !== null && projects.chosen !== null && (
+        <p data-takeoff="chosen-project" className="mb-3 text-xs text-ink-muted">
+          Taking off <span className="font-semibold text-ink-body">{projects.groups[projects.chosen]!.label}</span>.{" "}
+          {projects.groups.filter((_, i) => i !== projects.chosen).map((group) => (
+            <span key={group.pages[0]}>
+              {group.label} is another project in this upload and is not counted.{" "}
+              <button
+                type="button"
+                data-takeoff="switch-project"
+                data-page={group.pages[0]}
+                onClick={() => onChoose(group.pages[0]!)}
+                disabled={pending}
+                className="underline hover:text-ink-body disabled:opacity-50"
+              >
+                Take off {group.label} instead
+              </button>{" "}
+            </span>
+          ))}
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-3">
-        <button
+        {!asking && <button
           type="button"
           data-takeoff="find-walls-everywhere"
           onClick={onStart}
@@ -110,7 +182,7 @@ export function WholeSetTakeoffPanel({
           className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
         >
           {running ? "Finding walls…" : inRun ? "Continue finding walls" : "Find walls on every floor plan"}
-        </button>
+        </button>}
         {view && (
           <span data-takeoff="whole-set-progress" className="text-sm text-ink-body">
             {view.finished + view.exhausted} of {view.total} sheets

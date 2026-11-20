@@ -5,7 +5,7 @@ import { prisma } from "@prova/db";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { MAX_ATTEMPTS } from "@/lib/plan-ingest/runner";
-import { wholeSetSummary, type WallsSummaryRow } from "@/lib/plan-ingest/walls";
+import { uploadProjectQuestion, wholeSetSummary, type WallsSummaryRow } from "@/lib/plan-ingest/walls";
 import { actionFail, actionOk, ownerRefusal, type ActionResult, type ActionResultWith } from "./shared";
 
 /**
@@ -43,4 +43,22 @@ export async function wholeSetTakeoffSummary(planId: string): Promise<ActionResu
   const plan = await prisma.takeoffPlan.findFirst({ where: { id: planId, companyId: context.company.id }, select: { id: true } });
   if (!plan) return { ok: false, error: "That plan set could not be found." };
   return { ok: true, value: await wholeSetSummary(plan.id, context.company.id, MAX_ATTEMPTS) };
+}
+
+/**
+ * The user's answer to "this upload has drawings from more than one project — which one are you bidding?"
+ * (`lib/plan-ingest/projectIdentity.ts`). Named by one page of the chosen project; the server works out the project
+ * again and stores ITS pages, so a stale or hand-made page list cannot choose anything the question did not offer.
+ */
+export async function chooseUploadProject(planId: string, pageNumber: number): Promise<ActionResult> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const plan = await prisma.takeoffPlan.findFirst({ where: { id: planId, companyId: context.company.id }, select: { id: true, jobId: true } });
+  if (!plan) return actionFail("That plan set could not be found.");
+  const question = await uploadProjectQuestion(plan.id, context.company.id);
+  const group = question?.groups.find((g) => g.pages.includes(pageNumber));
+  if (!group) return actionFail("That project is no longer one of this upload's choices. Reload the page and choose again.");
+  await prisma.takeoffPlan.update({ where: { id: plan.id }, data: { projectPages: group.pages } });
+  revalidatePath(`/jobs/${plan.jobId}/takeoff`);
+  return actionOk;
 }
