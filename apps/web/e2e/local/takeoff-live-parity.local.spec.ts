@@ -76,6 +76,12 @@ test.describe("the customer's live list, for parity with server detection", () =
       expect(existsSync(full), `${file} not in REAL_PLAN_DIR`).toBe(true);
       expect(readdirSync(PLANS).includes(file)).toBe(true);
       served = full;
+      // A long walk outlives the dev instance's session (6-oth: "Start the job" answered 404 → /sign-in after ~4 min).
+      await page.goto("/dashboard");
+      if (page.url().includes("/sign-in")) {
+        await signInAs(page, PERSONAS.takeoff.email);
+        await landOnDashboard(page, monitor);
+      }
       const id = await startJob(page, monitor, { name: `ZZ-E2E Live parity ${file.slice(0, 40)}`, gcName: "ZZ-E2E Live parity GC" });
       await finishWizard(page, monitor, id);
       await openJobTab(page, "Takeoff");
