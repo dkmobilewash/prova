@@ -73,7 +73,7 @@ test.describe("the customer's live list, for parity with server detection", () =
   // `route.fulfill` hands the browser the whole file at once; at 99-342 MB that crashed the browser (Joplin) or
   // the worker (ELEVEN03). The viewer asks by HTTP range (PLAN_PDF_TRANSPORT), so for those sets the request is
   // continued to a local server that answers ranges. Smaller sets keep the whole-file answer every walk used.
-  const BIG = 90 * 1024 * 1024;
+  const BIG = 80 * 1024 * 1024; // 80, not 90: CENTRAL Bank (88 MB) crashed the browser too; no set over 80 MB was walked before this line moved.
   let rangeServer: Server | null = null;
   let rangePort = 0;
   test.afterAll(() => rangeServer?.close());
