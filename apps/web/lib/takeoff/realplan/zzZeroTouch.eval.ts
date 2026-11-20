@@ -14,7 +14,7 @@ import { autoPairs } from "../priorPlanLoad";
 import { doorsAndWindowsForSheet } from "../doorsWindows";
 import { sheetStrokes } from "../sheetStrokes";
 import { loadWallModel } from "../wallModelFile";
-import { loadRunModel, priorForRuns, runModelVerdicts } from "../wallRunModel";
+import { loadRenoModel, loadRunModel, priorForRuns, renoModelRemovals, runModelVerdicts } from "../wallRunModel";
 import { reviewOrder, runScores } from "../wallReview";
 import type { WallCandidate } from "../wallVectors";
 import { setFigures, setHeightRule, wallHeightChain, type SetFigures, type SetHeightRule, type WallHeightConvention } from "../heightsByCode";
@@ -134,6 +134,14 @@ if (HEIGHTS !== "" && existsSync(HEIGHTS)) {
  * totals print ON/OFF so a run can never be silently vacuous about which arm it measured.
  */
 const RUN_MODEL = loadRunModel(process.env);
+/**
+ * R, THE PAIRED-RENOVATION MODEL, AS DETECTION RUNS IT (`detectWallsForCalibration.ts`): set
+ * TAKEOFF_WALL_RENO_MODEL and, on a renovation sheet paired with its demolition plan, every kept run
+ * the hand chain posts and R scores below 0.10 is held off too — a run either model removes is held.
+ * Missing from this eval until 2026-11-19, so its paired-renovation junk counted walls the product
+ * holds. The totals print ON/OFF for the same reason as the run model's.
+ */
+const RENO_MODEL = loadRenoModel(process.env);
 
 const flat = (s: string) => s.replace(/\.pdf$/i, "").replace(/[^a-z0-9]+/gi, "").toUpperCase();
 const findPdf = (dir: string) => {
@@ -261,6 +269,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           const verdicts = runModelVerdicts({ offered: runsBefore, kept: runs, pairings: scored, pairModel: setConfig.model, segments: strokes.segments, textItems, widthPt: W, feetPerUnit: fpu, ...(runPrior === undefined ? {} : { prior: runPrior }) }, RUN_MODEL);
           for (const r of verdicts.removed) held.add(r);
         }
+        if (RENO_MODEL !== null) for (const r of renoModelRemovals({ offered: runsBefore, kept: runs, pairings: scored, pairModel: setConfig.model, segments: strokes.segments, textItems, widthPt: W, feetPerUnit: fpu, ...(runPrior === undefined ? {} : { prior: runPrior }) }, RENO_MODEL)) held.add(r);
         const zeroLf = runs.reduce((n, r) => n + (held.has(r) ? 0 : r.lengthFeet), 0);
         // N presses, answered from the key, in the shipped order.
         const junk = runs.map((r) => scoreSheet({ set: dir, sheet, key, proposed: [{ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFeet: r.lengthFeet, thicknessFeet: r.thicknessFeet } as ScoredRun], feetPerUnit: fpu }).extraFeet >= 0.5 * r.lengthFeet);
@@ -399,6 +408,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     }
     const group = HELD ? "HELD-OUT" : "TRAINING";
     console.log(`ZT RUNMODEL ${group}: ${RUN_MODEL === null ? "OFF (TAKEOFF_WALL_RUN_MODEL unset)" : "ON (remove-only below 0.10)"}`);
+    console.log(`ZT RENOMODEL ${group}: ${RENO_MODEL === null ? "OFF (TAKEOFF_WALL_RENO_MODEL unset)" : "ON (paired renovation sheets, remove-only below 0.10)"}`);
     console.log(`ZT ROOMSIDES ${group}: ON — rooms ${rsRooms} · run walls ${rsWalls} · heights moved by room sides ${rsMoved}`);
     console.log(`ZT KEYZONES ${group}: ON — key walls priced sheet-zone ${kzSheet} · room-zone ${kzRoom} · zone-unresolved ${kzUnresolved}`);
     let zb = 0, kb = 0, tb = 0;
