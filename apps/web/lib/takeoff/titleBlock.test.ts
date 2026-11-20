@@ -26,14 +26,21 @@ describe("the title block is read off the sheet's own ruled boundary", () => {
     expect(titleBlockRegions([...frame, seg(800, 200, 800, 650)], titleWords, W), "spans half the page, not 0.85").toHaveLength(0);
   });
 
-  it("a large PLAN caption beyond the rule says drawing, not title block", () => {
-    const withCaption = [...titleWords, word("ATTIC FLOOR PLAN", 810, 400, 14)];
-    expect(titleBlockRegions([...frame, divider], withCaption, W)).toHaveLength(0);
+  it("SCALE and DATE are not title words: two of them alone qualify nothing", () => {
+    const ambient = [word('SCALE: 1/4" = 1\'-0"', 810, 100), word("DATE 4.25.18", 810, 300)];
+    expect(titleBlockRegions([...frame, divider], ambient, W)).toHaveLength(0);
+  });
+
+  it("stacked panel borders at one x chain into one boundary (Old Town Hall's shape)", () => {
+    const pieces = [seg(800, 8, 800, 150), seg(800, 155, 800, 400), seg(800, 404, 800, 690)];
+    expect(titleBlockRegions([...frame, ...pieces], titleWords, W)).toHaveLength(1);
+    const gappy = [seg(800, 8, 800, 150), seg(800, 300, 800, 690)];
+    expect(titleBlockRegions([...frame, ...gappy], titleWords, W), "a 150 pt hole is not a chain").toHaveLength(0);
   });
 
   it("a bottom title band: the highest qualifying full-width rule in the bottom 15%", () => {
     const band = seg(8, 620, 992, 620);
-    const below = [word("PROJECT NO. 22034", 100, 650), word("DATE 01.10.25", 400, 650)];
+    const below = [word("PROJECT NO. 22034", 100, 650), word("REVISIONS", 400, 650)];
     const boxes = titleBlockRegions([...frame, band], below, W);
     expect(boxes).toHaveLength(1);
     expect(boxes[0].fromY).toBeCloseTo(0.62, 5);
