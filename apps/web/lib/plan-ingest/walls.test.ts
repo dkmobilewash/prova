@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { areaOfTitle, floorPlansOfTheWork, roomsNoteFor, wallsNoteFor, wallsPlan, wallsSkipReason, wallsSummaryRows, wallsTaskPages, type WallsSheet } from "./walls";
+import { areaOfTitle, floorPlansOfTheWork, planOfWork, roomsNoteFor, wallsNoteFor, wallsPlan, wallsSkipReason, wallsSummaryRows, wallsTaskPages, type WallsSheet } from "./walls";
 
 const sheet = (over: Partial<WallsSheet> = {}): WallsSheet => ({
   pageNumber: 1,
@@ -22,6 +22,15 @@ describe("which sheets a whole-set run takes on", () => {
   });
   it("passes over a sheet the title says is not a floor plan", () => {
     expect(wallsSkipReason(sheet({ sheetNumber: "A601", title: "DOOR SCHEDULE" }))).toBe("not a floor plan");
+  });
+  it("passes over a life-safety, egress or code plan: a code drawing of the building, never the plan of the work (prereg-life-safety-plan.md)", () => {
+    // Aldrich's A001 LIFE-SAFETY PLAN is the whole existing school shaded "no work"; priced, it was the job's walls.
+    for (const title of ["LIFE-SAFETY PLAN", "LIFE SAFETY PLAN", "EGRESS PLAN", "CODE PLAN", "CODE ANALYSIS PLAN", "first floor life safety plan", "LIFE-SAFETY FLOOR PLAN", "FIRST FLOOR LIFE-SAFETY FLOOR PLAN"]) {
+      expect(wallsSkipReason(sheet({ sheetNumber: "A001", title })), title).toBe("not a floor plan");
+    }
+    expect(wallsSkipReason(sheet({ title: "FIRST FLOOR PLAN" }))).toBeNull();
+    expect(wallsSkipReason(sheet({ title: "ENCODE PLAN" }))).toBeNull();
+    expect(floorPlansOfTheWork([sheet({ pageNumber: 18, sheetNumber: "A001", title: "LIFE-SAFETY PLAN" })])).toEqual([]);
   });
   it("takes a sheet the inventory never named — unknown is not 'not a plan'", () => {
     expect(wallsSkipReason(sheet({ sheetNumber: null, title: null }))).toBeNull();
@@ -307,5 +316,57 @@ describe("one sheet number printed twice is measured once (Bluetooth AI101 CONST
   it("different numbers are untouched", () => {
     const plan = wallsPlan([{ pageNumber: 6, sheetNumber: "AI101", title: "CONSTRUCTION PLAN", hasScale: true, hasWalls: false }, { pageNumber: 7, sheetNumber: "AI102", title: "CONSTRUCTION PLAN", hasScale: true, hasWalls: false }]);
     expect(plan.get(7)).toBeNull();
+  });
+});
+
+describe("planOfWork: a project the run would count nothing on asks which sheet is the plan of the work (Diego 2026-11-21)", () => {
+  // Excell's side of Aldrich once Kurita is set aside and its LIFE-SAFETY plan is refused: nothing left to count.
+  const excell: WallsSheet[] = [
+    sheet({ pageNumber: 18, sheetNumber: "A001", title: "LIFE-SAFETY PLAN" }),
+    sheet({ pageNumber: 26, sheetNumber: "A111", title: "ENLARGED FLOOR PLAN; TOILET PLANS AND ELEVATIONS; ASSEMBLIES" }),
+    sheet({ pageNumber: 27, sheetNumber: "A300", title: "EXTERIOR ELEVATIONS, BUILDING SECTIONS" }),
+    sheet({ pageNumber: 28, sheetNumber: "E-0.0", title: "SITE PHOTOMETRICS PLAN" }),
+    sheet({ pageNumber: 66, sheetNumber: "A101", title: "GROUND LEVEL FLOOR PLAN", project: "other project" }),
+  ];
+
+  it("unanswered: it asks, offering the project's own architectural plans (not a trade sheet, not the other project), and counts nothing", () => {
+    const got = planOfWork(excell, []);
+    expect(got.question).toEqual({ candidates: [18, 26], chosen: [] });
+    expect(wallsTaskPages(got.sheets)).toEqual([]);
+  });
+
+  it("answered: the chosen sheet is counted, though its title alone would refuse it, and the workspace opens there", () => {
+    const got = planOfWork(excell, [26]);
+    expect(got.question).toEqual({ candidates: [18, 26], chosen: [26] });
+    expect(wallsTaskPages(got.sheets)).toEqual([26]);
+    expect(floorPlansOfTheWork(got.sheets)).toEqual([26]);
+  });
+
+  it("two chosen sheets are both counted: the contractor's word is not folded into 'same level'", () => {
+    expect(wallsTaskPages(planOfWork(excell, [18, 26]).sheets)).toEqual([18, 26]);
+  });
+
+  it("two chosen sheets that name the same floor are both counted, not one 'same level as' the other", () => {
+    const sameFloor = [
+      sheet({ pageNumber: 1, sheetNumber: "A101", title: "FIRST FLOOR LIFE SAFETY FLOOR PLAN" }),
+      sheet({ pageNumber: 2, sheetNumber: "A401", title: "FIRST FLOOR ENLARGED PLAN; ASSEMBLIES" }),
+    ];
+    expect(wallsTaskPages(sameFloor)).toEqual([]);
+    expect(wallsTaskPages(planOfWork(sameFloor, [1, 2]).sheets)).toEqual([1, 2]);
+  });
+
+  it("a set the run already counts a plan on asks nothing, whatever was stored", () => {
+    const counted = [sheet({ pageNumber: 3 }), sheet({ pageNumber: 4, sheetNumber: "A300", title: "ELEVATIONS" })];
+    expect(planOfWork(counted, []).question).toBeNull();
+    expect(planOfWork(counted, [4]).sheets).toEqual(counted);
+  });
+
+  it("while the which-project question is unanswered, this question waits for it", () => {
+    expect(planOfWork(excell.map((s) => ({ ...s, project: "unasked" as const })), []).question).toBeNull();
+  });
+
+  it("with no sheet titled as a plan, every sheet of the project is a candidate rather than none", () => {
+    const untitled = [sheet({ pageNumber: 1, sheetNumber: "PP1.1", title: "PRICING PACKAGE" }), sheet({ pageNumber: 2, sheetNumber: "PP1.2", title: "NOTES" })];
+    expect(planOfWork(untitled.map((s) => ({ ...s, title: s.title + " SCHEDULE" })), []).question?.candidates).toEqual([1, 2]);
   });
 });
