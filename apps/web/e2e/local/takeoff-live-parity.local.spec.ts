@@ -1,5 +1,6 @@
 import path from "node:path";
-import { appendFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { appendFileSync, createReadStream, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { createServer, type Server } from "node:http";
 import { test, expect, type Page } from "@playwright/test";
 import { signInAs } from "../lib/signIn";
 import { PERSONAS } from "../lib/personas";
@@ -68,16 +69,38 @@ test.describe("the customer's live list, for parity with server detection", () =
   // A PATH, not the bytes: ELEVEN03 is 342 MB, and a body that size sent through `route.fulfill` ran the worker out of memory.
   let served: string | null = null;
 
+  // ── A SET OVER 90 MB IS SERVED BY RANGE, as production serves every plan ──
+  // `route.fulfill` hands the browser the whole file at once; at 99-342 MB that crashed the browser (Joplin) or
+  // the worker (ELEVEN03). The viewer asks by HTTP range (PLAN_PDF_TRANSPORT), so for those sets the request is
+  // continued to a local server that answers ranges. Smaller sets keep the whole-file answer every walk used.
+  const BIG = 90 * 1024 * 1024;
+  let rangeServer: Server | null = null;
+  let rangePort = 0;
+  test.afterAll(() => rangeServer?.close());
+
   test.beforeAll(async ({ browser }) => {
     page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
     monitor = new HealthMonitor(page);
+    rangeServer = createServer((req, res) => {
+      if (served === null) return void res.writeHead(404).end();
+      const size = statSync(served).size;
+      const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range ?? "");
+      const headers = { "Content-Type": "application/pdf", "Accept-Ranges": "bytes", "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "Accept-Ranges, Content-Range, Content-Length" };
+      if (m === null) {
+        res.writeHead(200, { ...headers, "Content-Length": String(size) });
+        return void createReadStream(served).pipe(res);
+      }
+      const start = Number(m[1]);
+      const end = m[2] === "" ? size - 1 : Math.min(Number(m[2]), size - 1);
+      res.writeHead(206, { ...headers, "Content-Length": String(end - start + 1), "Content-Range": `bytes ${start}-${end}/${size}` });
+      createReadStream(served, { start, end }).pipe(res);
+    });
+    await new Promise<void>((resolve) => rangeServer!.listen(0, "127.0.0.1", () => resolve()));
+    rangePort = (rangeServer.address() as { port: number }).port;
     await page.route("**/api/takeoff/plan/**", async (route) => {
       if (served === null) return route.continue();
-      return route.fulfill({
-        status: 200,
-        contentType: "application/pdf",
-        path: served,
-      });
+      if (statSync(served).size > BIG) return route.continue({ url: `http://127.0.0.1:${rangePort}/plan.pdf` });
+      return route.fulfill({ status: 200, contentType: "application/pdf", path: served });
     });
     await signInAs(page, PERSONAS.takeoff.email);
     await landOnDashboard(page, monitor);
