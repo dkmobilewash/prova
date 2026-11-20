@@ -270,6 +270,14 @@ function onAPlan(sheet: DetectedSheet, x1: number, y1: number, x2: number, y2: n
  */
 export const LEGEND_NEW_INFILL = process.env.NEXT_PUBLIC_TAKEOFF_LEGEND_NEW_INFILL === "1";
 
+/**
+ * LEGEND-SAMPLE (prereg-legend-sample.md): a run drawn inside a legend row's swatch box is the
+ * legend's own sample, never a wall. ON by default; "0" is the measurement's OFF arm and the
+ * emergency off, not a feature flag. Split out of `LEGEND_NEW_INFILL` on Diego's order after the
+ * infill rule failed its ship rule but this half measured as pure junk removal.
+ */
+export const LEGEND_SAMPLE = process.env.NEXT_PUBLIC_TAKEOFF_LEGEND_SAMPLE !== "0";
+
 export function offeredCandidates(
   sheet: DetectedSheet,
   /** Also offer the HATCH-classed set-asides, for a reviewer judging them. */
@@ -346,7 +354,7 @@ export function offeredCandidates(
   let zeroExtent = 0;
   const underlines: WallCandidate[] = [];
   const legendSamples: WallCandidate[] = [];
-  const swatches = LEGEND_NEW_INFILL && sheet.textItems !== undefined ? legendSwatchBoxes(textRows(sheet.textItems), sheet.widthPt) : [];
+  const swatches = LEGEND_SAMPLE && sheet.textItems !== undefined ? legendSwatchBoxes(textRows(sheet.textItems), sheet.widthPt) : [];
   const onPlan = sheet.walls.filter((w) => {
     // A run with no extent — a closed loop's chord, a degenerate merge — is
     // nothing a reviewer can draw, accept or join, whatever its `lengthFeet`
@@ -357,7 +365,7 @@ export function offeredCandidates(
       return false;
     }
     if (!onAPlan(sheet, w.x1, w.y1, w.x2, w.y2)) return false;
-    // A legend's sample, beside its row — see `legendSwatchBoxes` (behind TAKEOFF_LEGEND_NEW_INFILL).
+    // A legend's sample, beside its row — see `legendSwatchBoxes` (LEGEND_SAMPLE, on by default).
     if (swatches.length > 0 && inLegendSample(w, swatches, sheet.feetPerUnit)) {
       legendSamples.push(w);
       return false;

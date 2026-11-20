@@ -13,8 +13,12 @@ import type { StrokeSegment, WallCandidate } from "./wallVectors";
  * and a notes column ruled in pairs a wall's thickness apart, a legend whose samples ARE wall pairs, and
  * single dashed grid lines running edge to edge between bubbles. 1,000 x 700 pt at 1/10 ft per point.
  *
- * Measured WITH `TAKEOFF_LEGEND_NEW_INFILL` on (prereg-legend-new-infill.md): without it the legend's
- * samples, drawn as wall pairs on a sheet measured whole, are offered — this guard is what found that.
+ * Runs at the PRODUCT'S OWN DEFAULTS (no env stubbed): what it asserts is what main plus the
+ * LEGEND-SAMPLE rule (prereg-legend-sample.md, on by default) guarantees. The legend's samples, drawn
+ * as wall pairs on a sheet measured whole, were offered before that rule — this guard is what found it.
+ * Parts that WAIT ON FUTURE RULES, deliberately not asserted: rules drawn in PAIRS a wall's thickness
+ * apart outside the plan on a single-view sheet (the KNOWN GAP below), and patterned-wall RECALL (the
+ * parked infill rule, `TAKEOFF_LEGEND_NEW_INFILL`, off by default after failing its ship rule).
  */
 const W = 1000, H = 700, FPU = 100;
 const seg = (x1: number, y1: number, x2: number, y2: number): StrokeSegment => ({ x1, y1, x2, y2, width: 0.7, gray: 0 });
@@ -52,15 +56,16 @@ const textItems = [
 
 describe("the customer offer on an invented sheet with a title block, notes, a legend and grid lines", () => {
   let offered: WallCandidate[] = [];
-  beforeAll(async () => {
-    vi.stubEnv("NEXT_PUBLIC_TAKEOFF_LEGEND_NEW_INFILL", "1");
+  const run = async () => {
     vi.resetModules();
-    const { detectForSheet, offeredCandidates, LEGEND_NEW_INFILL } = await import("./offeredCandidates");
-    expect(LEGEND_NEW_INFILL, "the flag reached the module").toBe(true);
+    const { detectForSheet, offeredCandidates } = await import("./offeredCandidates");
     const segments = [...plan, ...grid, ...titleBlock, ...notes, ...legend];
     const d = detectForSheet({ segments, textItems, pageSize: { widthPt: W, heightPt: H }, feetPerUnit: FPU });
-    offered = offeredCandidates({ walls: d.found.walls, segments: d.found.inUnits.map((u) => ({ ...u, x1: u.x1 * W, y1: u.y1 * W, x2: u.x2 * W, y2: u.y2 * W })), pageSegments: segments, widthPt: W, feetPerUnit: FPU, planBoxes: d.planBoxes, textItems }).offeredRuns;
-    vi.unstubAllEnvs();
+    return offeredCandidates({ walls: d.found.walls, segments: d.found.inUnits.map((u) => ({ ...u, x1: u.x1 * W, y1: u.y1 * W, x2: u.x2 * W, y2: u.y2 * W })), pageSegments: segments, widthPt: W, feetPerUnit: FPU, planBoxes: d.planBoxes, textItems }).offeredRuns;
+  };
+  beforeAll(async () => {
+    // The product's own defaults: no env stubbed, so this is what every customer sees.
+    offered = await run();
   });
 
   it("offers the plan's walls", () => {
@@ -76,5 +81,14 @@ describe("the customer offer on an invented sheet with a title block, notes, a l
   it("offers no run along a grid line", () => {
     const onGrid = offered.filter((r) => [140, 380].some((y) => Math.abs(r.y1 * W - y) < 3 && Math.abs(r.y2 * W - y) < 3));
     expect(onGrid).toEqual([]);
+  });
+
+  it("the kill switch exists and the rule is really wired: with LEGEND_SAMPLE off, the legend's samples come back", async () => {
+    vi.stubEnv("NEXT_PUBLIC_TAKEOFF_LEGEND_SAMPLE", "0");
+    const off = await run();
+    vi.unstubAllEnvs();
+    vi.resetModules();
+    const samples = off.filter((r) => [470, 510, 550].some((y) => Math.abs(r.y1 * W - y) < 8) && r.x1 * W > 700);
+    expect(samples.length, "legend samples offered again when the rule is off").toBeGreaterThan(0);
   });
 });
