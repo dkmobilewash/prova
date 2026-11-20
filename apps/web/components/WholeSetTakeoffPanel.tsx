@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { advancePlanIngest, chooseUploadProject, startPlanIngest, wholeSetTakeoffSummary } from "@/lib/actions";
+import { advancePlanIngest, choosePlanOfWork, chooseUploadProject, startPlanIngest, wholeSetTakeoffSummary } from "@/lib/actions";
+import type { PlanOfWorkQuestion } from "@/lib/plan-ingest/walls";
+import { useThumbnails } from "@/components/TakeoffSheetTree";
 import type { ProjectQuestion } from "@/lib/plan-ingest/projectIdentity";
 import type { IngestView } from "@/lib/plan-ingest/runner";
 import type { WallsSummaryRow } from "@/lib/plan-ingest/walls";
@@ -25,12 +27,15 @@ export function WholeSetTakeoffPanel({
   existing,
   summary: initialSummary,
   projects = null,
+  planQuestion = null,
 }: {
   planId: string;
   existing: IngestView | null;
   summary: WallsSummaryRow[];
   /** One upload, two projects (`projectIdentity.ts`, TAKEOFF_PROJECT_IDENTITY): the question, and the stored answer. */
   projects?: ProjectQuestion | null;
+  /** No floor plan for the run to count (`planOfWork`, same flag): which sheet(s) are the plan of the work. */
+  planQuestion?: PlanOfWorkQuestion | null;
 }) {
   const router = useRouter();
   const [view, setView] = useState<IngestView | null>(existing);
@@ -117,6 +122,32 @@ export function WholeSetTakeoffPanel({
     return `${pages.length} ${pages.length === 1 ? "sheet" : "sheets"}${numbers.length > 0 ? `: ${numbers.slice(0, 4).join(", ")}${numbers.length > 4 ? "…" : ""}` : ""}`;
   };
   const asking = projects !== null && projects.chosen === null;
+  // NOTHING IS PRE-TICKED the first time: the contractor names the plan of the work, the panel never guesses it.
+  const [picked, setPicked] = useState<number[]>(planQuestion?.chosen ?? []);
+  const [changing, setChanging] = useState(false);
+  const askingPlan = !asking && planQuestion !== null && (planQuestion.chosen.length === 0 || changing);
+  const thumbs = useThumbnails(planId, askingPlan);
+  const rowLabel = new Map(summary.map((row) => [row.pageNumber, row.label]));
+  const candidateKey = planQuestion?.candidates.join(",") ?? "";
+  useEffect(() => {
+    // A picture of each sheet offered, one PDF render apiece, serialised by the hook (TakeoffSheetTree's own).
+    if (askingPlan) for (const page of candidateKey.split(",").filter(Boolean)) thumbs.request(Number(page));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `thumbs` is a fresh object each render over stable refs
+  }, [askingPlan, candidateKey]);
+  function onChoosePlan() {
+    setError(null);
+    startTransition(async () => {
+      const result = await choosePlanOfWork(planId, picked);
+      if (!alive.current) return;
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setChanging(false);
+      await refreshSummary();
+      router.refresh();
+    });
+  }
 
   const counted = (row: WallsSummaryRow) => row.status.kind === "walls" && row.status.notCounted === undefined;
   const found = summary.filter(counted);
@@ -173,8 +204,52 @@ export function WholeSetTakeoffPanel({
           ))}
         </p>
       )}
+      {askingPlan && planQuestion !== null && (
+        <div data-takeoff="which-plan" className="mb-3">
+          <p className="text-sm font-semibold text-ink-body">No floor plan to count was found in this set. Which sheet shows the work?</p>
+          <p className="mt-1 text-xs text-ink-muted">Nothing is counted until you choose. Tick every sheet that is a plan of the work.</p>
+          <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+            {planQuestion.candidates.map((page) => {
+              const src = thumbs.get(page);
+              return (
+                <li key={page}>
+                  <label className="flex cursor-pointer items-center gap-3 rounded-md border border-line-card p-2 text-sm text-ink-body hover:bg-rail-hover">
+                    <input
+                      type="checkbox"
+                      data-takeoff="plan-candidate"
+                      data-page={page}
+                      className="h-5 w-5 shrink-0"
+                      checked={picked.includes(page)}
+                      onChange={(event) => setPicked((now) => (event.target.checked ? [...now, page] : now.filter((p) => p !== page)))}
+                    />
+                    {src ? <img src={src} alt="" className="w-[72px] shrink-0 border border-line-row" /> : <span className="h-[48px] w-[72px] shrink-0 border border-line-row" />}
+                    <span>{rowLabel.get(page) ?? `Sheet ${page}`}</span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+          <button
+            type="button"
+            data-takeoff="count-plan"
+            onClick={onChoosePlan}
+            disabled={pending || picked.length === 0}
+            className="mt-2 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-yellow-500 disabled:opacity-50"
+          >
+            {picked.length === 1 ? "Count this sheet" : "Count these sheets"}
+          </button>
+        </div>
+      )}
+      {!asking && !askingPlan && planQuestion !== null && planQuestion.chosen.length > 0 && (
+        <p data-takeoff="chosen-plan" className="mb-3 text-xs text-ink-muted">
+          Counting {planQuestion.chosen.map((page) => (rowLabel.get(page) ?? `sheet ${page}`).split(" — ")[0]).join(", ")}: you named {planQuestion.chosen.length === 1 ? "it" : "them"} the plan of the work.{" "}
+          <button type="button" data-takeoff="change-plan" onClick={() => setChanging(true)} className="underline hover:text-ink-body">
+            Change
+          </button>
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-3">
-        {!asking && <button
+        {!asking && !askingPlan && <button
           type="button"
           data-takeoff="find-walls-everywhere"
           onClick={onStart}

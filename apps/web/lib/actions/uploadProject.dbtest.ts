@@ -12,8 +12,8 @@ import { prisma } from "@prova/db";
 const context = { company: { id: "" }, id: "", role: "OWNER" as string, jobFunction: null as string | null };
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-const { chooseUploadProject } = await import("./wholeSetTakeoff");
-const { uploadProjectQuestion, wallsSheetsFor, wallsTaskPages, wholeSetSummary } = await import("@/lib/plan-ingest/walls");
+const { chooseUploadProject, choosePlanOfWork } = await import("./wholeSetTakeoff");
+const { planOfWorkQuestion, uploadProjectQuestion, wallsSheetsFor, wallsTaskPages, wholeSetSummary } = await import("@/lib/plan-ingest/walls");
 
 const CERTIFY = ["WAS PREPARED BY ME OR UNDER MY DIRECT SUPERVISION", "LAWS OF THE STATE OF MINNESOTA"];
 const excell = (sheet: string) => ["U+B ARCHITECTURE & DESIGN, INC.", "2609 ALDRICH AVENUE SOUTH SUITE 100", "Excell Academy for Higher Learning", "Project: 2019015_EXC-6", ...CERTIFY, sheet].join("\n");
@@ -27,6 +27,7 @@ const SHEETS: [number, string, string, string][] = [
 ];
 
 let planId = "";
+let excellOnly = "";
 const before = process.env.TAKEOFF_PROJECT_IDENTITY;
 
 beforeAll(async () => {
@@ -42,6 +43,18 @@ beforeAll(async () => {
       data: { ingestJobId, planId, pageNumber, proposedSheetNumber: number, proposedTitle: title, proposedReason: "read from the title block", proposedConfidence: "HIGH", model: "keyless", promptVersion: "keyless" },
     });
     const page = await prisma.takeoffPlanPage.create({ data: { planId, pageNumber, pageWidthPt: 2592 } });
+    await prisma.takeoffScaleCalibration.create({ data: { pageId: page.id, x1: 0.1, y1: 0.5, x2: 0.6, y2: 0.5, declaredDistanceFeet: "72" } });
+  }
+  // Excell's own sheets uploaded alone: its life-safety plan refused, its enlarged floor plan refused for sharing the
+  // sheet with toilet elevations, so the run has nothing to count.
+  excellOnly = (await prisma.takeoffPlan.create({ data: { companyId, jobId, fileUrl: "https://example.test/excell.pdf" } })).id;
+  const excellIngest = (await prisma.planIngestJob.create({ data: { planId: excellOnly, companyId, stage: "PAGE_INVENTORY", pageCount: 3 } })).id;
+  for (const [pageNumber, number, title] of [[1, "A001", "LIFE-SAFETY PLAN"], [2, "A111", "ENLARGED FLOOR PLAN; TOILET PLANS AND ELEVATIONS; ASSEMBLIES"], [3, "A300", "EXTERIOR ELEVATIONS"]] as const) {
+    await prisma.planSheetText.create({ data: { planId: excellOnly, pageNumber, hasTextLayer: true, widthPt: 2592, heightPt: 1728, titleBlockText: excell(number) } });
+    await prisma.planSheetProposal.create({
+      data: { ingestJobId: excellIngest, planId: excellOnly, pageNumber, proposedSheetNumber: number, proposedTitle: title, proposedReason: "read from the title block", proposedConfidence: "HIGH", model: "keyless", promptVersion: "keyless" },
+    });
+    const page = await prisma.takeoffPlanPage.create({ data: { planId: excellOnly, pageNumber, pageWidthPt: 2592 } });
     await prisma.takeoffScaleCalibration.create({ data: { pageId: page.id, x1: 0.1, y1: 0.5, x2: 0.6, y2: 0.5, declaredDistanceFeet: "72" } });
   }
 });
@@ -89,5 +102,29 @@ describe("one upload holding two projects", () => {
     process.env.TAKEOFF_PROJECT_IDENTITY = "1";
     expect(await chooseUploadProject(planId, 5)).toMatchObject({ ok: false });
     expect((await prisma.takeoffPlan.findUniqueOrThrow({ where: { id: planId } })).projectPages).toEqual([66, 67]);
+  });
+});
+
+describe("a set the run would count nothing on", () => {
+  it("flag OFF: today's behaviour — no question, nothing counted", async () => {
+    delete process.env.TAKEOFF_PROJECT_IDENTITY;
+    expect(await planOfWorkQuestion(excellOnly, context.company.id)).toBeNull();
+    expect(wallsTaskPages(await wallsSheetsFor(excellOnly, context.company.id))).toEqual([]);
+  });
+
+  it("flag ON: asks which sheet shows the work, offering the plans and not the elevations, and refuses a sheet it did not offer", async () => {
+    process.env.TAKEOFF_PROJECT_IDENTITY = "1";
+    expect(await planOfWorkQuestion(excellOnly, context.company.id)).toEqual({ candidates: [1, 2], chosen: [] });
+    expect(await choosePlanOfWork(excellOnly, [3])).toMatchObject({ ok: false });
+    expect(await choosePlanOfWork(excellOnly, [])).toMatchObject({ ok: false });
+    expect((await prisma.takeoffPlan.findUniqueOrThrow({ where: { id: excellOnly } })).planOfWorkPages).toEqual([]);
+  });
+
+  it("flag ON, answered: the run counts the sheet the contractor named, and the summary no longer says it is not a floor plan", async () => {
+    process.env.TAKEOFF_PROJECT_IDENTITY = "1";
+    expect(await choosePlanOfWork(excellOnly, [2])).toEqual({ ok: true });
+    expect(wallsTaskPages(await wallsSheetsFor(excellOnly, context.company.id))).toEqual([2]);
+    expect((await wholeSetSummary(excellOnly, context.company.id, 3)).find((row) => row.pageNumber === 2)?.status).toEqual({ kind: "pending" });
+    expect(await planOfWorkQuestion(excellOnly, context.company.id)).toEqual({ candidates: [1, 2], chosen: [2] });
   });
 });
