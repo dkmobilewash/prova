@@ -262,6 +262,21 @@ export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: str
     match: "LEVY CO. COURTHOUSE RENOVATION",
     why: "county courthouse renovation, phased, full CD set — FRESH DOORS EXAM pool (civic variety), held out 2026-11-17 before a label was written; never read for doors",
   },
+  // ── Data-growth wave 2 (Diego approved the 2:1 split 2026-11-20): three of the ten
+  // new sets go HELD-OUT before a label is written, chosen for spread — a new-build
+  // fire station, a warehouse renovation, a school athletic/metal-building complex.
+  {
+    match: "SFRD #172_BID SET - Architectural Set_2024.01.05",
+    why: "fire station #172, new construction, 90-page architectural set — held out 2026-11-20 before a label was written (data-growth wave 2, Diego's 2:1 split)",
+  },
+  {
+    match: "2016-4-04-100701-CENTRAL-Arts-Warehouse-Bid-Set-1",
+    why: "arts warehouse renovation, Delray Beach FL, 81 pages — held out 2026-11-20 before a label was written (data-growth wave 2, Diego's 2:1 split)",
+  },
+  {
+    match: "REQUEST-FOR-QUALIFICATIONS-AND-PROPOSALS-FOOTHILL-HIGH-SCHOOL-BASEBALL-SOFTBALL-COMPLEX-DRAWINGS",
+    why: "school baseball/softball complex, metal buildings, 81-page CD set — held out 2026-11-20 before a label was written (data-growth wave 2, Diego's 2:1 split)",
+  },
 ];
 
 /** Punctuation and extension removed, so one spelling matches another. */
