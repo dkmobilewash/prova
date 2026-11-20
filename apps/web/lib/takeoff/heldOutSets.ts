@@ -468,6 +468,22 @@ const ENLARGED_PLAN_SHEETS: { set: string; sheet: string; why: string }[] = [
   },
 ];
 
+/**
+ * A sheet whose TITLE says it is a code / life-safety / egress plan prices no
+ * wall LF in the eval (Diego's ruling, BOARD.md 2026-11-21): a code plan is
+ * never the plan of the work, and when it draws the same floor as the keyed
+ * architectural plan its keyed walls double-price the set — Joplin G-101
+ * ("FIRST FLOOR CODE FOOTPRINT PLAN", 120 walls, 101/120 aligned with A-101's
+ * within 0.02 page-width under one shift, matched lengths within 0.3%).
+ * Title-based, so it needs no per-sheet list; bare "CODE" without a PLAN word
+ * ("CODE ANALYSIS" tables, "BUILDING CODE SUMMARY") does not match.
+ */
+export function codePlanTitle(title: string | null): boolean {
+  const name = (title ?? "").trim();
+  if (name === "") return false;
+  return /\bLIFE[-\s]?SAFETY\b|\bEGRESS\b|\bCODE\b[^.]*\bPLAN\b/i.test(name);
+}
+
 /** The reason this sheet's walls price at zero (enlarged view of a main-plan room), or null. */
 export function enlargedPlanReason(set: string, sheet: string): string | null {
   const want = flatten(set);
