@@ -212,6 +212,73 @@ export function legendPens(rows: readonly TextRow[], segments: readonly StrokeSe
   return out;
 }
 
+/**
+ * ── WHERE THE LEGEND DRAWS ITS NEW TYPES FILLED OR PATTERNED AND ITS EXISTING ONE EMPTY ──
+ *
+ * Jane Hahan A2.1 (2026-11-19): "(E) PARTITION TO REMAIN" is an empty outline, and every "(N) …" type
+ * has something between its two lines — solid black, crosshatch, diagonal, chevron, ticks. Its
+ * existing pen reads as a white fill, which the new walls also carry under their pattern, so the pen
+ * match set aside every new wall Chrome then traced by hand. Pre-registered from the legend
+ * (coordination/prereg-legend-new-infill.md) before any number; constants fixed there.
+ *
+ * True when the existing row's swatch is EMPTY and at least one row starting "(N)" or "NEW" — any
+ * length, unlike `legendPens` — has a dark fill or a pattern in the same swatch geometry.
+ */
+export const INFILL_REACH_HEIGHTS = 14;
+export const INFILL_MIN_STROKES = 5;
+export function newInfillLegend(rows: readonly TextRow[], existingRow: string, segments: readonly StrokeSegment[], widthPt: number): boolean {
+  const swatch = (row: TextRow) => {
+    const h = row.height / widthPt;
+    const cy = (row.y - row.height / 2) / widthPt;
+    const x1 = row.x / widthPt - 0.2 * h, x0 = x1 - INFILL_REACH_HEIGHTS * h;
+    const inside = (x: number, y: number) => x >= x0 && x <= x1 && Math.abs(y - cy) <= h;
+    const strokes = segments.filter((s) => inside(s.x1, s.y1) && inside(s.x2, s.y2));
+    const dark = strokes.some((s) => s.fill !== undefined && s.fill < WHITE_FILL);
+    const pattern = strokes.filter((s) => Math.abs(s.y2 - s.y1) > 0.1 * Math.abs(s.x2 - s.x1)).length;
+    return dark || pattern >= INFILL_MIN_STROKES;
+  };
+  const existing = rows.find((r) => r.str === existingRow);
+  if (existing === undefined || swatch(existing)) return false;
+  return rows.some((r) => /^(?:\(N\)|NEW\b)/i.test(r.str.trim()) && !DEMOLITION.test(r.str) && swatch(r));
+}
+
+/** Slack past a face an interior stroke's end may sit, in feet; a stroke this far off a face is not on it, as a share of the thickness. */
+const INFILL_END_SLACK_FEET = 0.1;
+const INFILL_OFF_FACE_SHARE = 0.1;
+/** A stroke along the wall longer than this is a face or a centreline, not a pattern. */
+const INFILL_LONG_PARALLEL_FEET = 2;
+
+/** The run carries the legend's new kind of drawing between its faces: a dark fill, or a pattern at least once a foot over half its length. */
+export function carriesInfill(wall: WallCandidate, segments: readonly StrokeSegment[], feetPerUnit: number): boolean {
+  if (wallStyle(wall, segments, feetPerUnit)?.filled === true) return true;
+  const l = length(wall);
+  if (l === 0) return false;
+  const ux = (wall.x2 - wall.x1) / l, uy = (wall.y2 - wall.y1) / l;
+  const half = wall.thicknessFeet / 2;
+  const lengthFeet = l * feetPerUnit;
+  const off = (x: number, y: number) => Math.abs((x - wall.x1) * uy - (y - wall.y1) * ux) * feetPerUnit;
+  const along = (x: number, y: number) => ((x - wall.x1) * ux + (y - wall.y1) * uy) * feetPerUnit;
+  const reach = (half + INFILL_END_SLACK_FEET) / feetPerUnit;
+  const minX = Math.min(wall.x1, wall.x2) - reach, maxX = Math.max(wall.x1, wall.x2) + reach;
+  const minY = Math.min(wall.y1, wall.y2) - reach, maxY = Math.max(wall.y1, wall.y2) + reach;
+  let n = 0;
+  const bins = new Set<number>();
+  for (const s of segments) {
+    if (Math.max(s.x1, s.x2) < minX || Math.min(s.x1, s.x2) > maxX || Math.max(s.y1, s.y2) < minY || Math.min(s.y1, s.y2) > maxY) continue;
+    if (off(s.x1, s.y1) > half + INFILL_END_SLACK_FEET || off(s.x2, s.y2) > half + INFILL_END_SLACK_FEET) continue;
+    const mx = (s.x1 + s.x2) / 2, my = (s.y1 + s.y2) / 2;
+    if (off(mx, my) >= half - INFILL_OFF_FACE_SHARE * wall.thicknessFeet) continue;
+    const t = along(mx, my);
+    if (t < 0 || t > lengthFeet) continue;
+    const sl = length(s);
+    if (sl === 0) continue;
+    if (Math.abs(((s.x2 - s.x1) * ux + (s.y2 - s.y1) * uy) / sl) >= 0.97 && sl * feetPerUnit > INFILL_LONG_PARALLEL_FEET) continue;
+    n += 1;
+    bins.add(Math.floor(t));
+  }
+  return n >= lengthFeet && bins.size >= 0.5 * Math.ceil(lengthFeet);
+}
+
 /** The strokes lying along one face of the wall (`side` +1 or −1). */
 export function faceStrokes(wall: WallCandidate, side: 1 | -1, segments: readonly StrokeSegment[], feetPerUnit: number): StrokeSegment[] {
   const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
@@ -357,6 +424,8 @@ export function existingWalls(input: {
   textItems: readonly TextItem[];
   widthPt: number;
   feetPerUnit: number;
+  /** `TAKEOFF_LEGEND_NEW_INFILL` — see `newInfillLegend`. Off: exactly as before. */
+  newInfill?: boolean;
 }): ExistingWall[] {
   const { walls, segments, widthPt, feetPerUnit } = input;
   if (walls.length === 0 || !(widthPt > 0) || !(feetPerUnit > 0)) return [];
@@ -385,12 +454,15 @@ export function existingWalls(input: {
   // drawing: filled or not, then the outline's grey. A wall drawn like the new
   // sample stays; one drawn like the existing sample is set aside.
   const kinds = pens.existing !== null && pens.fresh !== null ? legendKinds(pens.existing.pen, pens.fresh.pen) : null;
+  // ── 2c. THE LEGEND'S NEW TYPES ARE DRAWN FILLED OR PATTERNED, ITS EXISTING ONE EMPTY ──
+  const infillIsNew = input.newInfill === true && pens.existing !== null && newInfillLegend(rows, pens.existing.row, input.pageSegments ?? segments, widthPt);
+  const legendSaysNew = (w: WallCandidate) => infillIsNew && carriesInfill(w, segments, feetPerUnit);
   if (kinds !== null && pens.existing !== null) {
     const row = pens.existing.row;
     for (const w of walls) {
       if (found.has(w)) continue;
       const style = wallStyle(w, segments, feetPerUnit);
-      if (style !== null && kinds(style) === "existing") found.set(w, { wall: w, route: "legend", why: `drawn like the legend's "${row}" sample (an outline, grey ${style.gray.toFixed(2)}), not its filled "${pens.fresh!.row}" sample` });
+      if (style !== null && kinds(style) === "existing" && !legendSaysNew(w)) found.set(w, { wall: w, route: "legend", why: `drawn like the legend's "${row}" sample (an outline, grey ${style.gray.toFixed(2)}), not its filled "${pens.fresh!.row}" sample` });
     }
   } else if (pens.existing !== null) {
     const other = pens.fresh?.pen ?? modalWallPen(walls, segments, feetPerUnit);
@@ -400,7 +472,7 @@ export function existingWalls(input: {
       const said = pen.fill !== undefined ? `filled grey ${pen.fill.toFixed(2)}` : `${pen.dashed ? "dashed, " : ""}grey ${pen.gray.toFixed(2)}, ${pen.width.toFixed(2)} pt`;
       for (const w of walls) {
         if (found.has(w)) continue;
-        if (drawnWithPen(w, pen, segments, feetPerUnit)) found.set(w, { wall: w, route: "legend", why: `drawn with the legend's "${row}" pen (${said})` });
+        if (drawnWithPen(w, pen, segments, feetPerUnit) && !legendSaysNew(w)) found.set(w, { wall: w, route: "legend", why: `drawn with the legend's "${row}" pen (${said})` });
       }
     }
   }

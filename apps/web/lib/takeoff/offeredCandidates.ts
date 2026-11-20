@@ -263,6 +263,13 @@ function onAPlan(sheet: DetectedSheet, x1: number, y1: number, x2: number, y2: n
   );
 }
 
+/**
+ * `TAKEOFF_LEGEND_NEW_INFILL` (prereg-legend-new-infill.md): a wall drawn like the legend's filled or
+ * patterned NEW types is not set aside by the legend's existing pen. One constant for the viewer and the
+ * server alike, so the customer list, auto-post, labelling and zero-touch read the same list.
+ */
+export const LEGEND_NEW_INFILL = process.env.NEXT_PUBLIC_TAKEOFF_LEGEND_NEW_INFILL === "1";
+
 export function offeredCandidates(
   sheet: DetectedSheet,
   /** Also offer the HATCH-classed set-asides, for a reviewer judging them. */
@@ -331,7 +338,7 @@ export function offeredCandidates(
   const existing = new Map<WallCandidate, ExistingWall>(
     sheet.textItems === undefined
       ? []
-      : existingWalls({ walls: sheet.walls, segments: unitSegments, pageSegments: sheet.pageSegments?.map(inPageWidthUnits(sheet.widthPt)), textItems: sheet.textItems, widthPt: sheet.widthPt, feetPerUnit: sheet.feetPerUnit }).map((e) => [e.wall, e]),
+      : existingWalls({ walls: sheet.walls, segments: unitSegments, pageSegments: sheet.pageSegments?.map(inPageWidthUnits(sheet.widthPt)), textItems: sheet.textItems, widthPt: sheet.widthPt, feetPerUnit: sheet.feetPerUnit, newInfill: LEGEND_NEW_INFILL }).map((e) => [e.wall, e]),
   );
   const existingRuns: ExistingWall[] = [];
   const dashed: WallCandidate[] = [];
