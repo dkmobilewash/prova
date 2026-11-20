@@ -27,7 +27,7 @@ import { roofPartsFor, type StoredRoofParts } from "../roofPartsRead";
 import { sheetRooms } from "../sheetRooms";
 import { wallChainWithRooms } from "../wallSides";
 import { keyWallFeet, loadKeyTypes, parseRoomZoneKey, type HeightsKeyType, type RoomZone } from "../roomZoneKey";
-import { wallSideRooms } from "../wallSides";
+import { wallSideCeilings, wallSideRooms } from "../wallSides";
 import { sheetViews } from "../sheetViews";
 import { generalTypeRule, typeHeightRule, wallHeightByType, type TypeHeightRule } from "../typeHeights";
 import { deckZonesFor, type StoredDeckZones } from "../deckZonesRead";
@@ -408,7 +408,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
               const o = wallOverlapFeet(run, k, fpu);
               if (o !== null && o > best.o) best = { code: runCode.get(run) ?? null, o };
             }
-            const sides = wallSideRooms(geo, foundRooms.rooms).map((room) => (room === null ? null : ceilings.get(room.id)?.heightFeet ?? null));
+            const sides = wallSideCeilings(geo, foundRooms.rooms, (room) => ceilings.get(room.id)?.heightFeet ?? null);
             const zones = typed.deck.get(saved.page);
             const on = wallHeightByType({ code: best.code, rules: typed.rules, general: typed.general, sideCeilings: sides, setCeilingFt: figures.setCeilingFt, deck: zones === undefined ? null : { zones: zones.zones, at: { x: (k.x1 + k.x2) / 2, y: (k.y1 + k.y2) / 2 }, feetPerUnit: fpu } });
             const onFeet = on === null ? off?.feet ?? 0 : on.kind === "height" ? on.feet : on.kind === "no-board" ? 0 : off?.feet ?? 0;

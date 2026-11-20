@@ -1,6 +1,6 @@
 import { prisma } from "@prova/db";
 import type { PlanPdf } from "@/lib/plan-ingest/planPdf";
-import { wallChainWithRooms, wallSideRooms } from "./wallSides";
+import { wallChainWithRooms, wallSideCeilings } from "./wallSides";
 import { generalTypeRule, typeHeightRule, wallHeightByType, type TypeHeightRule } from "./typeHeights";
 import { deckZonesFor, type StoredDeckZones } from "./deckZonesRead";
 import { storedLegendTypesFromJson } from "./legendProposal";
@@ -141,7 +141,7 @@ export async function assignWallHeights(input: { planId: string; pageId: string;
       code: wall.item?.wallType?.code ?? null,
       rules: byType.rules,
       general: byType.general,
-      sideCeilings: wallSideRooms(wall, rooms).map((room) => (room === null || room.ceilingHeightFeet === null ? null : Number(room.ceilingHeightFeet))),
+      sideCeilings: wallSideCeilings(wall, rooms, (room) => (room.ceilingHeightFeet === null ? null : Number(room.ceilingHeightFeet))),
       setCeilingFt: figures.setCeilingFt,
       deck: deck === null || pageFeetPerUnit === null ? null : { zones: deck.zones, at: { x: ((wall.xs[0] ?? 0) + (wall.xs[1] ?? 0)) / 2, y: ((wall.ys[0] ?? 0) + (wall.ys[1] ?? 0)) / 2 }, feetPerUnit: pageFeetPerUnit },
     });

@@ -32,6 +32,11 @@ export function wallSideRooms<R extends Ring>(wall: Ring, rooms: readonly R[], o
   });
 }
 
+/** The ceiling of the room on each side of the wall (null where no room, or no ceiling): the one probe, shared. */
+export function wallSideCeilings<R extends Ring>(wall: Ring, rooms: readonly R[], ceilingOf: (room: R) => number | null): (number | null)[] {
+  return wallSideRooms(wall, rooms).map((room) => (room === null ? null : ceilingOf(room)));
+}
+
 /**
  * ── THE CHAIN OVER A WALL'S OWN ROOMS ──
  *
@@ -52,7 +57,7 @@ export function wallChainWithRooms<R extends Ring>(input: {
   figures: SetFigures;
 }): ChainHeight | null {
   const sideRooms = wallSideRooms(input.wall, input.rooms);
-  const sides = sideRooms.map((room) => (room === null ? null : input.ceilingOf(room)));
+  const sides = wallSideCeilings(input.wall, input.rooms, input.ceilingOf);
   const pitched = sideRooms.map((room) =>
     room !== null && input.roofMask !== undefined ? roomPitched(input.roofMask, { xs: room.xs, ys: room.ys, named: input.namedOf(room) }) : null,
   );
