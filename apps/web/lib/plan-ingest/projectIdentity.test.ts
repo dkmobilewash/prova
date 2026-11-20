@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { labelledIdentity, uploadProjects } from "./projectIdentity";
+import { labelledIdentity, projectTags, uploadProjects } from "./projectIdentity";
 
 // Every Minnesota-sealed sheet prints its licence certification, whoever's project it is (measured on Aldrich: the
 // first reader joined Excell to Kurita through these lines).
@@ -92,5 +92,42 @@ describe("uploadProjects: an upload that holds more than one project (prereg-pro
   it("a table header under a project-number label is not a number", () => {
     expect(labelledIdentity("PROJECT NO. DATE\nA101").number).toBeNull();
     expect(labelledIdentity("PROJECT NO. 905-586\nA101").number).toBe("905-586");
+  });
+});
+
+describe("projectTags: which sheets stand aside (TAKEOFF_PROJECT_IDENTITY)", () => {
+  const aldrich = [
+    { pageNumber: 18, titleBlockText: excell("A001"), counted: true },
+    { pageNumber: 26, titleBlockText: excell("A111"), counted: false },
+    { pageNumber: 40, titleBlockText: "PLANNING COMMISSION REPORT\nPAGE 3", counted: false },
+    { pageNumber: 66, titleBlockText: kurita("A101"), counted: true },
+    { pageNumber: 67, titleBlockText: kurita("A102"), counted: true },
+  ];
+
+  it("before anyone chooses, every sheet waits and the question offers each counted project, no default", () => {
+    const got = projectTags(aldrich, []);
+    expect([...got.tags.values()].every((t) => t === "unasked")).toBe(true);
+    expect([...got.tags.keys()]).toEqual([18, 26, 40, 66, 67]);
+    expect(got.question?.groups.map((g) => g.label)).toEqual(["Project 2019015_EXC-6", "KURITA"]);
+    expect(got.question?.chosen).toBeNull();
+  });
+
+  it("after the choice, only the chosen project's sheets are candidates; everything else is another project", () => {
+    const got = projectTags(aldrich, [18, 26]);
+    expect(Object.fromEntries(got.tags)).toEqual({ 40: "other project", 66: "other project", 67: "other project" });
+    expect(got.question?.chosen).toBe(0);
+  });
+
+  it("a one-project upload tags nothing and asks nothing, whatever was stored", () => {
+    const one = aldrich.filter((p) => p.pageNumber < 60);
+    expect(projectTags(one, []).tags.size).toBe(0);
+    expect(projectTags(one, []).question).toBeNull();
+    expect(projectTags(one, [18]).tags.size).toBe(0);
+  });
+
+  it("a stored choice that no longer matches any counted project asks again", () => {
+    const got = projectTags(aldrich, [999]);
+    expect(got.question?.chosen).toBeNull();
+    expect([...got.tags.values()].every((t) => t === "unasked")).toBe(true);
   });
 });

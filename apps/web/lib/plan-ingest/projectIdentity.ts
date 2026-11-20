@@ -145,3 +145,35 @@ export function uploadProjects(pages: readonly ProjectPage[]): { groups: Project
     .sort((p, q) => p.pages[0]! - q.pages[0]!);
   return { groups, asks: groups.filter((g) => g.counted).length >= 2 };
 }
+
+/** Off unless `TAKEOFF_PROJECT_IDENTITY=1` (Diego, 2026-11-20): with it off, nothing here is called. */
+export function projectIdentityOn(): boolean {
+  return process.env.TAKEOFF_PROJECT_IDENTITY === "1";
+}
+
+export type ProjectTag = "unasked" | "other project";
+export type ProjectQuestion = {
+  /** The projects that each own a sheet the run would count: the answers. Upload order, no default. */
+  groups: ProjectGroup[];
+  /** Index into `groups` of the user's stored choice, or null until they choose. */
+  chosen: number | null;
+};
+
+/**
+ * Which sheets stand aside, given the pages the user chose (`TakeoffPlan.projectPages`, empty until they do).
+ * One project, or none readable: nothing is tagged and nothing is asked. Two or more counted projects and no choice:
+ * EVERY sheet waits, so the run counts nothing until someone answers. After the choice, only the chosen project's
+ * sheets are candidates; every other sheet, including one no title block attributes, is another project's.
+ */
+export function projectTags(pages: readonly ProjectPage[], chosenPages: readonly number[]): { tags: Map<number, ProjectTag>; question: ProjectQuestion | null } {
+  const { groups, asks } = uploadProjects(pages);
+  if (!asks) return { tags: new Map(), question: null };
+  const answers = groups.filter((g) => g.counted);
+  const chosenSet = new Set(chosenPages);
+  const index = answers.findIndex((g) => g.pages.some((p) => chosenSet.has(p)));
+  const chosen = index >= 0 ? index : null;
+  const keep = new Set(chosen === null ? [] : answers[chosen]!.pages);
+  const tags = new Map<number, ProjectTag>();
+  for (const p of pages) if (!keep.has(p.pageNumber)) tags.set(p.pageNumber, chosen === null ? "unasked" : "other project");
+  return { tags, question: { groups: answers, chosen } };
+}
