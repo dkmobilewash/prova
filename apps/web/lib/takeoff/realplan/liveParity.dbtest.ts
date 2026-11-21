@@ -22,7 +22,7 @@ const LIVE = process.env.LIVE_OUT ?? "";
 const PLANS = process.env.REAL_PLAN_DIR ?? "";
 const OUT = process.env.SERVER_OUT ?? "";
 
-type LiveLine = { file: string; page: number; calibration: { points: string; declaredDistanceFeet: string } };
+type LiveLine = { file: string; page: number; calibration: { points: string; declaredDistanceFeet: string } | null };
 
 describe.skipIf(LIVE === "" || PLANS === "" || OUT === "")("server detection's offered-minus-held, sheet by sheet", () => {
   it("runs detection on every recorded sheet", async () => {
@@ -34,6 +34,8 @@ describe.skipIf(LIVE === "" || PLANS === "" || OUT === "")("server detection's o
     try {
       for (const line of lines) {
         if (done.has(`${line.file}:${line.page}`)) continue;
+        // A sheet the browser could not finish has no calibration and no list: compare.py counts it missing.
+        if (line.calibration === null) continue;
         const real = realpathSync(join(PLANS, line.file));
         process.env.TAKEOFF_LOCAL_PLAN_DIR = dirname(real);
         const plan = await prisma.takeoffPlan.create({ data: { companyId: company.id, jobId: job.id, fileUrl: `local:${basename(real)}`, fileName: basename(real) } });
