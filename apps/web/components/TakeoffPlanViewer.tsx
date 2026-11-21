@@ -97,7 +97,7 @@ import { renovationMarks, showsExistingWork } from "@/lib/takeoff/renovationMark
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
 import { DROPPED_LABEL, HELD_ITEM, HELD_LABEL, needsLookCount, reviewWrite, sameRun } from "@/lib/takeoff/estimateHold";
 import { heldOnSheet, type HeldModels } from "@/lib/takeoff/heldOnSheet";
-import { priorForRuns } from "@/lib/takeoff/wallRunVerdicts";
+import { priorForRuns, runModelRows } from "@/lib/takeoff/wallRunVerdicts";
 import { nearestWallRun, sameRunAs } from "@/lib/takeoff/runMatch";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 import { TakeoffHeldWalls } from "./TakeoffHeldWalls";
@@ -1166,6 +1166,7 @@ export function TakeoffPlanViewer({
   /** What the finder saw and dropped on the last detection, for the labelling
    *  harness to read off the DOM and hold against the eval's own numbers. */
   const [detectSeen, setDetectSeen] = useState<string | null>(null);
+  const [liveDebug, setLiveDebug] = useState<string | null>(null);
   // ── READING A SCANNED SHEET ──
   // `reading` drives the button; `readError` and `wordsRead` are what the
   // estimator is told. The WORDS themselves go in a ref rather than state
@@ -4478,6 +4479,37 @@ export function TakeoffPlanViewer({
             )
           : null;
       liveHeldRef.current = liveHeld;
+      if (LIVE_DIGEST) {
+        // Harness only (prereg-live-list-parity.md): what the held set was decided from, to find where a live list
+        // and detection's part company. Never in a customer build.
+        const line = (r: { x1: number; y1: number; x2: number; y2: number }) => [r.x1, r.y1, r.x2, r.y2];
+        setLiveDebug(JSON.stringify({
+          models: liveHeldModels === null ? null : { hold: liveHeldModels.hold !== null, pair: liveHeldModels.pair !== null, run: liveHeldModels.run !== null, reno: liveHeldModels.reno !== null },
+          scanned: raster !== undefined,
+          pairings: pairings.length,
+          segments: segments.length,
+          text: textItems.length,
+          feetPerUnit,
+          widthPt: pageSize.widthPt,
+          before: beforeCompare?.offeredRuns.map(line) ?? null,
+          offered: offered?.offeredRuns.map(line) ?? null,
+          held: liveHeld === null ? null : [...liveHeld].map((at) => line(walls[at]!)),
+          rows:
+            liveHeldModels?.pair && offered !== null && beforeCompare !== null
+              ? runModelRows({ offered: beforeCompare.offeredRuns, kept: offered.offeredRuns, pairings, pairModel: liveHeldModels.pair, segments, textItems, widthPt: pageSize.widthPt, feetPerUnit }).rows.slice(0, 4)
+              : null,
+          sums: { seg: segments.reduce((n, g) => n + g.x1 + 2 * g.y1 + 3 * g.x2 + 4 * g.y2, 0), text: textItems.reduce((n, t) => n + t.x + 2 * t.y + t.str.length, 0), feat: pairings.reduce((n, q) => n + q.features.reduce((m, f, i) => m + f * (i + 1), 0), 0), pairModel: JSON.stringify(liveHeldModels?.pair ?? null).length, runModel: JSON.stringify(liveHeldModels?.run ?? null).length },
+          pairing0: pairings[0] ?? null,
+          text0: textItems[0] ?? null,
+          segment0: segments[0] ?? null,
+          run0: offered?.offeredRuns[0] ?? null,
+          runModel0: liveHeldModels?.run ? { init: liveHeldModels.run.init, lr: (liveHeldModels.run as { learningRate?: number }).learningRate, trees: liveHeldModels.run.trees.length, tree0: JSON.stringify(liveHeldModels.run.trees[0]).slice(0, 400) } : null,
+          scores:
+            liveHeldModels !== null && offered !== null && beforeCompare !== null
+              ? heldOnSheet({ beforeCompare: beforeCompare.offeredRuns, kept: offered.offeredRuns, pairings, segments, textItems, widthPt: pageSize.widthPt, feetPerUnit, scanned: raster !== undefined, ...(runPrior === undefined ? {} : { prior: runPrior }) }, liveHeldModels).runScore
+              : null,
+        }));
+      }
       const byModel =
         liveHeld === null && wallModelRef.current !== null
           ? modelVerdicts(wallModelRef.current.model, wallModelRef.current.cut, walls, pairings, feetPerUnit, { scanned: raster !== undefined })
@@ -6622,6 +6654,7 @@ export function TakeoffPlanViewer({
         // Every run the contractor sees after Run takeoff, page-width units, so
         // `e2e/local/takeoff-app-equals-eval.local.spec.ts` can hold it run for run against server detection.
         // A build-time switch: unset in every customer build, so nothing is serialised for them.
+        data-takeoff-live-debug={LIVE_DIGEST ? (liveDebug ?? undefined) : undefined}
         data-takeoff-live={LIVE_DIGEST && found !== null && answerKey === undefined ? JSON.stringify(shownGroups.flatMap((group) => group.runs.map((run) => [run.x1, run.y1, run.x2, run.y2]))) : undefined}
       >
         {/* ── THE BANNER THAT SAYS TRACING IS ON, AND WHAT TO DO NEXT ──

@@ -198,6 +198,7 @@ test.describe("the customer's live list, for parity with server detection", () =
             .toBe(true)
             .catch(() => undefined);
           const live = await port.getAttribute("data-takeoff-live");
+        const debug = process.env.LIVE_DEBUG === "1" ? await port.getAttribute("data-takeoff-live-debug") : null;
           appendFileSync(
             OUT,
             JSON.stringify({
@@ -205,6 +206,7 @@ test.describe("the customer's live list, for parity with server detection", () =
               page: n,
               calibration,
               live: live === null ? null : (JSON.parse(live) as number[][]),
+              ...(debug === null ? {} : { debug: JSON.parse(debug) as unknown }),
             }) + "\n",
           );
         } catch (error) {
