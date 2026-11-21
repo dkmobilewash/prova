@@ -96,6 +96,8 @@ import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { renovationMarks, showsExistingWork } from "@/lib/takeoff/renovationMarks";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
 import { DROPPED_LABEL, HELD_ITEM, HELD_LABEL, needsLookCount, reviewWrite, sameRun } from "@/lib/takeoff/estimateHold";
+import { heldOnSheet, type HeldModels } from "@/lib/takeoff/heldOnSheet";
+import { priorForRuns, runModelRows } from "@/lib/takeoff/wallRunVerdicts";
 import { nearestWallRun, sameRunAs } from "@/lib/takeoff/runMatch";
 import { UNTYPED_ITEM } from "@/lib/takeoff/untypedItem";
 import { TakeoffHeldWalls } from "./TakeoffHeldWalls";
@@ -223,6 +225,9 @@ import { ROOM_BOUNDARY_LABEL, isRoomBoundary, openRoomTags, snapToWallEnd, wallE
  */
 
 type Draft = { xs: number[]; ys: number[] };
+
+/** Build-time: the parity harness's live-list digest (`data-takeoff-live`). Off in every customer build. */
+const LIVE_DIGEST = process.env.NEXT_PUBLIC_TAKEOFF_LIVE_DIGEST === "1";
 
 const EMPTY: Draft = { xs: [], ys: [] };
 
@@ -364,6 +369,7 @@ export function TakeoffPlanViewer({
   doorScheduleRows = [],
   windowScheduleRows = [],
   wallModel = null,
+  liveHeldModels = null,
   ceilingPages = [],
   onMeasurementSaved,
   onUndoable,
@@ -518,6 +524,12 @@ export function TakeoffPlanViewer({
    * no model call. Null when no file is configured; inert with the switch off.
    */
   wallModel?: { model: WallModel; cut: number } | null;
+  /**
+   * The models server detection holds runs back with (`heldOnSheet`), sent only with TAKEOFF_LIVE_MODEL_PARITY
+   * on. With them, the live list is the offered runs less exactly the runs detection holds — the pairwise 0.55
+   * hold, the run model and R — instead of the configured-cut demotion alone (prereg-live-list-parity.md).
+   */
+  liveHeldModels?: HeldModels | null;
   /**
    * The plan's pages whose title block names a reflected ceiling plan or a
    * finish schedule. When the rooms are found, their text is read from the
@@ -1154,6 +1166,7 @@ export function TakeoffPlanViewer({
   /** What the finder saw and dropped on the last detection, for the labelling
    *  harness to read off the DOM and hold against the eval's own numbers. */
   const [detectSeen, setDetectSeen] = useState<string | null>(null);
+  const [liveDebug, setLiveDebug] = useState<string | null>(null);
   // ── READING A SCANNED SHEET ──
   // `reading` drives the button; `readError` and `wordsRead` are what the
   // estimator is told. The WORDS themselves go in a ref rather than state
@@ -3101,6 +3114,8 @@ export function TakeoffPlanViewer({
   const demoted = demote ? demotedRuns(labels, runsRef.current) : [];
   /** The model the find scores with — a ref, so the find callback need not re-bind on it. */
   const wallModelRef = useRef<{ model: WallModel; cut: number } | null>(null);
+  /** The runs `heldOnSheet` held on the last Run takeoff (indices into `runsRef`), so a rebuild keeps them off. */
+  const liveHeldRef = useRef<Set<number> | null>(null);
   wallModelRef.current = demote ? wallModel : null;
   const [hoveredDemoted, setHoveredDemoted] = useState<number | null>(null);
   // ── REVIEW WALLS: one run at a time, most doubted first. See `wallReview.ts`. ──
@@ -3126,7 +3141,7 @@ export function TakeoffPlanViewer({
   const rebuildFound = (dropped: Set<number>) => {
     const regroup = regroupRef.current;
     if (!regroup) return;
-    setFound(regroup(runsRef.current.filter((r, i) => !dropped.has(i) && !droppedOnJob(r) && !(labels?.get(i) && demotes(labels.get(i)!.label)))));
+    setFound(regroup(runsRef.current.filter((r, i) => !dropped.has(i) && !liveHeldRef.current?.has(i) && !droppedOnJob(r) && !(labels?.get(i) && demotes(labels.get(i)!.label)))));
   };
   // A drop from the set review lands as a dropped measurement; the sheet's total follows it.
   const droppedKey = (sheet?.measurements ?? []).filter((m) => m.label === DROPPED_LABEL).map((m) => m.id).sort().join(",");
@@ -4373,6 +4388,9 @@ export function TakeoffPlanViewer({
       };
       await stepDone("hand-back");
       let offered = answerKey !== undefined ? null : offerHere();
+      // Detection's run columns read the offer BEFORE the demolition compare and the aligned plan's lines and faces.
+      const beforeCompare = offered;
+      let runPrior: ReturnType<typeof priorForRuns>;
       // Key mode shows the raw runs; the customer offer is kept for when the mode turns off.
       if (answerKey !== undefined) customerOfferRef.current = { page: pageNumber, runs: offerHere().offeredRuns };
       else customerOfferRef.current = null;
@@ -4397,6 +4415,8 @@ export function TakeoffPlanViewer({
             newRuns: offered.offeredRuns,
             feetPerUnit,
           });
+          // Only with the parity switch on: with it off, nothing new runs inside this try (prereg amendment 1).
+          if (liveHeldModels !== null) runPrior = priorForRuns(lines, { segments: read.segments, widthPt: read.widthPt }, feetPerUnit, W);
           if (lines.lines === null) {
             prior = { page: pageNumber, pairing, sheet, n: 0, feet: 0, why: lines.why };
           } else {
@@ -4436,8 +4456,62 @@ export function TakeoffPlanViewer({
       // not labelling mode, in which case every run scoring below the cut
       // leaves the list demoted — the same walls the finder's veto would have
       // dropped, kept on screen instead. See `modelVerdicts`.
+      // ── WITH TAKEOFF_LIVE_MODEL_PARITY: EXACTLY THE RUNS DETECTION HOLDS (`heldOnSheet`) ──
+      // The same function detection calls, with the same inputs and models, so the list a contractor watches is
+      // the list posting and auto-post use. It replaces the configured-cut demotion below, which only the screen had.
+      const liveHeld =
+        liveHeldModels !== null && offered !== null && beforeCompare !== null
+          ? new Set(
+              heldOnSheet(
+                {
+                  beforeCompare: beforeCompare.offeredRuns,
+                  kept: offered.offeredRuns,
+                  pairings,
+                  segments,
+                  textItems,
+                  widthPt: pageSize.widthPt,
+                  feetPerUnit,
+                  scanned: raster !== undefined,
+                  ...(runPrior === undefined ? {} : { prior: runPrior }),
+                },
+                liveHeldModels,
+              ).held.map((run) => walls.indexOf(run)),
+            )
+          : null;
+      liveHeldRef.current = liveHeld;
+      if (LIVE_DIGEST) {
+        // Harness only (prereg-live-list-parity.md): what the held set was decided from, to find where a live list
+        // and detection's part company. Never in a customer build.
+        const line = (r: { x1: number; y1: number; x2: number; y2: number }) => [r.x1, r.y1, r.x2, r.y2];
+        setLiveDebug(JSON.stringify({
+          models: liveHeldModels === null ? null : { hold: liveHeldModels.hold !== null, pair: liveHeldModels.pair !== null, run: liveHeldModels.run !== null, reno: liveHeldModels.reno !== null },
+          scanned: raster !== undefined,
+          pairings: pairings.length,
+          segments: segments.length,
+          text: textItems.length,
+          feetPerUnit,
+          widthPt: pageSize.widthPt,
+          before: beforeCompare?.offeredRuns.map(line) ?? null,
+          offered: offered?.offeredRuns.map(line) ?? null,
+          held: liveHeld === null ? null : [...liveHeld].map((at) => line(walls[at]!)),
+          rows:
+            liveHeldModels?.pair && offered !== null && beforeCompare !== null
+              ? runModelRows({ offered: beforeCompare.offeredRuns, kept: offered.offeredRuns, pairings, pairModel: liveHeldModels.pair, segments, textItems, widthPt: pageSize.widthPt, feetPerUnit }).rows.slice(0, 4)
+              : null,
+          sums: { seg: segments.reduce((n, g) => n + g.x1 + 2 * g.y1 + 3 * g.x2 + 4 * g.y2, 0), text: textItems.reduce((n, t) => n + t.x + 2 * t.y + t.str.length, 0), feat: pairings.reduce((n, q) => n + q.features.reduce((m, f, i) => m + f * (i + 1), 0), 0), pairModel: JSON.stringify(liveHeldModels?.pair ?? null).length, runModel: JSON.stringify(liveHeldModels?.run ?? null).length },
+          pairing0: pairings[0] ?? null,
+          text0: textItems[0] ?? null,
+          segment0: segments[0] ?? null,
+          run0: offered?.offeredRuns[0] ?? null,
+          runModel0: liveHeldModels?.run ? { init: liveHeldModels.run.init, lr: (liveHeldModels.run as { learningRate?: number }).learningRate, trees: liveHeldModels.run.trees.length, tree0: JSON.stringify(liveHeldModels.run.trees[0]).slice(0, 400) } : null,
+          scores:
+            liveHeldModels !== null && offered !== null && beforeCompare !== null
+              ? heldOnSheet({ beforeCompare: beforeCompare.offeredRuns, kept: offered.offeredRuns, pairings, segments, textItems, widthPt: pageSize.widthPt, feetPerUnit, scanned: raster !== undefined, ...(runPrior === undefined ? {} : { prior: runPrior }) }, liveHeldModels).runScore
+              : null,
+        }));
+      }
       const byModel =
-        wallModelRef.current !== null
+        liveHeld === null && wallModelRef.current !== null
           ? modelVerdicts(wallModelRef.current.model, wallModelRef.current.cut, walls, pairings, feetPerUnit, { scanned: raster !== undefined })
           : null;
       const doubted = byModel !== null && byModel.size > 0 ? byModel : null;
@@ -4504,8 +4578,8 @@ export function TakeoffPlanViewer({
       if (!quietFind.current) onResults?.();
       foundInKeyMode.current = answerKey !== undefined;
       setFound(
-        doubted !== null || runs.some(droppedOnJob)
-          ? regroup(runs.filter((r, at) => !doubted?.has(at) && !droppedOnJob(r)))
+        doubted !== null || liveHeld !== null || runs.some(droppedOnJob)
+          ? regroup(runs.filter((r, at) => !doubted?.has(at) && !liveHeld?.has(at) && !droppedOnJob(r)))
           : runs === found.walls
             ? found.groups
             : regroup(runs),
@@ -6576,6 +6650,12 @@ export function TakeoffPlanViewer({
         // button's own `disabled` already covers.
         data-sheet-ready={pageCount !== null && pageSize !== null ? "true" : "false"}
         data-takeoff-detect={detectSeen ?? undefined}
+        // ── THE CUSTOMER'S LIVE LIST, FOR THE PARITY HARNESS ONLY (prereg-live-list-parity.md) ──
+        // Every run the contractor sees after Run takeoff, page-width units, so
+        // `e2e/local/takeoff-app-equals-eval.local.spec.ts` can hold it run for run against server detection.
+        // A build-time switch: unset in every customer build, so nothing is serialised for them.
+        data-takeoff-live-debug={LIVE_DIGEST ? (liveDebug ?? undefined) : undefined}
+        data-takeoff-live={LIVE_DIGEST && found !== null && answerKey === undefined ? JSON.stringify(shownGroups.flatMap((group) => group.runs.map((run) => [run.x1, run.y1, run.x2, run.y2]))) : undefined}
       >
         {/* ── THE BANNER THAT SAYS TRACING IS ON, AND WHAT TO DO NEXT ──
 

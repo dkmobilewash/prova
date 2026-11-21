@@ -11,10 +11,8 @@ import { asideExistingWalls, type ExistingDoorEvidence } from "./existingDoors";
 import { productDetection, productSheetRuns, sampledSheetsFor, vocabularyFor } from "./productDetection";
 import { userExclusionsFromRows } from "./userExclusions";
 import type { ScoredPairing } from "./demotedRuns";
-import { runsHeldOffEstimate } from "./estimateHold";
-import { runScores } from "./wallReview";
-import { loadWallModel } from "./wallModelFile";
-import { loadRenoModel, loadRunModel, priorForRuns, renoModelRemovals, runModelVerdicts } from "./wallRunModel";
+import { priorForRuns, serverHeldModels } from "./wallRunModel";
+import { heldOnSheet } from "./heldOnSheet";
 import { SheetTooDenseError, type StrokeSegment, type WallCandidate } from "./wallVectors";
 import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
@@ -95,6 +93,9 @@ export type DetectedBoundary = {
   pairings: WallCandidate[];
   segments: readonly StrokeSegment[];
   held: WallCandidate[];
+  /** Every run on offer after the compare — `held` is a subset of these objects. The live-list parity check reads
+   *  offered minus held (prereg-live-list-parity.md); nothing in the product needs it. */
+  offered?: readonly WallCandidate[];
   /** What the doors step needs to set existing doors aside: the walls set aside as existing, the demolition plan's doors (`existingDoors.ts`). */
   existingDoors?: ExistingDoorEvidence;
 };
@@ -346,34 +347,34 @@ export async function detectWallsForCalibration(
     }
     if (target.onBoundary !== undefined) {
       const company = await prisma.company.findUnique({ where: { id: target.companyId }, select: { demotedWallsOff: true } });
-      const config = company?.demotedWallsOff === false ? loadWallModel(process.env) : null;
-      const held: WallCandidate[] = config === null ? [] : runsHeldOffEstimate(config.model, offered.offeredRuns, scored, target.feetPerUnit, raster !== null);
-      // ── THE RUN MODEL AND R, BEHIND `TAKEOFF_WALL_RUN_MODEL` / `TAKEOFF_WALL_RENO_MODEL` (`wallRunModel.ts`) ──
-      // Remove-only: a run the hand chain posts and the run model scores below 0.10 is held back too; on a
-      // renovation sheet paired with its demolition plan, so is one R scores below 0.10. Each kept run carries
-      // the run model's score (`runScore`), which auto-post reads. Vector sheets only, as trained.
-      const runModel = raster === null ? loadRunModel(process.env) : null;
-      const renoModel = raster === null ? loadRenoModel(process.env) : null;
-      const pairModel = runModel === null && renoModel === null ? null : loadWallModel(process.env);
-      if (pairModel !== null) {
-        const input = { offered: beforeCompare.offeredRuns, kept: offered.offeredRuns, pairings: scored, pairModel: pairModel.model, segments: strokes.segments, textItems, widthPt: W, feetPerUnit: target.feetPerUnit, ...(runPrior === undefined ? {} : { prior: runPrior }) };
-        if (runModel !== null) {
-          const verdicts = runModelVerdicts(input, runModel);
-          verdicts.scores.forEach((score, at) => {
-            if (Number.isFinite(score)) (offered.offeredRuns[at] as WallCandidate & { runScore?: number }).runScore = score;
-          });
-          for (const run of verdicts.removed) if (!held.includes(run)) held.push(run);
-        }
-        if (renoModel !== null) for (const run of renoModelRemovals(input, renoModel)) if (!held.includes(run)) held.push(run);
-      }
-      // Each run's score rides into the stored walls, so a set-wide review can order every sheet's runs.
-      if (config !== null && raster === null) {
-        runScores(config.model, offered.offeredRuns, scored, target.feetPerUnit).forEach((score, at) => {
-          if (score !== null) offered.offeredRuns[at]!.modelScore = score;
-        });
-      }
+      // ── WHAT IS HELD OFF THE LIST: `heldOnSheet`, the ONE function the live list calls too ──
+      // The pairwise 0.55 estimate hold (unless the company turned demoted walls off); the run model and R,
+      // remove-only below 0.10, vector sheets only, R only on a renovation sheet paired with its demolition plan
+      // (`TAKEOFF_WALL_RUN_MODEL` / `TAKEOFF_WALL_RENO_MODEL`, `wallRunModel.ts`). Each kept run carries the run
+      // model's score (`runScore`, auto-post reads it) and the pairwise run score (`modelScore`, the set review).
+      const models = serverHeldModels(company?.demotedWallsOff === false);
+      const { held, runScore, modelScore } = heldOnSheet(
+        {
+          beforeCompare: beforeCompare.offeredRuns,
+          kept: offered.offeredRuns,
+          pairings: scored,
+          segments: strokes.segments,
+          textItems,
+          widthPt: W,
+          feetPerUnit: target.feetPerUnit,
+          scanned: raster !== null,
+          ...(runPrior === undefined ? {} : { prior: runPrior }),
+        },
+        models,
+      );
+      runScore.forEach((score, at) => {
+        if (Number.isFinite(score)) (offered.offeredRuns[at] as WallCandidate & { runScore?: number }).runScore = score;
+      });
+      modelScore.forEach((score, at) => {
+        if (score !== null) offered.offeredRuns[at]!.modelScore = score;
+      });
       const existingDoors = { asideWalls: asideExistingWalls(offered.setAsideLines), ...(priorDoors === null ? {} : { priorDoors: priorDoors.doors, priorSheet: priorDoors.sheet }) };
-      target.onBoundary({ pairings, segments: detected.found.inUnits, held, existingDoors });
+      target.onBoundary({ pairings, segments: detected.found.inUnits, held, offered: offered.offeredRuns, existingDoors });
     }
     await new Promise((resolve) => setImmediate(resolve));
     const found = { ...detected.found, walls: offered.offeredRuns, groups: detected.found.regroup(offered.offeredRuns) };

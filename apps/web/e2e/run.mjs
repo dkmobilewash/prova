@@ -319,7 +319,10 @@ try {
     // rest 0.88 against the default 0.3 cut. It proves the wiring reads a
     // model file and scores runs at Find time. It is not a trained model and
     // is not right about anything.
-    TAKEOFF_WALL_MODEL: path.join(webRoot, "e2e", "fixtures", "wall-model.invented.json"),
+    // A walk that must run the REAL models names one with E2E_WALL_MODEL (the live-list parity walk,
+    // prereg-live-list-parity.md amendment 2: this line silently replaced the real model it was given, so the
+    // browser and the server check ran two different pairwise models). Unset, the invented stump, as before.
+    TAKEOFF_WALL_MODEL: process.env.E2E_WALL_MODEL ? path.resolve(webRoot, process.env.E2E_WALL_MODEL) : path.join(webRoot, "e2e", "fixtures", "wall-model.invented.json"),
   });
 
   log("migrations: prisma migrate deploy against the throwaway database…");
