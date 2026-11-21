@@ -2,7 +2,7 @@ import { isDimensionString } from "./dimensionStrings";
 import { onPriorPlan, type PriorLine } from "./planCompare";
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { bothFacesDashedInPoints } from "./dashedFaces";
-import { existingSentence, existingWalls, type ExistingWall } from "./existingWalls";
+import { existingSentence, existingWalls, inLegendSample, legendSwatchBoxes, textRows, type ExistingWall } from "./existingWalls";
 import { clipToWorkArea, describeStyle, wallsLikeThese, type Line, type Polygon } from "./userExclusions";
 import { isTableRows, isUnderline } from "./textRows";
 import { legendBoxes } from "./legendBoxes";
@@ -263,6 +263,21 @@ function onAPlan(sheet: DetectedSheet, x1: number, y1: number, x2: number, y2: n
   );
 }
 
+/**
+ * `TAKEOFF_LEGEND_NEW_INFILL` (prereg-legend-new-infill.md): a wall drawn like the legend's filled or
+ * patterned NEW types is not set aside by the legend's existing pen. One constant for the viewer and the
+ * server alike, so the customer list, auto-post, labelling and zero-touch read the same list.
+ */
+export const LEGEND_NEW_INFILL = process.env.NEXT_PUBLIC_TAKEOFF_LEGEND_NEW_INFILL === "1";
+
+/**
+ * LEGEND-SAMPLE (prereg-legend-sample.md): a run drawn inside a legend row's swatch box is the
+ * legend's own sample, never a wall. ON by default; "0" is the measurement's OFF arm and the
+ * emergency off, not a feature flag. Split out of `LEGEND_NEW_INFILL` on Diego's order after the
+ * infill rule failed its ship rule but this half measured as pure junk removal.
+ */
+export const LEGEND_SAMPLE = process.env.NEXT_PUBLIC_TAKEOFF_LEGEND_SAMPLE !== "0";
+
 export function offeredCandidates(
   sheet: DetectedSheet,
   /** Also offer the HATCH-classed set-asides, for a reviewer judging them. */
@@ -331,13 +346,15 @@ export function offeredCandidates(
   const existing = new Map<WallCandidate, ExistingWall>(
     sheet.textItems === undefined
       ? []
-      : existingWalls({ walls: sheet.walls, segments: unitSegments, pageSegments: sheet.pageSegments?.map(inPageWidthUnits(sheet.widthPt)), textItems: sheet.textItems, widthPt: sheet.widthPt, feetPerUnit: sheet.feetPerUnit }).map((e) => [e.wall, e]),
+      : existingWalls({ walls: sheet.walls, segments: unitSegments, pageSegments: sheet.pageSegments?.map(inPageWidthUnits(sheet.widthPt)), textItems: sheet.textItems, widthPt: sheet.widthPt, feetPerUnit: sheet.feetPerUnit, newInfill: LEGEND_NEW_INFILL }).map((e) => [e.wall, e]),
   );
   const existingRuns: ExistingWall[] = [];
   const dashed: WallCandidate[] = [];
   const tables: WallCandidate[] = [];
   let zeroExtent = 0;
   const underlines: WallCandidate[] = [];
+  const legendSamples: WallCandidate[] = [];
+  const swatches = LEGEND_SAMPLE && sheet.textItems !== undefined ? legendSwatchBoxes(textRows(sheet.textItems), sheet.widthPt) : [];
   const onPlan = sheet.walls.filter((w) => {
     // A run with no extent — a closed loop's chord, a degenerate merge — is
     // nothing a reviewer can draw, accept or join, whatever its `lengthFeet`
@@ -348,6 +365,11 @@ export function offeredCandidates(
       return false;
     }
     if (!onAPlan(sheet, w.x1, w.y1, w.x2, w.y2)) return false;
+    // A legend's sample, beside its row — see `legendSwatchBoxes` (LEGEND_SAMPLE, on by default).
+    if (swatches.length > 0 && inLegendSample(w, swatches, sheet.feetPerUnit)) {
+      legendSamples.push(w);
+      return false;
+    }
     // The length cap is the equipment words' (a 10 ft reach finds a building's
     // wall beside a play yard); a site word within 3 ft of a long line is that
     // line's own label — a property line is as long as the lot.
@@ -487,6 +509,9 @@ export function offeredCandidates(
   if (wordRuns.length > 0) {
     aside.set("ocr-words", { kind: "ocr-words", why: ocrWordsSentence(wordRuns.map((r) => r.word)), n: wordRuns.length });
   }
+  if (legendSamples.length > 0) {
+    aside.set("legend-sample", { kind: "legend-sample", why: "a wall legend's sample, beside its row", n: legendSamples.length });
+  }
   if (zeroExtent > 0) {
     aside.set("zero-extent", { kind: "zero-extent", why: "a run with no extent — the same start and end — which nothing can draw or accept", n: zeroExtent });
   }
@@ -523,6 +548,7 @@ export function offeredCandidates(
       ...titleStrip.map((w) => ({ kind: "title-strip", why: "in the title-block strip", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...twins.map((w) => ({ kind: "same-wall-twin", why: "the same wall as a longer or better-drawn run", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...wordRuns.map((r) => ({ kind: "ocr-words", why: `inside the OCR word "${r.word}"`, lengthFeet: r.wall.lengthFeet, x1: r.wall.x1, y1: r.wall.y1, x2: r.wall.x2, y2: r.wall.y2 })),
+      ...legendSamples.map((w) => ({ kind: "legend-sample", why: "a wall legend's sample, beside its row", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...existingRuns.map((e) => ({ kind: "existing", why: e.why, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
       ...[...like.excluded].map((w) => ({ kind: "excluded-like", why: "drawn like a wall you clicked — excluded by you", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...area.outside.map((w) => ({ kind: "outside-work-area", why: "outside the work area you drew", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
