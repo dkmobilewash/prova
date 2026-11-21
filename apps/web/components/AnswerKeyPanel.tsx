@@ -762,6 +762,18 @@ export function AnswerKeyPanel({
           return (
             <div data-takeoff="key-window-tag" data-kind={markKind} className="mt-1 flex flex-wrap items-center gap-1 text-xs">
               <span className="text-ink-muted">{word}</span>
+              {(() => {
+                // ── WHICH MARK THIS GOES TO, SAID IN THE STRIP (Round 39) ──
+                // Placing a mark focuses it, so a tag picked "for the next one" landed on the last one.
+                const same = (state.openings ?? []).filter((o) => o.kind === markKind);
+                const at = same.findIndex((o) => o.id === focusedOpening);
+                const target = same[at];
+                return (
+                  <span data-takeoff="key-window-tag-target" className="text-ink-label">
+                    {`→ ${markKind} ${at + 1} (the larger ring), ${target?.tag === undefined ? "no tag yet" : `tagged ${target.tag}`}`}
+                  </span>
+                );
+              })()}
               {choices.map((tag, at) => (
                 <button
                   key={tag}

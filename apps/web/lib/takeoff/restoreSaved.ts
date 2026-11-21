@@ -505,7 +505,8 @@ export function restoreSaved(
 
   return {
     ok: true,
-    state,
+    // What came off disk is the baseline: nothing in it is an edit ⌘Z should take back.
+    state: { ...state, edits: [] },
     carried,
     // Only the records NOT re-applied: the re-applied ones are in `state.splits`
     // already, and the save writes both (`splitsForSave`).

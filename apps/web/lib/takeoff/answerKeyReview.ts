@@ -123,6 +123,14 @@ export type ReviewState = {
    * under them reading as fresh, unreviewed work. Optional: older states have none.
    */
   needsLook?: string[];
+  /**
+   * ── WHAT WAS DONE, IN ORDER, SO ONE ⌘Z TAKES BACK THE LAST OF IT (Round 39) ──
+   *
+   * Traces drawn and tags given, newest last; a tag keeps the tag it replaced. ⌘Z only ever removed
+   * the last trace, so a tag given to the wrong mark could not be taken back. Optional: a state from
+   * before this has none, and an undo with nothing recorded does nothing here.
+   */
+  edits?: ({ kind: "trace"; id: string } | { kind: "tag"; id: string; was?: string })[];
 };
 
 export type Opening = { id: string; x: number; y: number; kind: "window" | "door"; tag?: string };
@@ -143,6 +151,12 @@ export function removeOpening(state: ReviewState, id: string): ReviewState {
 
 /** Sets (or, with null or blank, clears) an opening's tag, upper-cased like a wall type. */
 export function setOpeningTag(state: ReviewState, id: string, tag: string | null): ReviewState {
+  const was = (state.openings ?? []).find((o) => o.id === id);
+  if (was === undefined) return state;
+  return { ...retag(state, id, tag), edits: [...(state.edits ?? []), { kind: "tag", id, ...(was.tag === undefined ? {} : { was: was.tag }) }] };
+}
+
+function retag(state: ReviewState, id: string, tag: string | null): ReviewState {
   const clean = tag?.trim().toUpperCase() ?? "";
   return {
     ...state,
@@ -296,7 +310,19 @@ export function addTraced(state: ReviewState, wall: Candidate): ReviewState {
     ...state,
     traced: [...state.traced, { ...wall, id: `t${state.nextTraceId}` }],
     nextTraceId: state.nextTraceId + 1,
+    edits: [...(state.edits ?? []), { kind: "trace", id: `t${state.nextTraceId}` }],
   };
+}
+
+/** Takes back the newest recorded edit that still applies (a trace drawn, a tag given); null when there is none. */
+export function undoLastEdit(state: ReviewState): { state: ReviewState; undone: "trace" | "tag" | null } {
+  const edits = [...(state.edits ?? [])];
+  while (edits.length > 0) {
+    const last = edits.pop()!;
+    if (last.kind === "trace" && state.traced.some((t) => t.id === last.id)) return { state: { ...removeTraced(state, last.id), edits }, undone: "trace" };
+    if (last.kind === "tag" && (state.openings ?? []).some((o) => o.id === last.id)) return { state: { ...retag(state, last.id, last.was ?? null), edits }, undone: "tag" };
+  }
+  return { state: { ...state, edits }, undone: null };
 }
 
 /**
