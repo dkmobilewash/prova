@@ -57,6 +57,8 @@ describe.skipIf(LIVE === "" || PLANS === "" || OUT === "")("server detection's o
         appendFileSync(OUT, JSON.stringify({
           file: line.file, page: line.page, outcome, offered: offered.length, held: held.size,
           list: offered.filter((r) => !held.has(r)).map((r) => [r.x1, r.y1, r.x2, r.y2]),
+          offeredRuns: offered.map((r) => [r.x1, r.y1, r.x2, r.y2]),
+          heldRuns: [...held].map((r) => [r.x1, r.y1, r.x2, r.y2]),
         }) + "\n");
       }
     } finally {
