@@ -2,14 +2,16 @@
  * ── THE MODEL-FILE CENSUS'S OWN GUARDS (2026-11-24) ──
  *
  * Born from production running with the pairwise wall classifier silently OFF: TAKEOFF_WALL_MODEL
- * named a file the deployed function did not ship, the only symptom was one stderr line on a page
- * production rarely loads, and the file sat in `outputFileTracingIncludes` beside three siblings
- * that WERE shipped. No test here can see a Vercel bundle — what source can carry is pinned
+ * resolved to a file the function could not find (first read as "did not ship"; the real cause was the
+ * baked build directory, see case 2), the only symptom was one stderr line on a page
+ * production rarely loads. Every model file was traced; all four resolved into the build directory. No test here can see a Vercel bundle — what source can carry is pinned
  * instead, each half sized against a source that cannot drift with it:
  *
  *   1. every committed model file is NAMED in `outputFileTracingIncludes` (door-model.json was
  *      committed and never traced — found by this test's first run);
- *   2. `resolveModelPath` accepts both documented spellings and lands on the committed file;
+ *   2. `resolveModelPath` accepts both documented spellings and lands on the committed file, also
+ *      when the baked build directory is absent (the real cause, found the same day: the file WAS
+ *      traced; the resolver looked in /vercel/path0, which only the build has);
  *   3. `modelFileCensus` reports a configured-but-missing file, and treats unset as a choice;
  *   4. MODEL_FILE_ENVS is the ONLY list — a `TAKEOFF_*_MODEL` literal in lib/takeoff that the
  *      census does not cover fails here, so a seventh model var cannot ship outside the census.
@@ -62,6 +64,26 @@ describe("resolveModelPath", () => {
     expect(existsSync(underApp)).toBe(true);
     expect(existsSync(fromRepoRoot)).toBe(true);
     expect(fromRepoRoot).toBe(underApp);
+  });
+
+  // THE 2026-11-24 OUTAGE, REPRODUCED: webpack bakes the BUILD machine's path into `import.meta.url`,
+  // and on Vercel that directory (/vercel/path0) is not in the function. The function runs at the repo
+  // root. Every committed model must still resolve, from both env spellings — and a resolver that
+  // trusts the baked path alone (the #860 code) fails every row here.
+  it("finds every committed model in a function whose build directory no longer exists", () => {
+    const repoRoot = join(appDir, "..", "..");
+    const gone = "/vercel/path0/apps/web";
+    expect(existsSync(gone)).toBe(false); // the control: the baked directory really is absent here
+    expect(committedModels.length).toBeGreaterThanOrEqual(4);
+    for (const file of committedModels) {
+      for (const named of [`models/${file}`, `apps/web/models/${file}`]) {
+        for (const cwd of [repoRoot, appDir]) {
+          const got = resolveModelPath(named, cwd, gone);
+          expect(got.startsWith(gone), `${named} from ${cwd} resolved into the build directory`).toBe(false);
+          expect(existsSync(got), `${named} from ${cwd}`).toBe(true);
+        }
+      }
+    }
   });
 });
 

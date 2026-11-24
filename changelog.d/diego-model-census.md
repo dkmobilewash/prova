@@ -25,3 +25,14 @@ Three pieces, none of which can see a Vercel bundle, each pinning what source ca
 What this deliberately does not claim: why the tracer shipped three siblings and dropped
 `wall-model.json` on dpl_9hfCmf5o/dpl_AEvWJEp2 is still unexplained; no repo test can read
 a lambda's filesystem. The census makes the next occurrence one grep instead of an afternoon.
+
+**CORRECTED the same day by `diego/model-path-runtime`: the two sentences above saying the
+deployment did not ship `wall-model.json` and that the three siblings "shipped fine" are both
+false.** Every file was traced (179 of 179 entries in a local build). `resolveModelPath`
+derived its root from `import.meta.url`, which webpack bakes to the build machine's path
+(`/vercel/path0/apps/web` on Vercel, absent in the function), so ALL FOUR models were
+unreadable. The siblings looked fine only because the failing page never reads them:
+`/jobs/[id]/takeoff` calls `loadWallModel` alone, and `serverHeldModels` runs there only with
+`TAKEOFF_LIVE_MODEL_PARITY=1`. Their silence meant "never read", not "loaded". The census
+line stays the proof instrument; it now says the file could not be found, not that it was
+not shipped.
