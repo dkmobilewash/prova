@@ -70,6 +70,8 @@ export type StageCtx = {
    *  person — the first caller in this app for which that is the real case rather
    *  than a nullable column being polite. */
   startedByUserId: string | null;
+  /** One sheet's wall-finding budget when the hosting function cannot give the full one (the 60 s sweep). */
+  detectBudgetMs?: number;
 };
 
 /**

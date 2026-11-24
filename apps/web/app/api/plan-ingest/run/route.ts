@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { prisma } from "@prova/db";
 import { closeIfSettled, claimPorts, hasWaitingWork, ingestCounts, nextJobToDrain } from "@/lib/plan-ingest/claim";
 import { DEFAULT_RUN_BUDGET_MS, runIngest, type RunReport } from "@/lib/plan-ingest/runner";
+import { SHORT_FUNCTION_DETECTION_BUDGET_MS } from "@/lib/takeoff/timeBudget";
 import { stageWork } from "@/lib/plan-ingest/stages";
 
 /**
@@ -154,6 +155,8 @@ export async function GET(request: Request) {
           ingestJobId: job.id,
           jobId: job.plan.jobId,
           startedByUserId: job.startedByUserId,
+          // A sheet's full budget does not fit in this 60 s function; out of time is a retryable row.
+          detectBudgetMs: SHORT_FUNCTION_DETECTION_BUDGET_MS,
         }),
       }),
       budgetMs: DEFAULT_RUN_BUDGET_MS,

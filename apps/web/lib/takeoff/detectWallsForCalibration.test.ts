@@ -130,6 +130,13 @@ describe("detection stops itself instead of being stopped", () => {
     log.mockRestore();
   });
 
+  it("takes a caller's budget from the target when the clock names none (the 60 s sweep passes 45 s that way)", async () => {
+    openPlanPdf.mockResolvedValue(fakeDoc(10).doc);
+    const log = vi.spyOn(console, "info").mockImplementation(() => {});
+    expect(await detectWallsForCalibration({ ...target, budgetMs: 1 }, { now: tickingClock(1_000) })).toBe("out-of-time");
+    log.mockRestore();
+  });
+
   it("does NOT give up when the budget runs out while sampling — it drops the template pass", async () => {
     // The control and the case differ in ONE thing: how fast the clock runs.
     const generous = fakeDoc(10);
