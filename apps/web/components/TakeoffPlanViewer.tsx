@@ -763,6 +763,14 @@ export function TakeoffPlanViewer({
      *  The reviewer's own override for the filter above. */
     offerAll?: boolean;
     /**
+     * Draw the finder's RAW runs on the sheet instead of the customer offer.
+     * Key mode defaults to what a contractor sees (Diego, 2026-11-20: a key
+     * screen full of title-block and notes runs reviews the app's junk, not
+     * the drawing); this is the reviewer's way back to every raw run. Applied
+     * at find time — toggle it, then Find the walls on this sheet again.
+     */
+    showSetAside?: boolean;
+    /**
      * Tracing is armed: the next two clicks on the sheet are the ends of a
      * wall the drawing has no candidate for.
      *
@@ -4387,12 +4395,19 @@ export function TakeoffPlanViewer({
         stepAt = performance.now();
       };
       await stepDone("hand-back");
-      let offered = answerKey !== undefined ? null : offerHere();
+      // ── KEY MODE DRAWS THE CUSTOMER OFFER, UNLESS THE REVIEWER ASKS FOR THE RAW LIST ──
+      //
+      // The raw list was the default and Diego's key screens filled with
+      // title-block, notes and legend runs no contractor would see. The rail's
+      // candidates (`candidatesFromLastDetect`) and the saved labels never read
+      // this display list, so grading is unchanged either way.
+      const rawKeyList = answerKey !== undefined && answerKey.showSetAside === true;
+      let offered = rawKeyList ? null : offerHere();
       // Detection's run columns read the offer BEFORE the demolition compare and the aligned plan's lines and faces.
       const beforeCompare = offered;
       let runPrior: ReturnType<typeof priorForRuns>;
-      // Key mode shows the raw runs; the customer offer is kept for when the mode turns off.
-      if (answerKey !== undefined) customerOfferRef.current = { page: pageNumber, runs: offerHere().offeredRuns };
+      // The customer offer is kept for when the mode turns off.
+      if (answerKey !== undefined) customerOfferRef.current = { page: pageNumber, runs: (offered ?? offerHere()).offeredRuns };
       else customerOfferRef.current = null;
       await stepDone("set-asides");
       // ── PLAN COMPARISON, ON A PAIRED SHEET — see `priorPlan.ts` ──
