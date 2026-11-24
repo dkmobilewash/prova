@@ -129,6 +129,38 @@ describe("the sheet's thread, when it cannot answer", () => {
     expect(existsSync(path)).toBe(true);
   });
 
+  // #1250's outage, for the raster thread: webpack bakes the BUILD machine's path into import.meta.url, and on
+  // Vercel that directory is not where the function looks. With the baked directory gone, the script is still
+  // found from the working directory, from the repo root (Vercel) and from apps/web (next start, vitest).
+  it("finds the worker script in a function whose build directory no longer exists", async () => {
+    const { existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const appDir = fileURLToPath(new URL("../../..", import.meta.url));
+    const gone = "/vercel/path0/apps/web";
+    expect(existsSync(gone)).toBe(false); // the control: the baked directory really is absent here
+    for (const cwd of [join(appDir, "..", ".."), appDir]) {
+      const path = rasterWorkerPath(cwd, gone);
+      expect(path.startsWith(gone), `from ${cwd} it resolved into the build directory`).toBe(false);
+      expect(existsSync(path), `from ${cwd}`).toBe(true);
+      expect(path.endsWith("/lib/takeoff/raster/rasterWorker.mjs")).toBe(true);
+    }
+  });
+
+  // The case above cannot see the bundle: unbundled, import.meta.url is the real file, so the old code passes it on a
+  // laptop. What source CAN carry: the function's own body routes through the runtime resolver and derives nothing
+  // from import.meta.url. Its BODY only, because the doc comment above it quotes the old line (and `stripComments`
+  // loses its place at this file's regex literal holding a quote). wallModelFile.ts keeps the one baked fallback, last.
+  it("derives the worker path through the runtime resolver, never from import.meta.url", async () => {
+    const { readFileSync } = await import("node:fs");
+    const raw = readFileSync(new URL("./nodeStack.ts", import.meta.url), "utf8");
+    const start = raw.indexOf("export function rasterWorkerPath(");
+    expect(start).toBeGreaterThan(-1); // a renamed function must fail here, not pass on an empty body
+    const body = raw.slice(start, raw.indexOf("\n}\n", start));
+    expect(body).toContain("resolveModelPath(");
+    expect(body).not.toContain("import.meta.url");
+  });
+
   it("refuses an ask on a thread whose script did not load, instead of an uncaught error or a wait", async () => {
     const sheet = SheetWorker.start({ script: "/nonexistent/rasterWorker.mjs", timeoutMs: 2_000 });
     await expect(sheet.render(new Uint8Array([1, 2, 3]), 1, 72)).rejects.toThrow(/Cannot find module|exited|did not answer/);
