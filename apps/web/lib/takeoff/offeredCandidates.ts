@@ -368,9 +368,10 @@ export function offeredCandidates(
   // ── NOT-DRAWING v2 (prereg-not-drawing-v2.md): the title block read off its own ruled boundary,
   // and the caption'd text columns, are not the drawing — on every path, whatever the plan box did.
   const titleBoxes = NOT_DRAWING && sheet.textItems !== undefined ? titleBlockRegions(sheet.pageSegments ?? sheet.segments, sheet.textItems, sheet.widthPt) : [];
-  const notesBoxes = NOT_DRAWING ? (sheet.textBlocks ?? []) : [];
+  // v3 (prereg-not-drawing-v3.md): the text-block boxes are NOT a set-aside any more — Joplin's
+  // "text block" covered half its plan and cost 732 ft of real wall. They stay plumbed through for
+  // the run-model features (coordination/not-drawing-model-features.md).
   const titleBlock: WallCandidate[] = [];
-  const notesColumn: WallCandidate[] = [];
   const onPlan = sheet.walls.filter((w) => {
     // A run with no extent — a closed loop's chord, a degenerate merge — is
     // nothing a reviewer can draw, accept or join, whatever its `lengthFeet`
@@ -388,10 +389,6 @@ export function offeredCandidates(
     }
     if (titleBoxes.length > 0 && insideBoxes(titleBoxes, w.x1, w.y1, w.x2, w.y2)) {
       titleBlock.push(w);
-      return false;
-    }
-    if (notesBoxes.length > 0 && insideBoxes(notesBoxes, w.x1, w.y1, w.x2, w.y2)) {
-      notesColumn.push(w);
       return false;
     }
     // The length cap is the equipment words' (a 10 ft reach finds a building's
@@ -539,9 +536,6 @@ export function offeredCandidates(
   if (titleBlock.length > 0) {
     aside.set("title-block", { kind: "title-block", why: "in the title block, past its ruled boundary", n: titleBlock.length });
   }
-  if (notesColumn.length > 0) {
-    aside.set("notes-column", { kind: "notes-column", why: "in a notes, keynotes, legend or schedule column", n: notesColumn.length });
-  }
   if (zeroExtent > 0) {
     aside.set("zero-extent", { kind: "zero-extent", why: "a run with no extent — the same start and end — which nothing can draw or accept", n: zeroExtent });
   }
@@ -580,7 +574,6 @@ export function offeredCandidates(
       ...wordRuns.map((r) => ({ kind: "ocr-words", why: `inside the OCR word "${r.word}"`, lengthFeet: r.wall.lengthFeet, x1: r.wall.x1, y1: r.wall.y1, x2: r.wall.x2, y2: r.wall.y2 })),
       ...legendSamples.map((w) => ({ kind: "legend-sample", why: "a wall legend's sample, beside its row", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...titleBlock.map((w) => ({ kind: "title-block", why: "in the title block, past its ruled boundary", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
-      ...notesColumn.map((w) => ({ kind: "notes-column", why: "in a notes, keynotes, legend or schedule column", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...existingRuns.map((e) => ({ kind: "existing", why: e.why, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
       ...[...like.excluded].map((w) => ({ kind: "excluded-like", why: "drawn like a wall you clicked — excluded by you", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...area.outside.map((w) => ({ kind: "outside-work-area", why: "outside the work area you drew", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),

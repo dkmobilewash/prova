@@ -68,12 +68,14 @@ export function titleBlockRegions(
   const texts = textItems.map((t) => ({ ...t, ux: t.x / widthPt, uy: t.y / widthPt }));
   const out: Box[] = [];
 
-  // The right strip: the leftmost chained full-height boundary with title words beyond it.
+  // The right strip: the RIGHTMOST chained full-height boundary with title words beyond it
+  // (prereg-not-drawing-v3.md). Leftmost was v2, and it picked K-4's own plan chain at x .728;
+  // the rightmost qualified chain is the annotation side's true divider on every probed sheet.
   const verticals = segments
     .filter((s) => Math.abs(s.x2 - s.x1) / widthPt < SAME_LINE)
     .map((s) => ({ at: (s.x1 + s.x2) / 2 / widthPt, lo: Math.min(s.y1, s.y2) / widthPt, hi: Math.max(s.y1, s.y2) / widthPt }))
     .filter((p) => p.at >= BOUNDARY_FROM_X);
-  const vSpans = [...chainedSpan(verticals, CHAIN_GAP_SHARE * H)].filter(([, span]) => span >= SPAN_SHARE * H).map(([at]) => at).sort((a, b) => a - b);
+  const vSpans = [...chainedSpan(verticals, CHAIN_GAP_SHARE * H)].filter(([, span]) => span >= SPAN_SHARE * H).map(([at]) => at).sort((a, b) => b - a);
   for (const x of vSpans) {
     if (titleWordCount(texts.filter((t) => t.ux >= x)) >= MIN_TITLE_WORDS) {
       out.push({ from: x, to: 1, fromY: 0, toY: H });

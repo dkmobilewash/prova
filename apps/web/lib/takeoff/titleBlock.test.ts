@@ -38,6 +38,17 @@ describe("the title block is read off the sheet's own ruled boundary", () => {
     expect(titleBlockRegions([...frame, ...gappy], titleWords, W), "a 150 pt hole is not a chain").toHaveLength(0);
   });
 
+  it("the RIGHTMOST qualified chain wins: a plan's own full-height line left of the words is not the boundary (K-4's shape)", () => {
+    // Two qualifying chains: the plan's long vertical at 720 and the title divider at 880. Title
+    // words sit right of both; the strip must start at 880 so the plan tail (720-880) stays.
+    const planChain = seg(720, 8, 720, 692);
+    const divider = seg(880, 8, 880, 692);
+    const words = [word("Drawn: AH", 890, 100), word("Sheet A3.10", 890, 600)];
+    const boxes = titleBlockRegions([...frame, planChain, divider], words, W);
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0].from).toBeCloseTo(0.88, 5);
+  });
+
   it("a bottom title band: the highest qualifying full-width rule in the bottom 15%", () => {
     const band = seg(8, 620, 992, 620);
     const below = [word("PROJECT NO. 22034", 100, 650), word("REVISIONS", 400, 650)];
@@ -53,7 +64,7 @@ describe("the title block is read off the sheet's own ruled boundary", () => {
   });
 });
 
-describe("behind NOT_DRAWING, runs in the title block and the text columns are set aside on the customer list", () => {
+describe("behind NOT_DRAWING, runs in the title block are set aside on the customer list — and text-block boxes are NOT (v3)", () => {
   const wall = (x1: number, y1: number, x2: number, y2: number): WallCandidate => ({ x1, y1, x2, y2, thicknessFeet: 0.5, lengthFeet: (Math.hypot(x2 - x1, y2 - y1) * 100) }) as WallCandidate;
   const plan = wall(0.1, 0.3, 0.4, 0.3);
   const inTitle = wall(0.82, 0.2, 0.95, 0.2);
@@ -70,15 +81,15 @@ describe("behind NOT_DRAWING, runs in the title block and the text columns are s
   });
   const blocks = [{ from: 0.6, to: 0.76, fromY: 0.05, toY: 0.5 }];
 
-  it("flag on: both set aside with named kinds; flag off: offered as today", async () => {
+  it("flag on: the title run goes, the text-block run STAYS (rule B removed, Joplin's 732 ft); flag off: today", async () => {
     vi.stubEnv("NEXT_PUBLIC_TAKEOFF_NOT_DRAWING", "1");
     vi.resetModules();
     const on = (await import("./offeredCandidates")).offeredCandidates(sheet(blocks));
     vi.unstubAllEnvs();
     vi.resetModules();
-    expect(on.offeredRuns).toEqual([plan]);
+    expect(on.offeredRuns).toEqual([plan, inNotes]);
     expect(on.setAsideLines.filter((l) => l.kind === "title-block")).toHaveLength(1);
-    expect(on.setAsideLines.filter((l) => l.kind === "notes-column")).toHaveLength(1);
+    expect(on.setAsideLines.filter((l) => l.kind === "notes-column")).toHaveLength(0);
     const off = (await import("./offeredCandidates")).offeredCandidates(sheet(blocks));
     expect(off.offeredRuns).toEqual([plan, inTitle, inNotes]);
   });
