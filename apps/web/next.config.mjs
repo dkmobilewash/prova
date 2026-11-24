@@ -189,6 +189,11 @@ const nextConfig = {
       "./models/wall-run-model.json",
       "./models/wall-reno-model.json",
       "./models/wall-reno-all-model.json",
+      // door-model.json was committed with no include line — the same
+      // ships-no-file trap as the entries above, waiting for the day
+      // TAKEOFF_DOOR_MODEL is set. modelCensus.test.ts now fails the build
+      // when a committed model file is missing from this list.
+      "./models/door-model.json",
       // THE SAMPLE JOB'S DRAWING, read by path for every company's sample
       // (`lib/sample-job/samplePlan.ts`). An invented fixture, never a client's set.
       "./lib/takeoff/fixtures/plans/S13.pdf",
