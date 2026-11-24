@@ -93,11 +93,12 @@ export function loadRenoModel(env: Record<string, string | undefined> = process.
 
 
 /**
- * ── THE MODEL-FILE CENSUS: A CONFIGURED FILE THE DEPLOYMENT DID NOT SHIP IS NAMED OUT LOUD ──
+ * ── THE MODEL-FILE CENSUS: A CONFIGURED FILE THE FUNCTION CANNOT FIND IS NAMED OUT LOUD ──
  *
- * 2026-11-24: production's TAKEOFF_WALL_MODEL named a file the deployed function did not carry,
- * while the three run/reno files beside it in `outputFileTracingIncludes` were present — so the
- * pairwise classifier ran silently off, and only a single once-per-process stderr line said so, on
+ * 2026-11-24: production's TAKEOFF_WALL_MODEL resolved to a file the function could not find (the build
+ * directory baked into `import.meta.url`, see `resolveModelPath`; this said "did not carry" at first, wrongly),
+ * and so did the three run/reno files beside it (they only looked present because that page never reads
+ * them) — so every learned hold ran silently off, and only a single once-per-process stderr line said so, on
  * a page production rarely loads. Each loader still logs its own failure at first use; this census
  * exists so ONE greppable `[model-census]` line names every configured-but-missing file together,
  * the first time any request loads models. An UNSET variable is a choice, not a failure.
@@ -130,7 +131,7 @@ export function serverHeldModels(holdApplies: boolean, env: Record<string, strin
   if (!censusSaid) {
     censusSaid = true;
     for (const miss of modelFileCensus(env).filter((s) => !s.ok)) {
-      console.error(`[model-census] ${miss.envName} names a model file this deployment did not ship — that model is OFF`, {
+      console.error(`[model-census] ${miss.envName} names a model file this function cannot find — that model is OFF`, {
         named: miss.named,
         resolved: miss.resolved,
       });

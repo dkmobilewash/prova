@@ -9,6 +9,11 @@ build had it. All four learned models (pairwise, run, R, R-ALL) go through that 
 of them has loaded in production since it was configured. The run/reno files were never shown to load:
 the failing page reads only the pairwise model, so their silence in the error log proved nothing.
 
+This also corrects #1248's own entry (`changelog.d/diego-model-census.md`) and the census comments,
+which said the deployment did not ship `wall-model.json` while its siblings shipped fine. Both claims
+were false. The `[model-census]` line now says it "cannot find" the file rather than that the file
+was not shipped.
+
 `resolveModelPath` now tries the working directory first (the repo root on Vercel, apps/web locally),
 then apps/web under it, the repo root above it, and the baked directory last, for a laptop.
 

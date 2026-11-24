@@ -2,9 +2,9 @@
  * ── THE MODEL-FILE CENSUS'S OWN GUARDS (2026-11-24) ──
  *
  * Born from production running with the pairwise wall classifier silently OFF: TAKEOFF_WALL_MODEL
- * named a file the deployed function did not ship, the only symptom was one stderr line on a page
- * production rarely loads, and the file sat in `outputFileTracingIncludes` beside three siblings
- * that WERE shipped. No test here can see a Vercel bundle — what source can carry is pinned
+ * resolved to a file the function could not find (first read as "did not ship"; the real cause was the
+ * baked build directory, see case 2), the only symptom was one stderr line on a page
+ * production rarely loads. Every model file was traced; all four resolved into the build directory. No test here can see a Vercel bundle — what source can carry is pinned
  * instead, each half sized against a source that cannot drift with it:
  *
  *   1. every committed model file is NAMED in `outputFileTracingIncludes` (door-model.json was
