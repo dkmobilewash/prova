@@ -31,6 +31,12 @@ import { planSetFromLoaded } from "@/lib/takeoff/planSet";
  * has been measured: going back to the estimate shows what was just done
  * because it is the same rows, not because anything synchronises.
  */
+/**
+ * The scale save's `after()` detection and Run takeoff again run in this route's function, and a sheet gets
+ * `SHEET_DETECTION_BUDGET_MS` (180 s), as it does in the browser. Declared, not left to the project's default.
+ */
+export const maxDuration = 300;
+
 export default async function TakeoffWorkspacePage({
   params,
   searchParams,

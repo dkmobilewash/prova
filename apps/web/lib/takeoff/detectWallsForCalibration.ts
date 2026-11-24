@@ -1,5 +1,5 @@
 import type { PriorLine } from "./planCompare";
-import { SheetTooSlowError, withTimeBudget } from "./timeBudget";
+import { SHEET_DETECTION_BUDGET_MS, SheetTooSlowError, withTimeBudget } from "./timeBudget";
 import { splitVariant, VARIANT_NOTES, variantNotes } from "./variantMark";
 import { after } from "next/server";
 import { prisma } from "@prova/db";
@@ -66,8 +66,11 @@ import { doorScheduleForPlan, doorsOnSheet, LEGEND_TEXT_ON, legendForPlan, typed
  * `runner.ts` also establishes the shape: a budget reading `Date.now()` can only
  * be tested by waiting for it, so the clock is INJECTED and the deadline becomes
  * a test that runs in a millisecond.
+ *
+ * 2026-11-24: 45 s became the browser's 180 s (`SHEET_DETECTION_BUDGET_MS`), so a sheet gets the same time on either
+ * side; the routes that run it declare 300 s. A 60 s function passes the shorter budget as `target.budgetMs`.
  */
-export const DETECTION_BUDGET_MS = 45_000;
+export const DETECTION_BUDGET_MS = SHEET_DETECTION_BUDGET_MS;
 
 /** The least time the finder itself gets, however much sampling spent: inside the route's 60 s. */
 export const FINDER_FLOOR_MS = 10_000;
@@ -122,6 +125,8 @@ export type DetectTarget = {
   pairWithThicknesses?: boolean;
   /** Stored legend and schedule reads only, never the model: a suggestion refresh (`suggestionRefresh.ts`). */
   noModel?: boolean;
+  /** This sheet's budget when the caller's function cannot give it `DETECTION_BUDGET_MS` (the 60 s sweep). */
+  budgetMs?: number;
 };
 
 export async function detectWallsForCalibration(
@@ -129,7 +134,7 @@ export async function detectWallsForCalibration(
   clock: DetectClock = {},
 ): Promise<DetectOutcome> {
   const now = clock.now ?? (() => Date.now());
-  const budgetMs = clock.budgetMs ?? DETECTION_BUDGET_MS;
+  const budgetMs = clock.budgetMs ?? target.budgetMs ?? DETECTION_BUDGET_MS;
   const startedAt = now();
   // When this run read the legend: a legend saved after it makes its suggestions stale (`suggestionStamp.ts`).
   const readAt = new Date();

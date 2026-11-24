@@ -1,6 +1,12 @@
 import { advancePlanIngest } from "@/lib/actions/planIngest";
 
 /**
+ * A walls slice is one sheet's full detection (`SHEET_DETECTION_BUDGET_MS`, 180 s) and its work timeout is 265 s
+ * (`WALLS_LEASE_MS`), so this route declares Hobby's ceiling rather than trusting the project's default.
+ */
+export const maxDuration = 300;
+
+/**
  * ── ONE SLICE OF A PLAN READING, OVER A PLAIN REQUEST ──
  *
  * The panel used to call `advancePlanIngest` as a Server Action, and a page's

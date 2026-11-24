@@ -6,7 +6,7 @@ import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { claimPorts, closeIfSettled, ingestViewOf, unfinishedIngestsFor } from "@/lib/plan-ingest/claim";
 import { openSharedPlanPdf } from "@/lib/plan-ingest/sharedPlanPdf";
-import { runIngestLanes, MAX_ATTEMPTS, MODEL_LANES, type IngestView } from "@/lib/plan-ingest/runner";
+import { runIngestLanes, MAX_ATTEMPTS, MODEL_LANES, WALLS_LEASE_MS, type IngestView } from "@/lib/plan-ingest/runner";
 import { isRunnableStage, stageWork, STAGE_SPENDS } from "@/lib/plan-ingest/stages";
 import { wallsSheetsFor, wallsTaskPages } from "@/lib/plan-ingest/walls";
 import { scannedPageNumbers } from "@/lib/plan-ingest/raster";
@@ -271,6 +271,8 @@ export async function advancePlanIngest(ingestJobId: string): Promise<ActionResu
       // Five seconds. Short enough that the page stays responsive, long enough
       // that a slice is worth the round trip.
       budgetMs: 5_000,
+      // A walls slice is one sheet's full detection budget; claimed for longer than that.
+      leaseMs: job.stage === "WALLS" ? WALLS_LEASE_MS : undefined,
     });
   } catch (err) {
     // A page's own failure is caught inside `runIngest` and recorded against
