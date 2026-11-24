@@ -1,4 +1,5 @@
 import type { PlanIngestStage } from "@prova/db";
+import { SHEET_DETECTION_BUDGET_MS } from "@/lib/takeoff/timeBudget";
 
 /**
  * The plan-ingestion run loop, with no database and no clock of its own.
@@ -46,6 +47,13 @@ export const DEFAULT_RUN_BUDGET_MS = 45_000;
  * genuinely gone.
  */
 export const CLAIM_LEASE_MS = 90_000;
+
+/**
+ * The lease for a WALLS task claimed by the open page's run (`advancePlanIngest`): one sheet's detection
+ * (`SHEET_DETECTION_BUDGET_MS`) plus 90 s for the rooms and items after it. The work timeout it gives (265 s) ends
+ * inside the advance route's 300 s, so the sheet is never recorded as timed out while its finder still has time.
+ */
+export const WALLS_LEASE_MS = SHEET_DETECTION_BUDGET_MS + 90_000;
 
 /**
  * How many times one page may be attempted before it is left failed.
