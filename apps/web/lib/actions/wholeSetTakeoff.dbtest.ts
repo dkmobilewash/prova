@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { prisma } from "@prova/db";
 import { claimPorts, closeIfSettled, ingestViewOf } from "@/lib/plan-ingest/claim";
 import { runIngest } from "@/lib/plan-ingest/runner";
-import { wallsWork } from "@/lib/plan-ingest/walls";
+import { WALLS_NOT_POSTED, wallsWork } from "@/lib/plan-ingest/walls";
 import type { DetectTarget } from "@/lib/takeoff/detectWallsForCalibration";
 
 /**
@@ -193,6 +193,33 @@ describe("whole-set takeoff", () => {
     // Pages 1 and 2 are found again, and page 5, which found nothing, is asked again.
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.total).toBe(3);
+  });
+
+  it("NEVER 'DONE' WHEN POSTING THREW: the sheet fails with a sentence, nothing is written, and a retry can still post (2026-11-24 P2028)", async () => {
+    // Production: posting threw P2028 on a 144-run sheet, the task finished with "; walls on job failed" in its note,
+    // and the panel said "1 of 1 sheets — done" with 0 rows on the job.
+    const run = await prisma.planIngestJob.findFirstOrThrow({ where: { planId, stage: "WALLS" }, orderBy: { createdAt: "desc" }, select: { id: true } });
+    const before = await prisma.planIngestTask.findFirstOrThrow({ where: { jobId: run.id, pageNumber: 2 }, select: { id: true, attempts: true, error: true, finishedAt: true, nextAttemptAt: true, note: true } });
+    expect(before.finishedAt).toBeNull(); // the control: page 2 is still to do on this run
+    const work = wallsWork(
+      { planId, companyId, ingestJobId: run.id, jobId, startedByUserId: context.id },
+      {
+        detect: async () => "nothing-found" as const,
+        refresh: async (target) => (target.pageNumber === 2 ? { kind: "proposals-only" as const, held: [] } : { kind: "posted-left-alone" as const }),
+        findRooms: async () => ({ kind: "skipped" as const, why: "room finding is off" }),
+        writeWallItems: async () => {
+          throw new Error("Transaction API error: Transaction not found.");
+        },
+      },
+    );
+    const report = await runIngest({ ports: claimPorts({ jobId: run.id, work }), budgetMs: 10_000 });
+    const after = await prisma.planIngestTask.findFirstOrThrow({ where: { id: before.id }, select: { finishedAt: true, error: true, note: true } });
+    expect(after.finishedAt, `the sheet finished although posting threw (report ${JSON.stringify(report)})`).toBeNull();
+    expect(after.error).toBe(WALLS_NOT_POSTED);
+    expect(after.note ?? "").not.toMatch(/walls on job failed/);
+    expect(await prisma.takeoffMeasurement.count({ where: { pageId: pageIds[2], source: "DETECTED" } })).toBe(0);
+    // Put the task back as it was, so the next case posts page 2 from the same state.
+    await prisma.planIngestTask.update({ where: { id: before.id }, data: { attempts: before.attempts, error: before.error, note: before.note, finishedAt: before.finishedAt, nextAttemptAt: before.nextAttemptAt, claimedAt: null, claimExpiresAt: null } });
   });
 
   it("A SHEET FOUND BUT NEVER POSTED IS POSTED: its stored walls go onto the job (new-customer run v2, M3)", async () => {
