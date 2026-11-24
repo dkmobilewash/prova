@@ -103,6 +103,32 @@ export type WallTypeTag = {
 export type PageTextItem = { str: string; x: number; y: number; width: number; height: number };
 
 /**
+ * ── AN APARTMENT'S UNIT TYPE IS NOT A WALL TYPE ──
+ *
+ * Mid-City A4.0–A4.3 print "UNIT TYPE" over "B1" / "C1" in every apartment, as
+ * plain text with no symbol around it. All 48 read as wall tags and typed
+ * 1,627 ft of NEW WALL as B1/C1 (prereg-unit-label-guard.md, 2026-11-24). The
+ * label scales with the plan, so the reach is in the code's own text heights:
+ * "UNIT TYPE" sat 2.2–4.3 heights away on every one, and 5 is the ceiling.
+ * Only "UNIT TYPE" is guarded: room names were not looked at.
+ *
+ * Behind TAKEOFF_UNIT_LABEL_GUARD; unset, nothing is a unit label.
+ */
+export const UNIT_LABEL_REACH_HEIGHTS = 5;
+const UNIT_TYPE = /^UNIT\s+TYPE\b/i;
+export const UNIT_LABEL_GUARD_ON = () => process.env.TAKEOFF_UNIT_LABEL_GUARD === "1";
+
+export function unitLabels(items: readonly PageTextItem[]): (item: PageTextItem) => boolean {
+  const centre = (i: PageTextItem) => ({ x: i.x + i.width / 2, y: i.y - i.height / 2 });
+  const labels = UNIT_LABEL_GUARD_ON() ? items.filter((i) => UNIT_TYPE.test(i.str.trim())).map(centre) : [];
+  if (labels.length === 0) return () => false;
+  return (item) => {
+    const c = centre(item);
+    return labels.some((l) => Math.hypot(l.x - c.x, l.y - c.y) <= UNIT_LABEL_REACH_HEIGHTS * item.height);
+  };
+}
+
+/**
  * The wall-type tags on a sheet, in page-width units.
  *
  * Deliberately NOT filtered by how often a name repeats. A filter like "a real
@@ -113,9 +139,11 @@ export type PageTextItem = { str: string; x: number; y: number; width: number; h
 export function wallTypeTags(items: readonly PageTextItem[], widthPt: number): WallTypeTag[] {
   if (!(widthPt > 0)) return [];
   const out: WallTypeTag[] = [];
+  const isUnitLabel = unitLabels(items);
   for (const item of items) {
     const name = item.str.trim();
     if (!TYPE_TAG.test(name)) continue;
+    if (isUnitLabel(item)) continue;
     out.push({
       name: name.toUpperCase(),
       x: (item.x + item.width / 2) / widthPt,
