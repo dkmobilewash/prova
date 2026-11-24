@@ -1,5 +1,6 @@
 import type { TagSymbol, TextForSymbol } from "./tagSymbols";
 import { splitVariant } from "./variantMark";
+import { unitLabels } from "./wallTags";
 import type { WallCandidate } from "./wallVectors";
 
 /**
@@ -46,10 +47,12 @@ export function bareTextTags(input: {
   const { text, vocabulary, symbols, walls, feetPerUnit, widthPt } = input;
   if (!(widthPt > 0) || !(feetPerUnit > 0)) return [];
   const out: BareTextTag[] = [];
+  const isUnitLabel = unitLabels(text);
   for (const item of text) {
     // A printed variant mark ("C6*") is the code for matching; the tag keeps the mark (`variantMark.ts`).
     const word = splitVariant(item.str).code.toUpperCase();
     if (word === "" || !vocabulary.has(word)) continue;
+    if (isUnitLabel(item)) continue; // "UNIT TYPE / B1" (`unitLabels`)
     const cx = item.x + item.width / 2;
     const cy = item.y - item.height / 2;
     if (symbols.some((s) => Math.hypot(s.x - cx, s.y - cy) <= s.radius)) continue;

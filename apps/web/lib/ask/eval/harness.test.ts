@@ -92,6 +92,8 @@ describe("every eval refuses to run without a key", () => {
   const KEYLESS_EVALS: Record<string, string> = {
     "zzTypeHeights.eval.ts":
       "calls no model: per-type wall heights measured once (prereg-type-heights.md). The zero-touch eval with, per key wall, today's chain height and the per-type height (legend rules from the cached legend reads, ZT_LEGEND_CACHE; the plan's untyped rule; deck zones), against the heights key. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR, ZT_OUT and TAKEOFF_WALL_MODEL, as zzZeroTouch does",
+    "zzLegendTextZT.eval.ts":
+      "calls no model: zero-touch typing instrument (prereg-legend-typing-only.md, reused by prereg-unit-label-guard.md). Per key wall: why its run has or lacks a type, and its heights, typing through `stageTypeGroups`; heights from the cached model legend (ZT_LEGEND_CACHE) as #1238. With LEGEND_TEXT_READ=1 the set's legend comes from its own text (`keylessLegend`); unset, no legend. Prints UNITLABEL per sheet: plain-text codes TAKEOFF_UNIT_LABEL_GUARD takes for unit labels. Skips without REAL_PLAN_DIR, TAKEOFF_LABEL_DIR, ZT_OUT and TAKEOFF_WALL_MODEL, as zzZeroTouch does",
     "legendText.eval.ts":
       "calls no model: AUTOMATION-PLAN item C. The keyless legend read (`readLegendFromText`) on every set page with a cached model read, compared code by code and field by field with that read. Skips without LEGEND_CACHE and REAL_PLAN_DIR, and asserts at least one cached read was compared",
     "zzZonedHeights.eval.ts":
