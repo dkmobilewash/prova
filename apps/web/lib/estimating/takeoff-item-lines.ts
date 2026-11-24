@@ -487,8 +487,9 @@ export async function syncTakeoffItemLines(
   // function's to read, let alone to retire.
   const existing = await tx.jobLineItem.findMany({
     where: { jobId, takeoffItemId: only === undefined ? { not: null } : { in: [...only] } },
-    select: { id: true, takeoffItemId: true, wallTypeComponentId: true, description: true, isDeleted: true },
+    select: { id: true, takeoffItemId: true, wallTypeComponentId: true, description: true, isDeleted: true, quantity: true, laborHours: true, productionRate: true },
   });
+  const stored = new Map(existing.map((line) => [line.id, line]));
   const key = (line: { takeoffItemId: string | null; wallTypeComponentId: string | null; description: string }) =>
     `${line.takeoffItemId}:${line.wallTypeComponentId ?? line.description}`;
   const live = new Map(existing.filter((line) => !line.isDeleted).map((line) => [key(line), line.id]));
@@ -500,18 +501,33 @@ export async function syncTakeoffItemLines(
   const openingItemIds = new Set(items.filter((i) => opening(i.name)).map((i) => i.id));
   let jobRates: RecapRates | null | undefined;
 
+  // ── ONE WRITE PER CHANGE, NEVER ONE PER LINE (the jobLineItem P2028 cluster, prod since 2026-08-31) ──
+  // This created every new line and updated every kept line with its own awaited query inside the caller's
+  // interactive transaction, so an 80-line estimate made 77 round trips and outlived Prisma's 5 s default at Neon's
+  // latency (P2028, 0 lines written; `syncLinesLatency.dbtest.ts`). New lines now go in one createMany, kept lines are
+  // written only when a value really moved (compared at each column's own scale), and retired lines in one updateMany.
+  const toCreate: Prisma.JobLineItemCreateManyInput[] = [];
+  const retired: string[] = [];
+  const at = (value: number | null, scale: number) => (value == null ? null : value.toFixed(scale));
+  const was = (value: { toFixed(n: number): string } | null, scale: number) => (value == null ? null : value.toFixed(scale));
+
   for (const [id, line] of wanted) {
     const lineId = live.get(id);
     if (lineId) {
       // Quantity and labour only. The price is the estimator's once it exists.
-      await tx.jobLineItem.update({
-        where: { id: lineId },
-        data: {
-          quantity: line.quantity.toString(),
-          laborHours: line.laborHours != null ? line.laborHours.toString() : null,
-          productionRate: line.productionRate != null ? line.productionRate.toString() : null,
-        },
-      });
+      const old = stored.get(lineId)!;
+      const moved =
+        was(old.quantity, 2) !== at(line.quantity, 2) || was(old.laborHours, 2) !== at(line.laborHours, 2) || was(old.productionRate, 4) !== at(line.productionRate, 4);
+      if (moved) {
+        await tx.jobLineItem.update({
+          where: { id: lineId },
+          data: {
+            quantity: line.quantity.toString(),
+            laborHours: line.laborHours != null ? line.laborHours.toString() : null,
+            productionRate: line.productionRate != null ? line.productionRate.toString() : null,
+          },
+        });
+      }
       updated += 1;
       continue;
     }
@@ -535,8 +551,7 @@ export async function syncTakeoffItemLines(
         sameCost = { cost: priced.budgetedUnitCost, price: price === null ? null : String(price) };
       }
     }
-    await tx.jobLineItem.create({
-      data: {
+    toCreate.push({
         jobId,
         description: line.description,
         unit: line.unit,
@@ -554,9 +569,14 @@ export async function syncTakeoffItemLines(
         priceBasis: entry ? "COMPANY_CATALOG" : null,
         wallTypeComponentId: line.componentId,
         takeoffItemId: line.itemId,
-      },
     });
     created += 1;
+  }
+  // The proposal lists lines by `createdAt` alone, so one statement's shared timestamp would leave their order to
+  // Postgres. Each new line keeps the order the one-at-a-time creates gave it, a millisecond apart.
+  if (toCreate.length > 0) {
+    const base = Date.now();
+    await tx.jobLineItem.createMany({ data: toCreate.map((row, i) => ({ ...row, createdAt: new Date(base + i) })) });
   }
 
   for (const line of existing) {
@@ -564,11 +584,11 @@ export async function syncTakeoffItemLines(
     if (wanted.has(key(line))) continue;
     // Retired, and the links released — which is what makes this function's
     // own removals distinguishable from a person's next time round.
-    await tx.jobLineItem.update({
-      where: { id: line.id },
-      data: { isDeleted: true, takeoffItemId: null, wallTypeComponentId: null },
-    });
+    retired.push(line.id);
     removed += 1;
+  }
+  if (retired.length > 0) {
+    await tx.jobLineItem.updateMany({ where: { id: { in: retired } }, data: { isDeleted: true, takeoffItemId: null, wallTypeComponentId: null } });
   }
 
   // ── A RENOVATION SHEET SENT AS IT WAS FOUND ──
