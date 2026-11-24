@@ -71,6 +71,8 @@ export type WallsSheet = {
 
 export const OTHER_PROJECT = "another project in this upload";
 export const WHICH_PROJECT = "waiting to be told which project to take off";
+/** A sheet whose walls were found but could not be put on the job: the task FAILS with this, never "done" (walls.ts). */
+export const WALLS_NOT_POSTED = "The walls were found but could not be put on the job. Retry this sheet.";
 export type WallsSkip = "no scale" | "not a floor plan" | "already found" | `same level as ${string}` | typeof OTHER_PROJECT | typeof WHICH_PROJECT;
 
 /** Why a sheet, on its own, is not a task — or null when it could be one.
@@ -559,7 +561,9 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       // nothing on the job. This used to say "already found" and post nothing,
       // and Baker's whole-set run put 0 walls on the job (new-customer run v2, M3).
       if (again.kind === "proposals-only") {
-        await note(task.id, await postAndRooms(task.pageNumber, again.held ?? [], refreshNoteFor(again.kind)));
+        const posted = await postAndRooms(task.pageNumber, again.held ?? [], refreshNoteFor(again.kind));
+        if (posted === null) return { ok: false, error: WALLS_NOT_POSTED };
+        await note(task.id, posted);
         return { ok: true };
       }
       // ── AND ITS WINDOWS, WHICH A SHEET FOUND BEFORE #1008 NEVER HAD COUNTED ──
@@ -605,6 +609,7 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
     // (`lib/plan-ingest/rooms.ts`). Its outcome rides on the task's note; a
     // failure there does not fail the sheet, whose walls are already written.
     const text = outcome === "written" ? await postAndRooms(task.pageNumber, boundary?.held ?? [], said.note, paired, boundary) : `${said.note}${paired}`;
+    if (text === null) return { ok: false, error: WALLS_NOT_POSTED };
     await note(task.id, text);
     return { ok: true };
   };
@@ -612,9 +617,9 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
   /**
    * A sheet whose walls are stored, onto the job by type, then its rooms: what
    * a fresh detection gets, and what a sheet found earlier but never posted
-   * gets too. Returns the task's note.
+   * gets too. Returns the task's note, or null when the walls could not be put on the job.
    */
-  async function postAndRooms(pageNumber: number, held: readonly { x1: number; y1: number; x2: number; y2: number }[], said: string, paired = "", boundary?: DetectedBoundary): Promise<string> {
+  async function postAndRooms(pageNumber: number, held: readonly { x1: number; y1: number; x2: number; y2: number }[], said: string, paired = "", boundary?: DetectedBoundary): Promise<string | null> {
     let text = `${said}${paired}`;
     // ── THE WALLS ONTO THE JOB, BY TYPE (`lib/plan-ingest/wallItems.ts`) ──
     const writeWallItems = deps.writeWallItems ?? realDeps.writeWallItems!;
@@ -627,8 +632,12 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       // dbtest's stub). Every other skip and every write is worth a clause.
       if (!(items.kind === "skipped" && items.why === "no walls found")) text = `${text}; ${wallItemsNoteFor(items)}`;
     } catch (error) {
+      // ── NEVER "DONE" WHEN POSTING THREW (2026-11-24) ──
+      // This added "; walls on job failed" to the note and the sheet finished: production posted 0 rows of a 144-run
+      // sheet (P2028) while the panel said "1 of 1 sheets — done". The sheet now FAILS, so the runner retries it and
+      // the panel shows the sentence below; the stored walls are untouched, so a retry posts them.
       console.error("[walls] wall items after walls threw", { planId: ctx.planId, pageNumber, error });
-      text = `${text}; walls on job failed`;
+      return null;
     }
     const findRooms = deps.findRooms ?? realDeps.findRooms!;
     try {
