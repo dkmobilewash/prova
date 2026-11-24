@@ -50,6 +50,13 @@ export function runConfidence(run: { modelScore?: number }): number | null {
   return typeof s === "number" && Number.isFinite(s) && s >= 0 && s <= 1 ? s : null;
 }
 
+/**
+ * The posting transaction's own limit, stated rather than left at Prisma's 5 s interactive default. With one lookup per
+ * item its round trips are bounded by the items a sheet posts to, not its runs (the latency dbtest measures them); this
+ * is headroom for a slow Neon minute, and still far inside the advance route's 300 s.
+ */
+export const WALL_ITEMS_TX_TIMEOUT_MS = 20_000;
+
 export async function wallItemsForSheet(input: {
   planId: string;
   companyId: string;
@@ -117,13 +124,28 @@ export async function wallItemsForSheet(input: {
   const setForJob = new Set<WallGroup>();
 
   const written = await prisma.$transaction(async (tx) => {
+    // ── ONE LOOKUP PER ITEM, NEVER ONE PER RUN (the 2026-11-24 P2028) ──
+    // This awaited an item lookup for every group and EVERY HELD RUN inside this transaction, so its round trips grew
+    // with the sheet: Milk Prep A2.21 (144 runs, 59 held) outlived Prisma's 5 s interactive default at Neon's latency,
+    // threw P2028 and posted nothing. Each item is now looked up (or made) once per call; `wallItemsLatency.dbtest.ts`.
+    const itemIds = new Map<string, Promise<string>>();
+    const once = (key: string, make: () => Promise<string>): Promise<string> => {
+      const known = itemIds.get(key);
+      if (known !== undefined) return known;
+      const made = make();
+      itemIds.set(key, made);
+      return made;
+    };
     const byType = new Map<string, { code: string; feet: number }>();
     let typedFeet = 0, untypedFeet = 0, heldFeet = 0;
     const held = input.held ?? [];
     const data: Prisma.TakeoffMeasurementCreateManyInput[] = [];
     for (const group of groups) {
       const type = typeOf(group);
-      const itemId = type === null ? await untypedItem(tx, input.companyId, input.jobId) : await itemForType(tx, input.companyId, input.jobId, type, types.find((t) => t.id === type.id)!);
+      const itemId =
+        type === null
+          ? await once(UNTYPED_ITEM, () => untypedItem(tx, input.companyId, input.jobId))
+          : await once(`type:${type.id}`, () => itemForType(tx, input.companyId, input.jobId, type, types.find((t) => t.id === type.id)!));
       // The label says HOW the type was settled: the tag, the tag carried
       // along the wall, the legend's U.N.O., or the thickness alone — the
       // last being the weakest, a company with one type that thick.
@@ -144,7 +166,7 @@ export async function wallItemsForSheet(input: {
         // Doubted by the wall model: on the sheet, off the estimate. See `estimateHold.ts`.
         const isHeld = isHeldRun(run, held);
         if (isHeld) heldFeet += Math.hypot(run.x2 - run.x1, run.y2 - run.y1) * feetPerUnit;
-        data.push({ pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [run.x1, run.x2], ys: [run.y1, run.y2], label: isHeld ? HELD_LABEL : auto === undefined && modelPostsItself(run.runScore, wallsAt) ? HIGH_CONFIDENCE_WALLS : label, source: "DETECTED", confidence: runConfidence(run), itemId: isHeld ? await namedItem(tx, input.companyId, input.jobId, HELD_ITEM) : itemId, createdByUserId: input.userId });
+        data.push({ pageId: page.id, calibrationId: calibration.id, kind: "LINEAR", xs: [run.x1, run.x2], ys: [run.y1, run.y2], label: isHeld ? HELD_LABEL : auto === undefined && modelPostsItself(run.runScore, wallsAt) ? HIGH_CONFIDENCE_WALLS : label, source: "DETECTED", confidence: runConfidence(run), itemId: isHeld ? await once(HELD_ITEM, () => namedItem(tx, input.companyId, input.jobId, HELD_ITEM)) : itemId, createdByUserId: input.userId });
       }
       const onEstimate = group.feet - (group.runs as Run[]).filter((run) => isHeldRun(run, held)).reduce((n, run) => n + Math.hypot(run.x2 - run.x1, run.y2 - run.y1) * feetPerUnit, 0);
       if (type === null) untypedFeet += onEstimate;
@@ -157,7 +179,7 @@ export async function wallItemsForSheet(input: {
     }
     if (data.length > 0) await tx.takeoffMeasurement.createMany({ data });
     return { typedFeet, untypedFeet, heldFeet, byType: [...byType.values()].sort((a, b) => b.feet - a.feet) };
-  });
+  }, { timeout: WALL_ITEMS_TX_TIMEOUT_MS });
   // Each group the auto-post rule typed, with nobody pressing anything (`TakeoffEvent`).
   await recordTakeoffEvents(
     [...autoFrom.entries()].map(([group, source]) => ({
