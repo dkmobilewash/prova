@@ -1,4 +1,4 @@
-# The title block behind the sheet's rightmost ruled boundary (NOT-DRAWING v3)
+### The title block behind the sheet's rightmost ruled boundary (NOT-DRAWING v3)
 
 Behind `NEXT_PUBLIC_TAKEOFF_NOT_DRAWING=1` (unset = today exactly): runs inside the
 sheet's own title-block strip are set aside from the customer offer. The strip's
