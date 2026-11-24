@@ -1435,6 +1435,8 @@ export function TakeoffPlanViewer({
      * a single-view sheet is.
      */
     planBoxes: { from: number; to: number; fromY: number; toY: number }[] | null;
+    /** Caption'd text-block views, for the NOT_DRAWING aside in `offeredCandidates`. */
+    textBlocks: { from: number; to: number; fromY: number; toY: number }[];
     /** The page's words, for the site-equipment rule in `offeredCandidates`. */
     textItems: { str: string; x: number; y: number; width: number; height: number }[];
   } | null>(null);
@@ -1470,6 +1472,7 @@ export function TakeoffPlanViewer({
         widthPt: last.widthPt,
         feetPerUnit: last.feetPerUnit,
         planBoxes: last.planBoxes,
+        textBlocks: last.textBlocks,
         textItems: last.textItems,
       },
       offerAll,
@@ -4378,6 +4381,7 @@ export function TakeoffPlanViewer({
           widthPt: W,
           feetPerUnit,
           planBoxes: detected.planBoxes,
+          textBlocks: detected.textBlocks,
           textItems,
           ...(exclusionsRef.current === null ? {} : { user: exclusionsRef.current }),
           ...(priorPlan === undefined ? {} : { priorPlan }),
@@ -4628,6 +4632,7 @@ export function TakeoffPlanViewer({
         widthPt: pageSize.widthPt,
         walls: [...found.walls],
         planBoxes,
+        textBlocks: detected.textBlocks,
         textItems,
       };
       if (answerKey?.onCandidates) {

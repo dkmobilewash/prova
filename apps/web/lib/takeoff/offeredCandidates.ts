@@ -6,6 +6,7 @@ import { existingSentence, existingWalls, inLegendSample, legendSwatchBoxes, tex
 import { clipToWorkArea, describeStyle, wallsLikeThese, type Line, type Polygon } from "./userExclusions";
 import { isTableRows, isUnderline } from "./textRows";
 import { legendBoxes } from "./legendBoxes";
+import { insideBoxes, titleBlockRegions } from "./titleBlock";
 import { findWallsOnSheet, inPageWidthUnits, type FoundOnSheet } from "./findWallsOnSheet";
 import {
   drawingCount,
@@ -78,6 +79,8 @@ export type DetectedSheet = {
   feetPerUnit: number;
   /** Where the sheet was measured. Null means the whole page counts. */
   planBoxes: readonly { from: number; to: number; fromY: number; toY: number }[] | null;
+  /** Caption'd text-block views from `detectForSheet` — read only behind `NOT_DRAWING`. */
+  textBlocks?: readonly { from: number; to: number; fromY: number; toY: number }[];
   /** The sheet's text, in page POINTS as the PDF gives it — optional, and only
    *  read by the site-equipment rule; a caller without it offers as before. */
   textItems?: readonly { str: string; x: number; y: number; width: number; height: number; confidence?: number }[];
@@ -278,6 +281,13 @@ export const LEGEND_NEW_INFILL = process.env.NEXT_PUBLIC_TAKEOFF_LEGEND_NEW_INFI
  */
 export const LEGEND_SAMPLE = process.env.NEXT_PUBLIC_TAKEOFF_LEGEND_SAMPLE !== "0";
 
+/**
+ * NOT-DRAWING v2 (prereg-not-drawing-v2.md): the title block (read off the sheet's own ruled
+ * boundary, `titleBlock.ts`) and the caption'd text columns are never offered, on every path.
+ * OFF unless "1": measured once per the prereg before any default flip.
+ */
+export const NOT_DRAWING = process.env.NEXT_PUBLIC_TAKEOFF_NOT_DRAWING === "1";
+
 export function offeredCandidates(
   sheet: DetectedSheet,
   /** Also offer the HATCH-classed set-asides, for a reviewer judging them. */
@@ -355,6 +365,13 @@ export function offeredCandidates(
   const underlines: WallCandidate[] = [];
   const legendSamples: WallCandidate[] = [];
   const swatches = LEGEND_SAMPLE && sheet.textItems !== undefined ? legendSwatchBoxes(textRows(sheet.textItems), sheet.widthPt) : [];
+  // ── NOT-DRAWING v2 (prereg-not-drawing-v2.md): the title block read off its own ruled boundary,
+  // and the caption'd text columns, are not the drawing — on every path, whatever the plan box did.
+  const titleBoxes = NOT_DRAWING && sheet.textItems !== undefined ? titleBlockRegions(sheet.pageSegments ?? sheet.segments, sheet.textItems, sheet.widthPt) : [];
+  // v3 (prereg-not-drawing-v3.md): the text-block boxes are NOT a set-aside any more — Joplin's
+  // "text block" covered half its plan and cost 732 ft of real wall. They stay plumbed through for
+  // the run-model features (coordination/not-drawing-model-features.md).
+  const titleBlock: WallCandidate[] = [];
   const onPlan = sheet.walls.filter((w) => {
     // A run with no extent — a closed loop's chord, a degenerate merge — is
     // nothing a reviewer can draw, accept or join, whatever its `lengthFeet`
@@ -368,6 +385,10 @@ export function offeredCandidates(
     // A legend's sample, beside its row — see `legendSwatchBoxes` (LEGEND_SAMPLE, on by default).
     if (swatches.length > 0 && inLegendSample(w, swatches, sheet.feetPerUnit)) {
       legendSamples.push(w);
+      return false;
+    }
+    if (titleBoxes.length > 0 && insideBoxes(titleBoxes, w.x1, w.y1, w.x2, w.y2)) {
+      titleBlock.push(w);
       return false;
     }
     // The length cap is the equipment words' (a 10 ft reach finds a building's
@@ -512,6 +533,9 @@ export function offeredCandidates(
   if (legendSamples.length > 0) {
     aside.set("legend-sample", { kind: "legend-sample", why: "a wall legend's sample, beside its row", n: legendSamples.length });
   }
+  if (titleBlock.length > 0) {
+    aside.set("title-block", { kind: "title-block", why: "in the title block, past its ruled boundary", n: titleBlock.length });
+  }
   if (zeroExtent > 0) {
     aside.set("zero-extent", { kind: "zero-extent", why: "a run with no extent — the same start and end — which nothing can draw or accept", n: zeroExtent });
   }
@@ -549,6 +573,7 @@ export function offeredCandidates(
       ...twins.map((w) => ({ kind: "same-wall-twin", why: "the same wall as a longer or better-drawn run", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...wordRuns.map((r) => ({ kind: "ocr-words", why: `inside the OCR word "${r.word}"`, lengthFeet: r.wall.lengthFeet, x1: r.wall.x1, y1: r.wall.y1, x2: r.wall.x2, y2: r.wall.y2 })),
       ...legendSamples.map((w) => ({ kind: "legend-sample", why: "a wall legend's sample, beside its row", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...titleBlock.map((w) => ({ kind: "title-block", why: "in the title block, past its ruled boundary", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...existingRuns.map((e) => ({ kind: "existing", why: e.why, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
       ...[...like.excluded].map((w) => ({ kind: "excluded-like", why: "drawn like a wall you clicked — excluded by you", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...area.outside.map((w) => ({ kind: "outside-work-area", why: "outside the work area you drew", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
@@ -656,6 +681,8 @@ export type SheetDetectResult = {
    */
   wholeSheet?: { why: string } | null;
   planBoxes: { from: number; to: number; fromY: number; toY: number }[] | null;
+  /** Caption'd text-block views (notes, keynotes, legend, schedule) — for the not-drawing aside. */
+  textBlocks: { from: number; to: number; fromY: number; toY: number }[];
   /** How many DRAWINGS the sheet was split into — under two means measured whole. */
   views: number;
   /** The views whose walls are in `found`, biggest first — one per level named. */
@@ -758,6 +785,7 @@ export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
       found: findWallsOnSheet({ ...base, segments: onTheDrawing, regionClipped: true }),
       wholeSheet: null,
       planBoxes: drawing.length > 0 ? [...drawing] : null,
+      textBlocks: blocks,
       views: drawingCount(views),
       kept: [],
       primaryName: null,
@@ -783,6 +811,7 @@ export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
       found: findWallsOnSheet(base),
       wholeSheet: fallback,
       planBoxes: null,
+      textBlocks: textBlockBoxes(views),
       views: drawingCount(views),
       kept: [],
       primaryName: null,
@@ -800,6 +829,7 @@ export function detectForSheet(input: SheetDetectInput): SheetDetectResult {
     // interior elevations.
     found: mergeViewWalls(kept) ?? findWallsOnSheet({ ...base, segments: [], textItems: [] }),
     planBoxes: measured.flatMap((one) => viewBoxes(one.view)),
+    textBlocks: textBlockBoxes(views),
     views: drawingCount(views),
     kept: kept.map((k) => ({ name: k.view.name, scaleName: k.view.scaleName, lengthFeet: k.lengthFeet })),
     primaryName: kept[0]?.view.name ?? null,

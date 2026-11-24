@@ -92,3 +92,50 @@ describe("the customer offer on an invented sheet with a title block, notes, a l
     expect(samples.length, "legend samples offered again when the rule is off").toBeGreaterThan(0);
   });
 });
+
+/**
+ * ── NOT-DRAWING v3's CI GUARD, LIMITED TO TITLE-BLOCK SHAPES (prereg-not-drawing-v3.md rule 5) ──
+ *
+ * The KNOWN GAP above, in the one place v3 closes it: a SINGLE-VIEW sheet measured whole, whose
+ * title-block row rules are drawn in PAIRS a wall's thickness apart. Singh A2.0 offered nine such
+ * runs (its entire list, 100% junk); OTH A105 its title runs. The strip is found from the sheet's
+ * own ruled boundary (rightmost chained full-height vertical with >= 2 strong title words right of
+ * it), and behind NEXT_PUBLIC_TAKEOFF_NOT_DRAWING=1 everything inside it is set aside.
+ * Notes/legend residue left of the boundary is deliberately NOT asserted — that belongs to (b),
+ * the run-model features.
+ */
+describe("a single-view sheet whose title-block rows are wall pairs (Singh A2.0's nine runs, OTH A105's title runs)", () => {
+  // One plan view, measured whole (no second view), and a ruled title strip with paired row rules.
+  const strip = [
+    seg(900, 10, 900, 690), seg(990, 10, 990, 690),
+    seg(900, 10, 990, 10), seg(900, 690, 990, 690),
+    ...[60, 160, 300, 420, 560, 640].map((y) => pair(902, y, 988, y)).flat(),
+  ];
+  const words = [
+    word("FLOOR PLAN", 60, 520, 10),
+    word("ARCHITECTS", 905, 40, 8), word("PROJECT", 905, 200, 8), word("REVISIONS", 905, 410), word("SHEET", 905, 630, 8),
+  ];
+  const inStrip = (r: WallCandidate) => [r.x1, r.x2].every((x) => x * W >= 895) ;
+  const runSingle = async () => {
+    const { detectForSheet, offeredCandidates } = await import("./offeredCandidates");
+    const segments = [...plan, ...strip];
+    const d = detectForSheet({ segments, textItems: words, pageSize: { widthPt: W, heightPt: H }, feetPerUnit: FPU });
+    return offeredCandidates({ walls: d.found.walls, segments: d.found.inUnits.map((u) => ({ ...u, x1: u.x1 * W, y1: u.y1 * W, x2: u.x2 * W, y2: u.y2 * W })), pageSegments: segments, widthPt: W, feetPerUnit: FPU, planBoxes: d.planBoxes, textItems: words }).offeredRuns;
+  };
+
+  it("flag off, the gap is real: the strip's paired rows ARE offered (what Singh A2.0 showed live)", async () => {
+    vi.resetModules();
+    const off = await runSingle();
+    expect(off.filter(inStrip).length, "title-row pairs offered with the rule off — the non-vacuity control").toBeGreaterThan(0);
+  });
+
+  it("flag on, nothing inside the detected strip survives, and the plan is untouched", async () => {
+    vi.stubEnv("NEXT_PUBLIC_TAKEOFF_NOT_DRAWING", "1");
+    vi.resetModules();
+    const on = await runSingle();
+    vi.unstubAllEnvs();
+    vi.resetModules();
+    expect(on.filter(inStrip).map((r) => `${(r.x1 * W).toFixed(0)},${(r.y1 * W).toFixed(0)}-${(r.x2 * W).toFixed(0)},${(r.y2 * W).toFixed(0)}`)).toEqual([]);
+    expect(on.filter(inPlan).reduce((n, r) => n + r.lengthFeet, 0), "the plan's walls still offered").toBeGreaterThan(250);
+  });
+});
