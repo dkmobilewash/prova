@@ -1869,6 +1869,7 @@ export function TakeoffWorkspace({
               symbolCount={data.symbolCountOn}
               demotedWalls={data.demotedWallsOn}
               wallModel={data.wallModel}
+              liveHeldModels={data.liveHeldModels}
               ceilingPages={data.ceilingPages}
               initialPage={openPage}
               autoOpened={openChosen}
