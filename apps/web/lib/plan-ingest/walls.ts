@@ -551,7 +551,7 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
     // find the sheet's walls and then refuse to write them beside the old rows.
     if (page.wallProposals.some((p) => p.calibrationId === calibration.id) || page.measurements.length > 0) {
       const refresh = deps.refresh ?? realDeps.refresh!;
-      const again = await refresh({ pageId: page.id, calibrationId: calibration.id, planId: ctx.planId, companyId: ctx.companyId, pageNumber: task.pageNumber, feetPerUnit, wallTypes: types, pairWithThicknesses: false, jobId: ctx.jobId, userId: ctx.startedByUserId });
+      const again = await refresh({ pageId: page.id, calibrationId: calibration.id, planId: ctx.planId, companyId: ctx.companyId, pageNumber: task.pageNumber, feetPerUnit, wallTypes: types, pairWithThicknesses: false, jobId: ctx.jobId, userId: ctx.startedByUserId, budgetMs: ctx.detectBudgetMs });
       if (again.kind === "failed") return { ok: false, error: "Finding the walls on this sheet again failed. Retry it." };
       // ── FOUND, BUT NEVER POSTED: POST IT NOW ──
       // Saving a scale stores the sheet's walls as proposals (detection runs on
@@ -587,6 +587,7 @@ export function wallsWork(ctx: StageCtx, deps: WallsDeps = realDeps): StageWork 
       // here, so the takeoff is the same with or without wall types; the
       // groups are built beside it with them (`stageGroups.ts`).
       pairWithThicknesses: false,
+      budgetMs: ctx.detectBudgetMs,
     });
     const said = wallsNoteFor(outcome);
     if (!said.ok) return said;

@@ -1,7 +1,7 @@
 import { runDetection, type DetectReply, type DetectRequest, type FoundPairing } from "./detectRun";
 import { regroupFrom } from "./findWallsOnSheet";
 import type { SheetDetectResult } from "./offeredCandidates";
-import { SheetTooSlowError } from "./timeBudget";
+import { SHEET_DETECTION_BUDGET_MS, SheetTooSlowError } from "./timeBudget";
 import { SheetTooDenseError } from "./wallVectors";
 
 export type { DetectRequest, FoundPairing } from "./detectRun";
@@ -30,8 +30,8 @@ export type { DetectRequest, FoundPairing } from "./detectRun";
  * in the worker on an idle Mac and 60–90+ s on the same Mac while other jobs ran (one press ran
  * past a 90 s budget, 2026-11-13); the training sheets take a few seconds.
  */
-export const FIND_BUDGET_MS = 180_000;
-export const FIND_LIMIT_MS = 240_000;
+export const FIND_BUDGET_MS = SHEET_DETECTION_BUDGET_MS;
+export const FIND_LIMIT_MS = SHEET_DETECTION_BUDGET_MS + 60_000;
 
 /**
  * Finds the sheet in a worker and gives back what `detectForSheet` gives, `regroup` included.

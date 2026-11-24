@@ -4,6 +4,7 @@ import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { windowsForSheet } from "@/lib/plan-ingest/rooms";
 import { detectWallsForCalibration } from "./detectWallsForCalibration";
 import { legendHeightsFor } from "./legendHeights";
+import { SHORT_FUNCTION_DETECTION_BUDGET_MS } from "./timeBudget";
 import { stampOf, stampSuggestions, suggestionsStale, SUGGESTIONS_READ } from "./suggestionStamp";
 
 /**
@@ -73,6 +74,8 @@ export async function refreshSuggestions(input: { planId: string; companyId: str
               wallTypes,
               pairWithThicknesses: false,
               noModel: true,
+              // Runs in after() of whatever function loads it, the 60 s sweep included; out of time loses nothing.
+              budgetMs: SHORT_FUNCTION_DETECTION_BUDGET_MS,
             });
       // A sheet detection did not write is stamped anyway, so it is not tried on every load.
       if (outcome !== "written") await stampSuggestions(input.planId, pageNumber, readAt);
