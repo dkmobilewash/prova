@@ -48,10 +48,24 @@ const sizeOf = (p) => {
   return s;
 };
 
+// ── EVERY MODEL FILE THE INCLUDE LIST NAMES IS IN EVERY ENTRY'S TRACE (2026-11-24) ──
+// The include key is "/**", so each model must ride in every function. A model named in the list and
+// missing from a trace fails here, after the build, in CI. (The 2026-11-24 outage was NOT this — the
+// file was traced and the resolver looked in the build directory; modelCensus.test.ts pins that.)
+const CONFIG = readFileSync(join(APP, "next.config.mjs"), "utf8");
+const INCLUDED_MODELS = [...CONFIG.matchAll(/"\.\/models\/([^"]+)"/g)].map((m) => resolve(APP, "models", m[1]));
+if (INCLUDED_MODELS.length < 4) {
+  console.error(`function-size-budget: parsed ${INCLUDED_MODELS.length} model files from next.config.mjs's include list (expected at least 4) — the model check would see nothing`);
+  process.exit(1);
+}
+const missingModels = [];
+
 const entries = [];
 for (const nft of nftFiles(SERVER)) {
   const { files = [] } = JSON.parse(readFileSync(nft, "utf8"));
   const base = dirname(nft);
+  const traced = new Set(files.map((f) => resolve(base, f)));
+  for (const model of INCLUDED_MODELS) if (!traced.has(model)) missingModels.push(`${nft.slice(SERVER.length + 1)}: ${model.slice(APP.length + 1)}`);
   const seen = new Set();
   let bytes = sizeOf(nft.replace(/\.nft\.json$/, ".js"));
   for (const f of files) {
@@ -67,6 +81,13 @@ if (entries.length === 0) {
   console.error(`function-size-budget: found NO .nft.json entries under ${SERVER} — the guard scanned nothing, which must never pass. Did the build run with output file tracing?`);
   process.exit(1);
 }
+
+if (missingModels.length > 0) {
+  console.error(`FAIL: ${missingModels.length} (entry, model) pairs where a model named in outputFileTracingIncludes is not in the entry's trace:`);
+  for (const line of missingModels.slice(0, 20)) console.error(`  ${line}`);
+  process.exit(1);
+}
+console.log(`function-size-budget: all ${INCLUDED_MODELS.length} included model files traced into all ${entries.length} entries`);
 
 entries.sort((a, b) => b.bytes - a.bytes);
 const gb = (n) => (n / GB).toFixed(2);

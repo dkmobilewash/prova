@@ -79,34 +79,33 @@ export function forgetWallModel(): void {
 }
 
 /**
- * ── A RELATIVE PATH RESOLVES AGAINST THE APP, NEVER THE CWD ──
+ * ── A RELATIVE PATH RESOLVES AT RUN TIME, FROM THE WORKING DIRECTORY FIRST ──
  *
- * `readFileSync` would resolve one against the function's working directory,
- * and this repo does not rely on that anywhere: `rasterWorkerPath()` computes
- * its own path from `import.meta.url` precisely because the cwd is unreliable
- * on Vercel, and the bug that taught us was a scanned-sheet pipeline that
- * silently did nothing.
+ * 2026-11-24 production outage, #860 to this fix: this used ONLY
+ * `fileURLToPath(import.meta.url)`, and webpack REPLACES `import.meta.url` in the server bundle
+ * with the BUILD machine's file URL (the local bundle carries
+ * `file:///Users/…/apps/web/lib/takeoff/wallModelFile.ts` literally). On Vercel that is
+ * `/vercel/path0/apps/web`, a directory that exists during the build and not in the function, so
+ * every relative model path pointed at nothing: production's `[walls-model] unreadable` named
+ * `/vercel/path0/apps/web/models/wall-model.json` and, under the older spelling,
+ * `/vercel/path0/apps/web/apps/web/models/…`. The files WERE traced into the function; the
+ * resolver looked somewhere else. All four learned models resolve here, so all four were off.
  *
- * A model that cannot be read is the same failure in the classifier's
- * clothes — every company has the grey-out on, the page behaves exactly as
- * before, and one log line nobody reads says why. So the deployment's
- * variable can be the repo-relative path a person would naturally write
- * (`models/wall-model.json`, or `apps/web/models/wall-model.json`) and it
- * works wherever the function is rooted.
+ * So the roots are computed when the function RUNS: the working directory (the repo root on
+ * Vercel, apps/web under `next start` and vitest), apps/web under it, and the repo root above it. The baked directory stays
+ * last, for a laptop where the build machine and the runtime are the same machine. Both env
+ * spellings (`models/…` and `apps/web/models/…`) land on the same file from either root.
  *
  * An ABSOLUTE path is used as given: that is what the tests pass, and what a
- * laptop or a mounted volume uses.
+ * laptop or a mounted volume uses. Nothing found: the first candidate, so the log names a real place.
  */
-export function resolveModelPath(file: string): string {
+const BUILT_APP_DIR = join(fileURLToPath(import.meta.url), "..", "..", ".."); // …/apps/web AT BUILD TIME
+
+export function resolveModelPath(file: string, cwd: string = process.cwd(), builtAppDir: string = BUILT_APP_DIR): string {
   if (isAbsolute(file)) return file;
-  // …/apps/web/lib/takeoff/wallModelFile.ts → …/apps/web
-  const appDir = join(fileURLToPath(import.meta.url), "..", "..", "..");
-  // Both spellings land on the same file, so neither has to be remembered:
-  // the one relative to apps/web, and the one relative to the repo root.
-  const underApp = join(appDir, file);
-  if (existsSync(underApp)) return underApp;
-  const fromRepoRoot = join(appDir, "..", "..", file);
-  return existsSync(fromRepoRoot) ? fromRepoRoot : underApp;
+  const roots = [cwd, join(cwd, "apps", "web"), join(cwd, "..", ".."), builtAppDir, join(builtAppDir, "..", "..")];
+  const candidates = roots.map((root) => join(root, file));
+  return candidates.find((p) => existsSync(p)) ?? candidates[0]!;
 }
 
 /**
