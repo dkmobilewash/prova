@@ -93,11 +93,16 @@ export function runModelVerdicts(input: RunModelInput, runModel: WallModel): { s
   return { scores, removed };
 }
 
+/** R for renovation sheets with an aligned demolition prior; R-ALL (loaded only behind `TAKEOFF_RENO_UNPAIRED=1`) for those without one. */
+export type RenoModels = { paired: WallModel | null; unpaired: WallModel | null };
+
 /**
- * The kept runs R holds back: none unless the sheet is a renovation sheet paired with its demolition
- * plan (an aligned prior), else exactly the run model's remove-only rule with R's scores.
+ * The kept runs held back on a renovation sheet: with an aligned demolition prior, R's remove-only
+ * verdicts; with none, R-ALL's (only when loaded, see `RenoModels`); never on a sheet that is not a
+ * renovation.
  */
-export function renoModelRemovals(input: RunModelInput, renoModel: WallModel): WallCandidate[] {
-  if (input.prior === undefined || !isRenovationSheet(input.textItems)) return [];
-  return runModelVerdicts(input, renoModel).removed;
+export function renoModelRemovals(input: RunModelInput, models: RenoModels): WallCandidate[] {
+  if (!isRenovationSheet(input.textItems)) return [];
+  const model = input.prior !== undefined ? models.paired : models.unpaired;
+  return model === null ? [] : runModelVerdicts(input, model).removed;
 }

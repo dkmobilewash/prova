@@ -27,13 +27,13 @@ describe("heldOnSheet", () => {
   });
 
   it("is exactly detection's old block: the 0.55 hold, then the run model's removals, then R's, each run once", () => {
-    const models: HeldModels = { hold: pairModel, pair: pairModel, run: constant(0.05), reno: constant(0.05) };
+    const models: HeldModels = { hold: pairModel, pair: pairModel, run: constant(0.05), reno: { paired: constant(0.05), unpaired: null } };
     const got = heldOnSheet(input, models);
     const old: WallCandidate[] = runsHeldOffEstimate(pairModel, kept, pairings, 100, false);
     const v = { offered: input.beforeCompare, kept, pairings, pairModel, segments: [], textItems: renovation, widthPt: 1000, feetPerUnit: 100, prior };
     const verdicts = runModelVerdicts(v, constant(0.05));
     for (const one of verdicts.removed) if (!old.includes(one)) old.push(one);
-    for (const one of renoModelRemovals(v, constant(0.05))) if (!old.includes(one)) old.push(one);
+    for (const one of renoModelRemovals(v, { paired: constant(0.05), unpaired: null })) if (!old.includes(one)) old.push(one);
     expect(got.held).toEqual(old);
     expect(got.held).toContain(kept[0]);
     expect(got.runScore).toEqual(verdicts.scores);
@@ -46,13 +46,13 @@ describe("heldOnSheet", () => {
   });
 
   it("a scanned sheet never meets the run model or R, as trained", () => {
-    const got = heldOnSheet({ ...input, scanned: true }, { hold: null, pair: pairModel, run: constant(0.05), reno: constant(0.05) });
+    const got = heldOnSheet({ ...input, scanned: true }, { hold: null, pair: pairModel, run: constant(0.05), reno: { paired: constant(0.05), unpaired: null } });
     expect(got.held).toEqual([]);
     expect(got.runScore.every((s) => Number.isNaN(s))).toBe(true);
   });
 
   it("R alone acts only on a renovation sheet with its demolition plan aligned", () => {
-    const reno: HeldModels = { hold: null, pair: pairModel, run: null, reno: constant(0.05) };
+    const reno: HeldModels = { hold: null, pair: pairModel, run: null, reno: { paired: constant(0.05), unpaired: null } };
     expect(heldOnSheet(input, reno).held.length).toBeGreaterThan(0);
     const unpaired: HeldInput = { ...input };
     delete unpaired.prior;

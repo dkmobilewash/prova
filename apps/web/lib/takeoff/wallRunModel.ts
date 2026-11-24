@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { deciderFor, type WallModel } from "./wallClassifier";
+import type { RenoModels } from "./wallRunVerdicts";
 import { loadWallModel, resolveModelPath } from "./wallModelFile";
 import type { HeldModels } from "./heldOnSheet";
 import { RUN_FEATURE_NAMES } from "./wallRunFeatures";
@@ -68,9 +69,25 @@ export function loadRunModel(env: Record<string, string | undefined> = process.e
   return loadRunKind(RUN_MODEL_ENV, env);
 }
 
-/** R, named by `TAKEOFF_WALL_RENO_MODEL`, or null. */
-export function loadRenoModel(env: Record<string, string | undefined> = process.env): WallModel | null {
-  return loadRunKind(RENO_MODEL_ENV, env);
+/**
+ * ── R-UNPAIRED: SHIPPED R WHERE THERE IS A DEMOLITION PLAN, R-ALL WHERE THERE IS NONE (behind TAKEOFF_RENO_UNPAIRED=1) ──
+ *
+ * The 2026-11-19 census of renovation junk: 10 of the 12 sets carrying 80% of it are paired with no
+ * demolition plan, so R never ran there. R-ALL (R retrained on every renovation sheet's runs, same
+ * columns, settings and 0.10 cut; `scripts/wall-model/reno_all.py`) failed as a replacement: worse
+ * than R on the PAIRED sheets, better on the unpaired. So the paired sheets keep R exactly, and R-ALL,
+ * named by `TAKEOFF_WALL_RENO_ALL_MODEL`, runs only where there is no prior. That split was chosen
+ * AFTER those numbers; its only valid gate is the next release's held-out exam. Flag off, or no R-ALL
+ * file: `unpaired` is null and nothing changes.
+ */
+export const RENO_UNPAIRED_FLAG = "TAKEOFF_RENO_UNPAIRED";
+export const RENO_ALL_MODEL_ENV = "TAKEOFF_WALL_RENO_ALL_MODEL";
+
+/** R (`TAKEOFF_WALL_RENO_MODEL`) for paired sheets and, with the flag, R-ALL for unpaired ones; null when neither is loaded. */
+export function loadRenoModel(env: Record<string, string | undefined> = process.env): RenoModels | null {
+  const paired = loadRunKind(RENO_MODEL_ENV, env);
+  const unpaired = env[RENO_UNPAIRED_FLAG] === "1" ? loadRunKind(RENO_ALL_MODEL_ENV, env) : null;
+  return paired === null && unpaired === null ? null : { paired, unpaired };
 }
 
 

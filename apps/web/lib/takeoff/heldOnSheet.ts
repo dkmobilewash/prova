@@ -2,7 +2,7 @@ import type { ScoredPairing } from "./demotedRuns";
 import { runsHeldOffEstimate } from "./estimateHold";
 import { runScores } from "./wallReview";
 import type { WallModel } from "./wallClassifier";
-import { renoModelRemovals, runModelVerdicts } from "./wallRunVerdicts";
+import { renoModelRemovals, runModelVerdicts, type RenoModels } from "./wallRunVerdicts";
 import type { PageTextItem } from "./wallTags";
 import type { StrokeSegment, WallCandidate } from "./wallVectors";
 
@@ -26,8 +26,8 @@ export type HeldModels = {
   pair: WallModel | null;
   /** `TAKEOFF_WALL_RUN_MODEL`. */
   run: WallModel | null;
-  /** `TAKEOFF_WALL_RENO_MODEL`. */
-  reno: WallModel | null;
+  /** `TAKEOFF_WALL_RENO_MODEL` (paired) and, behind `TAKEOFF_RENO_UNPAIRED=1`, `TAKEOFF_WALL_RENO_ALL_MODEL` (unpaired). */
+  reno: RenoModels | null;
 };
 
 export type HeldInput = {
