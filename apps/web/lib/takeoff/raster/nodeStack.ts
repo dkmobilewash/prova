@@ -1,5 +1,5 @@
-import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
+import { resolveModelPath } from "../wallModelFile";
 import type { Gray } from "./pgm";
 
 /**
@@ -80,11 +80,18 @@ type Reply = { ok: true; [k: string]: unknown } | { ok: false; error: string };
  * in the output trace (`next.config.mjs`) so a deploy ships it;
  * `rasterWorkerPath()` is exported so a test can assert the file exists where
  * the thread will look.
+ *
+ * ── AND IT IS RESOLVED WHEN THE FUNCTION RUNS, NOT FROM import.meta.url (2026-11-24) ──
+ * This used `fileURLToPath(import.meta.url)` alone, and webpack replaces that in the server bundle with the BUILD
+ * machine's file URL: the same bug that kept every learned wall model unreadable in production until #1250. So the
+ * path goes through #1250's resolver, which tries the working directory first and the baked directory last.
  */
-export function rasterWorkerPath(): string {
-  const here = fileURLToPath(import.meta.url);
-  return here.slice(0, here.lastIndexOf("/") + 1) + "rasterWorker.mjs";
+export function rasterWorkerPath(cwd?: string, builtAppDir?: string): string {
+  return resolveModelPath(RASTER_WORKER_FILE, cwd, builtAppDir);
 }
+
+/** Where the worker script sits, relative to apps/web. Also named in next.config.mjs's outputFileTracingIncludes. */
+export const RASTER_WORKER_FILE = "lib/takeoff/raster/rasterWorker.mjs";
 
 /** How long one message to the thread may take before the sheet is given up
  *  on. A page is 5–28 s on Evergreen at 200 dpi; the runner's lease is 90 s. */
