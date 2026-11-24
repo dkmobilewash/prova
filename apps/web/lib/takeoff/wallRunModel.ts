@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { deciderFor, type WallModel } from "./wallClassifier";
 import type { RenoModels } from "./wallRunVerdicts";
-import { loadWallModel, resolveModelPath } from "./wallModelFile";
+import { DECISION_MODEL_ENV, loadWallModel, resolveModelPath } from "./wallModelFile";
 import type { HeldModels } from "./heldOnSheet";
 import { RUN_FEATURE_NAMES } from "./wallRunFeatures";
 
@@ -93,12 +93,49 @@ export function loadRenoModel(env: Record<string, string | undefined> = process.
 
 
 /**
+ * ── THE MODEL-FILE CENSUS: A CONFIGURED FILE THE DEPLOYMENT DID NOT SHIP IS NAMED OUT LOUD ──
+ *
+ * 2026-11-24: production's TAKEOFF_WALL_MODEL named a file the deployed function did not carry,
+ * while the three run/reno files beside it in `outputFileTracingIncludes` were present — so the
+ * pairwise classifier ran silently off, and only a single once-per-process stderr line said so, on
+ * a page production rarely loads. Each loader still logs its own failure at first use; this census
+ * exists so ONE greppable `[model-census]` line names every configured-but-missing file together,
+ * the first time any request loads models. An UNSET variable is a choice, not a failure.
+ */
+export type ModelFileStatus = { envName: string; named: string; resolved: string | null; ok: boolean };
+
+/** Every env var naming a learned-model file. Built from the owning modules' constants, never retyped. */
+export const MODEL_FILE_ENVS: readonly string[] = [
+  ...new Set([...Object.values(DECISION_MODEL_ENV), RUN_MODEL_ENV, RENO_MODEL_ENV, RENO_ALL_MODEL_ENV]),
+];
+
+export function modelFileCensus(env: Record<string, string | undefined> = process.env): ModelFileStatus[] {
+  return MODEL_FILE_ENVS.map((envName) => {
+    const named = env[envName] ?? "";
+    if (named === "") return { envName, named, resolved: null, ok: true };
+    const resolved = resolveModelPath(named);
+    return { envName, named, resolved, ok: existsSync(resolved) };
+  });
+}
+
+let censusSaid = false;
+
+/**
  * The models `heldOnSheet` decides with, loaded the way detection always loaded them: the pairwise model for the
  * 0.55 hold only when the company keeps demoted walls on; the pairwise model again for the run columns whenever the
  * run model or R is configured; each null when its file is unset or unreadable. Detection calls this; the workspace
  * calls it too and hands the result to the viewer as data (`liveHeldModels`), so both sides decide with one set.
  */
 export function serverHeldModels(holdApplies: boolean, env: Record<string, string | undefined> = process.env): HeldModels {
+  if (!censusSaid) {
+    censusSaid = true;
+    for (const miss of modelFileCensus(env).filter((s) => !s.ok)) {
+      console.error(`[model-census] ${miss.envName} names a model file this deployment did not ship — that model is OFF`, {
+        named: miss.named,
+        resolved: miss.resolved,
+      });
+    }
+  }
   const run = loadRunModel(env);
   const reno = loadRenoModel(env);
   const pairwise = loadWallModel(env)?.model ?? null;
