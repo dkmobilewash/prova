@@ -33,9 +33,36 @@ describe("turning answer-key mode off", () => {
 
   it("the viewer keeps the customer offer on every find, marks a key-mode list, and applies this when the mode turns off", () => {
     const src = readFileSync(new URL("../../components/TakeoffPlanViewer.tsx", import.meta.url), "utf8");
-    expect(src).toContain("customerOfferRef.current = { page: pageNumber, runs: offerHere().offeredRuns };");
+    expect(src).toContain("customerOfferRef.current = { page: pageNumber, runs: (offered ?? offerHere()).offeredRuns };");
     expect(src).toContain("foundInKeyMode.current = answerKey !== undefined;");
     expect(src).toContain("const next = afterKeyModeOff({ builtInKeyMode: foundInKeyMode.current,");
     expect(src).toMatch(/\}, \[keyOn, pageNumber\]\);/);
+  });
+});
+
+describe("key mode draws the customer offer by default (Diego, 2026-11-20); the raw list is an explicit ask", () => {
+  // Textual wiring checks, the `keyModeList` precedent: they prove the seam is present and spelled
+  // the way the behavior needs, not that a browser rendered it — the panel's click-through is the
+  // round's job. The seam itself is one ternary, so there is no separate pure function to test.
+  const viewer = readFileSync(new URL("../../components/TakeoffPlanViewer.tsx", import.meta.url), "utf8");
+  const panel = readFileSync(new URL("../../components/AnswerKeyPanel.tsx", import.meta.url), "utf8");
+  const workspace = readFileSync(new URL("../../components/TakeoffWorkspace.tsx", import.meta.url), "utf8");
+
+  it("a key-mode find draws the offer unless the reviewer asked for the raw list", () => {
+    expect(viewer).toContain("const rawKeyList = answerKey !== undefined && answerKey.showSetAside === true;");
+    expect(viewer).toContain("let offered = rawKeyList ? null : offerHere();");
+  });
+
+  it("grading never reads the display list: the rail's candidates come from the RAW cache either way", () => {
+    // The cache stores the finder's raw walls, and the rail builds its own offer from them.
+    expect(viewer).toContain("walls: [...found.walls],");
+    expect(viewer).toContain("walls: last.walls,");
+  });
+
+  it("the panel has the toggle and the workspace plumbs it per page", () => {
+    expect(panel).toContain('data-takeoff="key-show-set-aside"');
+    expect(panel).toContain('"Back to the customer list" : "Show the set-aside lines"');
+    expect(workspace).toContain("showSetAside: onThisSheet(showSetAsideByPage, page) ?? false,");
+    expect(workspace).toContain("showSetAside={onThisSheet(showSetAsideByPage, page) ?? false}");
   });
 });

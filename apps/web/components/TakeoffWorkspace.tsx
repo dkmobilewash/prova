@@ -20,7 +20,7 @@ import { AnswerKeyPanel } from "@/components/AnswerKeyPanel";
 import { onThisSheet, setOnThisSheet } from "@/lib/takeoff/perSheet";
 import { restoreSaved, type SavedSheet } from "@/lib/takeoff/restoreSaved";
 import { restoreGate, type RestoreBaseline } from "@/lib/takeoff/restoreGate";
-import { addOpening, addTraced, removeOpening, removeTraced, startReview, tracedWall, type ReviewState } from "@/lib/takeoff/answerKeyReview";
+import { addOpening, addTraced, removeOpening, removeTraced, startReview, tracedWall, undoLastEdit, type ReviewState } from "@/lib/takeoff/answerKeyReview";
 import { splitCandidate, splitPress } from "@/lib/takeoff/splitCandidate";
 import { labelSheetKey } from "@/lib/takeoff/labelRows";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
@@ -636,10 +636,18 @@ export function TakeoffWorkspace({
         // render and is the only reading of current state that cannot be
         // stale.
         const review = keyStateRef.current;
-        const lastTrace = review?.traced[review.traced.length - 1];
-        if (!event.shiftKey && lastTrace !== undefined && review !== null) {
-          setKeyState(removeTraced(review, lastTrace.id));
-          return;
+        // The last thing done in the review: a trace drawn or a tag given (Round 39: a tag could not be taken back).
+        if (!event.shiftKey && review !== null) {
+          const back = undoLastEdit(review);
+          if (back.undone !== null) {
+            setKeyState(back.state);
+            return;
+          }
+          const lastTrace = review.traced[review.traced.length - 1];
+          if (lastTrace !== undefined) {
+            setKeyState(removeTraced(review, lastTrace.id));
+            return;
+          }
         }
         void runUndo(event.shiftKey ? "redo" : "undo");
         return;
@@ -913,6 +921,8 @@ export function TakeoffWorkspace({
     Record<number, { kind: string; why: string; n: number }[]>
   >({});
   const [offerAllByPage, setOfferAllByPage] = useState<Record<number, true>>({});
+  /** Key mode draws the customer offer; this is the per-page way back to the raw finder list. */
+  const [showSetAsideByPage, setShowSetAsideByPage] = useState<Record<number, true>>({});
   /** Tracing armed, and whether both ends are down — per sheet, like the rest
    *  of this mode's state. */
   const [tracingByPage, setTracingByPage] = useState<Record<number, true>>({});
@@ -1722,6 +1732,7 @@ export function TakeoffWorkspace({
                       onFocus: setKeyFocus,
                       overlaysOn: keyOverlays,
                       offerAll: onThisSheet(offerAllByPage, page) ?? false,
+                      showSetAside: onThisSheet(showSetAsideByPage, page) ?? false,
                       tracing: onThisSheet(tracingByPage, page) ?? false,
                       // `t` is handled in the viewer, because the panel that
                       // used to own it is not mounted until candidates exist —
@@ -1858,6 +1869,7 @@ export function TakeoffWorkspace({
               symbolCount={data.symbolCountOn}
               demotedWalls={data.demotedWallsOn}
               wallModel={data.wallModel}
+              liveHeldModels={data.liveHeldModels}
               ceilingPages={data.ceilingPages}
               initialPage={openPage}
               autoOpened={openChosen}
@@ -2015,6 +2027,10 @@ export function TakeoffWorkspace({
                 offerAll={onThisSheet(offerAllByPage, page) ?? false}
                 onOfferAll={(next) =>
                   setOfferAllByPage((prev) => setOnThisSheet(prev, page, next ? true : null))
+                }
+                showSetAside={onThisSheet(showSetAsideByPage, page) ?? false}
+                onShowSetAside={(next) =>
+                  setShowSetAsideByPage((prev) => setOnThisSheet(prev, page, next ? true : null))
                 }
                 pairings={onThisSheet(pairingsByPage, page) ?? undefined}
                 splitNote={splitNote}

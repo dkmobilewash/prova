@@ -106,6 +106,10 @@ export type AnswerKeyPanelProps = {
   /** Whether every unpaired line is being offered, and how to change it. */
   offerAll?: boolean;
   onOfferAll?: (next: boolean) => void;
+  /** Whether the sheet draws the finder's RAW runs instead of the customer
+   *  offer. Applied at find time — see `showSetAside` on the viewer. */
+  showSetAside?: boolean;
+  onShowSetAside?: (next: boolean) => void;
   /** Tracing armed, and how to arm it. A wall the drawing has no candidate
    *  for is drawn on the sheet itself — see `tracing` on the viewer. */
   tracing?: boolean;
@@ -176,6 +180,8 @@ export function AnswerKeyPanel({
   legendCodes = [],
   offerAll,
   onOfferAll,
+  showSetAside,
+  onShowSetAside,
   tracing,
   onTracing,
   traceReady,
@@ -762,6 +768,18 @@ export function AnswerKeyPanel({
           return (
             <div data-takeoff="key-window-tag" data-kind={markKind} className="mt-1 flex flex-wrap items-center gap-1 text-xs">
               <span className="text-ink-muted">{word}</span>
+              {(() => {
+                // ── WHICH MARK THIS GOES TO, SAID IN THE STRIP (Round 39) ──
+                // Placing a mark focuses it, so a tag picked "for the next one" landed on the last one.
+                const same = (state.openings ?? []).filter((o) => o.kind === markKind);
+                const at = same.findIndex((o) => o.id === focusedOpening);
+                const target = same[at];
+                return (
+                  <span data-takeoff="key-window-tag-target" className="text-ink-label">
+                    {`→ ${markKind} ${at + 1} (the larger ring), ${target?.tag === undefined ? "no tag yet" : `tagged ${target.tag}`}`}
+                  </span>
+                );
+              })()}
               {choices.map((tag, at) => (
                 <button
                   key={tag}
@@ -867,6 +885,15 @@ export function AnswerKeyPanel({
             className="mt-1 text-[11px] text-link hover:text-link-hover"
           >
             {offerAll ? "Hide the hatched ones again" : "Also judge the hatched ones"}
+          </button>
+          <button
+            type="button"
+            onClick={() => onShowSetAside?.(!showSetAside)}
+            data-takeoff="key-show-set-aside"
+            className="mt-1 block text-[11px] text-link hover:text-link-hover"
+            title="The sheet draws what a contractor sees. This draws every raw run instead — then press Find the walls on this sheet again."
+          >
+            {showSetAside === true ? "Back to the customer list" : "Show the set-aside lines"}
           </button>
         </div>
       )}

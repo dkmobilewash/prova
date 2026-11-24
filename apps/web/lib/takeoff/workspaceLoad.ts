@@ -9,6 +9,7 @@ import { setReviewItems, setReviewOrder, type SetReviewItem } from "@/lib/takeof
 import { storedRunsOrNull } from "@/lib/takeoff/wallProposal";
 import { DROPPED_LABEL, HELD_LABEL } from "@/lib/takeoff/estimateHold";
 import { loadWallModel } from "@/lib/takeoff/wallModelFile";
+import { serverHeldModels } from "@/lib/takeoff/wallRunModel";
 import type { StoredScheduleRow } from "./doorsWindows";
 import { prisma } from "@prova/db";
 import { aiGate } from "@/lib/ai/settings";
@@ -715,6 +716,10 @@ export async function loadTakeoffWorkspace(
     // The trained wall model, only for a company whose switch is on: ~80 KB
     // of trees that nobody else's page should carry.
     wallModel: (roomFinder?.demotedWallsOff ?? false) ? null : loadWallModel(process.env),
+    // ── THE MODELS DETECTION HOLDS RUNS WITH, FOR THE LIVE LIST (TAKEOFF_LIVE_MODEL_PARITY, prereg-live-list-parity.md) ──
+    // The same loader detection uses, so the viewer's `heldOnSheet` decides with the very models posting does:
+    // ~240 KB of trees, sent only with the switch on. Null with it off, and the viewer is what it was.
+    liveHeldModels: process.env.TAKEOFF_LIVE_MODEL_PARITY === "1" ? serverHeldModels(!(roomFinder?.demotedWallsOff ?? false)) : null,
     // The plan's pages whose title block says ceiling plan or finish schedule, for the
     // room finder's ceilings: the viewer reads those pages' text itself when rooms are found.
     ceilingPages: roomFinder?.roomFinderOn ? await ceilingPagesOf(plan.id) : [],

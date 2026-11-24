@@ -42,12 +42,16 @@ describe("the run model at Run takeoff, behind TAKEOFF_WALL_RUN_MODEL", () => {
   });
 
   it("detection scores with it only when it loads, and its removals join the hold the walls stage posts", () => {
+    // Since prereg-live-list-parity.md the block lives in `heldOnSheet`, which detection AND the live list call.
     const detect = read("./detectWallsForCalibration.ts");
-    expect(detect).toContain("const runModel = raster === null ? loadRunModel(process.env) : null;");
-    expect(detect).toContain("const input = { offered: beforeCompare.offeredRuns, kept: offered.offeredRuns,");
-    expect(detect).toContain("const verdicts = runModelVerdicts(input, runModel);");
-    expect(detect).toContain("for (const run of verdicts.removed) if (!held.includes(run)) held.push(run);");
-    expect(detect.indexOf("held.push(run)")).toBeLessThan(detect.indexOf("target.onBoundary({ pairings, segments: detected.found.inUnits, held"));
+    const held = read("./heldOnSheet.ts");
+    expect(read("./wallRunModel.ts")).toContain("const run = loadRunModel(env);");
+    expect(held).toContain("const run = input.scanned ? null : models.run;");
+    expect(held).toContain("const verdicts = runModelVerdicts(verdictInput, run);");
+    expect(held).toContain("for (const one of verdicts.removed) if (!held.includes(one)) held.push(one);");
+    expect(detect).toContain("const { held, runScore, modelScore } = heldOnSheet(");
+    expect(detect).toContain("beforeCompare: beforeCompare.offeredRuns,");
+    expect(detect.indexOf("heldOnSheet(")).toBeLessThan(detect.indexOf("target.onBoundary({ pairings, segments: detected.found.inUnits, held"));
     // The exam's table builds its columns with the same call.
     expect(read("./realplan/zzWallFeatureTable.eval.ts")).toContain("runModelRows({ offered: off, kept, pairings, pairModel: config.model");
   });
@@ -63,25 +67,48 @@ describe("R, the paired-renovation model, behind TAKEOFF_WALL_RENO_MODEL", () =>
     expect(loadRenoModel({})).toBeNull();
     expect(loadRenoModel({ TAKEOFF_WALL_RUN_MODEL: "models/wall-run-model.json" })).toBeNull();
     expect(loadRenoModel({ TAKEOFF_WALL_RENO_MODEL: "models/wall-model.json" }), "the pairwise model has other columns").toBeNull();
-    expect(loadRenoModel({ TAKEOFF_WALL_RENO_MODEL: "models/wall-reno-model.json" })?.features).toEqual([...RUN_FEATURE_NAMES]);
+    expect(loadRenoModel({ TAKEOFF_WALL_RENO_MODEL: "models/wall-reno-model.json" })?.paired?.features).toEqual([...RUN_FEATURE_NAMES]);
     // Both loaded at once, each from its own file.
     expect(loadRunModel({ TAKEOFF_WALL_RUN_MODEL: "models/wall-run-model.json" })).not.toBe(loadRenoModel({ TAKEOFF_WALL_RENO_MODEL: "models/wall-reno-model.json" }));
   });
 
   it(`removes below ${RUN_REMOVE_BELOW} only on a renovation sheet paired with its demolition plan`, () => {
-    const low = constant(0.05);
+    const low = { paired: constant(0.05), unpaired: null };
     expect(renoModelRemovals({ ...base, textItems: renovation, prior }, low)).toEqual([base.kept[0], base.kept[1]]);
     expect(renoModelRemovals({ ...base, textItems: renovation }, low), "not paired").toEqual([]);
     expect(renoModelRemovals({ ...base, textItems: [], prior }, low), "not a renovation sheet").toEqual([]);
-    expect(renoModelRemovals({ ...base, textItems: renovation, prior }, constant(0.1001))).toEqual([]);
+    expect(renoModelRemovals({ ...base, textItems: renovation, prior }, { paired: constant(0.1001), unpaired: null })).toEqual([]);
+  });
+
+  it("R-UNPAIRED (TAKEOFF_RENO_UNPAIRED=1 + TAKEOFF_WALL_RENO_ALL_MODEL): R-ALL only where there is NO prior; paired sheets keep R exactly", () => {
+    const named = { TAKEOFF_WALL_RENO_MODEL: "models/wall-reno-model.json" };
+    const on = loadRenoModel({ ...named, TAKEOFF_RENO_UNPAIRED: "1", TAKEOFF_WALL_RENO_ALL_MODEL: "models/wall-reno-model.json" });
+    expect(on?.paired?.features).toEqual([...RUN_FEATURE_NAMES]);
+    expect(on?.unpaired?.features).toEqual([...RUN_FEATURE_NAMES]);
+    expect(loadRenoModel({ ...named, TAKEOFF_WALL_RENO_ALL_MODEL: "models/wall-reno-model.json" })?.unpaired, "flag off").toBeNull();
+    expect(loadRenoModel({ ...named, TAKEOFF_RENO_UNPAIRED: "1" })?.unpaired, "flag on, no R-ALL file").toBeNull();
+    // R keeps everything (0.5), R-ALL removes everything (0.05): which one ran is visible in the result.
+    const both = { paired: constant(0.5), unpaired: constant(0.05) };
+    expect(renoModelRemovals({ ...base, textItems: renovation }, both), "unpaired renovation sheet: R-ALL").toEqual([base.kept[0], base.kept[1]]);
+    expect(renoModelRemovals({ ...base, textItems: renovation, prior }, both), "paired sheet: shipped R, not R-ALL").toEqual([]);
+    expect(renoModelRemovals({ ...base, textItems: [] }, both), "never on a sheet that is not a renovation").toEqual([]);
+  });
+
+  it("the zero-touch eval runs R the way detection does (it had no R step before 2026-11-19)", () => {
+    const zt = read("./realplan/zzZeroTouch.eval.ts");
+    expect(zt).toContain("for (const r of renoModelRemovals({ offered: runsBefore, kept: runs,");
   });
 
   it("detection holds what either model removes, and only the run model's score rides on the run", () => {
     const detect = read("./detectWallsForCalibration.ts");
-    expect(detect).toContain("const renoModel = raster === null ? loadRenoModel(process.env) : null;");
-    expect(detect).toContain("if (renoModel !== null) for (const run of renoModelRemovals(input, renoModel)) if (!held.includes(run)) held.push(run);");
-    expect(detect.indexOf("renoModelRemovals(input, renoModel)")).toBeLessThan(detect.indexOf("target.onBoundary({ pairings, segments: detected.found.inUnits, held"));
-    expect(detect.match(/runScore = score/g)?.length).toBe(1);
+    const held = read("./heldOnSheet.ts");
+    expect(held).toContain("const reno = input.scanned ? null : models.reno;");
+    expect(held).toContain("if (reno !== null) for (const one of renoModelRemovals(verdictInput, reno)) if (!held.includes(one)) held.push(one);");
+    expect(held.indexOf("renoModelRemovals(verdictInput, reno)")).toBeGreaterThan(held.indexOf("runModelVerdicts(verdictInput, run)"));
+    expect(detect.indexOf("heldOnSheet(")).toBeLessThan(detect.indexOf("target.onBoundary({ pairings, segments: detected.found.inUnits, held"));
+    // Only the run model's score rides on the run; R's is used and dropped.
+    expect(held.match(/runScore = verdicts\.scores/g)?.length).toBe(1);
+    expect(detect.match(/\.runScore = score/g)?.length).toBe(1);
   });
 
   it("the zero-touch eval holds what R removes, with detection's inputs, after the run model's step", () => {

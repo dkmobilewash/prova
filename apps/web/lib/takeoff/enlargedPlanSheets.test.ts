@@ -46,7 +46,7 @@ describe("enlargedPlanReason", () => {
     const src = readFileSync(join(__dirname, "realplan/zzZeroTouch.eval.ts"), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\/\/[^\n]*/g, "");
-    expect(src).toMatch(/const wallTest = wallTestFromLabels\(saved\) && enlargedWhy === null;/);
+    expect(src).toMatch(/const wallTest = wallTestFromLabels\(saved\) && enlargedWhy === null && !codePlan;/);
     expect((src.match(/enlargedPlanReason\s*\(/g) ?? []).length, "the eval never calls enlargedPlanReason").toBeGreaterThanOrEqual(1);
   });
 });

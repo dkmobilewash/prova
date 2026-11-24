@@ -27,8 +27,9 @@ describe("the review finds the wall it is dropping", () => {
     const viewer = read("../../components/TakeoffPlanViewer.tsx");
     // Exact first, then the same wall after a finder change (prereg-reattach-P0.md, `sameWallRun.test.ts`).
     expect(viewer).toContain("rows.find((m) => sameRun(line(m), run)) ?? (feetPerUnit === null ? null : nearestWallRun(run, rows, line, feetPerUnit))");
-    expect(viewer).toContain("!dropped.has(i) && !droppedOnJob(r)");
-    expect(viewer).toContain("regroup(runs.filter((r, at) => !doubted?.has(at) && !droppedOnJob(r)))");
+    // The held set (TAKEOFF_LIVE_MODEL_PARITY) sits between them; with the flag off `liveHeld` is null and inert.
+    expect(viewer).toContain("!dropped.has(i) && !liveHeldRef.current?.has(i) && !droppedOnJob(r)");
+    expect(viewer).toContain("regroup(runs.filter((r, at) => !doubted?.has(at) && !liveHeld?.has(at) && !droppedOnJob(r)))");
     expect(viewer).toMatch(/useEffect\(\(\) => \{\n\s+if \(droppedKeyWas\.current === droppedKey\) return;[\s\S]{0,200}rebuildFound\(/);
   });
 });
