@@ -921,6 +921,8 @@ export function TakeoffWorkspace({
     Record<number, { kind: string; why: string; n: number }[]>
   >({});
   const [offerAllByPage, setOfferAllByPage] = useState<Record<number, true>>({});
+  /** Key mode draws the customer offer; this is the per-page way back to the raw finder list. */
+  const [showSetAsideByPage, setShowSetAsideByPage] = useState<Record<number, true>>({});
   /** Tracing armed, and whether both ends are down — per sheet, like the rest
    *  of this mode's state. */
   const [tracingByPage, setTracingByPage] = useState<Record<number, true>>({});
@@ -1730,6 +1732,7 @@ export function TakeoffWorkspace({
                       onFocus: setKeyFocus,
                       overlaysOn: keyOverlays,
                       offerAll: onThisSheet(offerAllByPage, page) ?? false,
+                      showSetAside: onThisSheet(showSetAsideByPage, page) ?? false,
                       tracing: onThisSheet(tracingByPage, page) ?? false,
                       // `t` is handled in the viewer, because the panel that
                       // used to own it is not mounted until candidates exist —
@@ -1866,6 +1869,7 @@ export function TakeoffWorkspace({
               symbolCount={data.symbolCountOn}
               demotedWalls={data.demotedWallsOn}
               wallModel={data.wallModel}
+              liveHeldModels={data.liveHeldModels}
               ceilingPages={data.ceilingPages}
               initialPage={openPage}
               autoOpened={openChosen}
@@ -2023,6 +2027,10 @@ export function TakeoffWorkspace({
                 offerAll={onThisSheet(offerAllByPage, page) ?? false}
                 onOfferAll={(next) =>
                   setOfferAllByPage((prev) => setOnThisSheet(prev, page, next ? true : null))
+                }
+                showSetAside={onThisSheet(showSetAsideByPage, page) ?? false}
+                onShowSetAside={(next) =>
+                  setShowSetAsideByPage((prev) => setOnThisSheet(prev, page, next ? true : null))
                 }
                 pairings={onThisSheet(pairingsByPage, page) ?? undefined}
                 splitNote={splitNote}
