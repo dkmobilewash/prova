@@ -19,6 +19,7 @@ import { readFileSync, statSync } from "node:fs";
 import { readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
 const APP = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SERVER = join(APP, ".next", "server");
@@ -102,3 +103,8 @@ if (over.length > 0) {
   process.exit(1);
 }
 console.log(`function-size-budget: all entries under ${FAIL_GB} GB (warned: ${warn.length})`);
+
+// The scanned-sheet worker, run inside the scanned-sheet route's function as traced: CI already calls this script
+// after `next build`, so the check rides here rather than in the workflow (raster-worker-trace-check.mjs says why).
+const worker = spawnSync(process.execPath, [join(APP, "scripts", "raster-worker-trace-check.mjs")], { stdio: "inherit" });
+if (worker.status !== 0) process.exit(1);

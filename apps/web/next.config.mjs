@@ -175,6 +175,26 @@ const nextConfig = {
       // on the server, 2026-10-29. Loaded by path, nothing traces it, so it is
       // named here or a deploy ships a thread with no script to run.
       "./lib/takeoff/raster/rasterWorker.mjs",
+      // ── AND WHAT THAT THREAD IMPORTS, which nothing traced either (#1252's proof, 2026-11-24: ERR_MODULE_NOT_FOUND
+      // pdfjs-dist from /var/task/…/rasterWorker.mjs; scanned reading had never run in production). Globbed THROUGH
+      // pnpm's flat store, node_modules/.pnpm/node_modules: an include glob copies files at the path it matched and
+      // never copies pnpm's directory symlinks, so from there the packages arrive as one flat directory where each
+      // one's own `require` finds its siblings. The worker resolves from the same place (`runtimeStore.mjs`).
+      // `scripts/raster-worker-trace-check.mjs` runs the worker inside the traced function in CI.
+      "./lib/takeoff/raster/runtimeStore.mjs",
+      "./lib/takeoff/raster/tilePlan.mjs",
+      "../../node_modules/.pnpm/node_modules/pdfjs-dist/package.json",
+      "../../node_modules/.pnpm/node_modules/pdfjs-dist/legacy/build/pdf.mjs",
+      "../../node_modules/.pnpm/node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+      // the canvas pdf.js draws on, and its platform binary (linux-x64-gnu on Vercel)
+      "../../node_modules/.pnpm/node_modules/@napi-rs/canvas*/**",
+      // Tesseract: the library, the thread it spawns by path, the LSTM cores it picks by CPU (the worker asks for
+      // OEM 1, LSTM only), and the dependencies its sources require. eng.traineddata is DOWNLOADED at run time.
+      "../../node_modules/.pnpm/node_modules/tesseract.js/package.json",
+      "../../node_modules/.pnpm/node_modules/tesseract.js/src/**",
+      "../../node_modules/.pnpm/node_modules/tesseract.js-core/package.json",
+      "../../node_modules/.pnpm/node_modules/tesseract.js-core/*-lstm.*",
+      "../../node_modules/.pnpm/node_modules/{bmp-js,idb-keyval,is-url,regenerator-runtime,wasm-feature-detect,zlibjs}/**",
       // THE WALL CLASSIFIER'S MODEL, read by path from TAKEOFF_WALL_MODEL
       // (`loadWallModel` in lib/takeoff/wallModelFile.ts). Same reason as the
       // line above: a readFileSync traces nothing, so without this a deploy
