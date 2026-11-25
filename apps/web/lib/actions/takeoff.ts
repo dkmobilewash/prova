@@ -1516,12 +1516,23 @@ export async function deleteTakeoffMeasurement(jobId: string, measurementId: str
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
 
-  const deleted = await prisma.takeoffMeasurement.deleteMany({
-    where: { id: measurementId, page: { plan: { jobId, companyId: company.id } } },
+  // ── A DELETED RUN TAKES ITS FEET OFF THE ESTIMATE IN THE SAME WRITE (Diego's order (e), B1) ──
+  // On main the line kept the run's feet until somebody pressed Send again (60 ft priced for 20 ft of walls).
+  const gone = await prisma.$transaction(async (tx) => {
+    const run = await tx.takeoffMeasurement.findFirst({
+      where: { id: measurementId, page: { plan: { jobId, companyId: company.id } } },
+      select: { itemId: true, page: { select: { plan: { select: { job: { select: { status: true } } } } } } },
+    });
+    if (run === null) return false;
+    await tx.takeoffMeasurement.delete({ where: { id: measurementId } });
+    if (run.page.plan.job.status === "ESTIMATE") await syncReviewedItems(tx, company.id, jobId, [run.itemId]);
+    return true;
   });
-  if (deleted.count === 0) return actionFail("That measurement is already gone. Reload the page.");
+  if (!gone) return actionFail("That measurement is already gone. Reload the page.");
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/jobs/${jobId}/estimate`);
+  revalidatePath(`/takeoff/${jobId}`);
   return actionOk;
 }
 
