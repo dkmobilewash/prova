@@ -1,0 +1,5 @@
+### A sheet's "all partitions to be type X unless noted" types its untagged walls (TAKEOFF_UNO_DEFAULT, off)
+
+- With `TAKEOFF_UNO_DEFAULT=1`, a U.N.O. default sentence (`unoDefaults`) gives the untagged walls of a sheet the code it names, suggested as the note's ("legend's unless noted otherwise"), where today's reader finds nothing. Today's reader needs the code in the company's library, which is empty on a set read without a legend, so 114026's A1A, Wendell's S4 and Baker's S6B reached no wall. The sheet's own sentence counts first, else one from the set's other pages (114026 prints it on its general-notes page). The U.N.O. is required, the code must look like a designation (PAINTED, WC, "TO" refused), a sheet reference is refused, and a sheet or set naming two defaults (Topeka P1 interior, P30 exterior) gives none. Posting is unchanged: `POSTS` still decides. Unset, nothing changes.
+
+Measured by `zzLegendTextZT.eval.ts` (prereg-uno-default-type.md), which now counts a note-typed group as typed and prints `UNODEFAULT` per sheet.
