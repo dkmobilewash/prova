@@ -193,7 +193,7 @@ const nextConfig = {
       "../../node_modules/.pnpm/node_modules/tesseract.js/package.json",
       "../../node_modules/.pnpm/node_modules/tesseract.js/src/**",
       "../../node_modules/.pnpm/node_modules/tesseract.js-core/package.json",
-      "../../node_modules/.pnpm/node_modules/tesseract.js-core/*-lstm.*",
+      "../../node_modules/.pnpm/node_modules/tesseract.js-core/tesseract-core*",
       "../../node_modules/.pnpm/node_modules/{bmp-js,idb-keyval,is-url,regenerator-runtime,wasm-feature-detect,zlibjs}/**",
       // THE WALL CLASSIFIER'S MODEL, read by path from TAKEOFF_WALL_MODEL
       // (`loadWallModel` in lib/takeoff/wallModelFile.ts). Same reason as the
