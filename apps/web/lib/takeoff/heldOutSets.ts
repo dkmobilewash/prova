@@ -277,6 +277,18 @@ export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: str
     match: "REQUEST-FOR-QUALIFICATIONS-AND-PROPOSALS-FOOTHILL-HIGH-SCHOOL-BASEBALL-SOFTBALL-COMPLEX-DRAWINGS",
     why: "school baseball/softball complex, metal buildings, 81-page CD set — held out 2026-11-20 before a label was written (data-growth wave 2, Diego's 2:1 split)",
   },
+  // ── Data-growth wave 3 (Diego approved 2026-11-25): two of the six new sets go
+  // HELD-OUT before a label is written, picked by a rule fixed before any survey was
+  // read — sort the six PDFs by SHA-256 of file bytes ascending, hold out the first
+  // two. No hand-picking; the hashes are in coordination/log.md 10:20Z.
+  {
+    match: "ADU_A_1200",
+    why: "LA County standard-plan ADU, residential, 10 pages — held out 2026-11-25 before a label was written (data-growth wave 3, SHA-order rule)",
+  },
+  {
+    match: "25ENT-0051 (817 16th St) AA Stamped Plans",
+    why: "multi-unit residential, 817 16th St, 33 pages — held out 2026-11-25 before a label was written (data-growth wave 3, SHA-order rule)",
+  },
 ];
 
 /** Punctuation and extension removed, so one spelling matches another. */
