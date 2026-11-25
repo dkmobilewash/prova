@@ -1,6 +1,6 @@
 "use server";
 
-import { prisma } from "@prova/db";
+import { prisma, type Prisma } from "@prova/db";
 import { revalidatePath } from "next/cache";
 import { requireCompanyContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
@@ -49,30 +49,41 @@ export async function applyRevisedSheets(jobId: string): Promise<ActionResultWit
     const touched = new Set<string>();
     const untyped = await untypedItem(tx, companyId, jobId);
     const dropped = await namedItem(tx, companyId, jobId, DROPPED_ITEM);
+    // ── A FIXED NUMBER OF WRITES, NEVER ONE PER RUN ──
+    // A 144-run addendum sheet awaited a create or an update per run here and outlived Prisma's 5 s default at
+    // Neon's latency (`syncCallersLatency.dbtest.ts`). Every sheet's rows are read once; the written runs go in one
+    // createManyAndReturn, the carried ones in one updateMany per item, the earlier ones in one updateMany.
+    const pages = await tx.takeoffMeasurement.findMany({ where: { pageId: { in: work.map((sheet) => sheet.pageId) }, kind: "LINEAR" }, select: { id: true, pageId: true, xs: true, ys: true, itemId: true, label: true } });
+    const writes: Prisma.TakeoffMeasurementCreateManyInput[] = [];
+    const carried = new Map<string, string>();
     for (const sheet of work) {
-      const posted = await tx.takeoffMeasurement.findMany({ where: { pageId: sheet.pageId, kind: "LINEAR" }, select: { id: true, xs: true, ys: true, itemId: true, label: true } });
+      const posted = pages.filter((m) => m.pageId === sheet.pageId);
       for (const run of sheet.news) {
         const to = run.itemId ?? untyped;
         const at = posted.find((m) => sameRunAs(run, m.xs, m.ys));
         if (at === undefined) {
-          const row = await tx.takeoffMeasurement.create({ data: { pageId: sheet.pageId, calibrationId: sheet.calibrationId, kind: "LINEAR", source: "DETECTED", xs: [run.x1, run.x2], ys: [run.y1, run.y2], itemId: to, label: run.itemId === null ? "wall, untyped" : "wall (carried from the earlier sheet)", createdByUserId: context.id }, select: { id: true } });
-          created.push(row.id);
+          writes.push({ pageId: sheet.pageId, calibrationId: sheet.calibrationId, kind: "LINEAR", source: "DETECTED", xs: [run.x1, run.x2], ys: [run.y1, run.y2], itemId: to, label: run.itemId === null ? "wall, untyped" : "wall (carried from the earlier sheet)", createdByUserId: context.id });
           touched.add(to);
         } else if (at.itemId !== to && (at.itemId === null || at.itemId === untyped)) {
           // Only an untyped run takes the carried type; one somebody already decided keeps it.
           moved.push({ id: at.id, itemId: at.itemId, label: at.label });
-          await tx.takeoffMeasurement.update({ where: { id: at.id }, data: { itemId: to, label: "wall (carried from the earlier sheet)" } });
+          carried.set(at.id, to);
           touched.add(to);
           if (at.itemId !== null) touched.add(at.itemId);
         }
       }
-      const earlier = await tx.takeoffMeasurement.findMany({ where: { id: { in: sheet.oldIds } }, select: { id: true, itemId: true, label: true } });
-      for (const m of earlier) {
-        moved.push({ id: m.id, itemId: m.itemId, label: m.label });
-        if (m.itemId !== null) touched.add(m.itemId);
-      }
-      if (earlier.length > 0) await tx.takeoffMeasurement.updateMany({ where: { id: { in: earlier.map((m) => m.id) } }, data: { itemId: dropped, label } });
     }
+    if (writes.length > 0) created.push(...(await tx.takeoffMeasurement.createManyAndReturn({ data: writes, select: { id: true } })).map((row) => row.id));
+    for (const to of new Set(carried.values())) {
+      const ids = [...carried].filter(([, item]) => item === to).map(([id]) => id);
+      await tx.takeoffMeasurement.updateMany({ where: { id: { in: ids } }, data: { itemId: to, label: "wall (carried from the earlier sheet)" } });
+    }
+    const earlier = await tx.takeoffMeasurement.findMany({ where: { id: { in: work.flatMap((sheet) => sheet.oldIds) } }, select: { id: true, itemId: true, label: true } });
+    for (const m of earlier) {
+      moved.push({ id: m.id, itemId: m.itemId, label: m.label });
+      if (m.itemId !== null) touched.add(m.itemId);
+    }
+    if (earlier.length > 0) await tx.takeoffMeasurement.updateMany({ where: { id: { in: earlier.map((m) => m.id) } }, data: { itemId: dropped, label } });
     await syncDecidedItems(tx, companyId, jobId, [...touched, dropped]);
     return { moved, created, items: [] };
   });

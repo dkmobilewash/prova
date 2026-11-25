@@ -1,7 +1,7 @@
 import { applyCatalogPrices, ratesFrom } from "./catalogPrices";
 import { unitPriceFromCost, type RecapRates } from "@/lib/bid-recap";
 import { showsExistingWork } from "@/lib/takeoff/renovationMarks";
-import type { Prisma } from "@prova/db";
+import { Prisma } from "@prova/db";
 
 import { componentRunQuantity, openingsFromJson, type RunGeometry, type WallComponentBasis } from "@/lib/wall-assemblies";
 import { openingThresholdSqFt as thresholdFor } from "@/lib/businessScope";
@@ -487,9 +487,8 @@ export async function syncTakeoffItemLines(
   // function's to read, let alone to retire.
   const existing = await tx.jobLineItem.findMany({
     where: { jobId, takeoffItemId: only === undefined ? { not: null } : { in: [...only] } },
-    select: { id: true, takeoffItemId: true, wallTypeComponentId: true, description: true, isDeleted: true, quantity: true, laborHours: true, productionRate: true },
+    select: { id: true, takeoffItemId: true, wallTypeComponentId: true, description: true, isDeleted: true },
   });
-  const stored = new Map(existing.map((line) => [line.id, line]));
   const key = (line: { takeoffItemId: string | null; wallTypeComponentId: string | null; description: string }) =>
     `${line.takeoffItemId}:${line.wallTypeComponentId ?? line.description}`;
   const live = new Map(existing.filter((line) => !line.isDeleted).map((line) => [key(line), line.id]));
@@ -504,30 +503,22 @@ export async function syncTakeoffItemLines(
   // ── ONE WRITE PER CHANGE, NEVER ONE PER LINE (the jobLineItem P2028 cluster, prod since 2026-08-31) ──
   // This created every new line and updated every kept line with its own awaited query inside the caller's
   // interactive transaction, so an 80-line estimate made 77 round trips and outlived Prisma's 5 s default at Neon's
-  // latency (P2028, 0 lines written; `syncLinesLatency.dbtest.ts`). New lines now go in one createMany, kept lines are
-  // written only when a value really moved (compared at each column's own scale), and retired lines in one updateMany.
+  // latency (P2028, 0 lines written; `syncLinesLatency.dbtest.ts`). New lines now go in one createMany, kept lines in one
+  // UPDATE and retired lines in one updateMany: a fixed number of statements whatever the size of the estimate.
   const toCreate: Prisma.JobLineItemCreateManyInput[] = [];
+  const changed: { id: string; quantity: string; laborHours: string | null; productionRate: string | null }[] = [];
   const retired: string[] = [];
-  const at = (value: number | null, scale: number) => (value == null ? null : value.toFixed(scale));
-  const was = (value: { toFixed(n: number): string } | null, scale: number) => (value == null ? null : value.toFixed(scale));
 
   for (const [id, line] of wanted) {
     const lineId = live.get(id);
     if (lineId) {
       // Quantity and labour only. The price is the estimator's once it exists.
-      const old = stored.get(lineId)!;
-      const moved =
-        was(old.quantity, 2) !== at(line.quantity, 2) || was(old.laborHours, 2) !== at(line.laborHours, 2) || was(old.productionRate, 4) !== at(line.productionRate, 4);
-      if (moved) {
-        await tx.jobLineItem.update({
-          where: { id: lineId },
-          data: {
-            quantity: line.quantity.toString(),
-            laborHours: line.laborHours != null ? line.laborHours.toString() : null,
-            productionRate: line.productionRate != null ? line.productionRate.toString() : null,
-          },
-        });
-      }
+      changed.push({
+        id: lineId,
+        quantity: line.quantity.toString(),
+        laborHours: line.laborHours != null ? line.laborHours.toString() : null,
+        productionRate: line.productionRate != null ? line.productionRate.toString() : null,
+      });
       updated += 1;
       continue;
     }
@@ -571,6 +562,12 @@ export async function syncTakeoffItemLines(
         takeoffItemId: line.itemId,
     });
     created += 1;
+  }
+  // Every kept line in ONE statement: Prisma has no update-many with a value per row. Parameterised by the tagged
+  // template; the columns' own scales round the values exactly as `update` did.
+  if (changed.length > 0) {
+    const rows = Prisma.join(changed.map((c) => Prisma.sql`(${c.id}, ${c.quantity}, ${c.laborHours}, ${c.productionRate})`));
+    await tx.$executeRaw`UPDATE "JobLineItem" AS l SET "quantity" = v.q::numeric, "laborHours" = v.h::numeric, "productionRate" = v.r::numeric, "updatedAt" = CURRENT_TIMESTAMP FROM (VALUES ${rows}) AS v(id, q, h, r) WHERE l."id" = v.id`;
   }
   // The proposal lists lines by `createdAt` alone, so one statement's shared timestamp would leave their order to
   // Postgres. Each new line keeps the order the one-at-a-time creates gave it, a millisecond apart.
@@ -787,4 +784,14 @@ export async function wallItemsForLabor(tx: Tx, companyId: string, jobId: string
     if (geometry.linearFt > 0) out.push({ wallTypeId: item.wallTypeId, heightFt, linearFt: geometry.linearFt, boardedSqFt: geometry.boardedSqFt });
   }
   return out;
+}
+
+/**
+ * The items an action made, removed once they hold no run and no live line ("C8B walls", empty), in ONE statement.
+ * Each was a count, a count and a delete of its own inside the caller's transaction (`syncCallersLatency.dbtest.ts`).
+ * `where` narrows it further, so a claim from the browser only reaches rows it may.
+ */
+export async function deleteEmptyItems(tx: Tx, ids: readonly string[], where: Prisma.TakeoffItemWhereInput = {}): Promise<void> {
+  if (ids.length === 0) return;
+  await tx.takeoffItem.deleteMany({ where: { ...where, id: { in: [...ids] }, measurements: { none: {} }, lineItems: { none: { isDeleted: false } } } });
 }
