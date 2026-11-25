@@ -193,6 +193,7 @@ export default async function JobTakeoffPage({
     legendCodes,
     levelByPage,
     scalePrefillByPage,
+    renovationByPage,
     viewScalesByPage,
     scaleDeclineByPage,
     duplicateWallsByPage,
@@ -304,6 +305,7 @@ export default async function JobTakeoffPage({
         storedWallsByPage={storedWallsByPage}
         legendCodes={legendCodes}
         scalePrefillByPage={scalePrefillByPage}
+        renovationByPage={renovationByPage}
         viewScalesByPage={viewScalesByPage}
         scaleDeclineByPage={scaleDeclineByPage}
         levelByPage={levelByPage}
@@ -374,6 +376,7 @@ export default async function JobTakeoffPage({
       {isEstimateStage && wholeSetTakeoffOn && (
         <WholeSetTakeoffPanel
           planId={plan.id}
+          jobId={job.id}
           existing={await latestIngestFor(plan.id, "WALLS")}
           summary={await wholeSetSummary(plan.id, company.id, MAX_ATTEMPTS)}
           projects={await uploadProjectQuestion(plan.id, company.id)}

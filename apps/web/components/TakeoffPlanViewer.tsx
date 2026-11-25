@@ -93,7 +93,8 @@ import { asideExistingWalls, existingDoorsSentence, existingPrefixes, type Exist
 import { insideWorkArea, openingsInWorkArea, runAt, splitLinesFrom, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
 import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUndo";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
-import { renovationMarks, showsExistingWork } from "@/lib/takeoff/renovationMarks";
+import { renovationMarks } from "@/lib/takeoff/renovationMarks";
+import { isWholeSheet, WHOLE_SHEET, workAreaPrompt } from "@/lib/takeoff/workAreaFirst";
 import { TakeoffExclusionBar } from "./TakeoffExclusionBar";
 import { DROPPED_LABEL, HELD_ITEM, HELD_LABEL, needsLookCount, reviewWrite, sameRun } from "@/lib/takeoff/estimateHold";
 import { heldOnSheet, type HeldModels } from "@/lib/takeoff/heldOnSheet";
@@ -343,6 +344,7 @@ export function TakeoffPlanViewer({
   wallTypes,
   generalHeight = null,
   scalePrefillByPage,
+  renovationByPage,
   viewScalesByPage,
   answerKey,
   scaleDeclineByPage,
@@ -655,6 +657,8 @@ export function TakeoffPlanViewer({
   /** What each sheet said about its own scale, read off the dimensions
    *  printed on it. A PREFILL and never a calibration — see `ScalePrefill`. */
   scalePrefillByPage: ScalePrefillByPage;
+  /** Each sheet's stored marks of existing work (`PlanSheetText.renovationMarks`): the work-area prompt shows on open. */
+  renovationByPage?: Record<number, string[]>;
   /**
    * The drawings on each multi-scale sheet, with the scale captioned under
    * each. Absent for every page that read a scale of its own, which is most of
@@ -897,13 +901,22 @@ export function TakeoffPlanViewer({
       setAsideLikeDone(null);
       setTool("exclude");
     };
+    // The review queue's "Draw work area" on a renovation sheet (work-area-first.md W5b): that sheet, the tool picked.
+    const onWorkArea = (event: Event) => {
+      const page = (event as CustomEvent<{ page?: number }>).detail?.page;
+      if (typeof page !== "number" || page < 1) return;
+      setPageNumber(page);
+      setTool("workarea");
+    };
     document.addEventListener("takeoff-shortcut", onShortcut);
     document.addEventListener("takeoff-goto", onGoto);
     document.addEventListener("takeoff-aside-like", onAsideLike);
+    document.addEventListener("takeoff-work-area", onWorkArea);
     return () => {
       document.removeEventListener("takeoff-shortcut", onShortcut);
       document.removeEventListener("takeoff-goto", onGoto);
       document.removeEventListener("takeoff-aside-like", onAsideLike);
+      document.removeEventListener("takeoff-work-area", onWorkArea);
     };
   }, [pageCount]);
 
@@ -970,6 +983,8 @@ export function TakeoffPlanViewer({
   const [oneTapScalePage, setOneTapScalePage] = useState<number | null>(null);
   /** What on this sheet says it shows existing work, read at Find the walls. */
   const [renovationOnPage, setRenovationOnPage] = useState<{ page: number; marks: string[] } | null>(null);
+  // The marks the work-area prompt reads: the stored ones from the first paint, else what Find read off the sheet.
+  const pageMarks = renovationByPage?.[pageNumber] ?? (renovationOnPage?.page === pageNumber ? renovationOnPage.marks : []);
   /** The Split area line being dragged, page-width units. */
   const [splitLine, setSplitLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   /** "Close room": the line being dragged, its ends already snapped to wall ends. */
@@ -1353,7 +1368,7 @@ export function TakeoffPlanViewer({
   const exclusionsRef = useRef(userExclusionsFromRows(sheet?.exclusions ?? []));
   // From the sheet at first paint: a saved work area has its control on open.
   const [exclusionRows, setExclusionRows] = useState<ExclusionRow[]>(sheet?.exclusions ?? []);
-  const [userAside, setUserAside] = useState<{ kind: string; why: string; n: number }[]>([]);
+  const [userAside, setUserAside] = useState<{ kind: string; why: string; n: number; feet?: number }[]>([]);
   // ── "SET ASIDE ALL WALLS DRAWN LIKE THIS ONE", STARTED FROM THE REVIEW QUEUE (`setAsideLike.ts`) ──
   // `pick`: waiting for the click on one existing wall; then the preview, applied by Enter.
   const [asideLike, setAsideLike] = useState<{ page: number; preview: { line: { x1: number; y1: number; x2: number; y2: number }; runs: Set<WallCandidate>; n: number; feet: number } | null } | null>(null);
@@ -1363,7 +1378,7 @@ export function TakeoffPlanViewer({
   const [priorStatus, setPriorStatus] = useState<PriorStatus | null>(null);
   // ── WHAT THE COMPARISON SET ASIDE, IN PLACE OF THE RENOVATION PROMPT ──
   // A sheet paired with its demolition plan, walls set aside: the prompt to
-  // draw a work area or exclude existing walls is already answered (Chrome on
+  // draw a work area is already answered (Chrome on
   // E Street A2.1). Unpaired, or nothing set aside, the prompt stays.
   // The browser's own comparison when it made one on this page, else what the server's Run takeoff stored.
   const storedPrior = planCompare?.stored?.[pageNumber];
@@ -4090,6 +4105,12 @@ export function TakeoffPlanViewer({
     setTool("pan");
   }
 
+  /** The work-area prompt's second exit: one work area over the whole sheet (work-area-first.md W3). */
+  async function onWholeSheetNewWork() {
+    if (!sheet) return;
+    await addExclusion("WORK_AREA", [...WHOLE_SHEET.xs], [...WHOLE_SHEET.ys]);
+  }
+
   /** The sentence's Undo: the newest exclusion of that kind. */
   async function onUndoExclusion(kind: ExclusionRow["kind"]) {
     const last = exclusionRowsRef.current.filter((r) => r.kind === kind).at(-1);
@@ -5843,12 +5864,14 @@ export function TakeoffPlanViewer({
           existing={existingAside}
           // The prompt is for a renovation sheet with NO demolition plan paired: a paired one has its
           // existing walls set aside by the comparison, and says so instead (`existing`).
-          renovation={
-            found !== null && planCompare?.pairs[pageNumber] === undefined && renovationOnPage?.page === pageNumber && showsExistingWork(renovationOnPage.marks) && !exclusionRows.some((r) => r.kind === "EXCLUDE_LIKE" || r.kind === "WORK_AREA")
-              ? renovationOnPage.marks
-              : null
-          }
+          // ── THE WORK AREA FIRST (Diego's audit order, 2026-11-25; work-area-first.md W1-W2) ──
+          // On open, from the sheet's stored marks (the live read stands in until they are stored), and until a work
+          // area exists: Find is not needed first, and excluding walls drawn like one is not an answer.
+          renovation={workAreaPrompt({ marks: pageMarks, paired: planCompare?.pairs[pageNumber] !== undefined, exclusions: exclusionRows }) === "ask" ? pageMarks : null}
           onPickTool={(next) => setTool(next)}
+          onWholeSheet={readOnly ? undefined : () => void onWholeSheetNewWork()}
+          wholeSheet={exclusionRows.some((r) => r.kind === "WORK_AREA" && isWholeSheet(r.xs, r.ys))}
+          outsideFeet={userAside.find((a) => a.kind === "outside-work-area")?.feet ?? null}
           splits={exclusionRows.filter((r) => r.kind === "ROOM_SPLIT").length}
           workAreas={exclusionRows.filter((r) => r.kind === "WORK_AREA").length}
           readOnly={readOnly}

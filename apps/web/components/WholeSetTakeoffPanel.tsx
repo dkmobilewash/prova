@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { advancePlanIngest, choosePlanOfWork, chooseUploadProject, startPlanIngest, wholeSetTakeoffSummary } from "@/lib/actions";
+import { advancePlanIngest, choosePlanOfWork, chooseUploadProject, markWholeSheetNewWork, startPlanIngest, wholeSetTakeoffSummary } from "@/lib/actions";
+import { WORK_AREA_PROMPT } from "@/lib/takeoff/workAreaFirst";
 import type { PlanOfWorkQuestion } from "@/lib/plan-ingest/walls";
 import { useThumbnails } from "@/components/TakeoffSheetTree";
 import type { ProjectQuestion } from "@/lib/plan-ingest/projectIdentity";
@@ -24,12 +25,15 @@ const MAX_IDLE_SLICES = 3;
 
 export function WholeSetTakeoffPanel({
   planId,
+  jobId,
   existing,
   summary: initialSummary,
   projects = null,
   planQuestion = null,
 }: {
   planId: string;
+  /** For each renovation sheet's "Draw work area": the full workspace, on that sheet. */
+  jobId?: string;
   existing: IngestView | null;
   summary: WallsSummaryRow[];
   /** One upload, two projects (`projectIdentity.ts`, TAKEOFF_PROJECT_IDENTITY): the question, and the stored answer. */
@@ -50,6 +54,21 @@ export function WholeSetTakeoffPanel({
       alive.current = false;
     };
   }, []);
+
+  // A renovation sheet with walls and no work area yet: asked on its row and named in the summary (W5).
+  const needsWorkArea = (row: WallsSummaryRow) => row.renovation !== undefined && row.workArea !== true && row.status.kind === "walls";
+  const unanswered = summary.filter(needsWorkArea);
+  function wholeSheet(pageNumber: number) {
+    setError(null);
+    startTransition(async () => {
+      const result = await markWholeSheetNewWork(planId, pageNumber);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setSummary((rows) => rows.map((r) => (r.pageNumber === pageNumber ? { ...r, workArea: true } : r)));
+    });
+  }
 
   const refreshSummary = useCallback(async () => {
     const result = await wholeSetTakeoffSummary(planId);
@@ -277,10 +296,11 @@ export function WholeSetTakeoffPanel({
             {passed.length > 0 ? `, ${passed.length} passed over` : ""}
             {failed.length > 0 ? `, ${failed.length} failed` : ""}.
           </span>
-          {summary.some((row) => row.renovation && row.status.kind === "walls") && (
+          {/* ── ONLY THE SHEETS STILL UNANSWERED (work-area-first.md W5) ── a work area, drawn or the whole sheet. */}
+          {unanswered.length > 0 && (
             <p className="mt-2 font-medium text-tag-amber-ink" data-takeoff="whole-set-renovation">
-              Shows existing work, so draw the work area or exclude existing walls before sending:{" "}
-              {summary.filter((row) => row.renovation && row.status.kind === "walls").map((row) => `${row.label} (${row.renovation!.join(", ")})`).join("; ")}.
+              Shows existing work, so each needs its work area before sending:{" "}
+              {unanswered.map((row) => `${row.label} (${row.renovation!.join(", ")})`).join("; ")}.
             </p>
           )}
           <ul className="mt-2 grid gap-1 sm:grid-cols-2">
@@ -301,6 +321,25 @@ export function WholeSetTakeoffPanel({
                         : inRun || running
                           ? "waiting"
                           : "not looked at yet"}
+                {/* ── THE SAME PROMPT AS THE SHEET, WITH THE SAME TWO EXITS (Diego's audit order, 2026-11-25) ── */}
+                {needsWorkArea(row) && (
+                  <span className="mt-1 flex flex-wrap items-center gap-2 rounded-md bg-tag-amber px-2 py-1 font-medium text-tag-amber-ink" data-takeoff="whole-set-work-area">
+                    {WORK_AREA_PROMPT}
+                    {jobId !== undefined && (
+                      <a href={`/takeoff/${jobId}?page=${row.pageNumber}`} className="inline-flex min-h-[32px] items-center rounded-md border border-line-card bg-surface px-2 text-ink-body">
+                        Draw work area
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      disabled={pending}
+                      className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body"
+                      onClick={() => wholeSheet(row.pageNumber)}
+                    >
+                      Whole sheet is new work
+                    </button>
+                  </span>
+                )}
               </li>
             ))}
           </ul>

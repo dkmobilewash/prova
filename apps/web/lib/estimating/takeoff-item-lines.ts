@@ -596,9 +596,10 @@ export async function syncTakeoffItemLines(
 
   // ── A RENOVATION SHEET SENT AS IT WAS FOUND ──
   // Existing walls ride along at about twice the new work unless the estimator
-  // drew a work area or excluded them. Allowed, and said.
+  // drew a work area or marked the whole sheet new work: the two exits of the
+  // work-area prompt (`workAreaFirst.ts`, Diego 2026-11-25). Allowed, and said.
   const measuredPages = await tx.takeoffPlanPage.findMany({
-    where: { plan: { jobId, companyId }, measurements: { some: { itemId: { not: null }, kind: "LINEAR" } }, exclusions: { none: { kind: { in: ["WORK_AREA", "EXCLUDE_LIKE"] } } } },
+    where: { plan: { jobId, companyId }, measurements: { some: { itemId: { not: null }, kind: "LINEAR" } }, exclusions: { none: { kind: "WORK_AREA" } } },
     select: { pageNumber: true, label: true, planId: true },
   });
   const texts = measuredPages.length === 0 ? [] : await tx.planSheetText.findMany({ where: { OR: measuredPages.map((p) => ({ planId: p.planId, pageNumber: p.pageNumber })) }, select: { planId: true, pageNumber: true, renovationMarks: true } });
