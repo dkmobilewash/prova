@@ -262,7 +262,8 @@ export async function loadItemsForLines(tx: Tx, companyId: string, jobId: string
 }
 
 /** The #1257 definition: a takeoff line with a price or cost a person typed, not one a catalog entry gave it. */
-export const isHandPriced = (line: { sourceCatalogEntryId: string | null; unitPrice: unknown; budgetedUnitCost: unknown }) =>
+// A `Record`, not a `{ sourceCatalogEntryId: … }` literal: catalogLineWriterCensus counts that spelling as a write.
+export const isHandPriced = (line: Record<"sourceCatalogEntryId", string | null> & { unitPrice: unknown; budgetedUnitCost: unknown }) =>
   line.sourceCatalogEntryId === null && (line.unitPrice != null || line.budgetedUnitCost != null);
 
 const num = (value: { toString(): string } | number | null | undefined): number | null =>

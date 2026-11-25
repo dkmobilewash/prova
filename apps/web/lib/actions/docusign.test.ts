@@ -55,9 +55,12 @@ function flatten(where: Record<string, unknown> = {}): Record<string, unknown> {
   return out;
 }
 
-function matches(row: Row, where?: Record<string, unknown>) {
+function matches(row: Row, where?: Record<string, unknown>): boolean {
   return Object.entries(flatten(where)).every(([key, value]) => {
+    // GC_LINE_WHERE (order (e), A4): `NOT: { … }` and `{ not: null }`, as Prisma reads them.
+    if (key === "NOT") return !matches(row, value as Record<string, unknown>);
     const actual = row[key] ?? null;
+    if (value && typeof value === "object" && "not" in (value as object)) return actual !== (value as { not: unknown }).not;
     if (value && typeof value === "object" && "in" in (value as object)) {
       return ((value as { in: unknown[] }).in as unknown[]).includes(actual);
     }

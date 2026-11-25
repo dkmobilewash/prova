@@ -19,7 +19,7 @@ export function gcLines(jobId: string) {
 
 export async function zeroedPricedLines(jobId: string): Promise<{ id: string; description: string; unitPrice: string | null }[]> {
   const rows = await prisma.jobLineItem.findMany({
-    where: { jobId, isDeleted: false, takeoffItemId: { not: null }, quantity: 0, sourceCatalogEntryId: null, OR: [{ unitPrice: { not: null } }, { budgetedUnitCost: { not: null } }] },
+    where: { jobId, isDeleted: false, takeoffItemId: { not: null }, quantity: 0, sourceCatalogEntry: { is: null }, OR: [{ unitPrice: { not: null } }, { budgetedUnitCost: { not: null } }] },
     orderBy: { createdAt: "asc" },
     select: { id: true, description: true, unitPrice: true },
   });

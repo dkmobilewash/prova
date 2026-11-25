@@ -337,7 +337,7 @@ export async function loadTakeoffWorkspace(
       },
       // The `isHandPriced` lines above 0: what the item-delete confirmation offers to keep (order (e), C2).
       lineItems: {
-        where: { isDeleted: false, sourceCatalogEntryId: null, quantity: { gt: 0 }, OR: [{ unitPrice: { not: null } }, { budgetedUnitCost: { not: null } }] },
+        where: { isDeleted: false, sourceCatalogEntry: { is: null }, quantity: { gt: 0 }, OR: [{ unitPrice: { not: null } }, { budgetedUnitCost: { not: null } }] },
         select: { description: true, quantity: true, unitPrice: true },
       },
     },
