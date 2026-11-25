@@ -99,3 +99,75 @@ export function defaultWallTypeFromNotes(
   const [first, ...others] = fromLegend;
   return others.length > 0 ? { ...first!, others } : first!;
 }
+
+// ── prereg-uno-default-type.md (TAKEOFF_UNO_DEFAULT; unset = today exactly) ──
+//
+// The reader above needs the code in the company's library, and on a set read
+// with no legend that library is empty, so a sheet's own "ALL PARTITIONS TO BE
+// TYPE 'S4' UNLESS NOTED OTHERWISE" reached nothing (training census: 114026,
+// Wendell, Baker). This reads the sentence itself and lets its code stand in as
+// the type. The U.N.O. is REQUIRED here (it is what makes the code a default
+// rather than a mention), the code must look like a designation, and a sheet or
+// set naming two different defaults (Topeka: P1 interior, P30 exterior) gives
+// none — with no legend there is no thickness to say which wall is which.
+
+export const UNO_DEFAULT_ON = () => process.env.TAKEOFF_UNO_DEFAULT === "1";
+
+const QUOTE = `['"‘’“”]?`;
+/** "ALL [INTERIOR] PARTITIONS TO BE [TYPE] 'S4' … UNLESS NOTED", or Baker's "… WALL ASSEMBLY TYPE TO BE S6B UNLESS NOTED". */
+const UNO_SENTENCE = new RegExp(
+  `\\b(?:(?:ALL|TYPICAL)\\s+(?:[A-Z/-]+\\s+){0,3}?(?:PARTITIONS?|WALLS?)|WALL\\s+ASSEMBLY)\\s+(?:TYPE\\s+)?(?:SHALL\\s+BE|TO\\s+BE|ARE|IS)\\s+(?:WALL\\s+)?(?:TYPE\\s+)?${QUOTE}([A-Z0-9][A-Z0-9.-]{0,6}?)${QUOTE}(?=[\\s,.]|$)[^.]{0,80}?(?:U\\.?\\s?N\\.?\\s?O\\b|UNLESS\\s+(?:OTHERWISE\\s+)?NOTED)`,
+  "i",
+);
+const DESIGNATION_CODE = /^[A-Z]{1,4}-?\d{1,3}[A-Z]?$/;
+
+/** Each a named check with a test: what a captured word must not be to count as a wall type. */
+export const UNO_CODE_GUARDS: { name: string; refuses: (code: string) => boolean }[] = [
+  { name: "not a designation", refuses: (c) => !DESIGNATION_CODE.test(c) },
+  { name: "sheet reference", refuses: (c) => /^[A-Z]{1,2}-?\d{3,}/.test(c) },
+];
+
+export type UnoDefault = { code: string; note: string };
+
+/** Rows of a page's text, top to bottom, each read left to right. */
+function rows(items: readonly { str: string; x: number; y: number }[]): string[] {
+  const byRow = new Map<number, { str: string; x: number }[]>();
+  for (const i of items) {
+    const k = Math.round(i.y / 4);
+    byRow.set(k, [...(byRow.get(k) ?? []), i]);
+  }
+  return [...byRow.entries()].sort((a, b) => a[0] - b[0]).map(([, r]) => r.sort((a, b) => a.x - b.x).map((i) => i.str).join(" ").replace(/\s+/g, " ").trim());
+}
+
+/** Every U.N.O. default a page prints, one per distinct code (a sentence wrapped onto a second row included). */
+export function unoDefaults(items: readonly { str: string; x: number; y: number }[]): UnoDefault[] {
+  const lines = rows(items);
+  const found = new Map<string, UnoDefault>();
+  lines.forEach((line, i) => {
+    for (const text of [line, `${lines[i - 1] ?? ""} ${line}`]) {
+      const m = UNO_SENTENCE.exec(text);
+      if (m === null) continue;
+      const code = m[1]!.toUpperCase();
+      if (UNO_CODE_GUARDS.some((g) => g.refuses(code)) || found.has(code)) continue;
+      found.set(code, { code, note: m[0].trim() });
+    }
+  });
+  return [...found.values()];
+}
+
+/**
+ * The default a sheet works to: its own, else the set's — and only when exactly one code is named.
+ * The library's type when it has the code (its thickness then limits which walls it covers),
+ * else the code standing in as a type with no thickness.
+ */
+export function unoDefaultType(
+  sheet: readonly UnoDefault[],
+  set: readonly UnoDefault[] | null,
+  wallTypes: readonly MatchableWallType[],
+): WallTypeFromNote | null {
+  const named = sheet.length > 0 ? sheet : (set ?? []);
+  if (named.length !== 1) return null;
+  const { code, note } = named[0]!;
+  const type = wallTypes.find((one) => sameDesignation(one.code, code)) ?? { id: `uno:${code}`, code, name: code, hasParts: false, thicknessIn: null };
+  return { type, note };
+}
