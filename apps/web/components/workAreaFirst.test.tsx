@@ -118,3 +118,19 @@ describe("W3-W4: the bar says what the work area did", () => {
     expect(q("not-in-work-area")).toBeNull();
   });
 });
+
+describe("W3 follow-up: Whole sheet is new work says it is working, and a second press does nothing", () => {
+  // Production, 2026-11-25 (dpl_654pQyLx): the screen did not change for 5-20 s after the press, with no busy state.
+  it("goes busy at once and ignores a second press while the save runs", async () => {
+    let finish: (v: unknown) => void = () => {};
+    actions.addSheetExclusion.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)) as never);
+    viewer([]);
+    await press(q("renovation-whole-sheet")!);
+    const busy = q("renovation-whole-sheet") as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    expect(busy.textContent).toContain("Saving…");
+    await press(busy);
+    expect(actions.addSheetExclusion).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ ok: true, value: { ids: ["row_new"] } }));
+  });
+});

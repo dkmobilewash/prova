@@ -63,3 +63,16 @@ describe("W5: the whole set asks for each renovation sheet's work area", () => {
     expect(row(host, 3).querySelector('[data-takeoff="whole-set-work-area"]')).toBeNull();
   });
 });
+
+describe("W5 follow-up: the row's Whole sheet button says it is working", () => {
+  it("disables and reads Saving… while the save runs", async () => {
+    let finish: (v: unknown) => void = () => {};
+    whole.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)) as never);
+    const host = paint();
+    await act(async () => void row(host, 3).querySelector<HTMLButtonElement>('[data-takeoff="whole-set-work-area"] button')!.click());
+    const busy = row(host, 3).querySelector<HTMLButtonElement>('[data-takeoff="whole-set-work-area"] button')!;
+    expect(busy.disabled).toBe(true);
+    expect(busy.textContent).toContain("Saving…");
+    await act(async () => finish({ ok: true }));
+  });
+});

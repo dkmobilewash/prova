@@ -57,3 +57,18 @@ describe("W5b: the queue's renovation step asks for the work area", () => {
     expect(whole).toHaveBeenCalledWith("plan-1", 3);
   });
 });
+
+describe("W5b follow-up: the queue's Whole sheet button goes busy", () => {
+  it("disables at once and ignores a second press while the save runs", async () => {
+    let finish: (v: unknown) => void = () => {};
+    whole.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)) as never);
+    const host = mount();
+    await act(async () => void button(host, "Whole sheet is new work")!.click());
+    const busy = host.querySelector<HTMLButtonElement>('[data-takeoff="review-queue-whole-sheet"]')!;
+    expect(busy.disabled).toBe(true);
+    expect(busy.textContent).toContain("Saving…");
+    await act(async () => void busy.click());
+    expect(whole).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ ok: true, value: { ids: ["x"] } }));
+  });
+});

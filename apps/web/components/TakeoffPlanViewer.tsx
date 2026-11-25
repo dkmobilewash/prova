@@ -1368,6 +1368,7 @@ export function TakeoffPlanViewer({
   const exclusionsRef = useRef(userExclusionsFromRows(sheet?.exclusions ?? []));
   // From the sheet at first paint: a saved work area has its control on open.
   const [exclusionRows, setExclusionRows] = useState<ExclusionRow[]>(sheet?.exclusions ?? []);
+  const [wholeSheetSaving, setWholeSheetSaving] = useState(false);
   const [userAside, setUserAside] = useState<{ kind: string; why: string; n: number; feet?: number }[]>([]);
   // ── "SET ASIDE ALL WALLS DRAWN LIKE THIS ONE", STARTED FROM THE REVIEW QUEUE (`setAsideLike.ts`) ──
   // `pick`: waiting for the click on one existing wall; then the preview, applied by Enter.
@@ -4107,8 +4108,15 @@ export function TakeoffPlanViewer({
 
   /** The work-area prompt's second exit: one work area over the whole sheet (work-area-first.md W3). */
   async function onWholeSheetNewWork() {
+    // Busy at once (production 2026-11-25: 5-20 s with no change on screen; W3b). The bar's button is disabled while this
+    // runs, which is what stops a second press: a state check here would read the stale value from the same render.
     if (!sheet) return;
-    await addExclusion("WORK_AREA", [...WHOLE_SHEET.xs], [...WHOLE_SHEET.ys]);
+    setWholeSheetSaving(true);
+    try {
+      await addExclusion("WORK_AREA", [...WHOLE_SHEET.xs], [...WHOLE_SHEET.ys]);
+    } finally {
+      setWholeSheetSaving(false);
+    }
   }
 
   /** The sentence's Undo: the newest exclusion of that kind. */
@@ -5870,6 +5878,7 @@ export function TakeoffPlanViewer({
           renovation={workAreaPrompt({ marks: pageMarks, paired: planCompare?.pairs[pageNumber] !== undefined, exclusions: exclusionRows }) === "ask" ? pageMarks : null}
           onPickTool={(next) => setTool(next)}
           onWholeSheet={readOnly ? undefined : () => void onWholeSheetNewWork()}
+          wholeSheetSaving={wholeSheetSaving}
           wholeSheet={exclusionRows.some((r) => r.kind === "WORK_AREA" && isWholeSheet(r.xs, r.ys))}
           outsideFeet={userAside.find((a) => a.kind === "outside-work-area")?.feet ?? null}
           splits={exclusionRows.filter((r) => r.kind === "ROOM_SPLIT").length}

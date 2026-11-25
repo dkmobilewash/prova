@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { advancePlanIngest, choosePlanOfWork, chooseUploadProject, markWholeSheetNewWork, startPlanIngest, wholeSetTakeoffSummary } from "@/lib/actions";
 import { WORK_AREA_PROMPT } from "@/lib/takeoff/workAreaFirst";
+import { Spinner } from "@/components/Spinner";
 import type { PlanOfWorkQuestion } from "@/lib/plan-ingest/walls";
 import { useThumbnails } from "@/components/TakeoffSheetTree";
 import type { ProjectQuestion } from "@/lib/plan-ingest/projectIdentity";
@@ -336,7 +337,14 @@ export function WholeSetTakeoffPanel({
                       className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body"
                       onClick={() => wholeSheet(row.pageNumber)}
                     >
-                      Whole sheet is new work
+                      {/* Busy while the save runs (W3b): `pending` also disables it, so a second press does nothing. */}
+                      {pending ? (
+                        <>
+                          <Spinner /> Saving…
+                        </>
+                      ) : (
+                        "Whole sheet is new work"
+                      )}
                     </button>
                   </span>
                 )}
