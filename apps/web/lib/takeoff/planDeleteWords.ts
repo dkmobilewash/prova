@@ -40,7 +40,9 @@ export function planDeleteWords(impact: PlanDeleteImpact, keep: boolean) {
   const keepLabel =
     impact.handPriced.length === 0
       ? null
-      : `Keep the ${impact.handPriced.length === 1 ? "line" : `${impact.handPriced.length} lines`} you priced by hand (${money(handTotal)}) as typed lines`;
+      : impact.handPriced.length === 1
+        ? `Keep the line you priced by hand (${money(handTotal)}) as a typed line`
+        : `Keep the ${impact.handPriced.length} lines you priced by hand (${money(handTotal)}) as typed lines`;
 
   return {
     title: `Delete ${impact.label}?`,

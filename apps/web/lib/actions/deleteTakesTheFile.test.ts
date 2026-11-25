@@ -61,9 +61,19 @@ vi.mock("@/lib/blob", () => ({
     log.push(`blob:${url}`);
   },
 }));
+// The plan delete itself (cascade + estimate sync) is `applyPlanDelete`, proven on a real database in
+// planDelete.dbtest.ts; here it only says whether the row went, so the ORDER (row, then file) is what is tested.
+vi.mock("@/lib/takeoff/planDelete", () => ({
+  applyPlanDelete: async () => {
+    if (planDeleteCount === 0) return null;
+    log.push("row:plan");
+    return { label: "A-101" };
+  },
+}));
 vi.mock("@prova/db", () => ({
   Prisma: {},
   prisma: {
+    $transaction: async (run: (tx: unknown) => unknown) => run({}),
     complianceDocument: {
       findUnique: async () => complianceRow,
       delete: async () => {

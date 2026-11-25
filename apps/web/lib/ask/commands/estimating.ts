@@ -629,6 +629,7 @@ export const estimatingExclusions: Exclusion[] = [
   // failure the currency check exists to prevent.
   { action: "recordTakeoffPlanRevision", reason: "The revision label and date are read off a title block the assistant cannot see, and a wrong date makes superseded quantities read as current forever." },
   { action: "deleteTakeoffPlan", reason: "Deletes are never commands (T5)." },
+  { action: "previewDeleteTakeoffPlan", reason: "It only feeds the delete-plan confirmation, and deletes are never commands (T5): what it reports is read by the person about to press Delete." },
   { action: "saveTakeoffCalibration", reason: "A scale is set by dragging along a dimension on the drawing; a model has not seen the drawing." },
   { action: "confirmSheetScales", reason: "Confirming a set's scales is a person accepting what the plan set screen shows them, sheet by sheet; every quantity on the job is measured at those scales, so the press stays theirs." },
   { action: "saveViewScale", reason: "On a sheet of several drawings at different scales, which drawing is being measured is the person's pick (Diego, 2026-11-18); nothing chooses it for them, so the press stays theirs." },

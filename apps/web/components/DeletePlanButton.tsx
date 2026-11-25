@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { Spinner } from "@/components/Spinner";
 import { deleteTakeoffPlan, previewDeleteTakeoffPlan } from "@/lib/actions";
 import type { PlanDeleteImpact } from "@/lib/takeoff/planDelete";
 import { planDeletedToast, planDeleteWords } from "@/lib/takeoff/planDeleteWords";
@@ -51,7 +52,14 @@ export function DeletePlanButton({ jobId, planId }: { jobId: string; planId: str
         data-takeoff="delete-plan"
         className="shrink-0 rounded-md border border-line-card px-3 py-1.5 text-xs text-ink-label hover:border-red-500 hover:text-danger disabled:opacity-50"
       >
-        {pending && impact === null ? "Checking…" : "Delete plan"}
+        {pending && impact === null ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Spinner />
+            Checking…
+          </span>
+        ) : (
+          "Delete plan"
+        )}
       </button>
       {error !== null && impact === null && <p role="alert" className="text-xs text-danger">{error}</p>}
       <dialog
@@ -91,7 +99,14 @@ export function DeletePlanButton({ jobId, planId }: { jobId: string; planId: str
                 data-takeoff="delete-plan-confirm"
                 className="rounded-md border border-red-500 px-3 py-1.5 font-medium text-danger hover:bg-tag-rose disabled:opacity-50"
               >
-                {pending ? "Deleting…" : words.primary}
+                {pending ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Spinner />
+                    Deleting…
+                  </span>
+                ) : (
+                  words.primary
+                )}
               </button>
             </div>
           </div>

@@ -75,7 +75,7 @@ describe("the plan-delete confirmation", () => {
     await settle();
     const box = host.querySelector<HTMLInputElement>('dialog input[type="checkbox"]')!;
     expect(box.checked).toBe(true);
-    expect(box.closest("label")?.textContent).toBe("Keep the line you priced by hand ($360.00) as typed lines");
+    expect(box.closest("label")?.textContent).toBe("Keep the line you priced by hand ($360.00) as a typed line");
     await act(async () => box.click());
     expect(host.querySelector("dialog")!.textContent).toContain("7 estimate lines ($14,740.00)");
     await act(async () => button("Delete plan and update estimate")!.click());
