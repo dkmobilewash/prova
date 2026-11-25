@@ -338,6 +338,11 @@ export async function loadTakeoffWorkspace(
           calibration: { select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } },
         },
       },
+      // The `isHandPriced` lines above 0: what the item-delete confirmation offers to keep (order (e), C2).
+      lineItems: {
+        where: { isDeleted: false, sourceCatalogEntry: { is: null }, quantity: { gt: 0 }, OR: [{ unitPrice: { not: null } }, { budgetedUnitCost: { not: null } }] },
+        select: { description: true, quantity: true, unitPrice: true },
+      },
     },
   });
 
@@ -355,6 +360,7 @@ export async function loadTakeoffWorkspace(
     depthIn: item.depthIn === null ? null : Number(item.depthIn),
     wallTypeId: item.wallTypeId,
     sortOrder: item.sortOrder,
+    handPriced: item.lineItems.map((l) => ({ description: l.description, total: Math.round(Number(l.quantity) * Number(l.unitPrice ?? 0) * 100) / 100 })),
     measurements: item.measurements.map((m) => ({
       id: m.id,
       pageNumber: m.page.pageNumber,

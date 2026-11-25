@@ -12,6 +12,7 @@ import {
   reorderTakeoffItems,
 } from "@/lib/actions";
 import { ITEM_COLORS } from "@/lib/takeoff/itemColors";
+import { handPricedKeepLabel } from "@/lib/estimating/zeroedLinesWords";
 import {
   type TakeoffItemRow,
   formatQuantity,
@@ -91,6 +92,8 @@ export function TakeoffItemsPanel({
   const [adding, setAdding] = useState(false);
   /** Items whose delete keeps the measurements (unticked "Also delete"). Ticked is the default. */
   const [keepMeasurements, setKeepMeasurements] = useState<ReadonlySet<string>>(new Set());
+  /** Items whose hand-priced lines the person unticked in the delete confirmation: those retire with the item. */
+  const [dropPriced, setDropPriced] = useState<ReadonlySet<string>>(new Set());
   const [name, setName] = useState("");
   const [type, setType] = useState<string>("LINEAR");
   const [error, setError] = useState<string | null>(null);
@@ -322,9 +325,24 @@ export function TakeoffItemsPanel({
                           <ConfirmDelete
                             label="Delete"
                             describe={`Delete the item ${item.name}`}
-                            onConfirm={() => run(() => deleteTakeoffItem(jobId, item.id, item.measurements.length > 0 && !keepMeasurements.has(item.id)))}
+                            onConfirm={() => run(() => deleteTakeoffItem(jobId, item.id, item.measurements.length > 0 && !keepMeasurements.has(item.id), { keepHandPriced: !dropPriced.has(item.id) }))}
                             hint={
-                              item.measurements.length > 0 ? (
+                              item.measurements.length > 0 || (item.handPriced?.length ?? 0) > 0 ? (
+                                <span className="inline-flex flex-col gap-1">
+                                {/* ── A PRICE TYPED BY HAND IS A CHOICE HERE, NEVER LOST IN SILENCE (order (e), C2) ── */}
+                                {(item.handPriced?.length ?? 0) > 0 && (
+                                  <label className="inline-flex items-center gap-1">
+                                    <input
+                                      type="checkbox"
+                                      checked={!dropPriced.has(item.id)}
+                                      onChange={(e) => setDropPriced((was) => { const next = new Set(was); if (e.target.checked) next.delete(item.id); else next.add(item.id); return next; })}
+                                      data-takeoff="delete-item-keep-priced"
+                                      className="h-4 w-4"
+                                    />
+                                    {handPricedKeepLabel(item.handPriced ?? [])}
+                                  </label>
+                                )}
+                                {item.measurements.length > 0 && (
                                 <label className="inline-flex items-center gap-1">
                                   <input
                                     type="checkbox"
@@ -335,6 +353,8 @@ export function TakeoffItemsPanel({
                                   Also delete its {item.measurements.length} measurement{item.measurements.length === 1 ? "" : "s"}
                                   {keepMeasurements.has(item.id) ? " (they move to Unassigned)" : ""}
                                 </label>
+                                )}
+                                </span>
                               ) : undefined
                             }
                           />

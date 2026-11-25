@@ -74,9 +74,13 @@ export async function applyPlanDelete(
   const handPriced = estimateUpdates
     ? before.filter((l) => l.takeoffItemId !== null && emptied.includes(l.takeoffItemId) && l.sourceCatalogEntryId === null && (l.unitPrice !== null || l.budgetedUnitCost !== null))
     : [];
-  if (options.keepHandPriced && handPriced.length > 0) {
-    // Kept as a typed line: unlinked, so it stays at its quantity and price and no later sync retires it.
-    await tx.jobLineItem.updateMany({ where: { id: { in: handPriced.map((l) => l.id) } }, data: { takeoffItemId: null, wallTypeComponentId: null } });
+  if (handPriced.length > 0) {
+    // Kept as a typed line: unlinked, so it stays at its quantity and price and no later sync retires it. Unticked, it is
+    // retired here: the sync no longer retires a hand-priced line (order (e), A1), it would only take it to 0.
+    await tx.jobLineItem.updateMany({
+      where: { id: { in: handPriced.map((l) => l.id) } },
+      data: options.keepHandPriced ? { takeoffItemId: null, wallTypeComponentId: null } : { isDeleted: true, takeoffItemId: null, wallTypeComponentId: null },
+    });
   }
 
   await tx.takeoffPlan.delete({ where: { id: planId } });

@@ -9,7 +9,7 @@ import { parseNumericInput } from "@/lib/numeric-input";
 import { ringArea, ringSelfIntersects } from "@/lib/sheet-geometry";
 import { cutoutInside } from "@/lib/takeoff/drawTools";
 import { cutoutsFromJson } from "@/lib/takeoff/itemQuantities";
-import { syncDecidedItems, syncTakeoffItemLines, type ItemLineSummary } from "@/lib/estimating/takeoff-item-lines";
+import { isHandPriced, syncDecidedItems, syncReviewedItems, syncTakeoffItemLines, type ItemLineSummary } from "@/lib/estimating/takeoff-item-lines";
 import { can } from "@/lib/permissions";
 import { colorProblem, nextItemColor } from "@/lib/takeoff/itemColors";
 import {
@@ -299,7 +299,7 @@ export async function setWallGroupHeight(jobId: string, itemId: string, heightFt
  * The message SAYS SO, with the number, because a delete that silently kept
  * something is as surprising as one that silently destroyed it.
  */
-export async function deleteTakeoffItem(jobId: string, itemId: string, withMeasurements = false): Promise<ActionResult> {
+export async function deleteTakeoffItem(jobId: string, itemId: string, withMeasurements = false, options: { keepHandPriced?: boolean } = {}): Promise<ActionResult> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const refusal = ownerRefusal(context, "Only an owner can delete a takeoff item.");
@@ -311,10 +311,26 @@ export async function deleteTakeoffItem(jobId: string, itemId: string, withMeasu
   const item = await itemInJob(itemId, jobId, company.id);
   if (!item) return actionFail(GONE);
 
-  await prisma.$transaction([
-    ...(withMeasurements ? [prisma.takeoffMeasurement.deleteMany({ where: { itemId } })] : []),
-    prisma.takeoffItem.delete({ where: { id: itemId } }),
-  ]);
+  // ── AN ITEM DELETE TAKES ITS LINES WITH IT, AND ASKS ABOUT A PRICE TYPED BY HAND (Diego's order (e), C1-C2) ──
+  // On main the item's lines were SetNull'd: live, unlinked and still charged for walls that no longer had an item.
+  // Its lines retire now; one a person priced by hand is kept as a typed line at its quantity, unless they unticked it
+  // in the confirmation. A priced line already at 0 (its walls went first) has nothing to keep and retires.
+  const keep = options.keepHandPriced ?? true;
+  await prisma.$transaction(async (tx) => {
+    const lines = await tx.jobLineItem.findMany({
+      where: { jobId, takeoffItemId: itemId, isDeleted: false },
+      select: { id: true, quantity: true, unitPrice: true, budgetedUnitCost: true, sourceCatalogEntryId: true },
+    });
+    const kept = keep ? lines.filter((l) => isHandPriced(l) && Number(l.quantity) > 0).map((l) => l.id) : [];
+    const retired = lines.map((l) => l.id).filter((id) => !kept.includes(id));
+    if (retired.length > 0) await tx.jobLineItem.updateMany({ where: { id: { in: retired } }, data: { isDeleted: true, takeoffItemId: null, wallTypeComponentId: null } });
+    if (kept.length > 0) await tx.jobLineItem.updateMany({ where: { id: { in: kept } }, data: { takeoffItemId: null, wallTypeComponentId: null } });
+    if (withMeasurements) await tx.takeoffMeasurement.deleteMany({ where: { itemId } });
+    await tx.takeoffItem.delete({ where: { id: itemId } });
+    // Labor follows the walls that are left (an empty item set still re-works the labor lines).
+    if (lines.length > 0) await syncReviewedItems(tx, company.id, jobId, []);
+  });
+  revalidatePath(`/jobs/${jobId}/estimate`);
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
   return actionOk;
@@ -436,15 +452,21 @@ export async function assignMeasurementsToItem(
   }
 
   // SCOPED THROUGH THE PLAN TO THE JOB, because an id in a form is a claim.
-  const { count } = await prisma.takeoffMeasurement.updateMany({
-    where: { id: { in: measurementIds }, page: { plan: { jobId, companyId: company.id } } },
-    data: { itemId },
+  const where = { id: { in: measurementIds }, page: { plan: { jobId, companyId: company.id } } };
+  const count = await prisma.$transaction(async (tx) => {
+    const from = await tx.takeoffMeasurement.findMany({ where, select: { itemId: true }, distinct: ["itemId"] });
+    const moved = await tx.takeoffMeasurement.updateMany({ where, data: { itemId } });
+    if (moved.count !== measurementIds.length) return moved.count;
+    // The feet move on the estimate with the runs, in the same write (order (e), B1).
+    await syncReviewedItems(tx, company.id, jobId, [itemId, ...from.map((m) => m.itemId)]);
+    return moved.count;
   });
   if (count !== measurementIds.length) {
     return actionFail("Some of those measurements aren't on this job any more. Reload the page.");
   }
 
   revalidatePath(`/takeoff/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/estimate`);
   return actionOk;
 }
 
@@ -511,12 +533,18 @@ export async function addMeasurementCutout(
 
   const target = holding[0].area;
   const existing = cutoutsFromJson(target.cutouts);
-  await prisma.takeoffMeasurement.update({
-    where: { id: target.id },
-    data: { cutouts: [...existing, { xs: hole.xs, ys: hole.ys }] },
+  await prisma.$transaction(async (tx) => {
+    const cut = await tx.takeoffMeasurement.update({
+      where: { id: target.id },
+      data: { cutouts: [...existing, { xs: hole.xs, ys: hole.ys }] },
+      select: { itemId: true },
+    });
+    // The opening comes off the estimate line in the same write (order (e), B1).
+    await syncReviewedItems(tx, company.id, jobId, [cut.itemId]);
   });
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/jobs/${jobId}/estimate`);
   revalidatePath(`/takeoff/${jobId}`);
   return actionOk;
 }
@@ -561,8 +589,13 @@ export async function updateMeasurementGeometry(
     return actionFail("That outline crosses itself, so it has no area. Move the point somewhere else.");
   }
 
-  await prisma.takeoffMeasurement.update({ where: { id: measurementId }, data: { xs, ys } });
+  await prisma.$transaction(async (tx) => {
+    const moved = await tx.takeoffMeasurement.update({ where: { id: measurementId }, data: { xs, ys }, select: { itemId: true } });
+    // The run's new length reaches its estimate line in the same write (order (e), B1).
+    await syncReviewedItems(tx, company.id, jobId, [moved.itemId]);
+  });
   revalidatePath(`/takeoff/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/estimate`);
   return actionOk;
 }
 

@@ -253,6 +253,8 @@ export type TakeoffItemRow = {
   wallTypeId: string | null;
   sortOrder: number;
   measurements: ItemMeasurement[];
+  /** Its estimate lines a person priced by hand, above 0: what deleting the item asks about (order (e), C2). */
+  handPriced?: { description: string; total: number }[];
 };
 
 /** How a quantity reads beside a name: `1,240.5 ft`. */

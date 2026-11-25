@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 
 import { Spinner } from "@/components/Spinner";
+import { zeroedLinesSentence } from "@/lib/estimating/zeroedLinesWords";
 import { sendTakeoffItemsToEstimate, setAssemblyLibraryPin, updateTakeoffItem } from "@/lib/actions";
 import { itemGeometry } from "@/lib/estimating/takeoff-item-lines";
 import {
@@ -138,7 +139,7 @@ export function TakeoffAssemblyPanel({ jobId, assemblies, item, pinnedAt, readOn
         setError(result.error);
         return;
       }
-      const { created, updated, removed, unpriced: noAssembly, checkFigures, renovationUnchecked = [] } = result.value;
+      const { created, updated, removed, unpriced: noAssembly, checkFigures, renovationUnchecked = [], zeroed = [] } = result.value;
       setSent(
         `${created} added, ${updated} updated${removed > 0 ? `, ${removed} removed` : ""}` +
           (noAssembly.length > 0
@@ -149,7 +150,9 @@ export function TakeoffAssemblyPanel({ jobId, assemblies, item, pinnedAt, readOn
           checkFigures.map((c) => ` · ${c.name}: ${c.squareFeet.toLocaleString()} sf of floor, a check figure, not priced`).join("") +
           (renovationUnchecked.length > 0
             ? ` · Check: ${renovationUnchecked.join(", ")} ${renovationUnchecked.length === 1 ? "shows" : "show"} existing work and went with no work area or exclusion, so existing walls may be counted.`
-            : ""),
+            : "") +
+          // A priced line whose walls are gone is kept at 0, never retired (order (e), A2): Send says which.
+          (zeroed.length > 0 ? ` · ${zeroedLinesSentence(zeroed)} Remove it on the estimate, or leave it for when the walls come back.` : ""),
       );
     });
   }

@@ -26,10 +26,36 @@ function armAndConfirm(untick: boolean) {
 describe("deleting an item", () => {
   it("deletes its measurements too, by default", () => {
     armAndConfirm(false);
-    expect(del).toHaveBeenLastCalledWith("j", "i1", true);
+    expect(del).toHaveBeenLastCalledWith("j", "i1", true, { keepHandPriced: true });
   });
   it("keeps them, in Unassigned, when unticked", () => {
     const host = armAndConfirm(true);
-    expect(del).toHaveBeenLastCalledWith("j", "i1", false);
+    expect(del).toHaveBeenLastCalledWith("j", "i1", false, { keepHandPriced: true });
+  });
+});
+
+/** Order (e), C2: a line priced by hand is a choice in the confirmation, kept by default, never lost in silence. */
+function armPriced(untick: boolean) {
+  const priced = { ...item, measurements: [], handPriced: [{ description: "W2 walls — runner track", total: 210 }] };
+  const host = document.createElement("div");
+  document.body.append(host);
+  act(() => createRoot(host).render(createElement(TakeoffItemsPanel, { jobId: "j", items: [priced], activeItemId: null, onPick: () => {}, currentPage: 1, hidden: new Set<string>(), onToggleHidden: () => {}, unassignedHere: [], unassignedCount: 0 })));
+  const button = (text: string) => [...host.querySelectorAll("button")].find((b) => b.textContent?.trim() === text)!;
+  act(() => button("Delete").click());
+  const box = host.querySelector('[data-takeoff="delete-item-keep-priced"]') as HTMLInputElement | null;
+  expect(box?.closest("label")?.textContent).toBe("Keep the line you priced by hand (W2 walls — runner track, $210.00) on the estimate as a typed line");
+  expect(box!.checked).toBe(true);
+  if (untick) act(() => box!.click());
+  act(() => button("Confirm delete").click());
+}
+
+describe("deleting an item with a line priced by hand", () => {
+  it("names the line and its money, and keeps it by default", () => {
+    armPriced(false);
+    expect(del).toHaveBeenLastCalledWith("j", "i1", false, { keepHandPriced: true });
+  });
+  it("retires it when the person unticks the box", () => {
+    armPriced(true);
+    expect(del).toHaveBeenLastCalledWith("j", "i1", false, { keepHandPriced: false });
   });
 });
