@@ -5,8 +5,9 @@
 // instead of staying as the process's high-water mark (NOTES-scanned.md §7).
 //
 // Plain JavaScript on purpose: a worker file is loaded by path, not bundled
-// with its importer, so it imports only the two packages it needs by name
-// and nothing from the app. The protocol is typed on the TypeScript side.
+// with its importer, so it imports only the two packages it needs, through
+// pnpm's flat store (`runtimeStore.mjs` says why), and nothing from the app.
+// The protocol is typed on the TypeScript side.
 //
 //   { type: "render", bytes, page, dpi, bandPx }           → { gray, width, height }
 //   { type: "ocr", gray, width, height, dpi, cachePath, tilePxAt150, minConfidence, regions, skipTiles, lanes }
@@ -16,12 +17,13 @@
 //   { type: "ocrCell", gray, width, height, cachePath, region, upscale, psm, whitelist } → { lines }
 import { parentPort } from "node:worker_threads";
 import { planTiles } from "./tilePlan.mjs";
+import { storeImport } from "./runtimeStore.mjs";
 
 let pdfjs = null;
 let doc = null;
 
 async function open(bytes) {
-  pdfjs ??= await import("pdfjs-dist/legacy/build/pdf.mjs");
+  pdfjs ??= await storeImport("pdfjs-dist/legacy/build/pdf.mjs");
   doc = await pdfjs.getDocument({ data: bytes, useWorkerFetch: false, isEvalSupported: false, disableFontFace: true, verbosity: 0 }).promise;
 }
 
@@ -156,7 +158,7 @@ async function render(bytes, pageNumber, dpi, bandPx) {
 const lanes = [];
 async function laneWorkers(cachePath, count) {
   while (lanes.length < count) {
-    const { createWorker } = await import("tesseract.js");
+    const { createWorker } = await storeImport("tesseract.js");
     lanes.push(await createWorker("eng", 1, { cachePath, logger: () => {} }));
   }
   return lanes.slice(0, count);
@@ -229,7 +231,7 @@ async function ocr(gray, width, height, dpi, cachePath, tilePxAt150, minConfiden
 let cellWorker = null;
 async function ocrCell(gray, width, height, cachePath, region, upscale, psm, whitelist) {
   if (cellWorker === null) {
-    const { createWorker } = await import("tesseract.js");
+    const { createWorker } = await storeImport("tesseract.js");
     cellWorker = await createWorker("eng", 1, { cachePath, logger: () => {} });
   }
   await cellWorker.setParameters({ tessedit_pageseg_mode: String(psm), tessedit_char_whitelist: whitelist ?? "" });
