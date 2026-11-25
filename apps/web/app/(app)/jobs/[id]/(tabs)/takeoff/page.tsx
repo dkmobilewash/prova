@@ -6,6 +6,7 @@ import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
 import { can } from "@/lib/permissions";
 import { NoAccess } from "@/components/NoAccess";
 import { ConfirmDeleteButton } from "@/components/ConfirmDeleteButton";
+import { DeletePlanButton, PlanDeletedToast } from "@/components/DeletePlanButton";
 import { TakeoffMeasurementList } from "@/components/TakeoffMeasurementList";
 import { TakeoffPlanUploader } from "@/components/TakeoffPlanUploader";
 import { WholeSetTakeoffPanel } from "@/components/WholeSetTakeoffPanel";
@@ -30,7 +31,6 @@ import { TakeoffCurrencyBanner } from "@/components/TakeoffCurrencyBanner";
 import { TakeoffPlanRevisionForm } from "@/components/TakeoffPlanRevisionForm";
 import { loadTakeoffCurrency } from "@/lib/takeoff-currency-query";
 import { TakeoffPlanViewer } from "@/components/TakeoffPlanViewer";
-import { deleteTakeoffPlan } from "@/lib/actions";
 import { requireCapability } from "@/lib/authz";
 import { loadTakeoffPostDraft } from "@/lib/ask/drafts";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
@@ -350,19 +350,13 @@ export default async function JobTakeoffPage({
             </Link>
           )}
         {isEstimateStage && (
-          <ConfirmDeleteButton
-            label="Delete plan"
-            describe="Removes the drawing and everything traced on it. Line items already added to the estimate are not changed."
-            action={async () => {
-              "use server";
-              await deleteTakeoffPlan(job.id, plan.id);
-            }}
-          />
+          <DeletePlanButton jobId={job.id} planId={plan.id} />
         )}
         </div>
       </div>
 
       {!isEstimateStage && <NotEstimating />}
+      <PlanDeletedToast />
 
       {/* READING THE SHEETS, above the viewer because it is about the whole set
           rather than one sheet.
