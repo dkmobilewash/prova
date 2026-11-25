@@ -32,10 +32,11 @@ import { sheetViews } from "../sheetViews";
 import { generalTypeRule, typeHeightRule, wallHeightByType, type TypeHeightRule } from "../typeHeights";
 import { deckZonesFor, type StoredDeckZones } from "../deckZonesRead";
 import { wallOverlapFeet } from "../runMatch";
-import { defaultWallTypeFromNotes } from "../wallNotes";
+import { defaultWallTypeFromNotes, UNO_DEFAULT_ON } from "../wallNotes";
 import { sameDesignation } from "../wallTypeMatch";
 import { keylessLegend } from "./keylessLegend";
-import { stageTypeGroups } from "../stageGroups";
+import { setUnoDefaults, stageTypeGroups } from "../stageGroups";
+import { typeSource } from "../postingGate";
 import { vocabularyFor } from "../productDetection";
 import { unitLabels } from "../wallTags";
 
@@ -369,9 +370,13 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           found: { ...d.found, walls: kept, groups: d.found.regroup(kept as never) } as never,
           segmentsPt: strokes.segments, textItems, widthPt: W, feetPerUnit: fpu, wallTypes: legend.types, legendCodes,
           vocabulary: vocabulary.length === 0 ? null : vocabulary, fromText: true, scanned: false,
-          siblings: async () => [], readSibling: async () => null,
+          siblings: async () => [], readSibling: async () => null, setDefaults: setUnoDefaults(doc),
         });
         for (const g of staged) if (g.source.kind === "TAG") for (const r of g.runs) runCode.set(r as never, g.source.tag.toUpperCase());
+        // prereg-uno-default-type.md: a group the sheet's U.N.O. note types (the product's `typeSource`, source "note")
+        // counts as typed, in BOTH arms; with no legend read, OFF has no such group, so OFF must equal printed-code-shapes-r1.
+        for (const g of staged) if (g.source.kind === "GENERAL_NOTE") { const s = typeSource(g); if (s !== null) for (const r of g.runs) runCode.set(r as never, s.type.code.toUpperCase()); }
+        if (UNO_DEFAULT_ON()) { const n = staged.filter((g) => g.source.kind === "GENERAL_NOTE"); console.log(`UNODEFAULT ${dir} p${saved.page} code=${n.map((g) => typeSource(g)?.type.code ?? "none").filter((c, i, a) => a.indexOf(c) === i).join(",") || "-"} feet=${Math.round(n.reduce((t, g) => t + g.feet, 0))} note="${n[0]?.source.kind === "GENERAL_NOTE" ? n[0].source.note.slice(0, 90) : ""}"`); }
         const unitSegments = strokes.segments.map((g) => ({ ...g, x1: g.x1 / W, y1: g.y1 / W, x2: g.x2 / W, y2: g.y2 / W }));
         const foundRooms = sheetRooms({ pairings: [], runs: kept.map((r) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, thicknessFeet: r.thicknessFeet })) as never, drawn: [], segments: unitSegments, doorLeaves: [], feetPerUnit: fpu, text: text.items, widthPt: W });
         const ceilings = ceilingsForRooms({ rooms: foundRooms.rooms, current: { pageNumber: saved.page, items: text.items, widthPt: W, tableRows: tableRowsFromPage(text) }, feetPerUnit: fpu, others: ph.ceilingPages.filter((g) => g.pageNumber !== saved.page) });

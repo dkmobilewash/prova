@@ -4,7 +4,7 @@ import { planTextTagByRun, siblingTag } from "./planTextTags";
 import { MIN_VOTES } from "./planCompare";
 import { alignViews, longFaces } from "./viewAlign";
 import { contestedRuns, tagByRun, wallTypeTags, type PageTextItem, type WallTypeTag } from "./wallTags";
-import { defaultWallTypeFromNotes } from "./wallNotes";
+import { defaultWallTypeFromNotes, UNO_DEFAULT_ON, unoDefaults, unoDefaultType, type UnoDefault, type WallTypeFromNote } from "./wallNotes";
 import { wallTagCodes } from "./legendText";
 import { wallGroups, type WallGroup } from "./wallGroups";
 import type { MatchableWallType } from "./wallTypeMatch";
@@ -137,10 +137,12 @@ export function groupsForStage(input: {
   sibling?: SiblingSheet | null;
   /** The mid-span tag tie-break (`tagByRun`): true only when no legend has been read. */
   midSpan?: boolean;
+  /** The U.N.O. default the sheet works to (`unoDefaultType`, TAKEOFF_UNO_DEFAULT), used where today's reader finds none. */
+  uno?: WallTypeFromNote | null;
 }): { groups: WallGroup[]; hatched: Set<WallCandidate> } {
   const { found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes } = input;
   const tags = wallTypeTags(textItems, widthPt);
-  const fromNote = defaultWallTypeFromNotes(textItems, wallTypes);
+  const fromNote = defaultWallTypeFromNotes(textItems, wallTypes) ?? input.uno ?? null;
   const dropped: WallTypeTag[] = [];
   const own =
     legendCodes === null
@@ -242,6 +244,8 @@ export async function stageTypeGroups(input: {
   /** The sheet's siblings, asked only when the sheet prints no tag. */
   siblings: () => Promise<readonly number[]>;
   readSibling: (page: number) => Promise<SiblingSheet | null>;
+  /** Every U.N.O. default the set's pages print, asked only when the sheet prints none (TAKEOFF_UNO_DEFAULT). */
+  setDefaults?: () => Promise<readonly UnoDefault[]>;
 }): Promise<WallGroup[]> {
   const { found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes, vocabulary } = input;
   const untrusted =
@@ -253,16 +257,17 @@ export async function stageTypeGroups(input: {
       : null;
   const guarded = untrusted === null ? vocabulary : (vocabulary?.filter((c) => !untrusted.has(c.toUpperCase())) ?? null);
   const midSpan = (legendCodes ?? []).length === 0;
+  const uno = UNO_DEFAULT_ON() ? await unoFor(textItems, wallTypes, input.setDefaults) : null;
   let groups =
-    input.finderGroups !== undefined && untrusted === null
+    input.finderGroups !== undefined && untrusted === null && uno === null
       ? input.finderGroups
-      : groupsForStage({ found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes: guarded, midSpan }).groups;
+      : groupsForStage({ found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes: guarded, midSpan, uno }).groups;
   if (input.finderGroups === undefined && vocabulary !== null && !input.scanned && !groups.some((g) => g.source.kind === "TAG")) {
     try {
       for (const page of await input.siblings()) {
         const sibling = await input.readSibling(page);
         if (sibling === null) continue;
-        const withSibling = groupsForStage({ found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes: vocabulary, sibling, midSpan }).groups;
+        const withSibling = groupsForStage({ found, segmentsPt, textItems, widthPt, feetPerUnit, wallTypes, legendCodes: vocabulary, sibling, midSpan, uno }).groups;
         if (withSibling.some((g) => g.source.kind === "TAG")) {
           groups = withSibling;
           break;
@@ -273,4 +278,46 @@ export async function stageTypeGroups(input: {
     }
   }
   return groups;
+}
+
+/**
+ * The sheet's U.N.O. default (prereg-uno-default-type.md): its own sentence, else the set's, one code only.
+ * Today's library reader keeps precedence where it finds a note, so this only fills what it leaves.
+ */
+export async function unoFor(
+  textItems: readonly PageTextItem[],
+  wallTypes: readonly MatchableWallType[],
+  setDefaults: (() => Promise<readonly UnoDefault[]>) | undefined,
+): Promise<WallTypeFromNote | null> {
+  if (defaultWallTypeFromNotes(textItems, wallTypes) !== null) return null;
+  const sheet = unoDefaults(textItems);
+  if (sheet.length > 0 || setDefaults === undefined) return unoDefaultType(sheet, null, wallTypes);
+  try {
+    return unoDefaultType(sheet, await setDefaults(), wallTypes);
+  } catch (error) {
+    console.error("[takeoff] the set's U.N.O. notes were not read; grouping without them", error);
+    return null;
+  }
+}
+
+type TextDoc = { pageCount: number; pageText: (page: number) => Promise<{ items: readonly PageTextItem[] }> };
+const setReads = new WeakMap<TextDoc, Promise<readonly UnoDefault[]>>();
+/**
+ * The set's U.N.O. defaults (`unoFor`'s `setDefaults`), every page's text read once per open document.
+ * ponytail: reads every page of the set the first time a sheet with no note asks; a page index of the
+ * general-notes sheets would read one page instead, if this flag ever ships and the read shows in a profile.
+ */
+export function setUnoDefaults(doc: TextDoc): () => Promise<readonly UnoDefault[]> {
+  return () => {
+    let read = setReads.get(doc);
+    if (read === undefined) {
+      read = (async () => {
+        const found = new Map<string, UnoDefault>();
+        for (let page = 1; page <= doc.pageCount; page++) for (const d of unoDefaults((await doc.pageText(page)).items)) if (!found.has(d.code)) found.set(d.code, d);
+        return [...found.values()];
+      })();
+      setReads.set(doc, read);
+    }
+    return read;
+  };
 }

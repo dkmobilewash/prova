@@ -18,7 +18,7 @@ import { sameDesignation, type MatchableWallType } from "./wallTypeMatch";
 import { namedCodeOf, proposalRowsFor } from "./wallProposal";
 import { stampSuggestions } from "./suggestionStamp";
 import { matchGroups } from "./proposalMatch";
-import { siblingPages, stageTypeGroups } from "./stageGroups";
+import { setUnoDefaults, siblingPages, stageTypeGroups } from "./stageGroups";
 import { aiGate } from "@/lib/ai/settings";
 import { doorScheduleForPlan, doorsOnSheet, LEGEND_TEXT_ON, legendForPlan, typedFeetOf, writeSheetResult } from "./planTextRead";
 
@@ -407,6 +407,7 @@ export async function detectWallsForCalibration(
         const otherText = (await doc.pageText(page)).items.map((i) => ({ str: i.str, x: i.x, y: i.y, width: i.width, height: i.height }));
         return { segmentsPt: other.segments, textItems: otherText, widthPt: other.widthPt };
       },
+      setDefaults: setUnoDefaults(doc),
     });
     // ── WHAT A MARKED TAG MEANS, FOR THE QUEUE (`variantMark.ts`) ──
     // "C6*" types as C6; the words printed with it ride beside the groups so the
