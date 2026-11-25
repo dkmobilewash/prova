@@ -1,6 +1,6 @@
 "use client";
 
-import { RENOVATION_PROMPT } from "@/lib/takeoff/renovationMarks";
+import { notInWorkAreaWords, WORK_AREA_PROMPT } from "@/lib/takeoff/workAreaFirst";
 
 type Kind = "EXCLUDE_LIKE" | "WORK_AREA" | "ROOM_SPLIT";
 
@@ -19,6 +19,9 @@ export function TakeoffExclusionBar({
   renovation = null,
   existing = null,
   existingDoors = null,
+  outsideFeet = null,
+  wholeSheet = false,
+  onWholeSheet,
   onExistingDoors,
   onPickTool,
   onUndo,
@@ -32,8 +35,14 @@ export function TakeoffExclusionBar({
   splits?: number;
   workAreas: number;
   readOnly: boolean;
-  /** The marks that say this sheet shows existing work, when walls are found and nothing excludes them yet. */
+  /** The marks that say this sheet shows existing work, while it has no work area (`workAreaPrompt`): before Find too. */
   renovation?: string[] | null;
+  /** Feet the work area leaves out (`clipToWorkArea`'s outsideFeet): "−1,240 ft not in your work area". */
+  outsideFeet?: number | null;
+  /** The sheet's work area is the whole sheet, marked new work: nothing to subtract. */
+  wholeSheet?: boolean;
+  /** The prompt's second exit: one work area over the whole sheet. */
+  onWholeSheet?: () => void;
   /** What plan comparison set aside as existing, by the paired demolition plan. Its line stands in for the renovation prompt. */
   existing?: { sheet: string; n: number; feet: number } | null;
   /**
@@ -55,19 +64,31 @@ export function TakeoffExclusionBar({
           Existing walls set aside using demolition plan {existing.sheet}: {existing.n} wall{existing.n === 1 ? "" : "s"}, {Math.round(existing.feet).toLocaleString()} ft
         </span>
       )}
+      {/* ── THE WORK AREA FIRST (Diego's audit order, 2026-11-25; work-area-first.md W1-W3) ──
+            One prompt, on open, until a work area exists: drawn, or the whole sheet as new work. */}
       {renovation && existing === null && !readOnly && (
-        <span className="flex w-full flex-wrap items-center gap-2 rounded-md bg-tag-amber px-2 py-1 font-medium text-tag-amber-ink" data-takeoff="renovation-prompt" title={`Marked by: ${renovation.join(", ")}`}>
-          {RENOVATION_PROMPT}
+        <span className="order-first flex w-full flex-wrap items-center gap-2 rounded-md bg-tag-amber px-2 py-1 font-medium text-tag-amber-ink" data-takeoff="renovation-prompt" title={`Marked by: ${renovation.join(", ")}`}>
+          {WORK_AREA_PROMPT}
           {onPickTool && (
-            <>
-              <button type="button" className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body" data-takeoff="renovation-work-area" onClick={() => onPickTool("workarea")}>
-                Work area
-              </button>
-              <button type="button" className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body" data-takeoff="renovation-exclude" onClick={() => onPickTool("exclude")}>
-                Exclude like this
-              </button>
-            </>
+            <button type="button" className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body" data-takeoff="renovation-work-area" onClick={() => onPickTool("workarea")}>
+              Draw work area
+            </button>
           )}
+          {onWholeSheet && (
+            <button type="button" className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body" data-takeoff="renovation-whole-sheet" onClick={onWholeSheet}>
+              Whole sheet is new work
+            </button>
+          )}
+        </span>
+      )}
+      {wholeSheet && (
+        <span className="font-medium text-ink-body" data-takeoff="whole-sheet-new">
+          Whole sheet is new work: nothing set aside.
+        </span>
+      )}
+      {!wholeSheet && notInWorkAreaWords(outsideFeet) !== null && (
+        <span className="font-semibold text-ink-body" data-takeoff="not-in-work-area">
+          {notInWorkAreaWords(outsideFeet)}
         </span>
       )}
       {feet !== null && (

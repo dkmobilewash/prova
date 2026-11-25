@@ -318,7 +318,7 @@ export async function loadReviewQueue(
   if (withWalls.length > 0) {
     const [marks, aside, company] = await Promise.all([
       prisma.planSheetText.findMany({ where: { planId: plan.id, pageNumber: { in: withWalls.map((p) => p.pageNumber) } }, select: { pageNumber: true, renovationMarks: true } }),
-      prisma.takeoffSheetExclusion.findMany({ where: { pageId: { in: withWalls.map((p) => p.id) }, kind: { in: ["EXCLUDE_LIKE", "WORK_AREA"] } }, select: { pageId: true } }),
+      prisma.takeoffSheetExclusion.findMany({ where: { pageId: { in: withWalls.map((p) => p.id) }, kind: "WORK_AREA" }, select: { pageId: true } }),
       prisma.company.findUnique({ where: { id: companyId }, select: { planCompareOn: true } }),
     ]);
     const renovation = new Set(marks.filter((m) => showsExistingWork(m.renovationMarks)).map((m) => m.pageNumber));

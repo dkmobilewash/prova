@@ -767,14 +767,15 @@ const WALL = { x: 0.2977, y: 0.39 };
 const AREA = [{ x: 0.18, y: 0.235 }, { x: 0.3, y: 0.235 }, { x: 0.3, y: 0.52 }, { x: 0.18, y: 0.52 }];
 let bakerWalls = NaN;
 
-test("E1 Find the walls: about 1,742 ft, and the renovation prompt with its two tools", async () => {
+test("E1 Find the walls: about 1,742 ft, and the work-area prompt with its two exits", async () => {
   await sheet("baker", 12);
+  // Diego's audit order, 2026-11-25 (work-area-first.md W1): asked on open, before Find.
+  await expect(hook("renovation-prompt")).toContainText("Draw your work area: walls outside it won't be counted");
   await findWalls();
   bakerWalls = await settledWallFeet();
   expect(Math.abs(bakerWalls - 1742), `${bakerWalls} ft`).toBeLessThan(90);
-  await expect(hook("renovation-prompt")).toContainText("This sheet shows existing work.");
   await expect(hook("renovation-work-area")).toBeVisible();
-  await expect(hook("renovation-exclude")).toBeVisible();
+  await expect(hook("renovation-whole-sheet")).toBeVisible();
 });
 
 test("E2 Exclude like this: the total drops and says why, and stays said", async () => {
@@ -787,7 +788,8 @@ test("E2 Exclude like this: the total drops and says why, and stays said", async
   await expect.poll(wallFeet).toBeLessThan(bakerWalls);
   await page.waitForTimeout(5000);
   await says(/walls? drawn like the wall you clicked/);
-  await expect(hook("renovation-prompt")).toHaveCount(0);
+  // W2: excluding walls drawn like one is not an answer; the work-area prompt stays.
+  await expect(hook("renovation-prompt")).toHaveCount(1);
 });
 
 test("E3 one Undo restores the total exactly; Redo takes them away; Clear restores it", async () => {
@@ -966,7 +968,7 @@ test("R5-12/13 D moves on and adds the dropped feet; U takes it back; Done", asy
 test("R5-15 Baker A101 shows the renovation prompt, and a saved work area takes it away", async () => {
   await sheet("baker", 13);
   await findWalls();
-  await expect(hook("renovation-prompt")).toContainText("This sheet shows existing work.");
+  await expect(hook("renovation-prompt")).toContainText("Draw your work area: walls outside it won't be counted");
   await hook("renovation-work-area").click();
   // Round the left part of A101's plan (its key walls run x 0.334-0.565, y 0.252-0.525).
   const area = [{ x: 0.33, y: 0.245 }, { x: 0.45, y: 0.245 }, { x: 0.45, y: 0.53 }, { x: 0.33, y: 0.53 }];
@@ -974,6 +976,7 @@ test("R5-15 Baker A101 shows the renovation prompt, and a saved work area takes 
   for (const p of area) await clickAt(p.x, p.y);
   await hook("save-work-area").click();
   await says("outside the work area you drew");
+  await expect(hook("not-in-work-area")).toContainText("ft not in your work area");
   await expect(hook("renovation-prompt")).toHaveCount(0);
 });
 

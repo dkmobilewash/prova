@@ -31,4 +31,3 @@ export function showsExistingWork(marks: readonly string[]): boolean {
   return marks.some((m) => m !== "NIC");
 }
 
-export const RENOVATION_PROMPT = "This sheet shows existing work. Draw the work area or exclude existing walls before sending to the estimate.";

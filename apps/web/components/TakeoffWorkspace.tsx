@@ -1721,6 +1721,7 @@ export function TakeoffWorkspace({
               takeoffItems={data.matchableItems}
               levelByPage={data.levelByPage}
               scalePrefillByPage={data.scalePrefillByPage}
+              renovationByPage={data.renovationByPage}
               viewScalesByPage={data.viewScalesByPage}
               answerKey={
                 keyMode

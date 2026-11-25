@@ -8,6 +8,7 @@ import { can } from "@/lib/permissions";
 import { actionFail, type ActionResultWith } from "./shared";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { refreshSheetWalls } from "@/lib/takeoff/refreshSheetWalls";
+import { WHOLE_SHEET } from "@/lib/takeoff/workAreaFirst";
 
 /**
  * What the user said about one sheet's walls — `lib/takeoff/userExclusions.ts`.
@@ -100,4 +101,17 @@ export async function clearSheetExclusions(jobId: string, pageId: string, kind: 
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
   return { ok: true, value: { ids: [] } };
+}
+
+/**
+ * ── "WHOLE SHEET IS NEW WORK" (Diego's audit order, 2026-11-25; coordination/work-area-first.md W3, W5) ──
+ * The second exit from the work-area prompt: one work area over the whole page, so nothing is set aside and the sheet
+ * counts as answered everywhere (`workAreaPrompt`). By plan and page, because the whole-set panel knows sheets by number.
+ */
+export async function markWholeSheetNewWork(planId: string, pageNumber: number): Promise<Result> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const page = await prisma.takeoffPlanPage.findFirst({ where: { planId, pageNumber, plan: { companyId: context.company.id } }, select: { id: true, plan: { select: { jobId: true } } } });
+  if (page === null) return actionFail("That sheet is no longer on this job. Reload the page.");
+  return addSheetExclusion(page.plan.jobId, page.id, "WORK_AREA", [...WHOLE_SHEET.xs], [...WHOLE_SHEET.ys]);
 }

@@ -252,12 +252,15 @@ export async function loadTakeoffWorkspace(
   // since the inventory stage was written, so this is a second select on a table
   // already being written, not new extraction. See `takeoff/reducedPrint.ts`.
   const sheetWidthByPage: Record<number, number> = {};
+  // The stored marks of existing work, for the work-area prompt on open (work-area-first.md W1). Only sheets with marks.
+  const renovationByPage: Record<number, string[]> = {};
   if (plan) {
     for (const sheet of await prisma.planSheetText.findMany({
       where: { planId: plan.id },
-      select: { pageNumber: true, widthPt: true },
+      select: { pageNumber: true, widthPt: true, renovationMarks: true },
     })) {
       sheetWidthByPage[sheet.pageNumber] = sheet.widthPt;
+      if (sheet.renovationMarks.length > 0) renovationByPage[sheet.pageNumber] = sheet.renovationMarks;
     }
   }
   const scalePrefillByPage: ScalePrefillByPage = scalePrefillsFromReadings(scaleReadingRows, sheetWidthByPage);
@@ -746,6 +749,7 @@ export async function loadTakeoffWorkspace(
     matchableItems,
     levelByPage,
     scalePrefillByPage,
+    renovationByPage,
     viewScalesByPage,
     scaleDeclineByPage,
     duplicateWallsByPage,
