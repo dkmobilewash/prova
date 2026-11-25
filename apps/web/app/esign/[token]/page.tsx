@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@prova/db";
+import { GC_LINE_WHERE } from "@/lib/estimating/zeroedLines";
 import { ContractSummary } from "@/components/ContractSummary";
 import { signRequest } from "@/lib/actions";
 import { SubmitButton } from "@/components/SubmitButton";
@@ -33,7 +34,8 @@ export default async function EsignPage({ params }: { params: Promise<{ token: s
           company: true,
           contact: true,
           lineItems: {
-            where: { isDeleted: false },
+            // A takeoff line at 0 (its walls went, its price kept) is the sub's bookkeeping, not the GC's (order (e), A4).
+            where: GC_LINE_WHERE,
             orderBy: { createdAt: "asc" },
           },
         },

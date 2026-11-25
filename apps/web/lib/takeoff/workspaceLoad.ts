@@ -252,12 +252,15 @@ export async function loadTakeoffWorkspace(
   // since the inventory stage was written, so this is a second select on a table
   // already being written, not new extraction. See `takeoff/reducedPrint.ts`.
   const sheetWidthByPage: Record<number, number> = {};
+  // The stored marks of existing work, for the work-area prompt on open (work-area-first.md W1). Only sheets with marks.
+  const renovationByPage: Record<number, string[]> = {};
   if (plan) {
     for (const sheet of await prisma.planSheetText.findMany({
       where: { planId: plan.id },
-      select: { pageNumber: true, widthPt: true },
+      select: { pageNumber: true, widthPt: true, renovationMarks: true },
     })) {
       sheetWidthByPage[sheet.pageNumber] = sheet.widthPt;
+      if (sheet.renovationMarks.length > 0) renovationByPage[sheet.pageNumber] = sheet.renovationMarks;
     }
   }
   const scalePrefillByPage: ScalePrefillByPage = scalePrefillsFromReadings(scaleReadingRows, sheetWidthByPage);
@@ -335,6 +338,11 @@ export async function loadTakeoffWorkspace(
           calibration: { select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } },
         },
       },
+      // The `isHandPriced` lines above 0: what the item-delete confirmation offers to keep (order (e), C2).
+      lineItems: {
+        where: { isDeleted: false, sourceCatalogEntry: { is: null }, quantity: { gt: 0 }, OR: [{ unitPrice: { not: null } }, { budgetedUnitCost: { not: null } }] },
+        select: { description: true, quantity: true, unitPrice: true },
+      },
     },
   });
 
@@ -352,6 +360,7 @@ export async function loadTakeoffWorkspace(
     depthIn: item.depthIn === null ? null : Number(item.depthIn),
     wallTypeId: item.wallTypeId,
     sortOrder: item.sortOrder,
+    handPriced: item.lineItems.map((l) => ({ description: l.description, total: Math.round(Number(l.quantity) * Number(l.unitPrice ?? 0) * 100) / 100 })),
     measurements: item.measurements.map((m) => ({
       id: m.id,
       pageNumber: m.page.pageNumber,
@@ -740,6 +749,7 @@ export async function loadTakeoffWorkspace(
     matchableItems,
     levelByPage,
     scalePrefillByPage,
+    renovationByPage,
     viewScalesByPage,
     scaleDeclineByPage,
     duplicateWallsByPage,

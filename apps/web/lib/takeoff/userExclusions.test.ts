@@ -106,14 +106,14 @@ describe("offeredCandidates: what the user excluded", () => {
   it("a work area round the left four sets the right-hand wall aside under `outside-work-area`; no user input offers all five", () => {
     const got = offeredCandidates(sheet({ workArea: [{ xs: [ft(0), ft(50), ft(50), ft(0)], ys: [ft(0), ft(0), ft(60), ft(60)] }] }));
     expect(got.candidates).toHaveLength(4);
-    expect(got.setAside).toEqual([{ kind: "outside-work-area", why: "outside the work area you drew — 30 ft set aside", n: 1 }]);
+    expect(got.setAside).toEqual([{ kind: "outside-work-area", why: "outside the work area you drew — 30 ft set aside", n: 1, feet: expect.closeTo(30, 6) }]);
     expect(offeredCandidates(sheet()).candidates).toHaveLength(5);
   });
   it("a wall the work-area edge crosses is offered as its inside piece", () => {
     const got = offeredCandidates(sheet({ workArea: [{ xs: [ft(0), ft(25), ft(25), ft(0)], ys: [ft(0), ft(0), ft(60), ft(60)] }] }));
     // four walls cut at x = 25 ft to 15 ft pieces; the right-hand wall outside
     expect(got.candidates.map((c) => Math.round(c.lengthFeet)).sort()).toEqual([15, 15, 15, 15]);
-    expect(got.setAside[0]).toEqual({ kind: "outside-work-area", why: "outside the work area you drew — 90 ft set aside, 4 walls cut at its edge", n: 5 });
+    expect(got.setAside[0]).toEqual({ kind: "outside-work-area", why: "outside the work area you drew — 90 ft set aside, 4 walls cut at its edge", n: 5, feet: expect.closeTo(90, 6) });
   });
 });
 

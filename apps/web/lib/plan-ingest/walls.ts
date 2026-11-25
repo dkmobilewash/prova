@@ -658,6 +658,8 @@ export type WallsSummaryRow = {
   label: string;
   /** Present when the sheet's words say it shows existing work. */
   renovation?: string[];
+  /** A renovation sheet that has its work area (drawn, or the whole sheet as new work): answered (work-area-first.md W5). */
+  workArea?: boolean;
   status:
     | { kind: "walls"; groups: number; feet: number; typedFeet?: number; rooms?: number; ceilingSqFt?: number; notCounted?: WallsSkip }
     | { kind: "skipped"; why: WallsSkip }
@@ -709,6 +711,7 @@ export async function wholeSetSummary(planId: string, companyId: string, maxAtte
         calibrations: { orderBy: { createdAt: "desc" }, take: 1 },
         wallProposals: { orderBy: { createdAt: "desc" } },
         measurements: { where: { source: "ROOM_FINDER" }, select: { calibrationId: true, ceilingFamily: true, xs: true, ys: true } },
+        exclusions: { where: { kind: "WORK_AREA" }, select: { id: true }, take: 1 },
       },
     }),
     prisma.wallType.findMany({
@@ -767,13 +770,15 @@ export async function wholeSetSummary(planId: string, companyId: string, maxAtte
       });
     }
   }
+  // A renovation sheet with a work area (drawn, or the whole sheet as new work) is answered (work-area-first.md W5).
+  const answered = new Set(pages.filter((p) => p.exclusions.length > 0).map((p) => p.pageNumber));
   return wallsSummaryRows({
     rooms,
     sheets,
     walls,
     tasks: new Map((run?.tasks ?? []).map((task) => [task.pageNumber, task])),
     maxAttempts,
-  });
+  }).map((row) => (row.renovation && answered.has(row.pageNumber) ? { ...row, workArea: true } : row));
 }
 
 /** Shoelace area of a stored polygon, page-width units to square feet. */

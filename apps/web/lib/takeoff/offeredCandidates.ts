@@ -117,7 +117,8 @@ export type OfferedResult = {
    */
   offeredRuns: WallCandidate[];
   /** What the classifier withheld, by its own reason, for the panel to say. */
-  setAside: { kind: string; why: string; n: number }[];
+  /** `feet`: on the work area's entry, the feet it leaves out (work-area-first.md W4). */
+  setAside: { kind: string; why: string; n: number; feet?: number }[];
   /** For a measurement: the paired candidates dropped for being off-plan. */
   offPlanPaired: number;
   /**
@@ -333,7 +334,7 @@ export function offeredCandidates(
 
   // Counted by reason even when `offerAll` is on, so the sentence the panel
   // shows is about the drawing rather than about the filter's current setting.
-  const aside = new Map<string, { kind: string; why: string; n: number }>();
+  const aside = new Map<string, { kind: string; why: string; n: number; feet?: number }>();
   for (const one of classified) {
     if (worthOffering(one.kind)) continue;
     const at = aside.get(one.kind) ?? { kind: one.kind, why: one.why, n: 0 };
@@ -486,6 +487,7 @@ export function offeredCandidates(
       kind: "outside-work-area",
       why: `outside the work area you drew — ${Math.round(area.outsideFeet).toLocaleString()} ft set aside${area.split.length > 0 ? `, ${area.split.length} wall${area.split.length === 1 ? "" : "s"} cut at its edge` : ""}`,
       n: area.outside.length + area.split.length,
+      feet: area.outsideFeet,
     });
   }
   if (framedRuns.length > 0) {

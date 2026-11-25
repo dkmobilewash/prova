@@ -1,4 +1,5 @@
 import { Prisma, prisma } from "@prova/db";
+import { GC_LINE_WHERE } from "@/lib/estimating/zeroedLines";
 import { isPortalAccessRevoked, CLIENT_VISIBLE_CHANGE_ORDER_STATUS } from "@/lib/access-tokens";
 
 /**
@@ -135,7 +136,7 @@ const PORTAL_JOB_SELECT = {
        Printing them on the sub's OWN proposal stays as it is, and is right:
        a proposal is chosen and sent. This page renders whenever somebody
        opens a link. */
-    where: { isDeleted: false, unitPrice: { not: null } },
+    where: { ...GC_LINE_WHERE, unitPrice: { not: null } },
     orderBy: { createdAt: "asc" },
     select: {
       id: true,

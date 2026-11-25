@@ -93,6 +93,11 @@ export type ItemLineSummary = {
   emptyAssembly: { id: string; name: string }[];
   /** Sheets whose words show existing work, measured with no work area or exclusion. Sent anyway. */
   renovationUnchecked?: string[];
+  /**
+   * Lines priced by hand that THIS sync took to 0 instead of retiring (Diego's order (e), A1-A2): their walls are gone,
+   * their price is kept, and the person is told. Empty when nothing moved to 0 this time.
+   */
+  zeroed: { id: string; description: string; unitPrice: string | null }[];
 };
 
 /**
@@ -255,6 +260,11 @@ export async function loadItemsForLines(tx: Tx, companyId: string, jobId: string
   const pages = await tx.takeoffPlanPage.findMany({ where: { plan: { jobId, companyId } }, select: { id: true, finishTakeoff: true } });
   return { items, assemblies, pinnedAt: job.assemblyLibraryPinnedAt, defaultPartitionId: fallback?.id ?? null, finishPages: pages.filter((p) => p.finishTakeoff !== null) };
 }
+
+/** The #1257 definition: a takeoff line with a price or cost a person typed, not one a catalog entry gave it. */
+// A `Record`, not a `{ sourceCatalogEntryId: … }` literal: catalogLineWriterCensus counts that spelling as a write.
+export const isHandPriced = (line: Record<"sourceCatalogEntryId", string | null> & { unitPrice: unknown; budgetedUnitCost: unknown }) =>
+  line.sourceCatalogEntryId === null && (line.unitPrice != null || line.budgetedUnitCost != null);
 
 const num = (value: { toString(): string } | number | null | undefined): number | null =>
   value == null ? null : Number(value);
@@ -487,7 +497,7 @@ export async function syncTakeoffItemLines(
   // function's to read, let alone to retire.
   const existing = await tx.jobLineItem.findMany({
     where: { jobId, takeoffItemId: only === undefined ? { not: null } : { in: [...only] } },
-    select: { id: true, takeoffItemId: true, wallTypeComponentId: true, description: true, isDeleted: true },
+    select: { id: true, takeoffItemId: true, wallTypeComponentId: true, description: true, isDeleted: true, quantity: true, unitPrice: true, budgetedUnitCost: true, sourceCatalogEntryId: true },
   });
   const key = (line: { takeoffItemId: string | null; wallTypeComponentId: string | null; description: string }) =>
     `${line.takeoffItemId}:${line.wallTypeComponentId ?? line.description}`;
@@ -582,9 +592,17 @@ export async function syncTakeoffItemLines(
     await tx.jobLineItem.createMany({ data: toCreate.map((row, i) => ({ ...row, createdAt: new Date(base + i) })) });
   }
 
+  const zeroed: ItemLineSummary["zeroed"] = [];
   for (const line of existing) {
     if (line.isDeleted) continue;
     if (wanted.has(key(line))) continue;
+    // ── A PRICE TYPED BY HAND IS NEVER RETIRED BY A SYNC (Diego's order (e), A1) ──
+    // Its walls are gone, so it goes to 0, linked, with its price: the total is right, the price waits for the walls
+    // to come back (the same key re-quantifies it), and `zeroedPricedLines` tells the person on every screen.
+    if (isHandPriced(line)) {
+      if (Number(line.quantity) !== 0) zeroed.push({ id: line.id, description: line.description, unitPrice: line.unitPrice?.toString() ?? null });
+      continue;
+    }
     // Retired, and the links released — which is what makes this function's
     // own removals distinguishable from a person's next time round.
     retired.push(line.id);
@@ -593,12 +611,16 @@ export async function syncTakeoffItemLines(
   if (retired.length > 0) {
     await tx.jobLineItem.updateMany({ where: { id: { in: retired } }, data: { isDeleted: true, takeoffItemId: null, wallTypeComponentId: null } });
   }
+  if (zeroed.length > 0) {
+    await tx.jobLineItem.updateMany({ where: { id: { in: zeroed.map((l) => l.id) } }, data: { quantity: "0", laborHours: null } });
+  }
 
   // ── A RENOVATION SHEET SENT AS IT WAS FOUND ──
   // Existing walls ride along at about twice the new work unless the estimator
-  // drew a work area or excluded them. Allowed, and said.
+  // drew a work area or marked the whole sheet new work: the two exits of the
+  // work-area prompt (`workAreaFirst.ts`, Diego 2026-11-25). Allowed, and said.
   const measuredPages = await tx.takeoffPlanPage.findMany({
-    where: { plan: { jobId, companyId }, measurements: { some: { itemId: { not: null }, kind: "LINEAR" } }, exclusions: { none: { kind: { in: ["WORK_AREA", "EXCLUDE_LIKE"] } } } },
+    where: { plan: { jobId, companyId }, measurements: { some: { itemId: { not: null }, kind: "LINEAR" } }, exclusions: { none: { kind: "WORK_AREA" } } },
     select: { pageNumber: true, label: true, planId: true },
   });
   const texts = measuredPages.length === 0 ? [] : await tx.planSheetText.findMany({ where: { OR: measuredPages.map((p) => ({ planId: p.planId, pageNumber: p.pageNumber })) }, select: { planId: true, pageNumber: true, renovationMarks: true } });
@@ -615,7 +637,7 @@ export async function syncTakeoffItemLines(
 
   // Labor follows the walls: the hours are worked out again from what the lines now say.
   await syncLaborLines(tx, companyId, jobId);
-  return { created, updated, removed, unpriced, checkFigures, emptyAssembly, renovationUnchecked };
+  return { created, updated, removed, unpriced, checkFigures, emptyAssembly, renovationUnchecked, zeroed };
 }
 
 /**

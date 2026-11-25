@@ -10,6 +10,8 @@ import { loadTakeoffWorkspace, takeoffSavedSignature, workspaceForClient } from 
 import { loadReviewQueue } from "@/lib/takeoff/reviewQueueQuery";
 import { loadSpecSaysByCode } from "@/lib/specs/specBookQuery";
 import { planSetFromLoaded } from "@/lib/takeoff/planSet";
+import { ZeroedLinesNotice } from "@/components/ZeroedLinesNotice";
+import { zeroedPricedLines } from "@/lib/estimating/zeroedLines";
 
 /**
  * ── THE FULL-SCREEN TAKEOFF WORKSPACE ──
@@ -53,6 +55,8 @@ export default async function TakeoffWorkspacePage({
   const data = await loadTakeoffWorkspace(company, job);
   const savedAt = await takeoffSavedSignature(company.id, job.id);
   const queue = await loadReviewQueue(company.id, job.id);
+  // Priced lines a sync took to 0 (order (e), A2): said over the workspace, whichever action did it.
+  const zeroed = await zeroedPricedLines(job.id);
   const specSays = await loadSpecSaysByCode(job.id, company.id);
 
   if (data === null) {
@@ -84,6 +88,8 @@ export default async function TakeoffWorkspacePage({
   const sheetPages = new Set([...data.sheets.map((sheet) => sheet.pageNumber), ...data.sheetRows.map((row) => row.pageNumber)]);
 
   return (
+    <>
+    <ZeroedLinesNotice jobId={job.id} lines={zeroed} floating />
     <TakeoffWorkspace
       jobId={job.id}
       jobName={job.name}
@@ -144,5 +150,6 @@ export default async function TakeoffWorkspacePage({
          rebuild cannot hand one sheet's decisions to another's walls. */
       finderVersion={finderVersion()}
     />
+    </>
   );
 }

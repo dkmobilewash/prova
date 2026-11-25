@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/actions/shared";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
-import { confirmDoors, confirmSheetScales, confirmSheetSuggestions, recordQueueSkip, confirmWindows, undoAutoPost, undoConfirmDoors, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
+import { WORK_AREA_PROMPT } from "@/lib/takeoff/workAreaFirst";
+import { markWholeSheetNewWork, confirmDoors, confirmSheetScales, confirmSheetSuggestions, recordQueueSkip, confirmWindows, undoAutoPost, undoConfirmDoors, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
 import { shortScaleName } from "@/lib/takeoff/scaleFromDimensions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
 import { QueueGroupConfirm } from "./QueueGroupConfirm";
@@ -801,26 +802,49 @@ export function TakeoffReviewQueue({
             />
           )}
           {current.kind === "existing" && (
-            // ── A RENOVATION SHEET: THE EXISTING WALLS, IN ONE STEP (`setAsideLike.ts`) ──
-            // The viewer takes the pick: one existing wall, a preview of every wall drawn like it,
-            // Enter sets them aside with one Undo. It says when it is done (`takeoff-aside-like-done`).
+            // ── A RENOVATION SHEET: THE WORK AREA FIRST (Diego's audit order, 2026-11-25; work-area-first.md W5b) ──
+            // The same words and two exits as the sheet: a drawn work area, or the whole sheet as new work. Setting
+            // aside walls drawn like one is still a tool on the sheet, and no longer the answer to this step.
             <div className="flex flex-col gap-2" data-takeoff="review-queue-existing" data-page={current.pageNumber}>
               <p className="text-sm text-ink">
                 {current.sheet} shows existing work: {current.walls} wall{current.walls === 1 ? "" : "s"}
                 {current.feet === null ? "" : `, ${Math.round(current.feet).toLocaleString()} ft`} found, the existing ones among them.
               </p>
-              <p className="text-xs text-ink-muted">Pick one existing wall on the sheet; every wall drawn like it is set aside.</p>
+              <p className="text-sm font-medium text-tag-amber-ink">{WORK_AREA_PROMPT}</p>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   className={`${button} border-brand`}
+                  data-takeoff="review-queue-work-area"
+                  onClick={() => document.dispatchEvent(new CustomEvent("takeoff-work-area", { detail: { page: current.pageNumber } }))}
+                >
+                  Draw work area
+                </button>
+                <button
+                  type="button"
+                  className={button}
+                  data-takeoff="review-queue-whole-sheet"
+                  onClick={() => {
+                    const page = current.pageNumber;
+                    void markWholeSheetNewWork(planId, page).then((result) => {
+                      if (result.ok) setCursor(after(current.key));
+                    });
+                  }}
+                >
+                  Whole sheet is new work
+                </button>
+                {/* Still a tool for the existing walls (`setAsideLike.ts`), quieter, and not the step's answer (W2/W7). */}
+                <button
+                  type="button"
+                  className={button}
                   data-takeoff="review-queue-aside-like"
+                  title="Sets aside every wall drawn like one existing wall. The sheet still needs its work area."
                   onClick={() => {
                     document.dispatchEvent(new CustomEvent("takeoff-goto", { detail: { page: current.pageNumber } }));
                     document.dispatchEvent(new CustomEvent("takeoff-aside-like", { detail: { page: current.pageNumber } }));
                   }}
                 >
-                  Set aside all walls drawn like this one
+                  Set aside walls drawn like one
                 </button>
                 <button type="button" className={button} onClick={() => setCursor(after(current.key))}>
                   Skip

@@ -14,6 +14,7 @@ import { can } from "@/lib/permissions";
 import { viewerToday } from "@/lib/viewerToday";
 import { money as formatMoney } from "@/lib/money";
 import { prisma, Prisma } from "@prova/db";
+import { GC_LINE_WHERE } from "@/lib/estimating/zeroedLines";
 import {
   revokeToken,
   refreshTokens,
@@ -291,7 +292,7 @@ export async function signRequest(token: string, formData: FormData) {
   const userAgent = headerList.get("user-agent");
 
   const lineItems = await prisma.jobLineItem.findMany({
-    where: { jobId: request.jobId, isDeleted: false },
+    where: { jobId: request.jobId, ...GC_LINE_WHERE },
     orderBy: { createdAt: "asc" },
   });
   const total = lineItems.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0);

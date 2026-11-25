@@ -4,7 +4,8 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import { TakeoffExclusionBar } from "@/components/TakeoffExclusionBar";
 import { wallsSummaryRows } from "@/lib/plan-ingest/walls";
-import { renovationMarks, RENOVATION_PROMPT, showsExistingWork } from "./renovationMarks";
+import { renovationMarks, showsExistingWork } from "./renovationMarks";
+import { WORK_AREA_PROMPT } from "./workAreaFirst";
 
 describe("renovationMarks", () => {
   it("names what marks a sheet, and EXISTING needs three", () => {
@@ -20,15 +21,20 @@ describe("renovationMarks", () => {
 });
 
 describe("the renovation prompt", () => {
-  it("shows with its two tools, and each picks its tool", () => {
+  // Diego's audit order, 2026-11-25 (work-area-first.md): the work area is the first step, with two exits — draw one, or
+  // mark the whole sheet new work. "Exclude like this" is still a tool, and no longer an answer to the prompt.
+  it("shows the work-area prompt with its two exits, and each does its own thing", () => {
     const onPickTool = vi.fn();
+    const onWholeSheet = vi.fn();
     const host = document.createElement("div");
     document.body.append(host);
-    act(() => createRoot(host).render(createElement(TakeoffExclusionBar, { feet: 700, aside: [], excludes: 0, workAreas: 0, readOnly: false, renovation: ["(E)"], onPickTool, onUndo: () => {}, onClear: () => {} })));
-    expect(host.querySelector('[data-takeoff="renovation-prompt"]')?.textContent).toContain(RENOVATION_PROMPT);
+    act(() => createRoot(host).render(createElement(TakeoffExclusionBar, { feet: 700, aside: [], excludes: 0, workAreas: 0, readOnly: false, renovation: ["(E)"], onPickTool, onWholeSheet, onUndo: () => {}, onClear: () => {} })));
+    expect(host.querySelector('[data-takeoff="renovation-prompt"]')?.textContent).toContain(WORK_AREA_PROMPT);
     act(() => (host.querySelector('[data-takeoff="renovation-work-area"]') as HTMLButtonElement).click());
-    act(() => (host.querySelector('[data-takeoff="renovation-exclude"]') as HTMLButtonElement).click());
-    expect(onPickTool.mock.calls).toEqual([["workarea"], ["exclude"]]);
+    act(() => (host.querySelector('[data-takeoff="renovation-whole-sheet"]') as HTMLButtonElement).click());
+    expect(onPickTool.mock.calls).toEqual([["workarea"]]);
+    expect(onWholeSheet).toHaveBeenCalledTimes(1);
+    expect(host.querySelector('[data-takeoff="renovation-exclude"]')).toBeNull();
   });
   it("is not there without marks", () => {
     const host = document.createElement("div");

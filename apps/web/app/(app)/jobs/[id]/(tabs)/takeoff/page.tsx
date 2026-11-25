@@ -43,6 +43,8 @@ import type { PlanMeasurementRow, PlanSheet, PrintedScaleByPage, ScalePrefillByP
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import type { WallGroup } from "@/lib/takeoff/wallGroups";
 import { groupsFromProposals } from "@/lib/takeoff/wallProposal";
+import { ZeroedLinesNotice } from "@/components/ZeroedLinesNotice";
+import { zeroedPricedLines } from "@/lib/estimating/zeroedLines";
 
 /**
  * ── THIS ROUTE NEEDS LONGER THAN A PAGE DOES, AND IT IS THE SAVE THAT NEEDS IT ──
@@ -193,6 +195,7 @@ export default async function JobTakeoffPage({
     legendCodes,
     levelByPage,
     scalePrefillByPage,
+    renovationByPage,
     viewScalesByPage,
     scaleDeclineByPage,
     duplicateWallsByPage,
@@ -241,6 +244,7 @@ export default async function JobTakeoffPage({
           above the quotes: it decides whether the numbers below mean
           anything. */}
       <TakeoffCurrencyBanner jobId={job.id} currency={currency} />
+      <ZeroedLinesNotice jobId={job.id} lines={await zeroedPricedLines(job.id)} />
 
       {/* ── THE PLANS AND SCALE STEPS (guided flow, Phase 2) ──
           The set sorted by kind, each sheet's scale and how sure the reader is,
@@ -304,6 +308,7 @@ export default async function JobTakeoffPage({
         storedWallsByPage={storedWallsByPage}
         legendCodes={legendCodes}
         scalePrefillByPage={scalePrefillByPage}
+        renovationByPage={renovationByPage}
         viewScalesByPage={viewScalesByPage}
         scaleDeclineByPage={scaleDeclineByPage}
         levelByPage={levelByPage}
@@ -374,6 +379,7 @@ export default async function JobTakeoffPage({
       {isEstimateStage && wholeSetTakeoffOn && (
         <WholeSetTakeoffPanel
           planId={plan.id}
+          jobId={job.id}
           existing={await latestIngestFor(plan.id, "WALLS")}
           summary={await wholeSetSummary(plan.id, company.id, MAX_ATTEMPTS)}
           projects={await uploadProjectQuestion(plan.id, company.id)}
