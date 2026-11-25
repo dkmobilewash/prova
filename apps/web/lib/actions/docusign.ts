@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@prova/db";
+import { GC_LINE_WHERE } from "@/lib/estimating/zeroedLines";
 import {
   DocuSignApiError,
   createDocuSignEnvelope,
@@ -130,7 +131,7 @@ async function prepare(companyId: string, formData: FormData): Promise<{ error: 
     // becomes the contract, not something re-signed afterwards.
     if (job.status !== "ESTIMATE") return { error: "This job is already contracted." };
     const lineItems = await prisma.jobLineItem.findMany({
-      where: { jobId: job.id, isDeleted: false },
+      where: { jobId: job.id, ...GC_LINE_WHERE },
       orderBy: { createdAt: "asc" },
       select: { description: true, quantity: true, unit: true, unitPrice: true },
     });

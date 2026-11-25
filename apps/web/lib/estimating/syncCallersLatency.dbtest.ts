@@ -66,6 +66,8 @@ const { saveDoorScope } = await import("@/lib/actions/company");
 const { postAutoDoors } = await import("@/lib/plan-ingest/autoDoors");
 const { assignWallHeights } = await import("@/lib/takeoff/wallHeightsAssign");
 const { deleteTakeoffPlan, previewDeleteTakeoffPlan } = await import("@/lib/actions/takeoff");
+const takeoffActions = await import("@/lib/actions/takeoff");
+const itemActions = await import("@/lib/actions/takeoffItems");
 const { HELD_ITEM, HELD_LABEL } = await import("@/lib/takeoff/estimateHold");
 const { UNTYPED_ITEM } = await import("@/lib/takeoff/untypedItem");
 const { AUTO_DOORS_ITEM, AUTO_DOORS_LABEL } = await import("@/lib/takeoff/autoPost");
@@ -306,5 +308,27 @@ describe("every caller of the takeoff→estimate line sync, at production latenc
     holdsTheBar(done);
     // The control: the delete really moved the estimate (every typed item had runs on that plan).
     expect(done.result.ok && done.result.value.linesChanged.length).toBeGreaterThanOrEqual(TYPES);
+  }, 300_000);
+
+  // ── ORDER (e), RULE L: the actions that now re-sync (coordination/silent-estimate-sync.md B1, C1-C2) ──
+  it("Delete one run, move a group's runs to another item, edit a run's points, cut an opening", async () => {
+    const runsOf = async (itemId: string) => (await prisma.takeoffMeasurement.findMany({ where: { itemId }, select: { id: true } })).map((m) => m.id);
+    const one = (await runsOf(itemIds[5]!))[0]!;
+    holdsTheBar(await measure("deleteTakeoffMeasurement (1 run)", () => takeoffActions.deleteTakeoffMeasurement(jobId, one)));
+    const group = await runsOf(itemIds[6]!);
+    holdsTheBar(await measure(`assignMeasurementsToItem (${group.length} runs, 2 items)`, () => itemActions.assignMeasurementsToItem(jobId, itemIds[7]!, group)));
+    const edited = (await runsOf(itemIds[8]!))[0]!;
+    holdsTheBar(await measure("updateMeasurementGeometry (1 run)", () => itemActions.updateMeasurementGeometry(jobId, edited, [0.3, 0.4], [0.95, 0.95])));
+    const ceiling = await prisma.takeoffItem.create({ data: { companyId, jobId, name: "Ceiling area", type: "AREA_WITH_PERIMETER", colorHex: "#aaaaaa", wallTypeId: typeIds[9]! } });
+    await prisma.takeoffMeasurement.create({ data: { pageId: pageOf.get(1)!, calibrationId: calOf.get(1)!, kind: "AREA", xs: [0.4, 0.5, 0.5, 0.4], ys: [0.4, 0.4, 0.5, 0.5], itemId: ceiling.id } });
+    holdsTheBar(await measure("addMeasurementCutout (1 area)", () => itemActions.addMeasurementCutout(jobId, pageOf.get(1)!, { xs: [0.42, 0.45, 0.45, 0.42], ys: [0.42, 0.42, 0.45, 0.45] })));
+  }, 300_000);
+
+  it("Delete an item with its runs and a line priced by hand", async () => {
+    const line = await prisma.jobLineItem.findFirstOrThrow({ where: { takeoffItemId: itemIds[10]!, isDeleted: false } });
+    await prisma.jobLineItem.update({ where: { id: line.id }, data: { unitPrice: "4.00" } });
+    holdsTheBar(await measure("deleteTakeoffItem (5 runs, 4 lines, 1 priced by hand)", () => itemActions.deleteTakeoffItem(jobId, itemIds[10]!, true)));
+    // The control: it really kept the priced line and retired the rest.
+    expect((await prisma.jobLineItem.findUniqueOrThrow({ where: { id: line.id } })).isDeleted).toBe(false);
   }, 300_000);
 });

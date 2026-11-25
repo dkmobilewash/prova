@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@prova/db";
+import { GC_LINE_WHERE } from "@/lib/estimating/zeroedLines";
 import { PageShell } from "@prova/ui";
 import { requireCapability } from "@/lib/authz";
 import { NoAccess } from "@/components/NoAccess";
@@ -45,7 +46,7 @@ export default async function JobProposalPage({ params }: { params: Promise<{ id
     where: { id, companyId: company.id },
     include: {
       contact: { select: { name: true } },
-      lineItems: { where: { isDeleted: false }, orderBy: { createdAt: "asc" } },
+      lineItems: { where: GC_LINE_WHERE, orderBy: { createdAt: "asc" } },
       proposalClauses: {
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         select: { id: true, kind: true, text: true },

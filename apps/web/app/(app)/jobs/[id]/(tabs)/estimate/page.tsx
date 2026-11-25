@@ -3,6 +3,9 @@ import { prisma } from "@prova/db";
 import { ConfirmDelete, RowActions } from "@/components/RowActions";
 import { WipNarrativeButton } from "@/components/WipNarrativeButton";
 import { DraftLineItemsForm } from "@/components/DraftLineItemsForm";
+import { ZeroedLinesNotice } from "@/components/ZeroedLinesNotice";
+import { zeroedPricedLines } from "@/lib/estimating/zeroedLines";
+import { ZEROED_ROW_FLAG } from "@/lib/estimating/zeroedLinesWords";
 import { TakeoffForm } from "@/components/TakeoffForm";
 import { ReportProblemButton } from "@/components/ReportProblemButton";
 import { OrderMaterials } from "@/components/OrderMaterials";
@@ -327,6 +330,9 @@ export default async function JobEstimatePage({
   const bidRecapRates: RecapRates = Object.fromEntries(
     RECAP_RATE_KEYS.map((key) => [key, recapSource?.[key] != null ? Number(recapSource[key]) : null]),
   );
+  // Priced takeoff lines a sync took to 0 (order (e), A2-A3): named above the list and flagged on their row.
+  const zeroed = await zeroedPricedLines(job.id);
+  const zeroedIds = new Set(zeroed.map((l) => l.id));
   const bidRecapLines: RecapLineView[] = job.lineItems.map((item) => ({
     id: item.id,
     description: item.description,
@@ -956,6 +962,9 @@ export default async function JobEstimatePage({
                 Lines total <span className="font-semibold tabular-nums text-ink">{money(jobWip.contractValue)}</span>
               </p>
             </div>
+            <div className="mb-3">
+              <ZeroedLinesNotice jobId={job.id} lines={zeroed} onEstimate />
+            </div>
             {/* SEE IT, THEN CLICK INTO IT (declutter round 2). Every line used
                 to be an open edit form, ~10 inputs each. Now one summary row
                 per line; opening a row shows exactly the form it always had,
@@ -1007,6 +1016,11 @@ export default async function JobEstimatePage({
                         {specSaysFor(item) !== "" && (
                           <span className="block text-xs text-tag-amber-ink" data-estimate="spec-says">
                             {specSaysFor(item)}
+                          </span>
+                        )}
+                        {zeroedIds.has(item.id) && (
+                          <span className="block text-xs text-tag-amber-ink" data-estimate="zeroed">
+                            {ZEROED_ROW_FLAG}
                           </span>
                         )}
                         <span className="block text-xs text-ink-muted sm:hidden">
