@@ -1,7 +1,7 @@
 import { applyCatalogPrices, ratesFrom } from "./catalogPrices";
 import { unitPriceFromCost, type RecapRates } from "@/lib/bid-recap";
 import { showsExistingWork } from "@/lib/takeoff/renovationMarks";
-import { Prisma } from "@prova/db";
+import type { Prisma } from "@prova/db";
 
 import { componentRunQuantity, openingsFromJson, type RunGeometry, type WallComponentBasis } from "@/lib/wall-assemblies";
 import { openingThresholdSqFt as thresholdFor } from "@/lib/businessScope";
@@ -563,11 +563,17 @@ export async function syncTakeoffItemLines(
     });
     created += 1;
   }
-  // Every kept line in ONE statement: Prisma has no update-many with a value per row. Parameterised by the tagged
-  // template; the columns' own scales round the values exactly as `update` did.
+  // Every kept line in ONE statement: Prisma has no update-many with a value per row. Every value is a bound
+  // parameter ($1, $2, …); only the placeholders are built here. `$executeRawUnsafe` rather than the tagged template
+  // because `Prisma.sql` is a VALUE import of @prova/db, and this module reaches the browser bundle
+  // (client-prisma-boundary.test.ts). The columns' own scales round the values exactly as `update` did.
   if (changed.length > 0) {
-    const rows = Prisma.join(changed.map((c) => Prisma.sql`(${c.id}, ${c.quantity}, ${c.laborHours}, ${c.productionRate})`));
-    await tx.$executeRaw`UPDATE "JobLineItem" AS l SET "quantity" = v.q::numeric, "laborHours" = v.h::numeric, "productionRate" = v.r::numeric, "updatedAt" = CURRENT_TIMESTAMP FROM (VALUES ${rows}) AS v(id, q, h, r) WHERE l."id" = v.id`;
+    const placeholders = changed.map((_, i) => "(" + [1, 2, 3, 4].map((k) => "$" + String(i * 4 + k)).join(", ") + ")").join(", ");
+    await tx.$executeRawUnsafe(
+      'UPDATE "JobLineItem" AS l SET "quantity" = v.q::numeric, "laborHours" = v.h::numeric, "productionRate" = v.r::numeric, "updatedAt" = CURRENT_TIMESTAMP ' +
+        `FROM (VALUES ${placeholders}) AS v(id, q, h, r) WHERE l."id" = v.id`,
+      ...changed.flatMap((line) => [line.id, line.quantity, line.laborHours, line.productionRate]),
+    );
   }
   // The proposal lists lines by `createdAt` alone, so one statement's shared timestamp would leave their order to
   // Postgres. Each new line keeps the order the one-at-a-time creates gave it, a millisecond apart.
