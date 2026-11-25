@@ -1,6 +1,6 @@
 "use server";
 
-import { prisma } from "@prova/db";
+import { Prisma, prisma } from "@prova/db";
 import { randomUUID } from "node:crypto";
 import { recordTakeoffEvents, type TakeoffEventRow } from "@/lib/takeoff/events";
 import { groupTarget } from "@/lib/takeoff/eventTarget";
@@ -13,7 +13,7 @@ import { sameCode } from "@/lib/takeoff/legendMerge";
 import { storedLegendTypesFromJson } from "@/lib/takeoff/legendProposal";
 import { actionFail, actionOk, type ActionResult, type ActionResultWith } from "./shared";
 import { addWallTypeFromLegend } from "./wallLegend";
-import { syncDecidedItems } from "@/lib/estimating/takeoff-item-lines";
+import { deleteEmptyItems, syncDecidedItems } from "@/lib/estimating/takeoff-item-lines";
 import { nearestWallRun, sameRunAs, sameWallRun } from "@/lib/takeoff/runMatch";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 import { AUTO_DOOR_LABELS, AUTO_MARK, HIGH_CONFIDENCE_WALLS } from "@/lib/takeoff/autoPost";
@@ -217,30 +217,39 @@ export async function undoSheetSuggestions(jobId: string, undo: SheetSuggestions
       const touched = new Set<string>();
       const now = await tx.takeoffMeasurement.findMany({ where: { id: { in: [...ours] } }, select: { id: true, itemId: true } });
       for (const m of now) if (m.itemId !== null) touched.add(m.itemId);
+      // ── A FIXED NUMBER OF WRITES, NEVER ONE PER ROW ──
+      // Undo of a 144-run Accept all or addendum awaited one update per run here and outlived Prisma's 5 s default
+      // at Neon's latency (`syncCallersLatency.dbtest.ts`). Each row goes back to its own item and label, so it is ONE
+      // parameterised UPDATE ... FROM (VALUES ...): an addendum's earlier runs sit on as many items as the job has types.
+      const back: Prisma.Sql[] = [];
       for (const m of moved) {
         if (!ours.has(m.id) || (m.itemId !== null && !jobItems.has(m.itemId))) continue;
-        await tx.takeoffMeasurement.update({ where: { id: m.id }, data: { itemId: m.itemId, label: m.label } });
+        if ((m.itemId !== null && typeof m.itemId !== "string") || (m.label !== null && typeof m.label !== "string")) continue;
+        back.push(Prisma.sql`(${m.id}, ${m.itemId}, ${m.label})`);
         if (m.itemId !== null) touched.add(m.itemId);
+      }
+      if (back.length > 0) {
+        await tx.$executeRaw`UPDATE "TakeoffMeasurement" AS m SET "itemId" = v.i, "label" = v.l FROM (VALUES ${Prisma.join(back)}) AS v(id, i, l) WHERE m."id" = v.id`;
       }
       const gone = created.filter((id) => ours.has(id));
       if (gone.length > 0) await tx.takeoffMeasurement.deleteMany({ where: { id: { in: gone } } });
+      const heights = new Map<string, { data: { heightFt: string | null; sides: number | null }; ids: string[] }>();
       for (const item of items) {
         if (!jobItems.has(item.id)) continue;
         const feet = item.heightFt === null ? null : Number(item.heightFt);
         if (feet !== null && !(feet > 0 && feet < 100)) continue;
-        await tx.takeoffItem.update({ where: { id: item.id }, data: { heightFt: feet === null ? null : feet.toFixed(2), sides: Number.isInteger(item.sides) ? item.sides : null } });
+        const data = { heightFt: feet === null ? null : feet.toFixed(2), sides: Number.isInteger(item.sides) ? item.sides : null };
+        const to = JSON.stringify(data);
+        heights.set(to, { data, ids: [...(heights.get(to)?.ids ?? []), item.id] });
         touched.add(item.id);
       }
+      for (const { data, ids } of heights.values()) await tx.takeoffItem.updateMany({ where: { id: { in: ids } }, data });
       // The items the accept made: their lines are synced away with the rest, and
       // then an item with no runs left and no live line goes too ("C8B walls", empty).
       const madeHere = (Array.isArray(undo?.createdItems) ? undo.createdItems : []).filter((id) => typeof id === "string" && jobItems.has(id));
       for (const id of madeHere) touched.add(id);
       await syncDecidedItems(tx, companyId, jobId, [...touched]);
-      for (const id of madeHere) {
-        const runs = await tx.takeoffMeasurement.count({ where: { itemId: id } });
-        const lines = await tx.jobLineItem.count({ where: { takeoffItemId: id, isDeleted: false } });
-        if (runs === 0 && lines === 0) await tx.takeoffItem.delete({ where: { id } });
-      }
+      await deleteEmptyItems(tx, madeHere);
     });
     // ── A LIBRARY TYPE THE ACCEPT ADDED, TAKEN BACK IF NOTHING USES IT ──
     // The payload comes from the browser, so it is a claim, checked here: the user
@@ -351,6 +360,9 @@ async function typeGroup(
     const posted = await tx.takeoffMeasurement.findMany({ where: { pageId: page.id, kind: "LINEAR", source: "DETECTED" }, select: { id: true, xs: true, ys: true, itemId: true } });
     const label = `${wallType.code} wall (set by hand)`;
     const data = [];
+    // One updateMany for the whole group, never one per run: an 85-run group made 81 round trips in this
+    // transaction and outlived Prisma's 5 s default at Neon's latency (`syncCallersLatency.dbtest.ts`).
+    const moving = new Set<string>();
     for (const run of runs) {
       // The run already on the job, found again by a re-run a hair off (`sameRunAs`):
       // matched exactly, it was written a second time and the wall counted twice.
@@ -365,9 +377,9 @@ async function typeGroup(
       }
       // Only what sits on "Walls — untyped" moves: a run already typed, or held
       // off the estimate to confirm, keeps the decision it carries.
-      const ids = at.filter((m) => untyped !== null && m.itemId === untyped.id).map((m) => m.id);
-      if (ids.length > 0) await tx.takeoffMeasurement.updateMany({ where: { id: { in: ids } }, data: { itemId, label } });
+      for (const m of at) if (untyped !== null && m.itemId === untyped.id) moving.add(m.id);
     }
+    if (moving.size > 0) await tx.takeoffMeasurement.updateMany({ where: { id: { in: [...moving] } }, data: { itemId, label } });
     if (data.length > 0) await tx.takeoffMeasurement.createMany({ data });
     if (heightFt !== null) {
       await tx.takeoffItem.update({ where: { id: itemId }, data: { heightFt: heightFt.toFixed(2) } });
@@ -462,15 +474,18 @@ export async function undoAutoPost(jobId: string, planId: string, pageNumber: nu
           create: { planId, pageNumber, kind: DOORS_AUTO_UNDONE, value: true },
           update: { value: true },
         });
-        await syncDecidedItems(tx, companyId, jobId, doors.flatMap((d) => (d.itemId === null ? [] : [d.itemId])));
       }
+      // The doors' items and the walls' are synced together, once: two syncs in this one transaction were 61 round
+      // trips on a 144-run sheet (`syncCallersLatency.dbtest.ts`).
+      const touched = new Set<string>(doors.flatMap((d) => (d.itemId === null ? [] : [d.itemId])));
       // Typed auto-posts and the walls the model posted itself (`HIGH_CONFIDENCE_WALLS`) both go back.
       const auto = await tx.takeoffMeasurement.findMany({ where: { pageId: page.id, kind: "LINEAR", source: "DETECTED", OR: [{ label: { contains: AUTO_MARK } }, { label: HIGH_CONFIDENCE_WALLS }] }, select: { id: true, itemId: true } });
-      if (auto.length === 0) return doorCount;
-      const untyped = await untypedItem(tx, companyId, jobId);
-      await tx.takeoffMeasurement.updateMany({ where: { id: { in: auto.map((m) => m.id) } }, data: { itemId: untyped, label: "wall, untyped" } });
-      const touched = new Set<string>([untyped, ...auto.flatMap((m) => (m.itemId === null ? [] : [m.itemId]))]);
-      await syncDecidedItems(tx, companyId, jobId, [...touched]);
+      if (auto.length > 0) {
+        const untyped = await untypedItem(tx, companyId, jobId);
+        await tx.takeoffMeasurement.updateMany({ where: { id: { in: auto.map((m) => m.id) } }, data: { itemId: untyped, label: "wall, untyped" } });
+        for (const id of [untyped, ...auto.flatMap((m) => (m.itemId === null ? [] : [m.itemId]))]) touched.add(id);
+      }
+      if (touched.size > 0) await syncDecidedItems(tx, companyId, jobId, [...touched]);
       return auto.length + doorCount;
     });
     // Every group the auto-post rule logged on this sheet is undone: one UNDO each.

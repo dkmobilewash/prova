@@ -2,7 +2,7 @@
 
 import { countItemFor } from "@/lib/takeoff/countItem";
 import { storedWindowsOf, windowItemName, WINDOWS_SUGGESTED } from "@/lib/takeoff/windowTags";
-import { syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
+import { deleteEmptyItems, syncTakeoffItemLines } from "@/lib/estimating/takeoff-item-lines";
 import { CONFIRMED_DOOR_LABELS, CONFIRMED_DOOR_PAIRS_LABEL, CONFIRMED_DOORS_LABEL, DOORS_SUGGESTED, storedDoorsOf } from "@/lib/takeoff/doorSuggestions";
 import { AUTO_DOORS_ITEM } from "@/lib/takeoff/autoPost";
 import { revalidatePath } from "next/cache";
@@ -184,13 +184,7 @@ export async function undoConfirmWindows(jobId: string, planId: string, pageNumb
     await tx.takeoffMeasurement.deleteMany({ where: { id: { in: ids }, kind: "COUNT", page: { planId: plan.id, pageNumber } } });
     // Their lines go with them, before an item left with nothing is removed.
     if (touched.length > 0) await syncTakeoffItemLines(tx, company.id, jobId, new Set(touched));
-    for (const id of items) {
-      const item = await tx.takeoffItem.findFirst({ where: { id, jobId, companyId: company.id, type: "COUNT" }, select: { id: true } });
-      if (item === null) continue;
-      const counts = await tx.takeoffMeasurement.count({ where: { itemId: id } });
-      const lines = await tx.jobLineItem.count({ where: { takeoffItemId: id, isDeleted: false } });
-      if (counts === 0 && lines === 0) await tx.takeoffItem.delete({ where: { id } });
-    }
+    await deleteEmptyItems(tx, items, { jobId, companyId: company.id, type: "COUNT" });
     const read = await tx.takeoffPlanTextRead.findUnique({ where, select: { value: true } });
     const stored = storedWindowsOf(read?.value);
     if (stored !== null && stored.decided) await tx.takeoffPlanTextRead.update({ where, data: { value: { ...stored, decided: false } } });
@@ -267,13 +261,7 @@ export async function undoConfirmDoors(jobId: string, planId: string, pageNumber
     await tx.takeoffMeasurement.deleteMany({ where: { id: { in: ids }, kind: "COUNT", label: { in: CONFIRMED_DOOR_LABELS }, page: { planId: plan.id, pageNumber } } });
     // Their lines go with them, before an item left with nothing is removed.
     if (touched.length > 0) await syncTakeoffItemLines(tx, company.id, jobId, new Set(touched));
-    for (const id of items) {
-      const item = await tx.takeoffItem.findFirst({ where: { id, jobId, companyId: company.id, type: "COUNT" }, select: { id: true } });
-      if (item === null) continue;
-      const counts = await tx.takeoffMeasurement.count({ where: { itemId: id } });
-      const lines = await tx.jobLineItem.count({ where: { takeoffItemId: id, isDeleted: false } });
-      if (counts === 0 && lines === 0) await tx.takeoffItem.delete({ where: { id } });
-    }
+    await deleteEmptyItems(tx, items, { jobId, companyId: company.id, type: "COUNT" });
     const read = await tx.takeoffPlanTextRead.findUnique({ where, select: { value: true } });
     const stored = storedDoorsOf(read?.value);
     if (stored !== null && stored.decided) await tx.takeoffPlanTextRead.update({ where, data: { value: { ...stored, decided: false } } });
