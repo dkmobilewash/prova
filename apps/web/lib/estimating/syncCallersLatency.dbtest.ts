@@ -53,6 +53,7 @@ vi.mock("@prova/db", async (importOriginal) => {
 const context = { company: { id: "" }, companyId: "", id: "", role: "OWNER" as string, jobFunction: null as string | null };
 vi.mock("@/lib/auth", () => ({ requireCompanyContext: async () => context }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("@/lib/blob", async (actual) => ({ ...(await actual<typeof import("@/lib/blob")>()), deleteDocument: async () => {} }));
 
 const { prisma } = await import("@prova/db");
 const { syncTakeoffItemLines } = await import("./takeoff-item-lines");
@@ -64,6 +65,7 @@ const { confirmWindows, undoConfirmWindows, confirmDoors, undoConfirmDoors } = a
 const { saveDoorScope } = await import("@/lib/actions/company");
 const { postAutoDoors } = await import("@/lib/plan-ingest/autoDoors");
 const { assignWallHeights } = await import("@/lib/takeoff/wallHeightsAssign");
+const { deleteTakeoffPlan, previewDeleteTakeoffPlan } = await import("@/lib/actions/takeoff");
 const { HELD_ITEM, HELD_LABEL } = await import("@/lib/takeoff/estimateHold");
 const { UNTYPED_ITEM } = await import("@/lib/takeoff/untypedItem");
 const { AUTO_DOORS_ITEM, AUTO_DOORS_LABEL } = await import("@/lib/takeoff/autoPost");
@@ -133,10 +135,11 @@ async function measure<T>(label: string, run: () => Promise<T>): Promise<{ resul
   return { result, txs: [...rec.txs] };
 }
 
-function holdsTheBar(out: { result: unknown; txs: TxRecord[] }) {
+function holdsTheBar(out: { result: unknown; txs: TxRecord[] }, rollsBack?: string) {
   expect(out.txs.length, "the action opened no transaction: nothing was measured").toBeGreaterThan(0);
   for (const tx of out.txs) {
-    expect(tx.error).toBeNull();
+    // A preview rolls its own transaction back on purpose: that exact error, and no other, is its success.
+    expect(tx.error).toBe(rollsBack ?? null);
     // The round trips are what Neon charges, so each is charged LATENCY_MS: the wall clock also carries this machine's
     // CPU load (a loaded laptop read 2,672 ms for 34 queries), which no production request pays for in round trips.
     expect(tx.queries * LATENCY_MS, `${tx.queries} queries, ${tx.ms} ms on the clock`).toBeLessThanOrEqual(tx.limit / 2);
@@ -288,5 +291,20 @@ describe("every caller of the takeoff→estimate line sync, at production latenc
 
   it(`Every wall a height: the ${TYPES * RUNS}-run sheet`, async () => {
     holdsTheBar(await measure(`assignWallHeights (${TYPES * RUNS} runs)`, () => assignWallHeights({ planId, pageId: pageOf.get(1)!, pageNumber: 1, companyId, jobId, doc: null })));
+  }, 300_000);
+
+  it(`Delete a plan of ${SHEET_RUNS} runs on the typed items: the preview, then the delete (plan-delete-sync.md R9)`, async () => {
+    const doomed = await prisma.takeoffPlan.create({ data: { companyId, jobId, fileUrl: "local:doomed.pdf", fileName: "doomed.pdf" } });
+    const at = await sheet(9, "A-209", doomed.id);
+    await prisma.takeoffMeasurement.createMany({
+      data: grid(SHEET_RUNS).map((r, i) => ({ pageId: at.pageId, calibrationId: at.calId, kind: "LINEAR" as const, source: "DETECTED" as const, xs: [r.x1, r.x2], ys: [r.y1, r.y2], itemId: itemIds[i % TYPES]! })),
+    });
+    await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, jobId));
+    const shown = await measure(`previewDeleteTakeoffPlan (${SHEET_RUNS} runs, every typed item moves)`, () => previewDeleteTakeoffPlan(jobId, doomed.id));
+    holdsTheBar(shown, "preview: rolled back");
+    const done = await measure(`deleteTakeoffPlan (${SHEET_RUNS} runs)`, () => deleteTakeoffPlan(jobId, doomed.id));
+    holdsTheBar(done);
+    // The control: the delete really moved the estimate (every typed item had runs on that plan).
+    expect(done.result.ok && done.result.value.linesChanged.length).toBeGreaterThanOrEqual(TYPES);
   }, 300_000);
 });

@@ -52,6 +52,7 @@ import {
 } from "./shared";
 import { optionalDateFromString } from "@/lib/bid-pursuits";
 import { deleteDocument } from "@/lib/blob";
+import { applyPlanDelete, type PlanDeleteImpact } from "@/lib/takeoff/planDelete";
 import { onePackageOnly, describeForPackage } from "@/lib/takeoff/packages";
 
 /**
@@ -568,29 +569,59 @@ export async function recordTakeoffPlan(jobId: string, formData: FormData): Prom
  * case, and the one worth protecting. `deleteBidAddendum` and
  * `deleteContractDocument` already do it in exactly this order.
  */
-export async function deleteTakeoffPlan(jobId: string, planId: string): Promise<ActionResult> {
+export async function deleteTakeoffPlan(jobId: string, planId: string, options: { keepHandPriced?: boolean } = {}): Promise<ActionResultWith<PlanDeleteImpact>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
 
-  // Read BEFORE the delete: `deleteMany` returns a count, not the row, so after
-  // it runs there is nothing left to learn the URL from.
+  // Read BEFORE the delete: after it runs there is nothing left to learn the URL from.
   const plan = await prisma.takeoffPlan.findFirst({
     where: planScope(planId, jobId, company.id),
     select: { fileUrl: true },
   });
+  if (plan === null) return actionFail("That plan is no longer on this job. Reload the page.");
 
-  const deleted = await prisma.takeoffPlan.deleteMany({ where: planScope(planId, jobId, company.id) });
-  if (deleted.count === 0) return actionFail("That plan is no longer on this job. Reload the page.");
+  // ── THE ESTIMATE MOVES WITH THE PLAN, IN THE SAME TRANSACTION (Diego, 2026-11-25; `lib/takeoff/planDelete.ts`) ──
+  const impact = await prisma.$transaction(
+    (tx) => applyPlanDelete(tx, { companyId: company.id, jobId, planId }, { keepHandPriced: options.keepHandPriced !== false })
+  );
+  if (impact === null) return actionFail("That plan is no longer on this job. Reload the page.");
 
   // Only once the row is confirmed gone. Failures are swallowed by
   // `deleteDocument`, so a store that will not delete cannot turn a completed
   // delete into an error for somebody who just removed a plan.
   // A sample set is the deployment's own file, shared by every company: never the store's to delete.
-  if (plan?.fileUrl && !isSamplePlanUrl(plan.fileUrl)) await deleteDocument(plan.fileUrl);
+  if (plan.fileUrl && !isSamplePlanUrl(plan.fileUrl)) await deleteDocument(plan.fileUrl);
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
-  return actionOk;
+  revalidatePath(`/takeoff/${jobId}`);
+  revalidatePath(`/jobs/${jobId}`, "layout");
+  return { ok: true, value: impact };
+}
+
+/**
+ * What deleting this plan would do to the estimate, for the confirmation, before anything is deleted (R8).
+ * It runs the delete itself, inside a transaction, reads what changed and ROLLS IT BACK: one source of truth for the
+ * numbers, never an estimate of them. Shown with hand-priced lines kept, the dialog's default.
+ */
+export async function previewDeleteTakeoffPlan(jobId: string, planId: string): Promise<ActionResultWith<PlanDeleteImpact>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+  const rollback = new Error("preview: rolled back");
+  let impact: PlanDeleteImpact | null = null;
+  try {
+    await prisma.$transaction(
+      async (tx) => {
+        impact = await applyPlanDelete(tx, { companyId: company.id, jobId, planId }, { keepHandPriced: true });
+        throw rollback;
+      },
+    );
+  } catch (error) {
+    if (error !== rollback) throw error;
+  }
+  if (impact === null) return actionFail("That plan is no longer on this job. Reload the page.");
+  return { ok: true, value: impact };
 }
 
 /**
