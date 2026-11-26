@@ -514,6 +514,8 @@ model User {
   agentSettingsChanged      CompanyAgentSettings[]     @relation("CompanyAgentSettingsUpdatedBy")
 
   @@index([companyId])
+  /// Plans this user deleted, while still undoable (`TakeoffPlan.deletedBy`).
+  deletedTakeoffPlans TakeoffPlan[] @relation("TakeoffPlanDeletedBy")
 }
 
 /// A pending invitation for someone to join a Company. Deleted once

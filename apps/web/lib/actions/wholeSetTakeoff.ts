@@ -40,7 +40,7 @@ export async function saveWholeSetTakeoffSwitch(formData: FormData): Promise<Act
 export async function wholeSetTakeoffSummary(planId: string): Promise<ActionResultWith<WallsSummaryRow[]>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY) as ActionResultWith<WallsSummaryRow[]>;
-  const plan = await prisma.takeoffPlan.findFirst({ where: { id: planId, companyId: context.company.id }, select: { id: true } });
+  const plan = await prisma.takeoffPlan.findFirst({ where: { id: planId, companyId: context.company.id, deletedAt: null }, select: { id: true } });
   if (!plan) return { ok: false, error: "That plan set could not be found." };
   return { ok: true, value: await wholeSetSummary(plan.id, context.company.id, MAX_ATTEMPTS) };
 }
@@ -58,7 +58,7 @@ export async function chooseUploadProject(planId: string, pageNumber: number): P
   const question = await uploadProjectQuestion(plan.id, context.company.id);
   const group = question?.groups.find((g) => g.pages.includes(pageNumber));
   if (!group) return actionFail("That project is no longer one of this upload's choices. Reload the page and choose again.");
-  await prisma.takeoffPlan.update({ where: { id: plan.id }, data: { projectPages: group.pages } });
+  await prisma.takeoffPlan.update({ where: { id: plan.id, deletedAt: null }, data: { projectPages: group.pages } });
   revalidatePath(`/jobs/${plan.jobId}/takeoff`);
   return actionOk;
 }
@@ -79,7 +79,7 @@ export async function choosePlanOfWork(planId: string, pageNumbers: number[]): P
   if (!question || !pages.every((page) => question.candidates.includes(page))) {
     return actionFail("Those sheets are no longer this upload's choices. Reload the page and choose again.");
   }
-  await prisma.takeoffPlan.update({ where: { id: plan.id }, data: { planOfWorkPages: pages.sort((a, b) => a - b) } });
+  await prisma.takeoffPlan.update({ where: { id: plan.id, deletedAt: null }, data: { planOfWorkPages: pages.sort((a, b) => a - b) } });
   revalidatePath(`/jobs/${plan.jobId}/takeoff`);
   return actionOk;
 }

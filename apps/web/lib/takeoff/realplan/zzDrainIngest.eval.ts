@@ -56,7 +56,7 @@ describe.skipIf(!RUN)("draining the ingest queue", () => {
             planId: job.planId,
             companyId: job.companyId,
             ingestJobId: job.id,
-            jobId: job.plan.jobId,
+            jobId: job.plan.jobId ?? "",
             startedByUserId: job.startedByUserId,
           }),
         }),

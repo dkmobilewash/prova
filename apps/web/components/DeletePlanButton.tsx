@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Spinner } from "@/components/Spinner";
-import { deleteTakeoffPlan, previewDeleteTakeoffPlan } from "@/lib/actions";
+import { deleteTakeoffPlan, previewDeleteTakeoffPlan, undoTakeoffPlanDelete } from "@/lib/actions";
 import type { PlanDeleteImpact } from "@/lib/takeoff/planDelete";
 import { planDeletedToast, planDeleteWords } from "@/lib/takeoff/planDeleteWords";
 
 const TOAST_EVENT = "prova:plan-deleted";
+/** What the toast needs: its words, and, inside the window, the plan to bring back (plan-delete-undo.md U7). */
+type DeletedToast = { text: string; jobId: string; planId: string; undoUntil: string };
 
 /**
  * ── DELETE A PLAN, SEEING FIRST WHAT IT DOES TO THE ESTIMATE (Diego, 2026-11-25) ──
@@ -39,7 +41,7 @@ export function DeletePlanButton({ jobId, planId }: { jobId: string; planId: str
       const done = await deleteTakeoffPlan(jobId, planId, { keepHandPriced: keep });
       if (!done.ok) return setError(done.error);
       dialog.current?.close();
-      window.dispatchEvent(new CustomEvent(TOAST_EVENT, { detail: planDeletedToast(done.value) }));
+      window.dispatchEvent(new CustomEvent<DeletedToast>(TOAST_EVENT, { detail: { text: planDeletedToast(done.value), jobId, planId, undoUntil: done.value.undoUntil } }));
     });
 
   return (
@@ -118,20 +120,55 @@ export function DeletePlanButton({ jobId, planId }: { jobId: string; planId: str
 
 /** The plan-delete toast, mounted on the page so it outlives the plan block the delete removes. */
 export function PlanDeletedToast() {
+  // `undo` is the plan the toast can still bring back; null once it is back, or the window has closed.
   const [message, setMessage] = useState<string | null>(null);
+  const [undo, setUndo] = useState<DeletedToast | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
   useEffect(() => {
-    const show = (event: Event) => setMessage((event as CustomEvent<string>).detail);
+    const show = (event: Event) => {
+      const detail = (event as CustomEvent<DeletedToast>).detail;
+      setError(null);
+      setMessage(detail.text);
+      setUndo(detail);
+    };
     window.addEventListener(TOAST_EVENT, show);
     return () => window.removeEventListener(TOAST_EVENT, show);
   }, []);
   useEffect(() => {
     if (message === null) return;
-    const timer = window.setTimeout(() => setMessage(null), 6000);
+    // With Undo on offer the toast stays for the window (it is the only way back); otherwise six seconds.
+    const left = undo === null ? 6000 : Math.max(0, Date.parse(undo.undoUntil) - Date.now());
+    const timer = window.setTimeout(() => {
+      setMessage(null);
+      setUndo(null);
+    }, left);
     return () => window.clearTimeout(timer);
-  }, [message]);
+  }, [message, undo]);
+  const bringBack = () =>
+    undo !== null &&
+    start(async () => {
+      const done = await undoTakeoffPlanDelete(undo.jobId, undo.planId);
+      if (!done.ok) return setError(done.error);
+      setUndo(null);
+      setMessage(`${done.value.label} is back.`);
+    });
   return message === null ? null : (
-    <div role="status" data-takeoff="plan-deleted-toast" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border border-line-card bg-surface px-3 py-1.5 text-xs text-ink-body shadow-lg">
-      {message}
+    <div role="status" data-takeoff="plan-deleted-toast" className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-wrap items-center gap-2 rounded-md border border-line-card bg-surface px-3 py-1.5 text-xs text-ink-body shadow-lg">
+      <span>{message}</span>
+      {undo !== null && (
+        <button type="button" onClick={bringBack} disabled={pending} data-takeoff="plan-delete-undo" className="min-h-[32px] rounded-md border border-line-card px-2 font-medium text-ink hover:border-link disabled:opacity-60">
+          {pending ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner />
+              Bringing it back…
+            </span>
+          ) : (
+            "Undo"
+          )}
+        </button>
+      )}
+      {error !== null && <span className="text-tag-rose-ink">{error}</span>}
     </div>
   );
 }

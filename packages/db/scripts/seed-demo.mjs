@@ -2635,6 +2635,10 @@ async function undo(companyId) {
     // blobs these rows point at, which this does not remove.
     await del("jobMedia", () => prisma.jobMedia.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("takeoffPlan", () => prisma.takeoffPlan.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // A plan deleted and still undoable has left its job (jobId NULL; plan-delete-undo.md): found by the job it came from.
+    await del("takeoffPlan (deleted, undoable)", () =>
+      prisma.$executeRawUnsafe(`DELETE FROM "TakeoffPlan" WHERE "jobId" IS NULL AND "deleteUndo"->>'jobId' = ANY($1::text[])`, jobIds).then((count) => ({ count })),
+    );
     await del("takeoffItem", () => prisma.takeoffItem.deleteMany({ where: { jobId: { in: jobIds } } }));
     // SCOPED TO THE DEMO JOBS, unlike the same delete in
     // clean-scratch-data.mjs, which scopes to the company. The difference is

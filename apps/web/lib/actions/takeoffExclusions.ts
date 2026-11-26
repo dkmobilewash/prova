@@ -112,7 +112,7 @@ export async function clearSheetExclusions(jobId: string, pageId: string, kind: 
 export async function markWholeSheetNewWork(planId: string, pageNumber: number): Promise<Result> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
-  const page = await prisma.takeoffPlanPage.findFirst({ where: { planId, pageNumber, plan: { companyId: context.company.id } }, select: { id: true, plan: { select: { jobId: true } } } });
-  if (page === null) return actionFail("That sheet is no longer on this job. Reload the page.");
+  const page = await prisma.takeoffPlanPage.findFirst({ where: { planId, pageNumber, plan: { companyId: context.company.id, deletedAt: null } }, select: { id: true, plan: { select: { jobId: true } } } });
+  if (page === null || page.plan.jobId === null) return actionFail("That sheet is no longer on this job. Reload the page.");
   return addSheetExclusion(page.plan.jobId, page.id, "WORK_AREA", [...WHOLE_SHEET.xs], [...WHOLE_SHEET.ys]);
 }

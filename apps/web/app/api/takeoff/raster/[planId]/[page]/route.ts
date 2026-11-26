@@ -25,7 +25,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pla
   if (!can(context, "VIEW_JOB_COSTS")) return NextResponse.json({ error: "Not available to this job function." }, { status: 403 });
   const pageNumber = Number(page);
   if (!Number.isInteger(pageNumber) || pageNumber < 1) return NextResponse.json({ error: "Not a page." }, { status: 400 });
-  const plan = await prisma.takeoffPlan.findFirst({ where: { id: planId, companyId: context.company.id }, select: { id: true } });
+  const plan = await prisma.takeoffPlan.findFirst({ where: { id: planId, companyId: context.company.id, deletedAt: null }, select: { id: true } });
   if (!plan) return NextResponse.json({ error: "Plan not found." }, { status: 404 });
   const raster = await storedRasterFor(plan.id, pageNumber);
   if (raster === null) return NextResponse.json({ error: "No raster read for this page." }, { status: 404 });

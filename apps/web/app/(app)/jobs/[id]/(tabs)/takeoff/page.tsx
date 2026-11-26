@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { TakeoffExportButtons } from "@/components/TakeoffExportButtons";
 import { prisma } from "@prova/db";
+import { purgeDeletedPlans } from "@/lib/takeoff/planPurge";
 import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
 
 import { can } from "@/lib/permissions";
@@ -160,12 +161,15 @@ export default async function JobTakeoffPage({
   // The filter used to be in the query, and the wall finder inherited it. That
   // is why reading School-01's partition schedule produced ten wall types the
   // finder could not see — see `MatchableWallType` for the measurement.
+  // A deleted plan past its 10-minute Undo goes for good here, lazily (plan-delete-undo.md U6; crons run daily).
+  await purgeDeletedPlans({ companyId: company.id }).catch((error) => console.error("[takeoff] purging deleted plans failed", error));
   const loaded = await loadTakeoffWorkspace(company, job);
   const isEstimateStage = job.status === "ESTIMATE";
 
   if (loaded === null) {
     return (
       <section className="flex flex-col gap-4">
+        <PlanDeletedToast />
         <Header jobId={job.id} />
         <TakeoffCurrencyBanner jobId={job.id} currency={currency} />
         <div className="rounded-lg border border-line-card bg-surface-card p-4">
@@ -239,6 +243,10 @@ export default async function JobTakeoffPage({
 
   return (
     <section className="flex flex-col gap-4">
+      {/* FIRST, in this return AND the no-plan one above: the one position both share, so React keeps the toast (and its
+          Undo) when deleting the job's last plan turns this page into "No drawing on this job yet". #1268's production
+          proof found it inside this branch only, where that delete unmounted it. planDeletedToastMount.test.tsx. */}
+      <PlanDeletedToast />
       <Header jobId={job.id} hasPlan />
       {/* ABOVE the measurements, for the reason the levelling caution sits
           above the quotes: it decides whether the numbers below mean
@@ -361,7 +369,6 @@ export default async function JobTakeoffPage({
       </div>
 
       {!isEstimateStage && <NotEstimating />}
-      <PlanDeletedToast />
 
       {/* READING THE SHEETS, above the viewer because it is about the whole set
           rather than one sheet.

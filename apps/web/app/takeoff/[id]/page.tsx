@@ -6,6 +6,7 @@ import { requireCapability } from "@/lib/authz";
 import { requireJobGivenContext } from "@/lib/jobs/job-access";
 import { NoAccess } from "@/components/NoAccess";
 import { TakeoffWorkspace } from "@/components/TakeoffWorkspace";
+import { purgeDeletedPlans } from "@/lib/takeoff/planPurge";
 import { loadTakeoffWorkspace, takeoffSavedSignature, workspaceForClient } from "@/lib/takeoff/workspaceLoad";
 import { loadReviewQueue } from "@/lib/takeoff/reviewQueueQuery";
 import { loadSpecSaysByCode } from "@/lib/specs/specBookQuery";
@@ -52,6 +53,8 @@ export default async function TakeoffWorkspacePage({
   if (!allowed) return <NoAccess capability="VIEW_JOB_COSTS" />;
   const { company, job } = await requireJobGivenContext(id, context);
 
+  // A deleted plan past its 10-minute Undo goes for good here, lazily (plan-delete-undo.md U6; crons run daily).
+  await purgeDeletedPlans({ companyId: company.id }).catch((error) => console.error("[takeoff] purging deleted plans failed", error));
   const data = await loadTakeoffWorkspace(company, job);
   const savedAt = await takeoffSavedSignature(company.id, job.id);
   const queue = await loadReviewQueue(company.id, job.id);

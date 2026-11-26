@@ -21,12 +21,12 @@ import type { SheetRow } from "./sheetIndex";
 export async function sheetIndexFor(planId: string, companyId: string): Promise<SheetRow[]> {
   const [texts, proposals] = await Promise.all([
     prisma.planSheetText.findMany({
-      where: { planId, plan: { companyId } },
+      where: { planId, plan: { companyId, deletedAt: null } },
       select: { pageNumber: true, hasTextLayer: true, pathOperators: true, imageOperators: true },
       orderBy: { pageNumber: "asc" },
     }),
     prisma.planSheetProposal.findMany({
-      where: { planId, plan: { companyId } },
+      where: { planId, plan: { companyId, deletedAt: null } },
       select: {
         id: true,
         pageNumber: true,

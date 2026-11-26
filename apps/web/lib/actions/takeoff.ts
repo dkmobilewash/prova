@@ -52,7 +52,7 @@ import {
 } from "./shared";
 import { optionalDateFromString } from "@/lib/bid-pursuits";
 import { deleteDocument } from "@/lib/blob";
-import { applyPlanDelete, type PlanDeleteImpact } from "@/lib/takeoff/planDelete";
+import { applyPlanDelete, UNDO_WINDOW_MS, type PlanDeleteImpact, type PlanDeleteRecord } from "@/lib/takeoff/planDelete";
 import { onePackageOnly, describeForPackage } from "@/lib/takeoff/packages";
 
 /**
@@ -574,24 +574,13 @@ export async function deleteTakeoffPlan(jobId: string, planId: string, options: 
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
 
-  // Read BEFORE the delete: after it runs there is nothing left to learn the URL from.
-  const plan = await prisma.takeoffPlan.findFirst({
-    where: planScope(planId, jobId, company.id),
-    select: { fileUrl: true },
-  });
-  if (plan === null) return actionFail("That plan is no longer on this job. Reload the page.");
-
   // ── THE ESTIMATE MOVES WITH THE PLAN, IN THE SAME TRANSACTION (Diego, 2026-11-25; `lib/takeoff/planDelete.ts`) ──
+  // A SOFT delete since 2026-11-26 (plan-delete-undo.md): the plan, its runs and its file stay for the 10-minute Undo
+  // window; `purgeDeletedPlans` deletes the row and then the file (the old row-first, file-last order) after it.
   const impact = await prisma.$transaction(
-    (tx) => applyPlanDelete(tx, { companyId: company.id, jobId, planId }, { keepHandPriced: options.keepHandPriced !== false })
+    (tx) => applyPlanDelete(tx, { companyId: company.id, jobId, planId, userId: context.id }, { keepHandPriced: options.keepHandPriced !== false })
   );
   if (impact === null) return actionFail("That plan is no longer on this job. Reload the page.");
-
-  // Only once the row is confirmed gone. Failures are swallowed by
-  // `deleteDocument`, so a store that will not delete cannot turn a completed
-  // delete into an error for somebody who just removed a plan.
-  // A sample set is the deployment's own file, shared by every company: never the store's to delete.
-  if (plan.fileUrl && !isSamplePlanUrl(plan.fileUrl)) await deleteDocument(plan.fileUrl);
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
   revalidatePath(`/takeoff/${jobId}`);
@@ -622,6 +611,67 @@ export async function previewDeleteTakeoffPlan(jobId: string, planId: string): P
   }
   if (impact === null) return actionFail("That plan is no longer on this job. Reload the page.");
   return { ok: true, value: impact };
+}
+
+/**
+ * ── UNDO A PLAN DELETE, INSIDE ITS 10 MINUTES (Diego, 2026-11-26; coordination/plan-delete-undo.md U4-U5) ──
+ *
+ * One transaction: the plan back on its job, each run back on its item, each estimate line the delete moved back to its
+ * links, then the touched items re-synced, so every quantity is the sync's own and the total returns to what it was.
+ * Refused, with nothing moved, after the window, or when a line the delete moved was edited since: putting it back
+ * would silently undo that edit too.
+ */
+export async function undoTakeoffPlanDelete(jobId: string, planId: string): Promise<ActionResultWith<{ label: string }>> {
+  const context = await requireCompanyContext();
+  if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
+  const { company } = context;
+  const plan = await prisma.takeoffPlan.findFirst({
+    where: { id: planId, companyId: company.id, jobId: null, deletedAt: { not: null } },
+    select: { deletedAt: true, deleteUndo: true, fileName: true, pages: { orderBy: { pageNumber: "asc" }, take: 1, select: { label: true } } },
+  });
+  const record = plan?.deleteUndo as PlanDeleteRecord | null | undefined;
+  if (!plan || !plan.deletedAt || !record || record.jobId !== jobId) return actionFail("That plan cannot be brought back. Reload the page.");
+  if (Date.now() - plan.deletedAt.getTime() > UNDO_WINDOW_MS) return actionFail("Too late to undo: a deleted plan can be brought back for 10 minutes.");
+
+  const outcome = await prisma.$transaction(async (tx) => {
+    const now = await tx.jobLineItem.findMany({ where: { id: { in: record.lines.map((l) => l.id) } }, select: { id: true, updatedAt: true } });
+    const stamp = new Map(now.map((l) => [l.id, l.updatedAt.toISOString()]));
+    if (record.lines.some((l) => stamp.get(l.id) !== l.updatedAt)) return "edited" as const;
+    const back = await tx.takeoffPlan.updateMany({ where: { id: planId, jobId: null, deletedAt: plan.deletedAt }, data: { jobId, deletedAt: null, deletedByUserId: null } });
+    // `deleteUndo` is left as it was: a live plan never reads it, and the next delete writes a fresh one. (Clearing a Json
+    // column takes `Prisma.DbNull`, a VALUE import of @prova/db this browser-reachable module must not make.)
+    if (back.count === 0) return "gone" as const;
+    // Every run back on its item in ONE statement, whatever the number of items (rule L: one updateMany per item was 55
+    // round trips at Milk Prep size, over the 41 a 5 s transaction allows at Neon's latency).
+    if (record.runs.length > 0) {
+      const runSlots = record.runs.map((_, i) => "(" + [1, 2].map((k) => "$" + String(i * 2 + k)).join(", ") + ")").join(", ");
+      await tx.$executeRawUnsafe(
+        `UPDATE "TakeoffMeasurement" AS m SET "itemId" = v.i FROM (VALUES ${runSlots}) AS v(id, i) WHERE m."id" = v.id`,
+        ...record.runs.flatMap((run) => [run.id, run.itemId]),
+      );
+    }
+    const byItem = new Set(record.runs.map((run) => run.itemId));
+    // Each moved line back live with its links, in ONE statement (the #1253 shape); the sync then sets its quantity.
+    if (record.lines.length > 0) {
+      const placeholders = record.lines.map((_, i) => "(" + [1, 2, 3].map((k) => "$" + String(i * 3 + k)).join(", ") + ")").join(", ");
+      await tx.$executeRawUnsafe(
+        'UPDATE "JobLineItem" AS l SET "isDeleted" = false, "takeoffItemId" = v.t, "wallTypeComponentId" = v.c, "updatedAt" = CURRENT_TIMESTAMP ' +
+          `FROM (VALUES ${placeholders}) AS v(id, t, c) WHERE l."id" = v.id`,
+        ...record.lines.flatMap((l) => [l.id, l.takeoffItemId, l.wallTypeComponentId]),
+      );
+    }
+    const job = await tx.job.findFirst({ where: { id: jobId, companyId: company.id }, select: { status: true } });
+    if (job?.status === "ESTIMATE") await syncReviewedItems(tx, company.id, jobId, [...byItem.keys()]);
+    return "done" as const;
+  });
+  if (outcome === "edited") return actionFail("A line this delete changed was edited since, so Undo would undo that edit too. Nothing was changed.");
+  if (outcome === "gone") return actionFail("That plan cannot be brought back. Reload the page.");
+
+  revalidatePath(`/jobs/${jobId}/takeoff`);
+  revalidatePath(`/jobs/${jobId}/estimate`);
+  revalidatePath(`/takeoff/${jobId}`);
+  revalidatePath(`/jobs/${jobId}`, "layout");
+  return { ok: true, value: { label: plan.pages[0]?.label?.trim() || plan.fileName || "the plan" } };
 }
 
 /**
@@ -1525,7 +1575,7 @@ export async function deleteTakeoffMeasurement(jobId: string, measurementId: str
     });
     if (run === null) return false;
     await tx.takeoffMeasurement.delete({ where: { id: measurementId } });
-    if (run.page.plan.job.status === "ESTIMATE") await syncReviewedItems(tx, company.id, jobId, [run.itemId]);
+    if (run.page.plan.job?.status === "ESTIMATE") await syncReviewedItems(tx, company.id, jobId, [run.itemId]);
     return true;
   });
   if (!gone) return actionFail("That measurement is already gone. Reload the page.");
