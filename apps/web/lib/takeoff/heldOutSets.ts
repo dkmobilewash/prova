@@ -289,6 +289,22 @@ export const HELD_OUT_SETS: readonly { readonly match: string; readonly why: str
     match: "25ENT-0051 (817 16th St) AA Stamped Plans",
     why: "multi-unit residential, 817 16th St, 33 pages — held out 2026-11-25 before a label was written (data-growth wave 3, SHA-order rule)",
   },
+  // ── Data-growth wave 4 (Diego's yes 2026-11-26): three of the eight new sets go
+  // HELD-OUT before a label is written — the family rule first (a set from the same
+  // source/program follows its sibling's side), then SHA-256 ascending for the rest.
+  // Hashes and the rule's statement precede the survey in coordination/log.md 03:19Z.
+  {
+    match: "25ENT-0219 (1415 16th St) AA Stamped Plans",
+    why: "apartment addition, 1415 16th St, 18 pages — held out 2026-11-26 before a label was written (wave 4, FAMILY RULE: same 25ENT program as held-out 25ENT-0051)",
+  },
+  {
+    match: "Blairsville-Dentistry-Construction-Plans",
+    why: "dental clinic, Blairsville GA, 77 pages — held out 2026-11-26 before a label was written (wave 4, SHA-order rule)",
+  },
+  {
+    match: "h59-n347-cb-drawings",
+    why: "classroom/office renovation + addition, Myrtle Beach SC, 33 pages — held out 2026-11-26 before a label was written (wave 4, SHA-order rule)",
+  },
 ];
 
 /** Punctuation and extension removed, so one spelling matches another. */
