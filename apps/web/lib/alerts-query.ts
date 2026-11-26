@@ -193,10 +193,11 @@ async function takeoffRunsStartedFromAsk(companyId: string, userId: string, toda
     where: { id: { in: ids }, companyId, finishedAt: { not: null } },
     select: { id: true, pageCount: true, finishedAt: true, plan: { select: { jobId: true, job: { select: { name: true } } } } },
   });
-  return runs.map((run) => ({
+  // A deleted plan (jobId null, plan-delete-undo.md U2) has no job to link to, so its run is not an alert.
+  return runs.flatMap((run) => (run.plan.jobId === null || run.plan.job === null ? [] : [{ run, jobId: run.plan.jobId, jobName: run.plan.job.name }])).map(({ run, jobId, jobName }) => ({
     runId: run.id,
-    jobId: run.plan.jobId,
-    jobName: run.plan.job.name,
+    jobId,
+    jobName,
     sheets: run.pageCount,
     finishedOn: isoDate(run.finishedAt) ?? todayIso,
   }));

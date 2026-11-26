@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { purgeDeletedPlans } from "@/lib/takeoff/planPurge";
 import { prisma } from "@prova/db";
 import { closeIfSettled, claimPorts, hasWaitingWork, ingestCounts, nextJobToDrain } from "@/lib/plan-ingest/claim";
 import { DEFAULT_RUN_BUDGET_MS, runIngest, type RunReport } from "@/lib/plan-ingest/runner";
@@ -109,6 +110,8 @@ export async function GET(request: Request) {
   // places between ticks, or a budget-truncated sequence visits a different one
   // each time and neither finishes.
   // Fair across sets, and never a run whose pages are all waiting on the provider (`nextJobToDrain`).
+  // The daily backstop for the lazy purge (plan-delete-undo.md U6): every company's deleted plans past their window.
+  await purgeDeletedPlans().catch((error) => console.error("[plan-ingest] purging deleted plans failed", error));
   const nextId = await nextJobToDrain();
   const job = nextId === null ? null : await prisma.planIngestJob.findUnique({
     where: { id: nextId },
@@ -133,6 +136,9 @@ export async function GET(request: Request) {
     // absence-is-not-a-pass rule, applied to an endpoint.
     return json({ ok: true, jobs: 0, note: "no unfinished ingest jobs" });
   }
+  // Deleted between the pick and here (plan-delete-undo.md U2): nothing to read on a plan with no job.
+  const planJobId = job.plan.jobId;
+  if (planJobId === null) return json({ ok: true, jobs: 0, note: "the plan was deleted" });
 
   // `startedAt` means a worker began, not that a row was written, so it is set
   // HERE on the first tick that picks the job up. Guarded, so a second worker
@@ -153,7 +159,7 @@ export async function GET(request: Request) {
           planId: job.planId,
           companyId: job.companyId,
           ingestJobId: job.id,
-          jobId: job.plan.jobId,
+          jobId: planJobId,
           startedByUserId: job.startedByUserId,
           // A sheet's full budget does not fit in this 60 s function; out of time is a retryable row.
           detectBudgetMs: SHORT_FUNCTION_DETECTION_BUDGET_MS,

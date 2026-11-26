@@ -310,6 +310,26 @@ describe("every caller of the takeoff→estimate line sync, at production latenc
     expect(done.result.ok && done.result.value.linesChanged.length).toBeGreaterThanOrEqual(TYPES);
   }, 300_000);
 
+  // ── PLAN-DELETE UNDO, RULE L (coordination/plan-delete-undo.md): the delete above is soft, so Undo and the purge ──
+  it(`Undo a delete of ${SHEET_RUNS} runs on the typed items, then delete again and purge it`, async () => {
+    const doomed = await prisma.takeoffPlan.create({ data: { companyId, jobId, fileUrl: "local:undone.pdf", fileName: "undone.pdf" } });
+    const at = await sheet(10, "A-210", doomed.id);
+    await prisma.takeoffMeasurement.createMany({
+      data: grid(SHEET_RUNS).map((r, i) => ({ pageId: at.pageId, calibrationId: at.calId, kind: "LINEAR" as const, source: "DETECTED" as const, xs: [r.x1, r.x2], ys: [r.y1, r.y2], itemId: itemIds[i % TYPES]! })),
+    });
+    await prisma.$transaction((tx) => syncTakeoffItemLines(tx, companyId, jobId));
+    expect((await deleteTakeoffPlan(jobId, doomed.id)).ok).toBe(true);
+    holdsTheBar(await measure(`undoTakeoffPlanDelete (${SHEET_RUNS} runs, every typed item moves back)`, () => takeoffActions.undoTakeoffPlanDelete(jobId, doomed.id)));
+    expect(await prisma.takeoffPlan.count({ where: { id: doomed.id, jobId } })).toBe(1);
+    expect((await deleteTakeoffPlan(jobId, doomed.id)).ok).toBe(true);
+    const { purgeDeletedPlans } = await import("@/lib/takeoff/planPurge");
+    const purged = await measure(`purgeDeletedPlans (2 plans of ${SHEET_RUNS} runs)`, () => purgeDeletedPlans({ companyId, now: new Date(Date.now() + 11 * 60_000) }));
+    holdsTheBar(purged);
+    // This plan and the one the delete case above left soft-deleted: both past the window, both purged.
+    expect(purged.result).toBe(2);
+    expect(await prisma.takeoffPlan.count({ where: { id: doomed.id } })).toBe(0);
+  }, 300_000);
+
   // ── ORDER (e), RULE L: the actions that now re-sync (coordination/silent-estimate-sync.md B1, C1-C2) ──
   it("Delete one run, move a group's runs to another item, edit a run's points, cut an opening", async () => {
     const runsOf = async (itemId: string) => (await prisma.takeoffMeasurement.findMany({ where: { itemId }, select: { id: true } })).map((m) => m.id);

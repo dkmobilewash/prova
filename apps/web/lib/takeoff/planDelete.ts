@@ -1,5 +1,5 @@
 import type { Prisma } from "@prova/db";
-import { deleteEmptyItems, syncReviewedItems } from "@/lib/estimating/takeoff-item-lines";
+import { syncReviewedItems } from "@/lib/estimating/takeoff-item-lines";
 import { feetPerPageWidth } from "@/lib/takeoff-plan";
 
 /**
@@ -27,6 +27,23 @@ export type PlanDeleteImpact = {
   totalAfter: number;
   /** A signing link out with the GC: a PENDING one shows them the live estimate (R7). */
   signingLink: { status: "PENDING" | "SIGNED"; sentOn: string } | null;
+  /** Until when Undo can bring it back (ISO); the purge hard-deletes it after (plan-delete-undo.md U4, U6). */
+  undoUntil: string;
+};
+
+/** How long a deleted plan can be brought back (plan-delete-undo.md). */
+export const UNDO_WINDOW_MS = 10 * 60_000;
+
+/**
+ * What a delete changed, kept on the plan row so Undo can put it back exactly (`TakeoffPlan.deleteUndo`):
+ * the job it left, the item each of its runs was on, each estimate line it changed (its links before, and its
+ * `updatedAt` after, so an edit made since can be noticed), and the items it emptied (the purge's to remove).
+ */
+export type PlanDeleteRecord = {
+  jobId: string;
+  runs: { id: string; itemId: string }[];
+  lines: { id: string; takeoffItemId: string | null; wallTypeComponentId: string | null; updatedAt: string }[];
+  emptied: string[];
 };
 
 const money = (lines: { quantity: { toString(): string }; unitPrice: { toString(): string } | null }[]) =>
@@ -35,7 +52,7 @@ const money = (lines: { quantity: { toString(): string }; unitPrice: { toString(
 /** The delete, inside the caller's transaction. Returns what it changed. */
 export async function applyPlanDelete(
   tx: Prisma.TransactionClient,
-  where: { companyId: string; jobId: string; planId: string },
+  where: { companyId: string; jobId: string; planId: string; userId?: string | null },
   options: { keepHandPriced: boolean },
 ): Promise<PlanDeleteImpact | null> {
   const { companyId, jobId, planId } = where;
@@ -44,11 +61,11 @@ export async function applyPlanDelete(
     select: { fileName: true, job: { select: { status: true } }, pages: { orderBy: { pageNumber: "asc" }, take: 1, select: { label: true } } },
   });
   if (plan === null) return null;
-  const estimateUpdates = plan.job.status === "ESTIMATE";
+  const estimateUpdates = plan.job?.status === "ESTIMATE";
 
   const runs = await tx.takeoffMeasurement.findMany({
     where: { page: { planId } },
-    select: { kind: true, xs: true, ys: true, itemId: true, calibration: { select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } } },
+    select: { id: true, kind: true, xs: true, ys: true, itemId: true, calibration: { select: { x1: true, y1: true, x2: true, y2: true, declaredDistanceFeet: true } } },
   });
   let wallFeet = 0;
   let counts = 0;
@@ -61,7 +78,7 @@ export async function applyPlanDelete(
   }
   const touched = [...new Set(runs.flatMap((r) => (r.itemId === null ? [] : [r.itemId])))];
 
-  const lineSelect = { id: true, description: true, quantity: true, unitPrice: true, budgetedUnitCost: true, sourceCatalogEntryId: true, takeoffItemId: true } as const;
+  const lineSelect = { id: true, description: true, quantity: true, unitPrice: true, budgetedUnitCost: true, sourceCatalogEntryId: true, takeoffItemId: true, wallTypeComponentId: true } as const;
   const before = await tx.jobLineItem.findMany({ where: { jobId, isDeleted: false }, select: lineSelect });
 
   // The items this delete empties: they had runs here and have none on any other plan (R3).
@@ -83,16 +100,37 @@ export async function applyPlanDelete(
     });
   }
 
-  await tx.takeoffPlan.delete({ where: { id: planId } });
+  // ── A SOFT DELETE, UNDOABLE FOR 10 MINUTES (Diego, 2026-11-26; coordination/plan-delete-undo.md U1) ──
+  // The plan leaves its job (every read scoped by job stops seeing it) and its runs leave their items (item quantities
+  // read runs off the items, not through the plan), each recorded so Undo can put it back. The pages, runs, file and the
+  // items it emptied stay until the purge (`planPurge.ts`).
+  const deletedAt = new Date();
+  await tx.takeoffMeasurement.updateMany({ where: { page: { planId } }, data: { itemId: null } });
 
   if (estimateUpdates && touched.length > 0) {
     // #1253's batched sync: a fixed number of statements however many lines move (R1, R2).
     await syncReviewedItems(tx, companyId, jobId, touched);
-    await deleteEmptyItems(tx, emptied, { jobId, companyId });
   }
 
-  const after = await tx.jobLineItem.findMany({ where: { jobId, isDeleted: false }, select: lineSelect });
+  // One read of the job's lines, live and retired, for both the figures and the Undo record (rule L: every query counts).
+  const now = await tx.jobLineItem.findMany({ where: { jobId, OR: [{ isDeleted: false }, { id: { in: before.map((l) => l.id) } }] }, select: { ...lineSelect, isDeleted: true, updatedAt: true } });
+  const after = now.filter((l) => !l.isDeleted);
   const live = new Map(after.map((l) => [l.id, l]));
+  // Every line the delete moved (retired, unlinked or re-quantified), with its links before and its stamp after.
+  const moved = before.filter((l) => {
+    const line = live.get(l.id);
+    return line === undefined || line.quantity.toString() !== l.quantity.toString() || line.takeoffItemId !== l.takeoffItemId || line.wallTypeComponentId !== l.wallTypeComponentId;
+  });
+  const stamps = new Map(now.map((l) => [l.id, l.updatedAt.toISOString()]));
+  const record: PlanDeleteRecord = {
+    jobId,
+    runs: runs.flatMap((r) => (r.itemId === null ? [] : [{ id: r.id, itemId: r.itemId }])),
+    lines: moved.map((l) => ({ id: l.id, takeoffItemId: l.takeoffItemId, wallTypeComponentId: l.wallTypeComponentId, updatedAt: stamps.get(l.id) ?? "" })),
+    emptied,
+  };
+  // The plan leaves its job, marked deleted, with its record, in one write at the end (the sync above already cannot see
+  // its runs: they are off their items).
+  await tx.takeoffPlan.update({ where: { id: planId }, data: { jobId: null, deletedAt, deletedByUserId: where.userId ?? null, deleteUndo: record } });
   const linesChanged = before.flatMap((l) => {
     const now = live.get(l.id);
     return now !== undefined && now.quantity.toString() !== l.quantity.toString() ? [{ description: l.description, from: l.quantity.toString(), to: now.quantity.toString() }] : [];
@@ -109,5 +147,6 @@ export async function applyPlanDelete(
     totalBefore: money(before),
     totalAfter: money(after),
     signingLink: link === null ? null : { status: link.status, sentOn: link.createdAt.toISOString().slice(0, 10) },
+    undoUntil: new Date(deletedAt.getTime() + UNDO_WINDOW_MS).toISOString(),
   };
 }

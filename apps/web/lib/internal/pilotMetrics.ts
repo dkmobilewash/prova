@@ -105,7 +105,7 @@ export async function loadPilotMetrics(now: Date = new Date()): Promise<PilotRow
       WHERE e.type IN ('FAILED', 'BOUNCED') AND e."occurredAt" >= ${since} GROUP BY om."companyId"`,
     prisma.user.groupBy({ by: ["companyId"], _max: { lastSeenAt: true } }),
     prisma.job.groupBy({ by: ["companyId"], where: { isSample: false }, _max: { createdAt: true } }),
-    prisma.takeoffPlan.groupBy({ by: ["companyId"], where: { job: { isSample: false } }, _max: { createdAt: true } }),
+    prisma.takeoffPlan.groupBy({ by: ["companyId"], where: { job: { isSample: false }, deletedAt: null }, _max: { createdAt: true } }),
   ]);
 
   const jobsBy = counts(jobs), plansBy = counts(plans), sheetsBy = counts(sheets), typedBy = counts(typed), autoBy = counts(auto);

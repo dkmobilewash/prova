@@ -247,6 +247,9 @@ export async function advancePlanIngest(ingestJobId: string): Promise<ActionResu
     },
   });
   if (!job) return { ok: false, error: "That plan reading could not be found." };
+  // A deleted plan (still undoable) is not read (plan-delete-undo.md U2).
+  const planJobId = job.plan.jobId;
+  if (planJobId === null) return { ok: false, error: "That plan was deleted." };
 
   if (!job.startedAt) {
     await prisma.planIngestJob.updateMany({
@@ -264,7 +267,7 @@ export async function advancePlanIngest(ingestJobId: string): Promise<ActionResu
           planId: job.planId,
           companyId: context.company.id,
           ingestJobId: job.id,
-          jobId: job.plan.jobId,
+          jobId: planJobId,
           startedByUserId: job.startedByUserId,
         }),
       }),

@@ -46,7 +46,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ plan
   // Tenancy is the `where`: a plan id from another company matches nothing,
   // and "not found" is the right answer to give for both cases anyway.
   const plan = await prisma.takeoffPlan.findFirst({
-    where: { id: planId, companyId: context.company.id },
+    where: { id: planId, companyId: context.company.id, deletedAt: null },
     select: { fileUrl: true, fileName: true },
   });
   if (!plan) {
