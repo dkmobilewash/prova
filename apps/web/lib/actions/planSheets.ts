@@ -100,7 +100,7 @@ export async function acceptPlanSheets(acceptances: SheetAcceptance[]): Promise<
         where: {
           id: { in: cleaned.map((one) => one.proposalId) },
           status: "PROPOSED",
-          plan: { companyId: context.company.id },
+          plan: { companyId: context.company.id, deletedAt: null },
         },
         select: { id: true },
       });
@@ -162,7 +162,7 @@ export async function rejectPlanSheet(proposalId: string): Promise<ActionResult>
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(NOT_YOURS);
 
   const rejected = await prisma.planSheetProposal.updateMany({
-    where: { id: proposalId, status: "PROPOSED", plan: { companyId: context.company.id } },
+    where: { id: proposalId, status: "PROPOSED", plan: { companyId: context.company.id, deletedAt: null } },
     data: { status: "REJECTED", acceptedByUserId: context.id, acceptedAt: new Date() },
   });
 
@@ -200,7 +200,7 @@ export async function checkDrawingIndex(planId: string): Promise<IndexCheck> {
   if (!can(context, "VIEW_JOB_COSTS")) return { ok: false, error: NOT_YOURS };
 
   const plan = await prisma.takeoffPlan.findFirst({
-    where: { id: planId, companyId: context.company.id },
+    where: { id: planId, companyId: context.company.id, deletedAt: null },
     select: { id: true },
   });
   if (!plan) return { ok: false, error: "That plan set is no longer on this job. Reload the page." };

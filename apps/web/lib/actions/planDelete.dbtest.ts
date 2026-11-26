@@ -101,7 +101,9 @@ describe("deleting a plan updates the estimate", () => {
     expect((await remove(s.jobId, s.planA)).ok).toBe(true);
     expect(await qty(s.untyped, false)).toEqual([]);
     expect(await qty(s.doors, false)).toEqual([]);
-    expect(await prisma.takeoffItem.count({ where: { id: { in: [s.untyped, s.doors] } } })).toBe(0);
+    // Since the Undo (2026-11-26, plan-delete-undo.md): the emptied items stay, empty, for the 10-minute window so Undo can
+    // re-link to them; the purge removes them (planDeleteUndo.dbtest.ts U6). Empty means no run on them at all.
+    expect(await prisma.takeoffMeasurement.count({ where: { itemId: { in: [s.untyped, s.doors] } } })).toBe(0);
   });
 
   it("R2: an item with runs on another plan keeps them, and its lines recompute (W1 50 ft -> 20 ft)", async () => {
@@ -157,7 +159,8 @@ describe("deleting a plan updates the estimate", () => {
     expect(shown.value.linesChanged.filter((l) => l.description.includes("runner track"))).toEqual([{ description: expect.stringContaining("W1"), from: "50", to: "20" }]);
     const done = await remove(s.jobId, s.planA);
     if (!done.ok || !done.value) throw new Error("the delete returned no figures");
-    expect(done.value).toEqual(shown.value);
+    // Everything but `undoUntil`: the preview's is the moment it ran, the delete's the moment it ran (plan-delete-undo.md).
+    expect({ ...done.value, undoUntil: "" }).toEqual({ ...shown.value, undoUntil: "" });
     // And the figures are true: the live total moved by exactly what was shown.
     const total = (await live(s.jobId)).reduce((n, l) => n + Number(l.quantity) * Number(l.unitPrice ?? 0), 0);
     expect(total).toBeCloseTo(shown.value.totalAfter, 2);
@@ -179,7 +182,8 @@ describe("R6: a job past estimate keeps its estimate", () => {
     if (!shown.ok) throw new Error(shown.error);
     expect(shown.value.estimateUpdates).toBe(false);
     expect((await remove(s.jobId, s.planA)).ok).toBe(true);
-    expect(await prisma.takeoffPlan.count({ where: { id: s.planA } })).toBe(0);
+    // Off the job, soft-deleted for the Undo window (plan-delete-undo.md U1); the purge removes the row.
+    expect(await prisma.takeoffPlan.count({ where: { id: s.planA, jobId: s.jobId } })).toBe(0);
     expect(JSON.stringify(await live(s.jobId))).toBe(before);
   });
 });

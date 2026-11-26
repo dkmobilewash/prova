@@ -29,6 +29,8 @@ export function planDeleteWords(impact: PlanDeleteImpact, keep: boolean) {
     body.push(...shown);
     if (impact.linesChanged.length > 3) body.push(`${impact.linesChanged.length - 3} more lines change the same way.`);
   }
+  // Diego, 2026-11-26 (plan-delete-undo.md U7): a delete is soft for 10 minutes, and the toast carries the Undo.
+  body.push("You can undo this for 10 minutes.");
 
   let warning: string | null = null;
   if (impact.estimateUpdates && impact.signingLink?.status === "PENDING" && drop !== 0) {

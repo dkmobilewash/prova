@@ -21,6 +21,7 @@ const impact: PlanDeleteImpact = {
   totalBefore: 20000,
   totalAfter: 5620,
   signingLink: { status: "PENDING", sentOn: "2026-11-20" },
+  undoUntil: new Date(Date.now() + 10 * 60_000).toISOString(),
 };
 const calls: { preview: number; remove: { keepHandPriced?: boolean }[] } = { preview: 0, remove: [] };
 vi.mock("@/lib/actions", () => ({
@@ -82,7 +83,8 @@ describe("the plan-delete confirmation", () => {
     await settle();
     expect(calls.remove).toEqual([{ keepHandPriced: false }]);
     // The toast is the DELETE's figures, raised on the page.
-    expect(host.querySelector('[role="status"]')?.textContent).toBe("A-201 deleted. Estimate updated: −$14,740.00.");
+    // Its words; the Undo beside them is planDeleteUndo.test.tsx's (Diego, 2026-11-26).
+    expect(host.querySelector('[data-takeoff="plan-deleted-toast"] > span')?.textContent).toBe("A-201 deleted. Estimate updated: −$14,740.00.");
   });
 
   it("Cancel deletes nothing", async () => {
@@ -101,6 +103,7 @@ describe("the words", () => {
     expect(words.body).toEqual([
       "This removes the drawing and the 1,240 ft of walls and 18 counted doors and windows traced on it.",
       "This job is past the estimate, so its estimate is the contract and does not change here. Change it with a change order.",
+      "You can undo this for 10 minutes.",
     ]);
     expect(words.primary).toBe("Delete plan");
     expect(planDeletedToast({ ...impact, estimateUpdates: false })).toBe("A-201 deleted.");
@@ -108,7 +111,7 @@ describe("the words", () => {
 
   it("a plan nothing on the estimate came from says so, and the toast says nothing changed", () => {
     const none = { ...impact, linesRetired: 0, linesChanged: [], handPriced: [], totalAfter: impact.totalBefore, signingLink: null };
-    expect(planDeleteWords(none, true).body).toEqual(["This removes 1,240 ft of walls and 18 counted doors and windows from this job."]);
+    expect(planDeleteWords(none, true).body).toEqual(["This removes 1,240 ft of walls and 18 counted doors and windows from this job.", "You can undo this for 10 minutes."]);
     expect(planDeletedToast(none)).toBe("A-201 deleted. The estimate did not change.");
   });
 });

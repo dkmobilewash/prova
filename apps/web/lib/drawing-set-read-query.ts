@@ -72,7 +72,7 @@ export type ReadCandidate = {
 
 export async function readCandidates(companyId: string): Promise<ReadCandidate[]> {
   const plans = await prisma.takeoffPlan.findMany({
-    where: { companyId },
+    where: { companyId, deletedAt: null },
     // Newest first: the set somebody just ingested for the prospect they are
     // looking at is the one they want, and it is the last one uploaded.
     orderBy: { createdAt: "desc" },
@@ -94,7 +94,7 @@ export async function readCandidates(companyId: string): Promise<ReadCandidate[]
     plans.map(async (plan) => ({
       planId: plan.id,
       fileName: plan.fileName,
-      jobName: plan.job.name,
+      jobName: plan.job?.name ?? "",
       // `createdAt` is when the file was uploaded — `TakeoffPlan.sheetIssuedOn`
       // is the date printed on the paper and says nothing about this.
       uploadedAt: plan.createdAt,
@@ -143,14 +143,14 @@ export async function deliveredReadFor(
       where: { id: leadId },
       select: { companyId: true, companyName: true, contactName: true },
     }),
-    prisma.takeoffPlan.findUnique({
-      where: { id: planId },
+    prisma.takeoffPlan.findFirst({
+      where: { id: planId, deletedAt: null },
       select: { companyId: true, fileName: true, job: { select: { name: true } } },
     }),
   ]);
 
   if (!lead || lead.companyId !== companyId) return null;
-  if (!plan || plan.companyId !== companyId) return null;
+  if (!plan || plan.companyId !== companyId || plan.job === null) return null;
 
   // Only now, with both ids proved ours. `sheetIndexFor` carries the company
   // on both of its own queries as well, which is belt and braces rather than

@@ -29,7 +29,7 @@ export async function readPlanBytes(planId: string, companyId: string): Promise<
     where: { id: planId, companyId },
     select: { fileUrl: true, jobId: true },
   });
-  if (!plan) return { ok: false, error: "That plan set is no longer on file, so nothing was read." };
+  if (!plan || plan.jobId === null) return { ok: false, error: "That plan set is no longer on file, so nothing was read." };
   return readJobFileBytes(plan.fileUrl, plan.jobId, planId);
 }
 

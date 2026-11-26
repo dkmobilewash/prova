@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { TakeoffExportButtons } from "@/components/TakeoffExportButtons";
 import { prisma } from "@prova/db";
+import { purgeDeletedPlans } from "@/lib/takeoff/planPurge";
 import { loadTakeoffWorkspace } from "@/lib/takeoff/workspaceLoad";
 
 import { can } from "@/lib/permissions";
@@ -160,6 +161,8 @@ export default async function JobTakeoffPage({
   // The filter used to be in the query, and the wall finder inherited it. That
   // is why reading School-01's partition schedule produced ten wall types the
   // finder could not see — see `MatchableWallType` for the measurement.
+  // A deleted plan past its 10-minute Undo goes for good here, lazily (plan-delete-undo.md U6; crons run daily).
+  await purgeDeletedPlans({ companyId: company.id }).catch((error) => console.error("[takeoff] purging deleted plans failed", error));
   const loaded = await loadTakeoffWorkspace(company, job);
   const isEstimateStage = job.status === "ESTIMATE";
 
