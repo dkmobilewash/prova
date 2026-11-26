@@ -33,6 +33,11 @@ describe("enlargedPlanReason", () => {
     expect(enlargedPlanReason("SW-Grand-Junction-CO", "A110")).toBeNull();
   });
 
+  it("fires for FS5 A-313 under the file's real spelling (Round-44 scope-reclass)", () => {
+    expect(enlargedPlanReason("2020-0614 FS5 Fire Station No. 5 Renovation - Addendum 4A - Plan Drawings.pdf", "A-313")).toContain("CONNECTOR");
+    expect(excludedSheetReason("2020-0614 FS5 Fire Station No. 5 Renovation - Addendum 4A - Plan Drawings.pdf", "A-313")).toBeNull();
+  });
+
   it("is disjoint from EXCLUDED_SHEETS — this list zeroes walls, that one drops the sheet", () => {
     for (const [set, sheet] of [
       ["Joplin-community-center", "A-111"],
