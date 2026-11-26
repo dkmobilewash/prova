@@ -17,6 +17,7 @@ import { loadWallModel } from "../wallModelFile";
 import { loadRenoModel, loadRunModel, priorForRuns, renoModelRemovals, runModelVerdicts } from "../wallRunModel";
 import { reviewOrder, runScores } from "../wallReview";
 import type { WallCandidate } from "../wallVectors";
+import { clipToWorkArea, type Polygon } from "../userExclusions";
 import { setFigures, setHeightRule, wallHeightChain, type SetFigures, type SetHeightRule, type WallHeightConvention } from "../heightsByCode";
 import { levelHeight, planLevels, type LevelMark } from "../levelHeights";
 import { setHeightFacts } from "../setHeightFacts";
@@ -195,7 +196,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     // #1198 wired: instrument counters for the ROOMSIDES line (one group per process).
     let rsRooms = 0, rsWalls = 0, rsMoved = 0;
     let kzSheet = 0, kzRoom = 0, kzUnresolved = 0;
-    const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number; zeroBoardSf: number; lf10BoardSf: number; needsAnswerLf: number; noBoardLf: number }>();
+    const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number; zeroBoardSf: number; lf10BoardSf: number; needsAnswerLf: number; noBoardLf: number; revLf: number; rev10Lf: number; revJunkLf: number; revMissedLf: number; revBoardSf: number; rev10BoardSf: number; junkBoardSf: number; gradedKeyLf: number; defaultedBoardSf: number }>();
     for (const dir of readdirSync(LABELS).sort()) {
       if (!existsSync(join(LABELS, dir)) || (heldOutReason(dir) !== null) !== HELD) continue;
       if (process.env.ZT_ONLY !== undefined && !dir.includes(process.env.ZT_ONLY)) continue;
@@ -362,6 +363,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         }
         let keyBoardSf = 0;
         let defaultedBoardSf = 0;
+        let gradedKeyLf = 0;
         // H4/H5 (Diego 2026-11-19): needs-answer walls (height unknowable from
         // the documents) and no-board walls (bare CMU) price NO board on the
         // key side (keyWallFeet returns feet 0), and the SAME share leaves the
@@ -381,6 +383,10 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           if (r.from === "default" || r.from === "zone-unresolved") {
             defaultedBoardSf += k.lengthFeet * NOMINAL_FEET * 2;
             if (t !== "" && t !== "0" && t !== "U") unmatchedSpellings[`${dir.slice(0, 18)}:${t}`] = (unmatchedSpellings[`${dir.slice(0, 18)}:${t}`] ?? 0) + k.lengthFeet;
+          } else if (r.from !== "needs-answer" && r.from !== "no-board") {
+            // Scoreboard v2 (prereg-scoreboard-v2.md): a GRADED key wall — priced
+            // from a matched heights-key entry, so a height grade means something.
+            gradedKeyLf += k.lengthFeet;
           }
         }
         const unpricedBoardSf = defaultedBoardSf;
@@ -392,15 +398,72 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const exclFraction = keyLf > 0 ? Math.min(1, (needsAnswerLf + noBoardLf) / keyLf) : 0;
         const zeroBoardSfAdj = zeroBoardSf * (1 - exclFraction);
         const lf10BoardSfAdj = lf10BoardSf * (1 - exclFraction);
+        // ── SCOREBOARD V2 (prereg-scoreboard-v2.md) ──
+        // Board the zero-touch posting carries on JUNK runs, at each run's own
+        // chain height — the share Diego's audit found mislabelled as "height gap".
+        let junkBoardSf = 0;
+        for (let at = 0; at < runs.length; at += 1) {
+          const r = runs[at]!;
+          if (!held.has(r) && junk[at]) junkBoardSf += r.lengthFeet * runFeet(r) * 2;
+        }
+        const junkBoardSfAdj = junkBoardSf * (1 - exclFraction);
+        // THE REVIEWED POSTURE: on a sheet the product flags as showing existing
+        // work, one WORK_AREA box per cluster of the key's walls (two at most),
+        // applied with the PRODUCT's own clipToWorkArea, then the shipped presses.
+        // Any other sheet: REVIEWED = zero-touch, unchanged.
+        let revLf = zeroLf, revJunkLf = junkLf, revBoardSf = zeroBoardSf, rev10Lf = lf10, rev10BoardSf = lf10BoardSf;
+        if (renovation && wallTest && key.length > 0) {
+          const xsAll = key.flatMap((k) => [k.x1, k.x2]), ysAll = key.flatMap((k) => [k.y1, k.y2]);
+          const spanX = Math.max(...xsAll) - Math.min(...xsAll), spanY = Math.max(...ysAll) - Math.min(...ysAll);
+          const mids = key.map((k) => (spanX >= spanY ? (k.x1 + k.x2) / 2 : (k.y1 + k.y2) / 2));
+          const order = mids.map((v, i) => [v, i] as const).sort((a, b) => a[0] - b[0]);
+          let cut = -1, best = 0.15; // the prereg's split gap, page-width units
+          for (let i = 1; i < order.length; i += 1) {
+            const gap = order[i]![0] - order[i - 1]![0];
+            if (gap > best) { best = gap; cut = i; }
+          }
+          const groups = cut < 0 ? [key] : [order.slice(0, cut).map(([, i]) => key[i]!), order.slice(cut).map(([, i]) => key[i]!)];
+          const M = 0.02; // the prereg's margin, page-width units
+          const boxes: Polygon[] = groups.map((g) => {
+            const gx = g.flatMap((k) => [k.x1, k.x2]), gy = g.flatMap((k) => [k.y1, k.y2]);
+            const x0 = Math.min(...gx) - M, x1 = Math.max(...gx) + M, y0 = Math.min(...gy) - M, y1 = Math.max(...gy) + M;
+            return { xs: [x0, x1, x1, x0], ys: [y0, y0, y1, y1] };
+          });
+          const clip = clipToWorkArea(runs as readonly WallCandidate[], boxes, fpu);
+          const atOf = new Map(runs.map((r, at) => [r as unknown as WallCandidate, at] as const));
+          const pieces = [
+            ...clip.inside.map((r) => ({ src: r, feet: (r as unknown as { lengthFeet: number }).lengthFeet })),
+            ...clip.split.map((sp) => ({ src: sp.from, feet: sp.piece.lengthFeet })),
+          ];
+          const srcRun = (p: (typeof pieces)[number]) => runs[atOf.get(p.src) ?? -1]!;
+          const isHeld = (p: (typeof pieces)[number]) => held.has(srcRun(p));
+          const isJunk = (p: (typeof pieces)[number]) => junk[atOf.get(p.src) ?? -1] === true;
+          revLf = pieces.reduce((n, p) => n + (isHeld(p) ? 0 : p.feet), 0);
+          revJunkLf = pieces.reduce((n, p) => n + (!isHeld(p) && isJunk(p) ? p.feet : 0), 0);
+          revBoardSf = pieces.reduce((n, p) => n + (isHeld(p) ? 0 : p.feet * runFeet(srcRun(p)) * 2), 0);
+          const revEntries = pieces.map((p, i) => ({ at: i, held: isHeld(p), score: scores[atOf.get(p.src) ?? -1] ?? null, lengthFeet: p.feet }));
+          rev10Lf = revLf; rev10BoardSf = revBoardSf;
+          let revAnswered = 0;
+          for (const i of reviewOrder(revEntries, "doubt")) {
+            if (revAnswered >= PRESSES) break;
+            revAnswered += 1;
+            const p = pieces[i]!;
+            if (!isHeld(p) && isJunk(p)) { rev10Lf -= p.feet; rev10BoardSf -= p.feet * runFeet(srcRun(p)) * 2; }
+            if (isHeld(p) && !isJunk(p)) { rev10Lf += p.feet; rev10BoardSf += p.feet * runFeet(srcRun(p)) * 2; }
+          }
+        }
+        const revMissedLf = Math.max(0, keyLf - (revLf - revJunkLf));
+        const revBoardSfAdj = revBoardSf * (1 - exclFraction);
+        const rev10BoardSfAdj = rev10BoardSf * (1 - exclFraction);
         const keyByType: Record<string, number> = {};
         for (const k of key) {
           const t = ((k as { wallType?: string }).wallType ?? "0").trim() || "0";
           keyByType[t] = Math.round(((keyByType[t] ?? 0) + k.lengthFeet) * 10) / 10;
         }
-        const s = bySet.get(dir) ?? { lf: 0, doors: 0, windows: 0, lf10: 0, keyLf: 0, keyDoors: 0, keyWindows: 0, keyByType: {}, sheets: 0, junkLf: 0, junkRenoLf: 0, missedLf: 0, keyBoardSf: 0, renovation: false, doorsOver: 0, unpricedBoardSf: 0, zeroBoardSf: 0, lf10BoardSf: 0, needsAnswerLf: 0, noBoardLf: 0 };
+        const s = bySet.get(dir) ?? { lf: 0, doors: 0, windows: 0, lf10: 0, keyLf: 0, keyDoors: 0, keyWindows: 0, keyByType: {}, sheets: 0, junkLf: 0, junkRenoLf: 0, missedLf: 0, keyBoardSf: 0, renovation: false, doorsOver: 0, unpricedBoardSf: 0, zeroBoardSf: 0, lf10BoardSf: 0, needsAnswerLf: 0, noBoardLf: 0, revLf: 0, rev10Lf: 0, revJunkLf: 0, revMissedLf: 0, revBoardSf: 0, rev10BoardSf: 0, junkBoardSf: 0, gradedKeyLf: 0, defaultedBoardSf: 0 };
         // Not a wall test: every wall/board term is zeroed, doors/windows stay.
         const w = wallTest ? 1 : 0;
-        s.lf += zeroLf * w; s.lf10 += lf10 * w; s.doors += Math.min(postedDoors, keyDoors); s.doorsOver += Math.max(0, postedDoors - keyDoors); s.keyLf += keyLf * w; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1; s.junkLf += junkLf * w; if (renovation) s.junkRenoLf += junkLf * w; s.missedLf += missedLf * w; s.keyBoardSf += keyBoardSf * w; s.unpricedBoardSf += unpricedBoardSf * w; s.zeroBoardSf += zeroBoardSfAdj * w; s.lf10BoardSf += lf10BoardSfAdj * w; s.needsAnswerLf += needsAnswerLf * w; s.noBoardLf += noBoardLf * w; s.renovation = s.renovation || (renovation && wallTest);
+        s.lf += zeroLf * w; s.lf10 += lf10 * w; s.doors += Math.min(postedDoors, keyDoors); s.doorsOver += Math.max(0, postedDoors - keyDoors); s.keyLf += keyLf * w; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1; s.junkLf += junkLf * w; if (renovation) s.junkRenoLf += junkLf * w; s.missedLf += missedLf * w; s.keyBoardSf += keyBoardSf * w; s.unpricedBoardSf += unpricedBoardSf * w; s.zeroBoardSf += zeroBoardSfAdj * w; s.lf10BoardSf += lf10BoardSfAdj * w; s.needsAnswerLf += needsAnswerLf * w; s.noBoardLf += noBoardLf * w; s.renovation = s.renovation || (renovation && wallTest); s.revLf += revLf * w; s.rev10Lf += rev10Lf * w; s.revJunkLf += revJunkLf * w; s.revMissedLf += revMissedLf * w; s.revBoardSf += revBoardSfAdj * w; s.rev10BoardSf += rev10BoardSfAdj * w; s.junkBoardSf += junkBoardSfAdj * w; s.gradedKeyLf += gradedKeyLf * w; s.defaultedBoardSf += defaultedBoardSf * w;
         if (wallTest) for (const [t, ft] of Object.entries(keyByType)) s.keyByType[t] = Math.round(((s.keyByType[t] ?? 0) + ft) * 10) / 10;
         bySet.set(dir, s);
         rows.push({ set: dir, sheet, paired, renovation, keyLf: Math.round(keyLf * w), zeroLf: Math.round(zeroLf * w), lf10: Math.round(lf10 * w), junkLf: Math.round(junkLf * w), missedLf: Math.round(missedLf * w), keyBoardSf: Math.round(keyBoardSf * w), unpricedBoardSf: Math.round(unpricedBoardSf * w), zeroBoardSf: Math.round(zeroBoardSfAdj * w), chainFeet, chainFrom: chain?.from ?? null, rooms: foundRooms.rooms.length, keyDoors, postedDoors, keyWindows });
@@ -417,6 +480,10 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     let zb = 0, kb = 0, tb = 0;
     let totalErr = 0;
     const cause = { junkNew: 0, junkReno: 0, missed: 0, board: 0, doors: 0, windows: 0, doorsOver: 0, doorsAtFrames: 0, doorsAtFull: 0, windowsInfo: 0, unpricedBoard: 0 };
+    // ── SCOREBOARD V2 accumulators (prereg-scoreboard-v2.md) ──
+    let zbR = 0, tbR = 0, totalErrR = 0;
+    let prPostedLf = 0, prJunkLf = 0, prKeyLf = 0, prMissedLf = 0, prRevLf = 0, prRevJunkLf = 0, prRevMissedLf = 0;
+    const causeV2 = { boardOnJunk: 0, heightGap: 0, defaultBoard: 0 };
     for (const [dir, s] of [...bySet.entries()].sort()) {
       const kBid = bid({ lf: s.keyLf, boardSf: s.keyBoardSf, doors: s.keyDoors, windows: s.keyWindows });
       const boardOverSf = Math.max(0, s.zeroBoardSf - s.keyBoardSf);
@@ -438,6 +505,27 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       const zBid = bid({ lf: s.lf, boardSf: s.zeroBoardSf, doors: s.doors });
       const tBid = bid({ lf: s.lf10, boardSf: s.lf10BoardSf, doors: s.doors });
       zb += zBid; kb += kBid; tb += tBid;
+      // ── SCOREBOARD V2: the REVIEWED posture's set figures and the cause split ──
+      const rBid = bid({ lf: s.revLf, boardSf: s.revBoardSf, doors: s.doors });
+      const r10Bid = bid({ lf: s.rev10Lf, boardSf: s.rev10BoardSf, doors: s.doors });
+      const revBoardOverSf = Math.max(0, s.revBoardSf - s.keyBoardSf);
+      const revBoardUnderSf = Math.max(0, s.keyBoardSf - s.revBoardSf);
+      const revOver = s.revJunkLf * PRICE.wallPerLf + s.doorsOver * PRICE.doorEach[DOOR_SCOPE] + revBoardOverSf * PRICE.boardPerSf;
+      const revUnder = s.revMissedLf * PRICE.wallPerLf + revBoardUnderSf * PRICE.boardPerSf + Math.max(0, s.keyDoors - s.doors) * PRICE.doorEach[DOOR_SCOPE] + s.keyWindows * WINDOW_PRICE;
+      zbR += rBid; tbR += r10Bid; totalErrR += revOver + revUnder;
+      prPostedLf += s.lf; prJunkLf += s.junkLf; prKeyLf += s.keyLf; prMissedLf += s.missedLf;
+      prRevLf += s.revLf; prRevJunkLf += s.revJunkLf; prRevMissedLf += s.revMissedLf;
+      causeV2.boardOnJunk += s.junkBoardSf * PRICE.boardPerSf;
+      const gradedKeyBoardSf = Math.max(0, s.keyBoardSf - s.defaultedBoardSf);
+      const gradedFrac = s.keyLf > 0 ? Math.min(1, s.gradedKeyLf / s.keyLf) : 1;
+      const postedGradedSf = Math.max(0, s.zeroBoardSf - s.junkBoardSf) * gradedFrac;
+      causeV2.heightGap += Math.abs(postedGradedSf - gradedKeyBoardSf) * PRICE.boardPerSf;
+      causeV2.defaultBoard += s.defaultedBoardSf * PRICE.boardPerSf;
+      const rTotErr = kBid === 0 ? "—" : `${(((revOver + revUnder) / kBid) * 100).toFixed(1)}%`;
+      const rPct = (x: number) => (kBid === 0 ? "—" : `${(((x - kBid) / kBid) * 100).toFixed(1)}%`);
+      console.log(
+        `ZTREV ${group} ${dir.slice(0, 26).padEnd(26)} REVIEWED LF ${Math.round(s.revLf)} (zero ${Math.round(s.lf)}) · TOTAL ERROR ${rTotErr} (over $${Math.round(revOver)} + under $${Math.round(revUnder)}) · net ${rPct(rBid)} · after ${PRESSES} presses ${rPct(r10Bid)}${s.renovation ? "" : " · [not flagged: REVIEWED = zero-touch]"}`,
+      );
       const pct = (x: number) => (kBid === 0 ? "—" : `${(((x - kBid) / kBid) * 100).toFixed(1)}%`);
       const totErr = kBid === 0 ? "—" : `${(((setOver + setUnder) / kBid) * 100).toFixed(1)}%`;
       console.log(
@@ -450,7 +538,15 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       console.log(`ZT MODE LOSO: per-set fold models from ${LOSO_DIR} · ${bySet.size} sets scored · ${losoSkipped.length} skipped (no fold model)${losoSkipped.length > 0 ? ": " + losoSkipped.map((d) => d.slice(0, 24)).join(", ") : ""}`);
       console.log(`ZT MODE LOSO: pooled figures below cover ONLY the ${bySet.size} fold-covered sets; the fixed held-out sets remain the final exam, run once per release`);
     }
-    // HEADLINE: TOTAL ERROR = (|over| + |under|) / key — cancelling must never look like accuracy (Diego).
+    // ── SCOREBOARD V2 HEADLINE (prereg-scoreboard-v2.md): REVIEWED leads; zero-touch is the second line ──
+    if (kb > 0) {
+      console.log(`ZTREV ${group} TOTAL bid off ${(((zbR - kb) / kb) * 100).toFixed(1)}% reviewed · ${(((tbR - kb) / kb) * 100).toFixed(1)}% after ${PRESSES} presses/sheet (key $${Math.round(kb)})`);
+      console.log(`ZTREV ${group} TOTAL ERROR ${((totalErrR / kb) * 100).toFixed(1)}% of key $${Math.round(kb)} — THE HEADLINE (scoreboard v2); the zero-touch line below is the second line`);
+      const prec = (p: number, j: number) => (p > 0 ? (((p - j) / p) * 100).toFixed(1) + "%" : "—");
+      const rec = (k: number, m: number) => (k > 0 ? (((k - m) / k) * 100).toFixed(1) + "%" : "—");
+      console.log(`ZTPR ${group} zero-touch: precision ${prec(prPostedLf, prJunkLf)} · recall ${rec(prKeyLf, prMissedLf)} (by LF) · reviewed: precision ${prec(prRevLf, prRevJunkLf)} · recall ${rec(prKeyLf, prRevMissedLf)}`);
+    }
+    // ZT TOTAL ERROR = (|over| + |under|) / key — cancelling must never look like accuracy (Diego).
     if (kb > 0) console.log(`ZT ${group} TOTAL ERROR ${((totalErr / kb) * 100).toFixed(1)}% of key $${Math.round(kb)} — the headline; net is secondary`);
     // OVER and UNDER separately, so junk cuts and recovered quantities cannot hide each other (Diego).
     const over = cause.junkNew + cause.junkReno + cause.doorsOver;
@@ -464,7 +560,11 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       ["junk walls posted (new build)", cause.junkNew],
       ["existing walls counted on renovations (junk on reno sheets)", cause.junkReno],
       ["missed walls", cause.missed],
-      ["board height gap (run chain height vs key heights)", cause.board],
+      // Scoreboard v2 (prereg-scoreboard-v2.md): the old single "board height gap"
+      // label is RETIRED — Diego's audit showed most of it was board on junk.
+      ["board on junk walls (posted junk at chain height)", causeV2.boardOnJunk],
+      ["height disagreement (heights-key-graded walls only)", causeV2.heightGap],
+      ["board at the 9 ft default (ungraded — not a height grade)", causeV2.defaultBoard],
       [`doors not posted (at the company scope ${DOOR_SCOPE})`, cause.doors],
       [`windows not posted (at the company scope ${DOOR_SCOPE})`, cause.windows],
       ["doors posted beyond the key", cause.doorsOver],
