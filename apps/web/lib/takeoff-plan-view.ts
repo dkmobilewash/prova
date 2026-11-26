@@ -98,7 +98,7 @@ export type PlanSheet = {
    */
   zoneNotices: ZoneNotice[];
   /** What the user excluded on this sheet — see `lib/takeoff/userExclusions.ts`. Absent reads as none. */
-  exclusions?: { id: string; kind: "EXCLUDE_LIKE" | "WORK_AREA" | "ROOM_SPLIT"; xs: number[]; ys: number[] }[];
+  exclusions?: { id: string; kind: "EXCLUDE_LIKE" | "WORK_AREA" | "ROOM_SPLIT" | "ERASE_AREA"; xs: number[]; ys: number[] }[];
 };
 
 /*
@@ -347,7 +347,7 @@ export function printedScalesFromProposals(
   return byPage;
 }
 
-export type ToolId = "pan" | "hand" | "calibrate" | "linear" | "area" | "rect" | "count" | "cutout" | "edit" | "symbol" | "split" | "exclude" | "workarea" | "close";
+export type ToolId = "pan" | "hand" | "calibrate" | "linear" | "area" | "rect" | "count" | "cutout" | "edit" | "symbol" | "split" | "exclude" | "workarea" | "close" | "erase";
 
 /**
  * The measuring vocabulary, and it is deliberately the same three primitives
@@ -400,6 +400,8 @@ export const TOOLS: { id: ToolId; label: string; hint: string }[] = [
   { id: "close", label: "Close room", hint: "After Find the rooms: drag a straight line across a room's open side, from wall end to wall end. The ends snap to the walls; the room closes and its area and perimeter update." },
   { id: "split", label: "Split area", hint: "After Find the rooms: drag a line across a room from wall to wall. Each part takes the tag inside it and its own finish." },
   { id: "workarea", label: "Work area", hint: "Click round the area of work and close the shape. Walls outside it are set aside; walls across its edge are cut at it." },
+  // W2 item 2 (coordination/erase-area-tool.md): whole walls only, never cut — the shared predicate is `eraseInBoxes`.
+  { id: "erase", label: "Erase walls in this area", hint: "After Find the walls: drag a box round walls that are not walls. Every found wall wholly inside it is counted for you before anything is erased; Erase sets them aside, with an undo." },
 ];
 
 /**
@@ -410,7 +412,7 @@ export const TOOLS: { id: ToolId; label: string; hint: string }[] = [
  * entry in `TOOLS` is in one place or the other, and `toolRail.test.ts` says
  * so. There is no separate "measure" tool: Line IS the measurement.
  */
-export const RAIL_TOOLS: readonly ToolId[] = ["pan", "hand", "area", "rect", "linear", "count", "edit", "calibrate"];
+export const RAIL_TOOLS: readonly ToolId[] = ["pan", "hand", "area", "rect", "linear", "count", "edit", "erase", "calibrate"];
 
 /**
  * A hint, in the full-screen workspace's words. The shared hints name the
@@ -432,6 +434,7 @@ export const TOOL_KEYS: Partial<Record<ToolId, string>> = {
   linear: "l",
   count: "c",
   edit: "e",
+  erase: "x",
   calibrate: "s",
 };
 
@@ -451,6 +454,7 @@ export const TOOL_ICONS: Record<ToolId, string> = {
   split: "M4 4h16v16H4zM12 4v16",
   workarea: "M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4",
   close: "M4 20V4h16v16M4 20h16M2 20h2M20 20h2",
+  erase: "M15 4l5 5-9 9H7l-3-3zM9 9l5 5M7 20h13",
 };
 
 /**

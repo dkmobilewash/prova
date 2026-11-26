@@ -15,7 +15,7 @@ import { WHOLE_SHEET } from "@/lib/takeoff/workAreaFirst";
  * Each change detects the sheet again after the response, so the stored
  * proposals and any unposted walls on the job follow it.
  */
-type Kind = "EXCLUDE_LIKE" | "WORK_AREA" | "ROOM_SPLIT";
+type Kind = "EXCLUDE_LIKE" | "WORK_AREA" | "ROOM_SPLIT" | "ERASE_AREA";
 type Result = ActionResultWith<{ ids: string[] }>;
 
 const JOB_COSTS_ONLY = "A job's costs and pricing aren't part of your job function. The account owner sets who sees what, on the Team page.";
@@ -65,8 +65,9 @@ export async function addSheetExclusion(jobId: string, pageId: string, kind: Kin
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const found = await pageFor(jobId, pageId, context);
   if (found.kind === "refused") return actionFail(found.error);
-  if (kind !== "EXCLUDE_LIKE" && kind !== "WORK_AREA" && kind !== "ROOM_SPLIT") return actionFail("That is not something a sheet can exclude.");
-  const enough = kind === "WORK_AREA" ? xs.length >= 3 : xs.length === 2;
+  if (kind !== "EXCLUDE_LIKE" && kind !== "WORK_AREA" && kind !== "ROOM_SPLIT" && kind !== "ERASE_AREA") return actionFail("That is not something a sheet can exclude.");
+  // An erase box is its four corners (erase-area-tool.md E3); a work area any closed shape; a click or a split two points.
+  const enough = kind === "WORK_AREA" ? xs.length >= 3 : kind === "ERASE_AREA" ? xs.length === 4 : xs.length === 2;
   if (!enough || xs.length !== ys.length || !finite(xs) || !finite(ys)) return actionFail("That shape did not come through. Draw it again.");
   const row = await prisma.takeoffSheetExclusion.create({ data: { pageId, kind, xs, ys, createdByUserId: found.userId }, select: { id: true } });
   // A split moves no wall.

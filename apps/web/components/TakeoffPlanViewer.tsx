@@ -90,7 +90,8 @@ import {
 import { classifyWallCandidates } from "@/lib/actions/takeoffClassify";
 import { addSheetExclusion, clearSheetExclusions, removeSheetExclusion } from "@/lib/actions/takeoffExclusions";
 import { asideExistingWalls, existingDoorsSentence, existingPrefixes, type ExistingDoor } from "@/lib/takeoff/existingDoors";
-import { insideWorkArea, openingsInWorkArea, runAt, splitLinesFrom, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
+import { eraseInBoxes, insideWorkArea, openingsInWorkArea, runAt, splitLinesFrom, userExclusionsFromRows } from "@/lib/takeoff/userExclusions";
+import { EraseAreaConfirm } from "@/components/EraseAreaConfirm";
 import { exclusionUndoEntry, type ExclusionRow } from "@/lib/takeoff/exclusionUndo";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { renovationMarks } from "@/lib/takeoff/renovationMarks";
@@ -990,6 +991,10 @@ export function TakeoffPlanViewer({
   /** "Close room": the line being dragged, its ends already snapped to wall ends. */
   const [closeLine, setCloseLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [symbolBox, setSymbolBox] = useState<SymbolBox | null>(null);
+  // "Erase walls in this area" (erase-area-tool.md E4): the box being dragged, then the box waiting for Erase or Cancel.
+  const [eraseBox, setEraseBox] = useState<SymbolBox | null>(null);
+  const [erasePending, setErasePending] = useState<{ xs: number[]; ys: number[]; n: number; feet: number } | null>(null);
+  const [eraseSaving, setEraseSaving] = useState(false);
   const [symbols, setSymbols] = useState<{ page: number; matches: SymbolMatch[]; dropped: Set<number>; ms: number; busy: boolean; error: string | null; label?: string | null; tag?: string | null; choices?: SymbolBox[] } | null>(null);
   /** The boxed symbol as a template, kept so "Find on all sheets" lays the same one over the rest of the set. */
   const symbolTemplateRef = useRef<{ made: SymbolTemplate; widthPt: number; fpu: number | null; number: string | null } | null>(null);
@@ -1409,6 +1414,8 @@ export function TakeoffPlanViewer({
   // On the sheet alone: saving refreshes the page, which hands down a new rows
   // array, and clearing on that wiped the sentence the save had just written.
   useEffect(() => setUserAside([]), [sheet?.id]);
+  // A waiting erase box belongs to this sheet and this tool: leaving either drops it unsaved.
+  useEffect(() => setErasePending(null), [sheet?.id, tool]);
   const findRef = useRef<() => Promise<void>>(async () => {});
   const findQueue = useRef<Promise<void>>(Promise.resolve());
   const quietFind = useRef(false);
@@ -2647,6 +2654,19 @@ export function TakeoffPlanViewer({
       if (!raw) return;
       event.preventDefault();
       setSymbolBox({ x1: raw.x, y1: raw.y, x2: raw.x, y2: raw.y });
+      return;
+    }
+    // ── "ERASE WALLS IN THIS AREA" DRAGS A BOX; NOTHING IS WRITTEN UNTIL ERASE ──
+    if (tool === "erase") {
+      const raw = pointAt(event);
+      if (!raw) return;
+      event.preventDefault();
+      if (runsRef.current.length === 0) {
+        setFindError(say("Find the walls on this sheet first, then drag a box round the ones to erase."));
+        return;
+      }
+      setErasePending(null);
+      setEraseBox({ x1: raw.x, y1: raw.y, x2: raw.x, y2: raw.y });
       return;
     }
     if (!drawing) return;
@@ -4486,7 +4506,7 @@ export function TakeoffPlanViewer({
           console.warn("[takeoff] plan comparison not kept", error),
         );
       }
-      setUserAside((offered?.setAside ?? []).filter((a) => a.kind === "excluded-like" || a.kind === "outside-work-area"));
+      setUserAside((offered?.setAside ?? []).filter((a) => a.kind === "excluded-like" || a.kind === "outside-work-area" || a.kind === "erased-by-you"));
       const walls = offered?.offeredRuns ?? found.walls;
       const regroup = found.regroup;
       setTemplateStrokes(found.templateDropped);
@@ -4978,6 +4998,7 @@ export function TakeoffPlanViewer({
   dragOnRef.current =
     rectDragRef.current !== null ||
     symbolBox !== null ||
+    eraseBox !== null ||
     keyBox !== null ||
     splitLine !== null ||
     draggingVertex !== null ||
@@ -5886,6 +5907,7 @@ export function TakeoffPlanViewer({
           outsideFeet={userAside.find((a) => a.kind === "outside-work-area")?.feet ?? null}
           splits={exclusionRows.filter((r) => r.kind === "ROOM_SPLIT").length}
           workAreas={exclusionRows.filter((r) => r.kind === "WORK_AREA").length}
+          erases={exclusionRows.filter((r) => r.kind === "ERASE_AREA").length}
           readOnly={readOnly}
           existingDoors={
             countedDoorsTick >= 0 && countedDoorPages.current.has(pageNumber)
@@ -6854,6 +6876,10 @@ export function TakeoffPlanViewer({
                   const raw = pointAt(event);
                   if (raw) setSymbolBox({ ...symbolBox, x2: raw.x, y2: raw.y });
                 }
+                if (eraseBox !== null) {
+                  const raw = pointAt(event);
+                  if (raw) setEraseBox({ ...eraseBox, x2: raw.x, y2: raw.y });
+                }
                 if (splitLine !== null) {
                   const raw = pointAt(event);
                   if (raw) setSplitLine({ ...splitLine, x2: raw.x, y2: raw.y });
@@ -6910,6 +6936,18 @@ export function TakeoffPlanViewer({
                   const box = symbolBox;
                   setSymbolBox(null);
                   if (Math.abs(box.x2 - box.x1) > 0.001 && Math.abs(box.y2 - box.y1) > 0.001) void searchSymbols(box);
+                  return;
+                }
+                if (eraseBox !== null) {
+                  const box = eraseBox;
+                  setEraseBox(null);
+                  if (Math.abs(box.x2 - box.x1) > 0.001 && Math.abs(box.y2 - box.y1) > 0.001) {
+                    const x0 = Math.min(box.x1, box.x2), x1 = Math.max(box.x1, box.x2), y0 = Math.min(box.y1, box.y2), y1 = Math.max(box.y1, box.y2);
+                    const xs = [x0, x1, x1, x0], ys = [y0, y0, y1, y1];
+                    // The same predicate the server applies, on the walls this sheet offers now.
+                    const taken = eraseInBoxes(runsRef.current, [{ xs, ys }]).erased;
+                    setErasePending({ xs, ys, n: taken.length, feet: taken.reduce((sum, w) => sum + w.lengthFeet, 0) });
+                  }
                   return;
                 }
                 if (keyBox !== null && answerKey !== undefined) {
@@ -7345,6 +7383,21 @@ export function TakeoffPlanViewer({
               {[...splitLinesFrom(exclusionRows), ...(splitLine === null ? [] : [splitLine])].map((line, i) => (
                 <line key={i} data-takeoff="split-line" x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke="#2563eb" strokeWidth={STROKE_PX} strokeDasharray="6 4" vectorEffect="non-scaling-stroke" />
               ))}
+              {(eraseBox !== null || erasePending !== null) && (
+                <rect
+                  data-takeoff="erase-box"
+                  x={eraseBox !== null ? Math.min(eraseBox.x1, eraseBox.x2) : erasePending!.xs[0]}
+                  y={eraseBox !== null ? Math.min(eraseBox.y1, eraseBox.y2) : erasePending!.ys[0]}
+                  width={eraseBox !== null ? Math.abs(eraseBox.x2 - eraseBox.x1) : erasePending!.xs[1]! - erasePending!.xs[0]!}
+                  height={eraseBox !== null ? Math.abs(eraseBox.y2 - eraseBox.y1) : erasePending!.ys[2]! - erasePending!.ys[0]!}
+                  fill="#dc2626"
+                  fillOpacity={0.08}
+                  stroke="#dc2626"
+                  strokeWidth={STROKE_PX}
+                  strokeDasharray="6 4"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
               {symbolBox !== null && (
                 <rect
                   data-takeoff="symbol-box"
@@ -8005,6 +8058,22 @@ export function TakeoffPlanViewer({
             />
           )}
 
+          {tool === "erase" && erasePending !== null && (
+            <EraseAreaConfirm
+              n={erasePending.n}
+              feet={erasePending.feet}
+              saving={eraseSaving}
+              onCancel={() => setErasePending(null)}
+              onErase={() => {
+                const box = erasePending;
+                setEraseSaving(true);
+                void addExclusion("ERASE_AREA", box.xs, box.ys).finally(() => {
+                  setEraseSaving(false);
+                  setErasePending(null);
+                });
+              }}
+            />
+          )}
           {tool === "workarea" && sheet && draft.xs.length >= 3 && (
             <button
               type="button"
