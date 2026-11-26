@@ -17,6 +17,9 @@ const HELD_OUT_FILES = [
   "REQUEST-FOR-QUALIFICATIONS-AND-PROPOSALS-FOOTHILL-HIGH-SCHOOL-BASEBALL-SOFTBALL-COMPLEX-DRAWINGS.pdf",
   "ADU_A_1200.pdf",
   "25ENT-0051 (817 16th St) AA Stamped Plans.pdf",
+  "25ENT-0219 (1415 16th St) AA Stamped Plans.pdf",
+  "Blairsville-Dentistry-Construction-Plans.pdf",
+  "h59-n347-cb-drawings.pdf",
 ];
 
 const TRAINING_FILES = [
@@ -161,7 +164,10 @@ describe("the sets that must never reach training", () => {
     // written.
     // 39 to 41 on 2026-11-25: data-growth wave 3's SHA-order split (ADU_A_1200,
     // 25ENT-0051 817 16th St), before a label was written.
-    expect(HELD_OUT_SETS).toHaveLength(41);
+    // 41 to 44 on 2026-11-26: data-growth wave 4 (25ENT-0219 by the family rule,
+    // Blairsville Dentistry and h59-n347-cb by SHA order), before a label was
+    // written.
+    expect(HELD_OUT_SETS).toHaveLength(44);
   });
 
   it("refuses the three that were declared held out in round 7 and only listed in round 9", () => {
@@ -222,8 +228,8 @@ describe("splitting labelled sets for a training run", () => {
     // wasted without anybody noticing.
     const got = splitForTraining(HELD_OUT_FILES.map((f) => rowsFor(f, 10)));
     expect(got.train).toHaveLength(0);
-    expect(got.refused).toHaveLength(9);
-    expect(got.refused.reduce((n, r) => n + r.rows, 0)).toBe(90);
+    expect(got.refused).toHaveLength(12);
+    expect(got.refused.reduce((n, r) => n + r.rows, 0)).toBe(120);
     for (const one of got.refused) expect(one.why.length).toBeGreaterThan(0);
   });
 
