@@ -7,7 +7,7 @@ import { openPlanPdf } from "../../plan-ingest/planPdf";
 import type { ScoredPairing } from "../demotedRuns";
 import { runsHeldOffEstimate } from "../estimateHold";
 import { codePlanTitle, enlargedPlanReason, excludedSheetReason, heldOutReason } from "../heldOutSets";
-import { keyFromLabels, scoreSheet, wallTestFromLabels, type ScoredRun } from "../heldOutScore";
+import { keyFromLabels, scoreSheet, uncoveredFeet, wallTestFromLabels, type ScoredRun } from "../heldOutScore";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { priorPlanFor } from "../priorPlan";
 import { autoPairs } from "../priorPlanLoad";
@@ -218,7 +218,9 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     // #1198 wired: instrument counters for the ROOMSIDES line (one group per process).
     let rsRooms = 0, rsWalls = 0, rsMoved = 0;
     let kzSheet = 0, kzRoom = 0, kzUnresolved = 0;
-    const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number; zeroBoardSf: number; lf10BoardSf: number; needsAnswerLf: number; noBoardLf: number; revLf: number; rev10Lf: number; revJunkLf: number; revMissedLf: number; revBoardSf: number; rev10BoardSf: number; junkBoardSf: number; gradedKeyLf: number; defaultedBoardSf: number }>();
+    const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number; zeroBoardSf: number; lf10BoardSf: number; needsAnswerLf: number; noBoardLf: number; revLf: number; rev10Lf: number; revJunkLf: number; revMissedLf: number; revBoardSf: number; rev10BoardSf: number; junkBoardSf: number; gradedKeyLf: number; defaultedBoardSf: number; a2Lf: number; a2JunkLf: number; a2MissedLf: number; a2JunkBoardSf: number; a2RealGradedSf: number; a2DefaultPostedSf: number; keyGradedBoardSf: number; keyDefaultBoardSf: number }>();
+    // Scoreboard v3 (prereg-scoreboard-v3.md): one row per scored sheet for ACTIONS TO EXACT.
+    const v3Sheets: { group: string; set: string; sheet: string; actions: number; B: number; J: number; R: number; M: number; H: number }[] = [];
     for (const dir of readdirSync(LABELS).sort()) {
       if (!existsSync(join(LABELS, dir)) || (heldOutReason(dir) !== null) !== HELD) continue;
       if (process.env.ZT_ONLY !== undefined && !dir.includes(process.env.ZT_ONLY)) continue;
@@ -393,9 +395,16 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         // the product for pricing it either way.
         let needsAnswerLf = 0;
         let noBoardLf = 0;
+        // Scoreboard v3 (prereg-scoreboard-v3.md): each key wall's KEY-KNOWN height
+        // (null where the key does not know it) and whether it sat at the default.
+        const keyKnownFeet: (number | null)[] = [];
+        const keyAtDefault: boolean[] = [];
         for (const k of key) {
           const t = (((k as { wallType?: string }).wallType ?? "").trim()).toUpperCase();
           const r = keyWallFeet({ code: t, types: keyTypes, sheet, sideRoomNumbers: keyWallRooms(k), zoneKey, defaultFeet: NOMINAL_FEET });
+          const ungraded = r.from === "default" || r.from === "zone-unresolved" || r.from === "needs-answer" || r.from === "no-board";
+          keyKnownFeet.push(ungraded ? null : r.feet);
+          keyAtDefault.push(r.from === "default" || r.from === "zone-unresolved");
           keyBoardSf += k.lengthFeet * r.feet * 2;
           if (r.from === "sheet-zone") kzSheet += 1;
           if (r.from === "room-zone") kzRoom += 1;
@@ -477,6 +486,123 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const revMissedLf = Math.max(0, keyLf - (revLf - revJunkLf));
         const revBoardSfAdj = revBoardSf * (1 - exclFraction);
         const rev10BoardSfAdj = rev10BoardSf * (1 - exclFraction);
+        // ── SCOREBOARD V3 (prereg-scoreboard-v3.md): ACTIONS TO EXACT + REVIEWED-2MIN ──
+        // Junk / covered use the eval's own >=50%-uncovered rule through
+        // heldOutScore's uncoveredFeet, so v3 cannot disagree with v2 about what a
+        // junk run or a missed wall is.
+        const asScored = (r: (typeof runs)[number]): ScoredRun => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, lengthFeet: r.lengthFeet, thicknessFeet: r.thicknessFeet } as ScoredRun);
+        const isJunkAt = (at: number) => junk[at] === true;
+        const postedRealAt = runs.map((r, at) => !held.has(r) && !isJunkAt(at));
+        const heldRealAt = runs.map((r, at) => held.has(r) && !isJunkAt(at));
+        const coverSet = runs.filter((_, at) => postedRealAt[at] || heldRealAt[at]).map(asScored);
+        const missedKeyAt = key.map((k) => uncoveredFeet(k, coverSet, fpu) >= 0.5 * k.lengthFeet);
+        // Each real run's key wall = the one it overlaps most (its type and height).
+        const matchOf = runs.map((r, at) => {
+          if (isJunkAt(at)) return -1;
+          let best = -1, bestCover = 0;
+          const one = asScored(r);
+          for (let ki = 0; ki < key.length; ki += 1) {
+            const cover = r.lengthFeet - uncoveredFeet(one, [key[ki]!], fpu);
+            if (cover > bestCover) { bestCover = cover; best = ki; }
+          }
+          return best;
+        });
+        const typeOfKey = (ki: number) => ((((key[ki] as { wallType?: string }).wallType ?? "").trim()).toUpperCase());
+        const offTypes = new Set<string>();
+        runs.forEach((r, at) => {
+          const ki = matchOf[at]!;
+          if (!postedRealAt[at] || ki < 0) return;
+          const kf = keyKnownFeet[ki];
+          const t = typeOfKey(ki);
+          if (kf === null || kf === undefined || t === "" || t === "0" || t === "U") return;
+          if (Math.abs(runFeet(r) - kf) > 0.25) offTypes.add(t);
+        });
+        const actR = heldRealAt.filter(Boolean).length;
+        const actM = missedKeyAt.filter(Boolean).length;
+        const actH = offTypes.size;
+        // BOXES: only the move the product ships today — WORK_AREA on a sheet it
+        // flags as existing work — key-cluster boxes (<=3), greedy over k = 0..3.
+        const clusterBoxes = (kMax: number): Polygon[] => {
+          const xsAll = key.flatMap((k) => [k.x1, k.x2]), ysAll = key.flatMap((k) => [k.y1, k.y2]);
+          const spanX = Math.max(...xsAll) - Math.min(...xsAll), spanY = Math.max(...ysAll) - Math.min(...ysAll);
+          const order = key.map((k, i) => [spanX >= spanY ? (k.x1 + k.x2) / 2 : (k.y1 + k.y2) / 2, i] as const).sort((a, b) => a[0] - b[0]);
+          const gaps = order.slice(1).map((o, i) => [o[0] - order[i]![0], i + 1] as const).filter(([g]) => g > 0.15).sort((a, b) => b[0] - a[0]).slice(0, kMax - 1).map(([, at]) => at).sort((a, b) => a - b);
+          const cuts = [0, ...gaps, order.length];
+          const M = 0.02;
+          return cuts.slice(1).map((end, gi) => {
+            const g = order.slice(cuts[gi]!, end).map(([, i]) => key[i]!);
+            const gx = g.flatMap((k) => [k.x1, k.x2]), gy = g.flatMap((k) => [k.y1, k.y2]);
+            const x0 = Math.min(...gx) - M, x1 = Math.max(...gx) + M, y0 = Math.min(...gy) - M, y1 = Math.max(...gy) + M;
+            return { xs: [x0, x1, x1, x0], ys: [y0, y0, y1, y1] };
+          });
+        };
+        const keptFeetFor = (boxes: Polygon[]) => {
+          const inside = new Map<number, number>();
+          if (boxes.length === 0) { runs.forEach((r, at) => inside.set(at, r.lengthFeet)); return inside; }
+          const atOf3 = new Map(runs.map((r, at) => [r as unknown as WallCandidate, at] as const));
+          const clip3 = clipToWorkArea(runs as readonly WallCandidate[], boxes, fpu);
+          for (const r of clip3.inside) { const at = atOf3.get(r); if (at !== undefined) inside.set(at, (inside.get(at) ?? 0) + (r as unknown as { lengthFeet: number }).lengthFeet); }
+          for (const sp of clip3.split) { const at = atOf3.get(sp.from); if (at !== undefined) inside.set(at, (inside.get(at) ?? 0) + sp.piece.lengthFeet); }
+          return inside;
+        };
+        let bestK = 0, bestBoxActs = runs.filter((r, at) => !held.has(r) && isJunkAt(at)).length, bestBoxes: Polygon[] = [];
+        if (renovation && wallTest && key.length > 0) {
+          for (let kk = 1; kk <= 3; kk += 1) {
+            const boxes = clusterBoxes(kk);
+            if (boxes.length < kk) break; // no further split exists
+            const inside = keptFeetFor(boxes);
+            const keptAt = (at: number) => (inside.get(at) ?? 0) >= 0.5 * runs[at]!.lengthFeet;
+            const jLeft = runs.filter((r, at) => !held.has(r) && isJunkAt(at) && keptAt(at)).length;
+            const lostReal = runs.filter((_, at) => postedRealAt[at] && !keptAt(at)).length;
+            const acts = boxes.length + jLeft + lostReal;
+            if (acts < bestBoxActs) { bestBoxActs = acts; bestK = boxes.length; bestBoxes = boxes; }
+          }
+        }
+        const actionsToExact = bestBoxActs + actR + actM + actH;
+        // THE REVIEWED-2MIN POSTURE: the chosen boxes, the 10 shipped answers,
+        // then one height answer per key-known type.
+        const inside2 = keptFeetFor(bestBoxes);
+        const pieces2 = runs.map((r, at) => ({ at, feet: Math.min(r.lengthFeet, inside2.get(at) ?? 0) })).filter((p) => p.feet > 0);
+        const flipped = new Set<number>();
+        {
+          const entries2 = pieces2.map((p, i) => ({ at: i, held: held.has(runs[p.at]!), score: scores[p.at] ?? null, lengthFeet: p.feet }));
+          let answered2 = 0;
+          for (const i of reviewOrder(entries2, "doubt")) {
+            if (answered2 >= PRESSES) break;
+            answered2 += 1;
+            const p = pieces2[i]!;
+            const isHeld = held.has(runs[p.at]!);
+            if ((!isHeld && isJunkAt(p.at)) || (isHeld && !isJunkAt(p.at))) flipped.add(i);
+          }
+        }
+        let a2Lf = 0, a2JunkLf = 0, a2JunkBoardSf = 0, a2RealGradedSf = 0, a2DefaultPostedSf = 0;
+        pieces2.forEach((p, i) => {
+          const posted = held.has(runs[p.at]!) !== flipped.has(i);
+          if (!posted) return;
+          a2Lf += p.feet;
+          if (isJunkAt(p.at)) { a2JunkLf += p.feet; a2JunkBoardSf += p.feet * runFeet(runs[p.at]!) * 2; return; }
+          const ki = matchOf[p.at]!;
+          const kf = ki >= 0 ? keyKnownFeet[ki] : null;
+          if (kf !== null && kf !== undefined) a2RealGradedSf += p.feet * kf * 2; // the height answer
+          else if (ki >= 0 && keyAtDefault[ki]) a2DefaultPostedSf += p.feet * runFeet(runs[p.at]!) * 2;
+        });
+        const a2MissedLf = Math.max(0, keyLf - (a2Lf - a2JunkLf));
+        const keyGradedBoardSf = key.reduce((n, k, ki) => n + (keyKnownFeet[ki] != null ? k.lengthFeet * (keyKnownFeet[ki] as number) * 2 : 0), 0);
+        const keyDefaultBoardSf = key.reduce((n, k, ki) => n + (keyAtDefault[ki] ? k.lengthFeet * NOMINAL_FEET * 2 : 0), 0);
+        if (wallTest) v3Sheets.push({ group: HELD ? "HELD-OUT" : "TRAINING", set: dir, sheet, actions: actionsToExact, B: bestK, J: bestBoxActs - bestK, R: actR, M: actM, H: actH });
+        // DISPUTE DUMP (truth-audit-design.md): posted junk (A) + missed key walls (B),
+        // >=3 ft, coordinates only. The category is written HERE and nowhere a Chrome
+        // batch reads; the audit's blind lists are generated from this file.
+        if (process.env.ZT_DISPUTE_DUMP && wallTest) {
+          runs.forEach((r, at) => {
+            if (held.has(r) || !isJunkAt(at) || r.lengthFeet < 3) return;
+            appendFileSync(process.env.ZT_DISPUTE_DUMP!, JSON.stringify({ cat: "A", set: dir, sheet, page: saved.page, x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, L: r.lengthFeet }) + "\n");
+          });
+          key.forEach((k, ki) => {
+            if (!missedKeyAt[ki] || k.lengthFeet < 3) return;
+            appendFileSync(process.env.ZT_DISPUTE_DUMP!, JSON.stringify({ cat: "B", set: dir, sheet, page: saved.page, x1: k.x1, y1: k.y1, x2: k.x2, y2: k.y2, L: k.lengthFeet }) + "\n");
+          });
+        }
         // JUNKDUMP (the third's audit instrument, adopted committed per the env-audit
         // order): every POSTED junk run — exactly the runs summed into junkLf — with
         // nearby text and geometry, for family analysis. Gated on ZT_JUNKDUMP; no
@@ -499,10 +625,10 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           const t = ((k as { wallType?: string }).wallType ?? "0").trim() || "0";
           keyByType[t] = Math.round(((keyByType[t] ?? 0) + k.lengthFeet) * 10) / 10;
         }
-        const s = bySet.get(dir) ?? { lf: 0, doors: 0, windows: 0, lf10: 0, keyLf: 0, keyDoors: 0, keyWindows: 0, keyByType: {}, sheets: 0, junkLf: 0, junkRenoLf: 0, missedLf: 0, keyBoardSf: 0, renovation: false, doorsOver: 0, unpricedBoardSf: 0, zeroBoardSf: 0, lf10BoardSf: 0, needsAnswerLf: 0, noBoardLf: 0, revLf: 0, rev10Lf: 0, revJunkLf: 0, revMissedLf: 0, revBoardSf: 0, rev10BoardSf: 0, junkBoardSf: 0, gradedKeyLf: 0, defaultedBoardSf: 0 };
+        const s = bySet.get(dir) ?? { lf: 0, doors: 0, windows: 0, lf10: 0, keyLf: 0, keyDoors: 0, keyWindows: 0, keyByType: {}, sheets: 0, junkLf: 0, junkRenoLf: 0, missedLf: 0, keyBoardSf: 0, renovation: false, doorsOver: 0, unpricedBoardSf: 0, zeroBoardSf: 0, lf10BoardSf: 0, needsAnswerLf: 0, noBoardLf: 0, revLf: 0, rev10Lf: 0, revJunkLf: 0, revMissedLf: 0, revBoardSf: 0, rev10BoardSf: 0, junkBoardSf: 0, gradedKeyLf: 0, defaultedBoardSf: 0, a2Lf: 0, a2JunkLf: 0, a2MissedLf: 0, a2JunkBoardSf: 0, a2RealGradedSf: 0, a2DefaultPostedSf: 0, keyGradedBoardSf: 0, keyDefaultBoardSf: 0 };
         // Not a wall test: every wall/board term is zeroed, doors/windows stay.
         const w = wallTest ? 1 : 0;
-        s.lf += zeroLf * w; s.lf10 += lf10 * w; s.doors += Math.min(postedDoors, keyDoors); s.doorsOver += Math.max(0, postedDoors - keyDoors); s.keyLf += keyLf * w; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1; s.junkLf += junkLf * w; if (renovation) s.junkRenoLf += junkLf * w; s.missedLf += missedLf * w; s.keyBoardSf += keyBoardSf * w; s.unpricedBoardSf += unpricedBoardSf * w; s.zeroBoardSf += zeroBoardSfAdj * w; s.lf10BoardSf += lf10BoardSfAdj * w; s.needsAnswerLf += needsAnswerLf * w; s.noBoardLf += noBoardLf * w; s.renovation = s.renovation || (renovation && wallTest); s.revLf += revLf * w; s.rev10Lf += rev10Lf * w; s.revJunkLf += revJunkLf * w; s.revMissedLf += revMissedLf * w; s.revBoardSf += revBoardSfAdj * w; s.rev10BoardSf += rev10BoardSfAdj * w; s.junkBoardSf += junkBoardSfAdj * w; s.gradedKeyLf += gradedKeyLf * w; s.defaultedBoardSf += defaultedBoardSf * w;
+        s.lf += zeroLf * w; s.lf10 += lf10 * w; s.doors += Math.min(postedDoors, keyDoors); s.doorsOver += Math.max(0, postedDoors - keyDoors); s.keyLf += keyLf * w; s.keyDoors += keyDoors; s.keyWindows += keyWindows; s.sheets += 1; s.junkLf += junkLf * w; if (renovation) s.junkRenoLf += junkLf * w; s.missedLf += missedLf * w; s.keyBoardSf += keyBoardSf * w; s.unpricedBoardSf += unpricedBoardSf * w; s.zeroBoardSf += zeroBoardSfAdj * w; s.lf10BoardSf += lf10BoardSfAdj * w; s.needsAnswerLf += needsAnswerLf * w; s.noBoardLf += noBoardLf * w; s.renovation = s.renovation || (renovation && wallTest); s.revLf += revLf * w; s.rev10Lf += rev10Lf * w; s.revJunkLf += revJunkLf * w; s.revMissedLf += revMissedLf * w; s.revBoardSf += revBoardSfAdj * w; s.rev10BoardSf += rev10BoardSfAdj * w; s.junkBoardSf += junkBoardSfAdj * w; s.gradedKeyLf += gradedKeyLf * w; s.defaultedBoardSf += defaultedBoardSf * w; s.a2Lf += a2Lf * w; s.a2JunkLf += a2JunkLf * w; s.a2MissedLf += a2MissedLf * w; s.a2JunkBoardSf += a2JunkBoardSf * w; s.a2RealGradedSf += a2RealGradedSf * w; s.a2DefaultPostedSf += a2DefaultPostedSf * w; s.keyGradedBoardSf += keyGradedBoardSf * w; s.keyDefaultBoardSf += keyDefaultBoardSf * w;
         if (wallTest) for (const [t, ft] of Object.entries(keyByType)) s.keyByType[t] = Math.round(((s.keyByType[t] ?? 0) + ft) * 10) / 10;
         bySet.set(dir, s);
         rows.push({ set: dir, sheet, paired, renovation, keyLf: Math.round(keyLf * w), zeroLf: Math.round(zeroLf * w), lf10: Math.round(lf10 * w), junkLf: Math.round(junkLf * w), missedLf: Math.round(missedLf * w), keyBoardSf: Math.round(keyBoardSf * w), unpricedBoardSf: Math.round(unpricedBoardSf * w), zeroBoardSf: Math.round(zeroBoardSfAdj * w), chainFeet, chainFrom: chain?.from ?? null, rooms: foundRooms.rooms.length, keyDoors, postedDoors, keyWindows });
@@ -523,6 +649,9 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     let zbR = 0, tbR = 0, totalErrR = 0;
     let prPostedLf = 0, prJunkLf = 0, prKeyLf = 0, prMissedLf = 0, prRevLf = 0, prRevJunkLf = 0, prRevMissedLf = 0;
     const causeV2 = { boardOnJunk: 0, heightGap: 0, defaultBoard: 0 };
+    // ── SCOREBOARD V3 accumulators (prereg-scoreboard-v3.md) ──
+    let kb3 = 0, err3 = 0, gradedHeightErr = 0, defaultKeyBoard = 0, defaultPostedBoard = 0;
+    const setErr3: number[] = [];
     for (const [dir, s] of [...bySet.entries()].sort()) {
       const kBid = bid({ lf: s.keyLf, boardSf: s.keyBoardSf, doors: s.keyDoors, windows: s.keyWindows });
       const boardOverSf = Math.max(0, s.zeroBoardSf - s.keyBoardSf);
@@ -565,6 +694,18 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       console.log(
         `ZTREV ${group} ${dir.slice(0, 26).padEnd(26)} REVIEWED LF ${Math.round(s.revLf)} (zero ${Math.round(s.lf)}) · TOTAL ERROR ${rTotErr} (over $${Math.round(revOver)} + under $${Math.round(revUnder)}) · net ${rPct(rBid)} · after ${PRESSES} presses ${rPct(r10Bid)}${s.renovation ? "" : " · [not flagged: REVIEWED = zero-touch]"}`,
       );
+      // ── SCOREBOARD V3 per set: REVIEWED-2MIN, heights graded only where the key knows them ──
+      {
+        const kBid3 = bid({ lf: s.keyLf, boardSf: s.keyGradedBoardSf, doors: s.keyDoors, windows: s.keyWindows });
+        const postedBoard3 = s.a2JunkBoardSf + s.a2RealGradedSf;
+        const over3 = s.a2JunkLf * PRICE.wallPerLf + s.doorsOver * PRICE.doorEach[DOOR_SCOPE] + Math.max(0, postedBoard3 - s.keyGradedBoardSf) * PRICE.boardPerSf;
+        const under3 = s.a2MissedLf * PRICE.wallPerLf + Math.max(0, s.keyGradedBoardSf - postedBoard3) * PRICE.boardPerSf + Math.max(0, s.keyDoors - s.doors) * PRICE.doorEach[DOOR_SCOPE] + s.keyWindows * WINDOW_PRICE;
+        kb3 += kBid3; err3 += over3 + under3;
+        gradedHeightErr += Math.abs(s.a2RealGradedSf - s.keyGradedBoardSf) * PRICE.boardPerSf;
+        defaultKeyBoard += s.keyDefaultBoardSf * PRICE.boardPerSf; defaultPostedBoard += s.a2DefaultPostedSf * PRICE.boardPerSf;
+        if (kBid3 > 0 && s.keyLf > 0) setErr3.push(((over3 + under3) / kBid3) * 100);
+        console.log(`ZT2MIN ${group} ${dir.slice(0, 26).padEnd(26)} TOTAL ERROR ${kBid3 === 0 ? "—" : (((over3 + under3) / kBid3) * 100).toFixed(1) + "%"} (over $${Math.round(over3)} + under $${Math.round(under3)}) · key $${Math.round(kBid3)} graded-heights (v2 key $${Math.round(kBid)})`);
+      }
       const pct = (x: number) => (kBid === 0 ? "—" : `${(((x - kBid) / kBid) * 100).toFixed(1)}%`);
       const totErr = kBid === 0 ? "—" : `${(((setOver + setUnder) / kBid) * 100).toFixed(1)}%`;
       console.log(
@@ -576,6 +717,17 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     if (LOSO_DIR !== "") {
       console.log(`ZT MODE LOSO: per-set fold models from ${LOSO_DIR} · ${bySet.size} sets scored · ${losoSkipped.length} skipped (no fold model)${losoSkipped.length > 0 ? ": " + losoSkipped.map((d) => d.slice(0, 24)).join(", ") : ""}`);
       console.log(`ZT MODE LOSO: pooled figures below cover ONLY the ${bySet.size} fold-covered sets; the fixed held-out sets remain the final exam, run once per release`);
+    }
+    // ── SCOREBOARD V3 HEADLINE (prereg-scoreboard-v3.md): REVIEWED-2MIN + median actions to exact lead ──
+    {
+      const med = (xs: number[]) => { if (xs.length === 0) return NaN; const a = [...xs].sort((x, y) => x - y); const m = Math.floor(a.length / 2); return a.length % 2 ? a[m]! : (a[m - 1]! + a[m]!) / 2; };
+      const rows = v3Sheets.filter((r) => r.group === group);
+      const acts = rows.map((r) => r.actions);
+      const sum = (f: (r: (typeof rows)[number]) => number) => rows.reduce((n, r) => n + f(r), 0);
+      if (kb3 > 0) console.log(`ZT2MIN ${group} TOTAL ERROR ${((err3 / kb3) * 100).toFixed(1)}% of key $${Math.round(kb3)} (graded-heights key) · MEDIAN SET ${med(setErr3).toFixed(1)}% over ${setErr3.length} sets — THE HEADLINE (scoreboard v3, criteria 1+2)`);
+      console.log(`ZTACT ${group} ACTIONS TO EXACT: median ${med(acts)} per sheet · mean ${(acts.length ? sum((r) => r.actions) / acts.length : 0).toFixed(1)} · pooled ${sum((r) => r.actions)} over ${rows.length} sheets — boxes ${sum((r) => r.B)} · junk removes ${sum((r) => r.J)} · held-real restores ${sum((r) => r.R)} · missed adds ${sum((r) => r.M)} · height answers ${sum((r) => r.H)} (criterion 3; greedy = an upper bound)`);
+      console.log(`ZTHGT ${group} height disagreement on KEY-KNOWN heights $${Math.round(gradedHeightErr)} · default-vs-default (OFF the total, own line): key $${Math.round(defaultKeyBoard)} / posted $${Math.round(defaultPostedBoard)}`);
+      for (const r of rows) console.log(`ZTACT ${group} ${r.set.slice(0, 26).padEnd(26)} ${r.sheet} actions ${r.actions} (B ${r.B} J ${r.J} R ${r.R} M ${r.M} H ${r.H})`);
     }
     // ── SCOREBOARD V2 HEADLINE (prereg-scoreboard-v2.md): REVIEWED leads; zero-touch is the second line ──
     if (kb > 0) {

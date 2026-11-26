@@ -154,7 +154,7 @@ function overlapAlong(a: ScoredRun, b: ScoredRun): number {
  * The duplicate still shows up, as EXTRA rather than as coverage, which is
  * what double-billing a wall would be.
  */
-function uncoveredFeet(
+export function uncoveredFeet(
   a: ScoredRun,
   others: readonly ScoredRun[],
   feetPerUnit: number,
