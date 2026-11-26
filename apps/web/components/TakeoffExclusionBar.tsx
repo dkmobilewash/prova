@@ -23,6 +23,7 @@ export function TakeoffExclusionBar({
   outsideFeet = null,
   wholeSheet = false,
   wholeSheetSaving = false,
+  needsScale = false,
   onWholeSheet,
   onExistingDoors,
   onPickTool,
@@ -47,6 +48,8 @@ export function TakeoffExclusionBar({
   onWholeSheet?: () => void;
   /** Its save is running: the button is busy and a second press does nothing (W3b). */
   wholeSheetSaving?: boolean;
+  /** The sheet has no scale yet, so no work area can be stored: the prompt says so and both exits are disabled. */
+  needsScale?: boolean;
   /** What plan comparison set aside as existing, by the paired demolition plan. Its line stands in for the renovation prompt. */
   existing?: { sheet: string; n: number; feet: number } | null;
   /**
@@ -73,13 +76,14 @@ export function TakeoffExclusionBar({
       {renovation && existing === null && !readOnly && (
         <span className="order-first flex w-full flex-wrap items-center gap-2 rounded-md bg-tag-amber px-2 py-1 font-medium text-tag-amber-ink" data-takeoff="renovation-prompt" title={`Marked by: ${renovation.join(", ")}`}>
           {WORK_AREA_PROMPT}
+          {needsScale && <span className="font-normal">Set this sheet&apos;s scale first.</span>}
           {onPickTool && (
-            <button type="button" className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body" data-takeoff="renovation-work-area" onClick={() => onPickTool("workarea")}>
+            <button type="button" disabled={needsScale} className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body disabled:opacity-60" data-takeoff="renovation-work-area" onClick={() => onPickTool("workarea")}>
               Draw work area
             </button>
           )}
           {onWholeSheet && (
-            <button type="button" disabled={wholeSheetSaving} className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body disabled:opacity-60" data-takeoff="renovation-whole-sheet" onClick={onWholeSheet}>
+            <button type="button" disabled={wholeSheetSaving || needsScale} className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body disabled:opacity-60" data-takeoff="renovation-whole-sheet" onClick={onWholeSheet}>
               {wholeSheetSaving ? (
                 <>
                   <Spinner /> Saving…

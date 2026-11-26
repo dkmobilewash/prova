@@ -134,3 +134,40 @@ describe("W3 follow-up: Whole sheet is new work says it is working, and a second
     await act(async () => finish({ ok: true, value: { ids: ["row_new"] } }));
   });
 });
+
+describe("W1 follow-up: before the sheet has a scale, the prompt says so and its buttons wait", () => {
+  // Production, 2026-11-26 (dpl_H6dsLcJ2): with no scale yet the prompt showed and both buttons did nothing, because the
+  // viewer has no sheet row until a scale is saved.
+  it("keeps the words, says to set the scale first, and both exits are disabled", async () => {
+    act(() => {
+      root.render(
+        createElement(TakeoffPlanViewer, {
+          jobId: "job_1",
+          planId: "plan_1",
+          sheets: [],
+          printedScaleByPage: {},
+          scannedPages: [],
+          scalePrefillByPage: {},
+          panelOpen: false,
+          renovationByPage: { 1: ["(E)"] },
+        } as never),
+      );
+    });
+    const prompt = q("renovation-prompt");
+    expect(prompt?.textContent).toContain(WORDS);
+    expect(prompt?.textContent).toContain("Set this sheet's scale first");
+    expect((q("renovation-work-area") as HTMLButtonElement).disabled).toBe(true);
+    expect((q("renovation-whole-sheet") as HTMLButtonElement).disabled).toBe(true);
+    await press(q("renovation-whole-sheet")!);
+    expect(actions.addSheetExclusion).not.toHaveBeenCalled();
+  });
+  it("enables both exits as soon as the scale lands, with no reload", () => {
+    viewer([], { sheets: [] });
+    expect((q("renovation-whole-sheet") as HTMLButtonElement).disabled).toBe(true);
+    // The calibration saved: the same viewer, handed the sheet it now has.
+    viewer([]);
+    expect(q("renovation-prompt")?.textContent).not.toContain("Set this sheet's scale first");
+    expect((q("renovation-work-area") as HTMLButtonElement).disabled).toBe(false);
+    expect((q("renovation-whole-sheet") as HTMLButtonElement).disabled).toBe(false);
+  });
+});
