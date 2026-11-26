@@ -260,6 +260,10 @@ async function main() {
     // lib/actions/jobMedia.ts is the path that removes both.
     await del("jobMedia", () => prisma.jobMedia.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("takeoffPlan", () => prisma.takeoffPlan.deleteMany({ where: { jobId: { in: jobIds } } }));
+    // A plan deleted and still undoable has left its job (jobId NULL; plan-delete-undo.md): found by the job it came from.
+    await del("takeoffPlan (deleted, undoable)", () =>
+      prisma.$executeRawUnsafe(`DELETE FROM "TakeoffPlan" WHERE "jobId" IS NULL AND "deleteUndo"->>'jobId' = ANY($1::text[])`, jobIds).then((count) => ({ count })),
+    );
     await del("takeoffItem", () => prisma.takeoffItem.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("punchListItem", () => prisma.punchListItem.deleteMany({ where: { jobId: { in: jobIds } } }));
     await del("rfi", () => prisma.rfi.deleteMany({ where: { jobId: { in: jobIds } } }));

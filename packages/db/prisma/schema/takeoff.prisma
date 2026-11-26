@@ -57,8 +57,21 @@ model TakeoffPlan {
   /// which keeps three models out of the cleanup scripts entirely, the trick
   /// `JobMediaAnnotation` documents. Only this model needs registering in
   /// `HANDLED_MODELS` and the two `del()` orders.
-  jobId String
-  job   Job    @relation(fields: [jobId], references: [id])
+  ///
+  /// NULL ONLY WHILE THE PLAN IS DELETED AND STILL UNDOABLE (Diego, 2026-11-26; coordination/plan-delete-undo.md).
+  /// A delete takes the plan off its job for the 10-minute window, so every read scoped by job stops seeing it with
+  /// no edit; `deleteUndo.jobId` keeps where it came from, and the purge hard-deletes it after the window.
+  jobId String?
+  /// RESTRICT, pinned: an optional relation would default to SET NULL and let a job delete orphan its plans.
+  job   Job?    @relation(fields: [jobId], references: [id], onDelete: Restrict)
+
+  /// When it was deleted, and by whom; null on every live plan.
+  deletedAt       DateTime?
+  deletedByUserId String?
+  deletedBy       User?     @relation("TakeoffPlanDeletedBy", fields: [deletedByUserId], references: [id], onDelete: SetNull)
+  /// What the delete changed, so Undo can put it back exactly: the job, each run's item, each line's before-state
+  /// (`lib/takeoff/planDelete.ts`). Cleared by Undo; gone with the row at the purge.
+  deleteUndo      Json?
 
   /// Where the PDF lives, and the name the person picked. Checked on the way
   /// in by `documentUrlProblem(url, "plan-takeoff", jobId, env)` — both halves,
@@ -178,6 +191,8 @@ model TakeoffPlan {
 
   @@index([jobId, createdAt])
   @@index([companyId])
+
+  @@index([jobId, deletedAt])
 }
 
 /// One sheet of that PDF, created the first time somebody calibrates it. A

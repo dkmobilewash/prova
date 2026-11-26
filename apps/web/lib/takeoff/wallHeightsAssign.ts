@@ -163,9 +163,9 @@ export async function assignWallHeights(input: { planId: string; pageId: string;
 /** The company changed its answer: every assumed (or still height-less) wall on its open estimates, again. */
 export async function reassignAssumedHeights(companyId: string): Promise<number> {
   const pages = await prisma.takeoffPlanPage.findMany({
-    where: { plan: { companyId, job: { status: "ESTIMATE" } }, measurements: { some: { kind: "LINEAR", item: { companyId }, OR: [{ heightFt: null }, { heightAssumed: true }] } } },
+    where: { plan: { companyId, deletedAt: null, job: { status: "ESTIMATE" } }, measurements: { some: { kind: "LINEAR", item: { companyId }, OR: [{ heightFt: null }, { heightAssumed: true }] } } },
     select: { id: true, pageNumber: true, planId: true, plan: { select: { jobId: true } } },
   });
-  for (const page of pages) await assignWallHeights({ planId: page.planId, pageId: page.id, pageNumber: page.pageNumber, companyId, jobId: page.plan.jobId, doc: null, refresh: true });
+  for (const page of pages) if (page.plan.jobId !== null) await assignWallHeights({ planId: page.planId, pageId: page.id, pageNumber: page.pageNumber, companyId, jobId: page.plan.jobId, doc: null, refresh: true });
   return pages.length;
 }

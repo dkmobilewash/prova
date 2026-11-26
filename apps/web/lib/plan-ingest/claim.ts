@@ -304,6 +304,8 @@ export async function nextJobToDrain(
   const candidates = await prisma.planIngestJob.findMany({
     where: {
       finishedAt: null,
+      // A deleted plan, still undoable, is not read (plan-delete-undo.md U2): its run waits, and goes with it at the purge.
+      plan: { deletedAt: null },
       ...(planIds === undefined ? {} : { planId: { in: [...planIds] } }),
       OR: [{ tasks: { some: claimable(undefined, now, MAX_ATTEMPTS) } }, { tasks: { none: { finishedAt: null, attempts: { lt: MAX_ATTEMPTS } } } }],
     },

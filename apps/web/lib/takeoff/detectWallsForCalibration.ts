@@ -479,7 +479,7 @@ export async function detectWallsForCalibration(
       where: { id: target.planId },
       select: { jobId: true },
     });
-    const items = plan === null
+    const items = plan === null || plan.jobId === null
       ? []
       : await prisma.takeoffItem.findMany({
       where: { jobId: plan.jobId, companyId: target.companyId },
