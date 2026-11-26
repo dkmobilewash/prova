@@ -494,6 +494,15 @@ const ENLARGED_PLAN_SHEETS: { set: string; sheet: string; why: string }[] = [
       "captioned RESTROOM - ENLARGED PLAN; the restrooms are on the keyed A101 main plan. " +
       "Diego's enlarged-plans ruling, BOARD.md 2026-11-19.",
   },
+  {
+    set: "2020-0614_FS5_Fire_Station_No._5_Renovation_-_Addendum_4A_-_Plan_Drawings",
+    sheet: "A-313",
+    why:
+      "captioned ENLARGED FLOOR PLAN - CONNECTOR / CANOPY; its rooms are drawn on the A-101 " +
+      "overall plan, the REF A1.01B block is existing fabric (REMOVE EXISTING BRICK), and the " +
+      "connector's own enclosure is storefront + canopy. Diego's Round-44 key-scope ruling " +
+      "(scope-reclass), 2026-11-26 — the junk-families audit's FS5 question.",
+  },
 ];
 
 /**
