@@ -5879,6 +5879,9 @@ export function TakeoffPlanViewer({
           onPickTool={(next) => setTool(next)}
           onWholeSheet={readOnly ? undefined : () => void onWholeSheetNewWork()}
           wholeSheetSaving={wholeSheetSaving}
+          // No scale yet means no sheet row to hold a work area: the prompt says so and its exits wait (production
+          // 2026-11-26: both buttons did nothing). Derived from the sheet, so they enable the render the scale lands.
+          needsScale={calibration === null}
           wholeSheet={exclusionRows.some((r) => r.kind === "WORK_AREA" && isWholeSheet(r.xs, r.ys))}
           outsideFeet={userAside.find((a) => a.kind === "outside-work-area")?.feet ?? null}
           splits={exclusionRows.filter((r) => r.kind === "ROOM_SPLIT").length}
