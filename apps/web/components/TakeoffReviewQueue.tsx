@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/actions/shared";
 import type { UndoEntry } from "@/lib/takeoff/undoStack";
 import { WORK_AREA_PROMPT } from "@/lib/takeoff/workAreaFirst";
+import { Spinner } from "@/components/Spinner";
 import { markWholeSheetNewWork, confirmDoors, confirmSheetScales, confirmSheetSuggestions, recordQueueSkip, confirmWindows, undoAutoPost, undoConfirmDoors, undoConfirmWindows, priceLineFromCost, reviewWall, setWallGroupHeight, undoSheetSuggestions, type SheetSuggestionsUndo } from "@/lib/actions";
 import { shortScaleName } from "@/lib/takeoff/scaleFromDimensions";
 import { COST_CATEGORY_LONG_LABEL, COST_CATEGORY_VALUES } from "@/lib/cost-category";
@@ -91,6 +92,8 @@ export function TakeoffReviewQueue({
   // The item last on screen: where the queue stays while the cursor's item is not in `items`.
   const shown = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The renovation step's "Whole sheet is new work" save, in flight (W3b).
+  const [wholeSheetSaving, setWholeSheetSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [priced, setPriced] = useState<string | null>(null);
   const [undone, setUndone] = useState<ReadonlySet<number>>(new Set());
@@ -823,15 +826,26 @@ export function TakeoffReviewQueue({
                 <button
                   type="button"
                   className={button}
+                  disabled={wholeSheetSaving}
                   data-takeoff="review-queue-whole-sheet"
                   onClick={() => {
+                    // Busy at once (W3b); the disabled attribute is what refuses a second press.
+                    setWholeSheetSaving(true);
                     const page = current.pageNumber;
-                    void markWholeSheetNewWork(planId, page).then((result) => {
-                      if (result.ok) setCursor(after(current.key));
-                    });
+                    void markWholeSheetNewWork(planId, page)
+                      .then((result) => {
+                        if (result.ok) setCursor(after(current.key));
+                      })
+                      .finally(() => setWholeSheetSaving(false));
                   }}
                 >
-                  Whole sheet is new work
+                  {wholeSheetSaving ? (
+                    <>
+                      <Spinner /> Saving…
+                    </>
+                  ) : (
+                    "Whole sheet is new work"
+                  )}
                 </button>
                 {/* Still a tool for the existing walls (`setAsideLike.ts`), quieter, and not the step's answer (W2/W7). */}
                 <button

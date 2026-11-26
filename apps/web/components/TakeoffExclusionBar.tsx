@@ -1,5 +1,6 @@
 "use client";
 
+import { Spinner } from "@/components/Spinner";
 import { notInWorkAreaWords, WORK_AREA_PROMPT } from "@/lib/takeoff/workAreaFirst";
 
 type Kind = "EXCLUDE_LIKE" | "WORK_AREA" | "ROOM_SPLIT";
@@ -21,6 +22,7 @@ export function TakeoffExclusionBar({
   existingDoors = null,
   outsideFeet = null,
   wholeSheet = false,
+  wholeSheetSaving = false,
   onWholeSheet,
   onExistingDoors,
   onPickTool,
@@ -43,6 +45,8 @@ export function TakeoffExclusionBar({
   wholeSheet?: boolean;
   /** The prompt's second exit: one work area over the whole sheet. */
   onWholeSheet?: () => void;
+  /** Its save is running: the button is busy and a second press does nothing (W3b). */
+  wholeSheetSaving?: boolean;
   /** What plan comparison set aside as existing, by the paired demolition plan. Its line stands in for the renovation prompt. */
   existing?: { sheet: string; n: number; feet: number } | null;
   /**
@@ -75,8 +79,14 @@ export function TakeoffExclusionBar({
             </button>
           )}
           {onWholeSheet && (
-            <button type="button" className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body" data-takeoff="renovation-whole-sheet" onClick={onWholeSheet}>
-              Whole sheet is new work
+            <button type="button" disabled={wholeSheetSaving} className="min-h-[32px] rounded-md border border-line-card bg-surface px-2 text-ink-body disabled:opacity-60" data-takeoff="renovation-whole-sheet" onClick={onWholeSheet}>
+              {wholeSheetSaving ? (
+                <>
+                  <Spinner /> Saving…
+                </>
+              ) : (
+                "Whole sheet is new work"
+              )}
             </button>
           )}
         </span>
