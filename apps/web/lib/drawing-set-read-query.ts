@@ -143,7 +143,7 @@ export async function deliveredReadFor(
       where: { id: leadId },
       select: { companyId: true, companyName: true, contactName: true },
     }),
-    prisma.takeoffPlan.findFirst({
+    prisma.takeoffPlan.findUnique({
       where: { id: planId, deletedAt: null },
       select: { companyId: true, fileName: true, job: { select: { name: true } } },
     }),

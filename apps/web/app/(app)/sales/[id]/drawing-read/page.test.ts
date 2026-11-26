@@ -216,6 +216,8 @@ const PLANS: Row[] = [
      *  would make the rendering untestable. */
     createdAt: new Date("2026-10-08T01:00:00.000Z"),
     job: { name: "Harbor Medical Fit-Out" },
+    /** Live: a deleted plan (plan-delete-undo.md) carries a date here, and every read filters it. */
+    deletedAt: null,
   },
   {
     id: "plan_theirs",
@@ -223,18 +225,20 @@ const PLANS: Row[] = [
     fileName: "Rival Bid Set.pdf",
     createdAt: new Date("2026-10-09T01:00:00.000Z"),
     job: { name: "Rival Tower" },
+    /** Live: a deleted plan (plan-delete-undo.md) carries a date here, and every read filters it. */
+    deletedAt: null,
   },
 ];
 
 /** `plan` is carried on each row so the nested `where: { plan: { companyId } }`
  *  that `sheetIndexFor` uses is a real filter here rather than a no-op. */
 const SHEET_TEXTS: Row[] = [
-  { planId: "plan_ours", pageNumber: 1, hasTextLayer: true, plan: { companyId: COMPANY } },
+  { planId: "plan_ours", pageNumber: 1, hasTextLayer: true, plan: { companyId: COMPANY, deletedAt: null } },
   // A scan: no text layer and therefore no proposal, ever, until somebody
   // types the number in. This is the row that makes the email's "sheets we
   // could not read" section fire.
-  { planId: "plan_ours", pageNumber: 2, hasTextLayer: false, plan: { companyId: COMPANY } },
-  { planId: "plan_ours", pageNumber: 3, hasTextLayer: true, plan: { companyId: COMPANY } },
+  { planId: "plan_ours", pageNumber: 2, hasTextLayer: false, plan: { companyId: COMPANY, deletedAt: null } },
+  { planId: "plan_ours", pageNumber: 3, hasTextLayer: true, plan: { companyId: COMPANY, deletedAt: null } },
   { planId: "plan_theirs", pageNumber: 1, hasTextLayer: true, plan: { companyId: OTHER } },
 ];
 
@@ -243,7 +247,7 @@ function proposal(planId: string, pageNumber: number, extra: Row): Row {
     id: `prop_${planId}_${pageNumber}`,
     planId,
     pageNumber,
-    plan: { companyId: planId === "plan_ours" ? COMPANY : OTHER },
+    plan: { companyId: planId === "plan_ours" ? COMPANY : OTHER, deletedAt: null },
     proposedSheetNumber: null,
     proposedTitle: null,
     proposedDiscipline: null,

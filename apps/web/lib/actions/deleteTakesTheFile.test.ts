@@ -139,11 +139,14 @@ group("deleting a compliance document takes its file", () => {
 });
 
 group("deleting a takeoff plan takes its file", () => {
-  it("deletes the row and then the file", async () => {
+  // Since the Undo (Diego, 2026-11-26; coordination/plan-delete-undo.md): the delete is soft and keeps the file for the
+  // 10-minute window. The row-then-file order moved to the purge (`planPurge.ts`), and planDeleteUndo.dbtest.ts U6 holds
+  // it there: the file is deleted exactly once, after the row.
+  it("keeps the file at the delete itself (the purge deletes it after the window)", async () => {
     const { deleteTakeoffPlan } = await import("./takeoff");
     const result = await deleteTakeoffPlan("job_1", "plan_1");
     expect(result.ok).toBe(true);
-    expect(log).toEqual(["row:plan", `blob:${PLAN_URL}`]);
+    expect(log).toEqual(["row:plan"]);
   });
 
   it("deletes nothing from the store when the row was already gone", async () => {
