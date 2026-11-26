@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { offeredCandidates } from "./offeredCandidates";
 import { eraseInBoxes, userExclusionsFromRows } from "./userExclusions";
@@ -80,5 +82,18 @@ describe("P2: offeredCandidates with erase boxes", () => {
   it("with no erase box, nothing changes", () => {
     expect(offeredCandidates(sheet()).candidates).toHaveLength(4);
     expect(offeredCandidates(sheet({ erase: [] })).setAside).toEqual([]);
+  });
+});
+
+describe("E4: the viewer previews with the shared predicate and writes what it previewed", () => {
+  // A census: it proves the wiring is in the source, not that the browser honours it. The production proof does that.
+  const viewer = readFileSync(join(process.cwd(), "components/TakeoffPlanViewer.tsx"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  it("counts the box with eraseInBoxes over the sheet's offered runs", () => {
+    expect(viewer.match(/eraseInBoxes\(runsRef\.current, \[\{ xs, ys \}\]\)\.erased/g)).toHaveLength(1);
+  });
+  it("saves exactly the box it counted, as ERASE_AREA, only from Erase", () => {
+    expect(viewer.match(/addExclusion\("ERASE_AREA", box\.xs, box\.ys\)/g)).toHaveLength(1);
+    // The only write: no other path in the viewer stores an erase box.
+    expect(viewer.match(/(?:addExclusion|addSheetExclusion)\([^)]*"ERASE_AREA"/g)).toHaveLength(1);
   });
 });
