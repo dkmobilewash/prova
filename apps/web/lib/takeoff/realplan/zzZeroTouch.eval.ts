@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { pageInventoryWork, type SheetProposalRow } from "../../plan-ingest/pageInventory";
@@ -180,6 +180,28 @@ const bid = (q: { lf: number; boardSf?: number; doors: number; windows?: number 
 
 describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF_WALL_MODEL === undefined)("zero-touch bid accuracy", () => {
   it("prices the untouched takeoff against the key", { timeout: 14_400_000 }, async () => {
+    // ── ZTENV BANNER (Diego's env-audit order, 2026-11-26): the EFFECTIVE state of
+    // every flag and input this eval depends on, printed before anything runs. Exam 3
+    // ran NOT-DRAWING OFF because a script exported the bare TAKEOFF_NOT_DRAWING while
+    // the code reads only NEXT_PUBLIC_TAKEOFF_NOT_DRAWING — nobody could see it in the
+    // log. Now the log says what RAN, not what the command meant.
+    {
+      const { createHash } = await import("node:crypto");
+      const sha8 = (p: string | undefined) => {
+        if (!p) return "unset";
+        try { return createHash("sha256").update(readFileSync(p)).digest("hex").slice(0, 8); } catch { return "UNREADABLE"; }
+      };
+      const flag = (v: string | undefined) => (v === "1" ? "ON" : v === undefined ? "unset" : `"${v}"`);
+      // NOT_DRAWING is imported state in offeredCandidates; report the SAME read the
+      // product performs, plus the bare name so a wrong export is visible by contrast.
+      console.log(`ZTENV NOT_DRAWING effective=${process.env.NEXT_PUBLIC_TAKEOFF_NOT_DRAWING === "1" ? "ON" : "OFF"} (NEXT_PUBLIC_TAKEOFF_NOT_DRAWING=${flag(process.env.NEXT_PUBLIC_TAKEOFF_NOT_DRAWING)}; bare TAKEOFF_NOT_DRAWING=${flag(process.env.TAKEOFF_NOT_DRAWING)} — the bare name is READ BY NOTHING)`);
+      console.log(`ZTENV RENO_UNPAIRED=${flag(process.env.TAKEOFF_RENO_UNPAIRED)} · ZT_HELD=${flag(process.env.ZT_HELD)} · PRESSES=${PRESSES}`);
+      for (const name of ["TAKEOFF_WALL_MODEL", "TAKEOFF_WALL_RUN_MODEL", "TAKEOFF_WALL_RENO_MODEL", "TAKEOFF_WALL_RENO_ALL_MODEL"] as const) {
+        console.log(`ZTENV ${name}=${process.env[name] ?? "unset"} sha ${sha8(process.env[name])}`);
+      }
+      console.log(`ZTENV ZT_HEIGHTS=${HEIGHTS || "unset"} sha ${sha8(HEIGHTS || undefined)} · ZT_LEGEND_CACHE=${process.env.ZT_LEGEND_CACHE ?? "unset"} · ZT_ZONE_KEYS=${process.env.ZT_ZONE_KEYS ?? "unset"}`);
+      console.log(`ZTENV ZT_JUNKDUMP=${process.env.ZT_JUNKDUMP ?? "unset"} · ZT_LOSO_DIR=${process.env.ZT_LOSO_DIR ?? "unset"} · ZT_ONLY=${process.env.ZT_ONLY ?? "unset"}`);
+    }
     const config = loadWallModel();
     if (config === null) throw new Error("no wall model");
     /**
@@ -455,6 +477,23 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const revMissedLf = Math.max(0, keyLf - (revLf - revJunkLf));
         const revBoardSfAdj = revBoardSf * (1 - exclFraction);
         const rev10BoardSfAdj = rev10BoardSf * (1 - exclFraction);
+        // JUNKDUMP (the third's audit instrument, adopted committed per the env-audit
+        // order): every POSTED junk run — exactly the runs summed into junkLf — with
+        // nearby text and geometry, for family analysis. Gated on ZT_JUNKDUMP; no
+        // scored path touched.
+        if (process.env.ZT_JUNKDUMP) {
+          const sums = { junkLf: 0 };
+          for (let at = 0; at < runs.length; at += 1) {
+            const r = runs[at]!;
+            if (held.has(r) || !junk[at]) continue;
+            sums.junkLf += r.lengthFeet;
+            const mx = (r.x1 + r.x2) / 2, my = (r.y1 + r.y2) / 2;
+            const near = textItems.map((t) => ({ s: t.str, x: (t.x + t.width / 2) / W, y: t.y / W })).filter((t) => t.s.trim() !== "" && Math.hypot(t.x - mx, t.y - my) * fpu <= 12).map((t) => ({ ...t, d: +(Math.hypot(t.x - mx, t.y - my) * fpu).toFixed(1) })).sort((a, b) => a.d - b.d).slice(0, 15);
+            const curved = d.found.inUnits.filter((g) => (g as { curved?: boolean }).curved === true && Math.hypot((g.x1 + g.x2) / 2 - mx, (g.y1 + g.y2) / 2 - my) * fpu <= r.lengthFeet / 2 + 2).length;
+            appendFileSync(process.env.ZT_JUNKDUMP, JSON.stringify({ t: "run", set: dir, sheet, page: saved.page, pdf, wallTest, renovation, excl: exclFraction, x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, L: r.lengthFeet, th: r.thicknessFeet, h: runFeet(r), fpu, W, H: strokes.heightPt, curved, near }) + "\n");
+          }
+          appendFileSync(process.env.ZT_JUNKDUMP, JSON.stringify({ t: "sheet", set: dir, sheet, wallTest, renovation, junkLf, dumped: sums.junkLf }) + "\n");
+        }
         const keyByType: Record<string, number> = {};
         for (const k of key) {
           const t = ((k as { wallType?: string }).wallType ?? "0").trim() || "0";
