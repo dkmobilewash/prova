@@ -169,6 +169,7 @@ export default async function JobTakeoffPage({
   if (loaded === null) {
     return (
       <section className="flex flex-col gap-4">
+        <PlanDeletedToast />
         <Header jobId={job.id} />
         <TakeoffCurrencyBanner jobId={job.id} currency={currency} />
         <div className="rounded-lg border border-line-card bg-surface-card p-4">
@@ -242,6 +243,10 @@ export default async function JobTakeoffPage({
 
   return (
     <section className="flex flex-col gap-4">
+      {/* FIRST, in this return AND the no-plan one above: the one position both share, so React keeps the toast (and its
+          Undo) when deleting the job's last plan turns this page into "No drawing on this job yet". #1268's production
+          proof found it inside this branch only, where that delete unmounted it. planDeletedToastMount.test.tsx. */}
+      <PlanDeletedToast />
       <Header jobId={job.id} hasPlan />
       {/* ABOVE the measurements, for the reason the levelling caution sits
           above the quotes: it decides whether the numbers below mean
@@ -364,7 +369,6 @@ export default async function JobTakeoffPage({
       </div>
 
       {!isEstimateStage && <NotEstimating />}
-      <PlanDeletedToast />
 
       {/* READING THE SHEETS, above the viewer because it is about the whole set
           rather than one sheet.
