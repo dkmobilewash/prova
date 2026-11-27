@@ -664,6 +664,12 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     // ── SCOREBOARD V3 accumulators (prereg-scoreboard-v3.md) ──
     let kb3 = 0, err3 = 0, gradedHeightErr = 0, defaultKeyBoard = 0, defaultPostedBoard = 0;
     const setErr3: number[] = [];
+    // Amendment 3 (Diego, 2026-11-27): criteria 1 and 2 are judged against the FULL
+    // key (the basis of every prior exam and the Finish Plan's "49.8% today");
+    // default-vs-default stays off the ERROR only. The graded-key figures print
+    // beside them for reference.
+    let kbFull3 = 0;
+    const setErrFull3: number[] = [];
     for (const [dir, s] of [...bySet.entries()].sort()) {
       const kBid = bid({ lf: s.keyLf, boardSf: s.keyBoardSf, doors: s.keyDoors, windows: s.keyWindows });
       const boardOverSf = Math.max(0, s.zeroBoardSf - s.keyBoardSf);
@@ -716,6 +722,8 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         gradedHeightErr += Math.abs(s.a2RealGradedSf - s.keyGradedBoardSf) * PRICE.boardPerSf;
         defaultKeyBoard += s.keyDefaultBoardSf * PRICE.boardPerSf; defaultPostedBoard += s.a2DefaultPostedSf * PRICE.boardPerSf;
         if (kBid3 > 0 && s.keyLf > 0) setErr3.push(((over3 + under3) / kBid3) * 100);
+        kbFull3 += kBid;
+        if (kBid > 0 && s.keyLf > 0) setErrFull3.push(((over3 + under3) / kBid) * 100);
         console.log(`ZT2MIN ${group} ${dir.slice(0, 26).padEnd(26)} TOTAL ERROR ${kBid3 === 0 ? "—" : (((over3 + under3) / kBid3) * 100).toFixed(1) + "%"} (over $${Math.round(over3)} + under $${Math.round(under3)}) · key $${Math.round(kBid3)} graded-heights (v2 key $${Math.round(kBid)})`);
       }
       const pct = (x: number) => (kBid === 0 ? "—" : `${(((x - kBid) / kBid) * 100).toFixed(1)}%`);
@@ -736,7 +744,8 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       const rows = v3Sheets.filter((r) => r.group === group);
       const acts = rows.map((r) => r.actions);
       const sum = (f: (r: (typeof rows)[number]) => number) => rows.reduce((n, r) => n + f(r), 0);
-      if (kb3 > 0) console.log(`ZT2MIN ${group} TOTAL ERROR ${((err3 / kb3) * 100).toFixed(1)}% of key $${Math.round(kb3)} (graded-heights key) · MEDIAN SET ${med(setErr3).toFixed(1)}% over ${setErr3.length} sets — THE HEADLINE (scoreboard v3, criteria 1+2)`);
+      if (kbFull3 > 0) console.log(`ZT2MIN ${group} TOTAL ERROR ${((err3 / kbFull3) * 100).toFixed(1)}% of the FULL key $${Math.round(kbFull3)} · MEDIAN SET ${med(setErrFull3).toFixed(1)}% over ${setErrFull3.length} sets — THE HEADLINE (scoreboard v3, criteria 1+2; amendment 3)`);
+      if (kb3 > 0) console.log(`ZT2MIN ${group} reference only: ${((err3 / kb3) * 100).toFixed(1)}% of the graded-heights key $${Math.round(kb3)} · median set ${med(setErr3).toFixed(1)}%`);
       console.log(`ZTACT ${group} ACTIONS TO EXACT: median ${med(acts)} per sheet · mean ${(acts.length ? sum((r) => r.actions) / acts.length : 0).toFixed(1)} · pooled ${sum((r) => r.actions)} over ${rows.length} sheets — boxes ${sum((r) => r.B)} · exclude-like clicks ${sum((r) => r.E)} · junk removes ${sum((r) => r.J)} · real lost to boxes/clicks ${sum((r) => r.L)} · held-real restores ${sum((r) => r.R)} · missed adds ${sum((r) => r.M)} · height answers ${sum((r) => r.H)} (criterion 3; greedy = an upper bound)`);
       console.log(`ZTHGT ${group} height disagreement on KEY-KNOWN heights $${Math.round(gradedHeightErr)} · default-vs-default (OFF the total, own line): key $${Math.round(defaultKeyBoard)} / posted $${Math.round(defaultPostedBoard)}`);
       for (const r of rows) console.log(`ZTACT ${group} ${r.set.slice(0, 26).padEnd(26)} ${r.sheet} actions ${r.actions} (B ${r.B} E ${r.E} J ${r.J} L ${r.L} R ${r.R} M ${r.M} H ${r.H})`);
