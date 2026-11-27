@@ -35,6 +35,18 @@ export type PlanDeleteImpact = {
 export const UNDO_WINDOW_MS = 10 * 60_000;
 
 /**
+ * The plan-delete path's own transaction timeout (coordination/plan-delete-timeout.md T2): the preview, the delete and Undo.
+ * Production 2026-11-26: the preview's transaction ran 5,068 ms against Prisma's 5 s default and threw P2028, and a
+ * measured round trip was 6.2 s. Set per caller, as sync-p2028-callers.md requires; the global default is untouched.
+ * ponytail: headroom, not a cause — why production runs slower than 39 queries x 60 ms is not established. Fewer round
+ * trips (or a measured cause) is the upgrade path; 20 s is 3x the slowest measured round trip.
+ */
+export const PLAN_DELETE_TX_MS = 20_000;
+
+/** What a person reads when one of the three transactions fails: nothing moved, so trying again is safe. */
+export const PLAN_DELETE_TX_FAILED = "Could not finish that in time. Nothing was changed. Try again.";
+
+/**
  * What a delete changed, kept on the plan row so Undo can put it back exactly (`TakeoffPlan.deleteUndo`):
  * the job it left, the item each of its runs was on, each estimate line it changed (its links before, and its
  * `updatedAt` after, so an edit made since can be noticed), and the items it emptied (the purge's to remove).

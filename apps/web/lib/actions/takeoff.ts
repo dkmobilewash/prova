@@ -52,7 +52,7 @@ import {
 } from "./shared";
 import { optionalDateFromString } from "@/lib/bid-pursuits";
 import { deleteDocument } from "@/lib/blob";
-import { applyPlanDelete, UNDO_WINDOW_MS, type PlanDeleteImpact, type PlanDeleteRecord } from "@/lib/takeoff/planDelete";
+import { applyPlanDelete, PLAN_DELETE_TX_FAILED, PLAN_DELETE_TX_MS, UNDO_WINDOW_MS, type PlanDeleteImpact, type PlanDeleteRecord } from "@/lib/takeoff/planDelete";
 import { onePackageOnly, describeForPackage } from "@/lib/takeoff/packages";
 
 /**
@@ -577,9 +577,17 @@ export async function deleteTakeoffPlan(jobId: string, planId: string, options: 
   // ── THE ESTIMATE MOVES WITH THE PLAN, IN THE SAME TRANSACTION (Diego, 2026-11-25; `lib/takeoff/planDelete.ts`) ──
   // A SOFT delete since 2026-11-26 (plan-delete-undo.md): the plan, its runs and its file stay for the 10-minute Undo
   // window; `purgeDeletedPlans` deletes the row and then the file (the old row-first, file-last order) after it.
-  const impact = await prisma.$transaction(
-    (tx) => applyPlanDelete(tx, { companyId: company.id, jobId, planId, userId: context.id }, { keepHandPriced: options.keepHandPriced !== false })
-  );
+  let impact: PlanDeleteImpact | null;
+  try {
+    impact = await prisma.$transaction(
+      (tx) => applyPlanDelete(tx, { companyId: company.id, jobId, planId, userId: context.id }, { keepHandPriced: options.keepHandPriced !== false }),
+      { timeout: PLAN_DELETE_TX_MS },
+    );
+  } catch (error) {
+    // A thrown action reaches a person as a redacted error page (plan-delete-timeout.md T3); the transaction rolled back.
+    console.error("[takeoff] plan delete failed", { planId }, error);
+    return actionFail(PLAN_DELETE_TX_FAILED);
+  }
   if (impact === null) return actionFail("That plan is no longer on this job. Reload the page.");
 
   revalidatePath(`/jobs/${jobId}/takeoff`);
@@ -605,9 +613,14 @@ export async function previewDeleteTakeoffPlan(jobId: string, planId: string): P
         impact = await applyPlanDelete(tx, { companyId: company.id, jobId, planId }, { keepHandPriced: true });
         throw rollback;
       },
+      { timeout: PLAN_DELETE_TX_MS },
     );
   } catch (error) {
-    if (error !== rollback) throw error;
+    if (error !== rollback) {
+      // Production 2026-11-26: a P2028 thrown from here became an error page (plan-delete-timeout.md T1).
+      console.error("[takeoff] plan delete preview failed", { planId }, error);
+      return actionFail(PLAN_DELETE_TX_FAILED);
+    }
   }
   if (impact === null) return actionFail("That plan is no longer on this job. Reload the page.");
   return { ok: true, value: impact };
@@ -633,7 +646,9 @@ export async function undoTakeoffPlanDelete(jobId: string, planId: string): Prom
   if (!plan || !plan.deletedAt || !record || record.jobId !== jobId) return actionFail("That plan cannot be brought back. Reload the page.");
   if (Date.now() - plan.deletedAt.getTime() > UNDO_WINDOW_MS) return actionFail("Too late to undo: a deleted plan can be brought back for 10 minutes.");
 
-  const outcome = await prisma.$transaction(async (tx) => {
+  let outcome: "edited" | "gone" | "done";
+  try {
+    outcome = await prisma.$transaction(async (tx) => {
     const now = await tx.jobLineItem.findMany({ where: { id: { in: record.lines.map((l) => l.id) } }, select: { id: true, updatedAt: true } });
     const stamp = new Map(now.map((l) => [l.id, l.updatedAt.toISOString()]));
     if (record.lines.some((l) => stamp.get(l.id) !== l.updatedAt)) return "edited" as const;
@@ -663,7 +678,12 @@ export async function undoTakeoffPlanDelete(jobId: string, planId: string): Prom
     const job = await tx.job.findFirst({ where: { id: jobId, companyId: company.id }, select: { status: true } });
     if (job?.status === "ESTIMATE") await syncReviewedItems(tx, company.id, jobId, [...byItem.keys()]);
     return "done" as const;
-  });
+    }, { timeout: PLAN_DELETE_TX_MS });
+  } catch (error) {
+    // Nothing moved: the transaction rolled back (plan-delete-timeout.md T3).
+    console.error("[takeoff] plan delete undo failed", { planId }, error);
+    return actionFail(PLAN_DELETE_TX_FAILED);
+  }
   if (outcome === "edited") return actionFail("A line this delete changed was edited since, so Undo would undo that edit too. Nothing was changed.");
   if (outcome === "gone") return actionFail("That plan cannot be brought back. Reload the page.");
 
