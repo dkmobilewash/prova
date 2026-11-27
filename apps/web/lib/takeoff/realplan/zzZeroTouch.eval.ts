@@ -18,7 +18,7 @@ import { loadRenoModel, loadRunModel, priorForRuns, renoModelRemovals, runModelV
 import { reviewOrder, runScores } from "../wallReview";
 import type { WallCandidate } from "../wallVectors";
 import { clipToWorkArea, eraseInBoxes, wallsLikeThese, type Polygon } from "../userExclusions";
-import { actionsToExact } from "../actionsToExact";
+import { actionsToExact, postureChoice, postureFeet, type ActionsInput } from "../actionsToExact";
 import { setFigures, setHeightRule, wallHeightChain, type SetFigures, type SetHeightRule, type WallHeightConvention } from "../heightsByCode";
 import { levelHeight, planLevels, type LevelMark } from "../levelHeights";
 import { setHeightFacts } from "../setHeightFacts";
@@ -572,7 +572,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           }).filter((b) => !b.refused && b.junkLf > 0).sort((a, b) => b.junkLf - a.junkLf).slice(0, 3);
           for (let k = 1; k <= boxes.length; k += 1) eraseOptions.push({ boxes: k, erased: new Set(boxes.slice(0, k).flatMap((b) => b.erased)) });
         }
-        const act = actionsToExact({
+        const actInput: ActionsInput = {
           runs: runs.map((r, at) => ({ lengthFeet: r.lengthFeet, held: held.has(r), junk: isJunkAt(at), heightFeet: runFeet(r), keyIndex: matchOf[at]! })),
           key: key.map((k, ki) => ({ missed: missedKeyAt[ki]!, type: typeOfKey(ki), knownFeet: keyKnownFeet[ki] ?? null })),
           boxOptions: [...boxSets.entries()].map(([n, boxes]) => ({ boxes: n, insideFeet: keptFeetFor(boxes) })),
@@ -594,14 +594,17 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
             }
             return classes;
           },
-        });
-        const bestK = act.B;
+        };
+        const act = actionsToExact(actInput);
+        // The REVIEWED-2MIN posture's boxes: the counter's own choice, capped at 3 in all (Amendment 3).
+        const posture = postureChoice(actInput);
+        const bestK = posture.B;
         const bestBoxes: Polygon[] = boxSets.get(bestK) ?? [];
         const sheetActions = act.actions;
-        // THE REVIEWED-2MIN POSTURE: the chosen boxes, the 10 shipped answers,
+        // THE REVIEWED-2MIN POSTURE: the chosen boxes (work-area AND erase, 3 in all), the 10 shipped answers,
         // then one height answer per key-known type.
         const inside2 = keptFeetFor(bestBoxes);
-        const pieces2 = runs.map((r, at) => ({ at, feet: Math.min(r.lengthFeet, inside2.get(at) ?? 0) })).filter((p) => p.feet > 0);
+        const pieces2 = postureFeet(runs.map((r) => r.lengthFeet), inside2, posture.erased).map((feet, at) => ({ at, feet })).filter((p) => p.feet > 0);
         const flipped = new Set<number>();
         {
           const entries2 = pieces2.map((p, i) => ({ at: i, held: held.has(runs[p.at]!), score: scores[p.at] ?? null, lengthFeet: p.feet }));

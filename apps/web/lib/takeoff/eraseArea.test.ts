@@ -106,6 +106,12 @@ describe("P6: the scoreboard's erase move uses the product's own predicate", () 
     expect(evalSrc.match(/eraseInBoxes\(/g)).toHaveLength(1);
     expect(evalSrc).not.toMatch(/function eraseInBoxes|const eraseInBoxes/);
   });
+  it("the REVIEWED-2MIN posture takes its boxes from postureChoice over the SAME input, and its footage from postureFeet (Amendment 3)", () => {
+    expect(evalSrc).toMatch(/const act = actionsToExact\(actInput\);/);
+    expect(evalSrc).toMatch(/const posture = postureChoice\(actInput\);/);
+    expect(evalSrc).toMatch(/const bestK = posture\.B;/);
+    expect(evalSrc).toMatch(/postureFeet\(runs\.map\(\(r\) => r\.lengthFeet\), inside2, posture\.erased\)/);
+  });
   it("hands the sets to actionsToExact, and ZT_ERASE=0 is the OFF arm", () => {
     expect(evalSrc).toMatch(/^\s*eraseOptions,$/m);
     expect(evalSrc).toMatch(/process\.env\.ZT_ERASE !== "0"/);

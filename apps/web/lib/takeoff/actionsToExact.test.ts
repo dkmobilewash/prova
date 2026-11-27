@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionsToExact, type ActionsInput } from "./actionsToExact";
+import { actionsToExact, postureChoice, postureFeet, type ActionsInput } from "./actionsToExact";
 
 /**
  * Build gate 3 of prereg-scoreboard-v3.md: a PERFECT draft scores zero, and every
@@ -121,5 +121,43 @@ describe("actions to exact: erase boxes", () => {
   it("absent erase options change nothing (the OFF arm is v3)", () => {
     const runs = [realRun(0), realRun(1), junkRun()];
     expect(actionsToExact(base({ runs, eraseOptions: [] }))).toEqual(actionsToExact(base({ runs })));
+  });
+});
+
+/**
+ * Amendment 3 (erase-area-tool.md; the instrument owner's ruling 2026-11-28): the REVIEWED-2MIN posture applies every
+ * shipped box move, through the SAME choice the counter makes, capped at 3 boxes in all.
+ */
+describe("the 2MIN posture and the 3-box cap", () => {
+  it("postureFeet with no erase set is today's formula, run for run", () => {
+    const lengths = [10, 12.5, 7, 3];
+    const inside = new Map([[0, 10], [1, 6.25], [3, 9]]);
+    const today = lengths.map((len, at) => Math.min(len, inside.get(at) ?? 0));
+    expect(postureFeet(lengths, inside, new Set())).toEqual(today);
+  });
+  it("an erase box takes a run's whole posted footage out of the posture", () => {
+    const lengths = [10, 12.5, 7];
+    const inside = new Map([[0, 10], [1, 12.5], [2, 7]]);
+    expect(postureFeet(lengths, inside, new Set([1]))).toEqual([10, 0, 7]);
+  });
+  it("the POSTURE caps boxes at 3 in all: with 2 work-area boxes chosen, only the 1-box erase option is open to it", () => {
+    const runs = [realRun(0), realRun(1), ...Array.from({ length: 8 }, junkRun)];
+    // Two work-area boxes keep 0, 1 and junk 6..9 (junk 2..5 outside); erase options of 1 and 2 boxes take 6,7 / 6..9.
+    const input = base({ runs, boxOptions: [{ boxes: 2, insideFeet: new Map([[0, 10], [1, 10], [6, 10], [7, 10], [8, 10], [9, 10]]) }], eraseOptions: [{ boxes: 1, erased: new Set([6, 7]) }, { boxes: 2, erased: new Set([6, 7, 8, 9]) }] });
+    const posture = postureChoice(input);
+    expect(posture.B + posture.X).toBeLessThanOrEqual(3);
+    expect(posture).toMatchObject({ B: 2, X: 1 });
+    expect([...posture.erased].sort()).toEqual([6, 7]);
+  });
+  it("the COUNTER is not capped (criterion 3 has no budget): the same sheet takes 2 + 2", () => {
+    const runs = [realRun(0), realRun(1), ...Array.from({ length: 8 }, junkRun)];
+    const input = base({ runs, boxOptions: [{ boxes: 2, insideFeet: new Map([[0, 10], [1, 10], [6, 10], [7, 10], [8, 10], [9, 10]]) }], eraseOptions: [{ boxes: 1, erased: new Set([6, 7]) }, { boxes: 2, erased: new Set([6, 7, 8, 9]) }] });
+    expect(actionsToExact(input)).toMatchObject({ B: 2, X: 2, J: 0 });
+  });
+  it("uncapped, the posture's choice IS the counter's choice", () => {
+    const runs = [realRun(0), realRun(1), junkRun(), junkRun(), junkRun()];
+    const input = base({ runs, boxOptions: [{ boxes: 1, insideFeet: new Map([[0, 10], [1, 10], [2, 10], [3, 10]]) }], eraseOptions: [{ boxes: 1, erased: new Set([2, 3]) }] });
+    const a = actionsToExact(input), p = postureChoice(input);
+    expect({ B: p.B, X: p.X }).toEqual({ B: a.B, X: a.X });
   });
 });
