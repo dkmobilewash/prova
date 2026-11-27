@@ -64,6 +64,8 @@ vi.mock("@/lib/blob", () => ({
 // The plan delete itself (cascade + estimate sync) is `applyPlanDelete`, proven on a real database in
 // planDelete.dbtest.ts; here it only says whether the row went, so the ORDER (row, then file) is what is tested.
 vi.mock("@/lib/takeoff/planDelete", () => ({
+  PLAN_DELETE_TX_MS: 20_000,
+  PLAN_DELETE_TX_FAILED: "Could not finish that in time. Nothing was changed. Try again.",
   applyPlanDelete: async () => {
     if (planDeleteCount === 0) return null;
     log.push("row:plan");
