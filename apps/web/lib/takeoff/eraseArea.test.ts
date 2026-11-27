@@ -97,3 +97,17 @@ describe("E4: the viewer previews with the shared predicate and writes what it p
     expect(viewer.match(/(?:addExclusion|addSheetExclusion)\([^)]*"ERASE_AREA"/g)).toHaveLength(1);
   });
 });
+
+describe("P6: the scoreboard's erase move uses the product's own predicate", () => {
+  // The v3 rule: a move is modelled with the product's apply function, in the PR that ships it.
+  const evalSrc = readFileSync(join(process.cwd(), "lib/takeoff/realplan/zzZeroTouch.eval.ts"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  it("imports eraseInBoxes from the product and builds every erase set with it", () => {
+    expect(evalSrc).toMatch(/import \{[^}]*\beraseInBoxes\b[^}]*\} from "\.\.\/userExclusions";/);
+    expect(evalSrc.match(/eraseInBoxes\(/g)).toHaveLength(1);
+    expect(evalSrc).not.toMatch(/function eraseInBoxes|const eraseInBoxes/);
+  });
+  it("hands the sets to actionsToExact, and ZT_ERASE=0 is the OFF arm", () => {
+    expect(evalSrc).toMatch(/^\s*eraseOptions,$/m);
+    expect(evalSrc).toMatch(/process\.env\.ZT_ERASE !== "0"/);
+  });
+});

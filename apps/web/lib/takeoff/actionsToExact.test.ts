@@ -80,3 +80,46 @@ describe("actions to exact", () => {
     expect(r).toMatchObject({ E: 0, J: 2, actions: 2 });
   });
 });
+
+/**
+ * ERASE (W2 item 2, coordination/erase-area-tool.md P6): the product's "Erase walls in this area". The caller builds
+ * each option's erased set with the product's own `eraseInBoxes` (pinned in eraseArea.test.ts); here only the counting.
+ * One action per box; a real run it takes is a loss (one restore each, as for a work-area box); it acts after the
+ * work area, on what the work area kept (the product's order); absent, every v3 count is unchanged.
+ */
+describe("actions to exact: erase boxes", () => {
+  const junk3 = [realRun(0), realRun(1), junkRun(), junkRun(), junkRun()];
+  it("one erase box that takes three junk runs costs 1 instead of 3 removes", () => {
+    const r = actionsToExact(base({ runs: junk3, eraseOptions: [{ boxes: 1, erased: new Set([2, 3, 4]) }] }));
+    expect(r).toMatchObject({ actions: 1, J: 0, L: 0, X: 1 });
+  });
+  it("a real run the box takes is charged as a loss (L)", () => {
+    const r = actionsToExact(base({ runs: junk3, eraseOptions: [{ boxes: 1, erased: new Set([1, 2, 3, 4]) }] }));
+    expect(r).toMatchObject({ actions: 2, X: 1, L: 1, J: 0 });
+  });
+  it("an erase option that does not pay is not taken", () => {
+    const r = actionsToExact(base({ runs: [realRun(0), realRun(1), junkRun()], eraseOptions: [{ boxes: 1, erased: new Set([2]) }] }));
+    expect(r).toMatchObject({ actions: 1, X: 0, J: 1 });
+  });
+  it("ties keep fewer boxes", () => {
+    const r = actionsToExact(base({ runs: junk3, eraseOptions: [{ boxes: 1, erased: new Set([2, 3]) }, { boxes: 2, erased: new Set([2, 3, 4]) }] }));
+    expect(r).toMatchObject({ actions: 2, X: 1, J: 1 });
+  });
+  it("acts after the work area: a run the work area already set aside is not erased again or counted twice", () => {
+    // The work-area box keeps runs 0, 1, 2 (3 and 4 are outside it); erase then takes 2.
+    const insideFeet = new Map([[0, 10], [1, 10], [2, 10]]);
+    const r = actionsToExact(base({ runs: junk3, boxOptions: [{ boxes: 1, insideFeet }], eraseOptions: [{ boxes: 1, erased: new Set([2, 3, 4]) }] }));
+    expect(r).toMatchObject({ B: 1, X: 0, J: 1, actions: 2 });
+  });
+  it("prices an erase box on what the work area KEPT: junk outside the work area is not its job", () => {
+    // Work area keeps 0..3 (junk 2, 3 inside it); junk 4, 5 lie outside it. The erase box takes 2 and 3 only.
+    const runs = [realRun(0), realRun(1), junkRun(), junkRun(), junkRun(), junkRun()];
+    const insideFeet = new Map([[0, 10], [1, 10], [2, 10], [3, 10]]);
+    const r = actionsToExact(base({ runs, boxOptions: [{ boxes: 1, insideFeet }], eraseOptions: [{ boxes: 1, erased: new Set([2, 3]) }] }));
+    expect(r).toMatchObject({ B: 1, X: 1, J: 0, actions: 2 });
+  });
+  it("absent erase options change nothing (the OFF arm is v3)", () => {
+    const runs = [realRun(0), realRun(1), junkRun()];
+    expect(actionsToExact(base({ runs, eraseOptions: [] }))).toEqual(actionsToExact(base({ runs })));
+  });
+});

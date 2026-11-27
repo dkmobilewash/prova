@@ -5,12 +5,13 @@
  * key, counted GREEDILY (so an upper bound on the true minimum, the same bound for
  * every arm):
  *
- *   ACTIONS = B + E + J + L + R + M + H
+ *   ACTIONS = B + X + E + J + L + R + M + H
  *
  *   B  boxes (WORK_AREA, keep-inside — the product offers it on every sheet)
+ *   X  erase boxes ("Erase walls in this area", W2; erase-area-tool.md P6), after the work area
  *   E  "Exclude like this" clicks (Diego, 2026-11-26: one action per click)
  *   J  posted junk runs still standing after boxes and clicks (one remove each)
- *   L  REAL runs a box or a click set aside (one restore each — "charged as losses")
+ *   L  REAL runs a box, an erase box or a click set aside (one restore each — "charged as losses")
  *   R  runs the product HELD that are real (one restore each)
  *   M  key walls nothing posted or held covers (one add each)
  *   H  one answer per wall type whose height the KEY knows, when a posted real run
@@ -29,11 +30,16 @@ export type ActionsInput = {
   key: readonly { missed: boolean; type: string; knownFeet: number | null }[];
   /** Candidate box sets, fewest boxes first (k = 1..3); each maps run index -> inside feet. */
   boxOptions: readonly { boxes: number; insideFeet: ReadonlyMap<number, number> }[];
+  /**
+   * Candidate erase-box sets, fewest boxes first; each is the run indices the product's `eraseInBoxes` takes (whole runs).
+   * Absent or empty: the move is OFF, and every count is v3's.
+   */
+  eraseOptions?: readonly { boxes: number; erased: ReadonlySet<number> }[];
   /** Like-classes: for each class, the run indices one click would set aside. */
   likeClasses: (standing: readonly boolean[]) => readonly (readonly number[])[];
 };
 
-export type ActionsResult = { actions: number; B: number; E: number; J: number; L: number; R: number; M: number; H: number; chosenBoxes: number };
+export type ActionsResult = { actions: number; B: number; X: number; E: number; J: number; L: number; R: number; M: number; H: number; chosenBoxes: number };
 
 const HEIGHT_TOLERANCE_FEET = 0.25;
 
@@ -68,8 +74,20 @@ export function actionsToExact(input: ActionsInput): ActionsResult {
     }
   }
 
+  // ERASE BOXES: on what the work area kept (the product's order); the option with the fewest erase-stage actions,
+  // a real run erased being a loss; ties keep fewer boxes (options come fewest first, and only a strict gain moves).
+  let X = 0, eraseJunkLeft = boxJunkLeft, eraseLost = 0;
+  let erased: ReadonlySet<number> = new Set<number>();
+  for (const opt of input.eraseOptions ?? []) {
+    const jLeft = runs.filter((_, i) => postedJunk[i] && kept[i] && !opt.erased.has(i)).length;
+    const lost = runs.filter((_, i) => postedReal[i] && kept[i] && opt.erased.has(i)).length;
+    if (opt.boxes + jLeft + lost < X + eraseJunkLeft + eraseLost) {
+      X = opt.boxes; eraseJunkLeft = jLeft; eraseLost = lost; erased = opt.erased;
+    }
+  }
+
   // CLICKS: greedy over like-classes on what still stands after the boxes.
-  const standing = runs.map((r, i) => !r.held && kept[i]!);
+  const standing = runs.map((r, i) => !r.held && kept[i]! && !erased.has(i));
   const classes = input.likeClasses(standing);
   const gone = new Set<number>();
   let E = 0, junkGone = 0, realLost = 0;
@@ -87,7 +105,7 @@ export function actionsToExact(input: ActionsInput): ActionsResult {
     E += 1; junkGone += bestJ; realLost += bestR;
   }
 
-  const J = boxJunkLeft - junkGone;
-  const L = boxLost + realLost;
-  return { actions: B + E + J + L + R + M + H, B, E, J, L, R, M, H, chosenBoxes: B };
+  const J = eraseJunkLeft - junkGone;
+  const L = boxLost + eraseLost + realLost;
+  return { actions: B + X + E + J + L + R + M + H, B, X, E, J, L, R, M, H, chosenBoxes: B };
 }
