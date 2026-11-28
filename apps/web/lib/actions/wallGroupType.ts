@@ -1,5 +1,6 @@
 "use server";
 
+import { fillTypeHeight } from "@/lib/takeoff/typeHeightOnce";
 import { Prisma, prisma } from "@prova/db";
 import { randomUUID } from "node:crypto";
 import { recordTakeoffEvents, type TakeoffEventRow } from "@/lib/takeoff/events";
@@ -381,15 +382,19 @@ async function typeGroup(
     }
     if (moving.size > 0) await tx.takeoffMeasurement.updateMany({ where: { id: { in: [...moving] } }, data: { itemId, label } });
     if (data.length > 0) await tx.takeoffMeasurement.createMany({ data });
+    let filled: string[] = [];
     if (heightFt !== null) {
       await tx.takeoffItem.update({ where: { id: itemId }, data: { heightFt: heightFt.toFixed(2) } });
       await tx.takeoffItem.updateMany({ where: { id: itemId, sides: null }, data: { sides: 2 } });
+      // The type's other items with no height take the answer too (type-height-once.md H1).
+      filled = (await fillTypeHeight(tx, { companyId, jobId, itemId, heightFt })).map((f) => f.id);
     }
     // The type's line, and the untyped line the runs left, written now.
     if (touched !== undefined) {
       touched.add(itemId);
       if (untyped) touched.add(untyped.id);
-    } else await syncDecidedItems(tx, companyId, jobId, [itemId, untyped?.id ?? null]);
+      for (const id of filled) touched.add(id);
+    } else await syncDecidedItems(tx, companyId, jobId, [itemId, untyped?.id ?? null, ...filled]);
   });
   revalidatePath(`/jobs/${jobId}`, "layout");
   revalidatePath(`/takeoff/${jobId}`);

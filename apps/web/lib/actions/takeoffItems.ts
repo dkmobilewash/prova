@@ -1,5 +1,6 @@
 "use server";
 
+import { fillTypeHeight } from "@/lib/takeoff/typeHeightOnce";
 import { revalidatePath } from "next/cache";
 import { recordTakeoffEvents } from "@/lib/takeoff/events";
 import { prisma } from "@prova/db";
@@ -260,7 +261,7 @@ export async function updateTakeoffItem(
  * screen's square feet showed. The item's estimate lines are written or
  * updated at once (`syncDecidedItems`).
  */
-export async function setWallGroupHeight(jobId: string, itemId: string, heightFt: number): Promise<ActionResultWith<{ was: { heightFt: string | null; sides: number | null } }>> {
+export async function setWallGroupHeight(jobId: string, itemId: string, heightFt: number): Promise<ActionResultWith<{ was: { heightFt: string | null; sides: number | null; filled: { id: string; sides: number | null }[] } }>> {
   const context = await requireCompanyContext();
   if (!can(context, "VIEW_JOB_COSTS")) return actionFail(JOB_COSTS_ONLY);
   const { company } = context;
@@ -274,8 +275,10 @@ export async function setWallGroupHeight(jobId: string, itemId: string, heightFt
     const before = await tx.takeoffItem.findUniqueOrThrow({ where: { id: itemId }, select: { heightFt: true, sides: true } });
     await tx.takeoffItem.update({ where: { id: itemId }, data: { heightFt: heightFt.toFixed(2) } });
     await tx.takeoffItem.updateMany({ where: { id: itemId, sides: null }, data: { sides: 2 } });
-    await syncDecidedItems(tx, company.id, jobId, [itemId]);
-    return { heightFt: before.heightFt === null ? null : before.heightFt.toString(), sides: before.sides };
+    // The type's other items with no height take the answer too (type-height-once.md H1).
+    const filled = await fillTypeHeight(tx, { companyId: company.id, jobId, itemId, heightFt });
+    await syncDecidedItems(tx, company.id, jobId, [itemId, ...filled.map((f) => f.id)]);
+    return { heightFt: before.heightFt === null ? null : before.heightFt.toString(), sides: before.sides, filled };
   });
   // A height a person set on an item (the queue's height question or the layers panel): one HEIGHT_EDIT.
   await recordTakeoffEvents([{ companyId: company.id, jobId, kind: "HEIGHT_EDIT", userId: context.id }]);

@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from "@prova/db";
+import { answeredTypeHeight } from "@/lib/takeoff/typeHeightOnce";
 import { recordTakeoffEvents } from "@/lib/takeoff/events";
 import { groupTarget } from "@/lib/takeoff/eventTarget";
 import { nextItemColor } from "@/lib/takeoff/itemColors";
@@ -208,7 +209,7 @@ export async function itemForType(
   // A variant (C6 of family C) gets its own item under its full code, priced
   // with the family's assembly — so the family's item is found by its name
   // first, and never falls back onto a variant's.
-  const onType = await tx.takeoffItem.findMany({ where: { jobId, companyId, wallTypeId: type.id }, select: { id: true, name: true }, orderBy: { sortOrder: "asc" } });
+  const onType = await tx.takeoffItem.findMany({ where: { jobId, companyId, wallTypeId: type.id }, select: { id: true, name: true, heightFt: true }, orderBy: { sortOrder: "asc" } });
   const levelName = level === null ? null : `${type.code} walls · ${level}`;
   const onLevel = (name: string) => name.includes(" walls · level");
   const variantItem = (name: string) => /^(.*) walls$/.test(name) && familyOf(name.replace(/ walls$/, ""), [type.code]) !== null;
@@ -217,6 +218,11 @@ export async function itemForType(
       ? onType.find((i) => i.name === levelName)
       : (onType.find((i) => i.name === `${type.code} walls`) ?? (type.family === undefined ? onType.find((i) => !variantItem(i.name) && !onLevel(i.name)) : undefined));
   if (found) return found.id;
+  // With no schedule default, a new item of an answered type starts from that answer (type-height-once.md H3).
+  const answered =
+    row.defaultHeightFt === null && onType.some((i) => i.heightFt !== null)
+      ? answeredTypeHeight(onType, (await tx.wallType.findUnique({ where: { id: type.id }, select: { notes: true } }))?.notes)
+      : null;
   const existing = await tx.takeoffItem.findMany({ where: { jobId }, select: { colorHex: true, sortOrder: true }, orderBy: { sortOrder: "desc" } });
   const item = await tx.takeoffItem.create({
     data: {
@@ -227,7 +233,7 @@ export async function itemForType(
       colorHex: nextItemColor(existing.map((i) => i.colorHex)),
       sortOrder: (existing[0]?.sortOrder ?? -1) + 1,
       wallTypeId: type.id,
-      heightFt: row.defaultHeightFt === null ? null : Number(row.defaultHeightFt),
+      heightFt: row.defaultHeightFt === null ? answered : Number(row.defaultHeightFt),
       sides: row.sides,
     },
     select: { id: true },

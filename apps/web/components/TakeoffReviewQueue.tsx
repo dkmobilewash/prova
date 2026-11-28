@@ -1,5 +1,6 @@
 "use client";
 
+import { heightUndoItems } from "@/lib/takeoff/typeHeightOnce";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/actions/shared";
@@ -754,7 +755,8 @@ export function TakeoffReviewQueue({
                 const itemId = current.itemId;
                 acceptNow(current.key, current.name, () => setWallGroupHeight(jobId, itemId, heightFt), {
                   label: `Height ${heightFt} ft on ${current.name}`,
-                  undo: (saved) => undoSheetSuggestions(jobId, { moved: [], created: [], items: [{ id: itemId, heightFt: saved.value.was.heightFt, sides: saved.value.was.sides }] }),
+                  // The items this answer filled come back too (type-height-once.md H4).
+                  undo: (saved) => undoSheetSuggestions(jobId, { moved: [], created: [], items: heightUndoItems(itemId, saved.value.was) }),
                   redo: () => setWallGroupHeight(jobId, itemId, heightFt),
                 });
               }}

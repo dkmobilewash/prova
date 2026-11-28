@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionsToExact, type ActionsInput } from "./actionsToExact";
+import { actionsToExact, heightAnswersPerJob, type ActionsInput } from "./actionsToExact";
 
 /**
  * Build gate 3 of prereg-scoreboard-v3.md: a PERFECT draft scores zero, and every
@@ -78,5 +78,40 @@ describe("actions to exact", () => {
     const runs = [realRun(0), realRun(1), junkRun(), junkRun()];
     const r = actionsToExact(base({ runs, likeClasses: () => [[0, 1, 2, 3]] }));
     expect(r).toMatchObject({ E: 0, J: 2, actions: 2 });
+  });
+});
+
+/**
+ * W2 heights (coordination/type-height-once.md, REVIEWED by the original 2026-11-28; Diego's job-level measure): the
+ * height answers a JOB needs. One entry per (type × level item) that needs an answer, with its key height; OFF is one per
+ * distinct item; ON merges a non-structure, positively schedule-free type into 1 + its items whose key height differs
+ * from the best single answer by more than 0.25 ft. Anything not positively schedule-free, or to-structure, counts as OFF.
+ */
+describe("height answers per job (OFF vs ON)", () => {
+  const it9 = (level: string, keyFeet = 9, over: Partial<{ structure: boolean; scheduleFree: boolean; type: string }> = {}) => ({ type: "A", level, keyFeet, structure: false, scheduleFree: true, ...over });
+  it("OFF counts distinct (type × level) — two sheets of one level are one item", () => {
+    expect(heightAnswersPerJob([it9("2"), it9("2"), it9("5")])).toMatchObject({ off: 2 });
+  });
+  it("ON counts a schedule-free, non-structure type once when its levels agree", () => {
+    expect(heightAnswersPerJob([it9("2"), it9("5"), it9("8")])).toEqual({ off: 3, on: 1 });
+  });
+  it("ON = 1 + the levels whose key height differs from the answer by more than 0.25 ft (9 ft and 10 ft gives 2)", () => {
+    expect(heightAnswersPerJob([it9("2", 9), it9("5", 10)])).toEqual({ off: 2, on: 2 });
+    expect(heightAnswersPerJob([it9("2", 9), it9("5", 9.2), it9("8", 10)])).toEqual({ off: 3, on: 2 });
+  });
+  it("the answer is the key height that minimises the count, ties to the lower — so 9, 9, 10 answers 9 and counts 2", () => {
+    expect(heightAnswersPerJob([it9("2", 10), it9("5", 9), it9("8", 9)])).toEqual({ off: 3, on: 2 });
+  });
+  it("a type NOT positively schedule-free counts as OFF (unknown is defaulted)", () => {
+    expect(heightAnswersPerJob([it9("2", 9, { scheduleFree: false }), it9("5", 9, { scheduleFree: false })])).toEqual({ off: 2, on: 2 });
+  });
+  it("a to-structure type counts as OFF", () => {
+    expect(heightAnswersPerJob([it9("2", 9, { structure: true }), it9("5", 9, { structure: true })])).toEqual({ off: 2, on: 2 });
+  });
+  it("types are counted separately", () => {
+    expect(heightAnswersPerJob([it9("2"), it9("5"), it9("2", 9, { type: "B" }), it9("5", 9, { type: "B" })])).toEqual({ off: 4, on: 2 });
+  });
+  it("nothing needing an answer is zero both ways", () => {
+    expect(heightAnswersPerJob([])).toEqual({ off: 0, on: 0 });
   });
 });
