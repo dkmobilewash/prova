@@ -10,7 +10,7 @@ C="/Users/diego/Claude Folder/takeoff/coordination"
 T="/Users/diego/Claude Folder/takeoff"
 W="${EXAM_WORKTREE:-/Users/diego/prova/.claude/worktrees/diego-model-census}/apps/web"
 SNAP="$T/labels-snap-20261126T1633Z-post44b"
-O="$T/eval-out-sb3-baseline"
+O="${SB3_OUT:-$T/eval-out-sb3-baseline}"   # amendment 5 restatement: SB3_OUT=$T/eval-out-sb3-baseline-scope5
 mkdir -p "$O"
 H=$(cd "$SNAP" && find . -type f | sort | xargs shasum -a 256 | shasum -a 256 | cut -c1-16)
 [ "$H" = "bb486066b7578355" ] || { echo "SNAPSHOT HASH MISMATCH: $H != bb486066b7578355 — refusing"; exit 1; }
