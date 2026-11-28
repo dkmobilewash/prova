@@ -91,3 +91,34 @@ export function actionsToExact(input: ActionsInput): ActionsResult {
   const L = boxLost + realLost;
   return { actions: B + E + J + L + R + M + H, B, E, J, L, R, M, H, chosenBoxes: B };
 }
+
+/**
+ * ── HEIGHT ANSWERS PER JOB (W2 heights; coordination/type-height-once.md, REVIEWED by the original 2026-11-28) ──
+ *
+ * Diego's measure for "a wall type's height, answered once": per-sheet actions cannot see a saving ACROSS levels, so the
+ * count is per JOB. One entry per (type × level item, from the product's own split) that needs an answer — a posted real
+ * run of the type more than 0.25 ft off its key height. OFF: one answer per distinct item. ON: a type that does not run
+ * to the structure AND is positively schedule-free (its items start with no height, so one answer fills them) takes
+ * 1 + the items whose key height differs from the best single answer by more than 0.25 ft; the best answer is the key
+ * height that minimises that count, ties to the lower. Anything else counts as OFF.
+ */
+export type HeightNeed = { type: string; level: string; keyFeet: number; structure: boolean; scheduleFree: boolean };
+
+export function heightAnswersPerJob(needs: readonly HeightNeed[]): { off: number; on: number } {
+  const byType = new Map<string, Map<string, HeightNeed>>();
+  for (const n of needs) {
+    const items = byType.get(n.type) ?? new Map<string, HeightNeed>();
+    if (!items.has(n.level)) items.set(n.level, n); // two sheets of one level are one item
+    byType.set(n.type, items);
+  }
+  let off = 0, on = 0;
+  for (const items of byType.values()) {
+    const list = [...items.values()];
+    off += list.length;
+    const merge = list.every((i) => !i.structure && i.scheduleFree);
+    if (!merge) { on += list.length; continue; }
+    const candidates = [...new Set(list.map((i) => i.keyFeet))].sort((a, b) => a - b);
+    on += Math.min(...candidates.map((v) => 1 + list.filter((i) => Math.abs(i.keyFeet - v) > HEIGHT_TOLERANCE_FEET).length));
+  }
+  return { off, on };
+}

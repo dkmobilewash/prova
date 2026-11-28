@@ -19,9 +19,12 @@ import { loadRenoModel, loadRunModel, priorForRuns, renoModelRemovals, runModelV
 import { reviewOrder, runScores } from "../wallReview";
 import type { WallCandidate } from "../wallVectors";
 import { clipToWorkArea, wallsLikeThese, type Polygon } from "../userExclusions";
-import { actionsToExact } from "../actionsToExact";
+import { actionsToExact, heightAnswersPerJob, type HeightNeed } from "../actionsToExact";
+import { runsToStructure } from "../typeHeightOnce";
+import { legendHeightOf } from "../legendHeights";
+import { cachedLegendTypes } from "./legendCache";
 import { setFigures, setHeightRule, wallHeightChain, type SetFigures, type SetHeightRule, type WallHeightConvention } from "../heightsByCode";
-import { levelHeight, planLevels, type LevelMark } from "../levelHeights";
+import { levelHeight, planLevels, runLevels, type LevelMark } from "../levelHeights";
 import { setHeightFacts } from "../setHeightFacts";
 import { CEILING_PAGE_TITLE } from "../../plan-ingest/rooms";
 import { tableRowsFromPage } from "../../plan-ingest/scheduleTable";
@@ -216,12 +219,16 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     const losoSkipped: string[] = [];
     const rows: Record<string, unknown>[] = [];
     const unmatchedSpellings: Record<string, number> = {};
-    const planHeightsBySet = new Map<string, { rule: SetHeightRule | null; figures: Omit<SetFigures, "floorToFloorFt">; marks: LevelMark[]; roofs: Map<number, StoredRoofParts>; ceilingPages: CeilingPageText[] }>();
+    const planHeightsBySet = new Map<string, { rule: SetHeightRule | null; figures: Omit<SetFigures, "floorToFloorFt">; marks: LevelMark[]; roofs: Map<number, StoredRoofParts>; ceilingPages: CeilingPageText[]; heightFacts: Awaited<ReturnType<typeof setHeightFacts>> }>();
     // #1198 wired: instrument counters for the ROOMSIDES line (one group per process).
     let rsRooms = 0, rsWalls = 0, rsMoved = 0;
     let kzSheet = 0, kzRoom = 0, kzUnresolved = 0;
     const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number; zeroBoardSf: number; lf10BoardSf: number; needsAnswerLf: number; noBoardLf: number; revLf: number; rev10Lf: number; revJunkLf: number; revMissedLf: number; revBoardSf: number; rev10BoardSf: number; junkBoardSf: number; gradedKeyLf: number; defaultedBoardSf: number; a2Lf: number; a2JunkLf: number; a2MissedLf: number; a2JunkBoardSf: number; a2RealGradedSf: number; a2DefaultPostedSf: number; keyGradedBoardSf: number; keyDefaultBoardSf: number }>();
     // Scoreboard v3 (prereg-scoreboard-v3.md): one row per scored sheet for ACTIONS TO EXACT.
+    // W2 heights (type-height-once.md, REVIEWED by the original 2026-11-28; Diego's job-level measure): per JOB, the
+    // (type × level item) height answers the product needs, from the PRODUCT's own level split and legend read.
+    const heightNeeds = new Map<string, { group: string; needs: HeightNeed[] }>();
+    const legendBySet = new Map<string, Map<string, { code: string; heightNote: string | null; lines: string[] }>>();
     const v3Sheets: { group: string; set: string; sheet: string; actions: number; B: number; E: number; J: number; L: number; R: number; M: number; H: number }[] = [];
     for (const dir of readdirSync(LABELS).sort()) {
       if (!existsSync(join(LABELS, dir)) || (heldOutReason(dir) !== null) !== HELD) continue;
@@ -333,7 +340,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
             const cs = await doc.pageStrokes(n).catch(() => null);
             ceilingPages.push({ pageNumber: n, items: page.items, widthPt: page.widthPt, tableRows: tableRowsFromPage(page), strokes: cs?.segments.map((g) => ({ x1: g.x1 / cs.widthPt, y1: g.y1 / cs.widthPt, x2: g.x2 / cs.widthPt, y2: g.y2 / cs.widthPt })) });
           }
-          ph = { rule, figures: { structureFt: figs.structureFt, setCeilingFt: figs.setCeilingFt }, marks: facts.levels ?? [], roofs, ceilingPages };
+          ph = { rule, figures: { structureFt: figs.structureFt, setCeilingFt: figs.setCeilingFt }, marks: facts.levels ?? [], roofs, ceilingPages, heightFacts: facts };
           planHeightsBySet.set(dir, ph);
         }
         const pageLevels = sheetViews(text.items, W).map((v) => planLevels(v.name)).find((l) => l.length > 0) ?? [];
@@ -606,6 +613,40 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const a2MissedLf = Math.max(0, keyLf - (a2Lf - a2JunkLf));
         const keyGradedBoardSf = key.reduce((n, k, ki) => n + (keyKnownFeet[ki] != null ? k.lengthFeet * (keyKnownFeet[ki] as number) * 2 : 0), 0);
         const keyDefaultBoardSf = key.reduce((n, k, ki) => n + (keyAtDefault[ki] ? k.lengthFeet * NOMINAL_FEET * 2 : 0), 0);
+        // ── W2 HEIGHTS: the answers this sheet adds to its JOB's count (type-height-once.md T5) ──
+        if (wallTest) {
+          let legend = legendBySet.get(dir);
+          if (legend === undefined) {
+            legend = new Map(cachedLegendTypes(pdf, process.env.ZT_LEGEND_CACHE ?? "").map((t) => [t.code.toUpperCase(), t] as const));
+            legendBySet.set(dir, legend);
+          }
+          // The product's own level split: its stored captions are sheetViews' names and positions (levelReads.ts), and
+          // splitByLevel groups each TYPE's runs through runLevels.
+          const captions = sheetViews(text.items, W).map((v) => ({ name: v.name, captionX: v.captionX, captionY: v.captionY }));
+          const byType = new Map<string, number[]>();
+          runs.forEach((r, at) => {
+            if (held.has(r) || isJunkAt(at)) return;
+            const ki = matchOf[at]!;
+            const type = ki >= 0 ? typeOfKey(ki) : "";
+            if (type === "" || type === "0" || type === "U") return;
+            byType.set(type, [...(byType.get(type) ?? []), at]);
+          });
+          const entry = heightNeeds.get(dir) ?? { group: HELD ? "HELD-OUT" : "TRAINING", needs: [] };
+          for (const [type, ats] of byType) {
+            const levels = runLevels(ats.map((at) => runs[at]!), captions, fpu);
+            const lt = legend.get(type);
+            const structure = lt !== undefined && runsToStructure(lt.lines.join("\n"));
+            // Positively schedule-free only: in the product's cached legend read, with no height from legendHeightOf
+            // against the set's facts (the product's legendHeightsFor). Unknown counts as defaulted.
+            const scheduleFree = lt !== undefined && legendHeightOf({ code: lt.code, lines: lt.lines, heightNote: lt.heightNote }, ph.heightFacts, null).heightFt === null;
+            ats.forEach((at, j) => {
+              const kf = keyKnownFeet[matchOf[at]!];
+              if (kf === null || kf === undefined || Math.abs(runFeet(runs[at]!) - kf) <= 0.25) return;
+              entry.needs.push({ type, level: (levels[j] ?? []).join(",") || "-", keyFeet: kf, structure, scheduleFree });
+            });
+          }
+          heightNeeds.set(dir, entry);
+        }
         if (wallTest) v3Sheets.push({ group: HELD ? "HELD-OUT" : "TRAINING", set: dir, sheet, actions: sheetActions, B: act.B, E: act.E, J: act.J, L: act.L, R: act.R, M: act.M, H: act.H });
         // DISPUTE DUMP (truth-audit-design.md): posted junk (A) + missed key walls (B),
         // >=3 ft, coordinates only. The category is written HERE and nowhere a Chrome
@@ -753,6 +794,19 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       if (kbFull3 > 0) console.log(`ZT2MIN ${group} TOTAL ERROR ${((err3 / kbFull3) * 100).toFixed(1)}% of the FULL key $${Math.round(kbFull3)} · MEDIAN SET ${med(setErrFull3).toFixed(1)}% over ${setErrFull3.length} sets — THE HEADLINE (scoreboard v3, criteria 1+2; amendment 3)`);
       if (kb3 > 0) console.log(`ZT2MIN ${group} reference only: ${((err3 / kb3) * 100).toFixed(1)}% of the graded-heights key $${Math.round(kb3)} · median set ${med(setErr3).toFixed(1)}%`);
       console.log(`ZTACT ${group} ACTIONS TO EXACT: median ${med(acts)} per sheet · mean ${(acts.length ? sum((r) => r.actions) / acts.length : 0).toFixed(1)} · pooled ${sum((r) => r.actions)} over ${rows.length} sheets — boxes ${sum((r) => r.B)} · exclude-like clicks ${sum((r) => r.E)} · junk removes ${sum((r) => r.J)} · real lost to boxes/clicks ${sum((r) => r.L)} · held-real restores ${sum((r) => r.R)} · missed adds ${sum((r) => r.M)} · height answers ${sum((r) => r.H)} (criterion 3; greedy = an upper bound)`);
+      {
+        const jobs = [...heightNeeds.values()].filter((e) => e.group === group);
+        let off = 0, on = 0;
+        const eligible = new Set<string>(), unknown = new Set<string>(), structure = new Set<string>();
+        for (const [set, e] of heightNeeds) {
+          if (e.group !== group) continue;
+          const c = heightAnswersPerJob(e.needs);
+          // ZT_TYPE_HEIGHT_ONCE=0 is the OFF arm (the product without the answer-once change): every item answered alone.
+          off += c.off; on += process.env.ZT_TYPE_HEIGHT_ONCE === "0" ? c.off : c.on;
+          for (const n of e.needs) (n.structure ? structure : !n.scheduleFree ? unknown : eligible).add(`${set}:${n.type}`);
+        }
+        console.log(`ZTHONCE ${group} HEIGHT ANSWERS PER JOB: off ${off} · on ${on} — ${jobs.length} jobs counted · ${off} level items counted · types merge-eligible ${eligible.size} (schedule-free positively known, not to-structure) · treated as unknown -> OFF ${unknown.size} · to-structure -> OFF ${structure.size} (type-height-once.md; arm ${process.env.ZT_TYPE_HEIGHT_ONCE === "0" ? "OFF" : "ON"})`);
+      }
       console.log(`ZTHGT ${group} height disagreement on KEY-KNOWN heights $${Math.round(gradedHeightErr)} · default-vs-default (OFF the total, own line): key $${Math.round(defaultKeyBoard)} / posted $${Math.round(defaultPostedBoard)}`);
       for (const r of rows) console.log(`ZTACT ${group} ${r.set.slice(0, 26).padEnd(26)} ${r.sheet} actions ${r.actions} (B ${r.B} E ${r.E} J ${r.J} L ${r.L} R ${r.R} M ${r.M} H ${r.H})`);
     }

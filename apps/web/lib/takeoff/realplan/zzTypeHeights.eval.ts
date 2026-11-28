@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { cachedLegendTypes as cachedLegendTypesIn } from "./legendCache";
 import { describe, expect, it } from "vitest";
 import { pageInventoryWork, type SheetProposalRow } from "../../plan-ingest/pageInventory";
 import { openPlanPdf } from "../../plan-ingest/planPdf";
@@ -105,24 +106,6 @@ const NOMINAL_FEET = Number(process.env.ZT_DEFAULT_FEET ?? "9");
 const TYPE_ROWS: Record<string, unknown>[] = [];
 const LEGEND_CACHE = process.env.ZT_LEGEND_CACHE ?? "";
 const typedBySet = new Map<string, { rules: Map<string, TypeHeightRule>; general: ReturnType<typeof generalTypeRule>; deck: Map<number, StoredDeckZones>; legendTypes: number }>();
-/** The product's legend reader output for this PDF, cached per page (legend-cache: <stem>-p<N>-wall-legend.<v>.json). */
-function cachedLegendTypes(pdf: string): { code: string; heightNote: string | null; lines: string[] }[] {
-  if (LEGEND_CACHE === "" || !existsSync(LEGEND_CACHE)) return [];
-  const stem = pdf.split("/").at(-1)!.replace(/[^A-Za-z0-9]+/g, "_");
-  const byPage = new Map<string, string>();
-  for (const n of readdirSync(LEGEND_CACHE)) {
-    const m = new RegExp(`^${stem}-p(\\d+)-wall-legend\\.(\\d+)\\.json$`).exec(n);
-    if (m === null) continue;
-    const had = byPage.get(m[1]!);
-    if (had === undefined || Number(/\.(\d+)\.json$/.exec(had)![1]) < Number(m[2])) byPage.set(m[1]!, n);
-  }
-  const out = new Map<string, { code: string; heightNote: string | null; lines: string[] }>();
-  for (const n of byPage.values()) {
-    const d = JSON.parse(readFileSync(join(LEGEND_CACHE, n), "utf8")) as { types?: { code: string; heightNote?: string; lines?: string[] }[] };
-    for (const t of d.types ?? []) if (!out.has(t.code.toUpperCase())) out.set(t.code.toUpperCase(), { code: t.code, heightNote: t.heightNote ?? null, lines: t.lines ?? [] });
-  }
-  return [...out.values()];
-}
 
 /**
  * Heights for the board-SF term: heights-key sets → labelSet → type → feet.
@@ -318,7 +301,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           }
           ph = { rule, figures: { structureFt: figs.structureFt, setCeilingFt: figs.setCeilingFt }, marks: facts.levels ?? [], roofs, ceilingPages };
           planHeightsBySet.set(dir, ph);
-          const legendTypes = cachedLegendTypes(pdf);
+          const legendTypes = cachedLegendTypesIn(pdf, LEGEND_CACHE);
           const rules = new Map<string, TypeHeightRule>();
           for (const t of legendTypes) { const r = typeHeightRule(t, facts); if (r !== null) rules.set(t.code.toUpperCase(), r); }
           const notes = [facts.generalNote?.text ?? "", ...facts.facts.filter((f) => f.kind === "general-note" || f.kind === "note").map((f) => f.text ?? f.phrase ?? "")];

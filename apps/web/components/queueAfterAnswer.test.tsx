@@ -24,7 +24,8 @@ vi.mock("@/lib/actions", () => {
     undoConfirmWindows: ok,
     priceLineFromCost: ok,
     reviewWall: ok,
-    setWallGroupHeight: async () => ({ ok: true, value: { was: { heightFt: null, sides: null } } }),
+    // The action's real return shape: `filled` lists what the answer also set (type-height-once.md H4).
+    setWallGroupHeight: async () => ({ ok: true, value: { was: { heightFt: null, sides: null, filled: [] } } }),
     undoSheetSuggestions: ok,
   };
 });
