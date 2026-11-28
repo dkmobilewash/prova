@@ -44,16 +44,25 @@ echo "=== JUDGING (prereg-scoreboard-v3.md W2 ship test) ==="
 python3 - "$O" <<'PY'
 import re, sys
 O = sys.argv[1]
+# The restated v3 baseline (585c57e9, scope amendment 5): the bar, and what the OFF arm must reproduce.
+BAR_MEDIAN, BASE_POOLED, BASE_SHEETS = 18.0, 2307, 82
 def read(arm):
     t = open(f"{O}/train-{arm}.log", errors="ignore").read()
+    pooled = re.search(r"^ZTACT TRAINING ACTIONS TO EXACT: .*? pooled (\d+) over", t, re.M)
     med = re.search(r"^ZTACT TRAINING ACTIONS TO EXACT: median ([0-9.]+) per sheet .*? over (\d+) sheets", t, re.M)
     err = re.search(r"^ZT2MIN TRAINING TOTAL ERROR ([0-9.]+)%", t, re.M)
     if not med or not err: print(f"VOID: arm {arm} printed no ZTACT/ZT2MIN TRAINING line"); sys.exit(1)
-    return float(med.group(1)), int(med.group(2)), float(err.group(1))
-(m0, n0, e0), (m1, n1, e1) = read("off"), read("on")
+    return float(med.group(1)), int(med.group(2)), float(err.group(1)), int(pooled.group(1))
+m0, n0, e0, p0 = read("off")
+# STOP RULE (the original): the OFF arm must reproduce the baseline before ON is read at all.
+if (m0, p0, n0) != (BAR_MEDIAN, BASE_POOLED, BASE_SHEETS):
+    print(f"STOP: OFF arm is median {m0} / pooled {p0} / {n0} sheets, not the baseline {BAR_MEDIAN} / {BASE_POOLED} / {BASE_SHEETS}. ON NOT READ.")
+    sys.exit(2)
+print(f"OFF reproduces the baseline: median {m0} / pooled {p0} / {n0} sheets.")
+m1, n1, e1, p1 = read("on")
 if n0 != n1: print(f"VOID: sheet counts differ, off {n0} vs on {n1}"); sys.exit(1)
-a = m1 < m0; b = e1 <= e0
-print(f"median actions-to-exact (TRAINING, {n0} sheets): off {m0} -> on {m1} — {'PASS (strictly lower)' if a else 'FAIL'}")
+a = m1 < m0 and m1 < BAR_MEDIAN; b = e1 <= e0
+print(f"median actions-to-exact (TRAINING, {n0} sheets): off {m0} -> on {m1} (bar {BAR_MEDIAN}); pooled {p0} -> {p1} — {'PASS (strictly below OFF and the bar)' if a else 'FAIL'}")
 print(f"REVIEWED-2MIN total error (TRAINING): off {e0}% -> on {e1}% — {'PASS (not higher)' if b else 'FAIL'}")
 print("W2 ERASE SHIP VERDICT:", "SHIPS" if (a and b) else "DOES NOT SHIP")
 PY
