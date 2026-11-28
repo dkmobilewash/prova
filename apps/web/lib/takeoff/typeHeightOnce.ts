@@ -45,3 +45,9 @@ export function answeredTypeHeight(existing: readonly { heightFt: unknown }[], n
   const heights = new Set(existing.map((e) => (e.heightFt === null || e.heightFt === undefined ? null : Number(e.heightFt))).filter((h): h is number => h !== null && Number.isFinite(h)));
   return heights.size === 1 ? [...heights][0]! : null;
 }
+
+/** T4: what the queue says after one answer filled other items of the type, so the fill is never silent. */
+export function filledWords(filled: number, feet: number): string | null {
+  if (filled <= 0) return null;
+  return `${feet} ft also set on ${filled} other level item${filled === 1 ? "" : "s"} of this type that had no height.`;
+}

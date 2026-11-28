@@ -1,6 +1,6 @@
 "use client";
 
-import { heightUndoItems } from "@/lib/takeoff/typeHeightOnce";
+import { filledWords, heightUndoItems } from "@/lib/takeoff/typeHeightOnce";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ActionResult } from "@/lib/actions/shared";
@@ -96,6 +96,8 @@ export function TakeoffReviewQueue({
   // The renovation step's "Whole sheet is new work" save, in flight (W3b).
   const [wholeSheetSaving, setWholeSheetSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // What one height answer also filled (type-height-once.md T4): never silent.
+  const [filledNote, setFilledNote] = useState<string | null>(null);
   const [priced, setPriced] = useState<string | null>(null);
   const [undone, setUndone] = useState<ReadonlySet<number>>(new Set());
   // ── CONFIRM ONCE PER SET: after a group is confirmed, the same drawn group on the other floors, one click ──
@@ -753,7 +755,8 @@ export function TakeoffReviewQueue({
               onAccept={(_code, heightFt) => {
                 if (heightFt === null) return setError("Type a height first: H.");
                 const itemId = current.itemId;
-                acceptNow(current.key, current.name, () => setWallGroupHeight(jobId, itemId, heightFt), {
+                setFilledNote(null);
+                acceptNow(current.key, current.name, () => setWallGroupHeight(jobId, itemId, heightFt).then((r) => (r.ok && setFilledNote(filledWords(r.value.was.filled.length, heightFt)), r)), {
                   label: `Height ${heightFt} ft on ${current.name}`,
                   // The items this answer filled come back too (type-height-once.md H4).
                   undo: (saved) => undoSheetSuggestions(jobId, { moved: [], created: [], items: heightUndoItems(itemId, saved.value.was) }),
@@ -1200,6 +1203,7 @@ export function TakeoffReviewQueue({
         </span>
       )}
       {error !== null && <span className="text-tag-amber-ink">{error}</span>}
+      {filledNote !== null && <span className="text-ink-body" data-takeoff="queue-height-filled">{filledNote}</span>}
     </div>
   );
 }
