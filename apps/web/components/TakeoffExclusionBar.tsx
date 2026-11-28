@@ -3,7 +3,7 @@
 import { Spinner } from "@/components/Spinner";
 import { notInWorkAreaWords, WORK_AREA_PROMPT } from "@/lib/takeoff/workAreaFirst";
 
-type Kind = "EXCLUDE_LIKE" | "WORK_AREA" | "ROOM_SPLIT";
+type Kind = "EXCLUDE_LIKE" | "WORK_AREA" | "ROOM_SPLIT" | "ERASE_AREA";
 
 /**
  * The sheet's wall total and what the estimator took out of it. On the page and
@@ -16,6 +16,7 @@ export function TakeoffExclusionBar({
   excludes,
   splits = 0,
   workAreas,
+  erases = 0,
   readOnly,
   renovation = null,
   existing = null,
@@ -37,6 +38,8 @@ export function TakeoffExclusionBar({
   /** Lines dragged across rooms on this sheet. */
   splits?: number;
   workAreas: number;
+  /** Erase boxes on this sheet (erase-area-tool.md E2). */
+  erases?: number;
   readOnly: boolean;
   /** The marks that say this sheet shows existing work, while it has no work area (`workAreaPrompt`): before Find too. */
   renovation?: string[] | null;
@@ -62,7 +65,7 @@ export function TakeoffExclusionBar({
   onUndo: (kind: Kind) => void;
   onClear: (kind: Kind) => void;
 }) {
-  if (feet === null && excludes === 0 && workAreas === 0 && splits === 0 && !renovation) return null;
+  if (feet === null && excludes === 0 && workAreas === 0 && splits === 0 && erases === 0 && !renovation) return null;
   const control = "underline hover:text-ink-body";
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-muted" data-takeoff="exclusion-bar">
@@ -128,7 +131,7 @@ export function TakeoffExclusionBar({
             {one.n} wall{one.n === 1 ? "" : "s"} {one.why}.
           </span>
           {!readOnly && (
-            <button type="button" className={control} onClick={() => onUndo(one.kind === "excluded-like" ? "EXCLUDE_LIKE" : "WORK_AREA")}>
+            <button type="button" className={control} onClick={() => onUndo(one.kind === "excluded-like" ? "EXCLUDE_LIKE" : one.kind === "erased-by-you" ? "ERASE_AREA" : "WORK_AREA")}>
               Undo
             </button>
           )}
@@ -142,6 +145,11 @@ export function TakeoffExclusionBar({
       {!readOnly && splits > 0 && (
         <button type="button" className={control} data-takeoff="remove-splits" onClick={() => onClear("ROOM_SPLIT")}>
           Remove {splits === 1 ? "split" : `${splits} splits`}
+        </button>
+      )}
+      {!readOnly && erases > 0 && (
+        <button type="button" className={control} data-takeoff="clear-erased" onClick={() => onClear("ERASE_AREA")}>
+          Clear erased areas
         </button>
       )}
       {!readOnly && workAreas > 0 && (

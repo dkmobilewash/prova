@@ -327,6 +327,10 @@ enum TakeoffExclusionKind {
   /// A line the estimator dragged across a room region: the room finder treats
   /// it as a wall, so each part takes the tag inside it. Measures nothing.
   ROOM_SPLIT
+  /// A box the estimator erased: every found wall whose 25/50/75% centreline
+  /// points all lie inside it is set aside, whole and never cut
+  /// (`eraseInBoxes`, coordination/erase-area-tool.md).
+  ERASE_AREA
 }
 
 /// What the user said about one sheet's walls — `lib/takeoff/userExclusions.ts`.

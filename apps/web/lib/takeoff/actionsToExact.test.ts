@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionsToExact, type ActionsInput } from "./actionsToExact";
+import { actionsToExact, postureChoice, postureFeet, type ActionsInput } from "./actionsToExact";
 
 /**
  * Build gate 3 of prereg-scoreboard-v3.md: a PERFECT draft scores zero, and every
@@ -78,5 +78,86 @@ describe("actions to exact", () => {
     const runs = [realRun(0), realRun(1), junkRun(), junkRun()];
     const r = actionsToExact(base({ runs, likeClasses: () => [[0, 1, 2, 3]] }));
     expect(r).toMatchObject({ E: 0, J: 2, actions: 2 });
+  });
+});
+
+/**
+ * ERASE (W2 item 2, coordination/erase-area-tool.md P6): the product's "Erase walls in this area". The caller builds
+ * each option's erased set with the product's own `eraseInBoxes` (pinned in eraseArea.test.ts); here only the counting.
+ * One action per box; a real run it takes is a loss (one restore each, as for a work-area box); it acts after the
+ * work area, on what the work area kept (the product's order); absent, every v3 count is unchanged.
+ */
+describe("actions to exact: erase boxes", () => {
+  const junk3 = [realRun(0), realRun(1), junkRun(), junkRun(), junkRun()];
+  it("one erase box that takes three junk runs costs 1 instead of 3 removes", () => {
+    const r = actionsToExact(base({ runs: junk3, eraseOptions: [{ boxes: 1, erased: new Set([2, 3, 4]) }] }));
+    expect(r).toMatchObject({ actions: 1, J: 0, L: 0, X: 1 });
+  });
+  it("a real run the box takes is charged as a loss (L)", () => {
+    const r = actionsToExact(base({ runs: junk3, eraseOptions: [{ boxes: 1, erased: new Set([1, 2, 3, 4]) }] }));
+    expect(r).toMatchObject({ actions: 2, X: 1, L: 1, J: 0 });
+  });
+  it("an erase option that does not pay is not taken", () => {
+    const r = actionsToExact(base({ runs: [realRun(0), realRun(1), junkRun()], eraseOptions: [{ boxes: 1, erased: new Set([2]) }] }));
+    expect(r).toMatchObject({ actions: 1, X: 0, J: 1 });
+  });
+  it("ties keep fewer boxes", () => {
+    const r = actionsToExact(base({ runs: junk3, eraseOptions: [{ boxes: 1, erased: new Set([2, 3]) }, { boxes: 2, erased: new Set([2, 3, 4]) }] }));
+    expect(r).toMatchObject({ actions: 2, X: 1, J: 1 });
+  });
+  it("acts after the work area: a run the work area already set aside is not erased again or counted twice", () => {
+    // The work-area box keeps runs 0, 1, 2 (3 and 4 are outside it); erase then takes 2.
+    const insideFeet = new Map([[0, 10], [1, 10], [2, 10]]);
+    const r = actionsToExact(base({ runs: junk3, boxOptions: [{ boxes: 1, insideFeet }], eraseOptions: [{ boxes: 1, erased: new Set([2, 3, 4]) }] }));
+    expect(r).toMatchObject({ B: 1, X: 0, J: 1, actions: 2 });
+  });
+  it("prices an erase box on what the work area KEPT: junk outside the work area is not its job", () => {
+    // Work area keeps 0..3 (junk 2, 3 inside it); junk 4, 5 lie outside it. The erase box takes 2 and 3 only.
+    const runs = [realRun(0), realRun(1), junkRun(), junkRun(), junkRun(), junkRun()];
+    const insideFeet = new Map([[0, 10], [1, 10], [2, 10], [3, 10]]);
+    const r = actionsToExact(base({ runs, boxOptions: [{ boxes: 1, insideFeet }], eraseOptions: [{ boxes: 1, erased: new Set([2, 3]) }] }));
+    expect(r).toMatchObject({ B: 1, X: 1, J: 0, actions: 2 });
+  });
+  it("absent erase options change nothing (the OFF arm is v3)", () => {
+    const runs = [realRun(0), realRun(1), junkRun()];
+    expect(actionsToExact(base({ runs, eraseOptions: [] }))).toEqual(actionsToExact(base({ runs })));
+  });
+});
+
+/**
+ * Amendment 3 (erase-area-tool.md; the instrument owner's ruling 2026-11-28): the REVIEWED-2MIN posture applies every
+ * shipped box move, through the SAME choice the counter makes, capped at 3 boxes in all.
+ */
+describe("the 2MIN posture and the 3-box cap", () => {
+  it("postureFeet with no erase set is today's formula, run for run", () => {
+    const lengths = [10, 12.5, 7, 3];
+    const inside = new Map([[0, 10], [1, 6.25], [3, 9]]);
+    const today = lengths.map((len, at) => Math.min(len, inside.get(at) ?? 0));
+    expect(postureFeet(lengths, inside, new Set())).toEqual(today);
+  });
+  it("an erase box takes a run's whole posted footage out of the posture", () => {
+    const lengths = [10, 12.5, 7];
+    const inside = new Map([[0, 10], [1, 12.5], [2, 7]]);
+    expect(postureFeet(lengths, inside, new Set([1]))).toEqual([10, 0, 7]);
+  });
+  it("the POSTURE caps boxes at 3 in all: with 2 work-area boxes chosen, only the 1-box erase option is open to it", () => {
+    const runs = [realRun(0), realRun(1), ...Array.from({ length: 8 }, junkRun)];
+    // Two work-area boxes keep 0, 1 and junk 6..9 (junk 2..5 outside); erase options of 1 and 2 boxes take 6,7 / 6..9.
+    const input = base({ runs, boxOptions: [{ boxes: 2, insideFeet: new Map([[0, 10], [1, 10], [6, 10], [7, 10], [8, 10], [9, 10]]) }], eraseOptions: [{ boxes: 1, erased: new Set([6, 7]) }, { boxes: 2, erased: new Set([6, 7, 8, 9]) }] });
+    const posture = postureChoice(input);
+    expect(posture.B + posture.X).toBeLessThanOrEqual(3);
+    expect(posture).toMatchObject({ B: 2, X: 1 });
+    expect([...posture.erased].sort()).toEqual([6, 7]);
+  });
+  it("the COUNTER is not capped (criterion 3 has no budget): the same sheet takes 2 + 2", () => {
+    const runs = [realRun(0), realRun(1), ...Array.from({ length: 8 }, junkRun)];
+    const input = base({ runs, boxOptions: [{ boxes: 2, insideFeet: new Map([[0, 10], [1, 10], [6, 10], [7, 10], [8, 10], [9, 10]]) }], eraseOptions: [{ boxes: 1, erased: new Set([6, 7]) }, { boxes: 2, erased: new Set([6, 7, 8, 9]) }] });
+    expect(actionsToExact(input)).toMatchObject({ B: 2, X: 2, J: 0 });
+  });
+  it("uncapped, the posture's choice IS the counter's choice", () => {
+    const runs = [realRun(0), realRun(1), junkRun(), junkRun(), junkRun()];
+    const input = base({ runs, boxOptions: [{ boxes: 1, insideFeet: new Map([[0, 10], [1, 10], [2, 10], [3, 10]]) }], eraseOptions: [{ boxes: 1, erased: new Set([2, 3]) }] });
+    const a = actionsToExact(input), p = postureChoice(input);
+    expect({ B: p.B, X: p.X }).toEqual({ B: a.B, X: a.X });
   });
 });

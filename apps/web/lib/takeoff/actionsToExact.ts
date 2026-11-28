@@ -5,12 +5,13 @@
  * key, counted GREEDILY (so an upper bound on the true minimum, the same bound for
  * every arm):
  *
- *   ACTIONS = B + E + J + L + R + M + H
+ *   ACTIONS = B + X + E + J + L + R + M + H
  *
  *   B  boxes (WORK_AREA, keep-inside — the product offers it on every sheet)
+ *   X  erase boxes ("Erase walls in this area", W2; erase-area-tool.md P6), after the work area
  *   E  "Exclude like this" clicks (Diego, 2026-11-26: one action per click)
  *   J  posted junk runs still standing after boxes and clicks (one remove each)
- *   L  REAL runs a box or a click set aside (one restore each — "charged as losses")
+ *   L  REAL runs a box, an erase box or a click set aside (one restore each — "charged as losses")
  *   R  runs the product HELD that are real (one restore each)
  *   M  key walls nothing posted or held covers (one add each)
  *   H  one answer per wall type whose height the KEY knows, when a posted real run
@@ -29,11 +30,16 @@ export type ActionsInput = {
   key: readonly { missed: boolean; type: string; knownFeet: number | null }[];
   /** Candidate box sets, fewest boxes first (k = 1..3); each maps run index -> inside feet. */
   boxOptions: readonly { boxes: number; insideFeet: ReadonlyMap<number, number> }[];
+  /**
+   * Candidate erase-box sets, fewest boxes first; each is the run indices the product's `eraseInBoxes` takes (whole runs).
+   * Absent or empty: the move is OFF, and every count is v3's.
+   */
+  eraseOptions?: readonly { boxes: number; erased: ReadonlySet<number> }[];
   /** Like-classes: for each class, the run indices one click would set aside. */
   likeClasses: (standing: readonly boolean[]) => readonly (readonly number[])[];
 };
 
-export type ActionsResult = { actions: number; B: number; E: number; J: number; L: number; R: number; M: number; H: number; chosenBoxes: number };
+export type ActionsResult = { actions: number; B: number; X: number; E: number; J: number; L: number; R: number; M: number; H: number; chosenBoxes: number };
 
 const HEIGHT_TOLERANCE_FEET = 0.25;
 
@@ -55,21 +61,11 @@ export function actionsToExact(input: ActionsInput): ActionsResult {
   });
   const H = offTypes.size;
 
-  // BOXES: k = 0 is "remove every posted junk run by hand"; take the option with
-  // the fewest box-stage actions; ties keep fewer boxes.
-  let B = 0, boxJunkLeft = postedJunk.filter(Boolean).length, boxLost = 0;
-  let kept: boolean[] = runs.map(() => true);
-  for (const opt of input.boxOptions) {
-    const keptAt = runs.map((r, i) => (opt.insideFeet.get(i) ?? 0) >= 0.5 * r.lengthFeet);
-    const jLeft = runs.filter((_, i) => postedJunk[i] && keptAt[i]).length;
-    const lost = runs.filter((_, i) => postedReal[i] && !keptAt[i]).length;
-    if (opt.boxes + jLeft + lost < B + boxJunkLeft + boxLost) {
-      B = opt.boxes; boxJunkLeft = jLeft; boxLost = lost; kept = keptAt;
-    }
-  }
+  // The boxes: work-area, then erase, with no cap (criterion 3 has no budget).
+  const { B, boxLost, kept, X, eraseJunkLeft, eraseLost, erased } = boxStage(input, Number.POSITIVE_INFINITY);
 
   // CLICKS: greedy over like-classes on what still stands after the boxes.
-  const standing = runs.map((r, i) => !r.held && kept[i]!);
+  const standing = runs.map((r, i) => !r.held && kept[i]! && !erased.has(i));
   const classes = input.likeClasses(standing);
   const gone = new Set<number>();
   let E = 0, junkGone = 0, realLost = 0;
@@ -87,7 +83,57 @@ export function actionsToExact(input: ActionsInput): ActionsResult {
     E += 1; junkGone += bestJ; realLost += bestR;
   }
 
-  const J = boxJunkLeft - junkGone;
-  const L = boxLost + realLost;
-  return { actions: B + E + J + L + R + M + H, B, E, J, L, R, M, H, chosenBoxes: B };
+  const J = eraseJunkLeft - junkGone;
+  const L = boxLost + eraseLost + realLost;
+  return { actions: B + X + E + J + L + R + M + H, B, X, E, J, L, R, M, H, chosenBoxes: B };
+}
+
+/**
+ * THE BOX STAGE, shared by the counter (no cap: criterion 3 has no budget) and the REVIEWED-2MIN posture (cap 3 boxes IN
+ * ALL, work-area + erase: criterion 1's budget). One function, so both make the SAME choice wherever the cap does not bind
+ * (erase-area-tool.md Amendment 3, the instrument owner's ruling 2026-11-28).
+ */
+function boxStage(input: ActionsInput, cap: number) {
+  const { runs } = input;
+  const postedJunk = runs.map((r) => !r.held && r.junk);
+  const postedReal = runs.map((r) => !r.held && !r.junk);
+  // BOXES: k = 0 is "remove every posted junk run by hand"; take the option with
+  // the fewest box-stage actions; ties keep fewer boxes.
+  let B = 0, boxJunkLeft = postedJunk.filter(Boolean).length, boxLost = 0;
+  let kept: boolean[] = runs.map(() => true);
+  for (const opt of input.boxOptions) {
+    if (opt.boxes > cap) continue;
+    const keptAt = runs.map((r, i) => (opt.insideFeet.get(i) ?? 0) >= 0.5 * r.lengthFeet);
+    const jLeft = runs.filter((_, i) => postedJunk[i] && keptAt[i]).length;
+    const lost = runs.filter((_, i) => postedReal[i] && !keptAt[i]).length;
+    if (opt.boxes + jLeft + lost < B + boxJunkLeft + boxLost) {
+      B = opt.boxes; boxJunkLeft = jLeft; boxLost = lost; kept = keptAt;
+    }
+  }
+
+  // ERASE BOXES: on what the work area kept (the product's order); the option with the fewest erase-stage actions,
+  // a real run erased being a loss; ties keep fewer boxes (options come fewest first, and only a strict gain moves).
+  let X = 0, eraseJunkLeft = boxJunkLeft, eraseLost = 0;
+  let erased: ReadonlySet<number> = new Set<number>();
+  for (const opt of input.eraseOptions ?? []) {
+    if (B + opt.boxes > cap) continue;
+    const jLeft = runs.filter((_, i) => postedJunk[i] && kept[i] && !opt.erased.has(i)).length;
+    const lost = runs.filter((_, i) => postedReal[i] && kept[i] && opt.erased.has(i)).length;
+    if (opt.boxes + jLeft + lost < X + eraseJunkLeft + eraseLost) {
+      X = opt.boxes; eraseJunkLeft = jLeft; eraseLost = lost; erased = opt.erased;
+    }
+  }
+
+  return { B, boxJunkLeft, boxLost, kept, X, eraseJunkLeft, eraseLost, erased };
+}
+
+/** The REVIEWED-2MIN posture's boxes: the counter's own choice, restricted to 3 boxes in all. */
+export function postureChoice(input: ActionsInput): { B: number; X: number; erased: ReadonlySet<number> } {
+  const { B, X, erased } = boxStage(input, 3);
+  return { B, X, erased };
+}
+
+/** What each run keeps in the posture: its feet inside the chosen work-area boxes, nothing if a chosen erase box took it. */
+export function postureFeet(lengths: readonly number[], insideFeet: ReadonlyMap<number, number>, erased: ReadonlySet<number>): number[] {
+  return lengths.map((len, at) => (erased.has(at) ? 0 : Math.min(len, insideFeet.get(at) ?? 0)));
 }

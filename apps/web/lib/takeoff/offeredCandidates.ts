@@ -3,7 +3,7 @@ import { onPriorPlan, type PriorLine } from "./planCompare";
 import { candidatesFromSheet, type Candidate } from "./answerKeyReview";
 import { bothFacesDashedInPoints } from "./dashedFaces";
 import { existingSentence, existingWalls, inLegendSample, legendSwatchBoxes, textRows, type ExistingWall } from "./existingWalls";
-import { clipToWorkArea, describeStyle, wallsLikeThese, type Line, type Polygon } from "./userExclusions";
+import { clipToWorkArea, describeStyle, eraseInBoxes, wallsLikeThese, type Line, type Polygon } from "./userExclusions";
 import { isTableRows, isUnderline } from "./textRows";
 import { legendBoxes } from "./legendBoxes";
 import { insideBoxes, titleBlockRegions } from "./titleBlock";
@@ -94,7 +94,7 @@ export type DetectedSheet = {
    * units, and the work-area polygons they drew. Sheet-relative; a caller
    * passes the page's own.
    */
-  user?: { excludeLike?: readonly Line[]; workArea?: readonly Polygon[] };
+  user?: { excludeLike?: readonly Line[]; workArea?: readonly Polygon[]; erase?: readonly Polygon[] };
   /**
    * This level's demolition or existing plan, its walls already aligned onto
    * this sheet in page-width units, and its sheet number for the sentence —
@@ -474,7 +474,9 @@ export function offeredCandidates(
   const like = wallsLikeThese(sheet.user?.excludeLike ?? [], survivors, unitSegments, sheet.feetPerUnit);
   const afterLike = survivors.filter((w) => !like.excluded.has(w));
   const area = clipToWorkArea(afterLike, sheet.user?.workArea ?? [], sheet.feetPerUnit);
-  const offeredRuns = [...area.inside, ...area.split.map((s) => s.piece)];
+  // Then the boxes the user erased, on what the work area left (erase-area-tool.md E2): whole runs, never cut.
+  const erasing = eraseInBoxes([...area.inside, ...area.split.map((s) => s.piece)], sheet.user?.erase ?? []);
+  const offeredRuns = erasing.kept;
   if (like.excluded.size > 0) {
     aside.set("excluded-like", {
       kind: "excluded-like",
@@ -489,6 +491,10 @@ export function offeredCandidates(
       n: area.outside.length + area.split.length,
       feet: area.outsideFeet,
     });
+  }
+  if (erasing.erased.length > 0) {
+    const feet = erasing.erased.reduce((sum, w) => sum + w.lengthFeet, 0);
+    aside.set("erased-by-you", { kind: "erased-by-you", why: `inside an area you erased — ${Math.round(feet).toLocaleString()} ft`, n: erasing.erased.length, feet });
   }
   if (framedRuns.length > 0) {
     aside.set("legend-box", {
@@ -579,6 +585,7 @@ export function offeredCandidates(
       ...existingRuns.map((e) => ({ kind: "existing", why: e.why, lengthFeet: e.wall.lengthFeet, x1: e.wall.x1, y1: e.wall.y1, x2: e.wall.x2, y2: e.wall.y2 })),
       ...[...like.excluded].map((w) => ({ kind: "excluded-like", why: "drawn like a wall you clicked — excluded by you", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...area.outside.map((w) => ({ kind: "outside-work-area", why: "outside the work area you drew", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
+      ...erasing.erased.map((w) => ({ kind: "erased-by-you", why: "inside an area you erased", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...dashed.map((w) => ({ kind: "dashed-faces", why: "both faces are dashed lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...dimensionRuns.map((w) => ({ kind: "dimension-string", why: "several dimensions written between the two lines", lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),
       ...onPrior.map((w) => ({ kind: "on-prior-plan", why: `also drawn on ${prior!.sheet}, the demolition plan`, lengthFeet: w.lengthFeet, x1: w.x1, y1: w.y1, x2: w.x2, y2: w.y2 })),

@@ -18,8 +18,8 @@ import { loadWallModel } from "../wallModelFile";
 import { loadRenoModel, loadRunModel, priorForRuns, renoModelRemovals, runModelVerdicts } from "../wallRunModel";
 import { reviewOrder, runScores } from "../wallReview";
 import type { WallCandidate } from "../wallVectors";
-import { clipToWorkArea, wallsLikeThese, type Polygon } from "../userExclusions";
-import { actionsToExact } from "../actionsToExact";
+import { clipToWorkArea, eraseInBoxes, wallsLikeThese, type Polygon } from "../userExclusions";
+import { actionsToExact, postureChoice, postureFeet, type ActionsInput } from "../actionsToExact";
 import { setFigures, setHeightRule, wallHeightChain, type SetFigures, type SetHeightRule, type WallHeightConvention } from "../heightsByCode";
 import { levelHeight, planLevels, type LevelMark } from "../levelHeights";
 import { setHeightFacts } from "../setHeightFacts";
@@ -222,7 +222,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
     let kzSheet = 0, kzRoom = 0, kzUnresolved = 0;
     const bySet = new Map<string, { lf: number; doors: number; windows: number; lf10: number; keyLf: number; keyDoors: number; keyWindows: number; keyByType: Record<string, number>; sheets: number; junkLf: number; junkRenoLf: number; missedLf: number; keyBoardSf: number; renovation: boolean; doorsOver: number; unpricedBoardSf: number; zeroBoardSf: number; lf10BoardSf: number; needsAnswerLf: number; noBoardLf: number; revLf: number; rev10Lf: number; revJunkLf: number; revMissedLf: number; revBoardSf: number; rev10BoardSf: number; junkBoardSf: number; gradedKeyLf: number; defaultedBoardSf: number; a2Lf: number; a2JunkLf: number; a2MissedLf: number; a2JunkBoardSf: number; a2RealGradedSf: number; a2DefaultPostedSf: number; keyGradedBoardSf: number; keyDefaultBoardSf: number }>();
     // Scoreboard v3 (prereg-scoreboard-v3.md): one row per scored sheet for ACTIONS TO EXACT.
-    const v3Sheets: { group: string; set: string; sheet: string; actions: number; B: number; E: number; J: number; L: number; R: number; M: number; H: number }[] = [];
+    const v3Sheets: { group: string; set: string; sheet: string; actions: number; B: number; X: number; E: number; J: number; L: number; R: number; M: number; H: number }[] = [];
     for (const dir of readdirSync(LABELS).sort()) {
       if (!existsSync(join(LABELS, dir)) || (heldOutReason(dir) !== null) !== HELD) continue;
       if (process.env.ZT_ONLY !== undefined && !dir.includes(process.env.ZT_ONLY)) continue;
@@ -548,10 +548,40 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
           }
         }
         const atOfX = new Map(runs.map((r, at) => [r as unknown as WallCandidate, at] as const));
-        const act = actionsToExact({
+        // ERASE candidates (W2 item 2, erase-area-tool.md P6): the second's estimator from prereg-erase-area.md, its
+        // constants unchanged — posted junk midpoints within 10 ft cluster (single link), a box is the cluster's
+        // bounding box padded 1 ft, a box is refused when real LF inside exceeds 10% of all LF inside, up to 3 boxes,
+        // greedy by junk LF inside. What each box takes is the PRODUCT's own eraseInBoxes (whole runs). On every scored
+        // sheet (the product has no renovation gate for it). ZT_ERASE=0 is the A/B's OFF arm.
+        const eraseOptions: { boxes: number; erased: ReadonlySet<number> }[] = [];
+        if (process.env.ZT_ERASE !== "0" && wallTest && key.length > 0) {
+          const posted = (at: number) => !held.has(runs[at]!);
+          const junkAts = runs.map((_, at) => at).filter((at) => posted(at) && isJunkAt(at));
+          const mid = (at: number) => ({ x: (runs[at]!.x1 + runs[at]!.x2) / 2, y: (runs[at]!.y1 + runs[at]!.y2) / 2 });
+          const near = 10 / fpu, pad = 1 / fpu;
+          const parent = new Map(junkAts.map((at) => [at, at] as const));
+          const root = (at: number): number => (parent.get(at) === at ? at : root(parent.get(at)!));
+          for (let a = 0; a < junkAts.length; a += 1) for (let b = a + 1; b < junkAts.length; b += 1) {
+            const p = mid(junkAts[a]!), q = mid(junkAts[b]!);
+            if (Math.hypot(p.x - q.x, p.y - q.y) <= near) parent.set(root(junkAts[a]!), root(junkAts[b]!));
+          }
+          const clusters = new Map<number, number[]>();
+          for (const at of junkAts) clusters.set(root(at), [...(clusters.get(root(at)) ?? []), at]);
+          const boxes = [...clusters.values()].map((members) => {
+            const xs = members.flatMap((at) => [runs[at]!.x1, runs[at]!.x2]), ys = members.flatMap((at) => [runs[at]!.y1, runs[at]!.y2]);
+            const x0 = Math.min(...xs) - pad, x1 = Math.max(...xs) + pad, y0 = Math.min(...ys) - pad, y1 = Math.max(...ys) + pad;
+            const erased = eraseInBoxes(runs.map((r, at) => ({ x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2, at })), [{ xs: [x0, x1, x1, x0], ys: [y0, y0, y1, y1] }]).erased.map((r) => r.at).filter(posted);
+            const junkLf = erased.filter(isJunkAt).reduce((n, at) => n + runs[at]!.lengthFeet, 0);
+            const allLf = erased.reduce((n, at) => n + runs[at]!.lengthFeet, 0);
+            return { erased, junkLf, refused: allLf > 0 && (allLf - junkLf) / allLf > 0.1 };
+          }).filter((b) => !b.refused && b.junkLf > 0).sort((a, b) => b.junkLf - a.junkLf).slice(0, 3);
+          for (let k = 1; k <= boxes.length; k += 1) eraseOptions.push({ boxes: k, erased: new Set(boxes.slice(0, k).flatMap((b) => b.erased)) });
+        }
+        const actInput: ActionsInput = {
           runs: runs.map((r, at) => ({ lengthFeet: r.lengthFeet, held: held.has(r), junk: isJunkAt(at), heightFeet: runFeet(r), keyIndex: matchOf[at]! })),
           key: key.map((k, ki) => ({ missed: missedKeyAt[ki]!, type: typeOfKey(ki), knownFeet: keyKnownFeet[ki] ?? null })),
           boxOptions: [...boxSets.entries()].map(([n, boxes]) => ({ boxes: n, insideFeet: keptFeetFor(boxes) })),
+          eraseOptions,
           // Amendment 2: the product's own wallsLikeThese decides each click's class,
           // on the product's survivors; one class per standing posted-junk run.
           likeClasses: (standing) => {
@@ -569,14 +599,17 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
             }
             return classes;
           },
-        });
-        const bestK = act.B;
+        };
+        const act = actionsToExact(actInput);
+        // The REVIEWED-2MIN posture's boxes: the counter's own choice, capped at 3 in all (Amendment 3).
+        const posture = postureChoice(actInput);
+        const bestK = posture.B;
         const bestBoxes: Polygon[] = boxSets.get(bestK) ?? [];
         const sheetActions = act.actions;
-        // THE REVIEWED-2MIN POSTURE: the chosen boxes, the 10 shipped answers,
+        // THE REVIEWED-2MIN POSTURE: the chosen boxes (work-area AND erase, 3 in all), the 10 shipped answers,
         // then one height answer per key-known type.
         const inside2 = keptFeetFor(bestBoxes);
-        const pieces2 = runs.map((r, at) => ({ at, feet: Math.min(r.lengthFeet, inside2.get(at) ?? 0) })).filter((p) => p.feet > 0);
+        const pieces2 = postureFeet(runs.map((r) => r.lengthFeet), inside2, posture.erased).map((feet, at) => ({ at, feet })).filter((p) => p.feet > 0);
         const flipped = new Set<number>();
         {
           const entries2 = pieces2.map((p, i) => ({ at: i, held: held.has(runs[p.at]!), score: scores[p.at] ?? null, lengthFeet: p.feet }));
@@ -606,7 +639,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         const a2MissedLf = Math.max(0, keyLf - (a2Lf - a2JunkLf));
         const keyGradedBoardSf = key.reduce((n, k, ki) => n + (keyKnownFeet[ki] != null ? k.lengthFeet * (keyKnownFeet[ki] as number) * 2 : 0), 0);
         const keyDefaultBoardSf = key.reduce((n, k, ki) => n + (keyAtDefault[ki] ? k.lengthFeet * NOMINAL_FEET * 2 : 0), 0);
-        if (wallTest) v3Sheets.push({ group: HELD ? "HELD-OUT" : "TRAINING", set: dir, sheet, actions: sheetActions, B: act.B, E: act.E, J: act.J, L: act.L, R: act.R, M: act.M, H: act.H });
+        if (wallTest) v3Sheets.push({ group: HELD ? "HELD-OUT" : "TRAINING", set: dir, sheet, actions: sheetActions, B: act.B, X: act.X, E: act.E, J: act.J, L: act.L, R: act.R, M: act.M, H: act.H });
         // DISPUTE DUMP (truth-audit-design.md): posted junk (A) + missed key walls (B),
         // >=3 ft, coordinates only. The category is written HERE and nowhere a Chrome
         // batch reads; the audit's blind lists are generated from this file.
@@ -752,9 +785,9 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
       const sum = (f: (r: (typeof rows)[number]) => number) => rows.reduce((n, r) => n + f(r), 0);
       if (kbFull3 > 0) console.log(`ZT2MIN ${group} TOTAL ERROR ${((err3 / kbFull3) * 100).toFixed(1)}% of the FULL key $${Math.round(kbFull3)} · MEDIAN SET ${med(setErrFull3).toFixed(1)}% over ${setErrFull3.length} sets — THE HEADLINE (scoreboard v3, criteria 1+2; amendment 3)`);
       if (kb3 > 0) console.log(`ZT2MIN ${group} reference only: ${((err3 / kb3) * 100).toFixed(1)}% of the graded-heights key $${Math.round(kb3)} · median set ${med(setErr3).toFixed(1)}%`);
-      console.log(`ZTACT ${group} ACTIONS TO EXACT: median ${med(acts)} per sheet · mean ${(acts.length ? sum((r) => r.actions) / acts.length : 0).toFixed(1)} · pooled ${sum((r) => r.actions)} over ${rows.length} sheets — boxes ${sum((r) => r.B)} · exclude-like clicks ${sum((r) => r.E)} · junk removes ${sum((r) => r.J)} · real lost to boxes/clicks ${sum((r) => r.L)} · held-real restores ${sum((r) => r.R)} · missed adds ${sum((r) => r.M)} · height answers ${sum((r) => r.H)} (criterion 3; greedy = an upper bound)`);
+      console.log(`ZTACT ${group} ACTIONS TO EXACT: median ${med(acts)} per sheet · mean ${(acts.length ? sum((r) => r.actions) / acts.length : 0).toFixed(1)} · pooled ${sum((r) => r.actions)} over ${rows.length} sheets — boxes ${sum((r) => r.B)} · erase boxes ${sum((r) => r.X)} · exclude-like clicks ${sum((r) => r.E)} · junk removes ${sum((r) => r.J)} · real lost to boxes/clicks ${sum((r) => r.L)} · held-real restores ${sum((r) => r.R)} · missed adds ${sum((r) => r.M)} · height answers ${sum((r) => r.H)} (criterion 3; greedy = an upper bound)`);
       console.log(`ZTHGT ${group} height disagreement on KEY-KNOWN heights $${Math.round(gradedHeightErr)} · default-vs-default (OFF the total, own line): key $${Math.round(defaultKeyBoard)} / posted $${Math.round(defaultPostedBoard)}`);
-      for (const r of rows) console.log(`ZTACT ${group} ${r.set.slice(0, 26).padEnd(26)} ${r.sheet} actions ${r.actions} (B ${r.B} E ${r.E} J ${r.J} L ${r.L} R ${r.R} M ${r.M} H ${r.H})`);
+      for (const r of rows) console.log(`ZTACT ${group} ${r.set.slice(0, 26).padEnd(26)} ${r.sheet} actions ${r.actions} (B ${r.B} X ${r.X} E ${r.E} J ${r.J} L ${r.L} R ${r.R} M ${r.M} H ${r.H})`);
     }
     // ── SCOREBOARD V2 HEADLINE (prereg-scoreboard-v2.md): REVIEWED leads; zero-touch is the second line ──
     if (kb > 0) {

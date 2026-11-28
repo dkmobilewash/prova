@@ -170,14 +170,42 @@ export function splitLinesFrom(rows: readonly { kind: string; xs: readonly numbe
   return rows.filter((r) => r.kind === "ROOM_SPLIT" && r.xs.length === 2 && r.ys.length === 2).map((r) => ({ x1: r.xs[0]!, y1: r.ys[0]!, x2: r.xs[1]!, y2: r.ys[1]! }));
 }
 
-export function userExclusionsFromRows(rows: readonly { kind: string; xs: readonly number[]; ys: readonly number[] }[]): { excludeLike: Line[]; workArea: Polygon[] } | null {
+export function userExclusionsFromRows(rows: readonly { kind: string; xs: readonly number[]; ys: readonly number[] }[]): { excludeLike: Line[]; workArea: Polygon[]; erase: Polygon[] } | null {
   const excludeLike: Line[] = [];
   const workArea: Polygon[] = [];
+  const erase: Polygon[] = [];
   for (const r of rows) {
     if (r.kind === "EXCLUDE_LIKE" && r.xs.length >= 2 && r.ys.length >= 2) excludeLike.push({ x1: r.xs[0], y1: r.ys[0], x2: r.xs[1], y2: r.ys[1] });
     else if (r.kind === "WORK_AREA" && r.xs.length >= 3 && r.ys.length >= 3) workArea.push({ xs: [...r.xs], ys: [...r.ys] });
+    else if (r.kind === "ERASE_AREA" && r.xs.length === 4 && r.ys.length === 4) erase.push({ xs: [...r.xs], ys: [...r.ys] });
   }
-  return excludeLike.length === 0 && workArea.length === 0 ? null : { excludeLike, workArea };
+  return excludeLike.length === 0 && workArea.length === 0 && erase.length === 0 ? null : { excludeLike, workArea, erase };
+}
+
+// ── "ERASE WALLS IN THIS AREA" (W2 item 2; coordination/erase-area-tool.md) ──
+
+/**
+ * E1, frozen: the ONE predicate the product and the scoreboard share — the second's ceiling `inside()`
+ * (eval-out-second/erase-area/boxes.py). A run goes when its centreline points at 25%, 50% and 75% all lie inside one
+ * box, edges inclusive. Whole runs only, never cut: the ceiling's 14 ft of real wall erased was measured that way, and
+ * clipping would also cut the real partitions that run out of a fixture cluster, at a cost nobody has measured.
+ * A box is its corners' bounding box; one with no area erases nothing.
+ */
+export function eraseInBoxes<W extends { x1: number; y1: number; x2: number; y2: number }>(runs: readonly W[], boxes: readonly Polygon[]): { kept: W[]; erased: W[] } {
+  const bounds = boxes
+    .map((b) => ({ x0: Math.min(...b.xs), x1: Math.max(...b.xs), y0: Math.min(...b.ys), y1: Math.max(...b.ys) }))
+    .filter((b) => b.x1 > b.x0 && b.y1 > b.y0);
+  const out = { kept: [] as W[], erased: [] as W[] };
+  for (const r of runs) {
+    const gone = bounds.some((b) =>
+      [0.25, 0.5, 0.75].every((t) => {
+        const x = r.x1 + (r.x2 - r.x1) * t, y = r.y1 + (r.y2 - r.y1) * t;
+        return x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1;
+      }),
+    );
+    (gone ? out.erased : out.kept).push(r);
+  }
+  return out;
 }
 
 // ── THE WORK AREA ──
