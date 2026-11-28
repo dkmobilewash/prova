@@ -503,7 +503,66 @@ const ENLARGED_PLAN_SHEETS: { set: string; sheet: string; why: string }[] = [
       "connector's own enclosure is storefront + canopy. Diego's Round-44 key-scope ruling " +
       "(scope-reclass), 2026-11-26 — the junk-families audit's FS5 question.",
   },
+  // ── Diego's scope correction of 2026-11-27 (prereg-scoreboard-v3 amendment 5): the
+  // enlarged plans his 2026-11-19 ruling covers leave wall LF AND actions-to-exact.
+  ...(["A10", "A11", "A12"] as const).map((sheet) => ({
+    set: "3799_Drawings_MJB",
+    sheet,
+    why:
+      "1/4\" enlarged holding-area / staff-toilet plans of rooms drawn on the A2-A4 floor plans " +
+      "(Round 42 batch 2). Diego's enlarged-plans ruling, 2026-11-19; named 2026-11-27.",
+  })),
+  {
+    set: "9583_Exhibit_A_-_CCB_Remodel_-_DCR_104_108A_Bid_Plans",
+    sheet: "A601S",
+    why:
+      "captioned ENLARGED PLAN - LEVEL 01 - DEPARTMENT OF CIVIL RIGHTS; named by Diego 2026-11-27 " +
+      "under his 2026-11-19 ruling, knowing it carries more of the scope than its A201S overview.",
+  },
+  {
+    set: "24-1015_01_BCH_BID-SET-2026-09-15",
+    sheet: "A-300",
+    why: "captioned Enl. Elevator floor plans; the elevator is on the A-110/A-112 plans. Diego's ruling 2026-11-19 (\"any others like them\", 2026-11-27).",
+  },
+  {
+    set: "24-1015_01_BCH_BID-SET-2026-09-15",
+    sheet: "I-200",
+    why: "captioned Enlarged Plan - Lav. I-211 & I-212; the lavs are on the A-112 ED floor plan. Diego's ruling 2026-11-19 (\"any others like them\", 2026-11-27).",
+  },
+  {
+    set: "2022-02-28-NAPLES-AOB-CONSTRUCTION-DRAWINGS",
+    sheet: "A461A",
+    why: "captioned ENLARGED FLOOR PLANS - TOILET; the restrooms are on the A101A floor plans. Diego's ruling 2026-11-19 (\"any others like them\", 2026-11-27).",
+  },
 ];
+
+/**
+ * ── DEMOLITION-ONLY SHEETS LEAVE WALL SCORING (Diego, 2026-11-27) ──
+ *
+ * The product offers nothing to measure on a demolition-only sheet, by design, so
+ * its key's demolished walls are not a takeoff the scoreboard can grade; demolition
+ * takeoff is a future feature. The test is the PRODUCT's own (`isDemo` in
+ * pairDemoPlans: title or sheet number), narrowed to demolition ONLY: a title that
+ * also names NEW or PROPOSED work is a combined sheet and stays in. One explicit
+ * entry covers a sheet whose title the product reads as the project name alone.
+ */
+const DEMOLITION_ONLY_SHEETS: { set: string; sheet: string; why: string }[] = [
+  {
+    set: "9583_Exhibit_A_-_CCB_Remodel_-_DCR_104_108A_Bid_Plans",
+    sheet: "A102S",
+    why: "the product reads its title as the project name (\"CCB REMODEL\"); Chrome's Round 42 batch 3 report recorded it as Demolition Plan - Level 05.",
+  },
+];
+
+/** The reason this sheet is demolition-only (out of wall scoring), or null. */
+export function demolitionOnlyReason(set: string, sheet: string, isDemoSheet: boolean, title: string | null): string | null {
+  const want = flatten(set);
+  for (const one of DEMOLITION_ONLY_SHEETS) {
+    if (flatten(one.set) === want && flatten(one.sheet) === flatten(sheet)) return one.why;
+  }
+  if (isDemoSheet && !/\b(NEW|PROPOSED)\b/i.test(title ?? "")) return `demolition-only sheet (${(title ?? sheet).trim()})`;
+  return null;
+}
 
 /**
  * A sheet whose TITLE says it is a code / life-safety / egress plan prices no
