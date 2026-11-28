@@ -6,7 +6,8 @@ import { pageInventoryWork, type SheetProposalRow } from "../../plan-ingest/page
 import { openPlanPdf } from "../../plan-ingest/planPdf";
 import type { ScoredPairing } from "../demotedRuns";
 import { runsHeldOffEstimate } from "../estimateHold";
-import { codePlanTitle, enlargedPlanReason, excludedSheetReason, heldOutReason } from "../heldOutSets";
+import { codePlanTitle, demolitionOnlyReason, enlargedPlanReason, excludedSheetReason, heldOutReason } from "../heldOutSets";
+import { isDemo } from "../pairDemoPlans";
 import { keyFromLabels, scoreSheet, uncoveredFeet, wallTestFromLabels, type ScoredRun } from "../heldOutScore";
 import { detectForSheet, offeredCandidates } from "../offeredCandidates";
 import { priorPlanFor } from "../priorPlan";
@@ -261,7 +262,11 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         // likewise (BOARD.md 2026-11-21): it repeats the architectural floor.
         const enlargedWhy = enlargedPlanReason(dir, sheet);
         const codePlan = codePlanTitle(sheetsAll.find((s) => s.pageNumber === saved.page)?.title ?? null);
-        const wallTest = wallTestFromLabels(saved) && enlargedWhy === null && !codePlan;
+        // Amendment 5 (Diego, 2026-11-27): a demolition-only sheet leaves wall scoring
+        // and actions-to-exact — the product offers nothing there by design.
+        const inv = sheetsAll.find((s) => s.pageNumber === saved.page);
+        const demoWhy = demolitionOnlyReason(dir, sheet, inv !== undefined && isDemo(inv), inv?.title ?? null);
+        const wallTest = wallTestFromLabels(saved) && enlargedWhy === null && !codePlan && demoWhy === null;
         const strokes = await sheetStrokes(Buffer.from(readFileSync(pdf)), saved.page);
         if (strokes === null || strokes.segments.length < 50) continue;
         const doc = await openPlanPdf(Buffer.from(readFileSync(pdf)));
@@ -646,6 +651,7 @@ describe.skipIf(DIR === "" || LABELS === "" || OUT === "" || process.env.TAKEOFF
         rows.push({ set: dir, sheet, paired, renovation, keyLf: Math.round(keyLf * w), zeroLf: Math.round(zeroLf * w), lf10: Math.round(lf10 * w), junkLf: Math.round(junkLf * w), missedLf: Math.round(missedLf * w), keyBoardSf: Math.round(keyBoardSf * w), unpricedBoardSf: Math.round(unpricedBoardSf * w), zeroBoardSf: Math.round(zeroBoardSfAdj * w), chainFeet, chainFrom: chain?.from ?? null, rooms: foundRooms.rooms.length, keyDoors, postedDoors, keyWindows });
         if (codePlan) console.log(`ZT ${HELD ? "HELD-OUT" : "TRAINING"} ${dir.slice(0, 26)} ${sheet}: CODE/LIFE-SAFETY PLAN — wall and board terms excluded (codePlanTitle)`);
         else if (enlargedWhy !== null) console.log(`ZT ${HELD ? "HELD-OUT" : "TRAINING"} ${dir.slice(0, 26)} ${sheet}: ENLARGED PLAN — wall and board terms excluded (enlargedPlanReason)`);
+        else if (demoWhy !== null) console.log(`ZT ${HELD ? "HELD-OUT" : "TRAINING"} ${dir.slice(0, 26)} ${sheet}: DEMOLITION-ONLY — wall and board terms excluded (${demoWhy})`);
         else if (!wallTest) console.log(`ZT ${HELD ? "HELD-OUT" : "TRAINING"} ${dir.slice(0, 26)} ${sheet}: wall review never ran (door/window keys only) — wall and board terms excluded (wallTestFromLabels)`);
       }
     }

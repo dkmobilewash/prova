@@ -1,7 +1,32 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { enlargedPlanReason, excludedSheetReason } from "./heldOutSets";
+import { demolitionOnlyReason, enlargedPlanReason, excludedSheetReason } from "./heldOutSets";
+
+describe("Diego's scope correction of 2026-11-27 (prereg-scoreboard-v3 amendment 5)", () => {
+  it("takes out the enlarged plans he named, under the real file spellings", () => {
+    for (const sheet of ["A10", "A11", "A12"]) expect(enlargedPlanReason("3799_Drawings_MJB.pdf", sheet)).not.toBeNull();
+    expect(enlargedPlanReason("9583_Exhibit_A_-_CCB_Remodel_-_DCR_104_108A_Bid_Plans.pdf", "A601S")).not.toBeNull();
+    expect(enlargedPlanReason("24-1015_01_BCH_BID-SET-2026-09-15.pdf", "I-200")).not.toBeNull();
+    expect(enlargedPlanReason("2022-02-28-NAPLES-AOB-CONSTRUCTION-DRAWINGS.pdf", "A461A")).not.toBeNull();
+  });
+
+  it("leaves the main plans of the same sets in", () => {
+    expect(enlargedPlanReason("3799_Drawings_MJB.pdf", "A2")).toBeNull();
+    expect(enlargedPlanReason("9583_Exhibit_A_-_CCB_Remodel_-_DCR_104_108A_Bid_Plans.pdf", "A201S")).toBeNull();
+  });
+
+  it("takes out a demolition-only sheet the product flags, and keeps a combined demo + new sheet", () => {
+    expect(demolitionOnlyReason("x", "AD-101", true, "DEMOLITION FLOOR PLAN- LEVEL 1 & 2")).not.toBeNull();
+    expect(demolitionOnlyReason("x", "A1.01", true, "DEMOLITION & PROPOSED FLOOR PLANS")).toBeNull();
+    expect(demolitionOnlyReason("x", "A2", true, "DEMO AND NEW WORK PLAN")).toBeNull();
+    expect(demolitionOnlyReason("x", "A101", false, "FLOOR PLAN")).toBeNull();
+  });
+
+  it("covers 9583 A102S, whose title the product reads as the project name", () => {
+    expect(demolitionOnlyReason("9583_Exhibit_A_-_CCB_Remodel_-_DCR_104_108A_Bid_Plans.pdf", "A102S", false, "CCB REMODEL")).not.toBeNull();
+  });
+});
 
 /**
  * Diego's enlarged-plans ruling (BOARD.md 2026-11-19): a wall is priced ONCE,
@@ -51,7 +76,8 @@ describe("enlargedPlanReason", () => {
     const src = readFileSync(join(__dirname, "realplan/zzZeroTouch.eval.ts"), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\/\/[^\n]*/g, "");
-    expect(src).toMatch(/const wallTest = wallTestFromLabels\(saved\) && enlargedWhy === null && !codePlan;/);
+    expect(src).toMatch(/const wallTest = wallTestFromLabels\(saved\) && enlargedWhy === null && !codePlan && demoWhy === null;/);
+    expect((src.match(/demolitionOnlyReason\s*\(/g) ?? []).length, "the eval never calls demolitionOnlyReason").toBeGreaterThanOrEqual(1);
     expect((src.match(/enlargedPlanReason\s*\(/g) ?? []).length, "the eval never calls enlargedPlanReason").toBeGreaterThanOrEqual(1);
   });
 });
