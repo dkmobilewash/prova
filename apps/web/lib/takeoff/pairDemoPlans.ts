@@ -151,7 +151,8 @@ export function demoPlansFor(sheets: readonly SheetForPairing[], newPage: number
 }
 
 const flat = (number: string | null) => (number ?? "").toUpperCase().replace(/[-\s]/g, "");
-const isDemo = (s: SheetForPairing) => !!s.demoCaption || demoSheetTitle(s.title) || /^(?:[A-Z]D|D[A-Z]?)[-.\d]/i.test(s.sheetNumber ?? "");
+/** The product's demolition-sheet test; exported so the eval's scope uses the same one. */
+export const isDemo = (s: SheetForPairing) => !!s.demoCaption || demoSheetTitle(s.title) || /^(?:[A-Z]D|D[A-Z]?)[-.\d]/i.test(s.sheetNumber ?? "");
 
 /** A plan of what is there now, not what is built: Macon-Bibb's A1-0 "FLOOR PLAN - EXISTING". */
 const EXISTING_ONLY = (title: string | null) => /\bEXISTING\b/i.test(title ?? "") && !/\bNEW\b/i.test(title ?? "");
