@@ -9,11 +9,12 @@ set -o pipefail
 C="/Users/diego/Claude Folder/takeoff/coordination"
 T="/Users/diego/Claude Folder/takeoff"
 W="${EXAM_WORKTREE:-/Users/diego/prova/.claude/worktrees/diego-model-census}/apps/web"
-SNAP="$T/labels-snap-20261126T1633Z-post44b"
+SNAP="${SB3_SNAP:-$T/labels-snap-20261126T1633Z-post44b}"   # truth-audit restatement: SB3_SNAP + SB3_HASH name the corrected snapshot
+WANT="${SB3_HASH:-bb486066b7578355}"
 O="${SB3_OUT:-$T/eval-out-sb3-baseline}"   # amendment 5 restatement: SB3_OUT=$T/eval-out-sb3-baseline-scope5
 mkdir -p "$O"
 H=$(cd "$SNAP" && find . -type f | sort | xargs shasum -a 256 | shasum -a 256 | cut -c1-16)
-[ "$H" = "bb486066b7578355" ] || { echo "SNAPSHOT HASH MISMATCH: $H != bb486066b7578355 — refusing"; exit 1; }
+[ "$H" = "$WANT" ] || { echo "SNAPSHOT HASH MISMATCH: $H != $WANT — refusing"; exit 1; }
 SLOT=$(bash "$C/heavylock.sh" claim original long "SCOREBOARD V3 BASELINE (prereg-scoreboard-v3.md)" | grep -oE 'HEAVY_LOCK_[12]' | tail -1)
 [ -n "$SLOT" ] || { echo "no heavy slot free"; exit 1; }
 trap 'bash "$C/heavylock.sh" release original "$SLOT"' EXIT
@@ -38,6 +39,8 @@ ZT_HELD=1 ZT_OUT="$O/zt-held.json" npx vitest run --config vitest.eval.config.mt
 echo "held vitest=$?"
 grep -aE "^ZTENV" "$O/held-full.log" | head -9
 grep -aE "^(ZT2MIN|ZTACT|ZTHGT|ZTREV|ZT) HELD-OUT (TOTAL|ACTIONS|height)" "$O/held-full.log"
+# A held-out-only key correction leaves every training input unchanged: SB3_HELD_ONLY=1 stops here.
+[ "${SB3_HELD_ONLY:-}" = "1" ] && { echo "dispute rows: $(wc -l < "$ZT_DISPUTE_DUMP")"; echo "=== SB3 BASELINE COMPLETE (held-out only) ==="; exit 0; }
 echo "=== SB3 BASELINE TRAINING ==="
 export ZT_ZONE_KEYS="Joplin-community-center.pdf=$C/joplin-room-parts-key.md,BUNKIE-BID-DRAWINGS.pdf=$C/bunkie-room-parts-key.md,SW-Grand-Junction-CO.pdf=$C/sw-room-parts-key.md"
 ZT_OUT="$O/zt-train.json" npx vitest run --config vitest.eval.config.mts lib/takeoff/realplan/zzZeroTouch.eval.ts > "$O/train-full.log" 2>&1
